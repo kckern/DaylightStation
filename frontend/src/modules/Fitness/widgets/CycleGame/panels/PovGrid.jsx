@@ -3,200 +3,385 @@ import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
-import { useLeaderAnchoredZoom } from '@/modules/Fitness/lib/cycleGame/useLeaderAnchoredZoom.js';
-import { computePovFrame } from '@/modules/Fitness/lib/cycleGame/povFrame.js';
 import { tickFraction } from '@/modules/Fitness/lib/cycleGame/tickFraction.js';
-import { computeGridRails } from '@/modules/Fitness/lib/cycleGame/povRails.js';
-import { BASE_CAMERA } from '@/modules/Fitness/lib/cycleGame/povCamera.js';
-import { stepCameraDynamics, cameraFrom, NEUTRAL_DYNAMICS } from '@/modules/Fitness/lib/cycleGame/povCameraDynamics.js';
-import { drawScene } from '@/modules/Fitness/lib/cycleGame/povCanvasScene.js';
-import { computeGates } from '@/modules/Fitness/lib/cycleGame/povGates.js';
+import { povWorld } from '@/modules/Fitness/lib/cycleGame/povWorld.js';
+import { povFollowCam } from '@/modules/Fitness/lib/cycleGame/povFollowCam.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './PovGrid.scss';
 
-const MINOR_M = 1;         // minor metre mark every 1 m
-const MAJOR_M = 10;        // major every 10 m
-const GRID_SLOTS = 200;    // metre-mark count (covers 200 m of road at 1 m spacing;
-                           // a multiple of MAJOR_M/MINOR_M=10 so major identity stays exact.
-                           // off-road/fogged marks are skipped in drawScene, so the count is cheap)
-const TICK_MS = 1000;      // matches RACE_TICK_MS — the 1 Hz data cadence
-const K_TAU_MS = 320;      // zoom-ease time constant
-const VLINES = 9;          // fixed vertical gridlines (road edges + interior)
+// World / grid (must match povWorld defaults).
+const RACE_TICK_MS = 1000;   // matches RACE_TICK_MS data cadence
+const ROAD_HALF_W = 4;       // road spans x ∈ [-4, +4] world units
+const LANE_INSET = 0.85;     // riders spread across ±halfW*inset
+const GRID_MINOR_M = 1;      // minor metre mark spacing
+const GRID_MAJOR_M = 10;     // major (labelled) every 10 m
+const AHEAD_M = 25;          // road drawn ahead of the leader (frames leader high)
+const MIN_SPAN_M = 20;       // min framed span → max-zoom cap
+const FOG_FAR_M = 220;       // fog cutoff / mark horizon behind the leader
 
-// Leader-anchored zoom anchors (PovGrid-only override): last place rests low (≈ bottom
-// ~25%) so a spread field fills the frame. minGapM is the MAX-ZOOM cap: below this gap
-// the view stops zooming in, so close / about-to-overtake riders cluster near the leader
-// (proximity is highlighted) instead of being stretched across the screen. The wide
-// hysteresis band makes rezooms conservative — the view re-fits far less often.
-const ZOOM_CFG = { maxLines: GRID_SLOTS, homePct: 0.08, lowPct: 0.02, highPct: 0.30, minGapM: 20 };
+// Camera follow (camera-controls). smoothTime is the damping knob (no whiplash).
+const SMOOTH_TIME = 0.5;
+const MIN_DIST = 8;          // closest dolly — the hard max-zoom cap
+const MAX_DIST = 150;        // farthest dolly — whole-field spread
 
-// Static near-edge x positions for the longitudinal rails (camera reprojects per frame).
-const RAILS_X = computeGridRails(BASE_CAMERA, VLINES).map((r) => r.nearX);
+// Look-at geometry (tuned on kiosk).
+const CAM_FILL = 0.95;       // camDist ≈ span * CAM_FILL (clamped to MIN/MAX_DIST)
+const CAM_BEHIND = 0.55;     // camera sits this * camDist behind last place
+const CAM_ELEV = 0.42;       // camera elevation = this * camDist
+const LOOK_AHEAD = 0.35;     // look at a point this fraction into the span (leader sits high)
+
+// Avatar card scale: clamp(MIN..MAX, CARD_FOCAL / distanceToCamera).
+const CARD_FOCAL = 26;
+const CARD_MIN_SCALE = 0.45;
+const CARD_MAX_SCALE = 1.5;
+
+// Neon palette.
+const BG = 0x0a0118;
+const MAGENTA = 0xff40a0;
+const GOLD = 0xffc846;
+const MAJOR_RGB = [0.18, 0.92, 1.0];   // bright cyan
+const MINOR_RGB = [0.06, 0.42, 0.52];  // dim cyan
+const RAIL_CYAN = 0x21e6ff;
+
+// Pools.
+const MAX_TRUSS = 320;       // metre-mark line capacity (≈ (FOG_FAR_M+AHEAD_M)/MINOR)
+const GATE_POOL = 10;        // simultaneous lap/finish arches
+const MAJOR_LABEL_POOL = 30; // simultaneous off-road metre labels
+const ARCH_H = 3.2;          // gate arch height (world units)
+
+const clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
 
 /**
- * Canvas2D POV road. A single <canvas> draws the wireframe grid (rails + metre
- * trusses) each frame through a dynamic camera; the SAME camera positions a DOM
- * overlay of rider avatars, so they sit on the road. One rAF loop owns both. The
- * camera leans toward the leader and pulses FOV on sprints — but rigidly (the
- * grid never deforms; "not jello"). See README.
+ * three.js POV race road. A WebGLRenderer draws the neon grid (rails + metre
+ * trusses) and lap/finish arches in true 3D; a camera-controls follow-cam frames
+ * the field each frame (eased + zoom-capped); the DOM avatar cards and the metre /
+ * gate labels are positioned by projecting their 3D world points to screen, so they
+ * ride the road with crisp text and stay React-owned. All race→world math lives in
+ * the pure povWorld / povFollowCam modules. three + camera-controls are
+ * dynamic-imported so they only load when the POV mounts. See PovGrid.README.md.
  */
 export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null }) {
   const distOf = (id) => Math.max(0, riders[id]?.cumulativeDistanceM || 0);
-  // DNF riders are off the course entirely — excluded from BOTH the leader-anchored
-  // zoom (so a stalled rider can't crush the scale) and the avatar overlay.
+  // DNF / not-yet-moved riders are off the course entirely (excluded from the
+  // avatar overlay AND the camera bounds, so a stalled rider can't crush the scale).
   const movedIds = riderIds.filter((id) => distOf(id) > 0 && !riderLive[id]?.dnf);
   const colorOf = (id) => LINE_COLORS[riderIds.indexOf(id) % LINE_COLORS.length];
-  const zoom = useLeaderAnchoredZoom(movedIds.map(distOf), ZOOM_CFG);
-  const laneX = (idx) => (movedIds.length <= 1 ? 50 : 12 + idx * (76 / (movedIds.length - 1)));
 
-  const canvasRef = useRef(null);
-  const ctxRef = useRef(null);
-  const dimsRef = useRef({ w: 0, h: 0, dpr: 1 });
-  const tickRef = useRef({ leaderPrev: 0, leaderCur: 0, kTarget: 0, riders: [], tickAt: 0, leaderVel: 0, accel: 0, leaderLaneX: 50, gapM: 0 });
-  const kRef = useRef(null);
-  const leaderURef = useRef(null);
-  const camDynRef = useRef(NEUTRAL_DYNAMICS);
-  const markerEls = useRef({});
+  const rootRef = useRef(null);
+  const glMountRef = useRef(null);
+  const labelsRef = useRef(null);
+  const markerEls = useRef({});           // { id: card DOM node }
+  const sceneRef = useRef(null);          // built three.js scene + pools
+  const tickRef = useRef({ riders: [], tickAt: 0 });
   const prevDistRef = useRef({});
-  // Live lap-gate config for the rAF loop (refreshed each render; the loop reads the ref).
   const gateCfgRef = useRef({ lapLengthM, finishM });
   gateCfgRef.current = { lapLengthM, finishM };
-  // Component-scoped logger (the rAF loop reads it via this ref).
+  const movedCountRef = useRef(0);
+  movedCountRef.current = movedIds.length;
   const logRef = useRef(null);
   if (!logRef.current) logRef.current = getLogger().child({ component: 'pov-grid' });
 
-  // Capture each new tick's targets (only on real data change), and derive the
-  // camera signals (leader lane + acceleration) for the dynamics.
+  // Capture each new data tick (only on real change) for the rAF loop to interpolate.
   useEffect(() => {
-    const t = tickRef.current;
-    if (zoom.leaderDist === t.leaderCur && Object.keys(prevDistRef.current).length === movedIds.length) return;
-    const now = performance.now();
     const prev = prevDistRef.current;
-    const ridersFrame = movedIds.map((id, idx) => ({
-      id, idx, laneX: laneX(idx),
-      prev: Number.isFinite(prev[id]) ? prev[id] : distOf(id),
-      cur: distOf(id)
-    }));
-    const leaderCur = zoom.leaderDist;
-    const leaderPrev = Number.isFinite(t.leaderCur) && t.leaderCur > 0 ? t.leaderCur : leaderCur;
-    const leaderVel = Math.max(0, leaderCur - leaderPrev);
-    const accel = leaderVel - (t.leaderVel || 0);
-    const leaderId = movedIds.reduce((best, id) => (best && distOf(best) >= distOf(id) ? best : id), null);
-    const leaderLaneX = leaderId ? laneX(movedIds.indexOf(leaderId)) : 50;
-    // Field spread (leader → last place), used to lower the leader's depth-anchor when
-    // the pack is bunched near the start so the field rests low instead of crowding the top.
-    const rearCur = movedIds.length ? Math.min(...movedIds.map(distOf)) : leaderCur;
-    const gapM = Math.max(0, leaderCur - rearCur);
-    // Camera audit: a rezoom (dolly/zoom change) is when the held zoom k jumps between ticks.
-    const prevK = t.kTarget;
-    if (prevK > 0 && Math.abs(zoom.kFrac - prevK) / prevK > 0.02) {
-      const lastDist = movedIds.length ? Math.min(...movedIds.map(distOf)) : leaderCur;
-      logRef.current.debug('cycle_game.pov.rezoom', { fromK: prevK, toK: zoom.kFrac, gapM: Math.round(leaderCur - lastDist) });
-    }
+    const changed = movedIds.length !== Object.keys(prev).length
+      || movedIds.some((id) => prev[id] !== distOf(id));
+    if (!changed) return;
     tickRef.current = {
-      leaderPrev, leaderCur, kTarget: zoom.kFrac, riders: ridersFrame, tickAt: now,
-      leaderVel, accel, leaderLaneX, gapM
+      riders: movedIds.map((id, idx) => ({
+        id, idx,
+        prev: Number.isFinite(prev[id]) ? prev[id] : distOf(id),
+        cur: distOf(id),
+        isGhost: !!riders[id]?.isGhost,
+      })),
+      tickAt: performance.now(),
     };
-    const next = {}; movedIds.forEach((id) => { next[id] = distOf(id); });
+    const next = {};
+    movedIds.forEach((id) => { next[id] = distOf(id); });
     prevDistRef.current = next;
   });
 
-  // Size the canvas backing store to devicePixelRatio for crisp lines; re-measure
-  // on resize. jsdom returns null for getContext('2d') and 0-size rects — guarded.
+  // Build the three.js scene once, run the rAF loop. jsdom has no WebGL, so every
+  // GL call is guarded: a missing context degrades to the avatar-only fallback.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-    ctxRef.current = (canvas.getContext && canvas.getContext('2d')) || null;
-    const measure = () => {
-      const rect = canvas.getBoundingClientRect();
-      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-      const w = Math.max(0, Math.round(rect.width));
-      const h = Math.max(0, Math.round(rect.height));
-      dimsRef.current = { w, h, dpr };
-      if (w > 0 && h > 0) {
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-        if (ctxRef.current) ctxRef.current.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let alive = true;
+    let raf = 0;
+    const cleanupFns = [];
+
+    (async () => {
+      let THREE;
+      let CameraControls;
+      try {
+        THREE = await import('three');
+        CameraControls = (await import('camera-controls')).default;
+      } catch (e) {
+        logRef.current.error('cycle_game.pov.import_failed', { reason: String(e?.message || e) });
+        sceneRef.current = { webgl: false };
+        logRef.current.info('cycle_game.pov.mount', { riderCount: movedCountRef.current, webgl: false });
+        return;
       }
-    };
-    measure();
-    let ro;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure);
-      ro.observe(canvas);
-    }
-    return () => { if (ro) ro.disconnect(); };
-  }, []);
+      if (!alive) return;
+      const glHost = glMountRef.current;
+      const labelsHost = labelsRef.current;
+      if (!glHost || !labelsHost) return;
 
-  // The 60fps loop — mounts once, draws the grid to canvas, positions avatars.
-  useEffect(() => {
-    let raf;
-    let lastT = performance.now();
-    let lastCamLog = 0;
-    const draw = () => {
-      const nowT = performance.now();
-      const dt = Math.min(64, nowT - lastT); lastT = nowT;
-      const t = tickRef.current;
+      let renderer;
+      try {
+        CameraControls.install({ THREE });
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      } catch (e) {
+        logRef.current.warn('cycle_game.pov.webgl_unavailable', { reason: String(e?.message || e) });
+        sceneRef.current = { webgl: false };
+        logRef.current.info('cycle_game.pov.mount', { riderCount: movedCountRef.current, webgl: false });
+        return;
+      }
 
-      const target = t.kTarget;
-      if (!(kRef.current > 0)) kRef.current = target;
-      else if (target > 0) kRef.current += (target - kRef.current) * (1 - Math.exp(-dt / K_TAU_MS));
-      const kFrame = kRef.current;
+      const rect = glHost.getBoundingClientRect();
+      let W = Math.max(1, Math.round(rect.width));
+      let H = Math.max(1, Math.round(rect.height));
+      renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
+      renderer.setSize(W, H, false);
+      renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;';
+      glHost.appendChild(renderer.domElement);
 
-      // Leader depth-anchor: rest the last-place rider at homePct (low on screen) and let
-      // the leader float up by the field's gap, capped at the far plane (rightPct). Bunched
-      // field → leader low + road ahead fills the frame; spread field → far-plane framing.
-      const leaderUTarget = Math.min(BASE_CAMERA.rightPct, ZOOM_CFG.homePct + (t.gapM || 0) * kFrame);
-      if (!(leaderURef.current > 0)) leaderURef.current = leaderUTarget;
-      else leaderURef.current += (leaderUTarget - leaderURef.current) * (1 - Math.exp(-dt / K_TAU_MS));
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(BG, MIN_DIST, FOG_FAR_M);
+      const camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 4000);
+      const controls = new CameraControls(camera, renderer.domElement);
+      controls.smoothTime = SMOOTH_TIME;
+      controls.minDistance = MIN_DIST;
+      controls.maxDistance = MAX_DIST;
+      const NONE = CameraControls.ACTION.NONE;
+      controls.mouseButtons.left = NONE; controls.mouseButtons.right = NONE;
+      controls.mouseButtons.wheel = NONE; controls.mouseButtons.middle = NONE;
+      controls.touches.one = NONE; controls.touches.two = NONE; controls.touches.three = NONE;
 
-      camDynRef.current = stepCameraDynamics(camDynRef.current, { leaderLaneX: t.leaderLaneX, accel: t.accel }, dt);
-      const camera = { ...cameraFrom(camDynRef.current), leaderU: leaderURef.current };
+      // Rails: static longitudinal gridlines down the road (9 lines, x = -4..+4).
+      const railPts = [];
+      for (let x = -ROAD_HALF_W; x <= ROAD_HALF_W + 1e-6; x += 1) railPts.push(x, 0, 8, x, 0, -100000);
+      const railGeom = new THREE.BufferGeometry();
+      railGeom.setAttribute('position', new THREE.Float32BufferAttribute(railPts, 3));
+      const railMat = new THREE.LineBasicMaterial({ color: RAIL_CYAN, transparent: true, opacity: 0.45 });
+      const rails = new THREE.LineSegments(railGeom, railMat);
+      rails.frustumCulled = false;
+      scene.add(rails);
 
-      // Camera audit: a ~1 Hz snapshot of the LIVE camera motion — zoom (k / fovMul /
-      // depthRatio), pan (vanishX lateral lead), dolly (leaderDist + leaderU/gapM start
-      // framing). Manually throttled (NOT logger.sampled, which burns its budget on the
-      // neutral idle frames) and skipped while idle (kFrame 0) so the trace reflects the race.
-      if (kFrame > 0 && nowT - lastCamLog >= 1000) {
-        lastCamLog = nowT;
-        logRef.current.debug('cycle_game.pov.camera', {
-          k: Number(kFrame.toFixed(5)), vanishX: Number(camera.vanishX.toFixed(2)),
-          fovMul: Number(camDynRef.current.fovMul.toFixed(3)), depthRatio: Number(camera.depthRatio.toFixed(3)),
-          leaderDistM: Math.round(t.leaderCur), leaderLaneX: Math.round(t.leaderLaneX),
-          leaderU: Number(camera.leaderU.toFixed(3)), gapM: Math.round(t.gapM || 0)
+      // Trusses: dynamic lateral metre marks, one LineSegments with vertex colors.
+      const trussPos = new Float32Array(MAX_TRUSS * 6);
+      const trussCol = new Float32Array(MAX_TRUSS * 6);
+      const trussGeom = new THREE.BufferGeometry();
+      trussGeom.setAttribute('position', new THREE.BufferAttribute(trussPos, 3));
+      trussGeom.setAttribute('color', new THREE.BufferAttribute(trussCol, 3));
+      const trussMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+      const trusses = new THREE.LineSegments(trussGeom, trussMat);
+      trusses.frustumCulled = false;
+      scene.add(trusses);
+
+      // Gate arches (pooled) + their labels.
+      const archPts = [];
+      const AN = 40;
+      for (let i = 0; i <= AN; i++) {
+        const a = Math.PI * (i / AN);
+        archPts.push(-Math.cos(a) * ROAD_HALF_W, Math.sin(a) * ARCH_H, 0);
+      }
+      const archGeom = new THREE.BufferGeometry();
+      archGeom.setAttribute('position', new THREE.Float32BufferAttribute(archPts, 3));
+      const gatePool = [];
+      for (let i = 0; i < GATE_POOL; i++) {
+        const mat = new THREE.LineBasicMaterial({ color: MAGENTA, transparent: true, opacity: 0.85 });
+        const line = new THREE.Line(archGeom, mat);
+        line.frustumCulled = false;
+        line.visible = false;
+        scene.add(line);
+        const labelEl = document.createElement('div');
+        labelEl.className = 'cg-pov__gate-label';
+        labelEl.style.opacity = '0';
+        labelsHost.appendChild(labelEl);
+        gatePool.push({ line, mat, labelEl });
+      }
+
+      // Off-road major metre labels (pooled DOM, projected each frame).
+      const majorLabelPool = [];
+      for (let i = 0; i < MAJOR_LABEL_POOL; i++) {
+        const el = document.createElement('div');
+        el.className = 'cg-pov__mark-label';
+        el.style.opacity = '0';
+        labelsHost.appendChild(el);
+        majorLabelPool.push(el);
+      }
+
+      const s = {
+        THREE, renderer, scene, camera, controls,
+        trussGeom, trussPos, trussCol, gatePool, majorLabelPool,
+        webgl: true, W, H,
+        _v: new THREE.Vector3(), _cs: new THREE.Vector3(),
+      };
+      sceneRef.current = s;
+
+      const ro = (typeof ResizeObserver !== 'undefined') ? new ResizeObserver(() => {
+        const r = glHost.getBoundingClientRect();
+        s.W = Math.max(1, Math.round(r.width));
+        s.H = Math.max(1, Math.round(r.height));
+        renderer.setSize(s.W, s.H, false);
+        camera.aspect = s.W / s.H;
+        camera.updateProjectionMatrix();
+      }) : null;
+      if (ro) { ro.observe(glHost); cleanupFns.push(() => ro.disconnect()); }
+
+      logRef.current.info('cycle_game.pov.mount', { riderCount: movedCountRef.current, webgl: true });
+
+      // --- per-frame helpers (close over s) ---
+      const screenOf = (x, y, z) => {
+        s._cs.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+        const inFront = s._cs.z < 0;             // camera looks down its own -z
+        const dist = -s._cs.z;
+        s._v.set(x, y, z).project(camera);
+        return { sx: (s._v.x * 0.5 + 0.5) * s.W, sy: (-s._v.y * 0.5 + 0.5) * s.H, inFront, dist };
+      };
+
+      const writeTrusses = (marks) => {
+        const n = Math.min(marks.length, MAX_TRUSS);
+        for (let i = 0; i < n; i++) {
+          const m = marks[i];
+          const o = i * 6;
+          trussPos[o] = -ROAD_HALF_W; trussPos[o + 1] = 0; trussPos[o + 2] = m.z;
+          trussPos[o + 3] = ROAD_HALF_W; trussPos[o + 4] = 0; trussPos[o + 5] = m.z;
+          const c = m.major ? MAJOR_RGB : MINOR_RGB;
+          trussCol[o] = c[0]; trussCol[o + 1] = c[1]; trussCol[o + 2] = c[2];
+          trussCol[o + 3] = c[0]; trussCol[o + 4] = c[1]; trussCol[o + 5] = c[2];
+        }
+        trussGeom.setDrawRange(0, n * 2);
+        trussGeom.attributes.position.needsUpdate = true;
+        trussGeom.attributes.color.needsUpdate = true;
+      };
+
+      const updateMajorLabels = (marks) => {
+        let li = 0;
+        for (let i = 0; i < marks.length && li < majorLabelPool.length; i++) {
+          if (!marks[i].major) continue;
+          const m = marks[i];
+          const el = majorLabelPool[li++];
+          const p = screenOf(-ROAD_HALF_W - 0.8, 0, m.z);
+          if (!p.inFront) { el.style.opacity = '0'; continue; }
+          el.textContent = m.label;
+          el.style.opacity = clamp(0.15, 0.85, 1 - p.dist / FOG_FAR_M).toFixed(3);
+          el.style.transform = `translate(-50%,-50%) translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px)`;
+        }
+        for (; li < majorLabelPool.length; li++) majorLabelPool[li].style.opacity = '0';
+      };
+
+      const updateGates = (gates) => {
+        for (let i = 0; i < gatePool.length; i++) {
+          const g = gatePool[i];
+          const data = gates[i];
+          if (!data) { g.line.visible = false; g.labelEl.style.opacity = '0'; continue; }
+          g.line.visible = true;
+          g.line.position.set(0, 0, data.z);
+          g.mat.color.setHex(data.isFinish ? GOLD : MAGENTA);
+          g.mat.opacity = data.isFinish ? 0.95 : 0.8;
+          const p = screenOf(0, ARCH_H * 0.62, data.z);
+          if (!p.inFront) { g.labelEl.style.opacity = '0'; continue; }
+          g.labelEl.textContent = data.label;
+          g.labelEl.style.color = data.isFinish ? '#ffd66e' : '#ff7ac4';
+          g.labelEl.style.opacity = clamp(0.2, 1, 1 - p.dist / FOG_FAR_M).toFixed(3);
+          g.labelEl.style.transform = `translate(-50%,-50%) translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px)`;
+        }
+      };
+
+      const positionCards = (worldRiders) => {
+        worldRiders.forEach((r) => {
+          const el = markerEls.current[r.id];
+          if (!el) return;
+          const p = screenOf(r.x, 0, r.z);
+          if (!p.inFront) { el.style.opacity = '0'; return; }
+          const scale = clamp(CARD_MIN_SCALE, CARD_MAX_SCALE, CARD_FOCAL / Math.max(1, p.dist));
+          el.style.opacity = '1';
+          el.style.transform = `translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px) translate(-50%,-50%) scale(${scale.toFixed(3)})`;
+          el.style.zIndex = String(10000 - Math.round(p.dist)); // nearer on top
         });
-      }
+      };
 
-      const frac = tickFraction(nowT, t.tickAt, TICK_MS);
-      const { lineSlots, markers } = computePovFrame({
-        riders: t.riders, leaderPrev: t.leaderPrev, leaderCur: t.leaderCur,
-        k: kFrame, frac, cam: camera, count: GRID_SLOTS, minorM: MINOR_M, majorM: MAJOR_M
-      });
+      // --- rAF loop ---
+      let last = performance.now();
+      let lastCamLog = 0;
+      const draw = () => {
+        if (!alive) return;
+        const now = performance.now();
+        const dt = Math.min(0.064, (now - last) / 1000);
+        last = now;
+        const t = tickRef.current;
+        const frac = tickFraction(now, t.tickAt, RACE_TICK_MS);
+        const world = povWorld({
+          riders: t.riders, frac, laneCount: t.riders.length,
+          lapLengthM: gateCfgRef.current.lapLengthM, finishM: gateCfgRef.current.finishM,
+          aheadM: AHEAD_M, gridMinorM: GRID_MINOR_M, gridMajorM: GRID_MAJOR_M, fogFarM: FOG_FAR_M,
+          roadHalfW: ROAD_HALF_W, laneInset: LANE_INSET,
+        });
 
-      // Lap gates at each lap multiple behind the interpolated leader (+ the finish).
-      const leaderNow = t.leaderPrev + (t.leaderCur - t.leaderPrev) * frac;
-      const gates = computeGates(leaderNow, kFrame, camera, gateCfgRef.current);
+        writeTrusses(world.marks);
+        updateGates(world.gates);
 
-      drawScene(ctxRef.current, { camera, lineSlots, railsX: RAILS_X, gates, dims: dimsRef.current });
+        if (world.riders.length) {
+          const b = povFollowCam({
+            leaderZ: world.leaderZ, lastZ: world.lastZ,
+            aheadM: AHEAD_M, minSpanM: MIN_SPAN_M, roadHalfW: ROAD_HALF_W,
+          });
+          const zNear = b.max.z;            // last place (least negative)
+          const zFar = b.min.z;             // ahead of leader (most negative)
+          const span = zNear - zFar;
+          const camDist = clamp(MIN_DIST, MAX_DIST, span * CAM_FILL);
+          const tgtZ = zFar + span * LOOK_AHEAD; // look high up the road
+          const camZ = zNear + camDist * CAM_BEHIND;
+          const camY = camDist * CAM_ELEV;
+          controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, true);
+        }
+        controls.update(dt);
+        renderer.render(scene, camera);
 
-      markers.forEach((m) => {
-        const el = markerEls.current[m.id];
-        if (!el) return;
-        const x = camera.vanishX + (m.laneX - camera.vanishX) * m.scale;
-        el.style.transform =
-          `translate3d(${x.toFixed(2)}cqw, ${(m.y * 100).toFixed(3)}cqh, 0) translate(-50%, -50%) scale(${(0.55 + 0.45 * m.scale).toFixed(3)})`;
-        el.style.zIndex = String(100 + Math.round((1 - m.t) * 100)); // nearer (t→0) on top
-      });
+        updateMajorLabels(world.marks);
+        positionCards(world.riders);
+
+        if (world.riders.length && now - lastCamLog >= 1000) {
+          lastCamLog = now;
+          controls.getTarget(s._cs);
+          logRef.current.debug('cycle_game.pov.camera', {
+            camX: +camera.position.x.toFixed(1), camY: +camera.position.y.toFixed(1), camZ: +camera.position.z.toFixed(1),
+            tgtX: +s._cs.x.toFixed(1), tgtY: +s._cs.y.toFixed(1), tgtZ: +s._cs.z.toFixed(1),
+            distance: +controls.distance.toFixed(1), fov: camera.fov,
+            leaderDistM: Math.round(-world.leaderZ), riderCount: world.riders.length,
+          });
+        }
+        raf = requestAnimationFrame(draw);
+      };
       raf = requestAnimationFrame(draw);
+      cleanupFns.push(() => cancelAnimationFrame(raf));
+    })();
+
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      cleanupFns.forEach((fn) => { try { fn(); } catch (e) { /* noop */ } });
+      const s = sceneRef.current;
+      if (s && s.webgl) {
+        try { s.controls.dispose(); } catch (e) { /* noop */ }
+        try { s.renderer.dispose(); } catch (e) { /* noop */ }
+        try {
+          const el = s.renderer.domElement;
+          if (el && el.parentNode) el.parentNode.removeChild(el);
+        } catch (e) { /* noop */ }
+        try { s.gatePool.forEach((g) => { if (g.labelEl.parentNode) g.labelEl.parentNode.removeChild(g.labelEl); }); } catch (e) { /* noop */ }
+        try { s.majorLabelPool.forEach((el) => { if (el.parentNode) el.parentNode.removeChild(el); }); } catch (e) { /* noop */ }
+      }
+      logRef.current.info('cycle_game.pov.unmount', {});
+      sceneRef.current = null;
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
   }, []);
 
   return (
-    <div className="cg-pov" data-testid="race-pov">
-      <canvas className="cg-pov__canvas" ref={canvasRef} aria-hidden="true" />
-      <div className="cg-pov__avatars" aria-hidden="true">
+    <div className="cg-pov" data-testid="race-pov" ref={rootRef}>
+      <div className="cg-pov__gl" ref={glMountRef} aria-hidden="true" />
+      <div className="cg-pov__labels" ref={labelsRef} aria-hidden="true" />
+      <div className="cg-pov__cards" aria-hidden="true">
         {movedIds.map((id) => {
           const color = colorOf(id);
           const isGhost = !!riders[id]?.isGhost;
@@ -221,5 +406,5 @@ PovGrid.propTypes = {
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object,
   lapLengthM: PropTypes.number,
-  finishM: PropTypes.number
+  finishM: PropTypes.number,
 };
