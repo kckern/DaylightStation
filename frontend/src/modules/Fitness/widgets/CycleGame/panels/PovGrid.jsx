@@ -30,10 +30,13 @@ const CAM_BEHIND = 0.55;     // camera sits this * camDist behind last place
 const CAM_ELEV = 0.42;       // camera elevation = this * camDist
 const LOOK_AHEAD = 0.35;     // look at a point this fraction into the span (leader sits high)
 
-// Avatar card scale: clamp(MIN..MAX, CARD_FOCAL / distanceToCamera).
-const CARD_FOCAL = 26;
-const CARD_MIN_SCALE = 0.45;
-const CARD_MAX_SCALE = 1.5;
+// Avatar card scale: clamp(MIN..MAX, CARD_FOCAL / distanceToCamera). The avatar is
+// rendered at 88px intrinsic and only ever DOWN-scaled (max 0.75) so the bitmap is
+// downsampled, never upscaled — crisp against the shader grid. On-screen size is
+// unchanged from the old 44px/1.5 setup (88*0.75 = 66 = 44*1.5).
+const CARD_FOCAL = 13;
+const CARD_MIN_SCALE = 0.225;
+const CARD_MAX_SCALE = 0.75;
 
 // Neon palette.
 const BG = 0x0a0118;
@@ -415,7 +418,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
               ref={(el) => { markerEls.current[id] = el; }} style={{ '--cg-pov-color': color }}>
               <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc}
                 heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
-                size={44} showGauge={false} showIndicator={false} />
+                size={88} showGauge={false} showIndicator={false} />
               <span className="cg-pov__dist">{formatDistance(distOf(id))}</span>
             </div>
           );
