@@ -10,6 +10,7 @@ import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
+import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -205,9 +206,10 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     const pm = Array.isArray(summary.media) ? summary.media.find(m => m.primary) || summary.media[0] : null;
     const session = sessionData.session || {};
 
-    const dateStr = sessionData.sessionId
-      ? `${sessionData.sessionId.slice(0, 4)}-${sessionData.sessionId.slice(4, 6)}-${sessionData.sessionId.slice(6, 8)}`
-      : null;
+    const dateStr = sessionData.date
+      || (sessionData.sessionId
+        ? `${sessionData.sessionId.slice(0, 4)}-${sessionData.sessionId.slice(4, 6)}-${sessionData.sessionId.slice(6, 8)}`
+        : null);
 
     const durationMs = (session.duration_seconds || 0) * 1000;
 
@@ -225,8 +227,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
     const stravaBlock = sessionData.strava || null;
 
+    const act = !pm ? primaryActivity(sessionData?.activities) : null;
+    const actDisplay = act ? getActivityDisplay(act.type) : null;
+    const title = pm?.title || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
+
     return {
-      title: pm?.title || stravaBlock?.name || 'Workout',
+      title,
+      activityPoster: actDisplay?.Poster || null,
+      activityAccent: actDisplay?.accent || null,
       showTitle: pm?.showTitle || pm?.grandparentTitle || null,
       grandparentId: pm?.grandparentId || null,
       posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
@@ -290,6 +298,19 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
               onError={(e) => { e.target.style.display = 'none'; }}
             />
           </div>
+        ) : header?.activityPoster ? (
+          (() => {
+            const P = header.activityPoster;
+            return (
+              <div
+                ref={posterRef}
+                className="session-detail__poster session-detail__poster--placeholder session-detail__poster--activity"
+                style={header.activityAccent ? { color: header.activityAccent } : undefined}
+              >
+                <P />
+              </div>
+            );
+          })()
         ) : (
           <div ref={posterRef} className="session-detail__poster session-detail__poster--placeholder">
             <SportIcon

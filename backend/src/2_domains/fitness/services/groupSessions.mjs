@@ -1,0 +1,71 @@
+export const GROUP_MAX_GAP_MS = 4 * 60 * 60 * 1000; // 4h ceiling
+
+const rosterSet = (s) => new Set(Object.keys(s.participants || {}));
+const hasVideo  = (s) => !!(s.media && s.media.primary);
+const disjoint  = (a, b) => { for (const x of b) if (a.has(x)) return false; return true; };
+
+export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
+  const sorted = [...(sessions || [])].sort((a, b) => a.startTime - b.startTime);
+  const groups = [];
+  let cur = null, union = null;
+
+  for (const s of sorted) {
+    const startMs = s.startTime;
+    const endMs   = s.startTime + (s.durationMs || 0);
+    const newRoster = rosterSet(s);
+
+    const mustBreak =
+      !cur ||
+      cur._hasVideo || hasVideo(s) ||
+      s.date !== cur.date ||
+      (startMs - cur._lastEndMs) > maxGapMs ||
+      disjoint(union, newRoster);
+
+    if (mustBreak) {
+      cur = { id: `group:${s.sessionId}`, isGroup: true, date: s.date,
+              startTime: startMs, endTime: endMs, segments: [], _lastEndMs: endMs,
+              _hasVideo: hasVideo(s), _coins: 0, _prevEnd: endMs };
+      union = new Set(newRoster);
+      groups.push(cur);
+    } else {
+      for (const r of newRoster) union.add(r);
+      cur.endTime = endMs;
+      cur._lastEndMs = endMs;
+    }
+
+    cur.segments.push({
+      sessionId: s.sessionId, start: startMs, end: endMs, durationMs: s.durationMs || 0,
+      participants: s.participants || {}, coins: s.totalCoins || 0,
+      gapBeforeMs: cur.segments.length === 0 ? 0 : Math.max(0, startMs - cur._prevEnd),
+      media: s.media || null, stravaActivityId: s.stravaActivityId ?? null,
+    });
+    cur._prevEnd = endMs;
+    cur._coins += s.totalCoins || 0;
+    cur._union = union;
+  }
+
+  return groups.map(finalize);
+}
+
+function finalize(g) {
+  const participants = {};
+  for (const r of g._union) {
+    const seg = g.segments.find((x) => x.participants[r]);
+    participants[r] = seg ? seg.participants[r] : { displayName: r };
+  }
+  const single = g.segments.length === 1;
+  return {
+    id: single ? g.segments[0].sessionId : g.id, // keep real id for un-merged singletons
+    sessionId: single ? g.segments[0].sessionId : null, // downstream compat for singletons
+    isGroup: !single,
+    date: g.date,
+    startTime: g.startTime,
+    endTime: g.endTime,
+    durationMs: g.endTime - g.startTime,
+    segments: g.segments,
+    participants,
+    totalCoins: g._coins,
+    media: g._hasVideo ? g.segments[0].media : null,
+    activities: [], // filled later by SessionGroupingService
+  };
+}
