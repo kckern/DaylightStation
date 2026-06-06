@@ -2,34 +2,23 @@
 
 .cg-pov {
   position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden;
-  container-type: size;              // enables cqw/cqh positioning of children
+  container-type: size;              // enables cqw/cqh positioning of the avatar overlay
   contain: layout paint;             // isolate from the rest of the screen
   background: radial-gradient(130% 80% at 50% 6%, #2a0a3a 0%, #0a0118 70%);
 
-  &__fan  { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  &__grid { position: absolute; inset: 0; pointer-events: none; }
+  // The road grid is a single canvas surface — no per-element compositor layers,
+  // so no sub-pixel shimmer. Stretches to the panel; the JS sizes the backing store.
+  &__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-  // Fixed metre scale: a minor line every 10 m, a major every 50 m. Each pooled slot
-  // has a constant major/minor identity (set here, statically) so only transform +
-  // opacity animate per frame — the height/glow never change (perf contract).
-  &__hline {
-    position: absolute; left: 0; right: 0; top: 0;
-    transform-origin: 50% 50%;
-    background: cg.$cg-cyan;
-    will-change: transform, opacity;
-  }
-  &__hline--minor { height: 1px; }
-  &__hline--major {
-    height: 2px;
-    box-shadow: 0 0 7px -1px rgba(cg.$cg-cyan, 0.8);
-  }
+  // DOM avatar overlay — the few rich CircularUserAvatar cards, positioned each
+  // frame by the same camera that draws the canvas.
+  &__avatars { position: absolute; inset: 0; pointer-events: none; }
 
   &__marker {
     position: absolute; top: 0; left: 0;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     transform-origin: 50% 50%;
     will-change: transform;
-    z-index: 2;
     .circular-user-avatar {
       width: 44px !important; height: 44px !important; --vital-avatar-size: 44px;
       box-shadow: 0 0 0 2px var(--cg-pov-color, #{cg.$cg-cyan}), 0 0 12px -2px var(--cg-pov-color, #{cg.$cg-cyan});

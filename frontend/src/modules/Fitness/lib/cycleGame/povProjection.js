@@ -13,8 +13,8 @@ export const POV_CAMERA = {
   rightPct: 0.88,  // leader's linear-depth coord (matches ZOOM_DEFAULTS.rightPct)
   farFrac: 0.22,   // leader/far-plane screen-Y — a comfortable margin from the top so
                    // the forwardmost avatar isn't clipped (was 0.10, which cut it off).
-                   // The component breathes this in ~[0.18, 0.28] so the leader isn't
-                   // pegged to one fixed pixel row.
+                   // FIXED: the Canvas2D renderer keeps the horizon steady (the grid is
+                   // a solid plane, not jello); only vanishX/depthRatio flex (povCamera).
   depthRatio: 6,   // zFar/zNear — perspective strength
   fogFrac: 0.18    // depth t below which far lines fade out (atmosphere)
 };
