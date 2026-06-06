@@ -20,6 +20,8 @@ import { useCloseWatchdog } from '@/modules/Player/hooks/useCloseWatchdog.js';
 import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
+import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js';
+import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
@@ -614,6 +616,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     mediaElement,
     resilienceStatus: resilienceState?.status,
     applyVolume: videoVolume?.applyToPlayer
+  });
+
+  // Audio-duck cues: play a configured SFX and briefly lower the video volume
+  // (without pausing) when the governance engine signals a challenge is nearing
+  // its lock threshold. Restores volume when the SFX ends.
+  useGovernanceAudioDuck({
+    mediaElement,
+    videoVolume,
+    audioDuck: effectiveGovernanceState?.audioDuck
   });
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
@@ -1765,7 +1776,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         {hasActiveItem ? videoContent : null}
       </div>
       {govStatus === 'warning' && (
-        <div className="governance-warning-scrim" aria-hidden="true" />
+        <GovernanceWarningScrim
+          deadline={effectiveGovernanceState?.deadline}
+          totalSeconds={effectiveGovernanceState?.gracePeriodTotal}
+        />
       )}
     </div>
   );
