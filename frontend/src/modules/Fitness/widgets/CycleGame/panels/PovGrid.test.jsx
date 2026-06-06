@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
+
+// Silence the structured logger (the camera-audit logs) so its console output can't
+// race the vitest worker teardown when this file runs with the rest of the suite.
+vi.mock('@/lib/logging/Logger.js', () => {
+  const noop = () => {};
+  const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
+  return { default: () => logger };
+});
+
 import PovGrid from './PovGrid.jsx';
 
 const riders = {

@@ -52,6 +52,7 @@ export function drawScene(ctx, { camera, lineSlots = [], railsX = [], gates = []
   }
 
   // Trusses — lateral metre marks bunching to the horizon, fogged by depth.
+  // Each major line is labeled with its metre value just off the road's left edge.
   for (const s of lineSlots) {
     if (!(s.opacity > 0)) continue;
     const y = Y(s.y);
@@ -59,6 +60,14 @@ export function drawScene(ctx, { camera, lineSlots = [], railsX = [], gates = []
     const xr = X(vanishX + (100 - vanishX) * s.scale);
     const alpha = s.opacity * (s.major ? 0.95 : 0.45);
     neonStroke(ctx, linePath(ctx, xl, y, xr, y, alpha), CYAN, alpha, s.major ? 1.6 : 1);
+    if (s.major) {
+      const fontPx = Math.max(7, Math.round(13 * s.scale));
+      ctx.font = `600 ${fontPx}px "Roboto Mono", ui-monospace, monospace`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = `rgba(${CYAN}, ${(alpha * 0.85).toFixed(3)})`;
+      ctx.fillText(`${Math.round(s.m)}m`, xl - 4 - 6 * s.scale, y); // off-course, left of the road edge
+    }
   }
 
   // Lap gates — a curved arch over the road, with a label, at each lap mark.
