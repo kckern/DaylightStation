@@ -121,7 +121,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const useLog = logRef.current;
   const yFor = (d) => {
     const frac = useLog
-      ? (Math.log1p(Math.max(0, d || 0)) / Math.log1p(Math.max(1, D)))
+      ? 1 - (Math.log1p(Math.max(0, D - (d || 0))) / Math.log1p(Math.max(1, D)))
       : Math.min(1, (d || 0) / D);
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
@@ -295,10 +295,6 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           ))}
         </g>
 
-        {winCondition === 'distance' && (
-          <line className="cycle-race-screen__goal" x1={PAD_L} y1={PAD_T} x2={W - PAD_R} y2={PAD_T} vectorEffect="non-scaling-stroke" />
-        )}
-
         {/* area fills (under each lane) */}
         {riderIds.map((id, idx) => {
           // Skip the leading flat-zero run (e.g. a penalty-boxed late start): the
@@ -344,6 +340,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
             />
           );
         })}
+
+        {winCondition === 'distance' && Number.isFinite(goalM) && goalM > 0 && (
+          <line className="cycle-race-screen__goal"
+            x1={PAD_L} y1={yFor(goalM).toFixed(1)} x2={W - PAD_R} y2={yFor(goalM).toFixed(1)}
+            vectorEffect="non-scaling-stroke" />
+        )}
 
         </g>
       </svg>
