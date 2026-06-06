@@ -12,14 +12,18 @@ model, the duck/restore lifecycle, and the edge cases. For the **config** (the
 ## Related code
 
 - `frontend/src/hooks/fitness/GovernanceEngine.js` — parses cues, computes the descriptor
-- `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` — executes the duck
-- `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` — wires the hook in (~line 621)
+- `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` — plays the SFX, drives the duck
+- `frontend/src/modules/Fitness/nav/usePersistentVolume.js` — owns the duck multiplier (`setDuck`); single volume authority
+- `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` — wires the hook in (~line 624)
 - `frontend/src/hooks/fitness/GovernanceEngine.audioDuck.test.js` — engine-side unit coverage
 - `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.test.jsx` — hook-side unit coverage
+- `frontend/src/modules/Fitness/nav/usePersistentVolume.test.jsx` — duck-multiplier unit coverage
 
 > History: shipped 2026-06-05 on the (since-merged-and-deleted) branch
 > `feature/governance-audio-duck-cues`. Design spec:
-> `docs/_wip/plans/2026-06-05-governance-audio-duck-cues-design.md`.
+> `docs/_wip/plans/2026-06-05-governance-audio-duck-cues-design.md`. Reworked
+> 2026-06-06 (`docs/_wip/plans/2026-06-06-audio-duck-volume-authority.md`): the duck
+> became a multiplier owned by the volume system (see *Single volume authority*).
 
 ---
 
@@ -37,11 +41,14 @@ _computeAudioDuck(challengeSnapshot)        ← decides WHICH cue (if any)
       ↓  returns { cueId, sound, duckTo, token } | null
 composedState.audioDuck                      ← stateless descriptor
       ↓
-FitnessPlayer  →  useGovernanceAudioDuck({ mediaElement, videoVolume, audioDuck })
+FitnessPlayer  →  useGovernanceAudioDuck({ videoVolume, audioDuck })
       ↓
-  • duck:    mediaElement.volume = clamp(baseLevel * duckTo)
-  • play:    new Audio('/media/' + sound)
-  • restore: on SFX 'ended' (or unmount / autoplay-reject)
+  • duck:    videoVolume.setDuck(duckTo)      ← volume system folds the multiplier
+  • play:    new Audio('/media/' + sound)     ← independent track
+  • lift:    videoVolume.setDuck(1)  on SFX 'ended' (or unmount / autoplay-reject / retoken)
+      ↓
+usePersistentVolume  →  every apply path multiplies the stored level by the duck
+                        multiplier, so no volume event can override an active duck
 ```
 
 ---
@@ -95,11 +102,12 @@ aggregated) each time it produces a descriptor.
 ## The hook (`useGovernanceAudioDuck`)
 
 ```js
-useGovernanceAudioDuck({ mediaElement, videoVolume, audioDuck });
+useGovernanceAudioDuck({ videoVolume, audioDuck });
 ```
 
-- **`mediaElement`** — the `<video>` (anything with a numeric `.volume`).
-- **`videoVolume`** — `{ volumeRef: { current } }`, the live persistent volume.
+- **`videoVolume`** — the persistent-volume handle from `usePersistentVolume`; the
+  hook calls its `setDuck(multiplier)` to lower/lift. The hook never touches a
+  media element directly.
 - **`audioDuck`** — the descriptor from the engine (or `null`).
 
 ### React to the *token*, never the descriptor object
@@ -118,12 +126,12 @@ useEffect(() => {
 }, [token]);                                    // ← token, not audioDuck
 ```
 
-The descriptor's other fields (`mediaElement`, `videoVolume`, `sound`, `duckTo`)
-are read at fire-time from a `latestRef` that a separate every-commit effect keeps
-current — so a re-render never re-runs the duck, it only refreshes the values the
-*next* token will use. The effect returns **no cleanup**: when the cue clears
-(`token → null`) the in-flight SFX is left to finish and restore itself. This is
-why a cue now plays through its whole window instead of being cut on the next tick.
+The descriptor's other fields (`videoVolume`, `sound`, `duckTo`) are read at
+fire-time from a `latestRef` that a separate every-commit effect keeps current —
+so a re-render never re-runs the duck, it only refreshes the values the *next*
+token will use. The effect returns **no cleanup**: when the cue clears
+(`token → null`) the in-flight SFX is left to finish and lift itself. This is why
+a cue now plays through its whole window instead of being cut on the next tick.
 
 > **The bug this replaced:** the original effect depended on the whole `audioDuck`
 > object and used a `firedTokenRef` guard. The guard stopped *replays* but not
@@ -134,32 +142,47 @@ why a cue now plays through its whole window instead of being cut on the next ti
 
 ### Session model
 
-A "session" (`{ token, audio, onEnded, restore }`) owns one cue's lifecycle:
+A "session" (`{ token, audio, onEnded, lift }`) owns one cue's lifecycle:
 
-- **`startSession`** — captures the viewer level, ducks (see below), plays the
-  SFX on its own `Audio` element, restores on the SFX `ended` event.
+- **`startSession`** — calls `videoVolume.setDuck(duckTo)`, then plays the SFX on
+  its own `Audio` element, lifting on the SFX `ended` event.
 - **`stopSession`** — detaches the listener, `pause()`s + clears the `Audio`
-  (no orphaned decode), and restores volume if not already restored. Idempotent.
+  (no orphaned decode), and lifts (`setDuck(1)`) if not already lifted. Idempotent
+  via a `lifted` flag.
 
-### Duck level — monotonic
+---
+
+## Single volume authority
+
+The duck is **not** a second writer of the video element's volume. It is a
+multiplier owned by `usePersistentVolume`:
 
 ```js
-viewerLevel = videoVolume.volumeRef.current ?? mediaElement.volume;
-duckLevel   = clamp01(viewerLevel * audioDuck.duckTo);
-if (duckLevel < mediaElement.volume) mediaElement.volume = duckLevel;  // only ever LOWER
+// usePersistentVolume.js — every apply path funnels through this:
+applyDucked(resolved) => applyToPlayer(playerRef,
+  { ...resolved, level: clamp01(resolved.level * duckRef.current) })
+
+setDuck(multiplier) => { duckRef.current = clamp01(multiplier); applyDucked({ level: volumeRef.current }); }
 ```
 
-`duck_to` is **multiplicative** against the viewer's current level (`0.1` = duck
-to 10%). The guard makes the duck **monotonic** — it can only lower the video
-volume, never raise it. The base is read from the persistent `volumeRef` so a
-duck already in flight can't become the new base and compound into silence.
+Consequences:
 
-### Restore — never louder than asked
-
-`restore()` (idempotent via a `restored` flag) sets volume back to the viewer's
-**current** intended level (`volumeRef.current`, clamped to `[0,1]`), so a volume
-change made mid-duck is honored. A duck can only ever *give volume back* — it can
-never push the video louder than the viewer set it.
+- **Single authority.** All five apply paths — hydration, `setVolume` (user
+  change), `toggleMute`, `applyToPlayer`, and `setDuck` — multiply the stored
+  level by `duckRef`. Nothing writes the element volume outside this funnel.
+- **No override.** `useVolumeSync` re-applies the level on `canplay`, resilience
+  recovery, and mount. Because those go through the same funnel, they re-apply the
+  **ducked** level instead of clobbering the duck.
+- **Monotonic by construction.** `duckRef` is clamped to `[0,1]`, so a duck can
+  only ever lower the video — never raise it. "Never accidentally raise" is
+  structural, not a guard.
+- **User change mid-duck stays proportional.** A `setVolume` during a duck applies
+  `newLevel × duckRef`; lifting (`setDuck(1)`) then restores to the new level.
+- **`duckRef`/`setDuck` are stable refs** on the hook instance, so even though the
+  `videoVolume` wrapper object is re-memoized on volume/mute changes, an in-flight
+  session's `lift()` always hits the same multiplier and player.
+- The cue **SFX plays on its own independent `Audio` element** — a separate track
+  from the `<video>`; the duck only scales the video's `level`, never `muted`.
 
 ---
 
@@ -168,17 +191,19 @@ never push the video louder than the viewer set it.
 - **Per-tick object churn** — the engine emits a new `audioDuck` object every
   tick; keying the effect on `token` (not the object) is what stops the SFX from
   being cut and the volume from bouncing. *(the core fix)*
+- **Volume event mid-duck** — `canplay` / resilience-recovery / mount re-applies
+  go through the same multiplier funnel, so they re-apply the *ducked* level
+  instead of overriding the duck. *(structural — see Single volume authority)*
 - **Autoplay rejection** — `audio.play()` returns a promise that can reject
-  silently; without handling, the `ended` event never fires and the video stays
-  ducked forever. `p.catch(() => restore())` guarantees recovery.
-  *(commit `5c953881a`)*
+  silently; without handling, the `ended` event never fires and the duck stays on
+  forever. `p.catch(() => lift())` guarantees recovery. *(originally `5c953881a`)*
 - **Synchronous Audio construction/play failure** — wrapped in `try/catch`;
-  restores immediately so the video is never left ducked with no SFX to end it.
+  lifts immediately so the video is never left ducked with no SFX to end it.
 - **Orphaned SFX on re-token** — a new token calls `stopSession()` on the
   previous session first, `pause()`ing + clearing the old `Audio` so it doesn't
-  keep decoding in the background.
+  keep decoding in the background, and lifting before the new duck.
 - **Unmount mid-duck** — a dedicated unmount-only effect calls `stopSession()`,
-  restoring volume exactly once.
+  lifting exactly once.
 
 ---
 
@@ -213,7 +238,11 @@ The suite silences the logger during teardown to avoid a teardown-race
 (`8692210e3`).
 
 `useGovernanceAudioDuck.test.jsx` covers the hook lifecycle with a fake `Audio`
-element: first-tick duck+play, **no cut/jump when the descriptor object changes
-but the token is unchanged** (the regression), restore on natural `ended`,
-monotonic duck (never raises), autoplay-rejection restore, retoken orphan-stop,
-and unmount restore.
+element and a `setDuck` spy: `setDuck(duckTo)`+play on a new token, **no re-duck /
+no SFX cut when the descriptor object changes but the token is unchanged** (the
+regression), `setDuck(1)` on natural `ended`, lift on autoplay rejection, stop
+previous + re-duck on a new token, and lift on unmount.
+
+`usePersistentVolume.test.jsx` covers the multiplier: default (no change), folding
+the multiplier into the applied level, the duck surviving a user `setVolume`,
+restore on release, and clamping (`>1`→1, `<0`→0, non-finite→1).
