@@ -32,6 +32,22 @@ describe('RaceRecap', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('shows speedometers in playback, fed from the recorded rpm series', () => {
+    const withRpm = {
+      ...candidate,
+      participants: [{ ...candidate.participants[0], rpmSeries: JSON.stringify([40, 80, 95]) }]
+    };
+    const { getByTestId, getAllByTestId } = render(<RaceRecap candidate={withRpm} onClose={() => {}} />);
+    // The recap used to hide the speedos (showSpeedos=false); now it renders one
+    // gauge per rider, reading the recorded cadence.
+    const rpm = getAllByTestId('cycle-speedometer-rpm');
+    expect(rpm.length).toBe(1);
+    expect(rpm[0].textContent).toContain('40'); // sample at t=0
+    fireEvent.click(getByTestId('race-recap-play'));
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(getAllByTestId('cycle-speedometer-rpm')[0].textContent).toContain('80'); // sample at t=1
+  });
+
   it('advances the replay clock on play and reveals more of the line', () => {
     const { getByTestId, getAllByTestId } = render(<RaceRecap candidate={candidate} onClose={() => {}} />);
     // starts paused at t=0 → first line point only

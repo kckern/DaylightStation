@@ -28,6 +28,7 @@ export default function RaceRecap({ candidate, onClose }) {
       color: LINE_COLORS[idx % LINE_COLORS.length],
       dist: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
       hr: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
+      rpm: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
       finalDistanceM: p.finalDistanceM ?? 0,
       finalTimeS: p.finalTimeS ?? null,
       placement: p.placement ?? null
@@ -69,8 +70,9 @@ export default function RaceRecap({ candidate, onClose }) {
       isGhost: false
     };
     const hr = p.hr.length ? p.hr[Math.min(t, p.hr.length - 1)] : null;
+    const rpm = p.rpm.length ? p.rpm[Math.min(t, p.rpm.length - 1)] : 0;
     riderLive[p.id] = {
-      rpm: 0,
+      rpm: Number.isFinite(rpm) ? Math.round(rpm) : 0,
       avatarSrc: p.avatarSrc,
       heartRate: Number.isFinite(hr) ? hr : null,
       zoneId: null,
@@ -104,7 +106,7 @@ export default function RaceRecap({ candidate, onClose }) {
           elapsedS={t * intervalS}
           riders={riders}
           riderLive={riderLive}
-          showSpeedos={false}
+          showSpeedos
         />
       </div>
 

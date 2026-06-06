@@ -35,4 +35,23 @@ describe('RaceLayoutManager', () => {
     const zones = [...root.querySelectorAll('[data-testid^="zone-"]')].map((z) => z.dataset.testid);
     expect(zones.indexOf('zone-splits')).toBeLessThan(zones.indexOf('zone-chart'));
   });
+
+  // Recap/playback feeds no speedoRow panel — the layout must NOT render (or
+  // reserve a grid track for) a speedo zone, else the chart row is starved and a
+  // dead band fills the rest. See RaceRecap (showSpeedos=false).
+  const noSpeedo = { ...panels };
+  delete noSpeedo.speedoRow;
+  it('sidebar without a speedo panel: omits the speedo zone + flags --no-speedo', () => {
+    const { getByTestId, queryByTestId } = render(<RaceLayoutManager panels={noSpeedo} fieldSize={2} />);
+    expect(queryByTestId('zone-speedo')).toBeNull();
+    expect(queryByTestId('p-speedo')).toBeNull();
+    ['p-chart', 'p-splits', 'p-pov', 'p-oval'].forEach((t) => expect(getByTestId(t)).toBeInTheDocument());
+    expect(getByTestId('race-layout').className).toContain('race-layout--no-speedo');
+    expect(getByTestId('race-layout').querySelector('.race-layout__main--no-speedo')).toBeTruthy();
+  });
+  it('wide without a speedo panel: omits the speedo zone + flags --no-speedo', () => {
+    const { getByTestId, queryByTestId } = render(<RaceLayoutManager panels={noSpeedo} fieldSize={5} />);
+    expect(queryByTestId('zone-speedo')).toBeNull();
+    expect(getByTestId('race-layout').className).toContain('race-layout--no-speedo');
+  });
 });

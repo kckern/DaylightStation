@@ -1,0 +1,100 @@
+@use '../cgTokens' as t;
+
+.cgh-tab {
+  appearance: none;
+  background: t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
+  border-radius: 999px;
+  padding: 7px 20px;
+  color: t.$cg-muted;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+
+  &:hover { border-color: t.$cg-border-soft; }
+  &.is-active {
+    border-color: t.$cg-cyan;
+    color: t.$cg-cyan;
+    background: rgba(33, 230, 255, 0.12);
+  }
+}
+
+.cgh-person {
+  appearance: none;
+  border: 1px solid transparent;
+  background: t.$cg-panel-2;
+  border-radius: 14px;
+  padding: 14px 8px 12px;
+  width: 100%;
+  color: t.$cg-text; // ensure the name label isn't the default black-on-dark
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+
+  &:hover { transform: translateY(-2px); border-color: t.$cg-border; }
+
+  &.has-hr {
+    border-color: rgba(33, 230, 255, 0.4);
+    background: linear-gradient(180deg, rgba(33, 230, 255, 0.1), t.$cg-panel-2);
+  }
+
+  &.is-current {
+    border-color: t.$cg-cyan;
+    box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.4);
+  }
+
+  // Clear/remove tile — distinct, muted, dashed.
+  &--clear {
+    border: 1px dashed t.$cg-border;
+    background: transparent;
+    justify-content: center;
+    gap: 8px;
+    color: t.$cg-muted;
+
+    &:hover { border-color: #f87171; color: #f87171; }
+  }
+
+  &__clear-glyph {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px dashed currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    line-height: 1;
+  }
+
+  &__name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+
+  &__badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    // Above the avatar's internal overlays (CircularUserAvatar children go up to
+    // z-index 4, and its root has no stacking context, so they'd otherwise cover
+    // this pill in the top-right corner).
+    z-index: 5;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: t.$cg-bg;
+    background: t.$cg-lane-1;
+    border-radius: 999px;
+    padding: 2px 7px;
+  }
+}

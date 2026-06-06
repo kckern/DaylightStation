@@ -36,7 +36,19 @@ describe('buildRecordRow', () => {
     expect(r.whenTime).toBe('6:12p');
     expect(r.winnerId).toBe('milo');
     expect(r.winnerName).toBe('Milo');
-    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }]);
+    expect(r.winnerIsGhost).toBe(false);
+    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false }]);
+  });
+
+  it('flags ghost participants (winner + others) so callers can apply .cg-ghost', () => {
+    const r = buildRecordRow({ ...base,
+      participants: [
+        { id: 'ghost:20260601:milo', displayName: 'Milo 👻', avatarSrc: '/a', isGhost: true },
+        { id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false }
+      ],
+      winCondition: 'distance', goalLabel: '1.00 km', scoreLabel: '5:13' }, '2026-06-03');
+    expect(r.winnerIsGhost).toBe(true);
+    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false }]);
   });
   it('a time race marks the time cell as the goal', () => {
     const r = buildRecordRow({ ...base, winCondition: 'time',

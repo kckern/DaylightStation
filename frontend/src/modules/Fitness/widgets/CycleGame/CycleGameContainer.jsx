@@ -9,6 +9,7 @@ import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { buildHighScores } from '@/modules/Fitness/lib/cycleGame/highScores.js';
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
@@ -480,15 +481,22 @@ export default function CycleGameContainer({ onMount } = {}) {
     return (Array.isArray(pastRaces) ? pastRaces : []).map((rec) => {
       const race = rec?.race || {};
       const winCondition = race.win_condition || 'distance';
-      const participants = Object.entries(rec?.participants || {})
+      const partEntries = Object.entries(rec?.participants || {});
+      // 2+ riders → show the household relational label ("Dad"/"Mom") exactly like
+      // a live race; a solo replay keeps the given name. getDisplayLabel is the SSOT.
+      const preferGroupLabel = partEntries.length >= 2;
+      const participants = partEntries
         .map(([id, p]) => {
           // Ghosts are persisted as `ghost:<raceId>:<sourceId>` — resolve to the
           // real face/name so the records rail doesn't fall back to the guest avatar.
           const ident = resolveParticipantIdentity(id, p.display_name);
+          const displayName = getDisplayLabel
+            ? (getDisplayLabel(ident.displayName, { userId: ident.sourceId, preferGroupLabel }) || ident.displayName)
+            : ident.displayName;
           return {
             id,
             isGhost: ident.isGhost,
-            displayName: ident.displayName,
+            displayName,
             avatarSrc: ident.avatarSrc,
             distanceSeries: p.distance_series || null,
             hrSeries: p.hr_series || null,
@@ -528,7 +536,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         scoreLabel: winCondition === 'distance' ? fmtMs(winner.finalTimeS) : formatDistance(winner.finalDistanceM || 0)
       };
     }).filter(Boolean);
-  }, [pastRaces]);
+  }, [pastRaces, getDisplayLabel]);
 
   // History table rows: winner + both metric columns + which is the goal + when.
   // "today" is computed once here (the container may read the clock); recordRow
@@ -548,6 +556,11 @@ export default function CycleGameContainer({ onMount } = {}) {
       .map((g) => buildRecordRow(g, todayYmd)),
     [ghostCandidates, todayYmd]
   );
+
+  // Personal-best high scores (furthest / longest), each tapping into the recap
+  // of the race that set it — same affordance as a History row. todayYmd gives
+  // each card a relative day label ("Today" / "Jun 3").
+  const highScores = useMemo(() => buildHighScores(ghostCandidates, todayYmd), [ghostCandidates, todayYmd]);
 
   // Race Recap overlay — replay a saved race's chart from the records rail.
   const [recapRaceId, setRecapRaceId] = useState(null);
@@ -1197,6 +1210,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           onAssign={onAssign}
           onUnassign={onUnassign}
           records={records}
+          highScores={highScores}
           onSelectRecord={onSelectRecord}
           ghost={ghost}
           ghostCandidates={ghostCandidates}

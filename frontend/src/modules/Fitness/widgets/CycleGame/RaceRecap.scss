@@ -1,9 +1,12 @@
 @use './cgTokens' as cg;
 
 .race-recap {
+  // cg-backdrop sets position:relative — include it FIRST so our absolute overlay
+  // positioning below wins. (When it came last, the recap fell back to relative,
+  // collapsed to content height, and the whole race layout was starved.)
+  @include cg.cg-backdrop;
   position: absolute; inset: 0; z-index: 60;
   display: flex; flex-direction: column;
-  @include cg.cg-backdrop;
   background-color: rgba(6, 7, 10, 0.96);
   color: cg.$cg-text;
 
@@ -37,5 +40,34 @@
   }
   &__scrub { flex: 1; accent-color: cg.$cg-cyan; }
 
-  &__results { max-height: 34%; overflow-y: auto; border-top: 1px solid cg.$cg-border-soft; }
+  // RaceResults is a full-screen podium by default (min-height:100vh, vertically
+  // centered, with a splits table + legend + auto-exit controls). Embedded in the
+  // recap we want ONLY a compact standings podium that sizes to its content — so
+  // drop the full-height centering and strip the post-race-screen extras (the
+  // recap already shows splits + the race itself above). This also frees vertical
+  // space the flex:1 stage reclaims, un-squishing the chart.
+  &__results {
+    flex: 0 0 auto; max-height: 28%; overflow-y: auto;
+    border-top: 1px solid cg.$cg-border-soft;
+    .race-results { min-height: 0; justify-content: flex-start; padding: 12px 24px; }
+    .race-results__eyebrow { display: none; }              // redundant "Finish"
+    .race-results__title { font-size: 1.2rem; margin: 0 0 8px; }
+    .race-results__list { gap: 6px; max-width: 720px; }
+    .race-results__place { padding: 7px 14px; gap: 12px; }
+    .race-results__placement { font-size: 1.1rem; }
+    .race-results__name { font-size: 0.98rem; }
+    .race-results__metric { font-size: 0.98rem; }
+    // De-emphasize the winner row so it doesn't tower in the compact strip.
+    .race-results__row.is-winner {
+      .race-results__placement { font-size: 1.3rem; }
+      .race-results__name { font-size: 1.05rem; }
+      .race-results__metric { font-size: 1rem; }
+    }
+    // Post-race-screen extras the recap doesn't need (it shows splits + the
+    // replay itself above): strip them to a clean standings podium.
+    .race-results__splits,
+    .race-results__legend,
+    .race-results__exit-row,
+    .race-results__countdown { display: none; }
+  }
 }

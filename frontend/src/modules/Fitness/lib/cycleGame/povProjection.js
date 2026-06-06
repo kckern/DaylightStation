@@ -11,10 +11,31 @@
  */
 export const POV_CAMERA = {
   rightPct: 0.88,  // leader's linear-depth coord (matches ZOOM_DEFAULTS.rightPct)
-  farFrac: 0.10,   // leader/far-plane screen-Y (near the top)
+  farFrac: 0.22,   // leader/far-plane screen-Y — a comfortable margin from the top so
+                   // the forwardmost avatar isn't clipped (was 0.10, which cut it off).
+                   // The component breathes this in ~[0.18, 0.28] so the leader isn't
+                   // pegged to one fixed pixel row.
   depthRatio: 6,   // zFar/zNear — perspective strength
   fogFrac: 0.18    // depth t below which far lines fade out (atmosphere)
 };
+
+// Smooth Hermite ramp 0→1 across [edge0, edge1]; flat outside. Used for the grid's
+// band fog so lines ease in/out at the road edges (no pop when a slot recycles).
+export function smoothstep(edge0, edge1, x) {
+  if (edge1 === edge0) return x < edge0 ? 0 : 1;
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+// Grid-line visibility vs depth t (0 near camera/bottom, 1 far/horizon). Fades IN at
+// the horizon (where a new line enters as the leader advances) and OUT at the near
+// edge (where it exits) — brightest in the legible mid-field. Both ends → 0 so slot
+// recycling at either edge is invisible.
+export function bandOpacity(t, cam = POV_CAMERA) {
+  const inFar = 1 - smoothstep(0.90, 1.0, t);   // 1 until t=0.90, →0 at the horizon
+  const outNear = smoothstep(0.0, cam.fogFrac, t); // 0 at t=0, →1 by the fog depth
+  return inFar * outNear;
+}
 
 // u in [0,rightPct] -> t in [0,1] (0 near camera, 1 far/leader), clamped.
 export function depthT(u, cam = POV_CAMERA) {

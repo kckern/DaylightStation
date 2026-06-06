@@ -1,0 +1,236 @@
+@use '../cgTokens' as t;
+
+.cgh-ghost-clear {
+  margin-top: 16px;
+  appearance: none; cursor: pointer; width: 100%;
+  background: transparent; border: 1px dashed t.$cg-border;
+  border-radius: 10px; padding: 10px; color: t.$cg-muted;
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover { border-color: #f87171; color: #f87171; }
+}
+
+// ── Ghost picker: day columns + two-stage cards ───────────────────────────
+.cgh-picker--ghost .cgh-picker__sheet { width: min(1040px, 95%); }
+
+.cgh-ghost-cols {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.cgh-ghost-col {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cgh-ghost-col__date {
+  position: sticky; top: 0; z-index: 1;
+  text-align: center;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: t.$cg-cyan;
+  padding: 6px 0 8px;
+  background: linear-gradient(180deg, t.$cg-panel 70%, transparent);
+  border-bottom: 1px solid t.$cg-border-soft;
+}
+.cgh-ghost-col__list {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 58vh; overflow-y: auto;
+  padding: 2px;
+}
+
+.cgh-ghost-card {
+  appearance: none; cursor: pointer; text-align: left; width: 100%;
+  // Single row: time (left) · avatars (centered, fill the middle) · type pill
+  // (right). One row instead of a header + avatar stack keeps cards short so 5+
+  // fit above the fold.
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
+  background: t.$cg-panel-2; border: 1.5px solid t.$cg-border;
+  border-radius: 12px; padding: 7px 12px; color: t.$cg-text;
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+
+  &:hover { border-color: t.$cg-border-soft; }
+  // First tap focuses (scrolled into view); second tap commits.
+  &.is-focused {
+    border-color: t.$cg-cyan;
+    box-shadow: 0 0 0 2px rgba(33, 230, 255, 0.5), 0 10px 26px rgba(0, 0, 0, 0.45);
+    transform: translateY(-1px);
+  }
+  &.is-current { border-color: t.$cg-lane-3; }
+
+  &__time { flex-shrink: 0; min-width: 52px; font-size: 0.74rem; color: t.$cg-faint; }
+
+  // Race-type pill — the format + goal. The metric on each avatar is in the OTHER
+  // dimension (time race → distances; distance race → finish times), so the pill
+  // is what makes those numbers legible.
+  &__type {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 999px;
+    font-family: t.$cg-display; font-weight: 800; font-size: 0.72rem;
+    letter-spacing: 0.03em; font-variant-numeric: tabular-nums; white-space: nowrap;
+    &--dist { color: t.$cg-cyan; background: rgba(33, 230, 255, 0.12); border: 1px solid rgba(33, 230, 255, 0.4); }
+    &--time { color: t.$cg-magenta; background: rgba(255, 45, 149, 0.12); border: 1px solid rgba(255, 45, 149, 0.4); }
+  }
+  &__type-icon { font-size: 0.82rem; line-height: 1; }
+
+  // Riders take the middle, centered. NEVER wrap — the field overlaps into
+  // crescents instead (winner in front), so any count fits one row.
+  &__riders {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; flex-wrap: nowrap;
+    justify-content: center; align-items: center;
+  }
+  &__rider {
+    position: relative; display: inline-flex; flex-shrink: 0;
+    &:not(:first-child) { margin-left: -22px; }   // overlap → trailing riders are crescents
+  }
+  // 🥇 on the winner (first/front rider), top-left, allowed to peek outside the circle.
+  &__crown {
+    position: absolute; top: -4px; left: -4px; z-index: 9;
+    font-size: 1rem; line-height: 1;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+  }
+
+  // Each avatar is a circle with the rider's OWN metric shaded across its base.
+  // The panel-colored border separates overlapping crescents.
+  &__avatar-wrap {
+    position: relative; width: 58px; height: 58px; border-radius: 50%;
+    overflow: hidden; display: inline-flex;
+    border: 2px solid t.$cg-panel; background: t.$cg-panel;
+  }
+  &__avatar { width: 100%; height: 100%; object-fit: cover; }
+  &__metric {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+    padding: 6px 1px 3px;
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 58%);
+    color: #fff; font-family: t.$cg-display; font-weight: 800;
+    font-size: 0.6rem; line-height: 1; text-align: center;
+    font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  }
+  &__more {
+    align-self: center; flex-shrink: 0;
+    font-family: t.$cg-display; font-weight: 700; font-size: 0.85rem; color: t.$cg-faint;
+  }
+}
+
+// ── Roster confirm — a centered modal card over the whole picker (second tap of
+//    a ghost card). Two optimized paths: (1) one tap on the big GO button races
+//    everyone; (2) tap riders to narrow, then GO. Ghosts from the past race are
+//    shown but locked — only live riders can become your competitors.
+.cgh-roster {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.cgh-roster__backdrop {
+  position: absolute; inset: 0;
+  background: rgba(6, 6, 14, 0.74);
+  backdrop-filter: blur(6px);
+}
+.cgh-roster__card {
+  position: relative; z-index: 1;
+  width: min(460px, 100%);
+  display: flex; flex-direction: column; align-items: stretch; gap: 14px;
+  padding: 26px 24px 24px;
+  background:
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 45, 149, 0.14), transparent 60%),
+    t.$cg-panel-2;
+  border: 1px solid t.$cg-border;
+  border-radius: 20px;
+  box-shadow: 0 0 0 1px rgba(33, 230, 255, 0.06), 0 30px 80px rgba(0, 0, 0, 0.6);
+  // Card lands with a small lift — keeps the second-tap → card transition legible.
+  animation: cgh-roster-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+@keyframes cgh-roster-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.cgh-roster__close {
+  position: absolute; top: 14px; right: 14px;
+  appearance: none; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid t.$cg-border; background: t.$cg-panel; color: t.$cg-muted;
+  font-size: 1.3rem; line-height: 1; cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  &:hover { color: t.$cg-text; border-color: t.$cg-border-soft; background: t.$cg-panel-2; }
+}
+.cgh-roster__eyebrow { @include t.cg-eyebrow; color: t.$cg-magenta; }
+.cgh-roster__title {
+  margin: 0; font-family: t.$cg-display; font-weight: 800; font-size: 1.5rem;
+  letter-spacing: 0.01em; color: t.$cg-text;
+}
+.cgh-roster__hint { margin: -6px 0 2px; font-size: 0.86rem; color: t.$cg-faint; }
+
+.cgh-roster__grid {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+  margin: 2px 0 4px;
+}
+
+// One rider chip — avatar over name, a generous tap target. Selected = magenta
+// ring + check badge (magenta is the token's "chosen" accent; cyan is reserved
+// for GO). Unselected live riders read dim so the selected set pops.
+.cgh-rider {
+  appearance: none; cursor: pointer; background: transparent; border: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 92px; padding: 8px 4px; border-radius: 14px;
+  transition: background 0.15s ease;
+  &:hover { background: rgba(255, 255, 255, 0.04); }
+
+  &__avatar {
+    position: relative; width: 64px; height: 64px; border-radius: 50%; display: inline-flex;
+    img {
+      width: 100%; height: 100%; border-radius: 50%; object-fit: cover;
+      border: 2px solid t.$cg-border; background: t.$cg-panel; opacity: 0.5;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    }
+  }
+  &__check {
+    position: absolute; right: -2px; bottom: -2px;
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    background: t.$cg-magenta; color: #fff; font-size: 0.8rem; font-weight: 900;
+    box-shadow: 0 0 0 2px t.$cg-panel-2, 0 0 10px rgba(255, 45, 149, 0.6);
+    transform: scale(0); transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.5);
+  }
+  &__name {
+    font-family: t.$cg-display; font-weight: 700; font-size: 0.9rem; color: t.$cg-muted;
+    max-width: 88px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: color 0.15s ease;
+  }
+
+  &.is-on {
+    .cgh-rider__avatar img { opacity: 1; border-color: t.$cg-magenta; box-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
+    .cgh-rider__check { transform: scale(1); }
+    .cgh-rider__name { color: t.$cg-text; }
+  }
+
+  // Ghost rider — present for context but locked out (can't re-race a ghost).
+  // .cg-ghost on the avatar wrapper supplies the grayscale + tint treatment.
+  &--ghost.is-locked {
+    cursor: not-allowed;
+    .cgh-rider__avatar img { opacity: 0.85; }
+    .cgh-rider__name { color: t.$cg-faint; }
+  }
+  &__tag {
+    @include t.cg-eyebrow;
+    font-size: 0.56rem; letter-spacing: 0.2em; color: t.$cg-faint; margin-top: -2px;
+  }
+}
+
+// The single dynamic CTA — cyan GO. Always the loudest thing on the card.
+.cgh-roster__cta {
+  appearance: none; cursor: pointer; width: 100%;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 15px 20px; border-radius: 14px; border: 0;
+  font-family: t.$cg-display; font-weight: 800; font-size: 1.15rem; letter-spacing: 0.02em;
+  color: #04121a;
+  background: linear-gradient(180deg, lighten(t.$cg-cyan, 6%), t.$cg-cyan);
+  box-shadow: 0 0 22px rgba(33, 230, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+
+  .cgh-start-flag { width: 20px; height: 20px; fill: currentColor; }
+
+  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 30px rgba(33, 230, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+  &:active:not(:disabled) { transform: translateY(0); }
+  &:disabled {
+    cursor: default; color: t.$cg-faint;
+    background: t.$cg-panel; box-shadow: inset 0 0 0 1px t.$cg-border;
+  }
+}

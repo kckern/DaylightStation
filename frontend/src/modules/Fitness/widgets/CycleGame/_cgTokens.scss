@@ -76,20 +76,19 @@ $cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is n
   color: $cg-muted;
 }
 
-// Ghost avatar treatment (unchanged behavior) — grayscale + tint via mix-blend.
+// Ghost avatar treatment — the ONE standard, applied identically everywhere
+// (ghost-card field, ghost roster, history rail). Grayscale + an icy-blue tint,
+// baked into a single filter so it renders the same on a bare
+// `<img class="cg-ghost">` and on an `<img>` inside a `.cg-ghost` wrapper. (A
+// ::after tint can't show through a bare replaced <img>, which is why the old
+// bare-img form was grayscale-only — the inconsistency this removes.)
+@mixin cg-ghost-img {
+  filter: grayscale(1) sepia(0.6) hue-rotate(175deg) saturate(1.7) brightness(1.05) contrast(0.95);
+}
 .cg-ghost {
   position: relative;
   display: inline-flex;
   border-radius: 50%;
-  img { filter: grayscale(1) contrast(0.9) brightness(1.18); }
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: var(--cg-ghost-tint, rgba(120, 180, 255, 0.6));
-    mix-blend-mode: color;
-    pointer-events: none;
-    z-index: 6;
-  }
+  img { @include cg-ghost-img; }
 }
+img.cg-ghost { @include cg-ghost-img; }
