@@ -10,6 +10,7 @@ vi.mock('@/lib/logging/Logger.js', () => {
 });
 
 import { useGovernanceAudioDuck } from './useGovernanceAudioDuck.js';
+import { __resetCueAudioForTest } from './audioCuePlayer.js';
 
 class FakeAudio {
   static instances = [];
@@ -34,6 +35,7 @@ describe('useGovernanceAudioDuck', () => {
   beforeEach(() => {
     FakeAudio.instances = [];
     global.Audio = FakeAudio;
+    __resetCueAudioForTest();
     videoVolume = { setDuck: vi.fn(), volumeRef: { current: 1 } };
   });
   afterEach(() => vi.restoreAllMocks());
@@ -72,12 +74,11 @@ describe('useGovernanceAudioDuck', () => {
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
   });
 
-  it('stops the previous SFX and re-ducks on a new token', () => {
+  it('reuses one shared element and re-ducks on a new token', () => {
     const { rerender } = render(descriptor({ token: 'ch1:challenge_start', cueId: 'challenge_start', duckTo: 0.2 }));
-    const first = FakeAudio.instances[0];
     rerender({ audioDuck: descriptor({ token: 'ch1:challenge_hurry', duckTo: 0.1 }) });
-    expect(first.pauseCalls).toBeGreaterThanOrEqual(1);
-    expect(FakeAudio.instances).toHaveLength(2);
+    expect(FakeAudio.instances).toHaveLength(1);        // shared element, not recreated
+    expect(FakeAudio.instances[0].playCalls).toBe(2);   // played again for the new cue
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(0.1);
   });
 
