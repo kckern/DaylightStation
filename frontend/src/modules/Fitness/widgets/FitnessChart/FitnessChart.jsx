@@ -931,7 +931,15 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 	}, [chartParticipants, presentEntries, absentEntries, allEntries]);
 	
 	const { width: chartWidth, height: chartHeight } = chartSize;
-	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
+	// For a merged "group" detail, floor the axis to the full stitched tick_count so this
+	// chart shares the EXACT x-scale as the HR-lane chart below — keeps bands/seams aligned
+	// across both. (Matches the same floor in FitnessTimeline.) Non-group sessions unaffected.
+	const groupTickFloor = (() => {
+		if (!isHistorical) return 0;
+		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
+		return src?.isGroup ? (Number(src?.timeline?.tick_count) || 0) : 0;
+	})();
+	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, groupTickFloor, 1);
 	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
 	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : Y_SCALE_BASE * MIN_GRID_LINES;
 	// Always use Y_SCALE_BASE regardless of entry count for consistent grid spacing

@@ -57,15 +57,17 @@ export default function FitnessCalendarWidget() {
     return map;
   }, [sessions]);
 
-  // Build sorted suffer scores for decile-based coloring.
-  // Rank each day's suffer score against all others so outlier spikes
-  // don't flatten everything else to the bottom of the gradient.
-  const sufferRankMap = useMemo(() => {
+  // Rank active days by intensity for the orange heatmap. Prefer the Strava suffer
+  // score; fall back to session duration (minutes) when no suffer score is present
+  // — local cycle/treadmill sessions have no HR upload, so suffer is 0 and the
+  // heatmap would otherwise wash out to white. Percentile rank keeps outlier spikes
+  // from flattening everything else to the bottom of the gradient.
+  const intensityRankMap = useMemo(() => {
     const scores = [];
     for (const [date, d] of dateMap.entries()) {
-      if (d.totalSufferScore != null && d.totalSufferScore > 0) {
-        scores.push({ date, score: d.totalSufferScore });
-      }
+      const suffer = d.totalSufferScore != null && d.totalSufferScore > 0 ? d.totalSufferScore : 0;
+      const intensity = suffer > 0 ? suffer : (d.totalMs || 0) / 60000;
+      if (intensity > 0) scores.push({ date, score: intensity });
     }
     if (scores.length === 0) return new Map();
     scores.sort((a, b) => a.score - b.score);
@@ -157,11 +159,13 @@ export default function FitnessCalendarWidget() {
             bgColor = 'transparent';
           } else if (!hasSession) {
             bgColor = '#888';
-          } else if (sufferRankMap.has(dateStr)) {
-            const t = sufferRankMap.get(dateStr);
+          } else if (intensityRankMap.has(dateStr)) {
+            const t = intensityRankMap.get(dateStr);
             bgColor = sufferColor(Math.max(t, 0.15));
           } else {
-            bgColor = '#FFF';
+            // Active day with no measurable intensity (no duration, no suffer) —
+            // keep it on the orange ramp at the lightest shade, not white.
+            bgColor = sufferColor(0.15);
           }
 
           const classNames = ['fitness-calendar__cell'];

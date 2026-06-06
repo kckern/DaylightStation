@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
-import RaceResults from './RaceResults.jsx';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import getLogger from '@/lib/logging/Logger.js';
@@ -82,11 +81,6 @@ export default function RaceRecap({ candidate, onClose }) {
     };
   });
 
-  const standings = [...decoded.parts]
-    .sort((a, b) => (a.placement || 99) - (b.placement || 99))
-    .map((p) => ({ userId: p.id, placement: p.placement, finishTimeS: p.finalTimeS, distanceM: p.finalDistanceM }));
-  const ridersMeta = Object.fromEntries(decoded.parts.map((p) => [p.id, { displayName: p.displayName, isGhost: false }]));
-
   return (
     <div className="race-recap" role="dialog" aria-modal="true" data-testid="race-recap">
       <div className="race-recap__head">
@@ -127,10 +121,6 @@ export default function RaceRecap({ candidate, onClose }) {
           }}
           aria-label="scrub"
         />
-      </div>
-
-      <div className="race-recap__results">
-        <RaceResults standings={standings} riders={ridersMeta} winCondition={candidate?.winCondition || 'distance'} />
       </div>
     </div>
   );
