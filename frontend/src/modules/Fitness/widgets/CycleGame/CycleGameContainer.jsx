@@ -153,6 +153,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Officiating thresholds (shared by the race config and the event toasts so
   // the on-screen copy always matches the rule that fired).
   const raceIdleDnfS = Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20;
+  // Grace before a rider's FIRST movement is required (vs the idle clock that
+  // runs after they've started). Covers magnetless cadence sensors that take
+  // ~20s to lock onto rotation from a dead stop (e.g. the tricycle's BK467).
+  const raceStartGraceS = Number.isFinite(cycleGameConfig?.race_start_grace_s) ? cycleGameConfig.race_start_grace_s : 30;
   const hotStartPenaltyS = Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0;
   // How long the results board holds before auto-returning to the lobby.
   const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
@@ -628,6 +632,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       hrlessMultiplier,
       startCountdownS: Number.isFinite(cycleGameConfig?.start_countdown_s) ? cycleGameConfig.start_countdown_s : 3,
       raceIdleDnfS,
+      raceStartGraceS,
       hotStartPenaltyS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
       lapLengthM,
@@ -677,6 +682,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       timeCapS: cfg.timeCapS ?? null,
       startCountdownS: cfg.startCountdownS,
       raceIdleDnfS,
+      raceStartGraceS,
       hotStartPenaltyS,
       hrlessMultiplier,
       stagingBufferMs,
@@ -711,7 +717,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, hotStartPenaltyS, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, applySnapshot, log]);
 
   // Keep stable refs to the latest startRace + phase so the sim control hook
   // (registered once) always reads current values.
