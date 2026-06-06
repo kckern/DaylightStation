@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { useGovernanceAudioDuck } from './useGovernanceAudioDuck.js';
 
 // Fake Audio that records instances and lets the test fire 'ended'.
@@ -75,5 +75,31 @@ describe('useGovernanceAudioDuck', () => {
     expect(media.volume).toBeCloseTo(0.06);
     unmount();
     expect(media.volume).toBeCloseTo(0.6);
+  });
+
+  it('stops the previous SFX and re-ducks when a new token arrives mid-play', () => {
+    const media = makeMedia(0.6);
+    const videoVolume = makeVolume(0.6);
+    const { rerender } = renderHook(
+      ({ d }) => useGovernanceAudioDuck({ mediaElement: media, videoVolume, audioDuck: d }),
+      { initialProps: { d: duck('ch1:challenge_hurry') } }
+    );
+    const first = FakeAudio.instances[0];
+    rerender({ d: duck('ch2:challenge_hurry') });
+    expect(first.paused).toBe(true);          // previous SFX stopped
+    expect(FakeAudio.instances).toHaveLength(2);
+    expect(FakeAudio.instances[1].played).toBe(true);
+    expect(media.volume).toBeCloseTo(0.06);   // still ducked for token B
+  });
+
+  it('restores volume if SFX playback is rejected (autoplay blocked)', async () => {
+    const media = makeMedia(0.6);
+    const videoVolume = makeVolume(0.6);
+    const playSpy = vi.spyOn(FakeAudio.prototype, 'play').mockReturnValueOnce(Promise.reject(new Error('NotAllowed')));
+    renderHook(() => useGovernanceAudioDuck({ mediaElement: media, videoVolume, audioDuck: duck('ch1:challenge_hurry') }));
+    expect(media.volume).toBeCloseTo(0.06);   // ducked synchronously
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(media.volume).toBeCloseTo(0.6);    // restored after rejection
+    playSpy.mockRestore();
   });
 });
