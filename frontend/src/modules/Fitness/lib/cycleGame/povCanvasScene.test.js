@@ -55,6 +55,20 @@ describe('drawScene', () => {
     expect(Math.max(...alphas)).toBeGreaterThan(Math.min(...alphas));
   });
 
+  it('thins crowded minors near the vanishing point but keeps majors', () => {
+    const ctx = mockCtx();
+    const crowd = [
+      { m: 30, major: true,  t: 0.95, y: 0.30, scale: 0.2, opacity: 0.8 },
+      { m: 31, major: false, t: 0.95, y: 0.305, scale: 0.2, opacity: 0.5 }, // within 7px → culled
+      { m: 32, major: false, t: 0.94, y: 0.31, scale: 0.2, opacity: 0.5 },  // within 7px → culled
+      { m: 33, major: false, t: 0.93, y: 0.315, scale: 0.2, opacity: 0.5 }, // within 7px → culled
+      { m: 39, major: false, t: 0.80, y: 0.40, scale: 0.25, opacity: 0.5 }  // 10px away → kept
+    ];
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: crowd, railsX: [], dims: { w: 200, h: 100 } });
+    expect(ctx.calls.stroke).toBe((1 + 1) * 2); // major + 1 spaced minor; 3 bunched minors dropped
+    expect(ctx.calls.labels).toEqual(['30m']);  // the major still labels
+  });
+
   it('labels each visible major gridline with its metre value (off the road)', () => {
     const ctx = mockCtx();
     const majors = [
