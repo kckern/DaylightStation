@@ -118,6 +118,24 @@ describe('GovernanceEngine — _computeAudioDuck', () => {
     expect(engine._computeAudioDuck(snapshot)).toBeNull();
   });
 
+  it('returns null for a cycle challenge snapshot', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', type: 'cycle', status: 'pending', remainingSeconds: 5 };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('treats an empty missingUsers list (no counts) as satisfied → null', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: null, actualCount: null, missingUsers: [] };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('fires when missingUsers is non-empty (no counts)', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: null, actualCount: null, missingUsers: ['alice'] };
+    expect(engine._computeAudioDuck(snapshot)).toMatchObject({ cueId: 'challenge_hurry', token: 'ch1:challenge_hurry' });
+  });
+
   it('exposes audioDuck on the composed state', () => {
     const engine = makeEngine();
     // Stub the challenge snapshot used by _composeState.
