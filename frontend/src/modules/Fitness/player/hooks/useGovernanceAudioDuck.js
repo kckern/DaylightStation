@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
+import { getCueAudioElement, isCueAudioUnlocked } from './audioCuePlayer.js';
 
 let _logger;
 function logger() {
@@ -19,6 +20,7 @@ function startSession({ videoVolume, audioDuck }) {
   videoVolume.setDuck(audioDuck.duckTo);
   logger().info('fitness.audio_duck.start', {
     cueId: audioDuck.cueId, token: audioDuck.token, duckTo: audioDuck.duckTo,
+    unlocked: isCueAudioUnlocked(),
   });
 
   let lifted = false;
@@ -40,7 +42,11 @@ function startSession({ videoVolume, audioDuck }) {
   };
   let audio = null;
   try {
-    audio = new Audio(DaylightMediaPath(`/media/${audioDuck.sound}`));
+    audio = getCueAudioElement();
+    if (!audio) { lift(); return null; }
+    audio.src = DaylightMediaPath(`/media/${audioDuck.sound}`);
+    audio.currentTime = 0;
+    audio.muted = false;
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
     const p = audio.play();
@@ -71,7 +77,6 @@ function stopSession(session) {
     audio.removeEventListener('ended', onEnded);
     if (onError) audio.removeEventListener('error', onError);
     try { audio.pause(); } catch { /* already released */ }
-    audio.src = '';
   }
   lift?.();
 }
