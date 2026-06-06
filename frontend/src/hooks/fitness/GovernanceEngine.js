@@ -2776,7 +2776,13 @@ export class GovernanceEngine {
     // Manually-triggered cycles bypass this gate — they're run as a directed
     // demo or test, and shouldn't be silently frozen because the surrounding
     // governance phase isn't 'unlocked'.
-    if (ctx.baseReqSatisfiedGlobal === false && !active.manualTrigger) {
+    // A locked cycle (health/ramp/init) must ALWAYS remain escapable by
+    // cadence — the rider pedals back into the green to resume. The base-
+    // requirement pause gate (HR governance) must not freeze a locked cycle,
+    // or a swapped-in rider whose HR hasn't yet caught up can never recover
+    // (deadlock — see docs/_wip/audits/2026-06-06-cycle-governance-deadlock-
+    // and-stale-media-audit.md). Non-locked states still freeze as before.
+    if (ctx.baseReqSatisfiedGlobal === false && !active.manualTrigger && active.cycleState !== 'locked') {
       if (active._pausedAt == null) {
         active._pausedAt = now;
         getLogger().info('governance.cycle.paused_by_base_req', {
