@@ -1346,7 +1346,9 @@ export default function CycleGameContainer({ onMount } = {}) {
           ? (Number.isFinite(rider.heartRate) ? rider.heartRate : null)
           : (vitals.heartRate ?? null),
         zoneId,
-        zoneColor: isGhostRider ? zoneColorFor(zoneId, zones) : (vitals.zoneColor || null),
+        zoneColor: isGhostRider
+          ? zoneColorFor(zoneId, zones)
+          : ((Number.isFinite(vitals.heartRate) && vitals.heartRate > 0) ? (vitals.zoneColor || null) : null),
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: mult,
         finished: isFinished,

@@ -48,6 +48,7 @@ const CircularUserAvatar = ({
   if (isFireZone) {
     showIndicator = false;
   }
+  const hasActiveHr = Number.isFinite(heartRate) && heartRate > 0;
   const normalizedProgress = clamp(progress, 0, 1);
   const indicatorAngle = normalizedProgress !== null
     ? 180 + normalizedProgress * 180
@@ -77,6 +78,7 @@ const CircularUserAvatar = ({
     'circular-user-avatar',
     'vital-avatar',
     zoneId ? `zone-${zoneId}` : null,
+    !hasActiveHr ? 'no-hr' : null,
     className
   ].filter(Boolean).join(' ');
 
@@ -120,7 +122,7 @@ const CircularUserAvatar = ({
         </div>
       )}
 
-      {showGauge && (
+      {showGauge && hasActiveHr && (
         <svg
           className="zone-progress-gauge"
           viewBox="0 0 100 100"

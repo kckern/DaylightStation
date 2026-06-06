@@ -46,6 +46,11 @@
     z-index: 4;
   }
 
+  &.no-hr::after {
+    border-color: var(--vital-ring-color, rgba(255, 255, 255, 0.9));
+    border-width: 2px;
+  }
+
   .avatar-core {
     position: relative;
     width: 100%;
