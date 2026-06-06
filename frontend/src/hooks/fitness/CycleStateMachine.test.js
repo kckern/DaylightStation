@@ -891,3 +891,57 @@ describe('Cycle SM — video pause covers every lock reason (regression)', () =>
     expect(snap.videoLocked).toBe(true);
   });
 });
+
+describe('Cycle SM — locked cycle recovers from cadence despite unmet global base-req (rider-swap deadlock)', () => {
+  it('recovers a locked cycle from cadence even when baseReqSatisfiedGlobal is false', () => {
+    const { engine, getNow, advance } = makeEngineWithActiveCycle();
+    const active = engine.challengeState.activeChallenge;
+
+    // Reproduce the post-swap ramp-lock: a NON-manual challenge (manual
+    // triggers bypass the pause gate), already locked, on phase 0.
+    active.manualTrigger = false;
+    active.cycleState = 'locked';
+    active.lockReason = 'ramp';
+    active.currentPhaseIndex = 0;
+    active._pausedAt = null;
+    active._lastCycleTs = getNow();
+
+    // POLICY hi_rpm_range is [60,60] → phase.hiRpm === 60. Pedal well past it
+    // while the global HR base-requirement is UNMET (the deadlock condition).
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 90,
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'cool' },
+      baseReqSatisfiedForRider: false,
+      baseReqSatisfiedGlobal: false
+    });
+
+    expect(active.cycleState).toBe('maintain');
+    expect(active.lockReason).toBe(null);
+  });
+
+  it('still freezes a non-locked cycle (init/ramp/maintain) when global base-req is unmet', () => {
+    const { engine, getNow, advance } = makeEngineWithActiveCycle();
+    const active = engine.challengeState.activeChallenge;
+    active.manualTrigger = false;
+    active.cycleState = 'maintain';
+    active.lockReason = null;
+    active.currentPhaseIndex = 0;
+    active._pausedAt = null;
+    active._lastCycleTs = getNow();
+
+    advance(200);
+    engine._evaluateCycleChallenge(active, {
+      equipmentRpm: 90,
+      activeParticipants: ['felix'],
+      userZoneMap: { felix: 'cool' },
+      baseReqSatisfiedForRider: false,
+      baseReqSatisfiedGlobal: false
+    });
+
+    // Pause gate still applies to non-locked states: frozen, _pausedAt stamped.
+    expect(active.cycleState).toBe('maintain');
+    expect(active._pausedAt).not.toBe(null);
+  });
+});
