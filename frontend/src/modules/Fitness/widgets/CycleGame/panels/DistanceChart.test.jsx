@@ -50,6 +50,26 @@ describe('DistanceChart panel', () => {
     expect(y1).toBeLessThanOrEqual(30); // near the top inset, not ~⅓ down
   });
 
+  it('hides the goal line + label until the Y window has zoomed out to the goal', () => {
+    // leader at 240 m of a 5 km goal → window is ~300 m (zoomed in), nowhere near goal.
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 240, distanceSeries: [240], isGhost: false } };
+    const { container, queryByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={5000} elapsedS={5} />
+    );
+    expect(container.querySelector('.cycle-race-screen__goal')).toBeNull();
+    expect(queryByTestId('chart-goal-label')).toBeNull();
+  });
+  it('shows + labels the goal line once the window reaches the goal', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 40, distanceSeries: [40], isGhost: false } };
+    const { container, getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={100} elapsedS={5} />
+    );
+    expect(container.querySelector('.cycle-race-screen__goal')).toBeTruthy();
+    expect(getByTestId('chart-goal-label').textContent).toContain('Target');
+  });
+
   it('renders decimating gridlines for the current window', () => {
     const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 120, distanceSeries: [120], isGhost: false } };
     const { container } = render(

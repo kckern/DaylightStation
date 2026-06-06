@@ -10,6 +10,18 @@ const TICK_OUTER_OFFSET = 2;
 // their intent across equipment.
 const BAND_REFERENCE_RPM = 120;
 
+// System-default cadence colour bands (authored against the 120-RPM reference).
+// Used whenever the config supplies no `cadence_zones` so the speedometer always
+// shows its green→yellow→orange→red intensity zones instead of a bare arc.
+// Thresholds are RPM mins; scaleBands() stretches them to the actual gauge.
+export const DEFAULT_CADENCE_BANDS = [
+  { id: 'warmup',   name: 'Warm-up',  min: 0,   color: '#5b6470' }, // grey base
+  { id: 'cruising', name: 'Cruising', min: 40,  color: '#2ecc71' }, // green
+  { id: 'pushing',  name: 'Pushing',  min: 70,  color: '#f1c40f' }, // yellow
+  { id: 'hard',     name: 'Hard',     min: 90,  color: '#e67e22' }, // orange
+  { id: 'sprint',   name: 'Sprint',   min: 105, color: '#e74c3c' }  // red
+];
+
 // Pick a tick/label spacing that keeps the dial legible at any gauge max — aim
 // for ~12 minor ticks, labelling every third. A fixed 10/30 crowds a 250 gauge.
 const NICE_STEPS = [5, 10, 20, 25, 50];

@@ -22,12 +22,14 @@ describe('RaceRecap', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('renders the recap with the race screen + standings, and closes', () => {
+  it('renders the recap with the race screen + playback controls (no results panel), and closes', () => {
     const onClose = vi.fn();
-    const { getByTestId } = render(<RaceRecap candidate={candidate} onClose={onClose} />);
+    const { getByTestId, queryByTestId } = render(<RaceRecap candidate={candidate} onClose={onClose} />);
     expect(getByTestId('race-recap')).toBeTruthy();
     expect(getByTestId('cycle-race-screen')).toBeTruthy();
-    expect(getByTestId('race-results')).toBeTruthy();
+    expect(getByTestId('race-recap-play')).toBeTruthy();
+    // results panel removed — the playback scrubber is the bottom of the recap
+    expect(queryByTestId('race-results')).toBeNull();
     fireEvent.click(getByTestId('race-recap-close'));
     expect(onClose).toHaveBeenCalled();
   });

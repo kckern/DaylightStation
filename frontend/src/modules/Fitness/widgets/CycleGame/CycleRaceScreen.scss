@@ -80,6 +80,15 @@
   // step has NO transition and only the ratio→1 pull-back animates over 300ms).
   &__zoomable { will-change: transform; }
   &__goal { stroke: cg.$cg-gold; stroke-width: 1.5; stroke-dasharray: 7 5; opacity: 0.8; }
+  // Label riding the dashed goal line, near its right end, just below the dashes.
+  &__goal-label {
+    position: absolute; right: 7%; transform: translateY(2px);
+    padding: 1px 7px; border-radius: 4px;
+    background: rgba(0, 0, 0, 0.45);
+    font-family: cg.$cg-mono; font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: cg.$cg-gold; white-space: nowrap; pointer-events: none;
+  }
   &__gridline { stroke: rgba(122, 162, 255, 0.14); stroke-width: 1; }
   &__gridline--y { stroke: rgba(122, 162, 255, 0.18); }
 

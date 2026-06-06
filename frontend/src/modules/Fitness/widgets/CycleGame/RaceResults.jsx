@@ -90,7 +90,8 @@ ResultRow.propTypes = {
 /**
  * Race results board — a Mario-Kart-style finish: rows slide into their finishing
  * order while each metric ticks up to its final value, the winner spotlit with a
- * crown. Below the podium, the full lap-by-lap splits table reviews the race. A
+ * crown. When laps were completed, the lap-by-lap splits table reviews the race
+ * below the podium (skipped for short races that never finish a lap). A
  * config-driven dwell auto-returns to the lobby; the last few seconds show a
  * countdown. Distance races headline finish time; time races headline distance.
  */
@@ -102,7 +103,11 @@ export default function RaceResults({
   const penalizedSet = new Set(penalized);
   const anyDnf = standings.some((s) => dnfSet.has(s.userId));
   const anyPenalty = standings.some((s) => penalizedSet.has(s.userId));
-  const showSplits = Number.isFinite(lapLengthM) && lapLengthM > 0 && standings.length > 0;
+  // Only review splits when laps were actually completed. With no completed laps
+  // SplitsChart falls back to a "live order" list that just duplicates the podium
+  // above — an empty box that inflates the page (short races never finish a lap).
+  const anyLapsCompleted = standings.some((s) => (riders[s.userId]?.lapSplits || []).length > 0);
+  const showSplits = Number.isFinite(lapLengthM) && lapLengthM > 0 && standings.length > 0 && anyLapsCompleted;
 
   return (
     <div className="race-results" data-testid="race-results">

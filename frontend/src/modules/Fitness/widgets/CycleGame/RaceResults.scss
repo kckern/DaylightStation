@@ -82,11 +82,12 @@
     .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
   }
 
-  // Full lap splits table below the podium — bounded + scrollable (it owns its own
-  // sticky header / scroll), so it never pushes the podium off-screen.
+  // Full lap splits table below the podium — sizes to its content and caps at a
+  // fraction of the viewport (it owns its own sticky header / scroll), so it never
+  // grows into a big empty box or pushes the podium off-screen.
   &__splits {
     width: 100%; max-width: 620px; margin: 16px auto 0;
-    flex: 1 1 auto; min-height: 180px;   // grow to use the vertical space
+    flex: 0 1 auto; min-height: 0; max-height: 38vh;
     border: 1px solid cg.$cg-border; border-radius: 12px;
     background: rgba(0, 0, 0, 0.28); overflow: hidden;
     animation: cg-rr-in 0.6s ease both;

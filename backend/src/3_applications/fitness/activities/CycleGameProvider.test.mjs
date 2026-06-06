@@ -75,4 +75,42 @@ describe('CycleGameProvider', () => {
     expect(item.meta.winnerId).toBe('milo');              // not the ghost despite its placement 1
     expect(item.meta.distances).toEqual({ milo: 613 });   // ghosts excluded from distances
   });
+
+  it('uses ACTUAL finish time (not the time cap) for a distance-race band so races dont nest', async () => {
+    // distance race won in 13s but cap is 180s — band must be 13s wide, else it swallows
+    // the next race (the "race within race" bug).
+    const distRace = {
+      race: { id: 'd1', date: '2026-06-05T23:44:18Z', time_cap_s: 180, win_condition: 'distance', interval_seconds: 1 },
+      participants: { milo: { display_name: 'Milo', final_distance_m: 1000, final_time_s: 13, placement: 1 } },
+    };
+    const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [distRace] } });
+    const [item] = await p.loadOverlapping(0, Date.parse('2026-06-06T00:00:00Z'), '2026-06-05', 'h');
+    expect((item.endMs - item.startMs) / 1000).toBe(13);
+  });
+
+  it('uses the recorded series length for an abandoned time race (not the cap)', async () => {
+    // a 180s time race that everyone quit after ~13s recorded only ~14 samples — the band
+    // must be ~13s, not 180s, so it does not swallow the next race.
+    const abandoned = {
+      race: { id: 't1', date: '2026-06-05T23:44:18Z', time_cap_s: 180, win_condition: 'time', interval_seconds: 1 },
+      participants: {
+        alan: { display_name: 'Alan', final_distance_m: 94, final_time_s: null, placement: 1,
+                distance_series: JSON.stringify([[0, 2], 4, 8, 12, 16, 20, 30, 40, 50, 60, 70, 80, 94]) }, // 14 ticks
+        felix: { display_name: 'Felix', final_distance_m: 0, distance_series: JSON.stringify([0]) },
+      },
+    };
+    const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [abandoned] } });
+    const [item] = await p.loadOverlapping(0, Date.parse('2026-06-06T00:00:00Z'), '2026-06-05', 'h');
+    expect((item.endMs - item.startMs) / 1000).toBe(13); // (14 ticks - 1) * 1s, not 180
+  });
+
+  it('falls back to the time cap only when there is no recorded data', async () => {
+    const timeRace = {
+      race: { id: 't2', date: '2026-06-05T23:55:57Z', time_cap_s: 120, win_condition: 'time', interval_seconds: 1 },
+      participants: { milo: { display_name: 'Milo', final_distance_m: 300, final_time_s: null, placement: 1 } },
+    };
+    const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [timeRace] } });
+    const [item] = await p.loadOverlapping(0, Date.parse('2026-06-06T00:00:00Z'), '2026-06-05', 'h');
+    expect((item.endMs - item.startMs) / 1000).toBe(120);
+  });
 });

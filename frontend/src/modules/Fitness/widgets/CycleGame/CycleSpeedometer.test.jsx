@@ -23,6 +23,24 @@ describe('CycleSpeedometer', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
     expect(container.querySelectorAll('.cycle-speedometer__band').length).toBe(4);
   });
+  it('falls back to the default colour bands when none are supplied', () => {
+    const { container } = render(<CycleSpeedometer {...baseProps} cadenceBands={[]} />);
+    // The 5 system-default zones (grey/green/yellow/orange/red) still render.
+    expect(container.querySelectorAll('.cycle-speedometer__band').length).toBe(5);
+  });
+  it('lights up the band the current RPM falls in and dims the rest', () => {
+    // rpm 92 with BANDS → the 'sprint' band (min 90) is active.
+    const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} rpm={92} />);
+    expect(container.querySelectorAll('.cycle-speedometer__band--active').length).toBe(1);
+    expect(container.querySelectorAll('.cycle-speedometer__band--dim').length).toBe(3);
+    expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#e74c3c');
+  });
+  it('moves the lit band as the RPM changes zones', () => {
+    const { getByTestId, rerender } = render(<CycleSpeedometer {...baseProps} rpm={50} />);
+    expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#2ecc71'); // cruising
+    rerender(<CycleSpeedometer {...baseProps} rpm={75} />);
+    expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#f1c40f'); // pushing
+  });
   it('shows the multiplier badge only when multiplier > 1', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} multiplier={2} />);
     expect(queryByTestId('cycle-speedometer-multiplier').textContent).toContain('2');

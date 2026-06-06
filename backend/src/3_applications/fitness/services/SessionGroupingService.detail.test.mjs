@@ -40,6 +40,18 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(band.axisEndMs).toBe(15000 + 5000);
   });
 
+  it('truncates an earlier band so no race nests inside another', async () => {
+    // two races in s2 whose rebased bands would overlap (A spans into B) — A must be cut to B's start
+    const overlapReg = { enrich: async () => [{ type: 'cycle-game', count: 2, items: [
+      { startMs: s2.startTime + 0,    endMs: s2.startTime + 8000, participants: ['milo'], meta: { raceId: 'A' } },
+      { startMs: s2.startTime + 2000, endMs: s2.startTime + 5000, participants: ['milo'], meta: { raceId: 'B' } },
+    ] }] };
+    const svc = new SessionGroupingService({ activityRegistry: overlapReg, sessionService });
+    const detail = await svc.getGroupDetail('group:20260605162200', 'household');
+    const items = detail.activities[0].items.slice().sort((x, y) => x.axisStartMs - y.axisStartMs);
+    expect(items[0].axisEndMs).toBeLessThanOrEqual(items[1].axisStartMs); // A truncated, no nesting
+  });
+
   it('returns null for an unknown group id', async () => {
     const svc = new SessionGroupingService({ activityRegistry: registry, sessionService });
     expect(await svc.getGroupDetail('group:20991231000000', 'household')).toBeNull();
