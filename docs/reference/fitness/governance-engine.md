@@ -448,6 +448,36 @@ governance:
               min_participants: 1
 ```
 
+### Audio Cues
+
+A challenge that is about to expire can play a short sound effect and briefly
+duck the workout video's audio — without pausing it — so the cue stands out. As
+soon as the sound effect finishes, the video volume returns to where the viewer
+had it. This is purely an audible nudge ahead of a lock; it never changes whether
+the challenge passes or fails.
+
+Cues live under `governance.audio_cues` in `data/household/config/fitness.yml`:
+
+```yaml
+governance:
+  audio_cues:
+    - id: challenge_hurry
+      trigger: challenge_remaining   # fire off the challenge countdown
+      threshold_seconds: 12          # fire when the timer reaches 12s left
+      sound: apps/fitness/ux/challenge-hurry.mp3   # media-relative path
+      duck_to: 0.1                   # video drops to 10% of its current volume
+```
+
+- `trigger: challenge_remaining` watches the active challenge's countdown.
+- The cue fires once per challenge, only while that challenge is still
+  unsatisfied — a challenge already met won't lock, so it stays silent.
+- `duck_to` is multiplicative against the viewer's current volume (`0.1` = 10%),
+  so the duck respects wherever they set the master level.
+- `sound` resolves against the media root; the referenced file must exist there.
+
+Multiple cues may be listed. Entries with an unknown trigger, a missing sound, or
+a non-numeric threshold are ignored.
+
 ### Zone Configuration
 
 ```yaml
