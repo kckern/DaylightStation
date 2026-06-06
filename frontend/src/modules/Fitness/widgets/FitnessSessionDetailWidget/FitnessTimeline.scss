@@ -24,3 +24,8 @@
     font-weight: 400;
   }
 }
+
+.timeline-band,
+.timeline-seam {
+  pointer-events: none;
+}
