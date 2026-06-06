@@ -28,14 +28,14 @@ function startSession({ videoVolume, audioDuck }) {
   let audio = null;
 
   let lifted = false;
-  const lift = () => {
+  const lift = (reason = 'unknown') => {
     if (lifted) return;
     lifted = true;
     videoVolume.setDuck(1);
-    logger().info('fitness.audio_duck.end', { cueId: audioDuck.cueId, token: audioDuck.token });
+    logger().info('fitness.audio_duck.end', { cueId: audioDuck.cueId, token: audioDuck.token, reason });
   };
 
-  const onEnded = () => lift();
+  const onEnded = () => lift('ended');
   const onError = () => {
     const mediaErr = audio?.error;
     const code = mediaErr?.code ?? null;
@@ -44,11 +44,11 @@ function startSession({ videoVolume, audioDuck }) {
       cueId: audioDuck.cueId, token: audioDuck.token,
       code, message: mediaErr?.message ?? null, aborted,
     });
-    if (!aborted) lift();
+    if (!aborted) lift('error');
   };
   try {
     audio = getCueAudioElement();
-    if (!audio) { lift(); return null; }
+    if (!audio) { lift('no_element'); return null; }
     audio.src = DaylightMediaPath(`/media/${audioDuck.sound}`);
     audio.currentTime = 0;
     audio.muted = false;
@@ -63,19 +63,19 @@ function startSession({ videoVolume, audioDuck }) {
         cueId: audioDuck.cueId, token: audioDuck.token,
         name: err?.name ?? null, message: err?.message ?? null,
       });
-      lift();
+      lift('rejected');
     });
   } catch (err) {
     logger().warn('fitness.audio_duck.play_threw', {
       cueId: audioDuck.cueId, token: audioDuck.token, message: err?.message ?? null,
     });
-    lift();
+    lift('threw');
   }
   return { token: audioDuck.token, audio, onEnded, onError, lift };
 }
 
 /** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
-function stopSession(session) {
+function stopSession(session, reason = 'stopped') {
   if (!session) return;
   const { audio, onEnded, onError, lift } = session;
   if (audio) {
@@ -85,7 +85,7 @@ function stopSession(session) {
     // spurious 'error' (aborted load) on the next consumer.
     try { audio.pause(); } catch { /* already released */ }
   }
-  lift?.();
+  lift?.(reason);
 }
 
 /**
@@ -108,12 +108,12 @@ export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
 
   useEffect(() => {
     if (!token) return;
-    stopSession(sessionRef.current);
+    stopSession(sessionRef.current, 'superseded');
     sessionRef.current = startSession(latestRef.current);
   }, [token]);
 
   useEffect(() => () => {
-    stopSession(sessionRef.current);
+    stopSession(sessionRef.current, 'unmount');
     sessionRef.current = null;
   }, []);
 }

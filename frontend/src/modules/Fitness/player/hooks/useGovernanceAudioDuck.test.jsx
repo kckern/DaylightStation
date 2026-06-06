@@ -3,9 +3,10 @@ import { renderHook, act } from '@testing-library/react';
 
 vi.mock('@/lib/api.mjs', () => ({ DaylightMediaPath: (p) => p }));
 const warn = vi.fn();
+const info = vi.fn();
 vi.mock('@/lib/logging/Logger.js', () => {
   const noop = () => {};
-  const logger = { child: () => logger, debug: noop, info: noop, warn: (...a) => warn(...a), error: noop, sampled: noop };
+  const logger = { child: () => logger, debug: noop, info: (...a) => info(...a), warn: (...a) => warn(...a), error: noop, sampled: noop };
   return { default: () => logger };
 });
 
@@ -123,5 +124,44 @@ describe('useGovernanceAudioDuck', () => {
     el.error = { code: 4, message: 'src not supported' };
     act(() => el.fire('error'));
     expect(videoVolume.setDuck).toHaveBeenLastCalledWith(1);
+  });
+
+  it('end reason is "ended" on natural completion', () => {
+    info.mockClear();
+    render(descriptor());
+    act(() => FakeAudio.instances[0].fire('ended'));
+    expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'ended' }));
+  });
+
+  it('end reason is "rejected" when play() is rejected', async () => {
+    info.mockClear();
+    global.Audio = class extends FakeAudio { play() { this.playCalls += 1; return Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' })); } };
+    __resetCueAudioForTest();
+    render(descriptor());
+    await act(async () => { await Promise.resolve(); });
+    expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'rejected' }));
+  });
+
+  it('end reason is "error" on a real media error', () => {
+    info.mockClear();
+    render(descriptor());
+    const el = FakeAudio.instances[0];
+    el.error = { code: 4, message: 'unsupported' };
+    act(() => el.fire('error'));
+    expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'error' }));
+  });
+
+  it('end reason is "superseded" when a new token replaces the current cue', () => {
+    const { rerender } = render(descriptor({ token: 'ch1:challenge_start', cueId: 'challenge_start', duckTo: 0.2 }));
+    info.mockClear();
+    rerender({ audioDuck: descriptor({ token: 'ch1:challenge_hurry', duckTo: 0.1 }) });
+    expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'superseded' }));
+  });
+
+  it('end reason is "unmount" when unmounted mid-cue', () => {
+    const { unmount } = render(descriptor());
+    info.mockClear();
+    unmount();
+    expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'unmount' }));
   });
 });
