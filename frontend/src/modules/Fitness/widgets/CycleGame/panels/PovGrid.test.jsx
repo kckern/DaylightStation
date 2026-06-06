@@ -8,7 +8,7 @@ const riders = {
 };
 
 describe('PovGrid', () => {
-  it('renders the road container, a recycled hline pool, the lane fan, and one marker per rider', () => {
+  it('renders the road container, a recycled hline pool, fixed gridline rails, and one marker per rider', () => {
     const { getByTestId, getAllByTestId, container } = render(
       <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />
     );
@@ -17,6 +17,7 @@ describe('PovGrid', () => {
     expect(container.querySelectorAll('.cg-pov__hline').length).toBe(50); // fixed 10 m pool, keyed by slot
     expect(container.querySelectorAll('.cg-pov__hline--major').length).toBe(10); // a major every 50 m
     expect(container.querySelector('.cg-pov__fan')).toBeTruthy();
+    expect(container.querySelectorAll('.cg-pov__rail').length).toBe(9); // FIXED vertical gridlines
     expect(getAllByTestId('pov-marker')).toHaveLength(2);
   });
   it('never renders a rider still at 0 m (they would anchor the zoom scale)', () => {
@@ -29,7 +30,7 @@ describe('PovGrid', () => {
       <PovGrid riderIds={['a', 'b', 'c']} riders={field} riderLive={{}} />
     );
     expect(getAllByTestId('pov-marker')).toHaveLength(2);            // a + c, not b
-    expect(container.querySelectorAll('.cg-pov__fan line').length).toBe(2); // fan lines match
+    expect(container.querySelectorAll('.cg-pov__rail').length).toBe(9); // gridlines are FIXED, not per-rider
   });
 
   it('renders nothing for the field at the start when no one has moved', () => {
