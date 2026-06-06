@@ -411,7 +411,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           const isGhost = !!riders[id]?.isGhost;
           const live = riderLive[id] || {};
           return (
-            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost' : ''}`} data-testid="pov-marker"
+            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}`} data-testid="pov-marker"
               ref={(el) => { markerEls.current[id] = el; }} style={{ '--cg-pov-color': color }}>
               <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc}
                 heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
