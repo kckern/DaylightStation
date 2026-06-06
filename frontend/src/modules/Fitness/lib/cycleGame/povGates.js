@@ -1,22 +1,18 @@
-import { depthT, screenY, depthScale, bandOpacity, POV_CAMERA } from './povProjection.js';
+import { screenY, depthScale, bandOpacity, POV_CAMERA } from './povProjection.js';
 
 /**
  * Lap-gate slots for the POV road.
  *
  * A gate sits at a fixed road distance (`N × lapLengthM`); every rider passes
- * through it when their own distance crosses that mark. Because the view is
- * leader-anchored (leader at the horizon, camera trailing), only gates BEHIND the
- * leader and still on the visible road are drawn — they recede toward the camera
- * as the leader pulls away. The finish (`finishM`, a distance race) is added too,
- * but since it's ahead of the leader it projects off-road (opacity 0) until the
- * leader reaches it.
- *
- * Each gate is projected exactly like a metre truss, so it lines up with the grid
- * and the avatars (same camera).
+ * through it when their own distance crosses that mark. Gates are emitted across
+ * the whole visible window — behind the leader (already-passed laps, receding
+ * toward the camera) AND ahead of the leader (upcoming laps + the finish, in the
+ * headroom above), bounded by the camera's `aheadT`. Each is projected exactly
+ * like a metre truss, so it lines up with the grid and the avatars.
  *
  * @param {number} leader - interpolated leader distance (m)
  * @param {number} k - width-fraction per metre (zoom)
- * @param {object} cam - camera (rightPct, depthRatio, farFrac, ...)
+ * @param {object} cam - camera (rightPct, depthRatio, farFrac, aheadT, ...)
  * @param {{lapLengthM:number, finishM?:number|null}} opts
  * @returns {Array<{ d:number, lap:number|null, isFinish:boolean, t:number, y:number, scale:number, opacity:number }>}
  */
@@ -25,11 +21,14 @@ export function computeGates(leader, k, cam = POV_CAMERA, { lapLengthM = 0, fini
   const lap = Number.isFinite(lapLengthM) && lapLengthM > 0 ? lapLengthM : 0;
   if (kk <= 0 || lap <= 0 || !(leader >= 0)) return [];
 
-  const nearDist = leader - cam.rightPct / kk; // road distance at the near edge (u=0)
+  const aheadT = Number.isFinite(cam.aheadT) ? cam.aheadT : 1;
+  const nearDist = leader - cam.rightPct / kk;                       // road distance at the near edge
+  const aheadMaxM = leader + (cam.rightPct * Math.max(0, aheadT - 1)) / kk; // furthest visible ahead
+
   const project = (d, lapNum, isFinish) => {
     const u = cam.rightPct - (leader - d) * kk;
-    const onRoad = u >= 0 && u <= cam.rightPct + 1e-6;
-    const t = depthT(Math.max(0, Math.min(cam.rightPct, u)), cam);
+    const t = u / cam.rightPct;                          // unclamped (t>1 is ahead of the leader)
+    const onRoad = u >= 0 && t <= aheadT + 1e-6;
     return {
       d, lap: lapNum, isFinish,
       t, y: screenY(t, cam), scale: depthScale(t, cam),
@@ -40,16 +39,16 @@ export function computeGates(leader, k, cam = POV_CAMERA, { lapLengthM = 0, fini
   const finishCap = Number.isFinite(finishM) && finishM > 0 ? finishM : Infinity;
   const gates = [];
 
-  // Lap multiples on the visible road behind the leader (never past the finish).
+  // Lap multiples across the visible window (behind + ahead), never past the finish.
+  const lastM = Math.min(aheadMaxM, finishCap);
   const firstN = Math.max(1, Math.ceil(nearDist / lap));
-  for (let n = firstN; n * lap <= leader + 1e-6; n++) {
+  for (let n = firstN; n * lap <= lastM + 1e-6; n++) {
     const d = n * lap;
-    if (d > finishCap + 1e-6) break;
     if (Math.abs(d - finishCap) < 1e-6) continue; // the finish draws as its own gate
     gates.push(project(d, n, false));
   }
 
-  // Finish gate (distance race). Off-road (opacity 0) until the leader reaches it.
+  // Finish gate (distance race) — now visible in the headroom as the leader nears it.
   if (Number.isFinite(finishM) && finishM > 0) {
     gates.push(project(finishM, null, true));
   }

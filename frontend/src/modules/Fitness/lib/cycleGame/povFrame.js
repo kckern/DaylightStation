@@ -50,6 +50,28 @@ export function computePovFrame({
         opacity: onRoad ? bandOpacity(t, cam) : 0
       });
     }
+
+    // Road AHEAD of the leader (t>1), so the course visibly continues into the
+    // headroom above instead of ending at the leader. Majors only — 1 m minors
+    // would smear into the horizon. Bounded by aheadT; fogged by bandOpacity.
+    const aheadT = Number.isFinite(cam.aheadT) ? cam.aheadT : 1;
+    if (aheadT > 1) {
+      const aheadMaxM = leader + (cam.rightPct * (aheadT - 1)) / kk; // distance where t = aheadT
+      const firstMajor = (Math.floor(leader / majorM) + 1) * majorM;
+      for (let m = firstMajor; m <= aheadMaxM + 1e-6; m += majorM) {
+        const u = cam.rightPct - (leader - m) * kk; // u > rightPct (ahead of the leader)
+        const t = u / cam.rightPct;                 // unclamped depth (>1)
+        lineSlots.push({
+          slot: (m / minorM) % count,
+          m,
+          major: true,
+          t,
+          y: screenY(t, cam),
+          scale: depthScale(t, cam),
+          opacity: bandOpacity(t, cam)
+        });
+      }
+    }
   }
 
   const markers = (riders || []).map((r) => {

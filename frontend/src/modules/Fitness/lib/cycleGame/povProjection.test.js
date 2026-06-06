@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { POV_CAMERA, depthT, perspRatio, screenY, depthScale } from './povProjection.js';
+import { POV_CAMERA, depthT, perspRatio, screenY, depthScale, bandOpacity } from './povProjection.js';
 
 describe('povProjection (1/z ground-plane camera)', () => {
   it('depthT normalizes u in [0,rightPct] to t in [0,1] and clamps', () => {
@@ -26,5 +26,23 @@ describe('povProjection (1/z ground-plane camera)', () => {
   it('perspRatio is 1/z with z = 1 + (depthRatio-1)*t', () => {
     expect(perspRatio(0)).toBeCloseTo(1, 5);
     expect(perspRatio(1)).toBeCloseTo(1 / POV_CAMERA.depthRatio, 5);
+  });
+
+  it('rests the leader in the top third (headroom above for the road ahead)', () => {
+    expect(screenY(1)).toBeCloseTo(0.30, 2);     // leader at ~30%, not the very top
+    expect(screenY(1)).toBeLessThan(0.35);
+    expect(screenY(1)).toBeGreaterThan(0.25);
+  });
+
+  it('projects road AHEAD of the leader (t>1) above the leader line, toward the horizon', () => {
+    expect(screenY(2)).toBeLessThan(screenY(1));  // further ahead → higher on screen
+    expect(screenY(4)).toBeLessThan(screenY(2));
+    expect(screenY(1.5)).toBeGreaterThan(POV_CAMERA.farFrac - 0.2); // still in the headroom band
+  });
+
+  it('bandOpacity keeps the leader line visible and fades approaching the far horizon (aheadT)', () => {
+    expect(bandOpacity(1)).toBeGreaterThan(0.5);                 // leader area is bright now
+    expect(bandOpacity(POV_CAMERA.aheadT)).toBeCloseTo(0, 2);    // dissolves at the horizon
+    expect(bandOpacity(0.5)).toBeGreaterThan(bandOpacity(POV_CAMERA.aheadT - 0.2));
   });
 });
