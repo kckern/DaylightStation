@@ -1711,6 +1711,9 @@ export class GovernanceEngine {
     if (!challengeSnapshot || !Array.isArray(this._audioCues) || this._audioCues.length === 0) {
       return null;
     }
+    // Scope: zone challenges only. Cycle challenges have their own audio-cue
+    // system (cycleAudioCue) and a different snapshot shape.
+    if (challengeSnapshot.type === 'cycle') return null;
     const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
     if (status !== 'pending' || !Number.isFinite(remainingSeconds)) return null;
 
@@ -1728,7 +1731,7 @@ export class GovernanceEngine {
         challengeId: challengeId || null,
         remainingSeconds,
         threshold: cue.thresholdSeconds
-      }, { maxPerMinute: 6 });
+      }, { maxPerMinute: 6, aggregate: true });
       return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
     }
     return null;
