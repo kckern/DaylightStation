@@ -20,7 +20,7 @@ function ordinal(n) {
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
-  isGhost = false, finished = false, placement = null, penalized = false,
+  isGhost = false, finished = false, placement = null, penalized = false, isLeader = false,
   penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
@@ -160,6 +160,7 @@ export default function CycleSpeedometer({
       </div>
 
       <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
+        {isLeader && <span className="cycle-speedometer__leader-medal" aria-label="Current leader">🥇</span>}
         {formatDistance(distanceMeters)}
       </div>
     </div>
@@ -187,6 +188,7 @@ CycleSpeedometer.propTypes = {
   finished: PropTypes.bool,
   placement: PropTypes.number,
   penalized: PropTypes.bool,
+  isLeader: PropTypes.bool,
   penaltyRemainingS: PropTypes.number,
   penaltyTotalS: PropTypes.number,
   penaltyAwaitingStop: PropTypes.bool

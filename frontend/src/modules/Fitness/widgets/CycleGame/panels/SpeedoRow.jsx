@@ -47,6 +47,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             isGhost={!!riders[id].isGhost}
             finished={!!live.finished}
             placement={live.placement}
+            isLeader={!!live.isLeader}
             penalized={!!live.penalized}
             penaltyRemainingS={live.penaltyRemainingS}
             penaltyTotalS={live.penaltyTotalS}

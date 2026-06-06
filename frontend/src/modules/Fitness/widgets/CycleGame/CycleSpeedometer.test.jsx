@@ -94,4 +94,10 @@ describe('CycleSpeedometer', () => {
     expect(queryByTestId('cycle-speedometer-penalty-bar')).toBeNull();
     expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
   });
+  it('renders the leader medal in the odometer only when isLeader is true', () => {
+    const { getByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
+    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+    rerender(<CycleSpeedometer {...baseProps} isLeader={true} />);
+    expect(getByTestId('cycle-speedometer-odometer').textContent).toContain('🥇');
+  });
 });

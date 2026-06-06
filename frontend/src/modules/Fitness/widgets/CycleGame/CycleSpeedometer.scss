@@ -87,6 +87,7 @@
   // (same --cg-rider-tint the gauge dial + chart lanes use) so the distance readout is
   // colour-coded to its rider. Bolder than the dial wash since it's a small flat chip.
   &__odometer {
+    position: relative;
     font-family: cg.$cg-mono;
     color: cg.$cg-text; font-size: 1.5rem; font-weight: 800;
     background: color-mix(in srgb, var(--cg-rider-tint, transparent) 45%, #0a0a14);
@@ -94,6 +95,11 @@
     border-radius: 8px;
     padding: 6px 18px; letter-spacing: 0.01em;
     box-shadow: 0 0 14px color-mix(in srgb, var(--cg-rider-tint, transparent) 45%, transparent);
+  }
+  &__leader-medal {
+    position: absolute; top: -0.6em; left: -0.4em;
+    font-size: 1.6rem; line-height: 1; pointer-events: none;
+    filter: drop-shadow(0 0 6px rgba(255, 213, 74, 0.6));
   }
 
   // FINISHED — a rider who crossed the line in a distance race. The gauge is
