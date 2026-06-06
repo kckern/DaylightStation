@@ -4,9 +4,10 @@
   // PanelSlot wrapper — must fill its grid cell so panels that use height:100% work.
   &__slot { display: block; width: 100%; height: 100%; min-height: 0; }
   &__zone--empty { display: none; }
+  &__zone--speedo { overflow: visible; padding: 6px 8px 10px; box-sizing: border-box; }
 
   &--sidebar { display: grid; height: 100%; grid-template-columns: 68% 32%; grid-template-rows: 1fr; gap: 8px; }
-  .race-layout__main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(200px, 48%); gap: 8px; }
+  .race-layout__main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(260px, 46%); gap: 8px; }
   .race-layout__main-top { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
   .race-layout__sidebar { display: grid; min-height: 0; grid-template-rows: 7fr 3fr; gap: 8px; }
 
