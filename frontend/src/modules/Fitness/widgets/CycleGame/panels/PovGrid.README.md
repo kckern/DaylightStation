@@ -73,8 +73,11 @@ top. Each **major gridline is labeled** with its metre value just off the road's
 left edge (`drawScene`).
 
 **Camera audit logging.** All camera motion is logged via the structured logger:
-`cycle_game.pov.camera` (sampled snapshot — zoom `k`/`fovMul`/`depthRatio`, pan
-`vanishX`, dolly `leaderDist`) and `cycle_game.pov.rezoom` (on a held-`k` change).
+`cycle_game.pov.camera` (a manually-throttled ~1 Hz snapshot of the live camera —
+zoom `k`/`fovMul`/`depthRatio`, pan `vanishX`, dolly `leaderDist`; skipped while
+idle) and `cycle_game.pov.rezoom` (on a held-`k` change). Note: a periodic *state
+snapshot* must not use `logger.sampled` — sampled burns its per-minute budget on
+the neutral idle frames and never records the race.
 
 ## Tests
 
