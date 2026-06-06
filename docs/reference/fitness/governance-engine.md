@@ -448,6 +448,62 @@ governance:
               min_participants: 1
 ```
 
+### Audio Cues
+
+Short sound effects mark key moments in a challenge's life and in the lock
+countdown. Each cue plays a sound and briefly ducks the workout video's audio —
+without pausing it — so the cue stands out, then restores the volume the instant
+the sound finishes. Cues are an audible layer only; they never change whether a
+challenge passes or whether the video locks.
+
+Cues live under `governance.audio_cues` in `data/household/config/fitness.yml`:
+
+```yaml
+governance:
+  audio_cues:
+    - id: challenge_start
+      trigger: challenge_start        # a challenge appears
+      sound: apps/fitness/ux/challenge-start.mp3
+      duck_to: 0.2
+    - id: challenge_hurry
+      trigger: challenge_remaining    # challenge timer almost up
+      threshold_seconds: 12           # fire when the timer reaches 12s left
+      sound: apps/fitness/ux/challenge-hurry.mp3
+      duck_to: 0.1
+    - id: challenge_complete
+      trigger: challenge_complete     # challenge satisfied
+      sound: apps/fitness/ux/challenge-complete.mp3
+      duck_to: 0.2
+    - id: challenge_warning
+      trigger: governance_warning     # grace period begins (screen blurs, health bar appears)
+      sound: apps/fitness/ux/challenge-warning.mp3
+      duck_to: 0.15
+```
+
+Triggers (each fires once per occurrence):
+
+- `challenge_start` — a challenge appears.
+- `challenge_remaining` — the challenge countdown reaches `threshold_seconds`,
+  but only while the challenge is still unsatisfied (a challenge already met
+  won't lock, so it stays silent). This is the only trigger that uses
+  `threshold_seconds`.
+- `challenge_complete` — the challenge is satisfied.
+- `governance_warning` — the grace period begins: the video blurs and the health
+  bar appears ahead of a lock.
+
+Common to all cues:
+
+- `duck_to` is multiplicative against the viewer's current volume (`0.1` = 10%),
+  so the duck respects wherever they set the master level.
+- `sound` resolves against the media root; the referenced file must exist there.
+- When two cues would coincide, the grace-period warning wins — an impending
+  lock is the most important thing to signal. Challenge *failure* has no cue: the
+  lock screen, which pauses the video, already covers it.
+
+Multiple cues may be listed. Entries with an unknown trigger, a missing sound, or
+a `challenge_remaining` entry with no numeric threshold are ignored. Cycle
+challenges are not covered by these cues — they have their own audible feedback.
+
 ### Zone Configuration
 
 ```yaml
