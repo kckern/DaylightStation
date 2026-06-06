@@ -6,15 +6,20 @@ export function raceEpochMs(record) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+const GHOST_PREFIX = 'ghost:';
+const isGhost = (id) => String(id).startsWith(GHOST_PREFIX);
+
 function toItem(record) {
   const startMs = raceEpochMs(record);
   if (startMs == null) return null;
-  const parts = Object.entries(record.participants || {});
+  const parts = Object.entries(record.participants || {}).filter(([id]) => !isGhost(id));
   const distances = {};
   let winnerId = null;
+  let bestPlacement = Infinity;
   for (const [id, p] of parts) {
     distances[id] = p.final_distance_m ?? 0;
-    if (p.placement === 1) winnerId = id;
+    const pl = Number.isFinite(p.placement) ? p.placement : Infinity;
+    if (pl < bestPlacement) { bestPlacement = pl; winnerId = id; }
   }
   const capS = record?.race?.time_cap_s || 0;
   return {

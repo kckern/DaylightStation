@@ -58,4 +58,21 @@ describe('CycleGameProvider', () => {
   it('throws if constructed without cycleRaceService', () => {
     expect(() => new CycleGameProvider({})).toThrow();
   });
+
+  it('excludes ghost participants and never names a ghost as winner', async () => {
+    const ghostRace = {
+      race: { id: 'g1', date: '2026-06-05T23:29:22Z', time_cap_s: 120, background_plex_id: 674141 },
+      participants: {
+        milo: { display_name: 'Milo', final_distance_m: 613, placement: 2 },
+        'ghost:abc:milo': { display_name: 'Ghost', final_distance_m: 1360, placement: 1 },
+        'ghost:abc:alan': { display_name: 'Ghost', final_distance_m: 1317, placement: 3 },
+      },
+    };
+    const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [ghostRace] } });
+    const [item] = await p.loadOverlapping(
+      Date.parse('2026-06-05T23:00:00Z'), Date.parse('2026-06-05T23:59:00Z'), '2026-06-05', 'h');
+    expect(item.participants).toEqual(['milo']);          // ghosts removed
+    expect(item.meta.winnerId).toBe('milo');              // not the ghost despite its placement 1
+    expect(item.meta.distances).toEqual({ milo: 613 });   // ghosts excluded from distances
+  });
 });
