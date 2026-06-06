@@ -60,12 +60,16 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // corner.) The lin↔log crowding transform (below) is orthogonal and kept.
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
   const leaderDistanceM = Math.max(0, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
+  // Distance races have a fixed finish: pin the Y window to the goal so the goal line
+  // sits at the TOP and riders climb toward it (vs. the time-race auto-zoom that grows
+  // the window to fit the leader and parks the goal mid-chart).
+  const distanceGoal = winCondition === 'distance' && Number.isFinite(goalM) && goalM > 0;
   // nextZoomLevel keeps BOTH inputs under threshold; feed each axis only its own
   // driver (0 for the other, which always fits) to get an independent level.
   const lxRef = useRef(0);
   const lyRef = useRef(0);
   lxRef.current = nextZoomLevel(lxRef.current, { elapsedS, leaderDistanceM: 0, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
-  lyRef.current = nextZoomLevel(lyRef.current, { elapsedS: 0, leaderDistanceM, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
+  lyRef.current = distanceGoal ? 0 : nextZoomLevel(lyRef.current, { elapsedS: 0, leaderDistanceM, xBaseS: X_BASE_S, yBaseM: Y_BASE_M, threshold: ZOOM_THRESHOLD });
   const Lx = lxRef.current;
   const Ly = lyRef.current;
   // Zoom-out animation: when either axis level jumps, SNAP that axis by the jump
@@ -100,7 +104,8 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const PLOT_W = W - PAD_L - PAD_R;
   const PLOT_H = H - PAD_T - PAD_B;
   const T = X_BASE_S * 2 ** Lx;   // seconds visible
-  const D = Y_BASE_M * 2 ** Ly;   // metres visible
+  // Distance race: window = goal (goal line pinned to the top). Time race: auto-zoom window.
+  const D = distanceGoal ? goalM : Y_BASE_M * 2 ** Ly;   // metres visible
   const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
   const xForTime = (t) => PAD_L + Math.max(0, Math.min(1, (t || 0) / T)) * PLOT_W;
   const xFor = (i) => xForTime(i * stepS);
