@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { ovalProgressFor } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
+import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import PovGrid from './panels/PovGrid.jsx';
@@ -38,6 +39,10 @@ export default function CycleRaceScreen({
     : Math.max(1, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
 
   const fieldSize = riderIds.length;
+  // Effective lap drives the POV lap-gate arches (always-on: configured lap, 400 m
+  // default, or the race distance if shorter). Finish line only for distance races.
+  const povLapM = effectiveLapLength({ lapLengthM, winCondition, goalM });
+  const povFinishM = winCondition === 'distance' ? goalM : null;
   const leaderLap = lapLengthM > 0
     ? lapCount(Math.max(0, ...riderIds.map((id) => riders[id]?.cumulativeDistanceM || 0)), lapLengthM) + 1
     : 0;
@@ -56,7 +61,8 @@ export default function CycleRaceScreen({
         clockSeconds={clockSeconds} maxDistanceM={maxDistance} zoneBox={slot?.zoneBox} />
     ),
     povGrid: () => (
-      <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive} />
+      <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive}
+        lapLengthM={povLapM} finishM={povFinishM} />
     ),
     ovalTrack: () => (
       <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}

@@ -53,3 +53,40 @@ describe('drawScene', () => {
     expect(Math.max(...alphas)).toBeGreaterThan(Math.min(...alphas));
   });
 });
+
+// Extended mock that also records arch curves + label text for the gate tests.
+function gateCtx() {
+  const calls = { quadratic: 0, labels: [], strokeStyles: [] };
+  return {
+    calls, _s: '',
+    set strokeStyle(v) { this._s = v; }, get strokeStyle() { return this._s; },
+    set lineWidth(_) {}, set lineCap(_) {}, set font(_) {}, set textAlign(_) {}, set textBaseline(_) {}, set fillStyle(_) {},
+    clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    quadraticCurveTo() { calls.quadratic++; },
+    stroke() { calls.strokeStyles.push(this._s); },
+    fillText(text) { calls.labels.push(text); }
+  };
+}
+
+describe('drawScene — lap gates', () => {
+  const gates = [
+    { d: 150, lap: 3, isFinish: false, t: 0.43, y: 0.5, scale: 0.5, opacity: 0.7 },
+    { d: 400, lap: null, isFinish: true, t: 0.8, y: 0.3, scale: 0.3, opacity: 0.6 },
+    { d: 9999, lap: 9, isFinish: false, t: 1.0, y: 0.22, scale: 0.16, opacity: 0 } // off-road, skipped
+  ];
+
+  it('draws an arch (curved top) + a label for each visible gate', () => {
+    const ctx = gateCtx();
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: [], railsX: [], gates, dims: { w: 200, h: 100 } });
+    expect(ctx.calls.quadratic).toBe(2 * 2);          // 2 visible gates × dual-pass arch
+    expect(ctx.calls.labels).toEqual(['LAP 3', 'FINISH']); // opacity-0 gate skipped
+  });
+
+  it('colors the finish gate gold and lap gates magenta', () => {
+    const ctx = gateCtx();
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: [], railsX: [], gates, dims: { w: 200, h: 100 } });
+    const styles = ctx.calls.strokeStyles.join('|');
+    expect(styles).toContain('255, 64, 160');  // magenta (LAP)
+    expect(styles).toContain('255, 200, 70');  // gold (FINISH)
+  });
+});
