@@ -50,8 +50,9 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const dimsRef = useRef({ w: 0, h: 0, dpr: 1 });
-  const tickRef = useRef({ leaderPrev: 0, leaderCur: 0, kTarget: 0, riders: [], tickAt: 0, leaderVel: 0, accel: 0, leaderLaneX: 50 });
+  const tickRef = useRef({ leaderPrev: 0, leaderCur: 0, kTarget: 0, riders: [], tickAt: 0, leaderVel: 0, accel: 0, leaderLaneX: 50, gapM: 0 });
   const kRef = useRef(null);
+  const leaderURef = useRef(null);
   const camDynRef = useRef(NEUTRAL_DYNAMICS);
   const markerEls = useRef({});
   const prevDistRef = useRef({});
@@ -80,6 +81,10 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
     const accel = leaderVel - (t.leaderVel || 0);
     const leaderId = movedIds.reduce((best, id) => (best && distOf(best) >= distOf(id) ? best : id), null);
     const leaderLaneX = leaderId ? laneX(movedIds.indexOf(leaderId)) : 50;
+    // Field spread (leader → last place), used to lower the leader's depth-anchor when
+    // the pack is bunched near the start so the field rests low instead of crowding the top.
+    const rearCur = movedIds.length ? Math.min(...movedIds.map(distOf)) : leaderCur;
+    const gapM = Math.max(0, leaderCur - rearCur);
     // Camera audit: a rezoom (dolly/zoom change) is when the held zoom k jumps between ticks.
     const prevK = t.kTarget;
     if (prevK > 0 && Math.abs(zoom.kFrac - prevK) / prevK > 0.02) {
@@ -88,7 +93,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
     }
     tickRef.current = {
       leaderPrev, leaderCur, kTarget: zoom.kFrac, riders: ridersFrame, tickAt: now,
-      leaderVel, accel, leaderLaneX
+      leaderVel, accel, leaderLaneX, gapM
     };
     const next = {}; movedIds.forEach((id) => { next[id] = distOf(id); });
     prevDistRef.current = next;
@@ -135,14 +140,22 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       else if (target > 0) kRef.current += (target - kRef.current) * (1 - Math.exp(-dt / K_TAU_MS));
       const kFrame = kRef.current;
 
+      // Leader depth-anchor: rest the last-place rider at homePct (low on screen) and let
+      // the leader float up by the field's gap, capped at the far plane (rightPct). Bunched
+      // field → leader low + road ahead fills the frame; spread field → far-plane framing.
+      const leaderUTarget = Math.min(BASE_CAMERA.rightPct, ZOOM_CFG.homePct + (t.gapM || 0) * kFrame);
+      if (!(leaderURef.current > 0)) leaderURef.current = leaderUTarget;
+      else leaderURef.current += (leaderUTarget - leaderURef.current) * (1 - Math.exp(-dt / K_TAU_MS));
+
       camDynRef.current = stepCameraDynamics(camDynRef.current, { leaderLaneX: t.leaderLaneX, accel: t.accel }, dt);
-      const camera = cameraFrom(camDynRef.current);
+      const camera = { ...cameraFrom(camDynRef.current), leaderU: leaderURef.current };
 
       // Camera audit: periodic snapshot of all camera motion — zoom (k / fovMul /
       // depthRatio), pan (vanishX lateral lead), dolly (leaderDist). Rate-limited.
       logRef.current.sampled('cycle_game.pov.camera', {
         k: kFrame, vanishX: camera.vanishX, fovMul: camDynRef.current.fovMul,
-        depthRatio: camera.depthRatio, leaderDistM: Math.round(t.leaderCur), leaderLaneX: t.leaderLaneX
+        depthRatio: camera.depthRatio, leaderDistM: Math.round(t.leaderCur), leaderLaneX: t.leaderLaneX,
+        leaderU: camera.leaderU, gapM: Math.round(t.gapM || 0)
       }, { maxPerMinute: 60, aggregate: false });
 
       const frac = tickFraction(nowT, t.tickAt, TICK_MS);

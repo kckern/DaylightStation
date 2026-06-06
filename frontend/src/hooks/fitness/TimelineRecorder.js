@@ -20,10 +20,14 @@
  */
 
 import getLogger from '../../lib/logging/Logger.js';
+import { sanitizeHeartRate } from './hrPlausibility.js';
 
 // -------------------- Sanitization Helpers --------------------
 
-const sanitizeHeartRate = (value) => (Number.isFinite(value) && value > 0 ? Math.round(value) : null);
+// sanitizeHeartRate imported from hrPlausibility.js (shared floor/ceiling) so the
+// recorded timeline series and summary metrics reject the same phantom-strap
+// ghosts. Previously this used a `value > 0` check with no floor, which let an
+// 11 BPM ghost (device:28690) into the saved series on 2026-06-05.
 const sanitizeNumber = (value) => (Number.isFinite(value) ? value : null);
 const sanitizeDistance = (value) => (Number.isFinite(value) && value > 0 ? value : null);
 
