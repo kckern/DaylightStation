@@ -38,7 +38,7 @@ every frame. That was the cardinal perf defect; it is gone.)
 per 1 Hz tick (React render):
   useLeaderAnchoredZoom(distances) → { k, lines (world-metre marks), leaderDist }
   → capture { leaderPrev, leaderCur, k, lines, riders[{prev,cur,laneX}], tickAt } into a ref
-  React renders: a FIXED pool of 24 hline <div>s (keyed by slot) + 1 marker/rider + a static SVG lane fan
+  React renders: a FIXED pool of 50 hline <div>s (keyed by slot) + 1 marker/rider + a static SVG gridline grid (fixed vertical rails)
 
 per animation frame (rAF loop, mounted once):
   frac = tickFraction(now, tickAt, 1000)                  // 0→1 across the tick, saturates if overdue
@@ -88,6 +88,9 @@ the zoom level. `gridLines` **coarsens** (doubles the interval) to keep the whol
 - **No `<canvas>`.** At ≤24 lines + ≤6 markers, transformed `<div>`s composite fine and keep the
   real DOM avatars (`CircularUserAvatar`). Canvas would be a bigger rewrite for no win.
 - **No general camera rig.** One fixed camera; `farFrac`/`depthRatio` are constants, not props.
+- **No organic camera ebb on the grid.** The grid (rails + trusses) projects through a fixed camera —
+  it stays solid, never breathing/deforming the far plane ("not racing on jello"). Only real motion
+  moves the grid: riders advancing (interpolated) and the eased rezoom glide.
 - **No `prefers-reduced-motion` branch** (the kiosk doesn't set it). If ever needed, freeze `frac` at 1.
 - **`DistanceChart` was not refactored** to share the clock — `tickFraction` is a new shared primitive
   PovGrid uses; the chart keeps its own working `tickFrac`.
@@ -109,8 +112,11 @@ the zoom level. `gridLines` **coarsens** (doubles the interval) to keep the whol
 5. **Negative / past-leader grid marks.** `gridLines` can emit marks slightly before the start or
    just past the leader when very zoomed out — intentional (a continuous road), and they project to
    the near/far edges. Confirm that reads as "road," not artifact.
-6. **Lane fan vs. converging markers.** Lanes are a static SVG fan (drawn once, no per-frame cost);
-   marker `x` converges via `depthScale`. Confirm a marker tracks its fan line at all depths.
+6. **Gridline rails vs. converging markers.** The longitudinal rails are a FIXED vertical grid
+   (`computeGridRails`, ~9 lines spanning the road, drawn once — not per-rider) projected through the
+   same FIXED camera as the trusses, so the road is a SOLID grid (**not jello**). Marker `x` converges
+   via `depthScale`. Confirm a marker tracks the grid at all depths and the rails stay welded to the
+   metre trusses (no float).
 
 ## Tests
 
