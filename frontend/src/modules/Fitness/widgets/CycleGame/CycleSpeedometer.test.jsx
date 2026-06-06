@@ -19,6 +19,12 @@ describe('CycleSpeedometer', () => {
     expect(getByTestId('cycle-speedometer-rpm').textContent).toContain('92');
     expect(getByTestId('cycle-speedometer-odometer').textContent).toBe('2.34 km');
   });
+  it('renders the effective km/h hero readout as a whole number', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} speedKmh={28.43} />);
+    expect(getByTestId('cycle-speedometer-speed').textContent).toContain('28');
+    expect(getByTestId('cycle-speedometer-speed').textContent).not.toContain('28.4');
+    expect(getByTestId('cycle-speedometer-speed').textContent).toContain('km/h');
+  });
   it('renders one band arc per cadence band', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
     expect(container.querySelectorAll('.cycle-speedometer__band').length).toBe(4);

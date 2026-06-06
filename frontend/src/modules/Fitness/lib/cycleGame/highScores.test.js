@@ -18,12 +18,12 @@ describe('buildHighScores', () => {
     const hs = buildHighScores(races, '2026-06-05');
     const sprint = hs.find((h) => h.key === 'sprint');
     const endurance = hs.find((h) => h.key === 'endurance');
-    expect(sprint.valueLabel).toBe('36.0 km/h'); // milo 1200 m / 120 s, race A
+    expect(sprint.valueLabel).toBe('36 km/h'); // milo 1200 m / 120 s, race A
     expect(sprint.raceId).toBe('A');
     expect(sprint.holderName).toBe('Milo');
     expect(sprint.whenDay).toBe('Yest'); // race A is the day before todayYmd
     expect(sprint.whenTime).toBe('8:30a');
-    expect(endurance.valueLabel).toBe('40.0 km/h'); // milo 4000 m / 360 s, race B
+    expect(endurance.valueLabel).toBe('40 km/h'); // milo 4000 m / 360 s, race B
     expect(endurance.raceId).toBe('B');
     expect(endurance.whenDay).toBe('Today');
   });
@@ -34,7 +34,7 @@ describe('buildHighScores', () => {
         { id: 'milo', displayName: 'Milo', avatarSrc: '/m', finalDistanceM: 5000, finalTimeS: null } // 5000 m / 600 s = 30.0 km/h
       ] }
     ]);
-    expect(hs.find((h) => h.key === 'endurance').valueLabel).toBe('30.0 km/h');
+    expect(hs.find((h) => h.key === 'endurance').valueLabel).toBe('30 km/h');
     expect(hs.find((h) => h.key === 'sprint')).toBeUndefined();
   });
 
@@ -44,7 +44,7 @@ describe('buildHighScores', () => {
       { raceId: 'B', participants: [{ id: 'ghost:X:milo', displayName: 'Milo 👻', avatarSrc: '/m', isGhost: true, finalDistanceM: 99999, finalTimeS: 100 }] }
     ]);
     const sprint = hs.find((h) => h.key === 'sprint');
-    expect(sprint.valueLabel).toBe('36.0 km/h'); // ghost 99999 ignored
+    expect(sprint.valueLabel).toBe('36 km/h'); // ghost 99999 ignored
     expect(sprint.raceId).toBe('A');
   });
 

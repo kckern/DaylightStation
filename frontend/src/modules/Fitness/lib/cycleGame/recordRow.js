@@ -1,9 +1,10 @@
 /**
- * Pure helpers for the lobby History (records) table. Each saved race has ONE
- * distance value and ONE time value; the goal column is the win condition. These
- * build a columnar row so a value's column declares its kind (distance vs time)
- * instead of the meaning swapping per row.
+ * Pure helpers for the lobby History (records) table. Each row reads as
+ * "rider · how fast (km/h) · the race they ran · when". km/h is the one comparable
+ * score across races of any length; the RACE column states the course's target
+ * (distance for distance races, the clock for time races).
  */
+import { kmh, kmhLabel, participantDurationS } from './speed.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -32,22 +33,29 @@ export function relativeDay(dayYmd, todayYmd) {
 
 /**
  * Build a columnar record row from a ghost candidate (participants sorted
- * winner-first; goalLabel/scoreLabel already formatted). The "when" is split into
- * a day + time so it can stack in a narrow column while showing both.
+ * winner-first; goalLabel already formatted as the course target). The row shows
+ * the WINNER's average km/h (distance ÷ duration) as the comparable score, plus the
+ * RACE target + its kind (distance/time) so the table can icon it. "when" is split
+ * into a day + time so it can stack in a narrow column while showing both.
  */
 export function buildRecordRow(g, todayYmd) {
-  const isDistance = g.winCondition === 'distance';
   const participants = Array.isArray(g.participants) ? g.participants : [];
+  const winner = participants[0] || {};
+  const durationS = participantDurationS(winner, g.timeCapS);
+  const speed = kmh(winner.finalDistanceM, durationS);
   return {
     raceId: g.raceId,
-    winnerId: participants[0]?.id ?? null,
+    winnerId: winner.id ?? null,
     winnerName: g.winnerName,
-    winnerAvatar: participants[0]?.avatarSrc ?? null,
-    winnerIsGhost: !!participants[0]?.isGhost,
+    winnerAvatar: winner.avatarSrc ?? null,
+    winnerIsGhost: !!winner.isGhost,
     others: participants.slice(1).map((p) => ({ id: p.id, displayName: p.displayName, avatarSrc: p.avatarSrc, isGhost: !!p.isGhost })),
-    distanceLabel: isDistance ? g.goalLabel : g.scoreLabel,
-    timeLabel: isDistance ? g.scoreLabel : g.goalLabel,
-    goalColumn: isDistance ? 'distance' : 'time',
+    // Winner's average pace — the one figure comparable across any race length.
+    // null when the race recorded no movement, so the table shows a clean placeholder.
+    speedLabel: speed > 0 ? kmhLabel(winner.finalDistanceM, durationS) : null,
+    // The course's defining target (distance goal or time cap) + its kind for an icon.
+    raceLabel: g.goalLabel,
+    raceKind: g.winCondition === 'time' ? 'time' : 'distance',
     whenDay: relativeDay(g.day, todayYmd),
     whenTime: compactTime(g.timeOfDay)
   };

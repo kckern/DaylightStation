@@ -33,7 +33,9 @@ export class BleHeartRateDecoder {
       hr = data[1];
     }
 
-    if (hr === 0 || hr > 250) return null;
+    // Reject physiologically implausible HR (dropped contact reads 0; phantom
+    // straps emit junk lows like 10/11). Keep in sync with ant.mjs HR gate.
+    if (hr < 50 || hr > 230) return null;
 
     this.lastHR = hr;
     this.sensorContact = sensorContactSupported ? !!sensorContactDetected : true;

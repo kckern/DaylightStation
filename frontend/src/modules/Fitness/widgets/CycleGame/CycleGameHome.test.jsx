@@ -290,14 +290,14 @@ describe('CycleGameHome', () => {
         records={[{
           raceId: '20260602150118', winnerId: 'milo', winnerName: 'Milo',
           winnerAvatar: '/api/v1/static/img/users/milo', others: [],
-          distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', whenDay: 'Today', whenTime: '3:01p'
+          speedLabel: '31 km/h', raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: '3:01p'
         }]}
       />
     );
     const row = getByTestId('record-20260602150118');
     expect(row).toHaveTextContent('Milo');
+    expect(row).toHaveTextContent('31 km/h');
     expect(row).toHaveTextContent('3 km');
-    expect(row).toHaveTextContent('4:12');
     // The day is now a once-per-day group header (not repeated on every row);
     // the row itself carries only the clock time.
     expect(row).toHaveTextContent('3:01p');
@@ -308,7 +308,7 @@ describe('CycleGameHome', () => {
   it('History groups rows by day: one header per day, time-only rows', () => {
     const mk = (raceId, whenDay, whenTime) => ({
       raceId, winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/m', others: [],
-      distanceLabel: '1 km', timeLabel: '4:00', goalColumn: 'distance', whenDay, whenTime
+      speedLabel: '28 km/h', raceLabel: '1 km', raceKind: 'distance', whenDay, whenTime
     });
     const { container } = render(
       <CycleGameHome bikes={bikes} people={people} records={[
@@ -321,25 +321,24 @@ describe('CycleGameHome', () => {
     expect(headers).toEqual(['Today', 'Yest']); // two same-day rows collapse to one header
   });
 
-  it('renders the History table: winner, goal-marked metric columns, and when', () => {
+  it('renders the History table: winner, SPEED + RACE columns, and when', () => {
     const records = [{
       raceId: 'r1', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
       others: [{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }],
-      distanceLabel: '1.00 km', timeLabel: '5:13', goalColumn: 'distance', whenDay: 'Today', whenTime: '6:12p'
+      speedLabel: '32 km/h', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p'
     }];
     const { getByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={records} />);
     const row = getByTestId('record-r1');
-    // distance is the goal cell, time is the result cell
-    expect(row.querySelector('[data-col="distance"][data-goal="true"]')).toBeTruthy();
-    expect(row.querySelector('[data-col="time"][data-goal="false"]')).toBeTruthy();
+    expect(row.querySelector('[data-col="speed"]')).toHaveTextContent('32 km/h');
+    expect(row.querySelector('[data-col="race"]')).toHaveTextContent('1.00 km');
     // section renamed to History
     expect(getByTestId('cycle-game-records')).toHaveTextContent('History');
   });
 
-  it('renders an explained placeholder when the result cell is empty', () => {
+  it('renders an explained placeholder when the race produced no speed', () => {
     const records = [{
       raceId: 'r-noscore', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a', others: [],
-      distanceLabel: '3 km', timeLabel: '', goalColumn: 'distance', whenDay: 'Today', whenTime: ''
+      speedLabel: null, raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTitle } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} />
@@ -351,7 +350,7 @@ describe('CycleGameHome', () => {
     const onSelectRecord = vi.fn();
     const records = [{
       raceId: '20260603120000', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
-      others: [], distanceLabel: '3 km', timeLabel: '4:12', goalColumn: 'distance', whenDay: 'Today', whenTime: ''
+      others: [], speedLabel: '30 km/h', raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={records} onSelectRecord={onSelectRecord} />

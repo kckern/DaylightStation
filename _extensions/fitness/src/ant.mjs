@@ -28,6 +28,13 @@ export class ANTPlusManager {
     // Gate cadence on revolution-count advancement so a sensor that holds its
     // last CalculatedCadence after the crank stops reports 0 instead of a stuck value.
     this._cadenceGate = createCadenceGate({ revStaleMs: 2500 });
+
+    // Plausibility gate for heart rate. The ANT+ scanner pairs to ANY device
+    // broadcasting an HR page (wildcard scan), so dying straps and bike sensors
+    // that emit a junk HR packet (e.g. 11, 10, 214 bpm) leak phantom series into
+    // a session. Drop ANT+ HR readings outside a physiological window.
+    this._minHr = 50;
+    this._maxHr = 230;
   }
 
   async initialize() {
@@ -170,7 +177,18 @@ export class ANTPlusManager {
         }
 
         // Extract key metrics for logging (avoid raw buffer spam)
-        const hr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        const rawHr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        // Reject physiologically implausible HR (phantom straps / bike sensors
+        // leaking a junk HR page). Strip it from `data` so downstream consumers
+        // (the app's DeviceManager) never see the ghost reading.
+        const hr = (rawHr !== null && rawHr >= this._minHr && rawHr <= this._maxHr)
+          ? rawHr
+          : null;
+        if (rawHr !== null && hr === null) {
+          if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
+          if ('heartRate' in data) data.heartRate = null;
+          console.log(`[${timestamp}] ${deviceId} HR rejected: ${rawHr} bpm outside ${this._minHr}-${this._maxHr}`);
+        }
         const rawCadence = data.CalculatedCadence ?? data.cadence ?? null;
         const revolutionCount = Number.isFinite(data.CumulativeCadenceRevolutionCount)
           ? data.CumulativeCadenceRevolutionCount

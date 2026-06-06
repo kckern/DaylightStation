@@ -18,7 +18,7 @@ function ordinal(n) {
 }
 
 export default function CycleSpeedometer({
-  rpm = 0, maxRpm = 120, cadenceBands = [], tickStep, labelStep,
+  rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, penalized = false,
   penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
@@ -52,8 +52,8 @@ export default function CycleSpeedometer({
   const px = typeof size === 'number' ? size : 220;
 
   return (
-    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''} ${className}`.trim()} style={{ width: px }}>
-      <div className="cycle-speedometer__gauge" style={{ width: px, height: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+      <div className="cycle-speedometer__gauge" style={{ width: px, height: px }}>
         {penalized && !finished && (
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
             <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
@@ -148,8 +148,14 @@ export default function CycleSpeedometer({
           )}
         </div>
 
+        {/* Cadence (rpm) is secondary now — the needle + lit band already show it,
+            so the digits sit small above the avatar. */}
         <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
           {Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span>
+        </div>
+        {/* Effective speed (rpm × wheel size × boost) is the hero readout below the avatar. */}
+        <div className="cycle-speedometer__speed" data-testid="cycle-speedometer-speed">
+          {Math.round(Number.isFinite(speedKmh) ? speedKmh : 0)}<span className="cycle-speedometer__speed-unit"> km/h</span>
         </div>
       </div>
 
@@ -163,6 +169,7 @@ export default function CycleSpeedometer({
 CycleSpeedometer.propTypes = {
   rpm: PropTypes.number,
   maxRpm: PropTypes.number,
+  speedKmh: PropTypes.number,
   cadenceBands: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, min: PropTypes.number, color: PropTypes.string })),
   tickStep: PropTypes.number,
   labelStep: PropTypes.number,
