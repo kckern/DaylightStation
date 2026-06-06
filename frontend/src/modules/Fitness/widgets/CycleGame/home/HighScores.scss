@@ -19,10 +19,15 @@
     svg { width: 26px; height: 26px; }
   }
   &__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  &__label { @include t.cg-eyebrow; font-size: 0.58rem; color: t.$cg-muted; }
+  // Single-line eyebrow — never wrap "FASTEST <5 MIN" onto a second row.
+  &__label {
+    @include t.cg-eyebrow; font-size: 0.56rem; color: t.$cg-muted;
+    white-space: nowrap; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis;
+  }
+  // Hero figure on one line ("53.6 km/h"); shrink slightly so the unit stays inline.
   &__value {
     @include t.cg-numeral(t.$cg-cyan);
-    font-size: 1.4rem; line-height: 1.05;
+    font-size: 1.3rem; line-height: 1.05; white-space: nowrap;
   }
   // When the record was set — relative day (+ compact time).
   &__when { margin-top: 2px; font-family: t.$cg-mono; font-size: 0.62rem; color: t.$cg-faint; }

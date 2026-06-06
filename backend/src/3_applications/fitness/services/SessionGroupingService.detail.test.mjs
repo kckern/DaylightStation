@@ -44,4 +44,23 @@ describe('SessionGroupingService.getGroupDetail', () => {
     const svc = new SessionGroupingService({ activityRegistry: registry, sessionService });
     expect(await svc.getGroupDetail('group:20991231000000', 'household')).toBeNull();
   });
+
+  it('keeps cumulative series continuous across seams (offsets later segments by the running total)', async () => {
+    // user_3:coins is cumulative and restarts each session; heart_rate is instantaneous
+    const svcSessions = {
+      resolveHouseholdId: () => 'household',
+      listSessionsByDate: async () => [ { ...s1 }, { ...s2 } ],
+      getSession: async (id) => ({
+        timeline: id === s1.sessionId
+          ? { series: { 'user_3:coins': [10, 20, 30], 'user_3:heart_rate': [100, 100, 100] }, events: [], tick_count: 3, interval_seconds: 5 }
+          : { series: { 'user_3:coins': [5, 15], 'user_3:heart_rate': [120, 120] }, events: [], tick_count: 2, interval_seconds: 5 },
+      }),
+    };
+    const svc = new SessionGroupingService({ activityRegistry: registry, sessionService: svcSessions });
+    const detail = await svc.getGroupDetail('group:20260605162200', 'household');
+    // cumulative: second segment offset by 30 (running total at the seam) -> 5+30, 15+30
+    expect(detail.timeline.series['user_3:coins']).toEqual([10, 20, 30, 35, 45]);
+    // instantaneous untouched
+    expect(detail.timeline.series['user_3:heart_rate']).toEqual([100, 100, 100, 120, 120]);
+  });
 });
