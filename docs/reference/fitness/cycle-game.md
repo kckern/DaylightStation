@@ -229,7 +229,8 @@ restart to take effect.
 | `start_countdown_s` | 3 | Stoplight countdown length |
 | `cadence_zones` / `zones` | [] | HR zones; each `{ id, distance_multiplier, color }` |
 | `hrless_multiplier` | 1 | Distance multiplier for a rider with no HR strap |
-| `race_idle_dnf_s` | 20 | Seconds of zero RPM before a rider is DNF'd |
+| `race_idle_dnf_s` | 20 | Seconds of zero RPM (after a rider has started) before they're DNF'd |
+| `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before a no-show DNF. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
 | `hot_start_penalty_s` | 0 | False-start penalty seconds (0 = disabled) |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
 | `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
@@ -303,8 +304,11 @@ penalized[], penaltyInfo{}, engineState }`.
   `startCountdownS`; reaching the green light begins racing (`_beginRacing` builds
   the engine).
 - **Idle → DNF:** per non-ghost rider, an idle timer increments while `rpm === 0`
-  and resets when pedalling; at `race_idle_dnf_s` the rider joins `dnf` and their
-  input is zeroed for the rest of the race.
+  and resets when pedalling; the rider joins `dnf` (and their input is zeroed for
+  the rest of the race) once the timer crosses its threshold. The threshold is
+  **two-phase**: before the rider's first `rpm > 0` reading it's `race_start_grace_s`
+  (a generous no-show window covering magnetless-sensor lock-on lag); after they've
+  registered any movement it drops to the normal `race_idle_dnf_s` (gave-up window).
 - **False start (pre-green only):** riders may **legally start pedalling on GREEN** —
   the engine is live at the green light. A false start is **only** a rider who
   pedalled **before** green. The container tracks pre-green pedallers during the
