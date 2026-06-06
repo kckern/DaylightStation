@@ -31,12 +31,12 @@ export function ovalPoint(progress, rx, ry) {
 export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
   // Compact two-row lap strip under the oval (one column per rider): the previous
   // (last completed) lap as a fixed split, and the current lap counting up live.
-  // Only shown when laps are enabled and a lap has been completed by someone.
+  // Shown whenever laps are enabled — before the first crossing "Last" reads "—"
+  // and "Now" counts up from the race start.
   const lapsOn = Number.isFinite(lapLengthM) && lapLengthM > 0;
   const splitsOf = (id) => riders[id]?.lapSplits || [];
   const prevLap = (id) => { const s = splitsOf(id); return s.length ? s[s.length - 1] - (s[s.length - 2] || 0) : null; };
   const curLap = (id) => { const s = splitsOf(id); return Math.max(0, elapsedS - (s[s.length - 1] || 0)); };
-  const anyLapDone = lapsOn && riderIds.some((id) => splitsOf(id).length > 0);
 
   return (
     <div className="cg-oval-track" data-testid="oval-track">
@@ -86,7 +86,7 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
       {lapLabel ? (
         <div className="cg-oval-track__lap-label" data-testid="oval-lap-label">{lapLabel}</div>
       ) : null}
-      {anyLapDone ? (
+      {lapsOn ? (
         <table className="cg-oval-track__laps" data-testid="oval-lap-strip">
           <thead>
             <tr>

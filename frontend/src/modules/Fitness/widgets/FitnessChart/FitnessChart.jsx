@@ -15,6 +15,7 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
+import { computeRaceBands, computeSeamLines } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
@@ -565,7 +566,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 // NOTE: Avatar/badge positioning is now handled by LayoutManager
 // See: layout/LayoutManager.js for collision resolution, clustering, and connector generation
 
-const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks, width, height, focusedUserId }) => (
+const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks, width, height, focusedUserId, overlay = null }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -573,6 +574,16 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 		role="presentation"
 		aria-hidden="true"
 	>
+		{overlay && (
+			<g className="race-chart__race-bands" pointerEvents="none">
+				{overlay.bands.map((b, i) => (
+					<g key={`rb-${b.raceId || i}`}>
+						<rect x={b.x} y={overlay.top} width={b.width} height={Math.max(0, overlay.bottom - overlay.top)} fill="#3ba776" opacity={0.10} />
+						<rect x={b.x} y={overlay.top} width={b.width} height={2} fill="#3ba776" opacity={0.5} />
+					</g>
+				))}
+			</g>
+		)}
 		<g className="race-chart__grid">
 			{yTicks.map((tick) => (
 				<line key={tick.value} x1={0} x2={width} y1={tick.y} y2={tick.y} />
@@ -640,6 +651,14 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				);
 			})}
 		</g>
+		{overlay && (
+			<g className="race-chart__seams" pointerEvents="none">
+				{overlay.seams.map((s, i) => (
+					<line key={`sm-${i}`} x1={s.x} x2={s.x} y1={overlay.top} y2={overlay.bottom}
+						stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
+				))}
+			</g>
+		)}
 		<g className="race-chart__absent-badges">
 			{badges.map((badge) => {
 				const bx = badge.x + (badge.offsetX || 0);
@@ -1186,6 +1205,26 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		return vals.length ? Math.max(...vals) : null;
 	}, [avatars]);
 
+	// Race-band + seam overlay for merged "group" session detail. Shares the chart's exact
+	// x-scale (effectiveTicks + innerWidth) so bands/seams crosscut this chart and the HR-lane
+	// chart below in alignment. Detail-only: live mode has no sessionData.seams/activities.
+	const raceOverlay = useMemo(() => {
+		if (!isHistorical) return null;
+		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
+		const seams = src?.seams;
+		const activities = src?.activities;
+		if (!(seams?.length) && !(activities?.length)) return null;
+		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
+		const intervalMs = Number(src?.timeline?.interval_seconds) > 0 ? Number(src.timeline.interval_seconds) * 1000 : 5000;
+		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left };
+		return {
+			bands: computeRaceBands(activities, opts),
+			seams: computeSeamLines(seams, opts),
+			top: CHART_MARGIN.top,
+			bottom: chartHeight - CHART_MARGIN.bottom,
+		};
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight]);
+
 	const hasData = allEntries.length > 0 && paths.length > 0;
 
 	useEffect(() => {
@@ -1295,6 +1334,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 						width={chartWidth}
 						height={chartHeight}
 						focusedUserId={focusedUserId}
+						overlay={raceOverlay}
 					/>
 				</div>
 			)}
