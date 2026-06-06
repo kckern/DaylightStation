@@ -23,10 +23,12 @@ const TICK_MS = 1000;      // matches RACE_TICK_MS — the 1 Hz data cadence
 const K_TAU_MS = 320;      // zoom-ease time constant
 const VLINES = 9;          // fixed vertical gridlines (road edges + interior)
 
-// Leader-anchored zoom anchors (PovGrid-only override): last place rests low on screen
-// (≈ bottom 20%) so the field fills the frame instead of crowding the top. minGapM is
-// lowered so an early bunched field still spreads down rather than piling at the leader.
-const ZOOM_CFG = { maxLines: GRID_SLOTS, homePct: 0.06, lowPct: 0.02, highPct: 0.18, minGapM: 4 };
+// Leader-anchored zoom anchors (PovGrid-only override): last place rests low (≈ bottom
+// ~25%) so a spread field fills the frame. minGapM is the MAX-ZOOM cap: below this gap
+// the view stops zooming in, so close / about-to-overtake riders cluster near the leader
+// (proximity is highlighted) instead of being stretched across the screen. The wide
+// hysteresis band makes rezooms conservative — the view re-fits far less often.
+const ZOOM_CFG = { maxLines: GRID_SLOTS, homePct: 0.08, lowPct: 0.02, highPct: 0.30, minGapM: 20 };
 
 // Static near-edge x positions for the longitudinal rails (camera reprojects per frame).
 const RAILS_X = computeGridRails(BASE_CAMERA, VLINES).map((r) => r.nearX);
@@ -125,6 +127,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   useEffect(() => {
     let raf;
     let lastT = performance.now();
+    let lastCamLog = 0;
     const draw = () => {
       const nowT = performance.now();
       const dt = Math.min(64, nowT - lastT); lastT = nowT;
@@ -138,12 +141,18 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       camDynRef.current = stepCameraDynamics(camDynRef.current, { leaderLaneX: t.leaderLaneX, accel: t.accel }, dt);
       const camera = cameraFrom(camDynRef.current);
 
-      // Camera audit: periodic snapshot of all camera motion — zoom (k / fovMul /
-      // depthRatio), pan (vanishX lateral lead), dolly (leaderDist). Rate-limited.
-      logRef.current.sampled('cycle_game.pov.camera', {
-        k: kFrame, vanishX: camera.vanishX, fovMul: camDynRef.current.fovMul,
-        depthRatio: camera.depthRatio, leaderDistM: Math.round(t.leaderCur), leaderLaneX: t.leaderLaneX
-      }, { maxPerMinute: 60, aggregate: false });
+      // Camera audit: a ~1 Hz snapshot of the LIVE camera motion — zoom (k / fovMul /
+      // depthRatio), pan (vanishX lateral lead), dolly (leaderDist). Manually throttled
+      // (NOT logger.sampled, which burns its budget on the neutral idle frames) and
+      // skipped while idle (kFrame 0) so the trace reflects the actual race.
+      if (kFrame > 0 && nowT - lastCamLog >= 1000) {
+        lastCamLog = nowT;
+        logRef.current.debug('cycle_game.pov.camera', {
+          k: Number(kFrame.toFixed(5)), vanishX: Number(camera.vanishX.toFixed(2)),
+          fovMul: Number(camDynRef.current.fovMul.toFixed(3)), depthRatio: Number(camera.depthRatio.toFixed(3)),
+          leaderDistM: Math.round(t.leaderCur), leaderLaneX: Math.round(t.leaderLaneX)
+        });
+      }
 
       const frac = tickFraction(nowT, t.tickAt, TICK_MS);
       const { lineSlots, markers } = computePovFrame({
