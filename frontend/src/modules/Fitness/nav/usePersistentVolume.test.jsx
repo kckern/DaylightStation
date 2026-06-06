@@ -59,4 +59,16 @@ describe('usePersistentVolume — duck multiplier', () => {
     act(() => result.current.setDuck(5));
     expect(applied.at(-1).level).toBeLessThanOrEqual(0.8);
   });
+
+  it('clamps a negative multiplier to 0 (silences, never inverts)', () => {
+    const { result } = render();
+    act(() => result.current.setDuck(-1));
+    expect(applied.at(-1).level).toBeCloseTo(0, 5);
+  });
+
+  it('treats a non-finite multiplier as no duck (fail-open)', () => {
+    const { result } = render();
+    act(() => result.current.setDuck(NaN));
+    expect(applied.at(-1).level).toBeCloseTo(0.8, 5);
+  });
 });

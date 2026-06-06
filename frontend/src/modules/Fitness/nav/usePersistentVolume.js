@@ -104,11 +104,12 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
   const setDuck = useCallback((multiplier) => {
     duckRef.current = clamp01(multiplier);
     // Re-apply the current level immediately so the duck takes effect (or lifts)
-    // without waiting for the next volume event.
+    // without waiting for the next volume event. A duck only ever touches level —
+    // we deliberately omit `muted` so it can't re-assert a stale mute state.
     if (playerRef?.current) {
-      applyDucked({ level: volumeRef.current, muted });
+      applyDucked({ level: volumeRef.current });
     }
-  }, [applyDucked, playerRef, muted]);
+  }, [applyDucked, playerRef]);
 
   return useMemo(() => ({
     volume,
