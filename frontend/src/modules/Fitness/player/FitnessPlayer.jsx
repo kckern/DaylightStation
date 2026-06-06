@@ -21,6 +21,7 @@ import { useMediaAmplifier } from '@/modules/Fitness/components/useMediaAmplifie
 import { FitnessPlayerFrame } from './frames';
 import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
 import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js';
+import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
@@ -625,6 +626,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     videoVolume,
     audioDuck: effectiveGovernanceState?.audioDuck
   });
+
+  // Unlock the shared cue-audio element on the first user gesture (WebView
+  // autoplay gate). installCueAudioUnlock self-removes once unlocked and is a
+  // no-op thereafter. Returning it as cleanup detaches listeners on unmount.
+  useEffect(() => installCueAudioUnlock(), []);
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
     const { level: detailLevel, ...restDetails } = details || {};
