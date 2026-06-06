@@ -999,6 +999,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.warn('cycle_game.race_saved', { raceId: meta?.raceId || null, ok: false, error: 'no_state' });
       return;
     }
+    // Never persist a dead race — if nobody covered any distance there's nothing
+    // worth keeping, and it just clutters the history with "0 m" rows.
+    const totalDistanceM = Object.values(engineState.riders || {})
+      .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
+    if (totalDistanceM <= 0) {
+      log.info('cycle_game.race_saved', { raceId: meta.raceId, ok: false, skipped: 'zero_distance' });
+      return;
+    }
     const record = buildRaceRecord(engineState, meta);
     (async () => {
       try {

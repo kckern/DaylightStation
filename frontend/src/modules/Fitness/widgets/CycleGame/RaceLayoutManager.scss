@@ -14,10 +14,10 @@
   // No speedo band (recap/playback): the chart+splits row takes the whole column
   // instead of leaving a reserved, empty speedo track behind.
   .race-layout__main--no-speedo { grid-template-rows: 1fr; }
-  .race-layout__main-top { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
+  .race-layout__main-top { display: grid; grid-template-columns: 1fr; gap: 8px; min-height: 0; }
   .race-layout__sidebar { display: grid; min-height: 0; grid-template-rows: 7fr 3fr; gap: 8px; }
 
   &--wide { display: grid; height: 100%; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
   &--wide.race-layout--no-speedo { grid-template-rows: 1fr; }
-  .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }
 }

@@ -34,12 +34,12 @@ const base4RiderProps = {
 };
 
 describe('CycleRaceScreen', () => {
-  it('renders sidebar mode for ≤3 riders with chart, splits, pov', () => {
+  it('renders sidebar mode for ≤3 riders with chart, pov, oval', () => {
     const { getByTestId } = render(<CycleRaceScreen {...props} />);
     expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
     expect(getByTestId('distance-chart')).toBeInTheDocument();
-    expect(getByTestId('race-splits')).toBeInTheDocument();
     expect(getByTestId('race-pov')).toBeInTheDocument();
+    expect(getByTestId('oval-track')).toBeInTheDocument();
   });
   it('renders wide mode (no oval) for 4+ riders', () => {
     const { getByTestId, queryByTestId } = render(<CycleRaceScreen {...base4RiderProps} />);
