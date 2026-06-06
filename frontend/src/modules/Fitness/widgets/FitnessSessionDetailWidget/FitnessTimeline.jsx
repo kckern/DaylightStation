@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
+import { computeRaceBands, computeSeamLines } from './timelineOverlay.js';
+import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import './FitnessTimeline.scss';
 
 /**
@@ -238,6 +240,15 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 
+  const overlay = useMemo(() => {
+    const opts = { intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left };
+    return {
+      bands: computeRaceBands(sessionData?.activities, opts),
+      seams: computeSeamLines(sessionData?.seams, opts),
+      accent: getActivityDisplay(primaryActivity(sessionData?.activities)?.type)?.accent || '#3ba776',
+    };
+  }, [sessionData, intervalMs, effectiveTicks, plotWidth]);
+
   const lanes = useMemo(() => {
     if (!roster || roster.length === 0 || plotWidth <= 0 || plotHeight <= 0) return [];
 
@@ -286,6 +297,13 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             );
           })}
         </defs>
+        {/* race bands (under lanes) */}
+        {overlay.bands.map((b, i) => (
+          <g key={`band-${b.raceId || i}`} className="timeline-band">
+            <rect x={b.x} y={0} width={b.width} height={plotHeight} fill={overlay.accent} opacity={0.1} />
+            <rect x={b.x} y={0} width={b.width} height={2} fill={overlay.accent} opacity={0.6} />
+          </g>
+        ))}
         {lanes.map((lane) => {
           const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
           const r = size / 2;
@@ -327,6 +345,12 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             </g>
           );
         })}
+        {/* seams (on top) */}
+        {overlay.seams.map((s, i) => (
+          <g key={`seam-${i}`} className="timeline-seam">
+            <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
+          </g>
+        ))}
       </svg>
     </div>
   );
