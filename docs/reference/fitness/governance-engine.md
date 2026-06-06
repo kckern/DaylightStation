@@ -504,6 +504,9 @@ Multiple cues may be listed. Entries with an unknown trigger, a missing sound, o
 a `challenge_remaining` entry with no numeric threshold are ignored. Cycle
 challenges are not covered by these cues — they have their own audible feedback.
 
+> For the implementation mechanism (descriptor pipeline, dedupe token, duck/restore
+> lifecycle, and edge cases), see [audio-duck-cues.md](./audio-duck-cues.md).
+
 ### Zone Configuration
 
 ```yaml

@@ -42,16 +42,51 @@ describe('CycleRaceController — racing + DNF', () => {
     c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 60, zoneId: 'hot' } });
     expect(c.getState().engineState.riders.a.cumulativeDistanceM).toBe(21);
   });
-  it('DNFs an idle rider and finishes when all are finished-or-DNF', () => {
-    const c = toRacing(distConfig({ startCountdownS: 0 }));
+  it('DNFs a no-show rider and finishes when all are finished-or-DNF', () => {
+    // b never pedals → no-show; raceStartGraceS governs its DNF (10s here).
+    const c = toRacing(distConfig({ startCountdownS: 0, raceStartGraceS: 10 }));
     // a reaches goal (21) tick1; b idle
-    c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 0 } }); // b idle 5s
+    c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 0 } }); // b no-show 5s
     expect(c.getState().phase).toBe('racing');
-    c.tick({ a: { rpm: 0 }, b: { rpm: 0 } }); // b idle 10s → DNF
+    c.tick({ a: { rpm: 0 }, b: { rpm: 0 } }); // b no-show 10s → DNF
     const s = c.getState();
     expect(s.dnf).toContain('b');
     expect(s.phase).toBe('finished');
   });
+  // Magnetless cadence sensors (e.g. the COOSPO BK467 on the tricycle) can take
+  // up to ~20s to lock onto rotation from a dead stop, reporting rpm 0 the whole
+  // time even while the rider is pedalling. The start-grace window prevents that
+  // lock-on lag from being scored as a no-show DNF.
+  describe('start-grace (sensor lock-on)', () => {
+    it('does NOT DNF a rider whose first reading is delayed past raceIdleDnfS but within the grace', () => {
+      // raceIdleDnfS 10 (2 ticks) would DNF under the old logic; grace 30 (6 ticks) protects.
+      const c = toRacing(distConfig({ startCountdownS: 0, goalM: 100000, raceIdleDnfS: 10, raceStartGraceS: 30 }));
+      // a: sensor not locked → rpm 0 for 4 ticks (20s). b pedals normally so it never no-shows.
+      for (let i = 0; i < 4; i += 1) c.tick({ a: { rpm: 0 }, b: { rpm: 60, zoneId: 'hot' } });
+      expect(c.getState().dnf).not.toContain('a'); // 20s idle but never started → grace not yet exceeded
+      // a's sensor finally locks on and it pedals — must stay in the race.
+      c.tick({ a: { rpm: 80, zoneId: 'hot' }, b: { rpm: 60, zoneId: 'hot' } });
+      expect(c.getState().dnf).not.toContain('a');
+    });
+
+    it('DNFs a true no-show only after raceStartGraceS, not raceIdleDnfS', () => {
+      const c = toRacing(distConfig({ startCountdownS: 0, goalM: 100000, raceIdleDnfS: 10, raceStartGraceS: 30 }));
+      for (let i = 0; i < 5; i += 1) c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 0 } }); // b 25s
+      expect(c.getState().dnf).not.toContain('b'); // 25s < 30s grace — still alive
+      c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 0 } }); // b 30s → no-show DNF
+      expect(c.getState().dnf).toContain('b');
+    });
+
+    it('applies the normal raceIdleDnfS once a rider has registered movement', () => {
+      const c = toRacing(distConfig({ startCountdownS: 0, goalM: 100000, raceIdleDnfS: 10, raceStartGraceS: 30 }));
+      c.tick({ a: { rpm: 80, zoneId: 'hot' }, b: { rpm: 60, zoneId: 'hot' } }); // a started
+      c.tick({ a: { rpm: 0 }, b: { rpm: 60, zoneId: 'hot' } }); // a idle 5s
+      expect(c.getState().dnf).not.toContain('a');
+      c.tick({ a: { rpm: 0 }, b: { rpm: 60, zoneId: 'hot' } }); // a idle 10s → DNF (started → idle clock)
+      expect(c.getState().dnf).toContain('a');
+    });
+  });
+
   it('ignores ticks once finished and exposes results via showResults()', () => {
     const c = toRacing(distConfig({ startCountdownS: 0 }));
     c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 60, zoneId: 'hot' } }); // both >=21 tick1? a=21,b=12
@@ -159,15 +194,15 @@ describe('CycleRaceController — ghost rider', () => {
   it('never DNFs a ghost (it replays a recording) and the race still finishes', () => {
     const c = new CycleRaceController({
       winCondition: 'distance', goalM: 1000, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
-      startCountdownS: 0, raceIdleDnfS: 2,
+      startCountdownS: 0, raceIdleDnfS: 2, raceStartGraceS: 2,
       riders: [
         { userId: 'a', wheelCircumferenceM: 2.1 },
         { userId: 'g', ghostSeries: [2000], ghostIntervalS: 1 }
       ]
     });
     c.startCountdown();
-    c.tick({ a: { rpm: 0 } }); // ghost → 2000 (finished); a idle 1s
-    c.tick({ a: { rpm: 0 } }); // a idle 2s → DNF
+    c.tick({ a: { rpm: 0 } }); // ghost → 2000 (finished); a no-show 1s
+    c.tick({ a: { rpm: 0 } }); // a no-show 2s → DNF
     const s = c.getState();
     expect(s.dnf).toContain('a');
     expect(s.dnf).not.toContain('g');

@@ -9,85 +9,81 @@ function logger() {
 }
 
 /**
- * Plays a one-shot SFX and ducks the video's audio (without pausing) when the
- * GovernanceEngine emits an `audioDuck` descriptor. The duck lasts only while
- * the SFX plays — volume is restored on the SFX `ended` event (or on unmount).
+ * Start a duck+SFX session: lower the video via the volume system's setDuck()
+ * (the single authority for the ducked level), play the cue's SFX on its own
+ * independent audio element, and lift the duck when the SFX ends.
+ */
+function startSession({ videoVolume, audioDuck }) {
+  if (!audioDuck || typeof videoVolume?.setDuck !== 'function') return null;
+
+  videoVolume.setDuck(audioDuck.duckTo);
+  logger().info('fitness.audio_duck.start', {
+    cueId: audioDuck.cueId, token: audioDuck.token, duckTo: audioDuck.duckTo,
+  });
+
+  let lifted = false;
+  const lift = () => {
+    if (lifted) return;
+    lifted = true;
+    videoVolume.setDuck(1);
+    logger().info('fitness.audio_duck.end', { cueId: audioDuck.cueId, token: audioDuck.token });
+  };
+
+  const onEnded = () => lift();
+  let audio = null;
+  try {
+    audio = new Audio(DaylightMediaPath(`/media/${audioDuck.sound}`));
+    audio.addEventListener('ended', onEnded);
+    const p = audio.play();
+    // Autoplay rejection is async; lift so the duck can't get stuck if the SFX
+    // never produces an 'ended' event.
+    if (p && typeof p.catch === 'function') p.catch(() => lift());
+  } catch {
+    lift();
+  }
+  return { token: audioDuck.token, audio, onEnded, lift };
+}
+
+/** Stop a session: detach + release the SFX, and lift the duck. Idempotent. */
+function stopSession(session) {
+  if (!session) return;
+  const { audio, onEnded, lift } = session;
+  if (audio) {
+    audio.removeEventListener('ended', onEnded);
+    try { audio.pause(); } catch { /* already released */ }
+    audio.src = '';
+  }
+  lift?.();
+}
+
+/**
+ * Plays a one-shot SFX and ducks the video (via the volume system) when the
+ * GovernanceEngine emits an `audioDuck` descriptor, lifting the duck when the SFX
+ * ends. Reacts to `audioDuck.token` ONLY — the engine rebuilds the descriptor
+ * object every tick, so keying on the object would tear the session down each
+ * tick (cutting the SFX and bouncing the volume).
  *
- * Dedupes by `audioDuck.token`: each distinct token fires exactly once, so a
- * descriptor that persists across the whole threshold window only ducks once.
- *
- * @param {object}  params
- * @param {HTMLMediaElement|{volume:number}|null} params.mediaElement - the video element to duck
- * @param {{ volumeRef: { current: number } }|null} params.videoVolume - live persistent volume
+ * @param {object} params
+ * @param {{ setDuck:(m:number)=>void, volumeRef?:{current:number} }|null} params.videoVolume
  * @param {{ cueId:string, sound:string, duckTo:number, token:string }|null} params.audioDuck
  */
-export function useGovernanceAudioDuck({ mediaElement, videoVolume, audioDuck }) {
-  const firedTokenRef = useRef(null);
-  const duckedMediaRef = useRef(null);
+export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
+  const latestRef = useRef({ videoVolume, audioDuck });
+  useEffect(() => { latestRef.current = { videoVolume, audioDuck }; });
+
+  const sessionRef = useRef(null);
+  const token = audioDuck?.token || null;
 
   useEffect(() => {
-    const token = audioDuck?.token || null;
-    if (!token || token === firedTokenRef.current) return;
-    if (!mediaElement || typeof mediaElement.volume !== 'number') return;
+    if (!token) return;
+    stopSession(sessionRef.current);
+    sessionRef.current = startSession(latestRef.current);
+  }, [token]);
 
-    firedTokenRef.current = token;
-
-    const baseLevel = Number.isFinite(videoVolume?.volumeRef?.current)
-      ? videoVolume.volumeRef.current
-      : mediaElement.volume;
-    const duckLevel = Math.max(0, Math.min(1, baseLevel * audioDuck.duckTo));
-
-    mediaElement.volume = duckLevel;
-    duckedMediaRef.current = mediaElement;
-
-    logger().info('fitness.audio_duck.start', {
-      cueId: audioDuck.cueId,
-      token,
-      duckTo: audioDuck.duckTo,
-      level: duckLevel
-    });
-
-    const restore = () => {
-      const media = duckedMediaRef.current;
-      if (media && typeof media.volume === 'number') {
-        const live = Number.isFinite(videoVolume?.volumeRef?.current)
-          ? videoVolume.volumeRef.current
-          : media.volume;
-        media.volume = live;
-      }
-      duckedMediaRef.current = null;
-      logger().info('fitness.audio_duck.end', { cueId: audioDuck.cueId, token });
-    };
-
-    let audio = null;
-    try {
-      audio = new Audio(DaylightMediaPath(`/media/${audioDuck.sound}`));
-      audio.addEventListener('ended', restore);
-      const p = audio.play();
-      // Autoplay rejection is async — if it were swallowed, the SFX 'ended'
-      // event would never fire and the video would stay ducked forever.
-      // Restore on rejection so the duck can never get stuck.
-      if (p && typeof p.catch === 'function') p.catch(() => restore());
-    } catch {
-      // Synchronous Audio construction/play failure — restore immediately so we
-      // never leave the video ducked with no SFX to end it.
-      restore();
-      return undefined;
-    }
-
-    return () => {
-      if (audio) {
-        audio.removeEventListener('ended', restore);
-        // Stop and release the SFX so a new token doesn't leave the previous
-        // instance decoding in the background (orphaned stream).
-        audio.pause();
-        audio.src = '';
-      }
-      // duckedMediaRef doubles as the "already restored" sentinel — restore()
-      // nulls it, so this won't double-restore after a natural 'ended'.
-      if (duckedMediaRef.current) restore();
-    };
-  }, [audioDuck, mediaElement, videoVolume]);
+  useEffect(() => () => {
+    stopSession(sessionRef.current);
+    sessionRef.current = null;
+  }, []);
 }
 
 export default useGovernanceAudioDuck;

@@ -19,6 +19,7 @@ export function buildRaceConfigFromCourse(course = {}, opts = {}) {
     hrlessMultiplier: opts.hrlessMultiplier ?? 1,
     startCountdownS: opts.startCountdownS ?? 3,
     raceIdleDnfS: opts.raceIdleDnfS ?? 20,
+    raceStartGraceS: opts.raceStartGraceS ?? 30,
     hotStartPenaltyS: opts.hotStartPenaltyS ?? 0,
     lapLengthM: Number.isFinite(course.lap_length_m) ? course.lap_length_m : (opts.lapLengthM ?? 0),
     courseId: course.id ?? null,
