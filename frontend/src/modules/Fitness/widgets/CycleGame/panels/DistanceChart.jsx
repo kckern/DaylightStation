@@ -7,6 +7,7 @@ import { useFitGuard } from './useFitGuard.js';
 import { nextZoomLevel, gridValues } from '@/modules/Fitness/lib/cycleGame/chartZoom.js';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import { gapFrac } from '@/modules/Fitness/lib/cycleGame/chartScale.js';
 import './DistanceChart.scss';
 
 const X_BASE_S = 20;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
@@ -119,6 +120,9 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // Lin↔log crowding transform (kept): switch to log when adjacent leaders bunch
   // within the window, with hysteresis so it doesn't flap.
   const lastDists = riderIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
+  const leaderM = lastDists.length ? Math.max(...lastDists) : 0;
+  const trailM = lastDists.length ? Math.min(...lastDists) : 0;
+  const K_GAP = 4; // metres at which front-cluster expansion sets in
   const logRef = useRef(false);
   if (riderIds.length >= 2) {
     const sorted = [...lastDists].sort((a, b) => a - b);
@@ -130,18 +134,14 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     logRef.current = false;
   }
   const useLog = logRef.current;
-  // Soften the de-crowding curve: full log compression squashes the whole race into
-  // a flat low line that then rockets vertical at the finish (a hockey stick). Blend
-  // the log only partway toward linear so leaders near the goal still separate, but
-  // the climb stays readable instead of near-vertical.
-  const LOG_BLEND = 0.35;
+  // When leaders bunch (useLog), switch the vertical mapping to a leader-anchored
+  // gap log: the leader is pinned at the top and the first few metres behind it are
+  // magnified, so neck-and-neck riders separate on their own. When not crowded, the
+  // plain linear absolute-distance mapping is used.
   const yFor = (d) => {
-    const lin = Math.min(1, (d || 0) / D);
-    let frac = lin;
-    if (useLog) {
-      const logF = 1 - (Math.log1p(Math.max(0, D - (d || 0))) / Math.log1p(Math.max(1, D)));
-      frac = lin + (logF - lin) * LOG_BLEND;
-    }
+    const frac = useLog
+      ? gapFrac(d, leaderM, trailM, K_GAP)
+      : Math.min(1, (d || 0) / D);
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
 
