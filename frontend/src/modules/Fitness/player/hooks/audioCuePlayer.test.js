@@ -53,4 +53,25 @@ describe('audioCuePlayer', () => {
     installCueAudioUnlock(target);
     expect(target.addEventListener).not.toHaveBeenCalled();
   });
+
+  it('rolls back unlock and re-arms listeners when play() rejects, allowing a later gesture to retry', async () => {
+    // play() rejects → optimistic unlock must roll back, listeners must be re-armed
+    global.Audio = class extends FakeAudio { play() { this.playCalls += 1; return Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' })); } };
+    __resetCueAudioForTest();
+    const handlers = {};
+    const target = { addEventListener: (e, cb) => { handlers[e] = cb; }, removeEventListener: (e) => { delete handlers[e]; } };
+    installCueAudioUnlock(target);
+    handlers.pointerdown();
+    await Promise.resolve(); await Promise.resolve();
+    expect(isCueAudioUnlocked()).toBe(false);                 // rolled back
+    expect(Object.keys(handlers).length).toBeGreaterThan(0);  // re-armed
+
+    // Now a gesture where play() resolves should unlock. Swap in a resolving
+    // Audio and drop the cached (rejecting) element so a fresh one is created.
+    global.Audio = FakeAudio;
+    getCueAudioElement().play = () => Promise.resolve();
+    handlers.pointerdown();
+    await Promise.resolve();
+    expect(isCueAudioUnlocked()).toBe(true);
+  });
 });
