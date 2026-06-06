@@ -24,7 +24,14 @@ const normalizeZoneId = (value) => {
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 // Supported governance audio-cue triggers (see _normalizeAudioCues).
-const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set(['challenge_remaining']);
+// Edge triggers fire once on a transition; only `challenge_remaining` uses a
+// `threshold_seconds` window.
+const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
+  'challenge_start',      // a challenge appears
+  'challenge_remaining',  // challenge timer within threshold_seconds of expiring
+  'challenge_complete',   // challenge satisfied
+  'governance_warning'    // grace phase begins (screen blurs + health bar)
+]);
 
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
 // while in the green zone (>= hiRpm). At zero the video pauses until the rider
@@ -878,8 +885,12 @@ export class GovernanceEngine {
       const trigger = String(entry.trigger || '').trim();
       const sound = typeof entry.sound === 'string' ? entry.sound.trim() : '';
       const thresholdSeconds = Number(entry.threshold_seconds ?? entry.thresholdSeconds);
-      if (!SUPPORTED_AUDIO_CUE_TRIGGERS.has(trigger) || !sound || !Number.isFinite(thresholdSeconds)) {
-        const reason = !SUPPORTED_AUDIO_CUE_TRIGGERS.has(trigger)
+      // Only the within-window trigger needs a threshold; the edge triggers
+      // (start/complete/warning) fire on a transition and ignore it.
+      const requiresThreshold = trigger === 'challenge_remaining';
+      const supported = SUPPORTED_AUDIO_CUE_TRIGGERS.has(trigger);
+      if (!supported || !sound || (requiresThreshold && !Number.isFinite(thresholdSeconds))) {
+        const reason = !supported
           ? 'unknown_trigger'
           : !sound
             ? 'missing_sound'
@@ -899,7 +910,7 @@ export class GovernanceEngine {
       cues.push({
         id: String(entry.id || `audio_cue_${index}`),
         trigger,
-        thresholdSeconds: Math.max(0, thresholdSeconds),
+        thresholdSeconds: Number.isFinite(thresholdSeconds) ? Math.max(0, thresholdSeconds) : null,
         sound,
         duckTo
       });
@@ -1701,39 +1712,77 @@ export class GovernanceEngine {
 
   /**
    * Compute the active audio-duck descriptor (or null) for the current
-   * challenge snapshot. Stateless: returns the same stable `token` for the
-   * whole in-window period; the React consumer dedupes by token so the SFX
-   * fires once per challenge. Only `challenge_remaining` cues are evaluated,
-   * and only while the zone challenge is pending AND unsatisfied (a satisfied
-   * challenge won't lock, so there is nothing to hurry for).
+   * governance/challenge state. Stateless: returns a stable `token` for the
+   * duration of each cue's lifecycle stage, and the React consumer dedupes by
+   * token — so each cue fires exactly once per stage transition.
+   *
+   * Triggers, in precedence order (highest first):
+   *   - governance_warning : the grace phase (screen blur + health bar) begins,
+   *                          keyed to the warning episode. An impending lock
+   *                          outranks any challenge cue.
+   *   - challenge_complete : the (zone) challenge is satisfied / succeeded.
+   *   - challenge_remaining: the challenge timer is within threshold_seconds of
+   *                          expiring while still unsatisfied (the "hurry" cue).
+   *   - challenge_start    : the challenge has appeared and is still pending,
+   *                          before the remaining-threshold window.
+   *
+   * Cycle challenges are excluded — they have their own cueAudio system.
+   * Challenge failure is intentionally not a cue: the lock screen (which pauses
+   * the video) already covers it.
    */
   _computeAudioDuck(challengeSnapshot) {
-    if (!challengeSnapshot || !Array.isArray(this._audioCues) || this._audioCues.length === 0) {
+    if (!Array.isArray(this._audioCues) || this._audioCues.length === 0) {
       return null;
     }
-    // Scope: zone challenges only. Cycle challenges have their own audio-cue
-    // system (cycleAudioCue) and a different snapshot shape.
-    if (challengeSnapshot.type === 'cycle') return null;
-    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
-    if (status !== 'pending' || !Number.isFinite(remainingSeconds)) return null;
 
+    const emit = (cue, token, extra = {}) => {
+      getLogger().sampled('governance.audio_cue.fired', {
+        cueId: cue.id,
+        trigger: cue.trigger,
+        token,
+        ...extra
+      }, { maxPerMinute: 12, aggregate: true });
+      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
+    };
+
+    // Governance grace phase (impending lock) takes precedence over challenge cues.
+    if (this.phase === 'warning') {
+      const cue = this._audioCues.find((c) => c.trigger === 'governance_warning');
+      if (cue) {
+        const episode = Number.isFinite(this._warningStartTime) ? this._warningStartTime : 0;
+        return emit(cue, `${cue.id}:${episode}`);
+      }
+    }
+
+    // Cycle challenges have their own audio-cue system and a different shape.
+    if (!challengeSnapshot || challengeSnapshot.type === 'cycle') return null;
+
+    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
+    const chId = challengeId || 'challenge';
     const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
       ? actualCount >= requiredCount
       : (Array.isArray(missingUsers) ? missingUsers.length === 0 : false);
-    if (satisfied) return null;
 
-    for (const cue of this._audioCues) {
-      if (cue.trigger !== 'challenge_remaining') continue;
-      if (remainingSeconds > cue.thresholdSeconds) continue;
-      const token = `${challengeId || 'challenge'}:${cue.id}`;
-      getLogger().sampled('governance.audio_cue.fired', {
-        cueId: cue.id,
-        challengeId: challengeId || null,
-        remainingSeconds,
-        threshold: cue.thresholdSeconds
-      }, { maxPerMinute: 6, aggregate: true });
-      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
+    // Complete: the challenge has been satisfied or reached success.
+    if (status === 'success' || satisfied) {
+      const cue = this._audioCues.find((c) => c.trigger === 'challenge_complete');
+      return cue ? emit(cue, `${chId}:${cue.id}`) : null;
     }
+
+    if (status !== 'pending' || !Number.isFinite(remainingSeconds)) return null;
+
+    // Hurry: the challenge timer is within a configured threshold of expiring.
+    const hurry = this._audioCues.find(
+      (c) => c.trigger === 'challenge_remaining'
+        && Number.isFinite(c.thresholdSeconds)
+        && remainingSeconds <= c.thresholdSeconds
+    );
+    if (hurry) return emit(hurry, `${chId}:${hurry.id}`, { remainingSeconds, threshold: hurry.thresholdSeconds });
+
+    // Start: the challenge is pending and not yet in the hurry window.
+    const start = this._audioCues.find((c) => c.trigger === 'challenge_start');
+    if (start) return emit(start, `${chId}:${start.id}`);
+
     return null;
   }
 

@@ -144,3 +144,86 @@ describe('GovernanceEngine — _computeAudioDuck', () => {
     expect(state.audioDuck).toMatchObject({ cueId: 'challenge_hurry', token: 'ch1:challenge_hurry' });
   });
 });
+
+describe('GovernanceEngine — audio cues: start / complete / warning triggers', () => {
+  const cues = [
+    { id: 'c_start', trigger: 'challenge_start', sound: 'apps/fitness/ux/challenge-start.mp3', duckTo: 0.2 },
+    { id: 'c_hurry', trigger: 'challenge_remaining', thresholdSeconds: 12, sound: 'apps/fitness/ux/challenge-hurry.mp3', duckTo: 0.1 },
+    { id: 'c_done', trigger: 'challenge_complete', sound: 'apps/fitness/ux/challenge-complete.mp3', duckTo: 0.2 },
+    { id: 'c_warn', trigger: 'governance_warning', sound: 'apps/fitness/ux/challenge-warning.mp3', duckTo: 0.15 }
+  ];
+  const makeEngine = (phase = 'unlocked') => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine._audioCues = cues;
+    engine.phase = phase;
+    return engine;
+  };
+  const pending = (remaining) => ({ id: 'ch1', status: 'pending', remainingSeconds: remaining, requiredCount: 2, actualCount: 1 });
+
+  it('parses edge triggers (start/complete/warning) without a threshold', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'c_start', trigger: 'challenge_start', sound: 'a.mp3' },
+      { id: 'c_done', trigger: 'challenge_complete', sound: 'b.mp3' },
+      { id: 'c_warn', trigger: 'governance_warning', sound: 'c.mp3' }
+    ]));
+    expect(engine._audioCues).toHaveLength(3);
+    expect(engine._audioCues.map((c) => c.trigger)).toEqual(['challenge_start', 'challenge_complete', 'governance_warning']);
+    expect(engine._audioCues[0].thresholdSeconds).toBeNull();
+  });
+
+  it('still drops a challenge_remaining cue that is missing its threshold', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([{ id: 'c_hurry', trigger: 'challenge_remaining', sound: 'a.mp3' }]));
+    expect(engine._audioCues).toHaveLength(0);
+  });
+
+  it('fires challenge_start while pending, before the hurry window', () => {
+    const engine = makeEngine();
+    expect(engine._computeAudioDuck(pending(40))).toMatchObject({ cueId: 'c_start', token: 'ch1:c_start' });
+  });
+
+  it('fires challenge_remaining (hurry) inside the threshold window', () => {
+    const engine = makeEngine();
+    expect(engine._computeAudioDuck(pending(8))).toMatchObject({ cueId: 'c_hurry', token: 'ch1:c_hurry' });
+  });
+
+  it('fires challenge_complete when the challenge is satisfied by count', () => {
+    const engine = makeEngine();
+    const duck = engine._computeAudioDuck({ id: 'ch1', status: 'pending', remainingSeconds: 5, requiredCount: 2, actualCount: 2 });
+    expect(duck).toMatchObject({ cueId: 'c_done', token: 'ch1:c_done' });
+  });
+
+  it('fires challenge_complete on success status', () => {
+    const engine = makeEngine();
+    const duck = engine._computeAudioDuck({ id: 'ch1', status: 'success', remainingSeconds: 0, requiredCount: 2, actualCount: 2 });
+    expect(duck).toMatchObject({ cueId: 'c_done', token: 'ch1:c_done' });
+  });
+
+  it('fires governance_warning when phase is warning, keyed to the episode', () => {
+    const engine = makeEngine('warning');
+    engine._warningStartTime = 5000;
+    expect(engine._computeAudioDuck(pending(8))).toMatchObject({ cueId: 'c_warn', token: 'c_warn:5000' });
+  });
+
+  it('warning takes precedence over an active challenge hurry cue', () => {
+    const engine = makeEngine('warning');
+    engine._warningStartTime = 5000;
+    expect(engine._computeAudioDuck(pending(8)).cueId).toBe('c_warn');
+  });
+
+  it('warning token changes between episodes so it can refire', () => {
+    const engine = makeEngine('warning');
+    engine._warningStartTime = 5000;
+    const first = engine._computeAudioDuck(null);
+    engine._warningStartTime = 9000;
+    const second = engine._computeAudioDuck(null);
+    expect(first.token).not.toBe(second.token);
+  });
+
+  it('does not fire challenge_start when only a hurry cue is configured and we are before the window', () => {
+    const engine = makeEngine();
+    engine._audioCues = [cues[1]]; // hurry only
+    expect(engine._computeAudioDuck(pending(40))).toBeNull();
+  });
+});
