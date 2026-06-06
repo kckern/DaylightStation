@@ -3,6 +3,13 @@ import { useVolumeStore } from './VolumeProvider.jsx';
 
 const defaultState = { level: 0.6, muted: false, source: 'global' };
 
+const clamp01 = (v) => {
+  if (!Number.isFinite(v)) return 1;
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+};
+
 const normalizePart = (value, fallback) => {
   if (value === undefined || value === null) return fallback;
   const normalized = String(value).trim();
@@ -30,6 +37,18 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
   // Use ref to hold current volume synchronously for immediate access
   const volumeRef = useRef(getVolume(ids).level);
 
+  // Duck multiplier owned by the volume system: every applied level is multiplied
+  // by this (≤ 1), so a duck can only lower the video and no other volume event
+  // can clobber it. Default 1 = no duck.
+  const duckRef = useRef(1);
+
+  const applyDucked = useCallback((resolved) => {
+    if (!playerRef?.current) return resolved;
+    const level = clamp01((resolved.level ?? 0) * duckRef.current);
+    applyToPlayer(playerRef, { ...resolved, level });
+    return resolved;
+  }, [applyToPlayer, playerRef]);
+
   // Use useLayoutEffect for synchronous hydration before browser paint (3B fix)
   useLayoutEffect(() => {
     const resolved = getVolume(ids);
@@ -38,9 +57,9 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
     setMutedState(resolved.muted);
     setSource(resolved.source || defaultState.source);
     if (playerRef?.current) {
-      applyToPlayer(playerRef, resolved);
+      applyDucked(resolved);
     }
-  }, [ids, playerRef, getVolume, applyToPlayer, version]);
+  }, [ids, playerRef, getVolume, applyDucked, version]);
 
   const persistVolume = useCallback(
     (nextLevel) => {
@@ -50,11 +69,11 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
       setMutedState(resolved.muted);
       setSource(resolved.source || 'exact');
       if (playerRef?.current) {
-        applyToPlayer(playerRef, resolved);
+        applyDucked(resolved);
       }
       return resolved;
     },
-    [ids, setVolume, applyToPlayer, playerRef]
+    [ids, setVolume, applyDucked, playerRef]
   );
 
   const toggleMute = useCallback(
@@ -64,23 +83,32 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
       setMutedState(resolved.muted);
       setSource(resolved.source || 'exact');
       if (playerRef?.current) {
-        applyToPlayer(playerRef, resolved);
+        applyDucked(resolved);
       }
       return resolved;
     },
-    [ids, muted, setVolume, applyToPlayer, playerRef]
+    [ids, muted, setVolume, applyDucked, playerRef]
   );
 
   const apply = useCallback(
     (level = volume, muteState = muted) => {
       const resolved = { level, muted: muteState };
       if (playerRef?.current) {
-        applyToPlayer(playerRef, resolved);
+        applyDucked(resolved);
       }
       return resolved;
     },
-    [applyToPlayer, playerRef, volume, muted]
+    [applyDucked, playerRef, volume, muted]
   );
+
+  const setDuck = useCallback((multiplier) => {
+    duckRef.current = clamp01(multiplier);
+    // Re-apply the current level immediately so the duck takes effect (or lifts)
+    // without waiting for the next volume event.
+    if (playerRef?.current) {
+      applyDucked({ level: volumeRef.current, muted });
+    }
+  }, [applyDucked, playerRef, muted]);
 
   return useMemo(() => ({
     volume,
@@ -90,5 +118,6 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
     setVolume: persistVolume,
     toggleMute,
     applyToPlayer: apply,
-  }), [volume, muted, source, persistVolume, toggleMute, apply]);
+    setDuck,
+  }), [volume, muted, source, persistVolume, toggleMute, apply, setDuck]);
 }
