@@ -14,6 +14,7 @@ describe('PovGrid', () => {
     );
     expect(getByTestId('race-pov')).toBeInTheDocument();
     expect(container.querySelector('canvas.cg-pov__canvas')).toBeTruthy();
+    expect(container.querySelector('.cg-pov__avatars')).toBeTruthy();
     expect(getAllByTestId('pov-marker')).toHaveLength(2);
   });
 
