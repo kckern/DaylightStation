@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
+
+// Silence the structured logger (the camera-audit logs) so its console output can't
+// race the vitest worker teardown when this file runs with the rest of the suite.
+vi.mock('@/lib/logging/Logger.js', () => {
+  const noop = () => {};
+  const logger = { child: () => logger, debug: noop, info: noop, warn: noop, error: noop, sampled: noop };
+  return { default: () => logger };
+});
+
 import PovGrid from './PovGrid.jsx';
 
 const riders = {
@@ -32,5 +41,16 @@ describe('PovGrid', () => {
     const field = { a: { displayName: 'A', cumulativeDistanceM: 0 }, b: { displayName: 'B', cumulativeDistanceM: 0 } };
     const { queryAllByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={field} riderLive={{}} />);
     expect(queryAllByTestId('pov-marker')).toHaveLength(0);
+  });
+
+  it('excludes DNF riders from the course entirely (riderLive[id].dnf)', () => {
+    const field = {
+      a: { displayName: 'A', cumulativeDistanceM: 500 },
+      b: { displayName: 'B', cumulativeDistanceM: 300 }, // moved, but DNF
+      c: { displayName: 'C', cumulativeDistanceM: 120 }
+    };
+    const live = { b: { dnf: true } };
+    const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={field} riderLive={live} />);
+    expect(getAllByTestId('pov-marker')).toHaveLength(2); // a + c, not the DNF'd b
   });
 });

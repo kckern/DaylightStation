@@ -50,4 +50,16 @@ describe('computePovFrame', () => {
     expect(near.opacity).toBeGreaterThan(0);
     expect(farBack.opacity).toBe(0);
   });
+
+  it('draws road AHEAD of the leader (major marks, t>1, above the leader line)', () => {
+    const f = computePovFrame({ ...base, frac: 1 }); // leader = 500
+    const ahead = f.lineSlots.filter((s) => s.m > 500);
+    expect(ahead.length).toBeGreaterThan(0);
+    expect(ahead.every((s) => s.major)).toBe(true);          // majors only ahead
+    const a550 = f.lineSlots.find((s) => s.m === 550);
+    expect(a550).toBeTruthy();
+    expect(a550.t).toBeGreaterThan(1);                       // past the leader in depth
+    expect(a550.y).toBeLessThan(POV_CAMERA.farFrac);         // above the leader line (headroom)
+    expect(a550.opacity).toBeGreaterThan(0);                 // visible
+  });
 });
