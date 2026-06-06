@@ -367,7 +367,9 @@ export function createFitnessRouter(config) {
     if (!record?.race?.id) return res.status(400).json({ error: 'record.race.id required' });
     try {
       const file = await cycleRaceService.save(record, household);
-      return res.json({ ok: true, raceId: record.race.id, file });
+      // null = the service refused a zero-distance race; report it as skipped, not saved.
+      if (!file) return res.json({ ok: true, raceId: record.race.id, saved: false, skipped: 'zero_distance' });
+      return res.json({ ok: true, raceId: record.race.id, saved: true, file });
     } catch (err) {
       logger.error?.('fitness.cycle_races.save.error', { error: err?.message });
       return res.status(400).json({ error: err?.message || 'save failed' });

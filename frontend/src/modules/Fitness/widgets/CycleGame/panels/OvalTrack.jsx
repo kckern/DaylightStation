@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
+import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import './OvalTrack.scss';
 
 // Oval geometry radii (SVG user units) — the track ellipse the markers ride on.
@@ -27,7 +28,16 @@ export function ovalPoint(progress, rx, ry) {
  * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
  * markers glide via a CSS transform-property transition. Pure presentational component.
  */
-export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null }) {
+export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
+  // Compact two-row lap strip under the oval (one column per rider): the previous
+  // (last completed) lap as a fixed split, and the current lap counting up live.
+  // Only shown when laps are enabled and a lap has been completed by someone.
+  const lapsOn = Number.isFinite(lapLengthM) && lapLengthM > 0;
+  const splitsOf = (id) => riders[id]?.lapSplits || [];
+  const prevLap = (id) => { const s = splitsOf(id); return s.length ? s[s.length - 1] - (s[s.length - 2] || 0) : null; };
+  const curLap = (id) => { const s = splitsOf(id); return Math.max(0, elapsedS - (s[s.length - 1] || 0)); };
+  const anyLapDone = lapsOn && riderIds.some((id) => splitsOf(id).length > 0);
+
   return (
     <div className="cg-oval-track" data-testid="oval-track">
       <svg
@@ -76,6 +86,38 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
       {lapLabel ? (
         <div className="cg-oval-track__lap-label" data-testid="oval-lap-label">{lapLabel}</div>
       ) : null}
+      {anyLapDone ? (
+        <table className="cg-oval-track__laps" data-testid="oval-lap-strip">
+          <thead>
+            <tr>
+              <th className="cg-oval-track__laps-corner" aria-hidden="true" />
+              {riderIds.map((id, idx) => (
+                <th key={id} className="cg-oval-track__laps-rider" data-testid="oval-lap-rider">
+                  <span className="cg-oval-track__laps-dot" style={{ background: LINE_COLORS[idx % LINE_COLORS.length] }} />
+                  {riders[id]?.displayName || id}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="cg-oval-track__laps-row" data-testid="oval-lap-prev">
+              <th scope="row" className="cg-oval-track__laps-label">Last</th>
+              {riderIds.map((id) => {
+                const d = prevLap(id);
+                return <td key={id} className="cg-oval-track__laps-cell">{d == null ? '—' : formatClock(d)}</td>;
+              })}
+            </tr>
+            <tr className="cg-oval-track__laps-row cg-oval-track__laps-row--current" data-testid="oval-lap-cur">
+              <th scope="row" className="cg-oval-track__laps-label">Now</th>
+              {riderIds.map((id) => (
+                <td key={id} className="cg-oval-track__laps-cell cg-oval-track__laps-cell--current">
+                  {formatClock(curLap(id))}…
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ) : null}
     </div>
   );
 }
@@ -85,5 +127,7 @@ OvalTrack.propTypes = {
   riders: PropTypes.object.isRequired,
   riderLive: PropTypes.object,
   progress: PropTypes.object,
-  lapLabel: PropTypes.string
+  lapLabel: PropTypes.string,
+  lapLengthM: PropTypes.number,
+  elapsedS: PropTypes.number
 };

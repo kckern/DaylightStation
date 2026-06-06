@@ -8,7 +8,8 @@ let tmp, svc;
 const rec = (id, over = {}) => ({
   version: 1,
   race: { id, date: `${id.slice(0,4)}-${id.slice(4,6)}-${id.slice(6,8)}`, win_condition: 'distance', goal_m: 3000, course_id: null, ...over },
-  participants: {}
+  // A real ride — the service refuses to persist a zero-distance race.
+  participants: { milo: { final_distance_m: 3000, final_time_s: 300 } }
 });
 
 beforeEach(() => {
@@ -22,6 +23,11 @@ describe('CycleRaceService', () => {
   it('saves and gets a race', async () => {
     await svc.save(rec('20260602143012'), 'default');
     expect((await svc.get('20260602143012', 'default')).race.id).toBe('20260602143012');
+  });
+  it('refuses to save a zero-distance race', async () => {
+    const dead = { version: 1, race: { id: '20260602143012', date: '2026-06-02', win_condition: 'distance', goal_m: 3000 }, participants: { milo: { final_distance_m: 0 } } };
+    expect(await svc.save(dead, 'default')).toBeNull();
+    expect(await svc.get('20260602143012', 'default')).toBeNull();
   });
   it('lists races by date', async () => {
     await svc.save(rec('20260602143012'), 'default');
