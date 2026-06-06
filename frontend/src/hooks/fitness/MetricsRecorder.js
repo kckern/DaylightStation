@@ -14,6 +14,8 @@
 
 // Note: slugifyId has been removed - we now use user.id directly
 
+import { sanitizeHeartRate } from './hrPlausibility.js';
+
 /**
  * @typedef {Object} MetricsRecorderConfig
  * @property {number} [intervalMs=5000] - Tick interval in ms
@@ -35,13 +37,9 @@ const sanitizeNumber = (val) => {
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
-const sanitizeHeartRate = (val) => {
-  if (val == null) return null;
-  const hr = Number(val);
-  if (!Number.isFinite(hr)) return null;
-  if (hr < 30 || hr > 250) return null;
-  return Math.round(hr);
-};
+// sanitizeHeartRate imported from hrPlausibility.js — shared floor/ceiling with
+// TimelineRecorder so summary stats and the chart series reject the same ghosts.
+// (Previously a local 30–250 check; floor raised to 50 to match the bridge gate.)
 
 const sanitizeDistance = (val) => {
   if (val == null) return null;

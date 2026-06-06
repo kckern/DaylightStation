@@ -22,11 +22,13 @@ export function computeGates(leader, k, cam = POV_CAMERA, { lapLengthM = 0, fini
   if (kk <= 0 || lap <= 0 || !(leader >= 0)) return [];
 
   const aheadT = Number.isFinite(cam.aheadT) ? cam.aheadT : 1;
-  const nearDist = leader - cam.rightPct / kk;                       // road distance at the near edge
-  const aheadMaxM = leader + (cam.rightPct * Math.max(0, aheadT - 1)) / kk; // furthest visible ahead
+  // Leader depth-anchor (see povFrame): the camera lowers it when the field is bunched.
+  const leaderU = Number.isFinite(cam.leaderU) ? cam.leaderU : cam.rightPct;
+  const nearDist = leader - leaderU / kk;                            // road distance at the near edge
+  const aheadMaxM = leader + Math.max(0, aheadT * cam.rightPct - leaderU) / kk; // furthest visible ahead
 
   const project = (d, lapNum, isFinish) => {
-    const u = cam.rightPct - (leader - d) * kk;
+    const u = leaderU - (leader - d) * kk;
     const t = u / cam.rightPct;                          // unclamped (t>1 is ahead of the leader)
     const onRoad = u >= 0 && t <= aheadT + 1e-6;
     return {
