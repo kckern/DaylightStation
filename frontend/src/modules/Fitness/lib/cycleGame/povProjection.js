@@ -11,12 +11,15 @@
  */
 export const POV_CAMERA = {
   rightPct: 0.88,  // leader's linear-depth coord (matches ZOOM_DEFAULTS.rightPct)
-  farFrac: 0.22,   // leader/far-plane screen-Y — a comfortable margin from the top so
-                   // the forwardmost avatar isn't clipped (was 0.10, which cut it off).
-                   // FIXED: the Canvas2D renderer keeps the horizon steady (the grid is
-                   // a solid plane, not jello); only vanishX/depthRatio flex (povCamera).
+  farFrac: 0.30,   // leader/first-place screen-Y (top third). The leader rests HERE, not
+                   // at the vanishing point — road is drawn AHEAD of them (t>1) up to
+                   // aheadT, into the headroom above, so you can read what's coming.
+                   // FIXED: the Canvas2D renderer keeps the horizon steady (not jello);
+                   // only vanishX/depthRatio flex (povCamera).
   depthRatio: 6,   // zFar/zNear — perspective strength
-  fogFrac: 0.18    // depth t below which far lines fade out (atmosphere)
+  fogFrac: 0.04,   // depth t below which near lines fade out (foreground atmosphere); kept
+                   // small so the road under last place (low on screen) stays legible.
+  aheadT: 4        // render/fog road ahead of the leader up to this depth (horizon ≈ t→∞)
 };
 
 // Smooth Hermite ramp 0→1 across [edge0, edge1]; flat outside. Used for the grid's
@@ -27,13 +30,14 @@ export function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-// Grid-line visibility vs depth t (0 near camera/bottom, 1 far/horizon). Fades IN at
-// the horizon (where a new line enters as the leader advances) and OUT at the near
-// edge (where it exits) — brightest in the legible mid-field. Both ends → 0 so slot
-// recycling at either edge is invisible.
+// Grid/road visibility vs depth t (0 near/bottom, 1 = leader, t>1 = road ahead of the
+// leader). Fades OUT at the near edge (foreground) and IN approaching the far horizon
+// (`aheadT`) — so the road continues visibly past the leader (t=1) and dissolves into
+// the distance rather than ending abruptly at the leader.
 export function bandOpacity(t, cam = POV_CAMERA) {
-  const inFar = 1 - smoothstep(0.90, 1.0, t);   // 1 until t=0.90, →0 at the horizon
-  const outNear = smoothstep(0.0, cam.fogFrac, t); // 0 at t=0, →1 by the fog depth
+  const farT = Number.isFinite(cam.aheadT) ? cam.aheadT : 1.0;
+  const inFar = 1 - smoothstep(Math.max(0, farT - 1.0), farT, t); // fade over the last ~1.0 of t
+  const outNear = smoothstep(0.0, cam.fogFrac, t);                // foreground fade near the camera
   return inFar * outNear;
 }
 

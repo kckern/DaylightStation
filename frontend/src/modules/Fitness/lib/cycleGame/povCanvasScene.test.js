@@ -4,7 +4,7 @@ import { BASE_CAMERA } from './povCamera.js';
 
 // Mock 2D context: records stroke calls with the strokeStyle active at stroke time.
 function mockCtx() {
-  const calls = { clearRect: 0, stroke: 0, strokeStyles: [], lineWidths: [] };
+  const calls = { clearRect: 0, stroke: 0, strokeStyles: [], lineWidths: [], labels: [] };
   return {
     calls,
     _style: '',
@@ -14,10 +14,12 @@ function mockCtx() {
     set lineWidth(v) { this._w = v; },
     get lineWidth() { return this._w; },
     set lineCap(_) {},
+    set font(_) {}, set textAlign(_) {}, set textBaseline(_) {}, set fillStyle(_) {},
     clearRect() { calls.clearRect++; },
     beginPath() {},
     moveTo() {},
     lineTo() {},
+    fillText(text) { calls.labels.push(text); },
     stroke() { calls.stroke++; calls.strokeStyles.push(this._style); calls.lineWidths.push(this._w); }
   };
 }
@@ -51,5 +53,55 @@ describe('drawScene', () => {
     drawScene(ctx, { camera: BASE_CAMERA, lineSlots, railsX, dims: { w: 200, h: 100 } });
     const alphas = ctx.calls.strokeStyles.map(alphaOf);
     expect(Math.max(...alphas)).toBeGreaterThan(Math.min(...alphas));
+  });
+
+  it('labels each visible major gridline with its metre value (off the road)', () => {
+    const ctx = mockCtx();
+    const majors = [
+      { m: 0, major: true, t: 0.1, y: 0.9, scale: 0.9, opacity: 0.8 },
+      { m: 50, major: true, t: 0.5, y: 0.5, scale: 0.5, opacity: 0.6 },
+      { m: 90, major: false, t: 0.7, y: 0.4, scale: 0.3, opacity: 0.5 } // minor → no label
+    ];
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: majors, railsX: [], dims: { w: 200, h: 100 } });
+    expect(ctx.calls.labels).toContain('0m');
+    expect(ctx.calls.labels).toContain('50m');
+    expect(ctx.calls.labels).not.toContain('90m'); // minors are unlabeled
+  });
+});
+
+// Extended mock that also records arch curves + label text for the gate tests.
+function gateCtx() {
+  const calls = { quadratic: 0, labels: [], strokeStyles: [] };
+  return {
+    calls, _s: '',
+    set strokeStyle(v) { this._s = v; }, get strokeStyle() { return this._s; },
+    set lineWidth(_) {}, set lineCap(_) {}, set font(_) {}, set textAlign(_) {}, set textBaseline(_) {}, set fillStyle(_) {},
+    clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    quadraticCurveTo() { calls.quadratic++; },
+    stroke() { calls.strokeStyles.push(this._s); },
+    fillText(text) { calls.labels.push(text); }
+  };
+}
+
+describe('drawScene — lap gates', () => {
+  const gates = [
+    { d: 150, lap: 3, isFinish: false, t: 0.43, y: 0.5, scale: 0.5, opacity: 0.7 },
+    { d: 400, lap: null, isFinish: true, t: 0.8, y: 0.3, scale: 0.3, opacity: 0.6 },
+    { d: 9999, lap: 9, isFinish: false, t: 1.0, y: 0.22, scale: 0.16, opacity: 0 } // off-road, skipped
+  ];
+
+  it('draws an arch (curved top) + a label for each visible gate', () => {
+    const ctx = gateCtx();
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: [], railsX: [], gates, dims: { w: 200, h: 100 } });
+    expect(ctx.calls.quadratic).toBe(2 * 2);          // 2 visible gates × dual-pass arch
+    expect(ctx.calls.labels).toEqual(['LAP 3', 'FINISH']); // opacity-0 gate skipped
+  });
+
+  it('colors the finish gate gold and lap gates magenta', () => {
+    const ctx = gateCtx();
+    drawScene(ctx, { camera: BASE_CAMERA, lineSlots: [], railsX: [], gates, dims: { w: 200, h: 100 } });
+    const styles = ctx.calls.strokeStyles.join('|');
+    expect(styles).toContain('255, 64, 160');  // magenta (LAP)
+    expect(styles).toContain('255, 200, 70');  // gold (FINISH)
   });
 });

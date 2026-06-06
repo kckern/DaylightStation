@@ -54,15 +54,27 @@ per animation frame (rAF, mounted once):
   for each marker: write transform on its avatar DOM node (z-index by depth, nearer on top)
 ```
 
-## The camera
+## The camera & framing
 
 `povProjection` gives the fixed 1/z ground plane (`screenY`, `depthScale`);
 `povCamera` adds a shiftable `vanishX`. `povCameraDynamics` eases two bounded
 offsets toward race-driven targets: **lateral lead** (vanishX leans toward the
 leader's lane) and **FOV pulse** (`depthRatio` boosts on acceleration). Both ease
 exponentially (no overshoot) and apply to the whole scene coherently — the grid
-never deforms independently. `farFrac` (the horizon row) is fixed: the road does
-not breathe.
+never deforms independently. `farFrac` is fixed: the road does not breathe.
+
+**Framing.** The leader rests at `farFrac` ≈ **30%** (top third), *not* at the
+vanishing point — the road continues **ahead** of them (`povFrame`/`povGates` emit
+major marks + upcoming lap/finish gates at depth `t>1`, bounded by `cam.aheadT`,
+fading toward the true horizon), so you can read what's coming. Last place is
+anchored **low** (≈ bottom 20%) via the PovGrid-only zoom anchors (`ZOOM_CFG`:
+lower `homePct`/`minGapM`), so the field fills the frame instead of crowding the
+top. Each **major gridline is labeled** with its metre value just off the road's
+left edge (`drawScene`).
+
+**Camera audit logging.** All camera motion is logged via the structured logger:
+`cycle_game.pov.camera` (sampled snapshot — zoom `k`/`fovMul`/`depthRatio`, pan
+`vanishX`, dolly `leaderDist`) and `cycle_game.pov.rezoom` (on a held-`k` change).
 
 ## Tests
 
