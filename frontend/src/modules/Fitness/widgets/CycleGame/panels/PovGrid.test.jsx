@@ -91,4 +91,20 @@ describe('PovGrid (three.js shell)', () => {
     const { getByText } = render(<PovGrid riderIds={['a']} riders={{ a: { displayName: 'Ada', cumulativeDistanceM: 120 } }} riderLive={{}} />);
     expect(getByText(/120/)).toBeTruthy();
   });
+
+  it('applies the canonical cg-ghost class to ghost markers on the POV', () => {
+    cleanup();
+    const riders = {
+      a: { displayName: 'Ada', cumulativeDistanceM: 120, isGhost: false },
+      g: { displayName: 'Ghost', cumulativeDistanceM: 90, isGhost: true }
+    };
+    const riderLive = { a: { avatarSrc: '' }, g: { avatarSrc: '' } };
+    const { container } = render(
+      <PovGrid riderIds={['a', 'g']} riders={riders} riderLive={riderLive} />
+    );
+    const markers = container.querySelectorAll('.cg-pov__marker');
+    const ghost = [...markers].find((m) => m.className.includes('is-ghost'));
+    expect(ghost).toBeTruthy();
+    expect(ghost.className).toContain('cg-ghost');
+  });
 });
