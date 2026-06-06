@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, within, fireEvent } from '@testing-library/react';
 import RaceResults from './RaceResults.jsx';
 
 const standings = [
@@ -40,5 +40,13 @@ describe('RaceResults', () => {
     expect(within(dist.container).getByTestId('result-row-milo').textContent).toContain('4:12'); // 252s
     const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} animate={false} />);
     expect(within(time.container).getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
+  });
+  it('renders an exit button that calls onExit', () => {
+    const onExit = vi.fn();
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} animate={false} onExit={onExit} />
+    );
+    fireEvent.click(getByTestId('race-results-exit'));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 });

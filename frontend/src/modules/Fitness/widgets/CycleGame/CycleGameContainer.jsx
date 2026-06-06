@@ -1356,6 +1356,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         })}
         elapsedS={engineState.elapsedS || 0}
         secondsLeft={resultsSecondsLeft}
+        onExit={backToHome}
       />
       <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
         Back to home

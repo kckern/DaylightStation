@@ -94,11 +94,20 @@
 
   // Auto-exit countdown (last few seconds before returning to the lobby).
   &__countdown {
-    margin-top: 14px; flex: 0 0 auto;
+    flex: 0 0 auto;
     font-family: cg.$cg-mono; font-size: 1rem; font-weight: 700;
     color: cg.$cg-gold; letter-spacing: 0.04em;
     animation: cg-rr-pulse 1s ease-in-out infinite;
   }
+
+  // Row holding the countdown text and the manual exit button side-by-side.
+  &__exit-row { margin-top: 16px; flex: 0 0 auto; display: flex; gap: 14px; align-items: center; justify-content: center; }
+  &__exit {
+    background: cg.$cg-panel; border: 1px solid cg.$cg-border; color: cg.$cg-text;
+    font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
+    padding: 8px 22px; border-radius: 10px; cursor: pointer;
+  }
+  &__exit:hover { border-color: cg.$cg-cyan; }
 
   // Acronym legend — spells out the badges that appeared above.
   &__legend {

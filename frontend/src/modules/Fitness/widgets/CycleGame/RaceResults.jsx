@@ -96,7 +96,7 @@ ResultRow.propTypes = {
  */
 export default function RaceResults({
   standings = [], riders = {}, winCondition = 'distance', dnf = [], penalized = [],
-  lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true
+  lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null
 }) {
   const dnfSet = new Set(dnf);
   const penalizedSet = new Set(penalized);
@@ -133,11 +133,18 @@ export default function RaceResults({
         </dl>
       )}
 
-      {Number.isFinite(secondsLeft) && secondsLeft <= 5 && secondsLeft > 0 && (
-        <div className="race-results__countdown" data-testid="race-results-countdown" aria-live="polite">
-          Back to lobby in {secondsLeft}…
-        </div>
-      )}
+      <div className="race-results__exit-row">
+        {Number.isFinite(secondsLeft) && secondsLeft > 0 && secondsLeft <= 5 && (
+          <span className="race-results__countdown" data-testid="race-results-countdown" aria-live="polite">
+            Back to lobby in {secondsLeft}…
+          </span>
+        )}
+        {onExit && (
+          <button type="button" className="race-results__exit" data-testid="race-results-exit" onClick={onExit}>
+            Exit
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -151,5 +158,6 @@ RaceResults.propTypes = {
   lapLengthM: PropTypes.number,
   elapsedS: PropTypes.number,
   secondsLeft: PropTypes.number,
-  animate: PropTypes.bool
+  animate: PropTypes.bool,
+  onExit: PropTypes.func
 };
