@@ -622,7 +622,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // (without pausing) when the governance engine signals a challenge is nearing
   // its lock threshold. Restores volume when the SFX ends.
   useGovernanceAudioDuck({
-    mediaElement,
     videoVolume,
     audioDuck: effectiveGovernanceState?.audioDuck
   });
