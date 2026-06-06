@@ -60,3 +60,69 @@ describe('GovernanceEngine — audio_cues config parsing', () => {
     expect(engine._audioCues[0].duckTo).toBe(0);
   });
 });
+
+describe('GovernanceEngine — _computeAudioDuck', () => {
+  const cue = {
+    id: 'challenge_hurry',
+    trigger: 'challenge_remaining',
+    thresholdSeconds: 12,
+    sound: 'apps/fitness/ux/challenge-hurry.mp3',
+    duckTo: 0.1
+  };
+
+  const makeEngine = () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine._audioCues = [cue];
+    return engine;
+  };
+
+  it('returns a duck descriptor when an unsatisfied challenge is within threshold', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 10, requiredCount: 2, actualCount: 1 };
+    const duck = engine._computeAudioDuck(snapshot);
+    expect(duck).toMatchObject({
+      cueId: 'challenge_hurry',
+      sound: 'apps/fitness/ux/challenge-hurry.mp3',
+      duckTo: 0.1,
+      token: 'ch1:challenge_hurry'
+    });
+  });
+
+  it('returns null before the threshold is crossed', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 20, requiredCount: 2, actualCount: 1 };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('returns null when the challenge is already satisfied', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: 2, actualCount: 2 };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('returns null for a non-pending challenge', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'success', remainingSeconds: 5, requiredCount: 2, actualCount: 2 };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('returns null when there is no challenge snapshot', () => {
+    const engine = makeEngine();
+    expect(engine._computeAudioDuck(null)).toBeNull();
+  });
+
+  it('returns null when no cues are configured', () => {
+    const engine = makeEngine();
+    engine._audioCues = [];
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 5, requiredCount: 2, actualCount: 1 };
+    expect(engine._computeAudioDuck(snapshot)).toBeNull();
+  });
+
+  it('exposes audioDuck on the composed state', () => {
+    const engine = makeEngine();
+    // Stub the challenge snapshot used by _composeState.
+    engine._buildChallengeSnapshot = () => ({ id: 'ch1', status: 'pending', remainingSeconds: 9, requiredCount: 2, actualCount: 0 });
+    const state = engine._composeState();
+    expect(state.audioDuck).toMatchObject({ cueId: 'challenge_hurry', token: 'ch1:challenge_hurry' });
+  });
+});
