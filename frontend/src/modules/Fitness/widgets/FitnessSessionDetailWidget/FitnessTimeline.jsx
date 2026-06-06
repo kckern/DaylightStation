@@ -235,8 +235,12 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
       const maxIdx = hrSeries.reduce((max, v, i) => (Number.isFinite(v) && v > 0 ? i : max), 0);
       if (maxIdx > globalMaxIndex) globalMaxIndex = maxIdx;
     }
-    return Math.max(MIN_VISIBLE_TICKS, globalMaxIndex + 1);
-  }, [roster, getSeries]);
+    return Math.max(
+      MIN_VISIBLE_TICKS,
+      globalMaxIndex + 1,
+      sessionData?.isGroup ? (Number(sessionData?.timeline?.tick_count) || 0) : 0
+    );
+  }, [roster, getSeries, sessionData]);
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 
