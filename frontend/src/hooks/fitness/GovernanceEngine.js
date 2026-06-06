@@ -220,6 +220,10 @@ export class GovernanceEngine {
     this.config = {};
     this.policies = [];
     this.media = null;
+    // True while an ungoverned takeover (e.g. the CycleGame race) owns the
+    // screen. A suspended engine goes idle every evaluate() WITHOUT dropping
+    // this.media, so governance resumes cleanly when the takeover unmounts.
+    this._suspended = false;
     this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
     this._zoneChangeDebounceTimer = null;
@@ -1188,6 +1192,22 @@ export class GovernanceEngine {
     }
   }
 
+  /**
+   * Suspend/resume governance for an ungoverned screen takeover (CycleGame
+   * race). While suspended, evaluate() resets to idle and returns without
+   * touching this.media. Resuming triggers an immediate re-evaluation.
+   */
+  setSuspended(suspended) {
+    const next = Boolean(suspended);
+    if (this._suspended === next) return;
+    this._suspended = next;
+    this._invalidateStateCache();
+    getLogger().info('governance.suspended_changed', { suspended: next });
+    if (!next) {
+      this._triggerPulse();
+    }
+  }
+
   setCallbacks({ onPhaseChange, onPulse, onStateChange }) {
     this.callbacks.onPhaseChange = onPhaseChange;
     this.callbacks.onPulse = onPulse;
@@ -2081,6 +2101,19 @@ export class GovernanceEngine {
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       tickManualCycle();
+      return;
+    }
+
+    // Ungoverned takeover (CycleGame race owns the screen): go fully dormant
+    // even though this.media still points at the paused governed video.
+    // Without this the engine keeps evaluating HR zones and firing challenges
+    // over the race (see 2026-06-06 audit). this.media is preserved so the
+    // next un-suspended evaluate() re-engages on the same video.
+    if (this._suspended) {
+      getLogger().sampled('governance.evaluate.suspended', {
+        contentId: this.media?.id
+      }, { maxPerMinute: 2, aggregate: true });
+      this._resetToIdle();
       return;
     }
 
