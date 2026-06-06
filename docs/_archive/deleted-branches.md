@@ -75,3 +75,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-03 | wip/cycle-event-toast | 2b0dbe002 | CycleEventToast + officiating-event-markers (dnf/penalty chart markers, controller event wiring, RaceResults penalty styling). Preserved local uncommitted work before pulling origin; merged to main via no-ff merge commit 60a439b2a after reconciling synthwave re-skin conflicts. |
 | 2026-06-05 | feat/cycle-game-layout-redesign | 85da83325 | Cycle-game race layout redesign (sidebar/wide modes, POV grid, splits) — merged to main |
 | 2026-06-05 | feature/governance-audio-duck-cues | 7d4ea920b | Governance audio-duck cues (challenge start/hurry/complete + governance_warning) and grace-warning scrim ramp — fast-forward merged to main |
+| 2026-06-06 | feature/pov-canvas-race-grid | 85e929c93 | Canvas2D POV race grid (single-surface wireframe + cinematic camera + DOM-overlay avatars) replacing the DOM-multilayer renderer — merged to main |
