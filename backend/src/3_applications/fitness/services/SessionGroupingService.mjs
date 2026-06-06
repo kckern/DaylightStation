@@ -80,14 +80,40 @@ export class SessionGroupingService {
       try { activities = await this.activityRegistry.enrich(group, householdId); }
       catch (e) { this.logger?.warn?.('fitness.group.detail.enrich.failed', { id: groupId, error: e?.message }); }
     }
+    const distTo = (x, ms) => (ms < x.start ? x.start - ms : (ms > x.end ? ms - x.end : 0));
     const rebase = (item) => {
-      const b = segBounds.find((x) => item.startMs >= x.start && item.startMs <= x.end);
+      // Prefer the segment that contains the race; if a race fell in a compressed gap
+      // (its session's recorded start/end didn't bracket it — happens at block edges),
+      // snap to the NEAREST segment so it still renders at the right seam instead of
+      // vanishing. rel is clamped into the segment so it can't land outside the axis.
+      let b = segBounds.find((x) => item.startMs >= x.start && item.startMs <= x.end);
+      if (!b) {
+        for (const x of segBounds) { if (!b || distTo(x, item.startMs) < distTo(b, item.startMs)) b = x; }
+      }
       if (!b) return item;
-      const rel = item.startMs - b.start;
-      const dur = (item.endMs ?? item.startMs) - item.startMs;
-      return { ...item, axisStartMs: b.offsetMs + rel, axisEndMs: b.offsetMs + rel + dur };
+      // Clamp the band to its segment's compressed bounds so a race that ran slightly past
+      // its session's recorded end can't bleed across the seam into the next segment (which
+      // would look like a "race within race" once the idle gap is compressed out).
+      const segSpan = Math.max(0, b.end - b.start);
+      const segStartAxis = b.offsetMs;
+      const segEndAxis = b.offsetMs + segSpan;
+      const rel = Math.max(0, Math.min(item.startMs - b.start, segSpan));
+      const dur = Math.max(0, (item.endMs ?? item.startMs) - item.startMs);
+      const axisStartMs = segStartAxis + rel;
+      const axisEndMs = Math.min(axisStartMs + dur, segEndAxis);
+      return { ...item, axisStartMs, axisEndMs };
     };
     activities = activities.map((a) => ({ ...a, items: (a.items || []).map(rebase) }));
+    // Defense in depth: after rebasing onto the compressed axis, no race band may nest inside
+    // another. Edge cases (a race straddling a session boundary, an orphan snapped to a seam,
+    // gap compression) can still produce a band that runs into the next one — truncate the
+    // earlier band's end to the next band's start so "race within race" can never render.
+    for (const a of activities) {
+      const its = (a.items || []).filter((i) => Number.isFinite(i.axisStartMs)).sort((x, y) => x.axisStartMs - y.axisStartMs);
+      for (let i = 0; i < its.length - 1; i++) {
+        if (its[i].axisEndMs > its[i + 1].axisStartMs) its[i].axisEndMs = its[i + 1].axisStartMs;
+      }
+    }
 
     return {
       id: groupId, sessionId: groupId, isGroup: true, date,

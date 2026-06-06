@@ -108,6 +108,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // (yFor clamps it there). Short races top out exactly at the goal; long races still
   // auto-zoom to fit the leader until the window reaches the goal. Time race: pure auto-zoom.
   const D = distanceGoal ? Math.min(Y_BASE_M * 2 ** Ly, goalM) : Y_BASE_M * 2 ** Ly;   // metres visible
+  // Only reveal the goal line once the Y window has zoomed all the way out to the
+  // goal (D === goalM). While zoomed in (window < goal) the line clamps to the top
+  // and falsely implies the goal is just overhead, so we hide it until max zoom-out.
+  const goalInView = distanceGoal && Y_BASE_M * 2 ** Ly >= goalM;
   const stepS = maxSeriesLen > 1 ? elapsedS / (maxSeriesLen - 1) : 1;
   const xForTime = (t) => PAD_L + Math.max(0, Math.min(1, (t || 0) / T)) * PLOT_W;
   const xFor = (i) => xForTime(i * stepS);
@@ -126,10 +130,18 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     logRef.current = false;
   }
   const useLog = logRef.current;
+  // Soften the de-crowding curve: full log compression squashes the whole race into
+  // a flat low line that then rockets vertical at the finish (a hockey stick). Blend
+  // the log only partway toward linear so leaders near the goal still separate, but
+  // the climb stays readable instead of near-vertical.
+  const LOG_BLEND = 0.35;
   const yFor = (d) => {
-    const frac = useLog
-      ? 1 - (Math.log1p(Math.max(0, D - (d || 0))) / Math.log1p(Math.max(1, D)))
-      : Math.min(1, (d || 0) / D);
+    const lin = Math.min(1, (d || 0) / D);
+    let frac = lin;
+    if (useLog) {
+      const logF = 1 - (Math.log1p(Math.max(0, D - (d || 0))) / Math.log1p(Math.max(1, D)));
+      frac = lin + (logF - lin) * LOG_BLEND;
+    }
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
 
@@ -348,7 +360,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           );
         })}
 
-        {winCondition === 'distance' && Number.isFinite(goalM) && goalM > 0 && (
+        {goalInView && (
           <line className="cycle-race-screen__goal"
             x1={PAD_L} y1={yFor(goalM).toFixed(1)} x2={W - PAD_R} y2={yFor(goalM).toFixed(1)}
             vectorEffect="non-scaling-stroke" />
@@ -356,6 +368,19 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
 
         </g>
       </svg>
+
+      {/* Goal line label — pinned to the dashed target line at the top. Only present
+          when the goal line itself is (max zoom-out), so it can't float over a hidden
+          line. HTML overlay (not SVG <text>) to dodge the non-uniform viewBox stretch. */}
+      {goalInView && (
+        <div
+          className="cycle-race-screen__goal-label"
+          data-testid="chart-goal-label"
+          style={{ top: `${(yFor(goalM) / H) * 100}%` }}
+        >
+          Target · {formatDistance(goalM)}
+        </div>
+      )}
 
       {/* Terminus markers: each line's tip carries the rider's avatar + running
           score (distance) + live HR. Distance is read here, not off a y-axis.

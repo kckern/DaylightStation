@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
-import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
+import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
 import './CycleSpeedometer.scss';
 
 const VIEWBOX = 200;
@@ -32,12 +32,19 @@ export default function CycleSpeedometer({
     () => buildTicks({ maxRpm, tickStep: effTickStep, labelStep: effLabelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
     [maxRpm, effTickStep, effLabelStep]
   );
+  // Fall back to the system-default colour bands when config supplies none, so the
+  // gauge always shows its green→red zones instead of a bare arc.
+  const effectiveBands = Array.isArray(cadenceBands) && cadenceBands.length > 0 ? cadenceBands : DEFAULT_CADENCE_BANDS;
   // Bands scale proportionally to the gauge so the colour zones keep their intent
-  // (a real sprint is the top tier, not a giant red wedge on a 250 dial).
-  const bands = useMemo(
-    () => buildBandArcs({ bands: scaleBands(cadenceBands, maxRpm), maxRpm, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
-    [cadenceBands, maxRpm]
-  );
+  // (a real sprint is the top tier, not a giant red wedge on a 250 dial). We also
+  // flag the band the current RPM sits in so it can light up — the needle is thin
+  // and hard to read, so the lit zone is the primary "where am I" cue.
+  const { bands, activeBandId } = useMemo(() => {
+    const scaled = scaleBands(effectiveBands, maxRpm);
+    const arcs = buildBandArcs({ bands: scaled, maxRpm, center: CENTER, gaugeRadius: GAUGE_RADIUS });
+    const active = bandForRpm(rpm, scaled);
+    return { bands: arcs, activeBandId: active?.id ?? null };
+  }, [effectiveBands, maxRpm, rpm]);
   const needleDeg = needleAngleDeg(rpm, maxRpm);
   const showBadge = Number.isFinite(multiplier) && multiplier > 1;
   const badgeColor = multiplierColor || avatar.zoneColor || '#e67e22';
@@ -82,9 +89,23 @@ export default function CycleSpeedometer({
         )}
         <svg className="cycle-speedometer__svg" viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`} aria-hidden="true">
           <circle className="cycle-speedometer__ring" cx={CENTER} cy={CENTER} r={GAUGE_RADIUS + 8} fill="none" />
-          {bands.map((b) => (
-            <path key={b.id} className="cycle-speedometer__band" d={b.d} stroke={b.color} fill="none" strokeWidth="6" />
-          ))}
+          {bands.map((b) => {
+            const isActive = b.id === activeBandId;
+            return (
+              <path
+                key={b.id}
+                className={`cycle-speedometer__band${isActive ? ' cycle-speedometer__band--active' : ' cycle-speedometer__band--dim'}`}
+                data-testid={isActive ? 'cycle-speedometer-band-active' : undefined}
+                d={b.d}
+                stroke={b.color}
+                fill="none"
+                strokeWidth={isActive ? 9 : 6}
+                // Glow tinted to the band's own colour so the lit zone reads as
+                // "emitting" rather than just thicker.
+                style={isActive ? { filter: `drop-shadow(0 0 4px ${b.color}) drop-shadow(0 0 8px ${b.color})` } : undefined}
+              />
+            );
+          })}
           {ticks.map((t) => (
             <line
               key={`t-${t.rpm}`}
