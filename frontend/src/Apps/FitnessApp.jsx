@@ -13,7 +13,8 @@ import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleConta
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
-import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
+import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/Fitness/lib/navigationUtils.js';
+import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
@@ -686,13 +687,23 @@ const FitnessApp = () => {
     return root?.content_source || 'plex';
   }, [fitnessConfiguration]);
 
+  // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
+  // day-gated nav items re-evaluate live on a long-running kiosk session.
+  const dayOfWeek = useDayOfWeek();
+
   // Derive navItems from the API response (source-agnostic: uses contentConfig section)
+  // Items may carry a `days` array (0=Sun..6=Sat) to gate them to certain days
+  // of the week — e.g. a "TV Shows" tab that only appears on Saturdays. The
+  // filter applies to both the rendered navbar and the default-first-item
+  // auto-init below, so a hidden tab is never auto-selected. Keyed on dayOfWeek
+  // so the tab disappears the instant the clock rolls past midnight — no stale
+  // overnight "stowaway" tab.
   const navItems = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const contentConfig = root?.content || root?.plex || root?.[contentSource] || {};
     const src = contentConfig?.nav_items || [];
-    return Array.isArray(src) ? src : [];
-  }, [fitnessConfiguration, contentSource]);
+    return filterNavItemsByDay(Array.isArray(src) ? src : [], dayOfWeek);
+  }, [fitnessConfiguration, contentSource, dayOfWeek]);
 
   // Derive screens config map from fitness configuration
   const screensConfig = useMemo(() => {
@@ -1171,6 +1182,30 @@ const FitnessApp = () => {
       }
     }
   }, [navItems, activeCollection, activeModule, activeScreen, currentView, urlInitialized, urlState, screensConfig, navigate]);
+
+  // Stowaway guard: when the day rolls over at midnight, a day-gated collection
+  // the user is already sitting in (e.g. a Saturday-only "TV Shows" menu) gets
+  // filtered out of navItems but its content stays on screen — the auto-init
+  // above won't recover it because activeCollection is still set. So on any day
+  // change, if the active menu collection no longer maps to a visible nav item,
+  // bounce to the first available tab. Bounded to menu view; module/screen/users
+  // views are untouched. Fires only on actual day transitions, never on config
+  // reloads (guarded by prevDayRef).
+  const prevDayRef = useRef(dayOfWeek);
+  useEffect(() => {
+    if (prevDayRef.current === dayOfWeek) return;
+    prevDayRef.current = dayOfWeek;
+    if (currentView !== 'menu' || activeCollection == null) return;
+    const stillVisible = navItems.some((item) =>
+      isNavItemActive(item, { currentView, activeCollection, activeModule, activeScreen })
+    );
+    if (stillVisible) return;
+    const first = sortNavItems(navItems)[0];
+    if (first) {
+      logger.info('fitness-nav-day-rollover-redirect', { day: dayOfWeek });
+      handleNavigate(first.type, first.target, first);
+    }
+  }, [dayOfWeek, navItems, currentView, activeCollection, activeModule, activeScreen]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
