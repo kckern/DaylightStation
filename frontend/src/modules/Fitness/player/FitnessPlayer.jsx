@@ -1053,9 +1053,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     const sessionStartTime = fitnessSessionInstance?.startTime;
     const threshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 480; // 8 minutes default
     const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
-    const shouldPrompt = sessionStartTime
+    const meetsPromptThreshold = sessionStartTime
       && ((Date.now() - sessionStartTime) / 1000 > threshold)
       && !hasMemos;
+    // Gate the auto-popup on configured eligibility (voice_memo_eligibility.users).
+    // Manual recording via the icon/button is never gated by this check.
+    const autoPromptEligible = fitnessSessionInstance?.voiceMemoManager?.isAutoPromptEligible?.() ?? true;
+    const shouldPrompt = meetsPromptThreshold && autoPromptEligible;
+
+    // Observability: the prompt would have fired but no eligible user is active.
+    if (meetsPromptThreshold && !autoPromptEligible) {
+      logger.debug('fitness.voice_memo.auto_prompt_suppressed', {
+        sessionId: fitnessSessionInstance?.sessionId ?? null,
+        reason: 'no-eligible-user-active',
+      });
+    }
 
     // 4B: Check 15-minute rule - prompt for voice memo if session is long and no memos
     if (shouldPrompt && openVoiceMemoCapture) {
