@@ -86,16 +86,27 @@ export class WeeklyReviewImmichAdapter {
 
     const sessions = this.#groupSessions(scored);
 
-    const photos = scored.map((item, index) => ({
-      id: item.asset.id,
-      type: item.asset.type === 'VIDEO' ? 'video' : 'image',
-      thumbnail: `${this.#proxyPath}/assets/${item.asset.id}/thumbnail`,
-      original: `${this.#proxyPath}/assets/${item.asset.id}/original`,
-      people: item.people,
-      isHero: assets.length >= 3 && index === 0 && item.asset.type !== 'VIDEO',
-      sessionIndex: this.#findSessionIndex(sessions, item.asset),
-      takenAt: item.asset.localDateTime,
-    }));
+    const photos = scored.map((item, index) => {
+      const isVideo = item.asset.type === 'VIDEO';
+      // Images: use Immich's pre-generated `?size=preview` JPEG rather than
+      // `/original` (HEIC — only Safari decodes it → blank) or `?size=fullsize`
+      // (on-demand transcode that times out under load → blank). preview is
+      // cached, served in ms, and at 2557×1440 stays sharp on our 1080p surfaces.
+      // Videos keep their original stream.
+      const original = isVideo
+        ? `${this.#proxyPath}/assets/${item.asset.id}/original`
+        : `${this.#proxyPath}/assets/${item.asset.id}/thumbnail?size=preview`;
+      return {
+        id: item.asset.id,
+        type: isVideo ? 'video' : 'image',
+        thumbnail: `${this.#proxyPath}/assets/${item.asset.id}/thumbnail`,
+        original,
+        people: item.people,
+        isHero: assets.length >= 3 && index === 0 && item.asset.type !== 'VIDEO',
+        sessionIndex: this.#findSessionIndex(sessions, item.asset),
+        takenAt: item.asset.localDateTime,
+      };
+    });
 
     return {
       date,

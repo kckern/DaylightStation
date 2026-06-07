@@ -94,6 +94,15 @@ export class ImmichProxyAdapter {
   getErrorFallback() { return 'svg'; }
 
   /**
+   * Follow Immich's internal redirects server-side (e.g. `?size=fullsize`
+   * falls back to `?size=preview` via a 302 when full-size generation is
+   * disabled). Without this the relative Location leaks to the browser and
+   * renders blank. A small depth covers the single expected hop.
+   * @returns {number}
+   */
+  getMaxRedirects() { return 3; }
+
+  /**
    * Default retry configuration
    * @returns {{ maxRetries: number, delayMs: number }}
    */
