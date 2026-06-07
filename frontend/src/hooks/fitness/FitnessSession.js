@@ -600,9 +600,10 @@ export class FitnessSession {
         // all participants. getRoster() reflects DeviceManager state which is immediately updated.
         if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
           const allUsers = this.userManager.getAllUsers();
-          const currentRoster = this._participantRoster?.getRoster();
-          const usersForZones = currentRoster
-            ? (() => { const ids = new Set(currentRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+          const presentIds = this._participantRoster?.getPresentParticipantIds();
+          const usersForZones = presentIds
+            ? allUsers.filter(u => presentIds.has(u.id))
             : allUsers;
           const changed = this._syncZoneProfiles(usersForZones);
           if (changed && this.governanceEngine) {
@@ -1926,9 +1927,10 @@ export class FitnessSession {
     // BUGFIX: Use getRoster() (device-present) not getActive() (ActivityMonitor-verified)
     // Same fix as in recordDeviceActivity — prevents timing gap where ZoneProfileStore
     // is empty between ActivityMonitor ticks, desynchronizing governance from the roster.
-    const currentRoster = this._participantRoster?.getRoster();
-    const usersForZones = currentRoster
-      ? (() => { const ids = new Set(currentRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+    // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+    const presentIds = this._participantRoster?.getPresentParticipantIds();
+    const usersForZones = presentIds
+      ? allUsers.filter(u => presentIds.has(u.id))
       : allUsers;
     this._syncZoneProfiles(usersForZones);
 
