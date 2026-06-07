@@ -89,6 +89,28 @@ describe('ParticipantRoster — getPresentParticipantIds (cheap presence query)'
     expect(ids.size).toBe(1);
   });
 
+  it('skips a null-id HR device, mirroring getRoster\'s _buildRosterEntry drop', () => {
+    // _buildRosterEntry drops any device with `device.id == null` before it can
+    // produce a roster entry. getPresentParticipantIds() must do the same so the
+    // two paths stay provably equivalent. A null-id device that WOULD otherwise
+    // resolve to a user (via deviceId fallback) must NOT contribute an id.
+    const deviceManager = {
+      getAllDevices: () => [{ type: 'heart_rate', id: null, deviceId: '40999' }],
+    };
+    const userManager = {
+      resolveUserForDevice: (deviceId) =>
+        String(deviceId) === '40999' ? { id: 'test-user-null' } : null,
+      assignmentLedger: { get: () => null },
+    };
+
+    const roster = new ParticipantRoster();
+    roster.configure({ deviceManager, userManager });
+
+    const ids = roster.getPresentParticipantIds();
+    expect(ids.has('test-user-null')).toBe(false);
+    expect(ids.size).toBe(0);
+  });
+
   it('equivalence guard: matches getRoster()\'s real-user id set on a mixed roster', () => {
     const { roster, deviceManager, userManager } = buildRoster();
 
