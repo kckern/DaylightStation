@@ -164,6 +164,21 @@ export class ProxyService {
           return;
         }
 
+        // Follow upstream redirects internally (opt-in via getMaxRedirects).
+        // Immich's `?size=fullsize` 302-redirects to `?size=preview` when
+        // full-size generation is disabled; the relative Location would
+        // otherwise resolve against the app origin and return HTML (a blank
+        // <img>). Following it server-side keeps the response an actual image.
+        const maxRedirects = adapter.getMaxRedirects?.() ?? 0;
+        const isRedirect = [301, 302, 303, 307, 308].includes(statusCode);
+        if (maxRedirects > 0 && isRedirect && proxyRes.headers.location) {
+          proxyRes.resume(); // discard redirect body
+          this.#followRedirect(
+            adapter, proxyRes.headers.location, headers, timeout, res, maxRedirects
+          ).then(resolve);
+          return;
+        }
+
         // Forward response — or fall back to placeholder SVG for image proxies
         const isImageProxy = typeof adapter.getErrorFallback === 'function';
         if (statusCode >= 400 && isImageProxy) {
@@ -239,6 +254,81 @@ export class ProxyService {
       } else {
         proxyReq.end();
       }
+    });
+  }
+
+  /**
+   * Follow an upstream redirect server-side (GET), resolving the Location
+   * against the adapter's base URL and re-applying auth. Recurses up to
+   * `depth` hops, then pipes the final response. Used so redirects that
+   * point back at the upstream (e.g. Immich size fallbacks) don't leak a
+   * relative Location to the browser. Reuses the image-proxy SVG fallback.
+   * @private
+   */
+  #followRedirect(adapter, location, reqHeaders, timeout, res, depth) {
+    const serviceName = adapter.getServiceName();
+    const targetUrl = new URL(location, adapter.getBaseUrl());
+
+    const headers = { ...reqHeaders };
+    delete headers.host;
+    const authHeaders = adapter.getAuthHeaders?.();
+    if (authHeaders) Object.assign(headers, authHeaders);
+
+    const protocol = targetUrl.protocol === 'https:' ? https : http;
+    const isImageProxy = typeof adapter.getErrorFallback === 'function';
+    const failover = () => {
+      if (isImageProxy) sendPlaceholderSvg(res);
+      else if (!res.headersSent) res.status(502).json({ error: 'Proxy error', service: serviceName });
+    };
+
+    return new Promise((resolve) => {
+      const proxyReq = protocol.request({
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
+        path: targetUrl.pathname + targetUrl.search,
+        method: 'GET',
+        headers,
+        timeout,
+      }, (proxyRes) => {
+        const statusCode = proxyRes.statusCode;
+
+        if ([301, 302, 303, 307, 308].includes(statusCode) && proxyRes.headers.location && depth > 1) {
+          proxyRes.resume();
+          this.#followRedirect(adapter, proxyRes.headers.location, reqHeaders, timeout, res, depth - 1)
+            .then(resolve);
+          return;
+        }
+
+        if (statusCode >= 400 && isImageProxy) {
+          proxyRes.resume();
+          this.#logger.warn?.('proxy.imageFallback', { service: serviceName, statusCode, url: targetUrl.href });
+          sendPlaceholderSvg(res);
+          resolve();
+          return;
+        }
+
+        if (!res.headersSent) {
+          const responseHeaders = { ...proxyRes.headers };
+          const cacheHeaders = adapter.getResponseHeaders?.(targetUrl.pathname + targetUrl.search, statusCode, responseHeaders);
+          if (cacheHeaders) Object.assign(responseHeaders, cacheHeaders);
+          res.writeHead(statusCode, responseHeaders);
+        }
+        proxyRes.pipe(res);
+        proxyRes.on('end', resolve);
+      });
+
+      proxyReq.on('error', (err) => {
+        this.#logger.error?.('proxy.redirectError', { service: serviceName, error: err.message });
+        failover();
+        resolve();
+      });
+      proxyReq.on('timeout', () => {
+        proxyReq.destroy();
+        this.#logger.error?.('proxy.redirectTimeout', { service: serviceName, timeout });
+        failover();
+        resolve();
+      });
+      proxyReq.end();
     });
   }
 

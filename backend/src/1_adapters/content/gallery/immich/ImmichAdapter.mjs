@@ -85,12 +85,22 @@ export class ImmichAdapter {
   }
 
   /**
-   * Build original image URL
+   * Build the display image URL.
+   *
+   * Uses Immich's `?size=preview` rendition (a ~1440px-tall JPEG) rather than
+   * `/original` or `?size=fullsize`:
+   *  - `/original` is often HEIC (iPhone), which only Safari can decode → blank.
+   *  - `?size=fullsize` falls back via a 302 to preview when full-size generation
+   *    is disabled, and triggers on-demand transcoding that times out under burst
+   *    load → blank placeholders.
+   *  - `?size=preview` is pre-generated on import, served from cache in a few ms,
+   *    and at 2557×1440 it exceeds our display surfaces (1080p WebView, 720p
+   *    office), so it renders sharp with no on-demand work.
    * @param {string} assetId
    * @returns {string}
    */
-  #originalUrl(assetId) {
-    return `${this.#proxyPath}/assets/${assetId}/original`;
+  #displayImageUrl(assetId) {
+    return `${this.#proxyPath}/assets/${assetId}/thumbnail?size=preview`;
   }
 
   /**
@@ -319,7 +329,7 @@ export class ImmichAdapter {
         id: `immich:${asset.id}`,
         source: 'immich',
         title: asset.originalFileName,
-        imageUrl: this.#originalUrl(asset.id),
+        imageUrl: this.#displayImageUrl(asset.id),
         thumbnail: this.#thumbnailUrl(asset.id),
         width: asset.width,
         height: asset.height,
@@ -810,7 +820,7 @@ export class ImmichAdapter {
       itemType: 'leaf',
       mediaType: 'image',
       thumbnail: this.#thumbnailUrl(asset.id),
-      imageUrl: this.#originalUrl(asset.id),
+      imageUrl: this.#displayImageUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase() || 'image',
         category: ContentCategory.MEDIA,
@@ -858,7 +868,7 @@ export class ImmichAdapter {
       source: 'immich',
       title: asset.originalFileName,
       mediaType: isVideo ? 'video' : 'image',
-      mediaUrl: isVideo ? this.#videoUrl(asset.id) : this.#originalUrl(asset.id),
+      mediaUrl: isVideo ? this.#videoUrl(asset.id) : this.#displayImageUrl(asset.id),
       duration,
       resumable: isVideo,
       thumbnail: this.#thumbnailUrl(asset.id),

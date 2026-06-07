@@ -75,7 +75,10 @@ export class ImmichCanvasAdapter {
       id: `canvas-immich:${asset.id}`,
       source: this.source,
       title: this.#titleFromFilename(asset.originalFileName),
-      imageUrl: `${this.#proxyPath}/assets/${asset.id}/original`,
+      // `preview` is a pre-generated ~1440px JPEG (HEIC originals don't render
+      // outside Safari; `fullsize` triggers on-demand transcodes that time out
+      // under load). 2557×1440 exceeds our display surfaces, so it stays sharp.
+      imageUrl: `${this.#proxyPath}/assets/${asset.id}/thumbnail?size=preview`,
       thumbnail: `${this.#proxyPath}/assets/${asset.id}/thumbnail`,
       category,
       artist: exif.Artist || null,
