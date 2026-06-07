@@ -205,6 +205,32 @@ export class ParticipantRoster {
   }
 
   /**
+   * Cheap presence query: the set of participant IDs that getRoster() would
+   * emit for currently-present heart-rate devices, WITHOUT building full entries
+   * (no zone lookup, no label resolution, no per-entry logging). Used by the
+   * per-packet zone-sync path so it doesn't trigger a full roster rebuild on
+   * every HR packet. Truly-anonymous devices (no user, no ledger) are omitted —
+   * their getRoster() entry id is `device:<id>`, which never matches a real user.
+   *
+   * @returns {Set<string>} participant IDs (mapped user IDs + ledger occupant IDs)
+   */
+  getPresentParticipantIds() {
+    const ids = new Set();
+    if (!this._deviceManager || !this._userManager) return ids;
+    const hrDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
+    for (const device of hrDevices) {
+      const deviceId = String(device.id || device.deviceId);
+      const mappedUser = this._userManager.resolveUserForDevice(deviceId);
+      if (mappedUser?.id) { ids.add(mappedUser.id); continue; }
+      const ledgerEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
+      const ledgerId = ledgerEntry?.occupantId || ledgerEntry?.metadata?.profileId || null;
+      if (ledgerId) ids.add(ledgerId);
+      // else: truly anonymous → omitted (never matches a real user id)
+    }
+    return ids;
+  }
+
+  /**
    * Get active participants (currently broadcasting)
    * @returns {RosterEntry[]}
    */
