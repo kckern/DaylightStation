@@ -219,7 +219,8 @@ export class ParticipantRoster {
     if (!this._deviceManager || !this._userManager) return ids;
     const hrDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
     for (const device of hrDevices) {
-      const deviceId = String(device.id || device.deviceId);
+      if (device.id == null) continue; // mirror _buildRosterEntry: null-id devices are dropped
+      const deviceId = String(device.id);
       const mappedUser = this._userManager.resolveUserForDevice(deviceId);
       if (mappedUser?.id) { ids.add(mappedUser.id); continue; }
       const ledgerEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
