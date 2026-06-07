@@ -165,13 +165,13 @@ export class ParticipantRoster {
     }
     const preferGroupLabels = presentUserCount > 1;
 
-    getLogger().debug('participant.roster.build', {
+    getLogger().sampled('participant.roster.build', {
       heartRateDeviceCount: heartRateDevices.length,
       userCount: devicesByUserId.size,
       presentUserCount,
       anonymousDeviceCount: anonymousDevices.length,
       preferGroupLabels,
-    });
+    }, { maxPerMinute: 6, aggregate: true });
 
     const roster = [];
 
@@ -533,14 +533,14 @@ export class ParticipantRoster {
 
     // Log display label resolution for debugging participant count transitions
     if (groupLabel && !isGuest) {
-      getLogger().debug('participant.roster.display_label_resolved', {
+      getLogger().sampled('participant.roster.display_label_resolved', {
         userId,
         name: participantName,
         groupLabel,
         displayLabel,
         preferGroupLabels,
         shouldPreferGroupLabel
-      });
+      }, { maxPerMinute: 6, aggregate: true });
     }
 
     // Get status from ActivityMonitor if available

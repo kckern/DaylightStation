@@ -947,13 +947,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
               // Log deviceName resolution for HR devices
               if (isHeartRate) {
-                getLogger().debug('fitness_users.device_name_resolved', {
+                getLogger().sampled('fitness_users.device_name_resolved', {
                   deviceId: deviceIdStr,
                   deviceName,
                   deviceNameSource,
                   displayLabel,
                   hasGuestAssignment: !!guestAssignment
-                });
+                }, { maxPerMinute: 6, aggregate: true });
               }
               // Use the LIVE (raw) zone for card display so the card color,
               // progress bar fill, and sort order all track current HR
