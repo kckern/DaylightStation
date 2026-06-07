@@ -462,7 +462,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedLabels,
     governedTypes,
     sessionsConfig,
-    cycleGameConfig
+    cycleGameConfig,
+    voiceMemoEligibleUsers
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
     // Prefer 'content' config key, fall back to legacy 'plex' key
@@ -507,7 +508,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       governedLabels: normalizedGovernedLabels,
       governedTypes: normalizedGovernedTypes,
       sessionsConfig: root?.sessions || {},
-      cycleGameConfig: root?.cycle_game || {}
+      cycleGameConfig: root?.cycle_game || {},
+      // Gates the session-end voice-memo auto-popup. Empty/absent = everyone.
+      voiceMemoEligibleUsers: Array.isArray(root?.voice_memo_eligibility?.users)
+        ? root.voice_memo_eligibility.users.filter(Boolean)
+        : []
     };
   }, [fitnessConfiguration]);
 
@@ -732,12 +737,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (!manager) return;
 
     manager.setMutationCallback(forceUpdate);
+    manager.setEligibleUsers(voiceMemoEligibleUsers);
     return () => {
       if (manager === session?.voiceMemoManager) {
         manager.setMutationCallback(null);
       }
     };
-  }, [forceUpdate, version]);
+  }, [forceUpdate, version, voiceMemoEligibleUsers]);
 
   // Sidebar toggle
   const toggleSidebarSizeMode = React.useCallback(() => {

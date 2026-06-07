@@ -4,10 +4,50 @@ export class VoiceMemoManager {
     this.memos = [];
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
+    // Eligible-user gate for the session-end auto-popup (from fitness.yml
+    // `voice_memo_eligibility.users`). Empty set = default-allow (everyone).
+    this._eligibleUsers = new Set();
   }
 
-  setMutationCallback(cb) { 
-    this._mutationCb = typeof cb === 'function' ? cb : null; 
+  setMutationCallback(cb) {
+    this._mutationCb = typeof cb === 'function' ? cb : null;
+  }
+
+  /**
+   * Configure which users gate the auto-popup. Pass the
+   * `voice_memo_eligibility.users` list from config. An empty/absent list
+   * means everyone is eligible (default-allow), mirroring session_write_whitelist.
+   * @param {Array<string>} users
+   */
+  setEligibleUsers(users) {
+    const list = Array.isArray(users)
+      ? users.filter((u) => u != null && u !== '').map((u) => String(u))
+      : [];
+    this._eligibleUsers = new Set(list);
+  }
+
+  /**
+   * Whether the session-end voice-memo auto-popup is allowed to fire.
+   *
+   * Gates ONLY the automatic prompt — manual recording (icon/button) is never
+   * affected. Returns true when no eligible users are configured (default-allow)
+   * or when at least one *currently-active* roster entry matches the configured
+   * list by profileId, id, or baseUserName (a guest riding under an eligible
+   * user counts).
+   * @returns {boolean}
+   */
+  isAutoPromptEligible() {
+    if (this._eligibleUsers.size === 0) return true;
+    const roster = Array.isArray(this.sessionRef?.roster) ? this.sessionRef.roster : [];
+    for (const entry of roster) {
+      if (!entry || !entry.isActive) continue;
+      if (this._eligibleUsers.has(String(entry.profileId))
+        || this._eligibleUsers.has(String(entry.id))
+        || this._eligibleUsers.has(String(entry.baseUserName))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   _notifyMutation() { 
