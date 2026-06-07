@@ -593,11 +593,12 @@ export class FitnessSession {
           });
         }
 
-        // Sync ZoneProfileStore immediately so governance sees fresh zone data
-        // BUGFIX: Use getRoster() (device-present) not getActive() (ActivityMonitor-verified)
-        // ActivityMonitor is tick-driven (5s intervals), so between ticks getActive() returns
-        // empty, causing ZoneProfileStore to have zero profiles and governance to ghost-filter
-        // all participants. getRoster() reflects DeviceManager state which is immediately updated.
+        // Sync ZoneProfileStore immediately so governance sees fresh zone data.
+        // Use device-present presence (getPresentParticipantIds) not getActive()
+        // (ActivityMonitor-verified): ActivityMonitor is tick-driven (5s intervals), so between
+        // ticks getActive() returns empty, causing ZoneProfileStore to have zero profiles and
+        // governance to ghost-filter all participants. Presence reflects DeviceManager state,
+        // which is updated immediately.
         if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
           const allUsers = this.userManager.getAllUsers();
           // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
@@ -1924,10 +1925,10 @@ export class FitnessSession {
         this.snapshot.participantSeries.set(userId, series);
       });
 
-    // BUGFIX: Use getRoster() (device-present) not getActive() (ActivityMonitor-verified)
-    // Same fix as in recordDeviceActivity — prevents timing gap where ZoneProfileStore
-    // is empty between ActivityMonitor ticks, desynchronizing governance from the roster.
-    // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+    // Use device-present presence (getPresentParticipantIds) not getActive()
+    // (ActivityMonitor-verified). Same rationale as in recordDeviceActivity — prevents the
+    // timing gap where ZoneProfileStore is empty between ActivityMonitor ticks, desyncing
+    // governance from the roster. Cheap presence query — avoids a full getRoster() rebuild per packet.
     const presentIds = this._participantRoster?.getPresentParticipantIds();
     const usersForZones = presentIds
       ? allUsers.filter(u => presentIds.has(u.id))
