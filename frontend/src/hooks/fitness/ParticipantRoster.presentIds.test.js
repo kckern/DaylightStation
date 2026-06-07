@@ -62,6 +62,33 @@ describe('ParticipantRoster — getPresentParticipantIds (cheap presence query)'
     expect(ids.size).toBe(1);
   });
 
+  it('ledger-fallback branch: includes occupantId when resolveUserForDevice returns null', () => {
+    // Exercises ParticipantRoster.js:225-227 in isolation. In normal flow,
+    // resolveUserForDevice already resolves ledger guests (via the named-ledger
+    // path → registered-user lookup), so the `ledgerEntry?.occupantId` fallback
+    // is dead-but-defensive. Here we force the null-resolution case with a stub
+    // userManager: resolveUserForDevice → null, but assignmentLedger.get →
+    // an entry carrying only occupantId. A real DeviceManager supplies the
+    // present HR device.
+    const deviceManager = new DeviceManager();
+    deviceManager.registerDevice({ id: '40110', type: 'heart_rate', heartRate: 72, lastSeen: Date.now() });
+
+    const userManager = {
+      resolveUserForDevice: () => null,
+      assignmentLedger: {
+        get: (deviceId) =>
+          String(deviceId) === '40110' ? { occupantId: 'guest_iso' } : null,
+      },
+    };
+
+    const roster = new ParticipantRoster();
+    roster.configure({ deviceManager, userManager });
+
+    const ids = roster.getPresentParticipantIds();
+    expect(ids.has('guest_iso')).toBe(true);
+    expect(ids.size).toBe(1);
+  });
+
   it('equivalence guard: matches getRoster()\'s real-user id set on a mixed roster', () => {
     const { roster, deviceManager, userManager } = buildRoster();
 
@@ -89,6 +116,42 @@ describe('ParticipantRoster — getPresentParticipantIds (cheap presence query)'
     const reference = allUsers.filter(u => rosterIdSet.has(u.id));
 
     expect(cheap).toEqual(reference);
+  });
+
+  it('equivalence guard: holds when a sub-floor (< anonymous floor) ghost is present', () => {
+    const { roster, deviceManager, userManager } = buildRoster();
+
+    // ≥2 mapped users
+    userManager.registerUser({ id: 'test-user-a', name: 'Test User A', hr_device_id: '10366' });
+    userManager.registerUser({ id: 'test-user-b', name: 'Test User B', hr_device_id: '11521' });
+    // 1 ledger guest
+    userManager.assignGuest('29425', 'Guest', {
+      profileId: 'guest_29425',
+      occupantType: 'guest'
+    });
+    // Devices for the mapped users + guest
+    deviceManager.registerDevice({ id: '10366', type: 'heart_rate', heartRate: 75, lastSeen: Date.now() });
+    deviceManager.registerDevice({ id: '11521', type: 'heart_rate', heartRate: 80, lastSeen: Date.now() });
+    deviceManager.registerDevice({ id: '29425', type: 'heart_rate', heartRate: 72, lastSeen: Date.now() });
+    // Sub-floor ghost: unregistered (no mapped user, no ledger) device whose HR
+    // (30) sits below the default anonymous floor (60). getRoster() drops it via
+    // _buildRosterEntry's §2B low-HR filter; the cheap path omits it because it
+    // matches no real user and has no ledger entry. The intersection with the
+    // real-user universe must be identical on both paths.
+    deviceManager.registerDevice({ id: '33002', type: 'heart_rate', heartRate: 30, lastSeen: Date.now() });
+
+    const allUsers = userManager.getAllUsers().map(u => ({ id: u.id }));
+
+    const presentSet = roster.getPresentParticipantIds();
+    const cheap = allUsers.filter(u => presentSet.has(u.id));
+
+    const rosterIdSet = new Set(roster.getRoster().map(e => e.id));
+    const reference = allUsers.filter(u => rosterIdSet.has(u.id));
+
+    expect(cheap).toEqual(reference);
+    // Sanity: the sub-floor ghost is in neither id set.
+    expect(presentSet.has('device:33002')).toBe(false);
+    expect(rosterIdSet.has('device:33002')).toBe(false);
   });
 
   it('cheapness guard: does NOT call _buildZoneLookup, but getRoster does', () => {
