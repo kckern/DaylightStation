@@ -41,9 +41,39 @@ export function createFileTransport(options = {}) {
     }
   }
 
-  // Initialize write stream
-  let stream = fs.createWriteStream(filename, { flags: 'a' });
+  let stream = null;
   let currentSize = 0;
+
+  /**
+   * Open a write stream on the log file.
+   *
+   * The fd is opened eagerly (rather than letting createWriteStream open it
+   * lazily) for two reasons:
+   * - The file is guaranteed to exist on disk before any rotation check, so
+   *   a first write that exceeds maxSize still finds a file to rename.
+   * - Buffered writes follow the inode (the fd), not the path, so data still
+   *   queued on a rotated-out stream flushes into the renamed generation
+   *   instead of leaking into the fresh live file.
+   *
+   * An 'error' listener is attached so async write errors (ENOSPC, EACCES on
+   * the fd, ...) never surface as an unhandled 'error' event and crash the
+   * process. On stream error we warn on stderr (never via the logger itself —
+   * recursion) and null the stream; a later send() re-opens it (fail soft).
+   */
+  const openStream = () => {
+    const fd = fs.openSync(filename, 'a');
+    const s = fs.createWriteStream(filename, { flags: 'a', fd });
+    s.on('error', (err) => {
+      process.stderr.write(`[FileTransport] Stream error: ${err.message}\n`);
+      if (stream === s) {
+        stream = null; // dropped until a later send() re-opens
+      }
+    });
+    return s;
+  };
+
+  // Initialize write stream
+  stream = openStream();
 
   // Get current file size if it exists
   try {
@@ -55,7 +85,17 @@ export function createFileTransport(options = {}) {
   }
 
   /**
-   * Rotate log files when max size is reached
+   * Rotate log files when max size is reached.
+   *
+   * Conventional logrotate scheme: the live file becomes `.1` (newest), `.1`
+   * becomes `.2`, ... up to `.{maxFiles - 1}` (oldest), which falls off.
+   * Exactly maxFiles generations are retained, counting the live file.
+   * With maxFiles: 1 only the live file is retained — the full generation is
+   * discarded on rotation.
+   *
+   * The rotation decision is based on the tracked currentSize, not on-disk
+   * size; openStream() guarantees the file exists by the time we rename it,
+   * even when the very first write triggers rotation.
    */
   const rotateIfNeeded = () => {
     if (currentSize < maxSize) return;
@@ -63,30 +103,37 @@ export function createFileTransport(options = {}) {
     try {
       stream.end();
 
-      for (let i = maxFiles - 1; i >= 1; i--) {
-        const oldPath = i === 1 ? filename : `${filename}.${i}`;
-        const newPath = `${filename}.${i + 1}`;
+      // Drop the oldest generation if it is at the cap
+      const oldest = `${filename}.${maxFiles - 1}`;
+      if (maxFiles > 1 && fs.existsSync(oldest)) {
+        fs.unlinkSync(oldest);
+      }
 
+      // Shift the remaining generations up: .{i} -> .{i + 1}
+      for (let i = maxFiles - 2; i >= 1; i--) {
+        const oldPath = `${filename}.${i}`;
         if (fs.existsSync(oldPath)) {
-          if (i === maxFiles - 1 && fs.existsSync(newPath)) {
-            fs.unlinkSync(newPath);
-          }
-          fs.renameSync(oldPath, newPath);
+          fs.renameSync(oldPath, `${filename}.${i + 1}`);
         }
       }
 
+      // Live file becomes .1 (or is discarded when maxFiles is 1)
       if (fs.existsSync(filename)) {
-        fs.renameSync(filename, `${filename}.1`);
+        if (maxFiles > 1) {
+          fs.renameSync(filename, `${filename}.1`);
+        } else {
+          fs.unlinkSync(filename);
+        }
       }
 
-      stream = fs.createWriteStream(filename, { flags: 'a' });
+      stream = openStream();
       currentSize = 0;
 
       process.stderr.write(`[FileTransport] Rotated log file: ${filename}\n`);
     } catch (err) {
       process.stderr.write(`[FileTransport] Rotation failed: ${err.message}\n`);
       try {
-        stream = fs.createWriteStream(filename, { flags: 'a' });
+        stream = openStream();
         currentSize = 0;
       } catch (recreateErr) {
         process.stderr.write(`[FileTransport] Failed to recreate stream: ${recreateErr.message}\n`);
@@ -156,6 +203,11 @@ export function createFileTransport(options = {}) {
       const byteLength = Buffer.byteLength(line);
 
       try {
+        if (!stream) {
+          // Previous stream died on an async 'error'; attempt a re-open.
+          // If this throws we land in the catch below and drop the line.
+          stream = openStream();
+        }
         stream.write(line);
         currentSize += byteLength;
         rotateIfNeeded();
