@@ -200,18 +200,17 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
 
   test('selecting a known item shows a human resolved title under the input', async ({ page }) => {
     await ComboboxActions.open(page);
-    await ComboboxActions.search(page, 'Office');
+    await ComboboxActions.search(page, 'Pilot');   // episodes are leaves — click selects
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
-    if (await options.count() === 0) test.skip(true, 'no searchable content available');
+    expect(await options.count(), 'search must return results').toBeGreaterThan(0);
     await options.first().click();
 
     const resolved = page.getByTestId('combobox-resolved-title');
-    await expect(resolved).toBeVisible();
+    await expect(resolved).toBeVisible({ timeout: 10000 });   // /info fetch is async
     const resolvedText = (await resolved.textContent())?.trim();
     expect(resolvedText && resolvedText.length).toBeTruthy();
-    // The resolved line is a human title, not the raw id.
-    expect(resolvedText).not.toMatch(/^[\w-]+:\S+$/);
+    expect(resolvedText).not.toMatch(/^[\w-]+:\S+$/);          // human title, not the raw id
   });
 });
