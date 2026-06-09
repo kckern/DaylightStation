@@ -172,6 +172,10 @@ export default function useZoomState({
     }
   }, []);
 
+  // Cancel any pending grace timer on unmount so it can't fire setZoomRange on
+  // an unmounted hook. The selection grace can be up to 12s, a wide leak window.
+  useEffect(() => () => cancelZoomReset(), [cancelZoomReset]);
+
   /**
    * Get the current zoom stack snapshot (for navigation)
    */
