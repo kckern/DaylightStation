@@ -7,6 +7,8 @@
  * - value: Initial content ID (e.g., plex:12345)
  * - placeholder: Input placeholder text
  * - mock: API mock mode (none, error, empty, slow)
+ * - selectContainers: '1'/'true' to make container rows commit (dual-affordance browse chevron)
+ * - searchParams: extra query string forwarded to the search endpoint
  */
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -17,6 +19,8 @@ function ComboboxTestPage() {
   const [searchParams] = useSearchParams();
   const initialValue = searchParams.get('value') || '';
   const placeholder = searchParams.get('placeholder') || 'Search content...';
+  const selectContainers = ['1', 'true'].includes(searchParams.get('selectContainers'));
+  const extraSearchParams = searchParams.get('searchParams') || '';
 
   const [value, setValue] = useState(initialValue);
   const [changeLog, setChangeLog] = useState([]);
@@ -48,6 +52,8 @@ function ComboboxTestPage() {
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
+          selectContainers={selectContainers}
+          searchParams={extraSearchParams}
         />
       </Paper>
 

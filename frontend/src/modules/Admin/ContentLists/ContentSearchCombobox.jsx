@@ -546,9 +546,16 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             </Stack>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <Badge size="xs" variant="light" color="gray">{source.toUpperCase()}</Badge>
+            <Badge size="xs" variant="light" color="gray">{(source ?? '?').toUpperCase()}</Badge>
             {isContainerItem && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
+            )}
+            {isContainerItem && selectContainers && (
+              <ActionIcon size="sm" variant="subtle" aria-label={`Browse into ${item.title}`}
+                data-testid={`browse-into-${item.id}`}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); browseContainer(item); }}>
+                <IconChevronRight size={16} />
+              </ActionIcon>
             )}
           </Group>
         </Group>
