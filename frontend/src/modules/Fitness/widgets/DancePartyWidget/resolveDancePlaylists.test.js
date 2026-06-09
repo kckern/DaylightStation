@@ -4,7 +4,14 @@ import { resolveDancePlaylists } from './resolveDancePlaylists.js';
 describe('resolveDancePlaylists', () => {
   it('uses configured audio + video ids', () => {
     const r = resolveDancePlaylists({ audio_playlist_id: 463801, video_playlist_id: 99, shuffle: true });
-    expect(r).toEqual({ configured: true, audioPlaylistId: 463801, videoPlaylistId: 99, shuffle: true, hasVideo: true });
+    expect(r).toEqual({ configured: true, audioPlaylistId: 463801, videoPlaylistId: 99, shuffle: true, hasVideo: true, videoShader: 'focused' });
+  });
+
+  it('video shader defaults to focused, honors video_shader config', () => {
+    expect(resolveDancePlaylists({}).videoShader).toBe('focused');
+    expect(resolveDancePlaylists(null).videoShader).toBe('focused');
+    expect(resolveDancePlaylists({ video_shader: 'minimal' }).videoShader).toBe('minimal');
+    expect(resolveDancePlaylists({ video_shader: '' }).videoShader).toBe('focused');
   });
 
   it('missing/null config block → configured false, no ids (NO silent fallback)', () => {

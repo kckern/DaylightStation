@@ -23,7 +23,10 @@ export function resolveDancePlaylists(dancePartyConfig) {
     audioPlaylistId,
     videoPlaylistId,
     shuffle: dp?.shuffle !== false,
-    hasVideo: videoPlaylistId != null
+    hasVideo: videoPlaylistId != null,
+    // Player shader for the video layer ('minimal' aliases to 'focused' in
+    // Player.jsx). Default keeps the party video chrome-free.
+    videoShader: typeof dp?.video_shader === 'string' && dp.video_shader ? dp.video_shader : 'focused'
   };
 }
 
