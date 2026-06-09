@@ -18,7 +18,10 @@ SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
 SELFCHECK_INTERVAL=300     # seconds between self-check (missed fires, orphans)
 CONNECT_CHECK_INTERVAL=60  # seconds between BT connectivity checks for schedule-active private headsets
 CONNECT_MISS_ALERT=5       # consecutive failed reconnects (~CONNECT_MISS_ALERT*CONNECT_CHECK_INTERVAL s) before alerting
+CONNECT_ESCALATE_MISSES=3  # consecutive failed reconnects before escalating to a full adapter power-cycle (then repeats every multiple) — clears a wedged controller that won't hold a link even WITH PSCAN present
+CONNECT_ESCALATE_MAX=12    # stop power-cycling the adapter past this many misses — a wedged controller clears within the first few resets; beyond that it's the headset (off / out of range), so keep retrying Connect + alert but stop churning the adapter
 BT_WAKE_TIMEOUT=60         # max seconds to wait for BT after HA turn_on
+BT_SETTLE_SEC=4            # seconds a freshly-connected link must stay up before we commit to the (expensive) start_playback — absorbs A2DP flapping at connect so we don't spawn/teardown mpv per blip
 DUPE_FIRE_WINDOW=60        # window in which a scheduled time matches "now"
 LAZY_PRIME_COUNT=5         # tracks to download synchronously before starting mpv
 MIN_AUDIO_BYTES=2048
@@ -585,6 +588,18 @@ connectivity_loop() {
             misses=$((misses + 1))
             echo "$misses" > "$miss_file"
             logev "$tag" bt.reconnect_fail mac="$mac" misses="$misses"
+            # Escalation: heal_adapter_pscan above is a no-op when PSCAN is
+            # present, so a controller that's wedged-but-PSCAN-healthy would
+            # otherwise retry the same gentle Connect forever. After enough
+            # consecutive misses, force a full adapter power-cycle to re-init it.
+            if should_escalate_reset "$misses"; then
+                local hci
+                if hci=$(hci_for_mac "$mac"); then
+                    log "$tag" "still down after $misses misses — escalating: power-cycling adapter $hci"
+                    logev "$tag" bt.adapter_reset hci="$hci" misses="$misses"
+                    cycle_adapter "$hci" "$tag"
+                fi
+            fi
             if (( misses >= CONNECT_MISS_ALERT )) && [[ ! -f "$alert_file" ]]; then
                 dispatch_alert warning bt_reconnect_fail \
                     "$name (slot $slot) is scheduled to play but unreachable for ~$((misses*CONNECT_CHECK_INTERVAL/60)) min — headset off, out of range, or BT fault"
@@ -860,28 +875,81 @@ bt_connected() {
     [[ "$(busctl --system get-property org.bluez "$path" org.bluez.Device1 Connected 2>/dev/null)" == "b true" ]]
 }
 
-# Heal a controller stuck without PSCAN (page scan). Failure mode: a bonded
-# headset can no longer reconnect because its Intel adapter silently stopped
-# accepting incoming pages (PSCAN flag gone). The service user can't run
-# `hciconfig piscan` (needs root), but power-cycling the adapter over D-Bus —
-# bluetoothd runs privileged — re-inits it and restores PSCAN. Safe because
-# each adapter hosts exactly one headset and we only call this when that
-# headset is already disconnected. Returns 0 if a heal was performed.
-heal_adapter_pscan() {
-    local mac="$1" tag="$2" path hci
+# True (0) iff the link stays Connected for the whole settle window. A flapping
+# A2DP link reports Connected, then drops within 1-4s; if we react to the first
+# Connected edge with start_playback we spawn mpv + prime 5 tracks + fork a
+# 97-track download, only for the disconnect handler to SIGKILL it all — then
+# the next connect redoes the whole cold cycle (observed green/slot3 2026-06-08:
+# 3 teardown/restart cycles in 95s before the link held). Gating both the gdbus
+# connect handler and the watchdog respawn on this check makes us commit to
+# playback only once the link has proven it will hold. Returns 1 the instant the
+# link drops during the window.
+bt_link_stable() {
+    local mac="$1" settle_sec="${2:-$BT_SETTLE_SEC}"
+    local end=$(( $(date +%s) + settle_sec ))
+    while (( $(date +%s) < end )); do
+        bt_connected "$mac" || return 1
+        sleep 0.5
+    done
+    bt_connected "$mac"
+}
+
+# Resolve the hciN adapter name hosting a paired headset MAC (from its BlueZ
+# device path /org/bluez/hciN/dev_..). Prints the name; exits 1 if unresolvable.
+hci_for_mac() {
+    local mac="$1" path hci
     path=$(device_path_for_mac "$mac") || return 1
     hci="${path#/org/bluez/}"; hci="${hci%%/*}"   # /org/bluez/hci3/dev_.. -> hci3
     [[ "$hci" == hci* ]] || return 1
-    # PSCAN present → adapter healthy, nothing to do.
-    hciconfig "$hci" 2>/dev/null | grep -qw PSCAN && return 1
-    log "$tag" "adapter $hci missing PSCAN — power-cycling over D-Bus to restore page scan"
-    logev "$tag" bt.adapter_heal hci="$hci"
-    local apath="/org/bluez/$hci"
+    printf '%s' "$hci"
+}
+
+# Power-cycle a controller over D-Bus. bluetoothd runs privileged, so the
+# Adapter1.Powered toggle works even though the service user can't `hciconfig`.
+# Re-inits the adapter: restores a dropped PSCAN flag AND clears a wedged
+# controller that won't hold/accept a link. Safe because each adapter hosts
+# exactly one headset and callers only invoke this while that headset is
+# disconnected, so there's no live link to disrupt.
+cycle_adapter() {
+    local hci="$1" apath="/org/bluez/$1"
     busctl --system set-property org.bluez "$apath" org.bluez.Adapter1 Powered b false 2>/dev/null || true
     sleep 2
     busctl --system set-property org.bluez "$apath" org.bluez.Adapter1 Powered b true 2>/dev/null || true
     sleep 2
+}
+
+# Heal a controller stuck without PSCAN (page scan). Failure mode: a bonded
+# headset can no longer reconnect because its Intel adapter silently stopped
+# accepting incoming pages (PSCAN flag gone). Power-cycling re-inits it and
+# restores PSCAN. Returns 0 if a heal was performed, 1 if the adapter already
+# has PSCAN (healthy — nothing to do; see should_escalate_reset for the
+# present-but-wedged path).
+heal_adapter_pscan() {
+    local mac="$1" tag="$2" hci
+    hci=$(hci_for_mac "$mac") || return 1
+    # PSCAN present → adapter healthy, nothing to do.
+    hciconfig "$hci" 2>/dev/null | grep -qw PSCAN && return 1
+    log "$tag" "adapter $hci missing PSCAN — power-cycling over D-Bus to restore page scan"
+    logev "$tag" bt.adapter_heal hci="$hci"
+    cycle_adapter "$hci" "$tag"
     return 0
+}
+
+# Decide whether a sustained reconnect outage warrants a full adapter
+# power-cycle. heal_adapter_pscan only fires when PSCAN is MISSING, but a
+# controller can refuse to hold/accept a link even WITH PSCAN present (no
+# escalation path existed — the slot just retried the same gentle Connect every
+# tick forever; observed green/slot3 dropping at 17:57 and never recovering).
+# Escalate at CONNECT_ESCALATE_MISSES and then every multiple thereafter (giving
+# a built-in backoff of ~CONNECT_ESCALATE_MISSES*CONNECT_CHECK_INTERVAL s between
+# resets) UP TO CONNECT_ESCALATE_MAX, after which we stop: a wedged controller
+# clears within the first few cycles, so continued failure means the headset is
+# simply off/out of range and power-cycling its adapter forever is futile churn.
+# Returns 0 when the caller should escalate.
+should_escalate_reset() {
+    local misses="$1"
+    [[ "$misses" =~ ^[0-9]+$ ]] || return 1
+    (( misses >= CONNECT_ESCALATE_MISSES && misses <= CONNECT_ESCALATE_MAX && misses % CONNECT_ESCALATE_MISSES == 0 ))
 }
 
 # Resolve the adapter BD address for a paired headset MAC. The evdev
@@ -2151,6 +2219,13 @@ mpv_watchdog() {
                 continue
             fi
 
+            # Same stability gate as the gdbus connect handler: don't respawn
+            # into a link that's still flapping (it would just be torn down
+            # again). Costs BT_SETTLE_SEC only on an actual respawn (rare).
+            if ! bt_link_stable "$mac"; then
+                log "$tag" "watchdog: BT connected but link unstable — deferring respawn"
+                continue
+            fi
             log "$tag" "watchdog: BT connected but mpv missing/dead — respawning (queue=$eff_queue)"
             start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
         done
@@ -2275,10 +2350,23 @@ monitor() {
 
                 if echo "$line" | grep -q "'Connected': <true>"; then
                     if [[ "${connected_state[$dbus_id]}" == false ]]; then
+                        local _cmac
+                        _cmac=$(jq -r '.mac' <<< "$device_json")
                         log "$name" "Connected"
-                        logev "$name" bt.connect mac="$(jq -r '.mac' <<< "$device_json")"
+                        logev "$name" bt.connect mac="$_cmac"
+                        # Don't commit to playback on the bare Connected edge —
+                        # require the link to hold for BT_SETTLE_SEC first. A
+                        # flapping link would otherwise spawn+teardown mpv (and a
+                        # full prime/download) per blip. If it drops during settle,
+                        # leave connected_state false so the next stable connect
+                        # re-enters; the watchdog (also gated) is the backstop if
+                        # the link settles without another gdbus edge.
+                        if ! bt_link_stable "$_cmac"; then
+                            log "$name" "link unstable during settle — deferring playback to next stable connect"
+                            logev "$name" bt.connect_unstable mac="$_cmac"
+                            continue
+                        fi
                         connected_state[$dbus_id]=true
-                        sleep 2
                         local cls
                         cls=$(device_class "$device_json")
                         if [[ "$cls" == "public" ]] && ! is_armed_for_play "$slot"; then
