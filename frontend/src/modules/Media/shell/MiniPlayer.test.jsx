@@ -69,4 +69,11 @@ describe('MiniPlayer', () => {
     renderMiniPlayer({ state: 'playing', item, queue });
     expect(screen.getByTestId('mini-queue-count')).toHaveTextContent('2/3');
   });
+
+  test('no queue badge when currentIndex is -1 (nothing current)', () => {
+    const item = { contentId: 'plex:2', title: 'Cosmos' };
+    const queue = { items: [{ queueItemId: 'a' }, { queueItemId: 'b' }, { queueItemId: 'c' }], currentIndex: -1, upNextCount: 0 };
+    renderMiniPlayer({ state: 'playing', item, queue });
+    expect(screen.queryByTestId('mini-queue-count')).not.toBeInTheDocument();
+  });
 });

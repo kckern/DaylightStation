@@ -2,7 +2,7 @@
 
 ## Overview
 
-The ContentBrowser uses a config-driven scope dropdown to filter search results by content type and source. Scopes are defined in `data/household/config/media.yml` under `searchScopes` and served via `GET /api/v1/media/config`.
+The ContentBrowser uses a config-driven scope dropdown to filter search results by content type and source. Scopes are defined in `data/household/apps/media/config.yml` under `searchScopes` and served via `GET /api/v1/media/config`.
 
 ## Config Structure
 

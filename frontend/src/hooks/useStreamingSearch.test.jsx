@@ -200,6 +200,17 @@ describe('useStreamingSearch', () => {
     expect(result.current.error).toBeNull();               // not a fatal error
   });
 
+  it('source_error removes the failed source from pending', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'pending', sources: ['plex', 'abs'] });
+      es.simulateMessage({ event: 'source_error', source: 'abs', error: 'down', pending: ['plex'] });
+    });
+    expect(result.current.pending).toEqual(['plex']);
+  });
+
   it('clears source errors on a fresh search', () => {
     const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
     act(() => { result.current.search('hello'); });
