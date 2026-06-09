@@ -177,3 +177,44 @@ describe('withBadgeXs', () => {
     expect(Math.abs(out[1].badgeX - out[0].badgeX)).toBeGreaterThanOrEqual(24);
   });
 });
+
+import { snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
+
+describe('snapChallengeEndsToZoneTicks', () => {
+  const opts = { intervalMs: 5000, effectiveTicks: 121, plotWidth: 600, marginLeft: 0, sessionStartMs: 1_000_000 };
+  // 5px per tick at this scale (600 / 120).
+  const mk = (endTick, zoneId, metUsers) => ({
+    x: 0, xEnd: endTick * 5, width: endTick * 5, type: 'zone', zoneId,
+    result: 'success', metUsers, endMs: 1_000_000 + endTick * 5000
+  });
+  it('slides xEnd right to the first tick where a met user shows the zone', () => {
+    // endTick 132.75-style case scaled down: end at tick 12.75, zone appears at tick 14
+    const m = mk(12.75, 'warm', ['felix']);
+    const zoneSeries = { felix: Array(20).fill('active') };
+    zoneSeries.felix[14] = 'warm';
+    const [out] = snapChallengeEndsToZoneTicks([m], zoneSeries, opts);
+    expect(out.xEnd).toBeCloseTo(14 * 5, 5);
+    expect(out.width).toBeCloseTo(out.xEnd - out.x, 5);
+  });
+  it('accepts a HIGHER zone than the target (hot counts for warm)', () => {
+    const m = mk(10.2, 'warm', ['kc']);
+    const zoneSeries = { kc: Array(20).fill('active') };
+    zoneSeries.kc[11] = 'hot';
+    const [out] = snapChallengeEndsToZoneTicks([m], zoneSeries, opts);
+    expect(out.xEnd).toBeCloseTo(55, 5);
+  });
+  it('leaves xEnd unchanged when the zone never appears within the cap', () => {
+    const m = mk(10.2, 'warm', ['kc']);
+    const zoneSeries = { kc: Array(20).fill('active') }; // never warm
+    const [out] = snapChallengeEndsToZoneTicks([m], zoneSeries, opts);
+    expect(out.xEnd).toBeCloseTo(51, 5);
+  });
+  it('leaves cycle challenges and markers already inside the zone untouched', () => {
+    const cyc = { ...mk(8, null, []), type: 'cycle', zoneId: null };
+    const inZone = mk(6.0, 'warm', ['kc']);
+    const zoneSeries = { kc: Array(20).fill('warm') };
+    const out = snapChallengeEndsToZoneTicks([cyc, inZone], zoneSeries, opts);
+    expect(out[0].xEnd).toBeCloseTo(40, 5);
+    expect(out[1].xEnd).toBeCloseTo(30, 5); // tick 6 already warm -> snap to floor tick = 6
+  });
+});
