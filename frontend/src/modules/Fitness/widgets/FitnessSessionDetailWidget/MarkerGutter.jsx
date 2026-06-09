@@ -38,15 +38,22 @@ export default function MarkerGutter({ sessionData }) {
           </g>
         ))}
       </svg>
-      {videoMarkers.map((m, i) => (
-        <div key={`vid-${i}`} className="marker-gutter__chip marker-gutter__chip--video" style={{ left: `${m.x}px` }}>
-          <div className="imgs">
-            {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
-            {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
+      {videoMarkers.map((m, i) => {
+        const flip = width > 0 && m.x > width - 170; // card ≈160px wide; flip near the right edge
+        return (
+          <div
+            key={`vid-${i}`}
+            className={`marker-gutter__chip marker-gutter__chip--video${flip ? ' marker-gutter__chip--flip' : ''}`}
+            style={{ left: `${m.x}px` }}
+          >
+            <div className="imgs">
+              {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
+              {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
+            </div>
+            {m.episodeName && <div className="caption">{m.episodeName}</div>}
           </div>
-          {m.episodeName && <div className="caption">{m.episodeName}</div>}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
