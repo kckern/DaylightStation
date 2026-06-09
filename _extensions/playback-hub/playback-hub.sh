@@ -13,6 +13,7 @@ API_FALLBACK_BASE="http://10.0.0.10:3111"
 # and curl got a bare id (curl exit 28, "API unavailable" on every fetch).
 DEFAULT_QUEUE_BASE="https://daylightlocal.kckern.net/api/v1/queue/plex/"
 REFRESH_INTERVAL=300       # seconds between queue refreshes (full playlist re-fetch)
+WARM_REUSE_WINDOW=120      # seconds after a teardown during which a reconnect for the SAME queue reuses the cached playlist.m3u (skip API refetch + rebuild + bg re-download) — makes a BT-flap reconnect cheap instead of a full cold start
 WATCHDOG_INTERVAL=5        # seconds between mpv liveness checks (tight respawn)
 SCHEDULE_TICK_INTERVAL=30  # seconds between scheduled-fire checks
 SELFCHECK_INTERVAL=300     # seconds between self-check (missed fires, orphans)
@@ -894,6 +895,45 @@ bt_link_stable() {
     bt_connected "$mac"
 }
 
+# True (0) iff a reconnect can cheaply reuse the existing playlist instead of a
+# cold rebuild. A BT flap tears mpv down and the next connect re-runs the full
+# start cycle — queue API fetch + playlist rebuild + a fresh 97-track bg
+# download — even though nothing changed in the ~seconds the link was gone.
+# Reuse is safe only when ALL hold: a teardown happened within WARM_REUSE_WINDOW;
+# the prior session's bg download finished (.bg_done — so playlist.m3u is the
+# WHOLE list, not a primed subset that needs the downloader re-forked); the
+# requested queue matches the one that built the playlist (.playlist_queue — so
+# a /play with a different queue still cold-loads); and playlist.m3u has at least
+# one real media entry. The periodic refresh/membership loops reconcile any
+# drift once playback resumes, so a ≤2-min-stale reuse is fine.
+warm_reconnect_ok() {
+    local slot="$1" queue="$2" dir; dir="$(slot_dir "$slot")"
+    [[ -f "$dir/playlist.m3u" && -f "$dir/.bg_done" && -f "$dir/.playlist_queue" ]] || return 1
+    [[ "$(cat "$dir/.playlist_queue" 2>/dev/null)" == "$queue" ]] || return 1
+    grep -qvE '^[[:space:]]*(#|$)' "$dir/playlist.m3u" 2>/dev/null || return 1
+    local td
+    td="$(cat "$dir/.last_teardown" 2>/dev/null || echo 0)"
+    [[ "$td" =~ ^[0-9]+$ ]] || return 1
+    (( $(date +%s) - td <= WARM_REUSE_WINDOW ))
+}
+
+# Fire a single best-effort outbound Connect for a headset that just dropped, so
+# a transient RF blip recovers in ~seconds instead of waiting up to
+# CONNECT_CHECK_INTERVAL for connectivity_loop's next tick. Backgrounded so it
+# never blocks the gdbus monitor read loop, and per-slot flock-guarded so a
+# flapping link can't pile up overlapping Connect attempts. The gated connect
+# handler resumes playback once the link proves stable.
+kick_reconnect() {
+    local mac="$1" dir="$2" path
+    path=$(device_path_for_mac "$mac") || return 1
+    (
+        exec 8>"$dir/.reconnect.lock"
+        flock -n 8 || exit 0   # a kick is already in flight for this slot
+        timeout 25 busctl --system call org.bluez "$path" \
+            org.bluez.Device1 Connect >/dev/null 2>&1 || true
+    ) &
+}
+
 # Resolve the hciN adapter name hosting a paired headset MAC (from its BlueZ
 # device path /org/bluez/hciN/dev_..). Prints the name; exits 1 if unresolvable.
 hci_for_mac() {
@@ -1230,6 +1270,9 @@ stop_playback() {
         rm -f "$dir/mpv.pid"
     fi
     rm -f "$dir/mpv-socket"
+    # Stamp teardown time so a quick reconnect (same queue, within
+    # WARM_REUSE_WINDOW) can reuse the cached playlist instead of cold-rebuilding.
+    date +%s > "$dir/.last_teardown" 2>/dev/null || true
 }
 
 # Explicit session end. Called on BT disconnect, scheduled auto-stop, and
@@ -1387,7 +1430,11 @@ fetch_and_cache() {
     fi
     log "$name" "Fetched queue from API"
 
-    rebuild_playlist_from_queue "$slot" "$name" "$queue_json" "$shuffle"
+    rebuild_playlist_from_queue "$slot" "$name" "$queue_json" "$shuffle" || return 1
+    # Record the queue that built this playlist so a warm reconnect (same queue,
+    # within WARM_REUSE_WINDOW) can reuse playlist.m3u instead of re-fetching +
+    # rebuilding. See warm_reconnect_ok / start_playback.
+    printf '%s' "$queue_url" > "$dir/.playlist_queue" 2>/dev/null || true
 }
 
 # Fork the background downloader for the remaining tracks recorded in
@@ -1662,13 +1709,23 @@ start_playback() {
     fi
     rm -f "$dir/mpv-socket"
 
+    # Warm reconnect: if this is a quick reconnect for the same queue (BT flap),
+    # reuse the cached playlist instead of the cold API fetch + rebuild + bg
+    # re-download. Still inside the lock, so no drift risk. Falls through to the
+    # cold path for anything that isn't a fresh, same-queue, fully-downloaded
+    # reuse. The membership/refresh loops reconcile any drift once mpv is up.
+    local warm=0
+    if warm_reconnect_ok "$slot" "$queue"; then
+        warm=1
+        log "$name" "warm reconnect — reusing cached playlist (skipping queue refetch/rebuild)"
+        logev "$name" playlist.warm_reuse slot="$slot"
     # Guardrail 3: fetch_and_cache must run INSIDE the lock. Previously
     # callers ran `fetch_and_cache && start_playback`, but that lets a
     # losing-the-flock caller still rewrite playlist.m3u with their own
     # shuffle while the winning caller's mpv has already loaded the
     # earlier content — producing playlist drift (mpv plays one order,
     # file shows another).
-    if ! fetch_and_cache "$slot" "$name" "$queue" "$shuffle"; then
+    elif ! fetch_and_cache "$slot" "$name" "$queue" "$shuffle"; then
         log "$name" "fetch_and_cache failed; not starting mpv"
         exec 9>&-
         return 1
@@ -1779,20 +1836,27 @@ start_playback() {
     else
         logev "$name" mpv.socket_timeout slot="$slot"
     fi
-    rm -f "$dir/.bg_done"
-    spawn_bg_downloader "$slot" "$name"
-    # One-shot reconcile: when the bg finishes appending the full list to the
-    # file, reload it into mpv (position-preserving) so mpv's in-memory list
-    # matches the full playlist — closing the warm-cache subset-loop race.
-    # exec 9>&- so the long-lived reconcile subshell does NOT hold the FD-9
-    # playback lock (it is still open in this parent until the line below).
-    ( exec 9>&-; set +e
-      for _ in $(seq 1 120); do [[ -f "$dir/.bg_done" ]] && break; sleep 1; done
-      rm -f "$dir/.bg_done"
-      loadlist_replace_preserving_pos "$slot" "$name"
-      logev "$name" playback.reconciled slot="$slot" \
-            mpv_count="$(mpv_playlist_count "$dir/mpv-socket")" \
-            file_count="$(grep -c '^/' "$dir/playlist.m3u" 2>/dev/null || echo 0)" ) &
+    # Cold path only: playlist.m3u holds just the primed subset, so kick the bg
+    # downloader for the rest and reconcile mpv once it finishes. The warm path
+    # already loaded the COMPLETE playlist and must NOT run this — removing
+    # .bg_done here would break warm-reuse for the next flap, and there's nothing
+    # left to download or reconcile.
+    if (( warm == 0 )); then
+        rm -f "$dir/.bg_done"
+        spawn_bg_downloader "$slot" "$name"
+        # One-shot reconcile: when the bg finishes appending the full list to the
+        # file, reload it into mpv (position-preserving) so mpv's in-memory list
+        # matches the full playlist — closing the warm-cache subset-loop race.
+        # exec 9>&- so the long-lived reconcile subshell does NOT hold the FD-9
+        # playback lock (it is still open in this parent until the line below).
+        ( exec 9>&-; set +e
+          for _ in $(seq 1 120); do [[ -f "$dir/.bg_done" ]] && break; sleep 1; done
+          rm -f "$dir/.bg_done"
+          loadlist_replace_preserving_pos "$slot" "$name"
+          logev "$name" playback.reconciled slot="$slot" \
+                mpv_count="$(mpv_playlist_count "$dir/mpv-socket")" \
+                file_count="$(grep -c '^/' "$dir/playlist.m3u" 2>/dev/null || echo 0)" ) &
+    fi
 
     # Release the per-slot playback lock (FD 9). Closing the FD lets a
     # future start_playback acquire flock; the lock file itself stays.
@@ -2400,6 +2464,16 @@ monitor() {
                         logev "$name" bt.disconnect mac="$(jq -r '.mac' <<< "$device_json")"
                         connected_state[$dbus_id]=false
                         end_session "$slot" "$name" fast
+                        # Fast-path reconnect: a transient RF blip during an active
+                        # schedule window shouldn't wait up to CONNECT_CHECK_INTERVAL
+                        # for connectivity_loop. Immediately (best-effort, backgrounded)
+                        # page the headset; the gated connect handler resumes once the
+                        # link proves stable. Gated to active windows so an off-hours
+                        # power-off (user done) isn't chased.
+                        if [[ "$(device_class "$device_json")" == "private" ]] \
+                            && active_schedule_json "$device_json" >/dev/null 2>&1; then
+                            kick_reconnect "$(jq -r '.mac' <<< "$device_json")" "$(slot_dir "$slot")"
+                        fi
                     fi
                 fi
             fi
