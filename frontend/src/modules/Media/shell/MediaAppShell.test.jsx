@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 
 vi.mock('../../Player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
@@ -88,10 +88,11 @@ describe('MediaAppShell', () => {
 
     // Home view is default now; navigate to NowPlaying via the MiniPlayer title button
     fireEvent.click(screen.getByTestId('mini-player-open-nowplaying'));
-    expect(screen.getByText(/now playing.*plex:42/i)).toBeInTheDocument();
+    const npHeading = () => within(screen.getByTestId('now-playing-view')).getByRole('heading');
+    expect(npHeading().textContent).toContain('plex:42');
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
     fireEvent.click(screen.getByTestId('settings-reset-session'));
     fireEvent.click(screen.getByTestId('confirm-ok'));
-    expect(screen.queryByText(/now playing.*plex:42/i)).not.toBeInTheDocument();
+    expect(npHeading().textContent).not.toContain('plex:42');
   });
 });

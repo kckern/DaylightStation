@@ -6,7 +6,7 @@ import { MiniPlayer } from './MiniPlayer.jsx';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { NavProvider } from './NavProvider.jsx';
 
-function makeAdapter(state, item) {
+function makeAdapter(state, item, queue) {
   const stopMock = vi.fn();
   const playMock = vi.fn();
   const pauseMock = vi.fn();
@@ -17,7 +17,7 @@ function makeAdapter(state, item) {
         state,
         currentItem: item,
         position: 0,
-        queue: { items: [], currentIndex: -1, upNextCount: 0 },
+        queue: queue ?? { items: [], currentIndex: -1, upNextCount: 0 },
         config: {},
         meta: { updatedAt: '', ownerId: 'test' },
       }),
@@ -28,8 +28,8 @@ function makeAdapter(state, item) {
   };
 }
 
-function renderMiniPlayer({ state, item }) {
-  const harness = makeAdapter(state, item);
+function renderMiniPlayer({ state, item, queue }) {
+  const harness = makeAdapter(state, item, queue);
   render(
     <LocalSessionContext.Provider value={{ adapter: harness.adapter }}>
       <NavProvider><MiniPlayer /></NavProvider>
@@ -58,5 +58,15 @@ describe('MiniPlayer', () => {
     const { stopMock } = renderMiniPlayer({ state: 'playing', item });
     fireEvent.click(screen.getByTestId('mini-stop'));
     expect(stopMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows queue position badge for a multi-item queue', () => {
+    const item = { contentId: 'plex:2', title: 'Cosmos' };
+    const queue = {
+      items: [{ queueItemId: 'a' }, { queueItemId: 'b' }, { queueItemId: 'c' }],
+      currentIndex: 1, upNextCount: 0,
+    };
+    renderMiniPlayer({ state: 'playing', item, queue });
+    expect(screen.getByTestId('mini-queue-count')).toHaveTextContent('2/3');
   });
 });
