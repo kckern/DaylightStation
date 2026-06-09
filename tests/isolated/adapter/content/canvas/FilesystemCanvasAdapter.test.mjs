@@ -120,6 +120,16 @@ describe('FilesystemCanvasAdapter', () => {
     });
   });
 
+  describe('getSearchCapabilities contract', () => {
+    it('returns the {canonical, specific} shape required by IMediaSearchable', () => {
+      const caps = adapter.getSearchCapabilities();
+
+      expect(Array.isArray(caps.canonical)).toBe(true);
+      expect(caps.canonical).toContain('text');
+      expect(Array.isArray(caps.specific)).toBe(true);
+    });
+  });
+
   describe('resolveDisplayables', () => {
     it('returns all images in a category folder', async () => {
       const mockFs = {
