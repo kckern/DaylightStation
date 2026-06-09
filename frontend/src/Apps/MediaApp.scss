@@ -1192,10 +1192,17 @@ div.media-search-results {
    ========================================================================= */
 @media (max-width: 780px) {
   .media-app [data-testid="media-dock"] {
-    grid-template-columns: 1fr auto;
-    padding: 8px 14px;
+    grid-template-columns: 1fr auto;   /* row 1: search + settings */
+    grid-auto-rows: auto;
+    row-gap: 8px;
+    padding: 8px 12px;
   }
-  .media-app .media-canvas { padding: 20px 16px 40px; }
+  .media-app .dock-status-cluster {
+    grid-column: 1 / -1;               /* row 2: full-width status */
+    justify-self: stretch;
+    justify-content: space-between;
+  }
+  .media-app .media-canvas { padding: 16px 12px 40px; }
 }
 
 /* =========================================================================
