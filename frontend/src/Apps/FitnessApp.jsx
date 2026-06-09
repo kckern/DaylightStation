@@ -743,7 +743,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration, contentSource]);
 
   // Handle /fitness/play/:id route
-  const handlePlayFromUrl = async (episodeId, { nogovern = false, resume = false } = {}) => {
+  const handlePlayFromUrl = async (episodeId, { nogovern = false } = {}) => {
     try {
       // Fetch episode metadata from API to get labels for governance
       const response = await DaylightAPI(`api/v1/info/${contentSource}/${episodeId}`);
@@ -772,7 +772,7 @@ const FitnessApp = () => {
         .map(l => typeof l === 'string' ? l.toLowerCase() : '');
       const isInSequentialShow = sequentialLabelSet.size > 0 &&
         episodeLabels.some(l => sequentialLabelSet.has(l));
-      if (isInSequentialShow && !nogovern && !resume) {
+      if (isInSequentialShow && !nogovern) {
         const showId = response.metadata?.grandparentId || response.metadata?.grandparentRatingKey;
         if (showId) {
           logger.info('fitness-play-url-sequential-blocked', { episodeId, showId });
@@ -1048,10 +1048,14 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
-  // After init: re-fire play-from-url whenever the URL changes to a /fitness/play/{id}
-  // path while the queue is empty. The main URL-init effect is one-shot, but in-app
-  // navigations (e.g. from the cycle-demo launcher module) need to populate the play
-  // queue without a full page reload.
+  // After init: ensure a /fitness/play/{id} URL with an empty queue gets a queue.
+  // Two paths feed this effect:
+  //   1. Restore-on-mount (F5 reload of an in-progress session): if sessionStorage
+  //      holds an active session, restore it directly via setFitnessPlayQueue — this
+  //      bypasses the sequential-show redirect because the session was already vetted.
+  //   2. In-app navigation (e.g. cycle-demo launcher, show-list onPlay) to a play URL
+  //      without a pre-populated queue: fall back to handlePlayFromUrl, which still
+  //      applies governance (including the sequential-show redirect).
   useEffect(() => {
     if (!urlInitialized || loading) return;
     if (urlState.view !== 'play' || !urlState.id) return;
@@ -1062,7 +1066,7 @@ const FitnessApp = () => {
       logger.info('fitness-session-restored-from-storage', { id: restored[0]?.id, size: restored.length });
       return;
     }
-    handlePlayFromUrl(urlState.id, { nogovern, resume: true });
+    handlePlayFromUrl(urlState.id, { nogovern });
   }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
 
   // Initialize state from URL on mount

@@ -16,6 +16,18 @@ describe('resolveTranscodeCaps', () => {
   it('passes through an explicit resolution', () => {
     expect(resolveTranscodeCaps({ maxResolution: '720' }).maxResolution).toBe('720');
   });
+
+  it('clamps an explicit frame rate above the default ceiling down to the cap', () => {
+    expect(resolveTranscodeCaps({ maxFrameRate: 60 }).maxFrameRate).toBe(30);
+  });
+
+  it('lets an explicit lower frame rate pass through', () => {
+    expect(resolveTranscodeCaps({ maxFrameRate: 24 }).maxFrameRate).toBe(24);
+  });
+
+  it('falls back to the default bitrate when given a non-finite value', () => {
+    expect(resolveTranscodeCaps({ maxVideoBitrate: 'abc' }).maxVideoBitrate).toBe(8000);
+  });
 });
 
 describe('buildClientProfileExtra', () => {
