@@ -50,9 +50,10 @@ test.describe('ContentSearchCombobox - Freeform Commit', () => {
     expect(logText).toContain(freeformText);
   });
 
-  test('blur commits freeform text with zero results', async ({ page }) => {
+  test('blur reverts plain (non-id) freeform text instead of committing it', async ({ page }) => {
     await ComboboxActions.open(page);
 
+    // Plain search text (no `source:` prefix) is exploratory — blur must NOT commit it.
     const freeformText = 'xyznonexistent888qqq';
     await ComboboxActions.search(page, freeformText);
     await ComboboxActions.waitForAllAdaptersComplete(page, 60000);
@@ -61,15 +62,31 @@ test.describe('ContentSearchCombobox - Freeform Commit', () => {
     await page.locator('body').click({ position: { x: 10, y: 10 } });
     await page.waitForTimeout(300);
 
-    // Value should be committed on blur
+    // Value must NOT be committed — blur is non-destructive for plain text.
     const currentValue = page.locator('[data-testid="current-value"]');
-    await expect(currentValue).toContainText(freeformText);
+    await expect(currentValue).not.toContainText(freeformText);
 
-    // Change log should record the commit
+    // Change log must show no commit happened.
     const changeLog = page.locator('[data-testid="change-log"]');
     const logText = await changeLog.textContent();
-    expect(logText).not.toContain('No changes yet');
-    expect(logText).toContain(freeformText);
+    expect(logText).not.toContain(freeformText);
+  });
+
+  test('blur reverts plain search text but keeps the prior committed value', async ({ page }) => {
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent('plex:456724')}`);
+    const input = ComboboxLocators.input(page);
+    await input.click();
+    await input.fill('beet');                 // exploratory search text
+    await page.locator('body').click({ position: { x: 5, y: 5 } });  // blur
+    await expect(page.getByTestId('current-value')).toContainText('plex:456724'); // unchanged
+  });
+
+  test('the freeform row commits arbitrary text explicitly', async ({ page }) => {
+    await ComboboxActions.open(page);
+    const input = ComboboxLocators.input(page);
+    await input.fill('my custom value');
+    await page.getByTestId('freeform-commit-option').click();
+    await expect(page.getByTestId('current-value')).toContainText('my custom value');
   });
 
   test('Enter commits freeform text before results arrive', async ({ page }) => {

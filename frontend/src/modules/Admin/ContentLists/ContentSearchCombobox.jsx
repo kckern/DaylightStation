@@ -6,7 +6,7 @@ import {
 import { useDebouncedCallback } from '@mantine/hooks';
 import {
   IconSearch, IconChevronRight, IconArrowLeft, IconFolder,
-  IconMusic, IconVideo, IconPhoto, IconFile, IconList
+  IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX
 } from '@tabler/icons-react';
 import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
@@ -63,6 +63,10 @@ function normalizeListSource(source) {
   return source === 'list' ? 'menu' : source;
 }
 
+// Content-id-like text (e.g. `plex:456724`, `canvas:religious/stars.jpg`) is an
+// intentional commit; plain exploratory search text is not. (§3.1-5/6)
+const CONTENT_ID_LIKE = /^[\w-]+:\S+/;
+
 /**
  * ContentSearchCombobox - Searchable combobox for selecting content items
  * Supports search and drilling down into containers
@@ -80,6 +84,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const scrollViewportRef = useRef(null);
   const loadCooldownRef = useRef(false); // prevent scroll-triggered load feedback loop
   const inputRef = useRef(null);
+  // True once the user has arrow-navigated to an option this edit; gates whether
+  // Enter commits freeform vs. selects the highlighted option. (§3.1-6)
+  const userNavigatedRef = useRef(false);
 
   // Log prop changes
   useEffect(() => {
@@ -553,6 +560,13 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     <Combobox
       store={combobox}
       onOptionSubmit={(val) => {
+        if (val === '__freeform__') {
+          log.info('freeform.commit_via_option', { freeformValue: search });
+          onChange(search);
+          setSearch(null); setBreadcrumbs([]); setBrowseResults([]);
+          combobox.closeDropdown();
+          return;
+        }
         const item = results.find(r => r.id === val);
         log.debug('option_submit', { val, found: !!item, title: item?.title });
         if (item) handleItemClick(item);
@@ -572,6 +586,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               setBrowseResults([]);
               setPagination(null);
             }
+            userNavigatedRef.current = false;
             setSearch(newValue);
             debouncedSearch(newValue);
             combobox.openDropdown();
@@ -586,26 +601,31 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             combobox.openDropdown();
           }}
           onBlur={() => {
-            log.debug('input.blur', { search, value, willCommitFreeform: !!(search && search !== value) });
-            // INVARIANT: Always save freeform text on blur. Never gate on result count.
-            // See: docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
-            // Commit freeform text if user typed something different from current value
-            if (search && search !== value) {
-              log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
-              onChange(search);
-              // Don't clear search here — let useEffect on [value] handle it
-              // after parent updates, to avoid display flash
+            log.debug('input.blur', { search, value });
+            // INVARIANT (updated 2026-06-09, supersedes the always-commit-on-blur rule):
+            // Blur is non-destructive for exploratory text — only content-id-like input
+            // (intentional) commits on blur; plain search text reverts to the committed
+            // value. Explicit commit paths remain Enter and the freeform row.
+            // See: docs/plans/2026-06-09-media-ux-overhaul.md (Task 13) and
+            //      docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
+            if (search !== null && search !== value) {
+              if (search && CONTENT_ID_LIKE.test(search)) {
+                log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
+                onChange(search);
+              } else {
+                log.info('freeform.revert_on_blur', { discarded: search, kept: value });
+              }
             }
             combobox.closeDropdown();
           }}
           onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') userNavigatedRef.current = true;
             if (e.key === 'Enter' && search && search !== value) {
               const idx = combobox.getSelectedOptionIndex();
-              log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length });
-              // INVARIANT: Commit freeform when no option is highlighted or no results.
-              // Never prevent save based on result availability. User decides what's valid.
-              // Commit freeform text on Enter when no dropdown option is highlighted
-              if (idx === -1 || results.length === 0) {
+              log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length, userNavigated: userNavigatedRef.current });
+              // Commit freeform on Enter whenever the user has NOT arrow-navigated to a
+              // real option. Intentional input is never lost. (§3.1-6)
+              if (!userNavigatedRef.current || idx === -1 || results.length === 0) {
                 log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
                 e.preventDefault();
                 onChange(search);
@@ -705,10 +725,15 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               </Combobox.Empty>
             ) : results.length === 0 ? (
               <Combobox.Empty>
-                {(!search || search.length < 2) ? 'Type to search...' : 'No results — press Enter to use as-is'}
+                {(!search || search.length < 2) ? 'Type to search...' : 'No results — select “Use as raw value” or press Enter'}
               </Combobox.Empty>
             ) : (
               options
+            )}
+            {search && search !== value && breadcrumbs.length === 0 && (
+              <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
+                <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>
+              </Combobox.Option>
             )}
             {loadingMore && pagination?.hasAfter && (
               <Group justify="center" py={4}>
