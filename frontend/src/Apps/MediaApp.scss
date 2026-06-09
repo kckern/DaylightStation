@@ -1201,6 +1201,11 @@ div.media-search-results {
      auto-placement cannot backfill — without these pins the cog lands alone on
      row 3 (the original M14 symptom, rearranged). */
   .media-app .settings-menu-root { grid-row: 1; grid-column: 2; }
+  /* The search bar's flex input has min-width:auto, which forces the 1fr column
+     wider than the viewport and shoves the cog/cluster off-screen right. Let it
+     shrink. */
+  .media-app .media-search-bar { min-width: 0; }
+  .media-app .media-search-bar input { min-width: 0; }
   .media-app .dock-status-cluster {
     grid-row: 2;
     grid-column: 1 / -1;               /* row 2: full-width status */
