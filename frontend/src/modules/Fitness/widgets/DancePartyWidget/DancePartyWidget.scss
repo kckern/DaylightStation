@@ -10,6 +10,12 @@
 .dance-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dance-artist { font-size: 12px; opacity: .8; }
 .dance-controls { display: flex; gap: 14px; }
+// VolumeControl primitive, themed for the dark now-playing gradient.
+.dance-volume { flex: 0 0 auto;
+  .volume-control__slider { width: 140px; }
+  .volume-control__track { background-color: rgba(255,255,255,.25); }
+  .volume-control__mute-btn { color: #fff; }
+}
 .dance-controls button { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
 
 .dance-party { position: absolute; inset: 0; background: #000; overflow: hidden; }
