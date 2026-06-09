@@ -383,16 +383,26 @@
     letter-spacing: 0.03em;
   }
 
-  // Chart row (40%)
+  // Chart row — grows to fill space left by header + gutter + timeline
   &__chart {
-    flex: 0 0 40%;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
     position: relative;
   }
 
-  // Timeline row (35%)
+  // Center gutter: marker icons + labels live here; the chart (above) and the
+  // HR-area lanes (below) draw the vertical indicators that emanate up and down.
+  &__gutter {
+    flex: 0 0 66px;
+    overflow: visible;
+    position: relative;
+    z-index: 2; // chips sit above the adjacent charts' indicator lines
+  }
+
+  // Timeline row (33%)
   &__timeline {
-    flex: 0 0 35%;
+    flex: 0 0 33%;
     overflow: hidden;
     position: relative;
   }

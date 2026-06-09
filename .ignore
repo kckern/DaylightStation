@@ -1,0 +1,4 @@
+# ripgrep .ignore — honored by Claude Code's @-mention file picker AND by the
+# Grep tool / `rg` in this repo. Keeps the test tree out of `@` autocomplete.
+# (Tests stay tracked in git; this only affects ripgrep-based file listing/search.)
+tests/
