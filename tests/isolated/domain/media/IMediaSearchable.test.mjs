@@ -4,12 +4,28 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('IMediaSearchable', () => {
   describe('isMediaSearchable', () => {
-    test('returns true for object with search method', () => {
+    test('returns true for object with search method and a valid capabilities shape', () => {
       const adapter = {
         search: async () => ({ items: [], total: 0 }),
-        getSearchCapabilities: () => ['text']
+        getSearchCapabilities: () => ({ canonical: ['text'], specific: [] })
       };
       expect(isMediaSearchable(adapter)).toBe(true);
+    });
+
+    test('returns false when getSearchCapabilities returns the wrong shape', () => {
+      const adapter = {
+        search: async () => ({ items: [], total: 0 }),
+        getSearchCapabilities: () => ['text'] // legacy array shape, not {canonical, specific}
+      };
+      expect(isMediaSearchable(adapter)).toBe(false);
+    });
+
+    test('returns false when getSearchCapabilities throws', () => {
+      const adapter = {
+        search: async () => ({ items: [], total: 0 }),
+        getSearchCapabilities: () => { throw new Error('boom'); }
+      };
+      expect(isMediaSearchable(adapter)).toBe(false);
     });
 
     test('returns false for object without search method', () => {
