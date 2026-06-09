@@ -28,6 +28,7 @@ import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
+import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
 
 registerBuiltinWidgets();
 
@@ -52,6 +53,12 @@ const FitnessApp = () => {
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
+
+  // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
+  useEffect(() => {
+    if (fitnessPlayQueue.length > 0) saveActiveSession(fitnessPlayQueue);
+    else clearActiveSession();
+  }, [fitnessPlayQueue]);
   const [kioskUI, setKioskUI] = useState(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocalhost) return false;
@@ -1049,6 +1056,12 @@ const FitnessApp = () => {
     if (!urlInitialized || loading) return;
     if (urlState.view !== 'play' || !urlState.id) return;
     if (fitnessPlayQueue.length > 0) return;
+    const restored = loadActiveSession();
+    if (restored) {
+      setFitnessPlayQueue(restored);
+      logger.info('fitness-session-restored-from-storage', { id: restored[0]?.id, size: restored.length });
+      return;
+    }
     handlePlayFromUrl(urlState.id, { nogovern });
   }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
 
