@@ -5,40 +5,20 @@
   overflow: visible;
   pointer-events: none;
 
+  // Indicator lines/rects pass THROUGH the gutter so they read continuously across
+  // the line chart, gutter, and HR lanes. Sits behind the video poster cards.
+  &__lines {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+  }
+
   &__chip {
     position: absolute;
     top: 50%;
     transform: translate(-50%, -50%);
     display: flex;
-    align-items: center;
   }
-
-  // Challenge: a small pill tinted by challenge type / HR zone (warm vs hot).
-  &__chip--challenge {
-    gap: 3px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    border: 1.5px solid var(--marker-color, #94a3b8);
-    background: rgba(0, 0, 0, 0.6);
-    font-size: 11px;
-    line-height: 1;
-    white-space: nowrap;
-
-    .icon { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)); }
-    .zone {
-      color: var(--marker-color, #fff);
-      font-weight: 700;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.02em;
-    }
-    .count { color: #fff; font-weight: 600; }
-  }
-
-  // A failed challenge reads dimmer/struck; a still-running one (started) pulses subtle.
-  &__chip--fail { opacity: 0.55; }
-  &__chip--fail .zone { text-decoration: line-through; }
-  &__chip--started { border-style: dashed; }
 
   // Video change: poster + episode thumbnail with a caption underneath.
   &__chip--video {
