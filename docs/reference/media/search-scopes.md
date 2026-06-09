@@ -50,25 +50,31 @@ curl -s "http://localhost:{port}/api/v1/proxy/plex/library/sections" | \
 
 Plex hub search returns unhydrated items (containers like shows, or movies without streaming URLs). These items lack `mediaUrl`, so `capability=playable` will filter them out. For Plex scopes, omit `capability=playable` and rely on `source` + `plex.libraryId` filtering instead.
 
-## Frontend Components
+## Frontend Surface
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `ScopeDropdown` | `frontend/src/modules/Media/ScopeDropdown.jsx` | Two-level dropdown with favorites and recents |
-| `ScopeChips` | `frontend/src/modules/Media/ScopeChips.jsx` | Result-count chips for re-scoping from results |
-| `useScopePrefs` | `frontend/src/hooks/media/useScopePrefs.js` | localStorage persistence (last scope, recents, favorites) |
+The Media App's search scope UI is intentionally minimal (rebuilt in the P1–P7
+overhaul). There is **no** `ScopeDropdown`, `ScopeChips`, or `useScopePrefs` — earlier
+revisions of this doc described components that were never shipped in the current app.
+
+| Piece | File | Purpose |
+|-------|------|---------|
+| `SearchProvider` | `frontend/src/modules/Media/search/SearchProvider.jsx` | Loads `searchScopes` from `/api/v1/media/config`, flattens parent + children, tracks `currentScopeKey`, persists last scope, exposes `scopeError` on config-load failure |
+| Scope `<select>` | `frontend/src/modules/Media/search/SearchBar.jsx` | Native `<select>`; parents with `children` render as an `<optgroup>` (with an optional "All {label}" option when the parent itself has `params`); leaf scopes render as plain `<option>` |
+
+Selecting any option (parent-with-params or a child leaf) sets `currentScopeKey`; the
+resolved scope's `params` string is forwarded to the SSE search endpoint. A child key
+resolves correctly because `SearchProvider` searches the flattened scope tree, not just
+the top level.
+
+If the config fetch fails, `SearchProvider` sets `scopeError` and `SearchBar` renders a
+small ⚠ indicator (testid `scope-error`) next to the dropdown.
 
 ## Persistence (localStorage)
 
 | Key | Value |
 |-----|-------|
-| `media-scope-last` | Key of last-used scope (restored on mount) |
-| `media-scope-recents` | Array of last 5 scope keys that produced results |
-| `media-scope-favorites` | Array of starred scope keys |
+| `media-scope-last` (`SCOPE_KEY_LAST`) | Key of the last-used scope (validated against the flattened scope tree, restored on mount) |
 
-Recents are only recorded when a search with that scope actually produces results (not on selection alone).
-
-## Re-scoping from Results
-
-- **Scope chips**: When search results arrive under a broad scope (All or parent), chips appear above results showing counts per leaf scope (e.g., `Movies (12) | TV Shows (5)`). Clicking narrows the scope.
-- **Source badges**: Each result displays its source as a clickable badge. Clicking finds the narrowest matching scope and re-scopes to it.
+> Favorites, recents, and result-count re-scoping chips are **not currently implemented**
+> (the `media-scope-recents` / `media-scope-favorites` keys and the chip/source-badge
+> re-scoping flows were removed in the P1–P7 rebuild). Only `media-scope-last` persists.

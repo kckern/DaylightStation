@@ -758,11 +758,11 @@ export class ContentQueryService {
       }
     }
 
-    console.debug('[ContentQueryService.#enrichWithWatchState] Storage path resolved:', { storagePath, usesFallback });
+    this.#logger.debug?.('content-query.watch-state.storage-path', { storagePath, usesFallback });
 
     // Load ALL progress for this storage path at once (1 file read, not N)
     let allProgress = await this.#mediaProgressMemory.getAll(storagePath);
-    console.debug('[ContentQueryService.#enrichWithWatchState] Progress loaded:', { count: allProgress.length });
+    this.#logger.debug?.('content-query.watch-state.progress-loaded', { count: allProgress.length });
 
     // If no progress found and we're using fallback, scan all library files
     // This handles the case when the source is offline (e.g., Plex unreachable)
@@ -819,10 +819,10 @@ export class ContentQueryService {
   async enrichWithWatchState(items, source, containerId = null) {
     const adapter = this.#registry.get(source);
     if (!adapter) {
-      console.debug('[ContentQueryService.enrichWithWatchState] No adapter for source:', source);
+      this.#logger.debug?.('content-query.watch-state.no-adapter', { source });
       return items;
     }
-    console.debug('[ContentQueryService.enrichWithWatchState]', { source, containerId, itemCount: items.length });
+    this.#logger.debug?.('content-query.watch-state.enrich', { source, containerId, itemCount: items.length });
     return this.#enrichWithWatchState(items, adapter, containerId);
   }
 

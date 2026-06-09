@@ -30,18 +30,39 @@ const VALID_MEDIA_TYPES = ['image', 'video', 'audio'];
 const VALID_SORT_OPTIONS = ['date', 'title', 'random'];
 
 /**
- * Check if an object implements IMediaSearchable
+ * @typedef {Object} SearchCapabilities
+ * @property {string[]} canonical - Canonical query fields the adapter understands
+ *   (text, people, dateFrom, etc.) — see MediaSearchQuery
+ * @property {string[]} specific - Source-specific query keys (passed through verbatim)
+ */
+
+/**
+ * Check if an object implements IMediaSearchable.
+ *
+ * Verifies both the method surface AND the capabilities shape: a conforming
+ * adapter's getSearchCapabilities() must return {canonical: string[], specific: string[]}.
+ * The call is wrapped defensively so a throwing/garbage implementation reports false
+ * rather than crashing the caller.
+ *
  * @param {Object} obj
  * @returns {boolean}
  */
 export function isMediaSearchable(obj) {
-  return (
-    obj !== null &&
-    obj !== undefined &&
-    typeof obj === 'object' &&
-    typeof obj.search === 'function' &&
-    typeof obj.getSearchCapabilities === 'function'
-  );
+  if (
+    obj === null ||
+    obj === undefined ||
+    typeof obj !== 'object' ||
+    typeof obj.search !== 'function' ||
+    typeof obj.getSearchCapabilities !== 'function'
+  ) {
+    return false;
+  }
+  try {
+    const caps = obj.getSearchCapabilities();
+    return !!caps && Array.isArray(caps.canonical) && Array.isArray(caps.specific);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -96,7 +117,7 @@ export function validateSearchQuery(query) {
  *
  * Adapters implementing this interface must provide:
  * - search(query: MediaSearchQuery): Promise<MediaSearchResult>
- * - getSearchCapabilities(): string[]
+ * - getSearchCapabilities(): {canonical: string[], specific: string[]}
  */
 export const IMediaSearchable = {
   /**
@@ -110,10 +131,10 @@ export const IMediaSearchable = {
 
   /**
    * Get available search capabilities for this adapter
-   * @returns {string[]} - Supported query fields
+   * @returns {SearchCapabilities} - {canonical: string[], specific: string[]}
    */
   getSearchCapabilities() {
-    return [];
+    return { canonical: [], specific: [] };
   }
 };
 
