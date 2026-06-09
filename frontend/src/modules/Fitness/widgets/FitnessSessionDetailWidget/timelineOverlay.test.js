@@ -56,3 +56,52 @@ describe('clamping to the plot', () => {
     expect(s.x).toBeGreaterThanOrEqual(10);
   });
 });
+
+import { computeVideoMarkers, computeChallengeMarkers } from './timelineOverlay.js';
+
+const MARKER_OPTS = { intervalMs: 5000, effectiveTicks: 121, plotWidth: 600, marginLeft: 0, sessionStartMs: 1_000_000 };
+
+const videoEvent = (startOffsetSec, over = {}) => ({
+  type: 'media',
+  data: { contentId: 'plex:1', title: 'Ep', grandparentId: 'plex:9', start: 1_000_000 + startOffsetSec * 1000, ...over }
+});
+
+describe('computeVideoMarkers', () => {
+  it('omits the first video (opening slot) and marks the rest', () => {
+    const events = [videoEvent(0, { title: 'Warmup' }), videoEvent(300, { title: 'Hero', contentId: 'plex:2' })];
+    const markers = computeVideoMarkers(events, MARKER_OPTS);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].episodeName).toBe('Hero');
+    expect(markers[0].thumbUrl).toBe('/api/v1/display/plex/2');
+    expect(markers[0].posterUrl).toBe('/api/v1/display/plex/9');
+    expect(markers[0].x).toBeGreaterThan(0);
+  });
+
+  it('returns no markers for a single-video session', () => {
+    expect(computeVideoMarkers([videoEvent(0)], MARKER_OPTS)).toHaveLength(0);
+  });
+
+  it('ignores audio (track) media', () => {
+    const events = [videoEvent(0), { type: 'media', data: { contentId: 'plex:3', artist: 'X', start: 1_300_000 } }];
+    expect(computeVideoMarkers(events, MARKER_OPTS)).toHaveLength(0);
+  });
+});
+
+describe('computeChallengeMarkers', () => {
+  it('places a dotted marker per challenge with a resolved type', () => {
+    const events = [
+      { type: 'challenge', data: { challengeId: 'a', type: 'cycle', start: 1_060_000, result: 'success' } },
+      { type: 'challenge', data: { challengeId: 'b', zoneId: 'warm', start: 1_120_000, result: 'fail', zoneLabel: 'Warm' } }
+    ];
+    const markers = computeChallengeMarkers(events, MARKER_OPTS);
+    expect(markers).toHaveLength(2);
+    expect(markers[0].type).toBe('cycle');
+    expect(markers[1].type).toBe('zone');
+    expect(markers[1].label).toBe('Warm');
+    expect(markers[0].x).toBeGreaterThan(0);
+  });
+
+  it('returns [] when there are no challenge events', () => {
+    expect(computeChallengeMarkers([{ type: 'media', data: {} }], MARKER_OPTS)).toHaveLength(0);
+  });
+});
