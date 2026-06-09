@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { vi, test, expect, beforeEach, describe } from 'vitest';
+import { vi, test, expect, beforeEach } from 'vitest';
 import { ResultRow } from './ResultRow.jsx';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { NavProvider } from '../shell/NavProvider.jsx';
