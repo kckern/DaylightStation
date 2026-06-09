@@ -237,33 +237,28 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
   });
 
   test('with selectContainers, a chevron browses in while row-click commits the container id', async ({ page }) => {
-    // selectContainers=1 makes container rows commit; the dual-affordance chevron drills in.
     await page.goto(`${TEST_URL}?selectContainers=1`);
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
-    const browseButtons = page.locator('[data-testid^="browse-into-"]');
-    if (await browseButtons.count() === 0) {
-      test.skip(true, 'no container results to exercise the dual affordance');
-    }
+    const containerRow = page.locator('[data-combobox-option]:has([data-testid^="browse-into-"])').first();
+    await expect(containerRow, 'search must return at least one container to exercise dual affordance').toBeVisible();
+    const chevron = containerRow.locator('[data-testid^="browse-into-"]');
+    const id = (await chevron.getAttribute('data-testid')).replace('browse-into-', '');
 
     // The chevron drills into the container (breadcrumb back button appears).
-    await browseButtons.first().click();
+    await chevron.click();
     await page.waitForTimeout(500);
     await expect(ComboboxLocators.backButton(page)).toBeVisible();
 
-    // Reset and verify row-click commits the container id instead of drilling.
+    // Reset; row-click (on the row that has a chevron) commits the container id.
     await page.goto(`${TEST_URL}?selectContainers=1`);
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
     await ComboboxActions.waitForStreamComplete(page, 30000);
-
-    const containerRow = page.locator('[data-testid^="browse-into-"]').first();
-    const id = (await containerRow.getAttribute('data-testid'))?.replace('browse-into-', '');
-    // Click the row body (not the chevron) — Mantine option click commits.
-    await ComboboxLocators.options(page).first().click();
+    await page.locator('[data-combobox-option]:has([data-testid^="browse-into-"])').first().click();
     await page.waitForTimeout(300);
-    if (id) await expect(page.getByTestId('current-value')).toContainText(id);
+    await expect(page.getByTestId('current-value')).toContainText(id);
   });
 });
