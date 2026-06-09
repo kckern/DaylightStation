@@ -75,6 +75,7 @@ import { ActivityRegistry } from '#apps/fitness/activities/ActivityRegistry.mjs'
 import { CycleGameProvider } from '#apps/fitness/activities/CycleGameProvider.mjs';
 import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingService.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
+import { DanceLightingController } from '#adapters/fitness/DanceLightingController.mjs';
 import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
@@ -912,6 +913,16 @@ export function createFitnessServices(config) {
     });
   }
 
+  // Dance Party lighting controller (reuses the same HA gateway)
+  let danceLightingController = null;
+  if (haGateway) {
+    danceLightingController = new DanceLightingController({
+      gateway: haGateway,
+      loadFitnessConfig,
+      logger
+    });
+  }
+
   // Equipment fan controller (uses home automation gateway)
   let equipmentFanController = null;
   if (haGateway) {
@@ -938,6 +949,7 @@ export function createFitnessServices(config) {
     cycleRaceService,
     sessionGroupingService,
     ambientLedController,
+    danceLightingController,
     equipmentFanController,
     transcriptionService,
     haGateway // Expose for other uses
@@ -1049,6 +1061,7 @@ export function createFitnessApiRouter(config) {
     cycleRaceService: fitnessServices.cycleRaceService,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     zoneLedController: fitnessServices.ambientLedController,
+    danceLightingController: fitnessServices.danceLightingController,
     equipmentFanController: fitnessServices.equipmentFanController,
     transcriptionService: fitnessServices.transcriptionService,
     screenshotService,

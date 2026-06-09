@@ -55,6 +55,7 @@ const simulationState = {
  * @param {Object} config
  * @param {Object} config.sessionService - SessionService instance
  * @param {Object} config.zoneLedController - AmbientLedAdapter instance
+ * @param {Object} [config.danceLightingController] - DanceLightingController instance
  * @param {Object} config.userService - UserService for hydrating config
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
@@ -74,6 +75,7 @@ export function createFitnessRouter(config) {
   const {
     sessionService,
     zoneLedController,
+    danceLightingController,
     equipmentFanController,
     userService,
     configService,
@@ -922,6 +924,31 @@ export function createFitnessRouter(config) {
     result.resetBy = req.ip || 'unknown';
     res.json(result);
   });
+
+  // =============================================================================
+  // Dance Party Lighting Endpoints (require Home Assistant configuration)
+  // =============================================================================
+
+  /**
+   * Dance Party lighting — POST /dance/{start,accent,stop}
+   * Gracefully no-ops when no controller is wired (HA disabled / not configured).
+   */
+  const danceAction = (action) => async (req, res) => {
+    try {
+      if (!danceLightingController || typeof danceLightingController[action] !== 'function') {
+        return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
+      }
+      const householdId = req.query.householdId || req.body?.householdId;
+      const result = await danceLightingController[action](householdId);
+      return res.json(result);
+    } catch (error) {
+      logger.error?.('fitness.dance.error', { action, error: error.message });
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  };
+  router.post('/dance/start', danceAction('start'));
+  router.post('/dance/accent', danceAction('accent'));
+  router.post('/dance/stop', danceAction('stop'));
 
   // =============================================================================
   // Equipment Fan Endpoints (require Home Assistant configuration)

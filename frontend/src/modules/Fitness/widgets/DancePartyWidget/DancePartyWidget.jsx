@@ -1,0 +1,139 @@
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import PropTypes from 'prop-types';
+import Player from '@/modules/Player/Player.jsx';
+import { ContentDisplayUrl } from '@/lib/api.mjs';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { resolveDancePlaylists } from './resolveDancePlaylists.js';
+import { muteVideosIn } from './muteVideosIn.js';
+import { useDanceLighting } from './useDanceLighting.js';
+import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
+import getLogger from '@/lib/logging/Logger.js';
+import './DancePartyWidget.scss';
+
+/**
+ * DancePartyWidget — fullscreen "Party Mode": a looping muted disco video
+ * (or animated CSS backdrop when no video is configured) + a shuffled music
+ * playlist, with the garage Hue strips driven by useDanceLighting (start on
+ * mount, stop on unmount, accent on each track change).
+ *
+ * The two <Player> instances mirror the real call site in
+ * FitnessMusicPlayer.jsx: a memoized `queue` object, the forwardRef `ref`,
+ * track detection via the `onProgress` callback's `progressData.media`, and
+ * the imperative API (`toggle`, `advance`, `getMediaElement`). The video is
+ * looped via `queue.continuous` and muted by forcing `<video>.muted = true`
+ * directly (via muteVideosIn — `play={{ volume: 0 }}` is a no-op because
+ * useQueueController resolves `play?.volume || ... || 1` and 0 is falsy).
+ */
+export default function DancePartyWidget({ onClose, config, onMount }) {
+  const logger = useMemo(() => getLogger().child({ component: 'dance-party' }), []);
+  const fitnessContext = useFitnessContext();
+  const musicPlaylists = config?.plex?.music_playlists || fitnessContext?.plexConfig?.music_playlists || [];
+  const { audioPlaylistId, videoPlaylistId, shuffle, hasVideo } =
+    useMemo(() => resolveDancePlaylists(config, musicPlaylists), [config, musicPlaylists]);
+
+  const { accent } = useDanceLighting({ enabled: true });
+
+  const audioRef = useRef(null);
+  const videoContainerRef = useRef(null);
+  const [track, setTrack] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const trackKeyRef = useRef(null);
+
+  // Notify the host container we've mounted (parity with other widgets).
+  useEffect(() => {
+    onMount?.();
+  }, [onMount]);
+
+  // Mirror FitnessMusicPlayer: the queue prop is a memoized object so the inner
+  // Player's queue controller does not re-init every render.
+  const audioQueue = useMemo(
+    () => (audioPlaylistId ? { contentId: `plex:${audioPlaylistId}`, plex: audioPlaylistId, shuffle } : null),
+    [audioPlaylistId, shuffle]
+  );
+  // continuous: true loops the playlist (see useQueueController reset-continuous).
+  const videoQueue = useMemo(
+    () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true } : null),
+    [videoPlaylistId, shuffle]
+  );
+  // Mute the video layer at the element level. Player has no `muted` prop and
+  // `play={{ volume: 0 }}` is a no-op (useQueueController: `play?.volume || 1`).
+  // The MutationObserver in muteVideosIn keeps the <video> muted as the
+  // `continuous` playlist swaps the source/element on each advance.
+  useEffect(() => {
+    if (!(hasVideo && videoQueue)) return undefined;
+    const cleanup = muteVideosIn(videoContainerRef.current);
+    return cleanup;
+  }, [hasVideo, videoQueue]);
+
+  // Track changes arrive via Player's onProgress callback (progressData.media),
+  // exactly as FitnessMusicPlayer derives its current track. Fire a lighting
+  // accent + update the now-playing bar only when the track key actually changes.
+  const handleAudioProgress = useCallback((progressData) => {
+    const media = progressData?.media;
+    if (!media) return;
+    const newKey = media.contentId || media.key || media.plex || media.assetId || media.ratingKey || null;
+    if (newKey && newKey !== trackKeyRef.current) {
+      trackKeyRef.current = newKey;
+      setTrack({
+        title: media.title || media.label || media.parentTitle || null,
+        artist: media.artist || media.albumArtist || media.grandparentTitle || media.parentTitle || null,
+        coverUrl: newKey ? ContentDisplayUrl(newKey) : null
+      });
+      accent();
+      logger.info('fitness.dance.track_change', { title: media.title || null });
+    }
+  }, [accent, logger]);
+
+  const handleAudioError = useCallback((err) => {
+    logger.warn('fitness.dance.audio_error', { kind: err?.kind ?? null, message: err?.message ?? null });
+  }, [logger]);
+
+  const togglePlay = useCallback(() => {
+    const api = audioRef.current;
+    if (!api || typeof api.toggle !== 'function') return;
+    api.toggle();
+    setIsPlaying((prev) => !prev);
+  }, []);
+
+  const next = useCallback(() => {
+    audioRef.current?.advance?.(1);
+  }, []);
+
+  return (
+    <div className="dance-party">
+      <div className="dance-video" ref={videoContainerRef}>
+        {hasVideo && videoQueue ? (
+          <Player queue={videoQueue} playerType="video" />
+        ) : (
+          <div className="dance-backdrop" aria-hidden="true" />
+        )}
+      </div>
+
+      {audioQueue && (
+        <div className="dance-audio-host">
+          <Player
+            ref={audioRef}
+            queue={audioQueue}
+            onProgress={handleAudioProgress}
+            onError={handleAudioError}
+            playerType="audio"
+          />
+        </div>
+      )}
+
+      <DanceNowPlayingBar
+        track={track}
+        isPlaying={isPlaying}
+        onPlayPause={togglePlay}
+        onNext={next}
+        onExit={onClose}
+      />
+    </div>
+  );
+}
+
+DancePartyWidget.propTypes = {
+  onClose: PropTypes.func,
+  config: PropTypes.object,
+  onMount: PropTypes.func
+};

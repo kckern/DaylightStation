@@ -1,0 +1,24 @@
+/**
+ * Resolve the dance_party.lighting config into a normalized shape with fallbacks.
+ * Config-driven with graceful degradation: absent config never throws, and a
+ * missing capability (e.g. no color_strips) degrades to a no-op downstream.
+ */
+const ACCENT_MODES = ['flash', 'breathe', 'blink'];
+
+export function resolveDanceLightingConfig(fitnessConfig) {
+  const dp = fitnessConfig?.dance_party || {};
+  const lighting = dp.lighting || {};
+  const accent = lighting.accent || {};
+  return {
+    enabled: dp.enabled !== false,
+    colorStrips: Array.isArray(lighting.color_strips) ? lighting.color_strips : [],
+    whiteLights: Array.isArray(lighting.white_lights) ? lighting.white_lights : [],
+    baseEffect: typeof lighting.base_effect === 'string' && lighting.base_effect ? lighting.base_effect : 'colorloop',
+    accent: {
+      mode: ACCENT_MODES.includes(accent.mode) ? accent.mode : 'flash',
+      onTrackChange: accent.on_track_change !== false,
+      intervalMs: Number.isFinite(accent.interval_ms) ? accent.interval_ms : 20000,
+      minIntervalMs: Number.isFinite(accent.min_interval_ms) ? accent.min_interval_ms : 4000
+    }
+  };
+}
