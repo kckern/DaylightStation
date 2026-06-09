@@ -287,13 +287,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const registry = getWidgetRegistry();
   const ChartComponent = registry.get('fitness:chart');
 
-  // The center gutter only earns its vertical space when there are markers to show:
-  // any challenge, or a video change (>1 non-audio media). Strava-map sessions have none.
+  // The center gutter holds only video-change cards now (challenge badges live at the
+  // top of the line chart), so it earns its 66px only when there IS a video change:
+  // >1 non-audio media event. Strava-map sessions never show it.
   const events = sessionData?.timeline?.events;
-  const hasMarkers = !header?.stravaHasMap && Array.isArray(events) && (
-    events.some((e) => e?.type === 'challenge') ||
-    events.filter((e) => e?.type === 'media' && e?.data?.contentType !== 'track' && !e?.data?.artist).length > 1
-  );
+  const hasVideoChanges = !header?.stravaHasMap && Array.isArray(events) &&
+    events.filter((e) => e?.type === 'media' && e?.data?.contentType !== 'track' && !e?.data?.artist).length > 1;
 
   return (
     <div className="session-detail">
@@ -497,7 +496,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       </div>
 
       {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
-      {hasMarkers && (
+      {hasVideoChanges && (
         <div className="session-detail__gutter">
           <MarkerGutter sessionData={sessionData} />
         </div>

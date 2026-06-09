@@ -23,25 +23,37 @@ export default function MarkerGutter({ sessionData }) {
           const w = Math.max(m.width, 2);
           return (
             <g key={`gl-chal-${i}`}>
-              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={0.14} />
+              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={0.06} />
+              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
               <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
             </g>
           );
         })}
         {videoMarkers.map((m, i) => (
-          <line key={`gl-vid-${i}`} x1={m.x} y1={0} x2={m.x} y2={height}
-            stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+          <g key={`gl-vid-${i}`}>
+            <line x1={m.x} y1={0} x2={m.x} y2={height}
+              stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
+            <line x1={m.x} y1={0} x2={m.x} y2={height}
+              stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+          </g>
         ))}
       </svg>
-      {videoMarkers.map((m, i) => (
-        <div key={`vid-${i}`} className="marker-gutter__chip marker-gutter__chip--video" style={{ left: `${m.x}px` }}>
-          <div className="imgs">
-            {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
-            {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
+      {videoMarkers.map((m, i) => {
+        const flip = width > 0 && m.x > width - 170; // card ≈160px wide; flip near the right edge
+        return (
+          <div
+            key={`vid-${i}`}
+            className={`marker-gutter__chip marker-gutter__chip--video${flip ? ' marker-gutter__chip--flip' : ''}`}
+            style={{ left: `${m.x}px` }}
+          >
+            <div className="imgs">
+              {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
+              {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
+            </div>
+            {m.episodeName && <div className="caption">{m.episodeName}</div>}
           </div>
-          {m.episodeName && <div className="caption">{m.episodeName}</div>}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
