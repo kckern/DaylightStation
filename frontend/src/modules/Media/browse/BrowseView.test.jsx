@@ -12,7 +12,7 @@ vi.mock('../session/useSessionController.js', () => ({
   useSessionController: vi.fn(() => controller),
 }));
 
-const navCtx = { push: vi.fn() };
+const navCtx = { push: vi.fn(), replace: vi.fn(), pop: vi.fn(), depth: 1 };
 vi.mock('../shell/NavProvider.jsx', () => ({
   useNav: vi.fn(() => navCtx),
 }));
@@ -23,6 +23,9 @@ beforeEach(() => {
   controller.queue.playNow.mockClear();
   controller.queue.add.mockClear();
   navCtx.push.mockClear();
+  navCtx.replace.mockClear();
+  navCtx.pop.mockClear();
+  navCtx.depth = 1;
   browseState = { items: [], total: 0, loading: false, error: null, loadMore: vi.fn() };
 });
 
@@ -51,7 +54,19 @@ describe('BrowseView', () => {
     };
     render(<BrowseView path="music" />);
     fireEvent.click(screen.getByTestId('browse-open-plex:folder'));
-    expect(navCtx.push).toHaveBeenCalledWith('browse', expect.objectContaining({ path: expect.stringContaining('plex:folder') }));
+    expect(navCtx.push).toHaveBeenCalledWith('browse', expect.objectContaining({ path: 'plex/folder' }));
+  });
+
+  it('drilling into a container uses the container id as the new path root', () => {
+    browseState = {
+      items: [{ id: 'plex:12345', title: 'Bluey', itemType: 'container' }],
+      total: 1, loading: false, error: null, loadMore: vi.fn(),
+    };
+    render(<BrowseView path="plex/video" />);
+    fireEvent.click(screen.getByTestId('browse-open-plex:12345'));
+    expect(navCtx.push).toHaveBeenCalledWith('browse', expect.objectContaining({
+      path: 'plex/12345', label: 'Bluey',
+    }));
   });
 
   it('renders an error message', () => {
