@@ -23,7 +23,7 @@ export default function MarkerGutter({ sessionData }) {
           const w = Math.max(m.width, 2);
           return (
             <g key={`gl-chal-${i}`}>
-              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={0.14} />
+              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={0.06} />
               <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
             </g>
           );
