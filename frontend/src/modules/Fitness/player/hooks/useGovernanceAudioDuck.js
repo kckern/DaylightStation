@@ -50,6 +50,8 @@ function startSession({ videoVolume, audioDuck }) {
     audio = getCueAudioElement();
     if (!audio) { lift('no_element'); return null; }
     audio.src = DaylightMediaPath(`/media/${audioDuck.sound}`);
+    const vol = Number(audioDuck.volume);
+    audio.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
     audio.currentTime = 0;
     audio.muted = false;
     audio.addEventListener('ended', onEnded);
@@ -97,7 +99,7 @@ function stopSession(session, reason = 'stopped') {
  *
  * @param {object} params
  * @param {{ setDuck:(m:number)=>void, volumeRef?:{current:number} }|null} params.videoVolume
- * @param {{ cueId:string, sound:string, duckTo:number, token:string }|null} params.audioDuck
+ * @param {{ cueId:string, sound:string, duckTo:number, volume?:number, token:string }|null} params.audioDuck
  */
 export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
   const latestRef = useRef({ videoVolume, audioDuck });

@@ -73,6 +73,34 @@ describe('GovernanceEngine — audio_cues config parsing', () => {
   });
 });
 
+describe('GovernanceEngine — audio_cues volume', () => {
+  it('parses an explicit volume', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3', volume: 0.5 }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(0.5);
+  });
+
+  it('defaults volume to 1.0 when absent', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3' }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(1);
+  });
+
+  it('clamps volume to [0,1]', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3', volume: 5 },
+      { id: 'challenge_complete', trigger: 'challenge_complete', sound: 'b.mp3', volume: -3 }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(1);
+    expect(engine._audioCues[1].volume).toBe(0);
+  });
+});
+
 describe('GovernanceEngine — _computeAudioDuck', () => {
   const cue = {
     id: 'challenge_hurry',

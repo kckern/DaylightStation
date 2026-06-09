@@ -911,12 +911,15 @@ export class GovernanceEngine {
       }
       const rawDuck = Number(entry.duck_to ?? entry.duckTo ?? 0.1);
       const duckTo = Number.isFinite(rawDuck) ? Math.max(0, Math.min(1, rawDuck)) : 0.1;
+      const rawVolume = Number(entry.volume);
+      const volume = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 1;
       cues.push({
         id: String(entry.id || `audio_cue_${index}`),
         trigger,
         thresholdSeconds: Number.isFinite(thresholdSeconds) ? Math.max(0, thresholdSeconds) : null,
         sound,
-        duckTo
+        duckTo,
+        volume
       });
     });
     return cues;
@@ -1762,7 +1765,7 @@ export class GovernanceEngine {
         token,
         ...extra
       }, { maxPerMinute: 12, aggregate: true });
-      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
+      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
     // Governance grace phase (impending lock) takes precedence over challenge cues.
