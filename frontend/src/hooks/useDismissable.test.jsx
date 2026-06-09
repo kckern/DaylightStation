@@ -64,3 +64,42 @@ describe('useDismissable', () => {
     }
   });
 });
+
+function Harness({ onDismiss, ignore }) {
+  const ref = useRef(null);
+  useDismissable(ref, { open: true, onDismiss, ignore });
+  return <div ref={ref} data-testid="inside">overlay</div>;
+}
+
+describe('useDismissable ignore selector', () => {
+  it('does not dismiss for pointerdown inside an ignored container', () => {
+    const onDismiss = vi.fn();
+    const { getByTestId } = render(
+      <>
+        <Harness onDismiss={onDismiss} ignore=".media-app-portal" />
+        <div className="media-app-portal"><button data-testid="in-portal">x</button></div>
+      </>
+    );
+    fireEvent.pointerDown(getByTestId('in-portal'));
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('still dismisses for pointerdown elsewhere', () => {
+    const onDismiss = vi.fn();
+    render(<Harness onDismiss={onDismiss} ignore=".media-app-portal" />);
+    fireEvent.pointerDown(document.body);
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('dismiss behavior unchanged when no ignore selector given', () => {
+    const onDismiss = vi.fn();
+    const { getByTestId } = render(
+      <>
+        <Harness onDismiss={onDismiss} />
+        <div className="media-app-portal"><button data-testid="in-portal">x</button></div>
+      </>
+    );
+    fireEvent.pointerDown(getByTestId('in-portal'));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+});

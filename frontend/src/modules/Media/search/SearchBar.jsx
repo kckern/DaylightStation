@@ -28,7 +28,7 @@ export function SearchBar() {
     setQuery('');
   }, [setQuery]);
 
-  useDismissable(rootRef, { open: isOpen, onDismiss: close });
+  useDismissable(rootRef, { open: isOpen, onDismiss: close, ignore: '.media-app-portal' });
 
   const onChange = (e) => {
     const next = e.target.value;
