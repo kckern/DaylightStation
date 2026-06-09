@@ -1653,3 +1653,49 @@ div.media-search-results {
   color: var(--fg);
   *, *::before, *::after { box-sizing: border-box; }
 }
+
+/* Task 7 (M6): QueuePanel — visible queue with transport-adjacent controls */
+:is(.media-app, .media-app-portal) .queue-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px;
+  .queue-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 8px; margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--fg-2);
+    .queue-count { margin-right: auto; }
+    button {
+      padding: 4px 10px; font-size: 11px; font-weight: 500;
+      color: var(--fg-2); background: var(--bg-card);
+      border: 1px solid var(--border-mid); border-radius: var(--r-sm);
+      &:hover { color: var(--fg); background: var(--bg-hover); }
+      &[aria-pressed='true'] { color: var(--brand); border-color: var(--brand); }
+    }
+    .queue-clear:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+  }
+  .queue-items { display: flex; flex-direction: column; gap: 1px; }
+  .queue-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: var(--r-sm);
+    &:hover { background: var(--bg-hover); }
+    &--current { background: rgba(229, 160, 13, 0.10); .queue-item-title { color: var(--brand); } }
+    &--upnext .queue-badge {
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--info); border: 1px solid var(--info); border-radius: var(--r-sm); padding: 1px 5px;
+    }
+  }
+  .queue-item-title {
+    flex: 1; text-align: left; font-size: 13px; color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    &:disabled { cursor: default; }
+    &:hover:not(:disabled) { color: var(--brand); }
+  }
+  .queue-item-remove {
+    width: 22px; height: 22px; border-radius: var(--r-sm);
+    color: var(--fg-3); font-size: 14px;
+    &:hover { color: #fff; background: var(--danger); }
+  }
+}
+.media-app .queue-empty { padding: 14px; font-size: 13px; color: var(--fg-3); }
