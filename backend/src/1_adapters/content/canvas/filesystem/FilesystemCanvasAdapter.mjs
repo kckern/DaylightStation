@@ -56,7 +56,7 @@ export class FilesystemCanvasAdapter {
   }
 
   getSearchCapabilities() {
-    return ['text'];
+    return { canonical: ['text'], specific: [] };
   }
 
   async search(query) {
