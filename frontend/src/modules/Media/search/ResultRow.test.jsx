@@ -66,3 +66,24 @@ test('peek contains the Cast trigger that opens the DispatchTargetPicker', () =>
   fireEvent.click(screen.getByTestId('cast-button-plex:7'));
   expect(screen.getByTestId('dispatch-target-picker')).toBeInTheDocument();
 });
+
+test('does NOT call onAction for Add — search stays open', () => {
+  const onAction = vi.fn();
+  render(wrap(<ResultRow row={row} onAction={onAction} />));
+  fireEvent.click(screen.getByTestId(`result-add-${row.id}`));
+  expect(queueMock.add).toHaveBeenCalled();
+  expect(onAction).not.toHaveBeenCalled();
+});
+
+test('flashes confirmation text on the clicked button', () => {
+  render(wrap(<ResultRow row={row} onAction={vi.fn()} />));
+  fireEvent.click(screen.getByTestId(`result-add-${row.id}`));
+  expect(screen.getByTestId(`result-add-${row.id}`)).toHaveTextContent('✓ Added');
+});
+
+test('still calls onAction for Play Now (playback starts, overlay closes)', () => {
+  const onAction = vi.fn();
+  render(wrap(<ResultRow row={row} onAction={onAction} />));
+  fireEvent.click(screen.getByTestId(`result-play-now-${row.id}`));
+  expect(onAction).toHaveBeenCalled();
+});

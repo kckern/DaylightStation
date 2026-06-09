@@ -1617,3 +1617,24 @@ div.media-search-results {
   }
   .media-app .app-nav-item { flex-direction: row; gap: 6px; padding: 8px 12px; }
 }
+
+/* Task 3 (M7/M8): result-row context line + in-button confirmation flash */
+.media-app .media-result-text {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  .media-result-title { grid-column: unset; }
+}
+.media-app .media-result-subtitle {
+  font-size: 11px;
+  color: var(--fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-app .media-result-actions button.action-flash {
+  color: var(--brand-ink);
+  background: var(--success);
+  border-color: var(--success);
+}

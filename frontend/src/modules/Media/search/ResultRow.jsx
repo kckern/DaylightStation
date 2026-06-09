@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useSessionController } from '../session/useSessionController.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
@@ -16,11 +16,15 @@ function thumbnailSrc(row) {
 export function ResultRow({ row, onAction }) {
   const { queue } = useSessionController('local');
   const [peekOpen, setPeekOpen] = useState(false);
+  const [flash, setFlash] = useState(null); // op key that just succeeded
+  const flashTimer = useRef(null);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+
   const id = row.id ?? row.itemId;
   if (!id) return null;
   const thumb = thumbnailSrc(row);
 
-  const fire = (op) => (e) => {
+  const fire = (op, { closes = false } = {}) => (e) => {
     e.stopPropagation();
     const input = resultToQueueInput(row);
     if (!input) return;
@@ -28,8 +32,17 @@ export function ResultRow({ row, onAction }) {
     else if (op === 'playNext') queue.playNext(input);
     else if (op === 'addUpNext') queue.addUpNext(input);
     else if (op === 'add') queue.add(input);
-    onAction?.();
+    if (closes) { onAction?.(); return; }
+    setFlash(op);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1200);
   };
+
+  const type = row.type ?? row.metadata?.type ?? row.mediaType;
+  const subtitle = [
+    type, row.source,
+    typeof row.duration === 'number' ? `${Math.round(row.duration / 60)} min` : null,
+  ].filter(Boolean).join(' • ');
 
   return (
     <li data-testid={`result-row-${id}`} className={`result-row ${peekOpen ? 'result-row--open' : ''}`}>
@@ -38,18 +51,27 @@ export function ResultRow({ row, onAction }) {
           <img className="media-result-thumb" src={thumb} alt="" loading="lazy"
                onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
         )}
-        <button
-          data-testid={`result-open-${id}`}
-          className="media-result-title"
-          onClick={() => setPeekOpen((v) => !v)}
-        >
-          {row.title ?? id}
-        </button>
+        <span className="media-result-text">
+          <button
+            data-testid={`result-open-${id}`}
+            className="media-result-title"
+            onClick={() => setPeekOpen((v) => !v)}
+          >
+            {row.title ?? id}
+          </button>
+          {subtitle && <span className="media-result-subtitle">{subtitle}</span>}
+        </span>
         <span className="media-result-actions">
-          <button data-testid={`result-play-now-${id}`} onClick={fire('playNow')}>Play Now</button>
-          <button data-testid={`result-play-next-${id}`} onClick={fire('playNext')}>Play Next</button>
-          <button data-testid={`result-upnext-${id}`} onClick={fire('addUpNext')}>Up Next</button>
-          <button data-testid={`result-add-${id}`} onClick={fire('add')}>Add</button>
+          <button data-testid={`result-play-now-${id}`} onClick={fire('playNow', { closes: true })}>Play Now</button>
+          <button data-testid={`result-play-next-${id}`} onClick={fire('playNext')} className={flash === 'playNext' ? 'action-flash' : ''}>
+            {flash === 'playNext' ? '✓ Next' : 'Play Next'}
+          </button>
+          <button data-testid={`result-upnext-${id}`} onClick={fire('addUpNext')} className={flash === 'addUpNext' ? 'action-flash' : ''}>
+            {flash === 'addUpNext' ? '✓ Queued' : 'Up Next'}
+          </button>
+          <button data-testid={`result-add-${id}`} onClick={fire('add')} className={flash === 'add' ? 'action-flash' : ''}>
+            {flash === 'add' ? '✓ Added' : 'Add'}
+          </button>
           <CastButton contentId={id} onAction={onAction} />
         </span>
       </div>
