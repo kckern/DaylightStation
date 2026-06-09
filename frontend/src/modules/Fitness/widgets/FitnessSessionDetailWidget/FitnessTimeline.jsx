@@ -319,6 +319,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
               <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.06} />
+              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
               <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke={color} strokeWidth={1.5} opacity={0.9} />
             </g>
           );
@@ -331,6 +332,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
         ))}
         {overlay.videoMarkers.map((m, i) => (
           <g key={`vid-${i}`} className="timeline-video-marker">
+            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
             <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
