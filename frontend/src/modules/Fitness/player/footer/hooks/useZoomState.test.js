@@ -28,3 +28,33 @@ describe('useZoomState — core navigation', () => {
     expect(result.current.isZoomed).toBe(false);
   });
 });
+
+describe('useZoomState — selection grace', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('does NOT reset before the grace window elapses', () => {
+    const { result } = renderHook(() => useZoomState({ baseDuration: 1000, selectionGraceMs: 12000 }));
+    act(() => result.current.zoomIn([100, 200]));
+    act(() => result.current.scheduleZoomReset());
+    act(() => { vi.advanceTimersByTime(800); }); // the OLD reset point
+    expect(result.current.isZoomed).toBe(true);   // still zoomed — grace not elapsed
+  });
+
+  it('resets to root once the grace window elapses', () => {
+    const { result } = renderHook(() => useZoomState({ baseDuration: 1000, selectionGraceMs: 12000 }));
+    act(() => result.current.zoomIn([100, 200]));
+    act(() => result.current.scheduleZoomReset());
+    act(() => { vi.advanceTimersByTime(12000); });
+    expect(result.current.isZoomed).toBe(false);
+  });
+
+  it('cancelZoomReset keeps the zoom alive past the grace window', () => {
+    const { result } = renderHook(() => useZoomState({ baseDuration: 1000, selectionGraceMs: 12000 }));
+    act(() => result.current.zoomIn([100, 200]));
+    act(() => result.current.scheduleZoomReset());
+    act(() => result.current.cancelZoomReset());
+    act(() => { vi.advanceTimersByTime(12000); });
+    expect(result.current.isZoomed).toBe(true);
+  });
+});
