@@ -189,4 +189,29 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
       }
     }
   });
+
+  test('clear button empties the committed value', async ({ page }) => {
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent('plex:456724')}`);
+    const clear = page.getByTestId('combobox-clear');
+    await expect(clear).toBeVisible();
+    await clear.click();
+    await expect(page.getByTestId('current-value')).not.toContainText('plex:456724');
+  });
+
+  test('selecting a known item shows a human resolved title under the input', async ({ page }) => {
+    await ComboboxActions.open(page);
+    await ComboboxActions.search(page, 'Office');
+    await ComboboxActions.waitForStreamComplete(page, 30000);
+
+    const options = ComboboxLocators.options(page);
+    if (await options.count() === 0) test.skip(true, 'no searchable content available');
+    await options.first().click();
+
+    const resolved = page.getByTestId('combobox-resolved-title');
+    await expect(resolved).toBeVisible();
+    const resolvedText = (await resolved.textContent())?.trim();
+    expect(resolvedText && resolvedText.length).toBeTruthy();
+    // The resolved line is a human title, not the raw id.
+    expect(resolvedText).not.toMatch(/^[\w-]+:\S+$/);
+  });
 });
