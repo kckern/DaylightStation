@@ -15,7 +15,7 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
-import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs } from '../FitnessSessionDetailWidget/timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
@@ -1279,19 +1279,32 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		const intervalMs = Number(src?.timeline?.interval_seconds) > 0 ? Number(src.timeline.interval_seconds) * 1000 : 5000;
 		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left, sessionStartMs: resolveSessionStartMs(src) };
-		return {
-			bands: computeRaceBands(activities, opts),
-			seams: computeSeamLines(seams, opts),
-			challengeMarkers: withBadgeXs(computeChallengeMarkers(events, opts), {
+		// Per-tick zone ids, keyed the same way the timeline/gutter do (entry.id || entry.profileId).
+		const zoneSeriesByUser = {};
+		for (const entry of chartParticipants || []) {
+			const userId = entry.id || entry.profileId;
+			zoneSeriesByUser[userId] = (typeof chartGetSeries === 'function'
+				? (chartGetSeries(userId, 'zone_id', { clone: false }) || chartGetSeries(userId, 'zone', { clone: false }))
+				: null) || [];
+		}
+		// Snap BEFORE badge collision-resolve so badges anchor to the snapped ends.
+		const challengeMarkers = withBadgeXs(
+			snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
+			{
 				minGap: 24, // badge diameter (22) + 2
 				min: CHART_MARGIN.left + 11,
 				max: CHART_MARGIN.left + innerWidth - 11
-			}),
+			}
+		);
+		return {
+			bands: computeRaceBands(activities, opts),
+			seams: computeSeamLines(seams, opts),
+			challengeMarkers,
 			videoMarkers: computeVideoMarkers(events, opts),
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
-	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight]);
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries]);
 
 	const hasData = allEntries.length > 0 && paths.length > 0;
 

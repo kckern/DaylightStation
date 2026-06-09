@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
-import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers } from './timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
 import { resolveSessionStartMs } from './sessionDetailUtils.js';
 import { computeEffectiveTicks } from './useTimelineMarkers.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
@@ -240,14 +240,19 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
     const sessionStartMs = resolveSessionStartMs(sessionData);
     const opts = { intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left, sessionStartMs };
     const events = sessionData?.timeline?.events;
+    const zoneSeriesByUser = {};
+    for (const entry of roster || []) {
+      const userId = entry.id || entry.profileId;
+      zoneSeriesByUser[userId] = getSeries(userId, 'zone_id', { clone: false }) || getSeries(userId, 'zone', { clone: false }) || [];
+    }
     return {
       bands: computeRaceBands(sessionData?.activities, opts),
       seams: computeSeamLines(sessionData?.seams, opts),
       videoMarkers: computeVideoMarkers(events, opts),
-      challengeMarkers: computeChallengeMarkers(events, opts),
+      challengeMarkers: snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
       accent: getActivityDisplay(primaryActivity(sessionData?.activities)?.type)?.accent || '#3ba776',
     };
-  }, [sessionData, intervalMs, effectiveTicks, plotWidth]);
+  }, [sessionData, intervalMs, effectiveTicks, plotWidth, getSeries, roster]);
 
   const lanes = useMemo(() => {
     if (!roster || roster.length === 0 || plotWidth <= 0 || plotHeight <= 0) return [];
