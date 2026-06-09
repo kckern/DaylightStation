@@ -94,6 +94,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
         } else if (data.event === 'source_error') {
           logger().warn('search.source-error', { query, source: data.source, error: data.error });
           setSourceErrors(prev => [...prev, { source: data.source, error: data.error }]);
+          if (Array.isArray(data.pending)) setPending(data.pending);
         } else if (data.event === 'error') {
           logger().warn('search.error', { query, error: data.message });
           setError({ kind: 'stream', message: data.message ?? 'Search adapter reported an error.' });
