@@ -5,6 +5,7 @@ const normalizeLabel = (value) => {
 
 import getLogger from '../../lib/logging/Logger.js';
 import { CadenceFilter } from './CadenceFilter.js';
+import { resolveCycleAudioCue } from './challengeAudioCues.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -30,7 +31,11 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
   'challenge_start',      // a challenge appears
   'challenge_remaining',  // challenge timer within threshold_seconds of expiring
   'challenge_complete',   // challenge satisfied
-  'governance_warning'    // grace phase begins (screen blurs + health bar)
+  'governance_warning',   // grace phase begins (screen blurs + health bar)
+  'cycle_start',          // cycle challenge appears
+  'cycle_end',            // cycle challenge completed
+  'cycle_fail',           // cycle challenge locked/failed
+  'cycle_hurry'           // rider below red zone, health dropping
 ]);
 
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
@@ -911,12 +916,15 @@ export class GovernanceEngine {
       }
       const rawDuck = Number(entry.duck_to ?? entry.duckTo ?? 0.1);
       const duckTo = Number.isFinite(rawDuck) ? Math.max(0, Math.min(1, rawDuck)) : 0.1;
+      const rawVolume = Number(entry.volume);
+      const volume = Number.isFinite(rawVolume) ? Math.max(0, Math.min(1, rawVolume)) : 1;
       cues.push({
         id: String(entry.id || `audio_cue_${index}`),
         trigger,
         thresholdSeconds: Number.isFinite(thresholdSeconds) ? Math.max(0, thresholdSeconds) : null,
         sound,
-        duckTo
+        duckTo,
+        volume
       });
     });
     return cues;
@@ -1746,9 +1754,10 @@ export class GovernanceEngine {
    *   - challenge_start    : the challenge has appeared and is still pending,
    *                          before the remaining-threshold window.
    *
-   * Cycle challenges are excluded — they have their own cueAudio system.
-   * Challenge failure is intentionally not a cue: the lock screen (which pauses
-   * the video) already covers it.
+   * Cycle challenges map their lifecycle edges + a health-based hurry to the
+   * cycle_start/cycle_end/cycle_fail/cycle_hurry cues via resolveCycleAudioCue.
+   * For HR/zone challenges, failure is intentionally not a cue: the lock screen
+   * (which pauses the video) already covers it.
    */
   _computeAudioDuck(challengeSnapshot) {
     if (!Array.isArray(this._audioCues) || this._audioCues.length === 0) {
@@ -1762,7 +1771,7 @@ export class GovernanceEngine {
         token,
         ...extra
       }, { maxPerMinute: 12, aggregate: true });
-      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, token };
+      return { cueId: cue.id, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
     // Governance grace phase (impending lock) takes precedence over challenge cues.
@@ -1774,8 +1783,25 @@ export class GovernanceEngine {
       }
     }
 
-    // Cycle challenges have their own audio-cue system and a different shape.
-    if (!challengeSnapshot || challengeSnapshot.type === 'cycle') return null;
+    // Cycle challenges: map the snapshot's lifecycle edges + a health-based
+    // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
+    if (!challengeSnapshot) return null;
+    if (challengeSnapshot.type === 'cycle') {
+      const cycleNow = this._now();
+      const { trigger, cooldownUntil } = resolveCycleAudioCue(challengeSnapshot, {
+        now: cycleNow,
+        cooldownUntil: this._cycleHurryCooldownUntil || 0
+      });
+      this._cycleHurryCooldownUntil = cooldownUntil;
+      if (!trigger) return null;
+      const cue = this._audioCues.find((c) => c.trigger === trigger);
+      if (!cue) return null;
+      const chId = challengeSnapshot.id || 'cycle';
+      const token = trigger === 'cycle_hurry'
+        ? `${chId}:cycle_hurry:${Math.floor(cycleNow)}`
+        : `${chId}:${cue.id}`;
+      return emit(cue, token);
+    }
 
     const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
     const chId = challengeId || 'challenge';

@@ -2,7 +2,9 @@ import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
-import { computeRaceBands, computeSeamLines } from './timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers } from './timelineOverlay.js';
+import { resolveSessionStartMs } from './sessionDetailUtils.js';
+import { getChallengeTypeDisplay } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import './FitnessTimeline.scss';
 
@@ -245,10 +247,14 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 
   const overlay = useMemo(() => {
-    const opts = { intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left };
+    const sessionStartMs = resolveSessionStartMs(sessionData);
+    const opts = { intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left, sessionStartMs };
+    const events = sessionData?.timeline?.events;
     return {
       bands: computeRaceBands(sessionData?.activities, opts),
       seams: computeSeamLines(sessionData?.seams, opts),
+      videoMarkers: computeVideoMarkers(events, opts),
+      challengeMarkers: computeChallengeMarkers(events, opts),
       accent: getActivityDisplay(primaryActivity(sessionData?.activities)?.type)?.accent || '#3ba776',
     };
   }, [sessionData, intervalMs, effectiveTicks, plotWidth]);
@@ -355,7 +361,42 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
           </g>
         ))}
+        {/* challenge markers (dotted) */}
+        {overlay.challengeMarkers.map((m, i) => {
+          const d = getChallengeTypeDisplay(m.type);
+          return (
+            <g key={`chal-${i}`} className="timeline-challenge-marker">
+              <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke={d.color} strokeWidth={1.5} strokeDasharray="1 4" opacity={0.85} />
+            </g>
+          );
+        })}
+        {/* video-change markers (dashed) */}
+        {overlay.videoMarkers.map((m, i) => (
+          <g key={`vid-${i}`} className="timeline-video-marker">
+            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+          </g>
+        ))}
       </svg>
+      <div className="fitness-timeline__markers" aria-hidden="true">
+        {overlay.challengeMarkers.map((m, i) => {
+          const d = getChallengeTypeDisplay(m.type);
+          return (
+            <div key={`chal-flag-${i}`} className="timeline-challenge-flag" style={{ left: `${m.x}px`, borderColor: d.color }}>
+              <span className="icon">{d.icon}</span>
+              {m.requiredCount != null && <span className="count">{m.requiredCount}</span>}
+            </div>
+          );
+        })}
+        {overlay.videoMarkers.map((m, i) => (
+          <div key={`vid-card-${i}`} className="timeline-video-card" style={{ left: `${m.x}px` }}>
+            <div className="imgs">
+              {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
+              {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
+            </div>
+            {m.episodeName && <div className="caption">{m.episodeName}</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

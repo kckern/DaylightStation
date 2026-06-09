@@ -36,7 +36,8 @@ export default function useZoomState({
   baseRange = null,
   playerRef,
   onZoomChange,
-  disabled = false
+  disabled = false,
+  selectionGraceMs = 12000
 }) {
   // Core state
   const [zoomRange, setZoomRange] = useState(null);
@@ -171,6 +172,10 @@ export default function useZoomState({
     }
   }, []);
 
+  // Cancel any pending grace timer on unmount so it can't fire setZoomRange on
+  // an unmounted hook. The selection grace can be up to 12s, a wide leak window.
+  useEffect(() => () => cancelZoomReset(), [cancelZoomReset]);
+
   /**
    * Get the current zoom stack snapshot (for navigation)
    */
@@ -286,9 +291,9 @@ export default function useZoomState({
 
   /**
    * Schedule a zoom reset after a delay (e.g., after seek completes)
-   * @param {number} delayMs - Delay before resetting (default 800ms)
+   * @param {number} delayMs - Delay before resetting (default: configurable selection grace)
    */
-  const scheduleZoomReset = useCallback((delayMs = 800) => {
+  const scheduleZoomReset = useCallback((delayMs = selectionGraceMs) => {
     if (!zoomRange) return; // Already at base level
     cancelZoomReset();
     logger.info('zoom-reset-scheduled', { delayMs, currentZoom: zoomRange });
@@ -298,7 +303,7 @@ export default function useZoomState({
       setZoomRange(null);
       pendingResetRef.current = null;
     }, delayMs);
-  }, [zoomRange, cancelZoomReset]);
+  }, [zoomRange, cancelZoomReset, selectionGraceMs]);
 
   /**
    * Step backward in zoom view (shift left)

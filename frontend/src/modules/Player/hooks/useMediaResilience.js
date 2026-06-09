@@ -7,6 +7,7 @@ import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
 import { formatTime } from '../lib/helpers.js';
 import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
+import { computeRecoverySeekMs } from './recoverySeek.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -102,7 +103,9 @@ export function useMediaResilience({
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
     recoveryCooldownMs,
-    recoveryCooldownBackoffMultiplier
+    recoveryCooldownBackoffMultiplier,
+    maxSamePositionRetries,
+    recoverySeekNudgeSeconds
   } = monitorSettings;
   const { maxAttempts } = recoveryConfig;
 
@@ -159,6 +162,8 @@ export function useMediaResilience({
   const hasEverPlayedRef = useRef(false);
   // Track transcode warmup state (0-byte fragment detection extends startup deadline)
   const transcodeWarmingRef = useRef(false);
+  // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
+  const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
   const triggerRecovery = useCallback((reason) => {
     const now = Date.now();
@@ -194,15 +199,22 @@ export function useMediaResilience({
     actions.setStatus(STATUS.recovering);
 
     if (typeof onReload === 'function') {
+      const baseSeekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
+      const { seekMs, tracker: nextTracker } = computeRecoverySeekMs({
+        baseSeekMs,
+        tracker: recoverySeekTrackerRef.current,
+        config: { nudgeSeconds: recoverySeekNudgeSeconds, maxSamePositionRetries: maxSamePositionRetries }
+      });
+      recoverySeekTrackerRef.current = nextTracker;
       onReload({
         reason,
         meta,
         waitKey,
         refreshUrl: shouldRefreshUrlForReason(reason),
-        seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000
+        seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
     _clearTracker(playbackSessionKey);
@@ -246,6 +258,7 @@ export function useMediaResilience({
       if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
       // Mark that we've successfully played (used for loop detection)
       hasEverPlayedRef.current = true;
+      recoverySeekTrackerRef.current = { lastSeekMs: null, sameCount: 0 };
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
       _clearTracker(playbackSessionKey);

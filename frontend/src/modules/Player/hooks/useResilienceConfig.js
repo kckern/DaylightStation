@@ -13,7 +13,11 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
     // Grace period for initial load
     hardRecoverLoadingGraceMs: 15000,
     recoveryCooldownMs: 4000,
-    recoveryCooldownBackoffMultiplier: 3
+    recoveryCooldownBackoffMultiplier: 3,
+    // Poisoned-segment escape: nudge the recovery seek forward after this many
+    // consecutive same-position startup failures.
+    maxSamePositionRetries: 2,
+    recoverySeekNudgeSeconds: 6
   },
   recovery: {
     enabled: true,
@@ -77,7 +81,9 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
         hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 2000),
         hardRecoverLoadingGraceMs: coerceNumber(monitorConfig.hardRecoverLoadingGraceMs, 15000),
         recoveryCooldownMs: coerceNumber(monitorConfig.recoveryCooldownMs, 4000),
-        recoveryCooldownBackoffMultiplier: coerceNumber(monitorConfig.recoveryCooldownBackoffMultiplier, 3)
+        recoveryCooldownBackoffMultiplier: coerceNumber(monitorConfig.recoveryCooldownBackoffMultiplier, 3),
+        maxSamePositionRetries: coerceNumber(monitorConfig.maxSamePositionRetries, 2),
+        recoverySeekNudgeSeconds: coerceNumber(monitorConfig.recoverySeekNudgeSeconds, 6)
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? true,
