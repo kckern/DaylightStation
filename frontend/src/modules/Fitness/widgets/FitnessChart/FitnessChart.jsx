@@ -591,7 +591,8 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					return (
 						<g key={`co-chal-${i}`}>
 							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.12} />
-							<rect x={m.x} y={overlay.top} width={1.5} height={h} fill={color} opacity={0.8} />
+							{/* solid edge on the RIGHT (challenge end) */}
+								<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.bottom} stroke={color} strokeWidth={1.5} opacity={0.9} />
 						</g>
 					);
 				})}
@@ -775,6 +776,21 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				});
 			})()}
 		</g>
+			{/* challenge badges — colored circle + count, anchored at the challenge END, pinned to chart top */}
+			{overlay && (overlay.challengeMarkers || []).map((m, i) => {
+				const color = getChallengeMarkerColor(m);
+				const r = 11;
+				const cy = overlay.top + r + 1;
+				return (
+					<g key={`co-badge-${i}`} className="race-chart__challenge-badge" pointerEvents="none">
+						<circle cx={m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
+						{m.requiredCount != null && (
+							<text x={m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
+						)}
+					</g>
+				);
+			})}
+
 	</svg>
 );
 

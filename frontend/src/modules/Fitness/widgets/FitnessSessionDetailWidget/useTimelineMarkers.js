@@ -32,12 +32,16 @@ export function computeEffectiveTicks(sessionData, getSeries, roster) {
  */
 export function useTimelineMarkers(sessionData) {
   const ref = useRef(null);
-  const [width, setWidth] = useState(0);
+  const [dims, setDims] = useState({ width: 0, height: 0 });
+  const { width, height } = dims;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+    const ro = new ResizeObserver(([entry]) => setDims({
+      width: Math.round(entry.contentRect.width),
+      height: Math.round(entry.contentRect.height)
+    }));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -50,7 +54,7 @@ export function useTimelineMarkers(sessionData) {
   return useMemo(() => {
     const plotWidth = width - CHART_MARGIN.left - CHART_MARGIN.right;
     if (!sessionData || plotWidth <= 0) {
-      return { ref, width, challengeMarkers: [], videoMarkers: [] };
+      return { ref, width, height, challengeMarkers: [], videoMarkers: [] };
     }
     const effectiveTicks = computeEffectiveTicks(sessionData, getSeries, roster);
     const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
@@ -65,8 +69,9 @@ export function useTimelineMarkers(sessionData) {
     return {
       ref,
       width,
+      height,
       challengeMarkers: computeChallengeMarkers(events, opts),
       videoMarkers: computeVideoMarkers(events, opts)
     };
-  }, [sessionData, width, getSeries, roster, timebase]);
+  }, [sessionData, width, height, getSeries, roster, timebase]);
 }
