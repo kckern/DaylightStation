@@ -58,6 +58,7 @@ const OTHER_KEYS = [
   'crypto', 'performance',
   'customElements',
   'matchMedia',
+  'localStorage', 'sessionStorage',
   'document',
 ];
 const ALL_KEYS = [...new Set([...LIVING_KEYS, ...OTHER_KEYS])];
