@@ -72,4 +72,35 @@ describe('FleetView', () => {
     render(<FleetView />);
     expect(screen.getByTestId('fleet-empty')).toBeInTheDocument();
   });
+
+  function setEntries(entries) {
+    fleetCtx = {
+      devices: Object.keys(entries).map((id) => ({ id, name: id, type: 'tv' })),
+      byDevice: new Map(Object.entries(entries)),
+      loading: false, error: null,
+    };
+  }
+
+  it('hides Take Over for offline/idle devices', () => {
+    setEntries({
+      tv1: { offline: true, snapshot: { state: 'playing' } },
+      tv2: { offline: false, snapshot: { state: 'idle' } },
+    });
+    render(<FleetView />);
+    expect(screen.queryByTestId('fleet-takeover-tv1')).toBeNull();
+    expect(screen.queryByTestId('fleet-takeover-tv2')).toBeNull();
+  });
+
+  it('shows Take Over for an active session', () => {
+    setEntries({ tv1: { offline: false, snapshot: { state: 'playing' } } });
+    render(<FleetView />);
+    expect(screen.getByTestId('fleet-takeover-tv1')).toBeTruthy();
+  });
+
+  it('state dot reflects offline', () => {
+    setEntries({ tv1: { offline: true, snapshot: { state: 'playing' } } });
+    render(<FleetView />);
+    expect(screen.getByTestId('fleet-card-tv1').querySelector('.fleet-card-state').className)
+      .toContain('fleet-card-state--offline');
+  });
 });

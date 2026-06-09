@@ -9,7 +9,7 @@ export function FleetIndicator() {
     <button
       data-testid="fleet-indicator"
       onClick={() => push('fleet', {})}
-      className="fleet-indicator"
+      className={`fleet-indicator ${online > 0 ? 'fleet-indicator--online' : 'fleet-indicator--offline'}`}
       title="Fleet"
     >
       Fleet {online}/{total}

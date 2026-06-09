@@ -311,9 +311,11 @@ div.media-search-results {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--success);
+  background: var(--fg-dim);
   flex: 0 0 auto;
 }
+.fleet-indicator--online::before { background: var(--success); }
+.fleet-indicator--offline::before { background: var(--danger); }
 
 .cast-target-chip-root { position: relative; }
 
@@ -880,9 +882,14 @@ div.media-search-results {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--success);
+    background: var(--fg-dim); /* default: unknown/idle */
   }
 }
+.fleet-card-state--playing::before,
+.fleet-card-state--buffering::before { background: var(--success); }
+.fleet-card-state--paused::before,
+.fleet-card-state--stalled::before { background: var(--brand); }
+.fleet-card-state--offline::before { background: var(--danger); }
 .fleet-card-stale {
   grid-area: stale;
   justify-self: end;
