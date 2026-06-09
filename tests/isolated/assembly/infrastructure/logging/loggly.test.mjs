@@ -1,5 +1,7 @@
 // tests/isolated/assembly/infrastructure/logging/loggly.test.mjs
 import { vi } from 'vitest';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 // Mock winston + winston-loggly-bulk so no network/bulk machinery runs.
 const mocks = vi.hoisted(() => {
@@ -9,7 +11,7 @@ const mocks = vi.hoisted(() => {
   return { winstonLog, logglyCtor, logglyOn };
 });
 
-vi.mock('winston-loggly-bulk', () => ({
+const logglyFactory = () => ({
   Loggly: class {
     constructor(options) {
       mocks.logglyCtor(options);
@@ -18,16 +20,36 @@ vi.mock('winston-loggly-bulk', () => ({
       mocks.logglyOn(eventName, handler);
     }
   }
-}));
+});
 
-vi.mock('winston', () => ({
+const winstonFactory = () => ({
   default: {
     createLogger: vi.fn(() => ({ log: mocks.winstonLog })),
     format: { json: vi.fn(() => ({})) }
   }
-}));
+});
 
-import { createLogglyTransport } from '#backend/src/0_system/logging/transports/loggly.mjs';
+// backend/ has its own package.json + node_modules (standalone/Docker installs),
+// so the SOURCE module may resolve winston/winston-loggly-bulk to
+// backend/node_modules while this test file resolves the root copies — and a
+// mock registered for one resolution does not intercept the other. Register
+// the mocks against the source file's resolutions too (when they exist), then
+// import the module under test AFTER the mocks via dynamic import (vi.doMock
+// is not hoisted, so ordering is explicit).
+const sourcePath = path.resolve('backend/src/0_system/logging/transports/loggly.mjs');
+const requireFromSource = createRequire(sourcePath);
+for (const [specifier, factory] of [
+  ['winston-loggly-bulk', logglyFactory],
+  ['winston', winstonFactory],
+]) {
+  vi.doMock(specifier, factory);
+  try {
+    const resolved = requireFromSource.resolve(specifier);
+    vi.doMock(resolved, factory);
+  } catch { /* not resolvable from the source dir — bare mock suffices */ }
+}
+
+const { createLogglyTransport } = await import('#backend/src/0_system/logging/transports/loggly.mjs');
 
 describe('LogglyTransport', () => {
   let stderrWrite;
