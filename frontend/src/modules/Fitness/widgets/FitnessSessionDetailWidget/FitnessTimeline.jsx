@@ -318,7 +318,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
           const w = Math.max(m.width, 2);
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
-              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.14} />
+              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.06} />
               <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke={color} strokeWidth={1.5} opacity={0.9} />
             </g>
           );
