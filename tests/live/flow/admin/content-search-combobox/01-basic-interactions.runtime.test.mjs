@@ -151,4 +151,15 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
     await input.click();                               // reopen
     await expect(page.getByText('Type to search...')).toBeVisible();
   });
+
+  test('closing within the debounce window does not leak a late search into the next open', async ({ page }) => {
+    await page.goto(TEST_URL);
+    const input = ComboboxLocators.input(page);
+    await input.click();
+    await input.fill('christmas');
+    await page.keyboard.press('Escape');      // close BEFORE the 300ms debounce fires
+    await page.waitForTimeout(700);            // let any leaked timer fire + stream
+    await input.click();                       // reopen
+    await expect(page.getByText('Type to search...')).toBeVisible();
+  });
 });

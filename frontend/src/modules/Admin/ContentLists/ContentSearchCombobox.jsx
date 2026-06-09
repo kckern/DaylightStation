@@ -186,6 +186,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       setBrowseResults([]);
       setPagination(null);
       setInitialLoadDone(false);
+      // Cancel any pending debounced dispatch — a timer surviving close would
+      // repopulate stream results while closed (§3.1-2 through a timing hole).
+      debouncedSearch('');
       streamSearch(''); // hook clears results/pending for short queries
     },
     onDropdownOpen: () => {
