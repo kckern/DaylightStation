@@ -139,7 +139,10 @@ export function HiddenPlayerMount() {
 
     // Fine-grained (≥0.5s) live position update for the seek bar — does NOT
     // persist; the ≥5s onPlayerProgress path below remains the durable write.
-    adapter.onPlayerPositionTick(positionSeconds);
+    // Suppressed while seeking: pre-seek ticks would overwrite the committed
+    // seek target and visibly snap the bar back.
+    const isSeeking = typeof payload === 'object' && payload !== null ? !!payload.isSeeking : false;
+    if (!isSeeking) adapter.onPlayerPositionTick(positionSeconds);
 
     const delta = Math.abs(positionSeconds - lastPersistedPosition.current);
     if (delta >= POSITION_PERSIST_INTERVAL_S) {
