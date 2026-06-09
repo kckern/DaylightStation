@@ -4,6 +4,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra } from './transcodeProfile.mjs';
 
 /**
  * Plex content source adapter.
@@ -1505,12 +1506,15 @@ export class PlexAdapter {
     params.append('X-Plex-Client-Identifier', clientIdentifier);
     params.append('X-Plex-Session-Identifier', sessionIdentifier);
     params.append('X-Plex-Platform', this.platform);
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
     // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
-    // MSE demuxer cannot append; see _buildTranscodeUrl comment).
+    // MSE demuxer cannot append; see _buildTranscodeUrl comment). Plus a
+    // frame-rate upper-bound to keep the encoder ahead of realtime.
     params.append(
       'X-Plex-Client-Profile-Extra',
-      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)'
+      buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate })
     );
     params.append('autoAdjustQuality', '1');
     params.append('directPlay', '0');
@@ -1528,12 +1532,8 @@ export class PlexAdapter {
     }
     params.append('X-Plex-Token', this.token);
 
-    if (maxVideoBitrate != null) {
-      params.append('maxVideoBitrate', String(maxVideoBitrate));
-    }
-    if (maxResolution != null) {
-      params.append('maxVideoResolution', String(maxResolution));
-    }
+    params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
+    params.append('maxVideoResolution', String(caps.maxResolution));
 
     const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
 
@@ -1609,6 +1609,8 @@ export class PlexAdapter {
    */
   _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     const baseParams = [
       `path=%2Flibrary%2Fmetadata%2F${key}`,
       `protocol=${this.protocol}`,
@@ -1624,19 +1626,16 @@ export class PlexAdapter {
       // demuxer rejects AV1/VP9 fMP4 segments with
       // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
       // match SourceBuffer codecs." Advertising them makes Plex emit segments
-      // the SourceBuffer can't append, stalling playback at t=0 forever.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
+      // the SourceBuffer can't append, stalling playback at t=0 forever. Plus a
+      // frame-rate upper-bound to keep the encoder ahead of realtime.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate }))}`
     ];
 
     if (startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
-    if (maxVideoBitrate != null) {
-      baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
-    }
-    if (maxResolution != null) {
-      baseParams.push(`maxVideoResolution=${encodeURIComponent(maxResolution)}`);
-    }
+    baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
+    baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
 
     return `${this.proxyPath}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
   }
