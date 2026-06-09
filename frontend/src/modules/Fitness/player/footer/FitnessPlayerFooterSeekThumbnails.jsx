@@ -128,8 +128,8 @@ const FitnessPlayerFooterSeekThumbnails = ({
 
     // Reset zoom when playback resumes after seek (not just when seek intent clears)
     if (prevLifecycle !== 'playing' && lifecycle === 'playing' && isZoomed) {
-      logger.info('playback-resumed-scheduling-zoom-reset', { isZoomed, zoomRange, lifecycle });
-      scheduleZoomReset(800);
+      logger.info('playback-resumed-arming-selection-grace', { isZoomed, zoomRange, lifecycle });
+      scheduleZoomReset(); // uses the configurable selection grace, not 800ms
     }
 
     // Cancel zoom reset when a new seek starts
@@ -137,6 +137,15 @@ const FitnessPlayerFooterSeekThumbnails = ({
       cancelZoomReset();
     }
   }, [lifecycle, isZoomed, zoomRange, scheduleZoomReset, cancelZoomReset]);
+
+  // Keep the zoom alive while the user is actively navigating (zoom in / pan).
+  // Each zoom-window change re-arms the selection grace; going idle for the
+  // grace window then returns to root on its own.
+  useEffect(() => {
+    if (isZoomed) {
+      scheduleZoomReset();
+    }
+  }, [zoomRange, isZoomed, scheduleZoomReset]);
 
   // --- EXPOSE REFS TO PARENT ---
   useEffect(() => {
