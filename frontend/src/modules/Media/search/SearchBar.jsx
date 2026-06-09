@@ -12,7 +12,7 @@ import { useSessionController } from '../session/useSessionController.js';
 
 export function SearchBar() {
   const { scopes, currentScopeKey, currentScope, setScopeKey } = useSearchContext();
-  const { results, pending, isSearching, error, setQuery, retry } = useLiveSearch({
+  const { results, pending, isSearching, error, sourceErrors, setQuery, retry } = useLiveSearch({
     scopeParams: currentScope?.params ?? '',
   });
   const { queue } = useSessionController('local');
@@ -91,6 +91,11 @@ export function SearchBar() {
           {state.kind === SEARCH_STATE.EMPTY && <SearchEmptyState query={state.query} />}
           {state.kind === SEARCH_STATE.ERROR && (
             <SearchErrorState error={state.error} onRetry={retry} />
+          )}
+          {sourceErrors?.length > 0 && (
+            <div data-testid="search-source-errors" className="search-source-errors">
+              {sourceErrors.map((e) => <span key={e.source}>⚠ {e.source} unavailable</span>)}
+            </div>
           )}
         </div>
       )}

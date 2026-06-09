@@ -186,4 +186,28 @@ describe('useStreamingSearch', () => {
     act(() => { result.current.search('world'); });
     expect(result.current.error).toBeNull();
   });
+
+  it('collects per-source errors without aborting the stream', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateMessage({ event: 'source_error', source: 'abs', error: 'ECONNREFUSED' });
+      es.simulateMessage({ event: 'results', source: 'plex', items: [{ id: '1' }], pending: [] });
+    });
+    expect(result.current.sourceErrors).toEqual([{ source: 'abs', error: 'ECONNREFUSED' }]);
+    expect(result.current.results).toEqual([{ id: '1' }]); // stream kept going
+    expect(result.current.error).toBeNull();               // not a fatal error
+  });
+
+  it('clears source errors on a fresh search', () => {
+    const { result } = renderHook(() => useStreamingSearch('/api/search/stream'));
+    act(() => { result.current.search('hello'); });
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'abs', error: 'x' });
+    });
+    expect(result.current.sourceErrors).toHaveLength(1);
+    act(() => { result.current.search('world'); });
+    expect(result.current.sourceErrors).toEqual([]);
+  });
 });

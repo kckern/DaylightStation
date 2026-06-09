@@ -3,6 +3,20 @@
 import { ItemSelectionService, RelevanceScoringService } from '#domains/content/index.mjs';
 
 /**
+ * Race a promise against a timeout. A non-positive `ms` disables the timeout
+ * (returns the promise unchanged). On timeout the returned promise rejects with
+ * an Error whose message contains the adapter label and "timeout".
+ */
+function withTimeout(promise, ms, label) {
+  if (!ms || ms <= 0) return promise;
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
+/**
  * Application service for orchestrating content queries across multiple sources.
  * Handles canonical key translation, result merging, and capability filtering.
  */
@@ -12,6 +26,7 @@ export class ContentQueryService {
   #prefixAliases;
   #logger;
   #aliasResolver;
+  #adapterTimeoutMs;
 
   /**
    * @param {Object} deps
@@ -21,12 +36,13 @@ export class ContentQueryService {
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
    * @param {import('./services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [deps.aliasResolver] - Optional alias resolver for prefix-based queries
    */
-  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null }) {
+  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 8000 }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#prefixAliases = prefixAliases;
     this.#logger = logger;
     this.#aliasResolver = aliasResolver;
+    this.#adapterTimeoutMs = adapterTimeoutMs;
   }
 
   /**
@@ -123,7 +139,7 @@ export class ContentQueryService {
             }
 
             const translated = this.#translateQuery(adapter, query);
-            const result = await adapter.search(translated);
+            const result = await withTimeout(adapter.search(translated), this.#adapterTimeoutMs, adapter.source);
             const ms = Math.round(performance.now() - adapterStart);
             perf.adapters[adapter.source] = {
               ms,
@@ -248,7 +264,7 @@ export class ContentQueryService {
 
       try {
         const translated = this.#translateQuery(adapter, query);
-        const result = await adapter.search(translated);
+        const result = await withTimeout(adapter.search(translated), this.#adapterTimeoutMs, adapter.source);
         return { adapter, result, error: null };
       } catch (error) {
         warnings.push({ source: adapter.source, error: error.message });
@@ -269,7 +285,11 @@ export class ContentQueryService {
       const { adapter, result, skipped, error } = winner.result;
       pending.delete(adapter.source);
 
-      if (skipped || error || !result?.items?.length) {
+      if (error) {
+        yield { event: 'source_error', source: adapter.source, error: error.message, pending: [...pending] };
+        continue;
+      }
+      if (skipped || !result?.items?.length) {
         continue;
       }
 

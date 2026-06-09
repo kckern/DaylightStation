@@ -91,6 +91,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     results: streamResults,
     pending: pendingSources,
     isSearching: streamLoading,
+    sourceErrors,
     search: streamSearch
   } = useStreamingSearch('/api/v1/content/query/search/stream', searchParams);
 
@@ -641,6 +642,20 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               <Text size="xs" c="dimmed">Searching:</Text>
               {pendingSources.map(source => (
                 <Badge key={source} size="xs" variant="light" color="gray">
+                  {SOURCE_ICONS[source] || SOURCE_ICONS.default} {source}
+                </Badge>
+              ))}
+            </Group>
+          </Box>
+        )}
+
+        {/* Per-source error indicator (B3): which sources failed this search */}
+        {sourceErrors?.length > 0 && breadcrumbs.length === 0 && (
+          <Box p="xs" className="source-errors" data-testid="combobox-source-errors" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Group gap="xs">
+              <Text size="xs" c="red">Unavailable:</Text>
+              {sourceErrors.map(({ source }) => (
+                <Badge key={source} size="xs" variant="light" color="red">
                   {SOURCE_ICONS[source] || SOURCE_ICONS.default} {source}
                 </Badge>
               ))}

@@ -86,4 +86,42 @@ describe('ContentQueryService.searchStream', () => {
     // Should still complete
     expect(events[events.length - 1].event).toBe('complete');
   });
+
+  it('yields source_error for a failing adapter and still completes', async () => {
+    const good = {
+      source: 'plex',
+      search: jest.fn().mockResolvedValue({ items: [{ id: 'plex:1', title: 'A' }] }),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const bad = {
+      source: 'abs',
+      search: jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED')),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const registry = {
+      resolveSource: () => [good, bad],
+      get: (s) => [good, bad].find(a => a.source === s),
+    };
+    const svc = new ContentQueryService({ registry });
+    const events = [];
+    for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
+    expect(events.some(e => e.event === 'source_error' && e.source === 'abs')).toBe(true);
+    expect(events.at(-1).event).toBe('complete');
+  });
+
+  it('times out a hung adapter', async () => {
+    const hung = {
+      source: 'slow',
+      search: () => new Promise(() => {}),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const registry = { resolveSource: () => [hung], get: () => hung };
+    const svc = new ContentQueryService({ registry, adapterTimeoutMs: 50 });
+    const events = [];
+    for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
+    expect(events.some(e => e.event === 'source_error' && /timeout/.test(e.error))).toBe(true);
+  });
 });
