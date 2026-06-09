@@ -1,3 +1,5 @@
+import { ZONE_COLOR_MAP } from '@/modules/Fitness/lib/chartHelpers.js';
+
 /**
  * Central registry of in-session challenge types → marker presentation.
  * Consolidates icon/color knowledge that was previously scattered across
@@ -19,6 +21,20 @@ export function getChallengeTypeDisplay(type) {
 }
 
 /**
+ * Resolve the display color for a specific challenge marker. HR-zone challenges are
+ * tinted by their actual zone (warm `#ffd43b` vs hot `#ff922b`, etc.) so the timeline
+ * shows *which* zone was targeted; cycle/other challenges use the type color.
+ * @param {{ type?: string, zoneId?: string|null }} marker
+ */
+export function getChallengeMarkerColor(marker) {
+  const zoneId = marker?.zoneId;
+  if (marker?.type === 'zone' && zoneId && ZONE_COLOR_MAP[zoneId]) {
+    return ZONE_COLOR_MAP[zoneId];
+  }
+  return getChallengeTypeDisplay(marker?.type).color;
+}
+
+/**
  * Classify a persisted challenge event as 'cycle' or 'zone'. Prefers the
  * persisted `data.type`; for legacy events without it, a missing zoneId implies
  * a cycle challenge (cycle challenges carry no zone).
@@ -29,4 +45,4 @@ export function resolveChallengeMarkerType(event) {
   return d.zoneId == null ? 'cycle' : 'zone';
 }
 
-export default { getChallengeTypeDisplay, resolveChallengeMarkerType };
+export default { getChallengeTypeDisplay, resolveChallengeMarkerType, getChallengeMarkerColor };

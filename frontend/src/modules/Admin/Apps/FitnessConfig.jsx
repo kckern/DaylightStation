@@ -193,6 +193,13 @@ function PlexSection({ data, update }) {
           onChange={(val) => update('plex.voice_memo_prompt_threshold_seconds', val)}
         />
       </SimpleGrid>
+      <TagsInput
+        label="Voice Memo Eligible Users"
+        description="Root-level: voice_memo_eligibility.users. Gates the session-end auto-popup to sessions where one of these users is currently active. Empty = everyone. Manual recording is never gated."
+        value={data.voice_memo_eligibility?.users || []}
+        onChange={(vals) => update('voice_memo_eligibility.users', vals)}
+        placeholder="Add user ID..."
+      />
       <SimpleGrid cols={2}>
         <TagsInput
           label="No-Music Labels"

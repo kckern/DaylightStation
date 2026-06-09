@@ -6,6 +6,7 @@ import { useScreenData, useScreenDataRefetch } from '@/screen-framework/data/Scr
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
+import MarkerGutter from './MarkerGutter.jsx';
 import GroupSummaryPanel from './GroupSummaryPanel.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
@@ -286,6 +287,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const registry = getWidgetRegistry();
   const ChartComponent = registry.get('fitness:chart');
 
+  // The center gutter only earns its vertical space when there are markers to show:
+  // any challenge, or a video change (>1 non-audio media). Strava-map sessions have none.
+  const events = sessionData?.timeline?.events;
+  const hasMarkers = !header?.stravaHasMap && Array.isArray(events) && (
+    events.some((e) => e?.type === 'challenge') ||
+    events.filter((e) => e?.type === 'media' && e?.data?.contentType !== 'track' && !e?.data?.artist).length > 1
+  );
+
   return (
     <div className="session-detail">
       {/* Header (25%) */}
@@ -486,6 +495,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
         )}
       </div>
+
+      {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
+      {hasMarkers && (
+        <div className="session-detail__gutter">
+          <MarkerGutter sessionData={sessionData} />
+        </div>
+      )}
 
       {/* Timeline (35%) */}
       <div className="session-detail__timeline">

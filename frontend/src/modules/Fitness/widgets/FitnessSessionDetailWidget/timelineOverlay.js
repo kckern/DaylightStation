@@ -58,16 +58,32 @@ export function computeVideoMarkers(events, opts) {
   });
 }
 
-/** Challenge markers (dotted). Type resolved via the registry classifier. */
+/**
+ * Challenge markers as duration spans. Each marker carries x..xEnd (width) from the
+ * event's start/end, plus type/zoneId so the renderer can tint by challenge type
+ * (cycle) or HR zone (warm/hot). An unfinished challenge (`end` null/absent) extends
+ * to the axis end so it reads as "still running at session end" rather than a sliver.
+ */
 export function computeChallengeMarkers(events, opts) {
   if (!Array.isArray(events) || !Number.isFinite(opts?.sessionStartMs)) return [];
+  // Absolute ms at the right edge of the compressed axis (last tick).
+  const axisEndMs = opts.sessionStartMs + Math.max(0, (opts.effectiveTicks - 1)) * opts.intervalMs;
   return events
     .filter((e) => e?.type === 'challenge' && Number.isFinite(e.data?.start))
-    .map((e) => ({
-      x: clampX(msToTickX(e.data.start - opts.sessionStartMs, opts), opts),
-      type: resolveChallengeMarkerType(e),
-      result: e.data.result || null,
-      label: e.data.zoneLabel || e.data.title || null,
-      requiredCount: Number.isFinite(e.data.requiredCount) ? e.data.requiredCount : null
-    }));
+    .map((e) => {
+      const startMs = e.data.start;
+      const endMs = Number.isFinite(e.data.end) ? e.data.end : axisEndMs;
+      const x = clampX(msToTickX(startMs - opts.sessionStartMs, opts), opts);
+      const xEnd = clampX(msToTickX(Math.max(endMs, startMs) - opts.sessionStartMs, opts), opts);
+      return {
+        x,
+        xEnd,
+        width: Math.max(0, xEnd - x),
+        type: resolveChallengeMarkerType(e),
+        zoneId: e.data.zoneId ?? null,
+        result: e.data.result || null,
+        label: e.data.zoneLabel || e.data.title || null,
+        requiredCount: Number.isFinite(e.data.requiredCount) ? e.data.requiredCount : null
+      };
+    });
 }

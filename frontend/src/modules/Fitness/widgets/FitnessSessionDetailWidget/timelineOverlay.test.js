@@ -104,4 +104,28 @@ describe('computeChallengeMarkers', () => {
   it('returns [] when there are no challenge events', () => {
     expect(computeChallengeMarkers([{ type: 'media', data: {} }], MARKER_OPTS)).toHaveLength(0);
   });
+
+  it('carries the duration as x..xEnd (width) and the zoneId', () => {
+    const events = [
+      { type: 'challenge', data: { challengeId: 'a', zoneId: 'warm', zoneLabel: 'Warm', start: 1_060_000, end: 1_120_000, result: 'success' } }
+    ];
+    const [m] = computeChallengeMarkers(events, MARKER_OPTS);
+    expect(m.zoneId).toBe('warm');
+    expect(m.xEnd).toBeGreaterThan(m.x);
+    expect(m.width).toBeCloseTo(m.xEnd - m.x, 5);
+    // 60s start, 120s end at 5s/tick over 600px/120ticks => 5px/tick => start tick12=60px, end tick24=120px
+    expect(m.x).toBeCloseTo(60, 1);
+    expect(m.xEnd).toBeCloseTo(120, 1);
+  });
+
+  it('extends an unfinished challenge (end:null) to the axis end', () => {
+    const events = [
+      { type: 'challenge', data: { challengeId: 'a', zoneId: 'hot', start: 1_060_000, end: null, result: 'started' } }
+    ];
+    const [m] = computeChallengeMarkers(events, MARKER_OPTS);
+    expect(m.zoneId).toBe('hot');
+    // axis end = (effectiveTicks-1)*intervalMs from start => clamps to right edge (plotWidth)
+    expect(m.xEnd).toBeCloseTo(MARKER_OPTS.marginLeft + MARKER_OPTS.plotWidth, 5);
+    expect(m.width).toBeGreaterThan(0);
+  });
 });
