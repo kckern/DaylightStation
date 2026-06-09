@@ -15,6 +15,11 @@
   button[data-pending="true"] {
     color: var(--mantine-color-dimmed, #888) !important;
   }
+
+  .peek-seek-row {
+    margin: 8px 0;
+    input[type="range"] { width: 100%; }
+  }
 }
 
 @keyframes peek-pending-pulse {
