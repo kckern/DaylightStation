@@ -5,6 +5,7 @@ const normalizeLabel = (value) => {
 
 import getLogger from '../../lib/logging/Logger.js';
 import { CadenceFilter } from './CadenceFilter.js';
+import { resolveCycleAudioCue } from './challengeAudioCues.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -30,7 +31,11 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
   'challenge_start',      // a challenge appears
   'challenge_remaining',  // challenge timer within threshold_seconds of expiring
   'challenge_complete',   // challenge satisfied
-  'governance_warning'    // grace phase begins (screen blurs + health bar)
+  'governance_warning',   // grace phase begins (screen blurs + health bar)
+  'cycle_start',          // cycle challenge appears
+  'cycle_end',            // cycle challenge completed
+  'cycle_fail',           // cycle challenge locked/failed
+  'cycle_hurry'           // rider below red zone, health dropping
 ]);
 
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
@@ -1777,8 +1782,25 @@ export class GovernanceEngine {
       }
     }
 
-    // Cycle challenges have their own audio-cue system and a different shape.
-    if (!challengeSnapshot || challengeSnapshot.type === 'cycle') return null;
+    // Cycle challenges: map the snapshot's lifecycle edges + a health-based
+    // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
+    if (!challengeSnapshot) return null;
+    if (challengeSnapshot.type === 'cycle') {
+      const cycleNow = this._now();
+      const { trigger, cooldownUntil } = resolveCycleAudioCue(challengeSnapshot, {
+        now: cycleNow,
+        cooldownUntil: this._cycleHurryCooldownUntil || 0
+      });
+      this._cycleHurryCooldownUntil = cooldownUntil;
+      if (!trigger) return null;
+      const cue = this._audioCues.find((c) => c.trigger === trigger);
+      if (!cue) return null;
+      const chId = challengeSnapshot.id || 'cycle';
+      const token = trigger === 'cycle_hurry'
+        ? `${chId}:cycle_hurry:${Math.floor(cycleNow)}`
+        : `${chId}:${cue.id}`;
+      return emit(cue, token);
+    }
 
     const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
     const chId = challengeId || 'challenge';
