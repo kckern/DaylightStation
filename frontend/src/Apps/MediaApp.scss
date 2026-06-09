@@ -1737,3 +1737,10 @@ div.media-search-results {
   &:hover { border-color: var(--brand); }
 }
 .media-app .mini-queue-count { font-size: 10px; color: var(--fg-3); }
+
+/* Task 11 (B3): per-source search failures surfaced under results */
+.media-app .search-source-errors {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 6px 10px;
+  font-size: 11px; color: var(--danger);
+}

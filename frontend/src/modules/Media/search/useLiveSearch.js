@@ -42,6 +42,7 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
     pending: inner.pending,
     isSearching: waiting || inner.isSearching,
     error: inner.error,
+    sourceErrors: inner.sourceErrors ?? [],
     setQuery,
     retry,
   };

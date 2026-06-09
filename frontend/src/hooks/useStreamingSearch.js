@@ -26,6 +26,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
   const [pending, setPending] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState(null);
+  const [sourceErrors, setSourceErrors] = useState([]);
   const eventSourceRef = useRef(null);
 
   // Cleanup on unmount
@@ -49,6 +50,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     if (!query || query.length < 2) {
       setResults([]);
       setPending([]);
+      setSourceErrors([]);
       setIsSearching(false);
       return;
     }
@@ -61,6 +63,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     logger().info('search.started', { query, endpoint, filterParams: effectiveExtra || null });
     setResults([]);
     setPending([]);
+    setSourceErrors([]);
 
     const url = `${endpoint}?text=${encodeURIComponent(query)}${effectiveExtra ? '&' + effectiveExtra : ''}`;
     const eventSource = new EventSource(url);
@@ -88,6 +91,9 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
           setPending([]);
           setIsSearching(false);
           eventSource.close();
+        } else if (data.event === 'source_error') {
+          logger().warn('search.source-error', { query, source: data.source, error: data.error });
+          setSourceErrors(prev => [...prev, { source: data.source, error: data.error }]);
         } else if (data.event === 'error') {
           logger().warn('search.error', { query, error: data.message });
           setError({ kind: 'stream', message: data.message ?? 'Search adapter reported an error.' });
@@ -111,7 +117,7 @@ export function useStreamingSearch(endpoint, extraQueryString = '') {
     };
   }, [endpoint, extraQueryString]);
 
-  return { results, pending, isSearching, error, search };
+  return { results, pending, isSearching, error, sourceErrors, search };
 }
 
 export default useStreamingSearch;
