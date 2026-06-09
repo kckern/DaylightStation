@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Text, Stack } from '@mantine/core';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useScreen } from '@/screen-framework/providers/ScreenProvider.jsx';
@@ -300,25 +301,36 @@ export default function FitnessSessionsWidget() {
   const rawSessions = useScreenData('sessions');
   const { replace } = useScreen();
   const { scrollToDate, setScrollToDate, selectedSessionId, setSelectedSessionId } = useFitnessScreen();
+  const navigate = useNavigate();
+  const location = useLocation();
   const revertRef = useRef(null);
   const containerRef = useRef(null);
 
   const loading = rawSessions === null;
   const sessions = rawSessions?.sessions || [];
 
+  // Reflect the open session in the URL so it is deep-linkable / shareable:
+  // /fitness/{screen}/session-{id}. Passing null returns to the bare screen path.
+  const syncSessionUrl = useCallback((sessionId) => {
+    const base = location.pathname.replace(/\/session-[^/]+$/, '');
+    navigate(sessionId ? `${base}/session-${sessionId}` : base);
+  }, [location.pathname, navigate]);
+
   const handleSessionClick = useCallback((sessionId) => {
     if (selectedSessionId === sessionId) {
       revertRef.current?.revert();
       revertRef.current = null;
       setSelectedSessionId(null);
+      syncSessionUrl(null);
       return;
     }
     revertRef.current?.revert();
     setSelectedSessionId(sessionId);
+    syncSessionUrl(sessionId);
     revertRef.current = replace('right-area', {
       children: [{ widget: 'fitness:session-detail', props: { sessionId } }]
     });
-  }, [selectedSessionId, setSelectedSessionId, replace]);
+  }, [selectedSessionId, setSelectedSessionId, replace, syncSessionUrl]);
 
   // When a session is selected externally (e.g. post-session redirect set it on the
   // provider) rather than via a row click, open its detail pane. handleSessionClick

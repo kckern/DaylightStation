@@ -1142,6 +1142,9 @@ const FitnessApp = () => {
     } else if (screensConfig[view]) {
       setActiveScreen(view);
       setCurrentView('screen');
+      // Deep link: /fitness/{screen}/session-{id} pre-opens that session's detail.
+      const sessionMatch = typeof id === 'string' && id.match(/^session-(.+)$/);
+      if (sessionMatch) setPendingSelectedSessionId(sessionMatch[1]);
     } else if (view === 'show' && id) {
       setSelectedShow(id);
       setCurrentView('show');
