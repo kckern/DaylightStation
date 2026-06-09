@@ -67,6 +67,10 @@ function normalizeListSource(source) {
 // intentional commit; plain exploratory search text is not. (§3.1-5/6)
 const CONTENT_ID_LIKE = /^[\w-]+:\S+/;
 
+// Process-lifetime cache of contentId -> human title so the resolved-title line
+// renders instantly for items we've already seen (no refetch). (§3.1-9)
+const titleCache = new Map();
+
 /**
  * ContentSearchCombobox - Searchable combobox for selecting content items
  * Supports search and drilling down into containers
@@ -92,6 +96,28 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   useEffect(() => {
     log.debug('props.value_changed', { value, selectContainers, searchParams });
   }, [value, selectContainers, searchParams]);
+
+  // Resolve a human-readable title for a committed content-id so the user sees
+  // what an opaque ID points to (rendered under the input when not editing). (§3.1-9)
+  const [resolvedTitle, setResolvedTitle] = useState(null);
+  useEffect(() => {
+    setResolvedTitle(null);
+    if (!value || !/^[\w-]+:\S+/.test(value)) return;
+    if (titleCache.has(value)) { setResolvedTitle(titleCache.get(value)); return; }
+    const colonIndex = value.indexOf(':');
+    const source = normalizeListSource(value.slice(0, colonIndex));
+    const localId = value.slice(colonIndex + 1);
+    let cancelled = false;
+    fetch(`/api/v1/info/${source}/${encodeURIComponent(localId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((info) => {
+        if (cancelled || !info?.title) return;
+        titleCache.set(value, info.title);
+        setResolvedTitle(info.title);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [value]);
 
   // Streaming search hook for SSE-enabled browsers
   const {
@@ -409,6 +435,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       browseContainer(item);
     } else {
       log.info('item_select', { contentId: item.id, title: item.title, prevValue: value });
+      if (item.title) titleCache.set(item.id, item.title);
       onChange(item.id, item);
       setSearch(null);
       setBreadcrumbs([]);
@@ -636,9 +663,17 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           }}
           placeholder={placeholder}
           leftSection={<IconSearch size={16} />}
-          rightSection={isLoading ? <Loader size="xs" /> : null}
+          rightSection={isLoading ? <Loader size="xs" /> : (value ? (
+            <ActionIcon size="sm" variant="subtle" aria-label="Clear selection" data-testid="combobox-clear"
+              onClick={(e) => { e.stopPropagation(); log.info('value.cleared', { prevValue: value }); onChange(''); setSearch(null); }}>
+              <IconX size={14} />
+            </ActionIcon>
+          ) : null)}
         />
       </Combobox.Target>
+      {search === null && resolvedTitle && (
+        <Text size="xs" c="dimmed" mt={2} truncate data-testid="combobox-resolved-title">{resolvedTitle}</Text>
+      )}
 
       <Combobox.Dropdown>
         {/* Breadcrumb navigation */}
