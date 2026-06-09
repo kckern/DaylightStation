@@ -34,6 +34,7 @@ export const mediaLog = {
   sessionResumed:         info('session.resumed'),
   sessionStateChange:     sampled('session.state-change', SAMPLED_STATE),
   sessionPersisted:       sampled('session.persisted'),
+  configChanged:          sampled('config.changed'),
   queueMutated:           debug('queue.mutated'),
   playbackStarted:        info('playback.started'),
   playbackStalled:        warn('playback.stalled'),
