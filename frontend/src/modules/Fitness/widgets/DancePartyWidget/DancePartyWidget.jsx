@@ -31,12 +31,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // host's `config` prop is only honored when it explicitly carries its own
   // dance_party block (e.g. unit tests) — never merged, never substituted.
   const dancePartyConfig = config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null;
-  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo } =
+  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader } =
     useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
 
   const { accent } = useDanceLighting({ enabled: true });
 
   const audioRef = useRef(null);
+  const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const [track, setTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -69,9 +70,10 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     [audioPlaylistId, shuffle]
   );
   // continuous: true loops the playlist (see useQueueController reset-continuous).
+  // shader rides the queue object — Player resolves play?.shader || queue?.shader.
   const videoQueue = useMemo(
-    () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true } : null),
-    [videoPlaylistId, shuffle]
+    () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true, shader: videoShader } : null),
+    [videoPlaylistId, shuffle, videoShader]
   );
   // Mute the video layer at the element level. Player has no `muted` prop and
   // `play={{ volume: 0 }}` is a no-op (useQueueController: `play?.volume || 1`).
@@ -91,6 +93,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     if (!media) return;
     const newKey = media.contentId || media.key || media.plex || media.assetId || media.ratingKey || null;
     if (newKey && newKey !== trackKeyRef.current) {
+      const isFirstTrack = trackKeyRef.current == null;
       trackKeyRef.current = newKey;
       setTrack({
         title: media.title || media.label || media.parentTitle || null,
@@ -99,6 +102,12 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       });
       accent();
       logger.info('fitness.dance.track_change', { title: media.title || null });
+      // New song → new visual: advance the video layer in step with the music.
+      // Skip the initial track so the video doesn't jump right at mount.
+      if (!isFirstTrack && videoRef.current?.advance) {
+        videoRef.current.advance(1);
+        logger.debug('fitness.dance.video_advance_on_track_change', {});
+      }
     }
   }, [accent, logger]);
 
@@ -149,7 +158,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}`}>
       <div className="dance-video" ref={videoContainerRef}>
         {hasVideo && videoQueue ? (
-          <Player queue={videoQueue} playerType="video" onProgress={handleVideoProgress} onError={handleVideoError} />
+          <Player ref={videoRef} queue={videoQueue} playerType="video" onProgress={handleVideoProgress} onError={handleVideoError} />
         ) : (
           <div className="dance-backdrop" aria-hidden="true" />
         )}
