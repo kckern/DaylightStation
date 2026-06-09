@@ -2,11 +2,17 @@
 /**
  * Freeform commit tests for ContentSearchCombobox
  *
- * Invariant: ContentSearchCombobox must always save user freeform input,
- * regardless of search result availability.
+ * Policy (2026-06-09, supersedes the old "always save on blur" invariant):
+ * - Enter commits freeform text ONLY when no option is selected; when an
+ *   option IS selected (a result row or the freeform row), Mantine's own
+ *   target keydown clicks it and routes through onOptionSubmit.
+ * - Blur commits only content-id-like text (/^[\w-]+:\S+/) and reverts
+ *   plain exploratory text.
+ * - The visible "Use … as raw value" row is the explicit commit affordance.
  *
- * Tests: Enter with zero results, blur with zero results, Enter before
- * results arrive, blur before results arrive, special characters.
+ * Tests: Enter with zero results, Enter on the arrow-selected freeform row
+ * (exactly one commit), blur revert vs. id-like commit, Enter/blur before
+ * results arrive, special characters.
  */
 import { test, expect } from '@playwright/test';
 import { ComboboxTestHarness, ComboboxLocators, ComboboxActions } from '#testlib/comboboxTestHarness.mjs';
@@ -87,6 +93,20 @@ test.describe('ContentSearchCombobox - Freeform Commit', () => {
     await input.fill('my custom value');
     await page.getByTestId('freeform-commit-option').click();
     await expect(page.getByTestId('current-value')).toContainText('my custom value');
+  });
+
+  test('Enter on the arrow-selected freeform row commits exactly once', async ({ page }) => {
+    await ComboboxActions.open(page);
+    const input = ComboboxLocators.input(page);
+    await input.fill('zz-no-results-zz');
+    await ComboboxActions.waitForAllAdaptersComplete(page, 60000);
+    await page.keyboard.press('ArrowDown');   // selects the __freeform__ row (only option)
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('current-value')).toContainText('zz-no-results-zz');
+    // Exactly ONE change-log entry — the double-commit regression fired two.
+    const entries = page.locator('[data-testid="change-log"] code:has-text("zz-no-results-zz")');
+    expect(await entries.count()).toBe(1);
   });
 
   test('Enter commits freeform text before results arrive', async ({ page }) => {
