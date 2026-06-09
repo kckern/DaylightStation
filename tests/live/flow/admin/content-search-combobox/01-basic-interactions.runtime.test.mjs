@@ -132,4 +132,23 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
     const valueDisplay = page.locator('[data-testid="current-value"]');
     await expect(valueDisplay).toContainText('plex:999');
   });
+
+  test('opening with a committed value shows that value selected in the input', async ({ page }) => {
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent('plex:456724')}`);
+    const input = ComboboxLocators.input(page);
+    await input.click();
+    await expect(input).toHaveValue('plex:456724');   // not blanked
+    const selection = await input.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd));
+    expect(selection).toBe('plex:456724');            // select-all, type-to-replace
+  });
+
+  test('reopening after a search does not show stale results under an untouched input', async ({ page }) => {
+    await page.goto(TEST_URL);
+    const input = ComboboxLocators.input(page);
+    await input.fill('christmas');
+    await page.waitForTimeout(1500);
+    await page.keyboard.press('Escape');
+    await input.click();                               // reopen
+    await expect(page.getByText('Type to search...')).toBeVisible();
+  });
 });
