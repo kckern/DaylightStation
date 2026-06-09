@@ -1,9 +1,10 @@
-import { useMemo, useState, useRef, useCallback } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import Player from '@/modules/Player/Player.jsx';
 import { ContentDisplayUrl } from '@/lib/api.mjs';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { resolveDancePlaylists } from './resolveDancePlaylists.js';
+import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import getLogger from '@/lib/logging/Logger.js';
@@ -19,9 +20,11 @@ import './DancePartyWidget.scss';
  * FitnessMusicPlayer.jsx: a memoized `queue` object, the forwardRef `ref`,
  * track detection via the `onProgress` callback's `progressData.media`, and
  * the imperative API (`toggle`, `advance`, `getMediaElement`). The video is
- * muted via `play={{ volume: 0 }}` and looped via `queue.continuous`.
+ * looped via `queue.continuous` and muted by forcing `<video>.muted = true`
+ * directly (via muteVideosIn — `play={{ volume: 0 }}` is a no-op because
+ * useQueueController resolves `play?.volume || ... || 1` and 0 is falsy).
  */
-export default function DancePartyWidget({ onClose, config }) {
+export default function DancePartyWidget({ onClose, config, onMount }) {
   const logger = useMemo(() => getLogger().child({ component: 'dance-party' }), []);
   const fitnessContext = useFitnessContext();
   const musicPlaylists = config?.plex?.music_playlists || fitnessContext?.plexConfig?.music_playlists || [];
@@ -31,9 +34,15 @@ export default function DancePartyWidget({ onClose, config }) {
   const { accent } = useDanceLighting({ enabled: true });
 
   const audioRef = useRef(null);
+  const videoContainerRef = useRef(null);
   const [track, setTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const trackKeyRef = useRef(null);
+
+  // Notify the host container we've mounted (parity with other widgets).
+  useEffect(() => {
+    onMount?.();
+  }, [onMount]);
 
   // Mirror FitnessMusicPlayer: the queue prop is a memoized object so the inner
   // Player's queue controller does not re-init every render.
@@ -46,8 +55,15 @@ export default function DancePartyWidget({ onClose, config }) {
     () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true } : null),
     [videoPlaylistId, shuffle]
   );
-  // Mute the video layer: Player has no `muted` prop — volume 0 via `play`.
-  const videoPlay = useMemo(() => ({ volume: 0 }), []);
+  // Mute the video layer at the element level. Player has no `muted` prop and
+  // `play={{ volume: 0 }}` is a no-op (useQueueController: `play?.volume || 1`).
+  // The MutationObserver in muteVideosIn keeps the <video> muted as the
+  // `continuous` playlist swaps the source/element on each advance.
+  useEffect(() => {
+    if (!(hasVideo && videoQueue)) return undefined;
+    const cleanup = muteVideosIn(videoContainerRef.current);
+    return cleanup;
+  }, [hasVideo, videoQueue]);
 
   // Track changes arrive via Player's onProgress callback (progressData.media),
   // exactly as FitnessMusicPlayer derives its current track. Fire a lighting
@@ -85,9 +101,9 @@ export default function DancePartyWidget({ onClose, config }) {
 
   return (
     <div className="dance-party">
-      <div className="dance-video">
+      <div className="dance-video" ref={videoContainerRef}>
         {hasVideo && videoQueue ? (
-          <Player queue={videoQueue} play={videoPlay} playerType="video" />
+          <Player queue={videoQueue} playerType="video" />
         ) : (
           <div className="dance-backdrop" aria-hidden="true" />
         )}
@@ -118,5 +134,6 @@ export default function DancePartyWidget({ onClose, config }) {
 
 DancePartyWidget.propTypes = {
   onClose: PropTypes.func,
-  config: PropTypes.object
+  config: PropTypes.object,
+  onMount: PropTypes.func
 };

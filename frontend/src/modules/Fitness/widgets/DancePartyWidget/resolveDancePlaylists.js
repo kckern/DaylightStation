@@ -9,8 +9,10 @@ export function resolveDancePlaylists(fitnessConfig, musicPlaylists = []) {
   const dp = fitnessConfig?.dance_party || {};
   const audioPlaylistId = dp.audio_playlist_id
     ?? (Array.isArray(musicPlaylists) && musicPlaylists[0]?.id) ?? null;
-  const rawVideo = dp.video_playlist_id;
-  const videoPlaylistId = Number.isFinite(rawVideo) && rawVideo > 0 ? rawVideo : null;
+  // Coerce: YAML may author the id as a string (e.g. "99"). Number.isFinite on a
+  // raw string is false, which would silently disable video. Convert first.
+  const v = Number(dp.video_playlist_id);
+  const videoPlaylistId = Number.isFinite(v) && v > 0 ? v : null;
   return {
     audioPlaylistId,
     videoPlaylistId,
