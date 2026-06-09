@@ -26,6 +26,11 @@ export function MiniPlayer() {
         onClick={() => push('nowPlaying', {})}
       >
         {item.title ?? item.contentId}
+        {snapshot.queue?.items?.length > 1 && (
+          <span className="mini-queue-count" data-testid="mini-queue-count">
+            {snapshot.queue.currentIndex + 1}/{snapshot.queue.items.length}
+          </span>
+        )}
       </button>
       <button
         data-testid="mini-toggle"

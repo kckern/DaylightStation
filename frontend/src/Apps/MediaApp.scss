@@ -1025,16 +1025,6 @@ div.media-search-results {
     font-weight: 600;
     color: var(--fg);
   }
-  > div:not(.handoff-section):not(.now-playing-host) {
-    font-size: 12px;
-    color: var(--fg-2);
-    display: inline-block;
-    padding: 4px 10px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-    margin-right: 6px;
-  }
 }
 
 .now-playing-host {
@@ -1699,3 +1689,44 @@ div.media-search-results {
   }
 }
 .media-app .queue-empty { padding: 14px; font-size: 13px; color: var(--fg-3); }
+
+/* Task 8 (M5): NowPlaying as a real player surface */
+.media-app .now-playing-title { font-size: 22px; font-weight: 600; color: var(--fg); }
+.media-app .now-playing-state {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--fg-3); padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.media-app .np-transport {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: var(--r);
+}
+.media-app .np-seek-row {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+  .np-time { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+}
+.media-app .np-seek {
+  appearance: none; height: 6px; border-radius: 3px; background: var(--bg-active);
+  &::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--brand); cursor: grab; }
+  &::-moz-range-thumb { width: 16px; height: 16px; border: none; border-radius: 50%; background: var(--brand); cursor: grab; }
+  &:disabled { opacity: .4; }
+}
+.media-app .np-buttons {
+  display: flex; align-items: center; gap: 8px;
+  button {
+    width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--bg-panel); border: 1px solid var(--border-mid); border-radius: var(--r);
+    color: var(--fg); font-size: 14px;
+    &:hover { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  }
+  [data-testid='np-stop']:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .np-volume-label { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2);
+    input { width: 120px; } }
+}
+.media-app .np-handoff-toggle {
+  padding: 8px 14px; font-size: 13px; color: var(--fg);
+  background: var(--bg-card); border: 1px solid var(--border-mid); border-radius: var(--r);
+  &:hover { border-color: var(--brand); }
+}
+.media-app .mini-queue-count { font-size: 10px; color: var(--fg-3); }
