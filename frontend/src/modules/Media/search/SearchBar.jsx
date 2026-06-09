@@ -6,6 +6,7 @@ import { SearchIdleState } from './SearchIdleState.jsx';
 import { SearchEmptyState } from './SearchEmptyState.jsx';
 import { SearchErrorState } from './SearchErrorState.jsx';
 import { deriveSearchState, SEARCH_STATE } from './searchStates.js';
+import { parseContentId } from './contentIdParser.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
 import { useSessionController } from '../session/useSessionController.js';
 
@@ -47,6 +48,7 @@ export function SearchBar() {
     results,
     error,
   });
+  const parsedId = parseContentId(value);
 
   return (
     <div
@@ -72,6 +74,9 @@ export function SearchBar() {
       />
       {isOpen && (
         <div data-testid="search-overlay" className="media-search-overlay">
+          {parsedId && state.kind !== SEARCH_STATE.IDLE && (
+            <SearchIdleState input={value} onDeepLink={onDeepLink} />
+          )}
           {state.kind === SEARCH_STATE.IDLE && (
             <SearchIdleState input={value} onDeepLink={onDeepLink} />
           )}
