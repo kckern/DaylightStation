@@ -43,4 +43,12 @@ describe('CastButton', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ play: 'plex:42', targetIds: ['living-tv'] }));
     expect(screen.queryByTestId('dispatch-target-picker')).not.toBeInTheDocument();
   });
+
+  test('portal root carries the media-app-portal class so scoped styles apply', () => {
+    harness();
+    fireEvent.click(screen.getByTestId('cast-button-plex:42'));
+    const portal = document.querySelector('.cast-button-popover-portal');
+    expect(portal).not.toBeNull();
+    expect(portal.classList.contains('media-app-portal')).toBe(true);
+  });
 });
