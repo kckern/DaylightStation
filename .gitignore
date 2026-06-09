@@ -89,3 +89,6 @@ data/agents/*.db
 data/agents/*.db-journal
 data/agents/*.db-wal
 data/agents/*.db-shm
+
+# Superpowers brainstorm/visual-companion scratch
+.superpowers/
