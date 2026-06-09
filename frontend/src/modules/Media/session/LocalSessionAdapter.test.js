@@ -213,3 +213,25 @@ describe('LocalSessionAdapter.onPlayerStalled', () => {
     expect(a.getSnapshot().state).toBe('idle');
   });
 });
+
+describe('LocalSessionAdapter — onPlayerPositionTick', () => {
+  it('onPlayerPositionTick updates subscribers without writing persistence', () => {
+    const deps = makeDeps();
+    const adapter = new LocalSessionAdapter(deps);
+    const writesBefore = deps.persistence.write.mock.calls.length;
+    const seen = [];
+    adapter.subscribe((s) => seen.push(s.position));
+    adapter.onPlayerPositionTick(12.4);
+    expect(seen).toEqual([12.4]);
+    expect(deps.persistence.write.mock.calls.length).toBe(writesBefore); // no new write
+  });
+
+  it('ignores non-finite values and sub-0.5s deltas', () => {
+    const adapter = new LocalSessionAdapter(makeDeps());
+    const seen = [];
+    adapter.subscribe((s) => seen.push(s.position));
+    adapter.onPlayerPositionTick(NaN);
+    adapter.onPlayerPositionTick(0.2); // < 0.5 from initial 0
+    expect(seen).toEqual([]);
+  });
+});
