@@ -1,10 +1,11 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
-import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
 import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers } from './timelineOverlay.js';
 import { resolveSessionStartMs } from './sessionDetailUtils.js';
-import { getChallengeTypeDisplay } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
+import { computeEffectiveTicks } from './useTimelineMarkers.js';
+import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import './FitnessTimeline.scss';
 
@@ -227,22 +228,11 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
   const plotWidth = width - CHART_MARGIN.left - CHART_MARGIN.right;
   const plotHeight = height; // No bottom margin — chart above provides x-axis labels
 
-  // Global effectiveTicks — matches FitnessChart's calculation (max across all participants)
-  const effectiveTicks = useMemo(() => {
-    if (!roster || roster.length === 0) return MIN_VISIBLE_TICKS;
-    let globalMaxIndex = 0;
-    for (const entry of roster) {
-      const userId = entry.id || entry.profileId;
-      const hrSeries = getSeries(userId, 'heart_rate', { clone: false });
-      const maxIdx = hrSeries.reduce((max, v, i) => (Number.isFinite(v) && v > 0 ? i : max), 0);
-      if (maxIdx > globalMaxIndex) globalMaxIndex = maxIdx;
-    }
-    return Math.max(
-      MIN_VISIBLE_TICKS,
-      globalMaxIndex + 1,
-      sessionData?.isGroup ? (Number(sessionData?.timeline?.tick_count) || 0) : 0
-    );
-  }, [roster, getSeries, sessionData]);
+  // Global effectiveTicks — shared with the gutter (useTimelineMarkers) so chips align.
+  const effectiveTicks = useMemo(
+    () => computeEffectiveTicks(sessionData, getSeries, roster),
+    [roster, getSeries, sessionData]
+  );
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 
@@ -361,42 +351,24 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
           </g>
         ))}
-        {/* challenge markers (dotted) */}
+        {/* challenge duration rectangles (jut UP from the gutter); tinted by type / HR zone */}
         {overlay.challengeMarkers.map((m, i) => {
-          const d = getChallengeTypeDisplay(m.type);
+          const color = getChallengeMarkerColor(m);
+          const w = Math.max(m.width, 2);
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
-              <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke={d.color} strokeWidth={1.5} strokeDasharray="1 4" opacity={0.85} />
+              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.14} />
+              <rect x={m.x} y={0} width={1.5} height={plotHeight} fill={color} opacity={0.8} />
             </g>
           );
         })}
-        {/* video-change markers (dashed) */}
+        {/* video-change markers (dashed, jut UP from the gutter) */}
         {overlay.videoMarkers.map((m, i) => (
           <g key={`vid-${i}`} className="timeline-video-marker">
             <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
       </svg>
-      <div className="fitness-timeline__markers" aria-hidden="true">
-        {overlay.challengeMarkers.map((m, i) => {
-          const d = getChallengeTypeDisplay(m.type);
-          return (
-            <div key={`chal-flag-${i}`} className="timeline-challenge-flag" style={{ left: `${m.x}px`, borderColor: d.color }}>
-              <span className="icon">{d.icon}</span>
-              {m.requiredCount != null && <span className="count">{m.requiredCount}</span>}
-            </div>
-          );
-        })}
-        {overlay.videoMarkers.map((m, i) => (
-          <div key={`vid-card-${i}`} className="timeline-video-card" style={{ left: `${m.x}px` }}>
-            <div className="imgs">
-              {m.posterUrl && <img className="poster" src={m.posterUrl} alt="" />}
-              {m.thumbUrl && <img className="thumb" src={m.thumbUrl} alt="" />}
-            </div>
-            {m.episodeName && <div className="caption">{m.episodeName}</div>}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

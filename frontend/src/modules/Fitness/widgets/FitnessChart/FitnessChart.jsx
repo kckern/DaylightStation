@@ -15,7 +15,9 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
-import { computeRaceBands, computeSeamLines } from '../FitnessSessionDetailWidget/timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers } from '../FitnessSessionDetailWidget/timelineOverlay.js';
+import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
+import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
@@ -582,6 +584,17 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 						<rect x={b.x} y={overlay.top} width={b.width} height={2} fill="#3ba776" opacity={0.5} />
 					</g>
 				))}
+				{/* challenge duration rectangles (jut DOWN from the gutter); tinted by type / HR zone */}
+				{(overlay.challengeMarkers || []).map((m, i) => {
+					const color = getChallengeMarkerColor(m);
+					const h = Math.max(0, overlay.bottom - overlay.top);
+					return (
+						<g key={`co-chal-${i}`}>
+							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.12} />
+							<rect x={m.x} y={overlay.top} width={1.5} height={h} fill={color} opacity={0.8} />
+						</g>
+					);
+				})}
 			</g>
 		)}
 		<g className="race-chart__grid">
@@ -656,6 +669,11 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				{overlay.seams.map((s, i) => (
 					<line key={`sm-${i}`} x1={s.x} x2={s.x} y1={overlay.top} y2={overlay.bottom}
 						stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
+				))}
+				{/* video-change markers (dashed, jut DOWN from the gutter) */}
+				{(overlay.videoMarkers || []).map((m, i) => (
+					<line key={`co-vid-${i}`} x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
+						stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
 				))}
 			</g>
 		)}
@@ -1221,13 +1239,17 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		const src = sessionData?.timeline ? sessionData : (sessionData?.session || sessionData);
 		const seams = src?.seams;
 		const activities = src?.activities;
-		if (!(seams?.length) && !(activities?.length)) return null;
+		const events = src?.timeline?.events;
+		const hasEvents = Array.isArray(events) && events.length > 0;
+		if (!(seams?.length) && !(activities?.length) && !hasEvents) return null;
 		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		const intervalMs = Number(src?.timeline?.interval_seconds) > 0 ? Number(src.timeline.interval_seconds) * 1000 : 5000;
-		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left };
+		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left, sessionStartMs: resolveSessionStartMs(src) };
 		return {
 			bands: computeRaceBands(activities, opts),
 			seams: computeSeamLines(seams, opts),
+			challengeMarkers: computeChallengeMarkers(events, opts),
+			videoMarkers: computeVideoMarkers(events, opts),
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
