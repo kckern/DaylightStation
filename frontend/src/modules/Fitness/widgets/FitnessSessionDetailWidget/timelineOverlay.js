@@ -87,3 +87,42 @@ export function computeChallengeMarkers(events, opts) {
       };
     });
 }
+
+/**
+ * Resolve 1-D badge positions so fixed-size badges never overlap.
+ * Greedy left-to-right pass enforces minGap; if the last badge spills past
+ * `max`, a right-to-left pass walks the cluster back; a final left clamp
+ * re-spreads forward. Input must be ascending. Pure; returns a new array.
+ */
+export function resolveBadgeXs(desired, { minGap, min, max }) {
+  const xs = [...desired];
+  for (let i = 1; i < xs.length; i++) {
+    if (xs[i] < xs[i - 1] + minGap) xs[i] = xs[i - 1] + minGap;
+  }
+  if (xs.length && xs[xs.length - 1] > max) {
+    xs[xs.length - 1] = max;
+    for (let i = xs.length - 2; i >= 0; i--) {
+      if (xs[i] > xs[i + 1] - minGap) xs[i] = xs[i + 1] - minGap;
+    }
+  }
+  if (xs.length && xs[0] < min) {
+    xs[0] = min;
+    for (let i = 1; i < xs.length; i++) {
+      if (xs[i] < xs[i - 1] + minGap) xs[i] = xs[i - 1] + minGap;
+    }
+  }
+  return xs;
+}
+
+/**
+ * Decorate challenge markers with a collision-free `badgeX` (anchored at each
+ * marker's xEnd). Sorts by xEnd internally but preserves the input order and
+ * does not mutate the input.
+ */
+export function withBadgeXs(markers, opts) {
+  const order = markers.map((_, i) => i).sort((a, b) => markers[a].xEnd - markers[b].xEnd);
+  const resolved = resolveBadgeXs(order.map((i) => markers[i].xEnd), opts);
+  const out = markers.map((m) => ({ ...m }));
+  order.forEach((mi, k) => { out[mi].badgeX = resolved[k]; });
+  return out;
+}
