@@ -25,7 +25,6 @@ export function getChallengeTypeDisplay(type) {
  */
 export function resolveChallengeMarkerType(event) {
   const d = event?.data || {};
-  if (d.type === 'cycle' || d.type === 'zone') return d.type;
   if (d.type) return d.type;
   return d.zoneId == null ? 'cycle' : 'zone';
 }
