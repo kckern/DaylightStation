@@ -87,4 +87,51 @@ assert_false "should_escalate_reset 39" "no escalate far past the cap (39)"
 assert_false "should_escalate_reset abc" "non-numeric never escalates"
 assert_false "should_escalate_reset 0" "zero never escalates"
 
+# --- warm_reconnect_ok: reuse cached playlist on a quick same-queue reconnect -
+# slot_dir resolves to $HOME/slots/<n> (HOME is the tmp root). Build a slot dir
+# that satisfies all reuse preconditions, then knock out one condition at a time.
+WARM_REUSE_WINDOW=120
+_wslot=9
+_wdir="$(slot_dir "$_wslot")"
+mkdir -p "$_wdir"
+printf '#EXTM3U\n/cache/100.mp3\n/cache/200.mp3\n' > "$_wdir/playlist.m3u"
+touch "$_wdir/.bg_done"
+printf 'plex:675608' > "$_wdir/.playlist_queue"
+# Virtual clock: teardown 10s ago, well inside the 120s window.
+_now=1000
+date() { [[ "$1" == "+%s" ]] && { echo "$_now"; return 0; }; command date "$@"; }
+echo "$((_now - 10))" > "$_wdir/.last_teardown"
+
+warm_reconnect_ok "$_wslot" "plex:675608"
+assert_eq "0" "$?" "warm reuse OK: fresh teardown, same queue, bg done, real entries"
+
+# Different queue → cold path (must not replay stale content).
+warm_reconnect_ok "$_wslot" "plex:999999"
+assert_eq "1" "$?" "different queue → no warm reuse"
+
+# Teardown too old (200s ago > 120s window) → cold path.
+echo "$((_now - 200))" > "$_wdir/.last_teardown"
+warm_reconnect_ok "$_wslot" "plex:675608"
+assert_eq "1" "$?" "stale teardown (>window) → no warm reuse"
+echo "$((_now - 10))" > "$_wdir/.last_teardown"   # restore fresh
+
+# bg download not finished (.bg_done absent) → cold path (playlist is a subset).
+rm -f "$_wdir/.bg_done"
+warm_reconnect_ok "$_wslot" "plex:675608"
+assert_eq "1" "$?" "no .bg_done (incomplete playlist) → no warm reuse"
+touch "$_wdir/.bg_done"   # restore
+
+# Playlist has no real media entries (only comments) → cold path.
+printf '#EXTM3U\n#nothing\n' > "$_wdir/playlist.m3u"
+warm_reconnect_ok "$_wslot" "plex:675608"
+assert_eq "1" "$?" "playlist with no media entries → no warm reuse"
+printf '#EXTM3U\n/cache/100.mp3\n' > "$_wdir/playlist.m3u"   # restore
+
+# Missing teardown stamp → cold path.
+rm -f "$_wdir/.last_teardown"
+warm_reconnect_ok "$_wslot" "plex:675608"
+assert_eq "1" "$?" "missing .last_teardown → no warm reuse"
+
+unset -f date
+
 teardown_tmp; finish
