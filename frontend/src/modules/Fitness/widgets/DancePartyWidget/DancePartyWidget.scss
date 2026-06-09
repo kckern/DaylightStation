@@ -10,11 +10,22 @@
 .dance-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dance-artist { font-size: 12px; opacity: .8; }
 .dance-controls { display: flex; gap: 14px; }
-// VolumeControl primitive, themed for the dark now-playing gradient.
-.dance-volume { flex: 0 0 auto;
-  .volume-control__slider { width: 140px; }
-  .volume-control__track { background-color: rgba(255,255,255,.25); }
-  .volume-control__mute-btn { color: #fff; }
+// TouchVolumeButtons strip (touch screen — discrete levels, no slider),
+// themed for the dark now-playing gradient. First segment (level 0) = mute.
+.dance-volume { flex: 0 0 auto; width: min(320px, 32vw);
+  .touch-volume {
+    display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; width: 100%;
+    touch-action: none;
+  }
+  .touch-volume-button {
+    height: 34px; padding: 0; cursor: pointer; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .touch-volume-button.on { background: linear-gradient(180deg,#ff8a00,#ff2d95); border-color: rgba(255,255,255,.5); }
+  .touch-volume-button.active { box-shadow: 0 0 0 2px rgba(255,255,255,.6); }
+  .touch-volume-button:first-child.off { background: rgba(120,49,56,.8); border-color: rgba(220,53,69,.5); }
+  .touch-volume-button:first-child.on { background: linear-gradient(180deg,rgba(220,53,69,.95),rgba(185,43,58,.95)); }
 }
 .dance-controls button { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
 

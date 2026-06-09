@@ -345,7 +345,9 @@ export function useCommonMediaController({
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
-    let processed = parseFloat(volume || 100);
+    // `?? 100` (not `|| 100`): an explicit volume of 0 means mute, not default.
+    let processed = parseFloat(volume ?? 100);
+    if (!Number.isFinite(processed)) processed = 100;
     if (processed > 1) processed = processed / 100;
     const adjusted = Math.min(1, Math.max(0, processed));
     try {
@@ -1136,7 +1138,9 @@ export function useCommonMediaController({
       const snapshot = recoverySnapshotRef.current;
       const snapshotTarget = snapshot && Number.isFinite(snapshot.targetTime) ? snapshot.targetTime : null;
       
-      let processedVolume = parseFloat(volume || 100);
+      // `?? 100` (not `|| 100`): an explicit volume of 0 means mute, not default.
+      let processedVolume = parseFloat(volume ?? 100);
+      if (!Number.isFinite(processedVolume)) processedVolume = 100;
       if (processedVolume > 1) {
         processedVolume = processedVolume / 100;
       }

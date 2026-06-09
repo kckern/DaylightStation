@@ -1,13 +1,10 @@
 import PropTypes from 'prop-types';
-import VolumeControl from '../../shared/primitives/VolumeControl';
+import { TouchVolumeButtons } from '../../player/panels/TouchVolumeButtons.jsx';
 import './DancePartyWidget.scss';
-
-// Snap points match TouchVolumeButtons' 10%-step touch levels.
-const VOLUME_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 export default function DanceNowPlayingBar({
   track, isPlaying, onPlayPause, onNext, onExit,
-  volume = 100, muted = false, onVolumeChange, onMuteToggle
+  volumeLevel = 100, onVolumeSelect
 }) {
   return (
     <>
@@ -20,20 +17,14 @@ export default function DanceNowPlayingBar({
           <div className="dance-title">{track?.title || '— No Track —'}</div>
           <div className="dance-artist">{track?.artist || ''}</div>
         </div>
-        {onVolumeChange && (
-          <VolumeControl
-            className="dance-volume"
-            orientation="horizontal"
-            size="sm"
-            steps={VOLUME_STEPS}
-            value={volume}
-            muted={muted}
-            onChange={onVolumeChange}
-            onMuteToggle={onMuteToggle}
-            showMute
-            showValue={false}
-            showButtons={false}
-          />
+        {onVolumeSelect && (
+          <div className="dance-volume" id="dance-volume-label" aria-label="Volume">
+            <TouchVolumeButtons
+              controlId="dance-volume"
+              currentLevel={volumeLevel}
+              onSelect={onVolumeSelect}
+            />
+          </div>
         )}
         <div className="dance-controls">
           <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={onPlayPause}>{isPlaying ? '⏸' : '▶'}</button>
@@ -50,8 +41,6 @@ DanceNowPlayingBar.propTypes = {
   onPlayPause: PropTypes.func.isRequired,
   onNext: PropTypes.func.isRequired,
   onExit: PropTypes.func.isRequired,
-  volume: PropTypes.number,
-  muted: PropTypes.bool,
-  onVolumeChange: PropTypes.func,
-  onMuteToggle: PropTypes.func
+  volumeLevel: PropTypes.number,
+  onVolumeSelect: PropTypes.func
 };
