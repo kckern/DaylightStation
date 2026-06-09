@@ -1754,9 +1754,10 @@ export class GovernanceEngine {
    *   - challenge_start    : the challenge has appeared and is still pending,
    *                          before the remaining-threshold window.
    *
-   * Cycle challenges are excluded — they have their own cueAudio system.
-   * Challenge failure is intentionally not a cue: the lock screen (which pauses
-   * the video) already covers it.
+   * Cycle challenges map their lifecycle edges + a health-based hurry to the
+   * cycle_start/cycle_end/cycle_fail/cycle_hurry cues via resolveCycleAudioCue.
+   * For HR/zone challenges, failure is intentionally not a cue: the lock screen
+   * (which pauses the video) already covers it.
    */
   _computeAudioDuck(challengeSnapshot) {
     if (!Array.isArray(this._audioCues) || this._audioCues.length === 0) {
