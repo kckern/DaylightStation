@@ -4,6 +4,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264 } from './transcodeProfile.mjs';
 
 /**
  * Plex content source adapter.
@@ -816,170 +817,6 @@ export class PlexAdapter {
   }
 
   /**
-   * Request transcode decision from Plex server
-   * Authorizes a streaming session and determines whether to direct play or transcode
-   *
-   * @param {string} key - Plex rating key
-   * @param {Object} [opts] - Options
-   * @param {string} [opts.session] - Client session ID for multi-player isolation
-   * @param {number} [opts.maxVideoBitrate] - Maximum video bitrate in kbps
-   * @param {string} [opts.maxResolution] - Maximum resolution (e.g., "1080p", "720p")
-   * @param {number} [opts.startOffset] - Start offset in seconds
-   * @returns {Promise<Object>} Decision result with session identifiers and stream info
-   */
-  async requestTranscodeDecision(key, opts = {}) {
-    const {
-      maxVideoBitrate = null,
-      maxResolution = null,
-      session = null,
-      startOffset = 0
-    } = opts;
-
-    const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
-
-    // Build decision endpoint URL
-    const params = new URLSearchParams();
-    params.append('path', `/library/metadata/${key}`);
-    params.append('protocol', this.protocol);
-    params.append('X-Plex-Client-Identifier', clientIdentifier);
-    params.append('X-Plex-Session-Identifier', sessionIdentifier);
-    params.append('X-Plex-Platform', this.platform);
-    params.append('autoAdjustQuality', '1');
-    params.append('directPlay', '0');
-    // directStream=0: force a transcode rather than letting Plex remux the
-    // ORIGINAL codec into the DASH container. With directStream=1, AV1/VP9
-    // sources are direct-streamed unchanged and MSE rejects the append
-    // (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual t=0 stall). Forcing
-    // transcode routes them through the advertised h264/hevc targets.
-    params.append('directStream', '0');
-    params.append('subtitleSize', '100');
-    params.append('audioBoost', '100');
-    params.append('fastSeek', '1');
-    if (startOffset > 0) {
-      params.append('offset', String(Math.floor(startOffset)));
-    }
-    params.append('X-Plex-Token', this.token);
-
-    if (maxVideoBitrate != null) {
-      params.append('maxVideoBitrate', String(maxVideoBitrate));
-    }
-    if (maxResolution != null) {
-      params.append('maxVideoResolution', String(maxResolution));
-    }
-
-    const decisionUrl = `${this.host}/video/:/transcode/universal/decision?${params.toString()}`;
-
-    try {
-      const response = await this.#httpClient.get(decisionUrl, {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!response.ok) {
-        throw new InfrastructureError(`Decision request failed: ${response.status}`, {
-        code: 'EXTERNAL_SERVICE_ERROR',
-        service: 'Plex',
-        statusCode: response.status
-      });
-      }
-
-      const container = response.data?.MediaContainer;
-      if (!container) {
-        throw new InfrastructureError('Invalid decision response: missing MediaContainer', {
-        code: 'INVALID_RESPONSE',
-        service: 'Plex'
-      });
-      }
-
-      // Extract decision codes
-      const generalDecisionCode = parseInt(container.generalDecisionCode, 10) || 0;
-      const generalDecisionText = container.generalDecisionText || '';
-      const transcodeDecisionCode = parseInt(container.transcodeDecisionCode, 10) || 0;
-      const transcodeDecisionText = container.transcodeDecisionText || '';
-
-      // Extract direct stream path if available
-      let directStreamPath = null;
-      let directStreamContainer = null;
-      const video = Array.isArray(container.Video) ? container.Video[0] : container.Video;
-      if (video?.Media) {
-        const media = Array.isArray(video.Media) ? video.Media[0] : video.Media;
-        if (media?.Part) {
-          const part = Array.isArray(media.Part) ? media.Part[0] : media.Part;
-          directStreamPath = part?.key || null;
-          directStreamContainer = media?.container || null;
-        }
-      }
-
-      return {
-        success: true,
-        sessionIdentifier,
-        clientIdentifier,
-        decision: {
-          generalDecisionCode,
-          generalDecisionText,
-          transcodeDecisionCode,
-          transcodeDecisionText,
-          directStreamPath,
-          directStreamContainer,
-          canDirectPlay: generalDecisionCode === 2000,
-          canTranscode: transcodeDecisionCode === 1000 || generalDecisionCode !== 2000
-        }
-      };
-    } catch (error) {
-      this.logger.error?.('plex.requestTranscodeDecision.exception', {
-        error: error.message,
-        stack: error.stack,
-      });
-      return {
-        success: false,
-        error: error.message,
-        sessionIdentifier,
-        clientIdentifier
-      };
-    }
-  }
-
-  /**
-   * Build a transcode URL for video streaming
-   * @param {string} key - Plex rating key
-   * @param {string} clientIdentifier - Client identifier
-   * @param {string} sessionIdentifier - Session identifier
-   * @param {number} [maxVideoBitrate] - Max video bitrate
-   * @param {string} [maxResolution] - Max resolution
-   * @returns {string} Transcode URL
-   * @private
-   */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null) {
-    const mediaBufferSize = 5242880 * 20; // 100MB buffer
-    const baseParams = [
-      `path=%2Flibrary%2Fmetadata%2F${key}`,
-      `protocol=${this.protocol}`,
-      `X-Plex-Client-Identifier=${clientIdentifier}`,
-      `X-Plex-Session-Identifier=${sessionIdentifier}`,
-      `X-Plex-Platform=${this.platform}`,
-      `autoAdjustQuality=1`,
-      `fastSeek=1`,
-      `mediaBufferSize=${mediaBufferSize}`,
-      // Advertise only H.264/HEVC as transcode targets. We deliberately do NOT
-      // advertise AV1/VP9: although browsers decode them natively for direct
-      // <video> playback, this pipeline feeds dash.js via MSE, and Chromium's
-      // demuxer rejects AV1/VP9 fMP4 segments with
-      // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
-      // match SourceBuffer codecs." Advertising them makes Plex emit segments
-      // the SourceBuffer can't append, stalling playback at t=0 forever.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
-    ];
-
-    if (maxVideoBitrate != null) {
-      baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
-    }
-    if (maxResolution != null) {
-      baseParams.push(`maxVideoResolution=${encodeURIComponent(maxResolution)}`);
-    }
-
-    return `${this.proxyPath}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
-  }
-
-  /**
    * Get container metadata bundled with its children
    * @param {string} id - Compound ID
    * @returns {Promise<{container: Object, children: Array}|null>}
@@ -1493,7 +1330,8 @@ export class PlexAdapter {
       maxVideoBitrate = null,
       maxResolution = null,
       session = null,
-      startOffset = 0
+      startOffset = 0,
+      allowDirectPlay = false
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1505,21 +1343,25 @@ export class PlexAdapter {
     params.append('X-Plex-Client-Identifier', clientIdentifier);
     params.append('X-Plex-Session-Identifier', sessionIdentifier);
     params.append('X-Plex-Platform', this.platform);
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
     // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
-    // MSE demuxer cannot append; see _buildTranscodeUrl comment).
+    // MSE demuxer cannot append; see _buildTranscodeUrl comment). Plus a
+    // frame-rate upper-bound to keep the encoder ahead of realtime.
     params.append(
       'X-Plex-Client-Profile-Extra',
-      'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)'
+      buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate })
     );
     params.append('autoAdjustQuality', '1');
-    params.append('directPlay', '0');
-    // directStream=0: force a transcode rather than letting Plex remux the
-    // ORIGINAL codec into the DASH container. With directStream=1, AV1/VP9
-    // sources are direct-streamed unchanged and MSE rejects the append
-    // (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual t=0 stall). Forcing
-    // transcode routes them through the advertised h264/hevc targets.
-    params.append('directStream', '0');
+    // directPlay/directStream default to 0 (forced transcode). Only an already
+    // h264/aac/mp4 source (canDirectPlayH264 gate) is allowed to direct-play —
+    // everything else stays on the transcode path so AV1/VP9 sources cannot be
+    // direct-streamed unchanged (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual
+    // t=0 stall). Forcing transcode routes them through the advertised
+    // h264/hevc targets.
+    params.append('directPlay', allowDirectPlay ? '1' : '0');
+    params.append('directStream', allowDirectPlay ? '1' : '0');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1528,12 +1370,8 @@ export class PlexAdapter {
     }
     params.append('X-Plex-Token', this.token);
 
-    if (maxVideoBitrate != null) {
-      params.append('maxVideoBitrate', String(maxVideoBitrate));
-    }
-    if (maxResolution != null) {
-      params.append('maxVideoResolution', String(maxResolution));
-    }
+    params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
+    params.append('maxVideoResolution', String(caps.maxResolution));
 
     const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
 
@@ -1609,6 +1447,8 @@ export class PlexAdapter {
    */
   _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
+    // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
+    const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     const baseParams = [
       `path=%2Flibrary%2Fmetadata%2F${key}`,
       `protocol=${this.protocol}`,
@@ -1624,19 +1464,16 @@ export class PlexAdapter {
       // demuxer rejects AV1/VP9 fMP4 segments with
       // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
       // match SourceBuffer codecs." Advertising them makes Plex emit segments
-      // the SourceBuffer can't append, stalling playback at t=0 forever.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent('append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)')}`
+      // the SourceBuffer can't append, stalling playback at t=0 forever. Plus a
+      // frame-rate upper-bound to keep the encoder ahead of realtime.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate }))}`
     ];
 
     if (startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
-    if (maxVideoBitrate != null) {
-      baseParams.push(`maxVideoBitrate=${encodeURIComponent(maxVideoBitrate)}`);
-    }
-    if (maxResolution != null) {
-      baseParams.push(`maxVideoResolution=${encodeURIComponent(maxResolution)}`);
-    }
+    baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
+    baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
 
     return `${this.proxyPath}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
   }
@@ -1713,12 +1550,14 @@ export class PlexAdapter {
         };
       }
 
+      const allowDirectPlay = canDirectPlayH264(playableItem.metadata);
       // Video: use decision API to authorize session
       const decisionResult = await this.requestTranscodeDecision(ratingKey, {
         maxVideoBitrate,
         maxResolution: resolvedMaxResolution,
         session,
-        startOffset
+        startOffset,
+        allowDirectPlay
       });
 
       if (!decisionResult.success) {

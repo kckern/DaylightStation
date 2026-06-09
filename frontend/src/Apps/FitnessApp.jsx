@@ -28,6 +28,7 @@ import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
+import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
 
 registerBuiltinWidgets();
 
@@ -52,6 +53,12 @@ const FitnessApp = () => {
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
+
+  // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
+  useEffect(() => {
+    if (fitnessPlayQueue.length > 0) saveActiveSession(fitnessPlayQueue);
+    else clearActiveSession();
+  }, [fitnessPlayQueue]);
   const [kioskUI, setKioskUI] = useState(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocalhost) return false;
@@ -1041,14 +1048,24 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
-  // After init: re-fire play-from-url whenever the URL changes to a /fitness/play/{id}
-  // path while the queue is empty. The main URL-init effect is one-shot, but in-app
-  // navigations (e.g. from the cycle-demo launcher module) need to populate the play
-  // queue without a full page reload.
+  // After init: ensure a /fitness/play/{id} URL with an empty queue gets a queue.
+  // Two paths feed this effect:
+  //   1. Restore-on-mount (F5 reload of an in-progress session): if sessionStorage
+  //      holds an active session, restore it directly via setFitnessPlayQueue — this
+  //      bypasses the sequential-show redirect because the session was already vetted.
+  //   2. In-app navigation (e.g. cycle-demo launcher, show-list onPlay) to a play URL
+  //      without a pre-populated queue: fall back to handlePlayFromUrl, which still
+  //      applies governance (including the sequential-show redirect).
   useEffect(() => {
     if (!urlInitialized || loading) return;
     if (urlState.view !== 'play' || !urlState.id) return;
     if (fitnessPlayQueue.length > 0) return;
+    const restored = loadActiveSession();
+    if (restored) {
+      setFitnessPlayQueue(restored);
+      logger.info('fitness-session-restored-from-storage', { id: restored[0]?.id, size: restored.length });
+      return;
+    }
     handlePlayFromUrl(urlState.id, { nogovern });
   }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
 

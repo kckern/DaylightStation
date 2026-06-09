@@ -164,4 +164,14 @@ describe('useGovernanceAudioDuck', () => {
     unmount();
     expect(info).toHaveBeenCalledWith('fitness.audio_duck.end', expect.objectContaining({ reason: 'unmount' }));
   });
+
+  it('applies the descriptor volume to the SFX element', () => {
+    render(descriptor({ volume: 0.6 }));
+    expect(FakeAudio.instances[0].volume).toBe(0.6);
+  });
+
+  it('defaults the SFX volume to 1 when no volume is given', () => {
+    render(descriptor());
+    expect(FakeAudio.instances[0].volume).toBe(1);
+  });
 });

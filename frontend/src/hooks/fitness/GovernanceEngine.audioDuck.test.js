@@ -73,6 +73,34 @@ describe('GovernanceEngine — audio_cues config parsing', () => {
   });
 });
 
+describe('GovernanceEngine — audio_cues volume', () => {
+  it('parses an explicit volume', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3', volume: 0.5 }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(0.5);
+  });
+
+  it('defaults volume to 1.0 when absent', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3' }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(1);
+  });
+
+  it('clamps volume to [0,1]', () => {
+    const engine = new GovernanceEngine(null, { now: () => 1000 });
+    engine.configure(baseConfig([
+      { id: 'challenge_start', trigger: 'challenge_start', sound: 'a.mp3', volume: 5 },
+      { id: 'challenge_complete', trigger: 'challenge_complete', sound: 'b.mp3', volume: -3 }
+    ]));
+    expect(engine._audioCues[0].volume).toBe(1);
+    expect(engine._audioCues[1].volume).toBe(0);
+  });
+});
+
 describe('GovernanceEngine — _computeAudioDuck', () => {
   const cue = {
     id: 'challenge_hurry',
@@ -237,5 +265,47 @@ describe('GovernanceEngine — audio cues: start / complete / warning triggers',
     const engine = makeEngine();
     engine._audioCues = [cues[1]]; // hurry only
     expect(engine._computeAudioDuck(pending(40))).toBeNull();
+  });
+});
+
+describe('GovernanceEngine — cycle audio duck', () => {
+  const cycleCues = [
+    { id: 'cyc_start', trigger: 'cycle_start', sound: 'cs.mp3' },
+    { id: 'cyc_end',   trigger: 'cycle_end',   sound: 'ce.mp3' },
+    { id: 'cyc_fail',  trigger: 'cycle_fail',  sound: 'cf.mp3' },
+    { id: 'cyc_hurry', trigger: 'cycle_hurry', sound: 'ch.mp3', volume: 0.6 }
+  ];
+
+  const withCycleCues = (now = 1000) => {
+    const e = new GovernanceEngine(null, { now: () => now });
+    e.configure(baseConfig(cycleCues));
+    e.phase = 'unlocked'; // ensure the governance-warning precedence branch is skipped
+    return e;
+  };
+
+  it('emits cycle_start on the init edge', () => {
+    const duck = withCycleCues()._computeAudioDuck({ type: 'cycle', id: 'c1', cycleAudioCue: 'cycle_challenge_init' });
+    expect(duck?.cueId).toBe('cyc_start');
+  });
+
+  it('emits cycle_fail on the locked edge', () => {
+    const duck = withCycleCues()._computeAudioDuck({ type: 'cycle', id: 'c1', cycleAudioCue: 'cycle_locked' });
+    expect(duck?.cueId).toBe('cyc_fail');
+  });
+
+  it('emits cycle_hurry (with its volume) when below red and health dropping', () => {
+    const duck = withCycleCues()._computeAudioDuck({
+      type: 'cycle', id: 'c1', cycleAudioCue: null,
+      currentPhase: { loRpm: 60, hiRpm: 80 }, currentRpm: 50, cycleHealthPct: 0.8
+    });
+    expect(duck?.cueId).toBe('cyc_hurry');
+    expect(duck?.volume).toBe(0.6);
+  });
+
+  it('does not re-emit hurry on the next tick (cooldown)', () => {
+    const e = withCycleCues();
+    const snap = { type: 'cycle', id: 'c1', cycleAudioCue: null, currentPhase: { loRpm: 60 }, currentRpm: 50, cycleHealthPct: 0.8 };
+    expect(e._computeAudioDuck(snap)?.cueId).toBe('cyc_hurry');
+    expect(e._computeAudioDuck(snap)).toBeNull();
   });
 });

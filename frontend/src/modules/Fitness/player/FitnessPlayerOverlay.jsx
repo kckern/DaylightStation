@@ -32,12 +32,13 @@ const resolveChallengeIdentity = (challenge) => {
   return challenge.id || challenge.selectionLabel || challenge.zone || challenge.zoneLabel || null;
 };
 
-const buildChallengeEventPayload = (challenge, statusOverride = null) => {
+export const buildChallengeEventPayload = (challenge, statusOverride = null) => {
   if (!challenge) return null;
   return {
     challengeId: resolveChallengeIdentity(challenge),
     status: statusOverride || normalizeChallengeStatusForLogging(challenge.status),
     title: challenge.zoneLabel || challenge.zone || challenge.title || '',
+    type: challenge.type || null,
     zoneId: challenge.zone || null,
     zoneLabel: challenge.zoneLabel || null,
     selectionLabel: challenge.selectionLabel || null,

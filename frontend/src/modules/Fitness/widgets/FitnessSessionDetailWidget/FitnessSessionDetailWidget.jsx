@@ -12,6 +12,7 @@ import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
+import { mediaDisplayUrl, resolveSessionStartMs } from './sessionDetailUtils.js';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -26,16 +27,6 @@ const StravaIcon = ({ size = 12, color = '#fc4c02' }) => (
     <path d="M6.731 0 2 9.125h2.788L6.73 5.497l1.93 3.628h2.766zm4.694 9.125-1.372 2.756L8.66 9.125H6.547L10.053 16l3.484-6.875z" />
   </svg>
 );
-
-function mediaDisplayUrl(contentId) {
-  if (!contentId) return null;
-  const str = String(contentId);
-  if (str.includes(':')) {
-    const [source, id] = str.split(':', 2);
-    return `/api/v1/display/${source}/${id}`;
-  }
-  return `/api/v1/display/plex/${str}`;
-}
 
 function formatTime(startTime, timezone) {
   if (!startTime) return '--';
