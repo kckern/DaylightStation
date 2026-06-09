@@ -463,6 +463,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedTypes,
     sessionsConfig,
     cycleGameConfig,
+    dancePartyConfig,
     voiceMemoEligibleUsers
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
@@ -509,6 +510,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       governedTypes: normalizedGovernedTypes,
       sessionsConfig: root?.sessions || {},
       cycleGameConfig: root?.cycle_game || {},
+      // Single source of truth for the dance_party block; null (not {}) when
+      // absent so consumers can distinguish "unconfigured" and fail loudly.
+      dancePartyConfig: root?.dance_party || null,
       // Gates the session-end voice-memo auto-popup. Empty/absent = everyone.
       voiceMemoEligibleUsers: Array.isArray(root?.voice_memo_eligibility?.users)
         ? root.voice_memo_eligibility.users.filter(Boolean)
@@ -2485,6 +2489,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     deviceConfiguration: ant_devices,
     equipment: equipmentConfig,
     cycleGameConfig,
+    dancePartyConfig,
     hrColorMap: {},
     plexConfig,
     nomusicLabels,
