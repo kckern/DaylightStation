@@ -118,6 +118,26 @@ describe('HiddenPlayerMount', () => {
     expect(adapter.onPlayerProgress).toHaveBeenLastCalledWith(20);
   });
 
+  it('suppresses position ticks while the player reports isSeeking', () => {
+    playerPropsLog.length = 0;
+    const adapter = mockAdapter({
+      currentItem: { contentId: 'plex:1', format: 'video' },
+      state: 'playing',
+    });
+    render(
+      <LocalSessionContext.Provider value={{ adapter }}>
+        <HiddenPlayerMount />
+      </LocalSessionContext.Provider>
+    );
+    const onProgress = playerPropsLog[0].onProgress;
+
+    act(() => { onProgress({ currentTime: 42, paused: false, isSeeking: true }); });
+    expect(adapter.onPlayerPositionTick).not.toHaveBeenCalled();
+
+    act(() => { onProgress({ currentTime: 43, paused: false, isSeeking: false }); });
+    expect(adapter.onPlayerPositionTick).toHaveBeenCalledWith(43);
+  });
+
   it('does not transition to playing if the first tick is paused', () => {
     playerPropsLog.length = 0;
     const adapter = mockAdapter({
