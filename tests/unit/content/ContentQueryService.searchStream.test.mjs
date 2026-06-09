@@ -124,4 +124,18 @@ describe('ContentQueryService.searchStream', () => {
     for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
     expect(events.some(e => e.event === 'source_error' && /timeout/.test(e.error))).toBe(true);
   });
+
+  it('batch search() times out a hung ID lookup instead of hanging the response', async () => {
+    const hungLookup = {
+      source: 'plex',
+      getItem: () => new Promise(() => {}),                      // hangs forever
+      search: jest.fn().mockResolvedValue({ items: [] }),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const registry = { resolveSource: () => [hungLookup], get: () => hungLookup };
+    const svc = new ContentQueryService({ registry, adapterTimeoutMs: 50, logger: { info: () => {}, warn: () => {}, debug: () => {} } });
+    const result = await svc.search({ text: 'plex:123' });       // ID-like → triggers #lookupById
+    expect(result.warnings?.some(w => /timeout/i.test(w.error))).toBe(true);
+  }, 5000);
 });

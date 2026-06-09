@@ -422,7 +422,7 @@ export class ContentQueryService {
 
       // Try getItem if available
       if (typeof adapter.getItem === 'function') {
-        const item = await adapter.getItem(id);
+        const item = await withTimeout(adapter.getItem(id), this.#adapterTimeoutMs, `${source} id-lookup`);
         if (item) {
           return { ...item, _idMatch: true };
         }
@@ -430,7 +430,7 @@ export class ContentQueryService {
 
       // Fallback: try to get item info via other means
       if (typeof adapter.getMetadata === 'function') {
-        const metadata = await adapter.getMetadata(id);
+        const metadata = await withTimeout(adapter.getMetadata(id), this.#adapterTimeoutMs, `${source} id-lookup`);
         if (metadata) {
           return {
             id: `${source}:${id}`,
