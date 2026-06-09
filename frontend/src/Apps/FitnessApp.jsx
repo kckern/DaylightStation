@@ -743,7 +743,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration, contentSource]);
 
   // Handle /fitness/play/:id route
-  const handlePlayFromUrl = async (episodeId, { nogovern = false } = {}) => {
+  const handlePlayFromUrl = async (episodeId, { nogovern = false, resume = false } = {}) => {
     try {
       // Fetch episode metadata from API to get labels for governance
       const response = await DaylightAPI(`api/v1/info/${contentSource}/${episodeId}`);
@@ -772,7 +772,7 @@ const FitnessApp = () => {
         .map(l => typeof l === 'string' ? l.toLowerCase() : '');
       const isInSequentialShow = sequentialLabelSet.size > 0 &&
         episodeLabels.some(l => sequentialLabelSet.has(l));
-      if (isInSequentialShow && !nogovern) {
+      if (isInSequentialShow && !nogovern && !resume) {
         const showId = response.metadata?.grandparentId || response.metadata?.grandparentRatingKey;
         if (showId) {
           logger.info('fitness-play-url-sequential-blocked', { episodeId, showId });
@@ -1062,7 +1062,7 @@ const FitnessApp = () => {
       logger.info('fitness-session-restored-from-storage', { id: restored[0]?.id, size: restored.length });
       return;
     }
-    handlePlayFromUrl(urlState.id, { nogovern });
+    handlePlayFromUrl(urlState.id, { nogovern, resume: true });
   }, [urlState.view, urlState.id, urlInitialized, loading, fitnessPlayQueue.length]);
 
   // Initialize state from URL on mount
