@@ -38,4 +38,16 @@ describe('FleetIndicator', () => {
     fireEvent.click(screen.getByTestId('fleet-indicator'));
     expect(navCtx.push).toHaveBeenCalledWith('fleet', {});
   });
+
+  it('carries an offline modifier when nothing is online', () => {
+    summary = { total: 2, online: 0, offline: 2 };
+    render(<FleetIndicator />);
+    expect(screen.getByTestId('fleet-indicator').className).toContain('fleet-indicator--offline');
+  });
+
+  it('carries an online modifier when at least one device is online', () => {
+    summary = { total: 2, online: 1, offline: 1 };
+    render(<FleetIndicator />);
+    expect(screen.getByTestId('fleet-indicator').className).toContain('fleet-indicator--online');
+  });
 });

@@ -15,6 +15,8 @@ function currentItemLabel(entry) {
   return item.title ?? item.contentId;
 }
 
+const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
+
 export function FleetView() {
   const { devices, byDevice, loading, error } = useFleetContext();
   const { push } = useNav();
@@ -30,11 +32,15 @@ export function FleetView() {
       <ul className="fleet-cards">
         {devices.map((d) => {
           const entry = byDevice.get(d.id);
+          const offline = !!entry?.offline;
+          const devState = entry?.snapshot?.state ?? 'unknown';
+          const stateClass = `fleet-card-state fleet-card-state--${offline ? 'offline' : devState}`;
+          const canTakeOver = !offline && ACTIVE_STATES.has(devState);
           return (
             <li key={d.id} data-testid={`fleet-card-${d.id}`} className="fleet-card">
               <div className="fleet-card-name">{d.name ?? d.id}</div>
               <div className="fleet-card-type">{d.type}</div>
-              <div className="fleet-card-state">{stateLabel(entry)}</div>
+              <div className={stateClass}>{stateLabel(entry)}</div>
               <div className="fleet-card-item">{currentItemLabel(entry)}</div>
               {entry?.isStale && <span className="fleet-card-stale">stale</span>}
               <button
@@ -44,13 +50,15 @@ export function FleetView() {
               >
                 Peek
               </button>
-              <button
-                data-testid={`fleet-takeover-${d.id}`}
-                onClick={() => takeOver(d.id)}
-                className="fleet-takeover-btn"
-              >
-                Take Over
-              </button>
+              {canTakeOver && (
+                <button
+                  data-testid={`fleet-takeover-${d.id}`}
+                  onClick={() => takeOver(d.id)}
+                  className="fleet-takeover-btn"
+                >
+                  Take Over
+                </button>
+              )}
             </li>
           );
         })}
