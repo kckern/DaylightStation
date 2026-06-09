@@ -88,9 +88,6 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const scrollViewportRef = useRef(null);
   const loadCooldownRef = useRef(false); // prevent scroll-triggered load feedback loop
   const inputRef = useRef(null);
-  // True once the user has arrow-navigated to an option this edit; gates whether
-  // Enter commits freeform vs. selects the highlighted option. (§3.1-6)
-  const userNavigatedRef = useRef(false);
 
   // Log prop changes
   useEffect(() => {
@@ -620,7 +617,6 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               setBrowseResults([]);
               setPagination(null);
             }
-            userNavigatedRef.current = false;
             setSearch(newValue);
             debouncedSearch(newValue);
             combobox.openDropdown();
@@ -653,17 +649,17 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             combobox.closeDropdown();
           }}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') userNavigatedRef.current = true;
             if (e.key === 'Enter' && search && search !== value) {
               const idx = combobox.getSelectedOptionIndex();
-              log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length, userNavigated: userNavigatedRef.current });
-              // Commit freeform on Enter whenever the user has NOT arrow-navigated to a
-              // real option. Intentional input is never lost. (§3.1-6)
-              if (!userNavigatedRef.current || idx === -1 || results.length === 0) {
+              log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length });
+              // Commit freeform ONLY when no option is selected. When an option IS
+              // selected (a result row or the __freeform__ row), Mantine's own target
+              // keydown clicks it and routes through onOptionSubmit — committing here
+              // too would double-fire onChange. (Review 2026-06-09, Important #1)
+              if (idx === -1) {
                 log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
                 e.preventDefault();
                 onChange(search);
-                // Don't clear search — useEffect on [value] resets it after parent updates
                 combobox.closeDropdown();
               }
             }
@@ -690,6 +686,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               <ActionIcon
                 size="sm"
                 variant="subtle"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => {
                   e.stopPropagation();
                   log.debug('back_button.click', { breadcrumbDepth: breadcrumbs.length });
