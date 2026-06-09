@@ -143,6 +143,25 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     audioRef.current?.advance?.(1);
   }, []);
 
+  // Volume control (now-playing bar): 0-100 UI scale → Player's 0-1 session
+  // volume. Mute remembers the last level and restores it on unmute.
+  const [volume, setVolume] = useState(100);
+  const [muted, setMuted] = useState(false);
+  const applyVolume = useCallback((level, isMuted) => {
+    audioRef.current?.setVolume?.(isMuted ? 0 : level / 100);
+  }, []);
+  const handleVolumeChange = useCallback((level) => {
+    setVolume(level);
+    setMuted(level === 0);
+    applyVolume(level, level === 0);
+    logger.debug('fitness.dance.volume_change', { level });
+  }, [applyVolume, logger]);
+  const handleMuteToggle = useCallback((nextMuted) => {
+    setMuted(nextMuted);
+    applyVolume(volume, nextMuted);
+    logger.info('fitness.dance.mute_toggle', { muted: nextMuted, level: volume });
+  }, [applyVolume, volume, logger]);
+
   // Press the video → fullscreen party: the widget root escapes the app frame
   // (fixed overlay over the fitness sidebar/chrome); press again to restore.
   // The now-playing bar stays visible in both states.
@@ -189,6 +208,10 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         onPlayPause={togglePlay}
         onNext={next}
         onExit={onClose}
+        volume={volume}
+        muted={muted}
+        onVolumeChange={handleVolumeChange}
+        onMuteToggle={handleMuteToggle}
       />
     </div>
   );
