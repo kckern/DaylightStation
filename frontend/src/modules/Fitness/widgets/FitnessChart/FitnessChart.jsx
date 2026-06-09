@@ -590,9 +590,12 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					const h = Math.max(0, overlay.bottom - overlay.top);
 					return (
 						<g key={`co-chal-${i}`}>
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.12} />
+							{/* whisper fill — the bracket + edge line carry the duration signal */}
+							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.05} />
+							{/* duration bracket hanging under the badge row: start → end */}
+							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
 							{/* solid edge on the RIGHT (challenge end) */}
-								<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.bottom} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.bottom} stroke={color} strokeWidth={1.5} opacity={0.9} />
 						</g>
 					);
 				})}
