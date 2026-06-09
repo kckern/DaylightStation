@@ -49,14 +49,17 @@ export class LocalSessionAdapter {
     // Bind transport so destructuring works
     this.transport = {
       play: () => {
+        mediaLog.transportCommand({ action: 'play', target: 'local' });
         this._playerCallbacks.onPlayRequest?.();
         this._dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
       },
       pause: () => {
+        mediaLog.transportCommand({ action: 'pause', target: 'local' });
         this._playerCallbacks.onPauseRequest?.();
         this._dispatch({ type: 'PLAYER_STATE', playerState: 'paused' });
       },
       stop: () => {
+        mediaLog.transportCommand({ action: 'stop', target: 'local' });
         this._playerCallbacks.onPauseRequest?.();
         this._dispatch({ type: 'RESET' });
       },
@@ -71,8 +74,14 @@ export class LocalSessionAdapter {
         const current = this._snapshot.position ?? 0;
         this.transport.seekAbs(Math.max(0, current + delta));
       },
-      skipNext: () => this._advance('skip-next'),
-      skipPrev: () => this._advanceBack(),
+      skipNext: () => {
+        mediaLog.transportCommand({ action: 'skipNext', target: 'local' });
+        this._advance('skip-next');
+      },
+      skipPrev: () => {
+        mediaLog.transportCommand({ action: 'skipPrev', target: 'local' });
+        this._advanceBack();
+      },
     };
   }
 
@@ -94,10 +103,23 @@ export class LocalSessionAdapter {
     const next = reduce(prev, action);
     if (next === prev) return;
     this._snapshot = next;
+    if (next.state !== prev.state) {
+      mediaLog.sessionStateChange({
+        sessionId: next.sessionId,
+        prevState: prev.state,
+        nextState: next.state,
+      });
+    }
     // Record a recent when: (a) transitioning into 'playing', or
     // (b) a new LOAD_ITEM arrives (item queued, even before player fires 'playing').
     const itemChanged = next.currentItem?.contentId !== prev.currentItem?.contentId;
     const nowPlaying = next.state === 'playing' && prev.state !== 'playing';
+    if (nowPlaying) {
+      mediaLog.playbackStarted({
+        sessionId: next.sessionId,
+        contentId: next.currentItem?.contentId,
+      });
+    }
     if ((nowPlaying || (itemChanged && next.currentItem)) && next.currentItem) {
       recordRecent({
         contentId: next.currentItem.contentId,
@@ -113,19 +135,23 @@ export class LocalSessionAdapter {
   queue = {
     playNow: (input, opts) => {
       const next = qOps.playNow(this._snapshot, input, opts);
+      this._logQueueMutation('playNow', next, { contentId: input?.contentId });
       this._replaceSnapshotAndLoad(next);
     },
     playNext: (input) => {
       const next = qOps.playNext(this._snapshot, input);
+      this._logQueueMutation('playNext', next, { contentId: input?.contentId });
       this._replaceSnapshot(next);
     },
     addUpNext: (input) => {
       const next = qOps.addUpNext(this._snapshot, input);
+      this._logQueueMutation('addUpNext', next, { contentId: input?.contentId });
       this._replaceSnapshot(next);
     },
     add: (input) => {
       const wasEmpty = this._snapshot.queue.items.length === 0;
       const next = qOps.add(this._snapshot, input);
+      this._logQueueMutation('add', next, { contentId: input?.contentId });
       if (wasEmpty && next.queue.currentIndex === 0) {
         this._replaceSnapshotAndLoad(next);
       } else {
@@ -134,34 +160,52 @@ export class LocalSessionAdapter {
     },
     clear: () => {
       const next = qOps.clear(this._snapshot);
+      this._logQueueMutation('clear', next);
       this._replaceSnapshot(next);
     },
     remove: (queueItemId) => {
       const next = qOps.remove(this._snapshot, queueItemId);
+      this._logQueueMutation('remove', next, { queueItemId });
       this._replaceSnapshot(next);
     },
     jump: (queueItemId) => {
       const next = qOps.jump(this._snapshot, queueItemId);
+      this._logQueueMutation('jump', next, { queueItemId });
       this._replaceSnapshotAndLoad(next);
     },
     reorder: (input) => {
       const next = qOps.reorder(this._snapshot, input);
+      this._logQueueMutation('reorder', next);
       this._replaceSnapshot(next);
     },
   };
 
+  _logQueueMutation(op, next, context = {}) {
+    mediaLog.queueMutated({
+      op,
+      sessionId: this._snapshot.sessionId,
+      ...context,
+      queueLength: next.queue.items.length,
+    });
+  }
+
   config = {
-    setShuffle: (enabled) => this._dispatch({ type: 'SET_CONFIG', patch: { shuffle: !!enabled } }),
+    setShuffle: (enabled) => this._setConfig({ shuffle: !!enabled }),
     setRepeat: (mode) => {
       if (!['off', 'one', 'all'].includes(mode)) return;
-      this._dispatch({ type: 'SET_CONFIG', patch: { repeat: mode } });
+      this._setConfig({ repeat: mode });
     },
-    setShader: (shader) => this._dispatch({ type: 'SET_CONFIG', patch: { shader: shader ?? null } }),
+    setShader: (shader) => this._setConfig({ shader: shader ?? null }),
     setVolume: (level) => {
       const clamped = Math.max(0, Math.min(100, Math.round(Number(level) || 0)));
-      this._dispatch({ type: 'SET_CONFIG', patch: { volume: clamped } });
+      this._setConfig({ volume: clamped });
     },
   };
+
+  _setConfig(patch) {
+    mediaLog.configChanged({ sessionId: this._snapshot.sessionId, patch });
+    this._dispatch({ type: 'SET_CONFIG', patch });
+  }
 
   lifecycle = {
     reset: () => {
@@ -241,8 +285,13 @@ export class LocalSessionAdapter {
     }
   }
 
-  _advance(_reason) {
+  _advance(reason) {
     const next = pickNextQueueItem(this._snapshot);
+    mediaLog.playbackAdvanced({
+      sessionId: this._snapshot.sessionId,
+      reason,
+      nextContentId: next?.contentId ?? null,
+    });
     if (!next) {
       this._dispatch({ type: 'PLAYER_STATE', playerState: 'ended' });
       return;

@@ -39,6 +39,26 @@ const validateEvent = (evt) => {
   return evt;
 };
 
+// Shared rate-limit state for sampled() across all loggers (mirrors Logger.js)
+const SAMPLING_WINDOW_MS = 60000;
+const samplingState = new Map();
+
+const accumulateSampledData = (aggregated, data) => {
+  for (const [key, value] of Object.entries(data || {})) {
+    if (typeof value === 'number') {
+      aggregated[key] = (aggregated[key] || 0) + value;
+    } else if (typeof value === 'string') {
+      if (!aggregated[key]) aggregated[key] = {};
+      const counts = aggregated[key];
+      if (Object.keys(counts).length < 20) {
+        counts[value] = (counts[value] || 0) + 1;
+      } else {
+        counts['__other__'] = (counts['__other__'] || 0) + 1;
+      }
+    }
+  }
+};
+
 function consoleTransport() {
   return {
     name: 'console',
@@ -217,6 +237,38 @@ function createLogger({ name = 'frontend', context = {}, level = 'info', transpo
     });
   };
 
+  // Rate-limited emit with optional aggregation of skipped events (mirrors Logger.js)
+  const sampled = (eventName, data = {}, options = {}) => {
+    const { maxPerMinute = 20, aggregate = true } = options;
+    const now = Date.now();
+    let state = samplingState.get(eventName);
+
+    // New window or first call: flush previous window's aggregate
+    if (!state || now - state.windowStart >= SAMPLING_WINDOW_MS) {
+      if (state?.skipped > 0 && aggregate) {
+        emit('info', `${eventName}.aggregated`, {
+          sampledCount: state.count,
+          skippedCount: state.skipped,
+          window: '60s',
+          aggregated: state.aggregated
+        });
+      }
+      state = { count: 0, skipped: 0, aggregated: {}, windowStart: now };
+      samplingState.set(eventName, state);
+    }
+
+    // Within budget: log normally
+    if (state.count < maxPerMinute) {
+      state.count += 1;
+      emit('info', eventName, data);
+      return;
+    }
+
+    // Over budget: accumulate for summary
+    state.skipped += 1;
+    if (aggregate) accumulateSampledData(state.aggregated, data);
+  };
+
   const child = (childContext = {}) => createLogger({ name, context: { ...baseContext, ...childContext }, level, transports, formatter, sampling });
 
   return {
@@ -225,6 +277,7 @@ function createLogger({ name = 'frontend', context = {}, level = 'info', transpo
     info: (eventName, data, opts) => emit('info', eventName, data, opts),
     warn: (eventName, data, opts) => emit('warn', eventName, data, opts),
     error: (eventName, data, opts) => emit('error', eventName, data, opts),
+    sampled,
     child
   };
 }

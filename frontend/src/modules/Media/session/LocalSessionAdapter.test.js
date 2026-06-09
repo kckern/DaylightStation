@@ -14,7 +14,7 @@ vi.mock('../logging/mediaLog.js', () => {
     'handoffInitiated','handoffSucceeded','handoffFailed',
     'wsConnected','wsDisconnected','wsReconnected','wsStale',
     'externalControlReceived','externalControlRejected','urlCommandProcessed',
-    'urlCommandIgnored','transportCommand',
+    'urlCommandIgnored','transportCommand','configChanged',
   ];
   const stub = {};
   for (const k of fns) stub[k] = vi.fn();
@@ -211,6 +211,185 @@ describe('LocalSessionAdapter.onPlayerStalled', () => {
     a.onPlayerStalled({ stalledMs: 10500 });
     expect(mediaLog.playbackStallAutoAdvanced).not.toHaveBeenCalled();
     expect(a.getSnapshot().state).toBe('idle');
+  });
+});
+
+describe('LocalSessionAdapter — queue mutation logging', () => {
+  let a;
+  beforeEach(() => { a = new LocalSessionAdapter(makeDeps()); });
+
+  it('queue.playNow emits queueMutated with op/sessionId/contentId/queueLength', () => {
+    a.queue.playNow({ contentId: 'p:1', format: 'video' }, { clearRest: true });
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'playNow', sessionId: 's-test-1', contentId: 'p:1', queueLength: 1,
+    }));
+  });
+
+  it('queue.playNext emits queueMutated', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    mediaLog.queueMutated.mockClear();
+    a.queue.playNext({ contentId: 'b', format: 'video' });
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'playNext', sessionId: 's-test-1', contentId: 'b', queueLength: 2,
+    }));
+  });
+
+  it('queue.addUpNext emits queueMutated', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    mediaLog.queueMutated.mockClear();
+    a.queue.addUpNext({ contentId: 'b', format: 'video' });
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'addUpNext', sessionId: 's-test-1', contentId: 'b', queueLength: 2,
+    }));
+  });
+
+  it('queue.add emits queueMutated', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'add', sessionId: 's-test-1', contentId: 'a', queueLength: 1,
+    }));
+  });
+
+  it('queue.clear emits queueMutated with resulting queueLength 0', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    mediaLog.queueMutated.mockClear();
+    a.queue.clear();
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'clear', sessionId: 's-test-1', queueLength: 0,
+    }));
+  });
+
+  it('queue.remove emits queueMutated with queueItemId', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.queue.add({ contentId: 'b', format: 'video' });
+    const targetId = a.getSnapshot().queue.items[1].queueItemId;
+    mediaLog.queueMutated.mockClear();
+    a.queue.remove(targetId);
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'remove', sessionId: 's-test-1', queueItemId: targetId, queueLength: 1,
+    }));
+  });
+
+  it('queue.jump emits queueMutated with queueItemId', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.queue.add({ contentId: 'b', format: 'video' });
+    const targetId = a.getSnapshot().queue.items[1].queueItemId;
+    mediaLog.queueMutated.mockClear();
+    a.queue.jump(targetId);
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'jump', sessionId: 's-test-1', queueItemId: targetId, queueLength: 2,
+    }));
+  });
+
+  it('queue.reorder emits queueMutated', () => {
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.queue.add({ contentId: 'b', format: 'video' });
+    const [i0, i1] = a.getSnapshot().queue.items;
+    mediaLog.queueMutated.mockClear();
+    a.queue.reorder({ from: i1.queueItemId, to: i0.queueItemId });
+    expect(mediaLog.queueMutated).toHaveBeenCalledWith(expect.objectContaining({
+      op: 'reorder', sessionId: 's-test-1', queueLength: 2,
+    }));
+  });
+});
+
+describe('LocalSessionAdapter — transport intent logging', () => {
+  let a;
+  beforeEach(() => {
+    a = new LocalSessionAdapter(makeDeps());
+    a._dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    mediaLog.transportCommand.mockClear();
+  });
+
+  it.each(['play', 'pause', 'stop', 'skipNext', 'skipPrev'])(
+    'transport.%s emits transportCommand with action and target=local',
+    (action) => {
+      a.transport[action]();
+      expect(mediaLog.transportCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ action, target: 'local' }),
+      );
+    },
+  );
+});
+
+describe('LocalSessionAdapter — state, playback, and config logging', () => {
+  it('emits sessionStateChange when snapshot.state transitions', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a._dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    expect(mediaLog.sessionStateChange).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', prevState: 'idle', nextState: 'loading',
+    }));
+  });
+
+  it('does not emit sessionStateChange when state is unchanged', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    mediaLog.sessionStateChange.mockClear();
+    a.config.setVolume(40); // config-only dispatch, no state change
+    expect(mediaLog.sessionStateChange).not.toHaveBeenCalled();
+  });
+
+  it('emits playbackStarted on transition into playing', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a._dispatch({ type: 'LOAD_ITEM', item: { contentId: 'p:1', format: 'video' } });
+    a._dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
+    expect(mediaLog.playbackStarted).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', contentId: 'p:1',
+    }));
+  });
+
+  it('emits playbackAdvanced with reason and nextContentId on item end', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.queue.add({ contentId: 'b', format: 'video' });
+    a.onPlayerEnded();
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', reason: 'item-ended', nextContentId: 'b',
+    }));
+  });
+
+  it('emits playbackAdvanced with nextContentId=null when the queue ends', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.onPlayerEnded();
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', reason: 'item-ended', nextContentId: null,
+    }));
+  });
+
+  it('emits playbackAdvanced with reason=skip-next on transport.skipNext', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.queue.add({ contentId: 'a', format: 'video' });
+    a.queue.add({ contentId: 'b', format: 'video' });
+    a.transport.skipNext();
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'skip-next', nextContentId: 'b',
+    }));
+  });
+
+  it('config setters emit configChanged with the patch', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.config.setShuffle(true);
+    expect(mediaLog.configChanged).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', patch: { shuffle: true },
+    }));
+    a.config.setRepeat('all');
+    expect(mediaLog.configChanged).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', patch: { repeat: 'all' },
+    }));
+    a.config.setShader('crt');
+    expect(mediaLog.configChanged).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', patch: { shader: 'crt' },
+    }));
+    a.config.setVolume(150);
+    expect(mediaLog.configChanged).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's-test-1', patch: { volume: 100 },
+    }));
+  });
+
+  it('config.setRepeat with an invalid mode emits nothing', () => {
+    const a = new LocalSessionAdapter(makeDeps());
+    a.config.setRepeat('bogus');
+    expect(mediaLog.configChanged).not.toHaveBeenCalled();
   });
 });
 

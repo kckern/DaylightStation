@@ -47,6 +47,7 @@ const noopLogger = () => ({
   info: () => {},
   warn: () => {},
   error: () => {},
+  sampled: () => {},
   child: () => noopLogger()
 });
 
