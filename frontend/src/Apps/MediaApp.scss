@@ -1744,3 +1744,6 @@ div.media-search-results {
   padding: 6px 10px;
   font-size: 11px; color: var(--danger);
 }
+
+/* Task 16 (M10): scope config load failure indicator */
+.media-app .scope-error { color: var(--danger); font-size: 12px; cursor: help; }

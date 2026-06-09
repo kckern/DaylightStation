@@ -11,7 +11,7 @@ import { useDismissable } from '../../../hooks/useDismissable.js';
 import { useSessionController } from '../session/useSessionController.js';
 
 export function SearchBar() {
-  const { scopes, currentScopeKey, currentScope, setScopeKey } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, scopeError, setScopeKey } = useSearchContext();
   const { results, pending, isSearching, error, sourceErrors, setQuery, retry } = useLiveSearch({
     scopeParams: currentScope?.params ?? '',
   });
@@ -63,9 +63,17 @@ export function SearchBar() {
         onChange={(e) => setScopeKey(e.target.value)}
       >
         {scopes.map((s) => (
-          <option key={s.key} value={s.key}>{s.label}</option>
+          Array.isArray(s.children) && s.children.length > 0 ? (
+            <optgroup key={s.key} label={s.label}>
+              {s.params != null && <option value={s.key}>All {s.label}</option>}
+              {s.children.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </optgroup>
+          ) : (
+            <option key={s.key} value={s.key}>{s.label}</option>
+          )
         ))}
       </select>
+      {scopeError && <span data-testid="scope-error" className="scope-error" title={scopeError.message}>⚠</span>}
       <input
         data-testid="media-search-input"
         value={value}

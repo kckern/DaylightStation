@@ -8,6 +8,14 @@ const SearchContext = createContext(null);
 export function SearchProvider({ children }) {
   const [scopes, setScopes] = useState([]);
   const [currentScopeKey, setCurrentScopeKey] = useState(null);
+  const [scopeError, setScopeError] = useState(null);
+
+  // Flatten parent scopes + their children so a stored child key resolves and
+  // currentScope can search the whole tree, not just the top level. (M10)
+  const flatScopes = useMemo(
+    () => scopes.flatMap((s) => [s, ...(Array.isArray(s.children) ? s.children : [])]),
+    [scopes]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -15,10 +23,11 @@ export function SearchProvider({ children }) {
       if (cancelled) return;
       const loaded = Array.isArray(cfg?.searchScopes) ? cfg.searchScopes : [];
       setScopes(loaded);
+      const flat = loaded.flatMap((s) => [s, ...(Array.isArray(s.children) ? s.children : [])]);
       const stored = localStorage.getItem(SCOPE_KEY_LAST);
-      const storedValid = stored && loaded.find((s) => s.key === stored);
+      const storedValid = stored && flat.find((s) => s.key === stored);
       setCurrentScopeKey(storedValid ? stored : loaded[0]?.key ?? null);
-    }).catch(() => {});
+    }).catch((err) => { if (!cancelled) setScopeError(err); });
     return () => { cancelled = true; };
   }, []);
 
@@ -28,13 +37,13 @@ export function SearchProvider({ children }) {
   }, []);
 
   const currentScope = useMemo(
-    () => scopes.find((s) => s.key === currentScopeKey) ?? null,
-    [scopes, currentScopeKey]
+    () => flatScopes.find((s) => s.key === currentScopeKey) ?? null,
+    [flatScopes, currentScopeKey]
   );
 
   const value = useMemo(
-    () => ({ scopes, currentScopeKey, currentScope, setScopeKey }),
-    [scopes, currentScopeKey, currentScope, setScopeKey]
+    () => ({ scopes, currentScopeKey, currentScope, scopeError, setScopeKey }),
+    [scopes, currentScopeKey, currentScope, scopeError, setScopeKey]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

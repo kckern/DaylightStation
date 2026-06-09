@@ -13,6 +13,7 @@ const scopeCtx = {
   scopes: [{ label: 'All', key: 'all', params: 'take=50' }, { label: 'Video', key: 'video', params: 'source=plex' }],
   currentScopeKey: 'all',
   currentScope: { label: 'All', key: 'all', params: 'take=50' },
+  scopeError: null,
   setScopeKey: vi.fn(),
 };
 vi.mock('./SearchProvider.jsx', () => ({
@@ -85,5 +86,27 @@ describe('SearchBar', () => {
     render(<SearchBar />);
     fireEvent.change(screen.getByTestId('media-search-input'), { target: { value: 'lo' } });
     expect(screen.getByTestId('search-loading')).toBeInTheDocument();
+  });
+
+  it('renders an optgroup for a parent scope with children', () => {
+    scopeCtx.scopes = [
+      { label: 'All', key: 'all', params: 'take=50' },
+      { label: 'Video', key: 'video', params: 'source=plex', children: [
+        { label: 'Movies', key: 'video-movies', params: 'source=plex&type=movie' },
+        { label: 'Shows', key: 'video-shows', params: 'source=plex&type=show' },
+      ] },
+    ];
+    const { container } = render(<SearchBar />);
+    const optgroup = container.querySelector('optgroup[label="Video"]');
+    expect(optgroup).not.toBeNull();
+    expect(optgroup.querySelectorAll('option').length).toBeGreaterThanOrEqual(2);
+    scopeCtx.scopes = [{ label: 'All', key: 'all', params: 'take=50' }, { label: 'Video', key: 'video', params: 'source=plex' }];
+  });
+
+  it('renders a scope-error indicator when scopeError is set', () => {
+    scopeCtx.scopeError = new Error('config down');
+    render(<SearchBar />);
+    expect(screen.getByTestId('scope-error')).toBeInTheDocument();
+    scopeCtx.scopeError = null;
   });
 });
