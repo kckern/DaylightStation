@@ -304,70 +304,64 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             <rect x={b.x} y={0} width={b.width} height={2} fill={overlay.accent} opacity={0.6} />
           </g>
         ))}
-        {lanes.map((lane) => {
-          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
-          const r = size / 2;
-          const cx = r;
-          const cy = lane.laneTop + lane.laneHeight / 2;
-          const borderWidth = 3;
-          return (
-            <g key={lane.userId}>
-              {lane.fills.map((fill, i) => (
-                <path
-                  key={i}
-                  d={fill.d}
-                  fill={fill.color}
-                  opacity={0.6}
-                  stroke="none"
-                />
-              ))}
-              {lane.avatarUrl && (
-                <>
-                  <image
-                    href={lane.avatarUrl}
-                    x={0}
-                    y={lane.laneTop + (lane.laneHeight - size) / 2}
-                    width={size}
-                    height={size}
-                    clipPath={`url(#avatar-clip-${lane.userId})`}
-                    preserveAspectRatio="xMidYMid slice"
-                  />
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={r - borderWidth / 2}
-                    fill="none"
-                    stroke="rgba(0, 0, 0, 0.7)"
-                    strokeWidth={borderWidth}
-                  />
-                </>
-              )}
-            </g>
-          );
-        })}
-        {/* seams (on top) */}
-        {overlay.seams.map((s, i) => (
-          <g key={`seam-${i}`} className="timeline-seam">
-            <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
+        {/* HR-area fills (under the indicator overlays) */}
+        {lanes.map((lane) => (
+          <g key={`fills-${lane.userId}`}>
+            {lane.fills.map((fill, i) => (
+              <path key={i} d={fill.d} fill={fill.color} opacity={0.6} stroke="none" />
+            ))}
           </g>
         ))}
-        {/* challenge duration rectangles (jut UP from the gutter); tinted by type / HR zone */}
+        {/* challenge duration rectangles — solid edge on the RIGHT (challenge end) */}
         {overlay.challengeMarkers.map((m, i) => {
           const color = getChallengeMarkerColor(m);
           const w = Math.max(m.width, 2);
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
               <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.14} />
-              <rect x={m.x} y={0} width={1.5} height={plotHeight} fill={color} opacity={0.8} />
+              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke={color} strokeWidth={1.5} opacity={0.9} />
             </g>
           );
         })}
-        {/* video-change markers (dashed, jut UP from the gutter) */}
+        {/* seams + video-change markers (dashed) */}
+        {overlay.seams.map((s, i) => (
+          <g key={`seam-${i}`} className="timeline-seam">
+            <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
+          </g>
+        ))}
         {overlay.videoMarkers.map((m, i) => (
           <g key={`vid-${i}`} className="timeline-video-marker">
             <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
+        {/* avatars — drawn LAST so they sit above every indicator line/rect */}
+        {lanes.map((lane) => {
+          if (!lane.avatarUrl) return null;
+          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
+          const r = size / 2;
+          const borderWidth = 3;
+          return (
+            <g key={`avatar-${lane.userId}`}>
+              <image
+                href={lane.avatarUrl}
+                x={0}
+                y={lane.laneTop + (lane.laneHeight - size) / 2}
+                width={size}
+                height={size}
+                clipPath={`url(#avatar-clip-${lane.userId})`}
+                preserveAspectRatio="xMidYMid slice"
+              />
+              <circle
+                cx={r}
+                cy={lane.laneTop + lane.laneHeight / 2}
+                r={r - borderWidth / 2}
+                fill="none"
+                stroke="rgba(0, 0, 0, 0.7)"
+                strokeWidth={borderWidth}
+              />
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
