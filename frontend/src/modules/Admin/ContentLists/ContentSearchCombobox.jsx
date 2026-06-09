@@ -88,6 +88,10 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const scrollViewportRef = useRef(null);
   const loadCooldownRef = useRef(false); // prevent scroll-triggered load feedback loop
   const inputRef = useRef(null);
+  // True when the imminent dropdown-close must NOT freeform-commit: set by
+  // Escape (revert intent) and by every path that already committed (option
+  // select, freeform row, Enter). Cleared on open and after every close.
+  const skipCloseCommitRef = useRef(false);
 
   // Log prop changes
   useEffect(() => {
@@ -177,6 +181,23 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const combobox = useCombobox({
     onDropdownClose: () => {
       log.debug('dropdown.close', { search, value, breadcrumbDepth: breadcrumbs.length, resultCount: results.length });
+      // INVARIANT (2026-06-09): commit-on-CLOSE, not on blur. Mantine closes the
+      // dropdown on outside-POINTERDOWN — before the input's native blur — so a
+      // blur handler always sees `search` already reset and silently drops
+      // intentional input (the pre-existing race behind the 2026-03-01 bug doc).
+      // This handler is the one place the live search text is still in scope.
+      // Content-id-like text (intentional) commits; exploratory text reverts.
+      // Suppressed when Escape or an explicit commit path already handled it.
+      // See: docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
+      if (!skipCloseCommitRef.current && search !== null && search !== value) {
+        if (search && CONTENT_ID_LIKE.test(search)) {
+          log.info('freeform.commit_on_close', { freeformValue: search, prevValue: value });
+          onChange(search);
+        } else if (search) {
+          log.info('freeform.revert_on_close', { discarded: search, kept: value });
+        }
+      }
+      skipCloseCommitRef.current = false;
       combobox.resetSelectedOption();
       // Reset search to null so input shows committed value when closed
       setSearch(null);
@@ -193,6 +214,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     },
     onDropdownOpen: () => {
       log.debug('dropdown.open', { value, search, initialLoadDone, resultCount: results.length });
+      skipCloseCommitRef.current = false; // never inherit a stale suppress flag
       // Seed the field with the committed value so the user SEES what's selected;
       // the rAF select() below highlights it so typing replaces it. (§3.1-1)
       if (search === null) {
@@ -440,6 +462,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       setSearch(null);
       setBreadcrumbs([]);
       setBrowseResults([]);
+      skipCloseCommitRef.current = true;
       combobox.closeDropdown();
     }
   };
@@ -598,6 +621,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           log.info('freeform.commit_via_option', { freeformValue: search });
           onChange(search);
           setSearch(null); setBreadcrumbs([]); setBrowseResults([]);
+          skipCloseCommitRef.current = true;
           combobox.closeDropdown();
           return;
         }
@@ -635,23 +659,20 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           }}
           onBlur={() => {
             log.debug('input.blur', { search, value });
-            // INVARIANT (updated 2026-06-09, supersedes the always-commit-on-blur rule):
-            // Blur is non-destructive for exploratory text — only content-id-like input
-            // (intentional) commits on blur; plain search text reverts to the committed
-            // value. Explicit commit paths remain Enter and the freeform row.
-            // See: docs/plans/2026-06-09-media-ux-overhaul.md (Task 13) and
-            //      docs/_wip/bugs/2026-03-01-admin-freeform-commit-must-always-save.md
-            if (search !== null && search !== value) {
-              if (search && CONTENT_ID_LIKE.test(search)) {
-                log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
-                onChange(search);
-              } else {
-                log.info('freeform.revert_on_blur', { discarded: search, kept: value });
-              }
-            }
+            // Commit/revert policy lives in onDropdownClose (commit-on-close):
+            // Mantine's outside-pointerdown close fires before this blur, so by the
+            // time we get here `search` is usually already reset. Closing here covers
+            // the Tab-out path (focus loss without a preceding outside-click close).
             combobox.closeDropdown();
           }}
           onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              // Escape = revert intent; the imminent Mantine close must not commit.
+              if (search && search !== value) {
+                log.info('freeform.revert_on_escape', { discarded: search, kept: value });
+              }
+              skipCloseCommitRef.current = true;
+            }
             if (e.key === 'Enter' && search && search !== value) {
               const idx = combobox.getSelectedOptionIndex();
               log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length });
@@ -663,6 +684,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                 log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
                 e.preventDefault();
                 onChange(search);
+                skipCloseCommitRef.current = true;
                 combobox.closeDropdown();
               }
             }
