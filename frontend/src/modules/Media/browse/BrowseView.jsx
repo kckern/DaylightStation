@@ -9,15 +9,17 @@ function splitPath(path) {
   return String(path).split('/').filter(Boolean);
 }
 
-export function BrowseView({ path, modifiers, take = 50 }) {
+export function BrowseView({ path, label, modifiers, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
-  const { push, replace } = useNav();
-
-  const segments = splitPath(path);
+  const { push, replace, pop, depth } = useNav();
 
   if (loading) return <div data-testid="browse-view-loading">Loading…</div>;
   if (error) return <div data-testid="browse-view-error">{error.message}</div>;
+
+  // List-API containers are addressed by id, not by accumulated path, so path
+  // segments past the first drill are meaningless. Render Home / [Back] / label.
+  const crumbLabel = label ?? splitPath(path).join(' / ');
 
   return (
     <div data-testid="browse-view" className="browse-view">
@@ -29,24 +31,11 @@ export function BrowseView({ path, modifiers, take = 50 }) {
         >
           Home
         </button>
-        {segments.map((seg, idx) => {
-          const pathUpToHere = segments.slice(0, idx + 1).join('/');
-          const isLast = idx === segments.length - 1;
-          return (
-            <React.Fragment key={pathUpToHere}>
-              <span className="browse-crumb-sep" aria-hidden="true">/</span>
-              <button
-                data-testid={`browse-crumb-${idx}`}
-                className={`browse-crumb${isLast ? ' browse-crumb--current' : ''}`}
-                onClick={() => { if (!isLast) replace('browse', { path: pathUpToHere, modifiers }); }}
-                aria-current={isLast ? 'page' : undefined}
-                disabled={isLast}
-              >
-                {seg}
-              </button>
-            </React.Fragment>
-          );
-        })}
+        {depth > 1 && (
+          <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>← Back</button>
+        )}
+        <span className="browse-crumb-sep" aria-hidden="true">/</span>
+        <span className="browse-crumb browse-crumb--current" aria-current="page">{crumbLabel}</span>
       </nav>
       <ul>
         {items.map((row) => {
@@ -58,7 +47,11 @@ export function BrowseView({ path, modifiers, take = 50 }) {
               {isContainer ? (
                 <button
                   data-testid={`browse-open-${id}`}
-                  onClick={() => push('browse', { path: `${path}/${id}` })}
+                  onClick={() => push('browse', {
+                    path: String(id).replace(':', '/'),
+                    label: row.title ?? id,
+                    modifiers,
+                  })}
                 >
                   {row.title ?? id} →
                 </button>
