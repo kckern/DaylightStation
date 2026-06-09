@@ -137,6 +137,10 @@ export function HiddenPlayerMount() {
       stallStartedAtRef.current = null;
     }
 
+    // Fine-grained (≥0.5s) live position update for the seek bar — does NOT
+    // persist; the ≥5s onPlayerProgress path below remains the durable write.
+    adapter.onPlayerPositionTick(positionSeconds);
+
     const delta = Math.abs(positionSeconds - lastPersistedPosition.current);
     if (delta >= POSITION_PERSIST_INTERVAL_S) {
       adapter.onPlayerProgress(positionSeconds);

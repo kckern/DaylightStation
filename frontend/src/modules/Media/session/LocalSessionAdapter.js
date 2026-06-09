@@ -210,6 +210,19 @@ export class LocalSessionAdapter {
     }
   }
 
+  /**
+   * High-frequency position update for live UI (seek bar). Mutates the
+   * in-memory snapshot and notifies subscribers but deliberately skips
+   * persistence — the 5s onPlayerProgress path remains the durable write.
+   */
+  onPlayerPositionTick(positionSeconds) {
+    if (typeof positionSeconds !== 'number' || !Number.isFinite(positionSeconds)) return;
+    const prev = this._snapshot;
+    if (Math.abs((prev.position ?? 0) - positionSeconds) < 0.5) return;
+    this._snapshot = { ...prev, position: positionSeconds };
+    for (const sub of this._subscribers) sub(this._snapshot);
+  }
+
   _replaceSnapshot(next) {
     if (next === this._snapshot) return;
     this._snapshot = next;
