@@ -26,6 +26,10 @@ vi.mock('../peek/usePeek.js', () => ({
   usePeek: vi.fn(() => ({ activePeeks: new Map([['lr', { controller: ctl }]]), enterPeek, exitPeek, getAdapter: vi.fn() })),
 }));
 
+vi.mock('../fleet/FleetProvider.jsx', () => ({
+  useFleetContext: vi.fn(() => ({ devices: [{ id: 'lr', name: 'Living Room TV' }], byDevice: new Map() })),
+}));
+
 import { PeekPanel } from './PeekPanel.jsx';
 
 beforeEach(() => {
@@ -64,6 +68,35 @@ describe('PeekPanel', () => {
     render(<PeekPanel deviceId="lr" />);
     fireEvent.change(screen.getByTestId('peek-volume'), { target: { value: '80' } });
     expect(volumeFn).toHaveBeenCalledWith(80);
+  });
+
+  it('heading shows the human device name, not the raw id', () => {
+    render(<PeekPanel deviceId="lr" />);
+    expect(screen.getByTestId('peek-panel')).toHaveTextContent('Living Room TV');
+  });
+
+  it('seek bar commits transport.seekAbs on release', () => {
+    const seekFn = vi.fn();
+    ctl = {
+      ...ctl,
+      snapshot: {
+        state: 'playing',
+        currentItem: { contentId: 'plex:1', title: 'Remote Song', duration: 300 },
+        position: 0,
+        config: { volume: 50 },
+      },
+      transport: { ...ctl.transport, seekAbs: seekFn },
+    };
+    render(<PeekPanel deviceId="lr" />);
+    const bar = screen.getByTestId('peek-seek');
+    fireEvent.change(bar, { target: { value: '120' } });
+    fireEvent.pointerUp(bar);
+    expect(seekFn).toHaveBeenCalledWith(120);
+  });
+
+  it('renders the remote queue panel (empty here) inside the peek panel', () => {
+    render(<PeekPanel deviceId="lr" />);
+    expect(screen.getByTestId('peek-panel').querySelector('[data-testid="queue-empty"], [data-testid="queue-panel"]')).toBeTruthy();
   });
 
   describe('optimistic state', () => {

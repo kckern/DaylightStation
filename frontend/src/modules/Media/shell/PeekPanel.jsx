@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSessionController } from '../session/useSessionController.js';
 import { usePeek } from '../peek/usePeek.js';
+import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { QueuePanel } from './QueuePanel.jsx';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
 import './PeekPanel.scss';
 
@@ -29,6 +31,9 @@ export function PeekPanel({ deviceId }) {
 
   const ctl = useSessionController({ deviceId });
   const realSnap = ctl.snapshot;
+  const { devices } = useFleetContext();
+  const deviceName = devices?.find((d) => d.id === deviceId)?.name ?? deviceId;
+  const [scrub, setScrub] = useState(null);
 
   // useStatusOverlay is map-based (so it can serve multi-device admins).
   // PeekPanel has exactly one device, so wrap in a one-entry Map.
@@ -43,6 +48,8 @@ export function PeekPanel({ deviceId }) {
   const itemLabel = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? 'nothing';
   const volume = snap?.config?.volume ?? 50;
   const pendingFields = snap?._pending;
+  const duration = snap?.currentItem?.duration ?? 0;
+  const position = scrub ?? snap?.position ?? 0;
 
   const statePending = pendingFields?.has('state');
   const currentItemPending = pendingFields?.has('currentItem');
@@ -70,7 +77,7 @@ export function PeekPanel({ deviceId }) {
 
   return (
     <div data-testid="peek-panel" className="peek-panel">
-      <h2>Peek: {deviceId}</h2>
+      <h2>Peek: {deviceName}</h2>
       <div data-pending={statePending ? 'true' : undefined}>state: {stateLabel}</div>
       <div data-pending={currentItemPending ? 'true' : undefined}>item: {itemLabel}</div>
       <div className="peek-transport">
@@ -115,6 +122,12 @@ export function PeekPanel({ deviceId }) {
           Prev
         </button>
       </div>
+      <div className="peek-seek-row">
+        <input data-testid="peek-seek" type="range" min="0" max={duration || 0} step="1"
+               value={Math.min(position, duration || 0)} disabled={!duration} aria-label="Seek"
+               onChange={(e) => setScrub(Number(e.target.value))}
+               onPointerUp={() => { if (scrub != null) { ctl.transport.seekAbs?.(scrub); setScrub(null); } }} />
+      </div>
       <div className="peek-config">
         <label>
           Volume: {volume}
@@ -128,6 +141,7 @@ export function PeekPanel({ deviceId }) {
           />
         </label>
       </div>
+      <QueuePanel target={{ deviceId }} />
     </div>
   );
 }
