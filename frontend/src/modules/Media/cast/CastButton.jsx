@@ -56,7 +56,7 @@ export function CastButton({ contentId, queue, onAction }) {
         <div
           ref={popoverRef}
           data-testid={`cast-button-popover-${id}`}
-          className="cast-button-popover-portal"
+          className="media-app-portal cast-button-popover-portal"
           style={{ position: 'fixed', top: `${coords.top}px`, right: `${coords.right}px`, zIndex: 1000 }}
         >
           <DispatchTargetPicker source={source} onComplete={onComplete} />

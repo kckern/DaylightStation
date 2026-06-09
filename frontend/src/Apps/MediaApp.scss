@@ -6,8 +6,11 @@
    content-forward, no ornament.
    ========================================================================= */
 
-.media-app {
-  /* Tokens */
+/* Tokens — shared by the in-app surface and any body-portaled popovers
+   (cast picker) so portaled UI keeps the design tokens despite escaping
+   the .media-app scope. */
+.media-app,
+.media-app-portal {
   --bg:         #101113;
   --bg-panel:   #17181b;
   --bg-card:    #1c1d20;
@@ -35,7 +38,9 @@
   --r-sm: 2px;
   --r:    4px;
   --r-lg: 6px;
+}
 
+.media-app {
   /* Surface */
   position: relative;
   min-height: 100vh;
@@ -1340,7 +1345,7 @@ div.media-search-results {
    DispatchTargetPicker
    ========================================================================= */
 
-.media-app .dispatch-target-picker {
+:is(.media-app, .media-app-portal) .dispatch-target-picker {
   min-width: 260px;
   padding: 12px;
   background: var(--bg-panel);
@@ -1637,4 +1642,14 @@ div.media-search-results {
   color: var(--brand-ink);
   background: var(--success);
   border-color: var(--success);
+}
+
+/* Task 5 (M1): body-portaled popovers (cast picker) inherit the base typography
+   and box-sizing reset that the .media-app surface block provides in-app. */
+.media-app-portal {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+  *, *::before, *::after { box-sizing: border-box; }
 }
