@@ -47,3 +47,21 @@ export function buildClientProfileExtra(opts = {}) {
   }
   return clauses.join('+');
 }
+
+/**
+ * Tight direct-play gate. Only h264 video + aac audio in an mp4 container both
+ * at the Media and Part level qualify. Everything else (vp9, av1, hevc-in-mkv,
+ * ac3 audio, …) stays on the forced-transcode path so the MSE/SourceBuffer
+ * codec-mismatch crash (see 2026-05-18 audit) cannot recur.
+ * @param {{Media?: Array}} metadata - the Plex item metadata
+ */
+export function canDirectPlayH264(metadata) {
+  const media = metadata?.Media?.[0];
+  if (!media) return false;
+  const part = media.Part?.[0];
+  const norm = (v) => String(v ?? '').toLowerCase();
+  return norm(media.videoCodec) === 'h264'
+    && norm(media.audioCodec) === 'aac'
+    && norm(media.container) === 'mp4'
+    && norm(part?.container || media.container) === 'mp4';
+}

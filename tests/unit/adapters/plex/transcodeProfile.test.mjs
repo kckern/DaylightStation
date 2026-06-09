@@ -33,3 +33,31 @@ describe('buildClientProfileExtra', () => {
     expect(extra.split('+')).toHaveLength(1);
   });
 });
+
+import { canDirectPlayH264 } from '#adapters/content/media/plex/transcodeProfile.mjs';
+
+describe('canDirectPlayH264', () => {
+  const h264Media = {
+    Media: [{ container: 'mp4', videoCodec: 'h264', audioCodec: 'aac',
+              Part: [{ container: 'mp4', key: '/library/parts/1/file.mp4' }] }]
+  };
+
+  it('allows direct play for h264/aac/mp4', () => {
+    expect(canDirectPlayH264(h264Media)).toBe(true);
+  });
+
+  it('rejects non-h264 video (the VP9/AV1 mismatch class)', () => {
+    expect(canDirectPlayH264({ Media: [{ container: 'webm', videoCodec: 'vp9', audioCodec: 'opus', Part: [{ container: 'webm' }] }] })).toBe(false);
+    expect(canDirectPlayH264({ Media: [{ container: 'mkv', videoCodec: 'av1', audioCodec: 'aac', Part: [{ container: 'mkv' }] }] })).toBe(false);
+  });
+
+  it('rejects non-mp4 containers and non-aac audio', () => {
+    expect(canDirectPlayH264({ Media: [{ container: 'mkv', videoCodec: 'h264', audioCodec: 'aac', Part: [{ container: 'mkv' }] }] })).toBe(false);
+    expect(canDirectPlayH264({ Media: [{ container: 'mp4', videoCodec: 'h264', audioCodec: 'ac3', Part: [{ container: 'mp4' }] }] })).toBe(false);
+  });
+
+  it('rejects missing/empty metadata', () => {
+    expect(canDirectPlayH264(null)).toBe(false);
+    expect(canDirectPlayH264({})).toBe(false);
+  });
+});

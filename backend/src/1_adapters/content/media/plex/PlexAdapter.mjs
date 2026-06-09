@@ -4,7 +4,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { resolveTranscodeCaps, buildClientProfileExtra } from './transcodeProfile.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264 } from './transcodeProfile.mjs';
 
 /**
  * Plex content source adapter.
@@ -1494,7 +1494,8 @@ export class PlexAdapter {
       maxVideoBitrate = null,
       maxResolution = null,
       session = null,
-      startOffset = 0
+      startOffset = 0,
+      allowDirectPlay = false
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1517,13 +1518,14 @@ export class PlexAdapter {
       buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate })
     );
     params.append('autoAdjustQuality', '1');
-    params.append('directPlay', '0');
-    // directStream=0: force a transcode rather than letting Plex remux the
-    // ORIGINAL codec into the DASH container. With directStream=1, AV1/VP9
-    // sources are direct-streamed unchanged and MSE rejects the append
-    // (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual t=0 stall). Forcing
-    // transcode routes them through the advertised h264/hevc targets.
-    params.append('directStream', '0');
+    // directPlay/directStream default to 0 (forced transcode). Only an already
+    // h264/aac/mp4 source (canDirectPlayH264 gate) is allowed to direct-play —
+    // everything else stays on the transcode path so AV1/VP9 sources cannot be
+    // direct-streamed unchanged (CHUNK_DEMUXER_ERROR_APPEND_FAILED → perpetual
+    // t=0 stall). Forcing transcode routes them through the advertised
+    // h264/hevc targets.
+    params.append('directPlay', allowDirectPlay ? '1' : '0');
+    params.append('directStream', allowDirectPlay ? '1' : '0');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1712,12 +1714,14 @@ export class PlexAdapter {
         };
       }
 
+      const allowDirectPlay = canDirectPlayH264(playableItem.metadata);
       // Video: use decision API to authorize session
       const decisionResult = await this.requestTranscodeDecision(ratingKey, {
         maxVideoBitrate,
         maxResolution: resolvedMaxResolution,
         session,
-        startOffset
+        startOffset,
+        allowDirectPlay
       });
 
       if (!decisionResult.success) {
