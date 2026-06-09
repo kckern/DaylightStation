@@ -1,12 +1,16 @@
 // tests/unit/infrastructure/logging/config.test.mjs
 import { vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import {
   loadLoggingConfig,
   resetLoggingConfig,
   resolveLoggerLevel,
   getLoggingTags,
   resolveLogglyToken,
-  resolveLogglySubdomain
+  resolveLogglySubdomain,
+  hydrateProcessEnvFromConfigs
 } from '#backend/src/0_system/logging/config.mjs';
 
 describe('Logging Config', () => {
@@ -52,6 +56,142 @@ describe('Logging Config', () => {
       process.env.LOG_LEVEL_API_ROUTER = 'error';
       const config = loadLoggingConfig('/nonexistent');
       expect(config.loggers['api.router']).toBe('error');
+    });
+  });
+
+  describe('config file loading', () => {
+    let tmpDir;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'logging-config-test-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    test('reads values from config/logging.yml', () => {
+      fs.mkdirSync(path.join(tmpDir, 'config'));
+      fs.writeFileSync(
+        path.join(tmpDir, 'config', 'logging.yml'),
+        'defaultLevel: warn\nloggers:\n  fitness: debug\ntags:\n  - custom-tag\n'
+      );
+
+      const config = loadLoggingConfig(tmpDir);
+
+      expect(config.defaultLevel).toBe('warn');
+      expect(config.loggers.fitness).toBe('debug');
+      expect(config.tags).toEqual(['custom-tag']);
+    });
+
+    test('invalid YAML falls back to defaults and reports the error', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      fs.mkdirSync(path.join(tmpDir, 'config'));
+      fs.writeFileSync(path.join(tmpDir, 'config', 'logging.yml'), 'a: [1, 2\n'); // unclosed flow sequence
+
+      const config = loadLoggingConfig(tmpDir);
+
+      expect(config.loggers).toEqual({});
+      expect(['info', 'debug']).toContain(config.defaultLevel);
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('[config] Failed to read'),
+        expect.any(String)
+      );
+      consoleError.mockRestore();
+    });
+
+    test('empty YAML file is treated as an empty config', () => {
+      fs.mkdirSync(path.join(tmpDir, 'config'));
+      fs.writeFileSync(path.join(tmpDir, 'config', 'logging.yml'), '');
+
+      const config = loadLoggingConfig(tmpDir);
+
+      expect(config.loggers).toEqual({});
+      expect(config.tags).toEqual(['backend']);
+    });
+  });
+
+  describe('hydrateProcessEnvFromConfigs', () => {
+    let tmpDir;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hydrate-config-test-'));
+      delete process.env.DAYLIGHT_ENV;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    test('returns empty object when no config files exist', () => {
+      expect(hydrateProcessEnvFromConfigs(tmpDir)).toEqual({});
+    });
+
+    test('merges system.yml and config.secrets.yml with secrets taking precedence', () => {
+      fs.writeFileSync(path.join(tmpDir, 'system.yml'), 'shared: from-system\nsystemOnly: yes\n');
+      fs.writeFileSync(path.join(tmpDir, 'config.secrets.yml'), 'shared: from-secrets\nsecret: s3cr3t\n');
+
+      const merged = hydrateProcessEnvFromConfigs(tmpDir);
+
+      expect(merged.shared).toBe('from-secrets');
+      expect(merged.systemOnly).toBe('yes');
+      expect(merged.secret).toBe('s3cr3t');
+    });
+
+    test('DAYLIGHT_ENV selects system-local.{env}.yml and it wins over secrets', () => {
+      process.env.DAYLIGHT_ENV = 'teststation';
+      fs.writeFileSync(path.join(tmpDir, 'system.yml'), 'shared: from-system\n');
+      fs.writeFileSync(path.join(tmpDir, 'config.secrets.yml'), 'shared: from-secrets\n');
+      fs.writeFileSync(path.join(tmpDir, 'system-local.teststation.yml'), 'shared: from-local\nlocalOnly: yes\n');
+
+      const merged = hydrateProcessEnvFromConfigs(tmpDir);
+
+      expect(merged.shared).toBe('from-local');
+      expect(merged.localOnly).toBe('yes');
+    });
+
+    test('Docker environment selects system-local.docker.yml when DAYLIGHT_ENV is unset', () => {
+      fs.writeFileSync(path.join(tmpDir, 'system-local.docker.yml'), 'pickedBy: docker\n');
+      const realExistsSync = fs.existsSync.bind(fs);
+      const spy = vi.spyOn(fs, 'existsSync').mockImplementation(
+        (p) => (p === '/.dockerenv' ? true : realExistsSync(p))
+      );
+
+      try {
+        const merged = hydrateProcessEnvFromConfigs(tmpDir);
+        expect(merged.pickedBy).toBe('docker');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('falls through to hostname-specific file when DAYLIGHT_ENV file is missing', () => {
+      process.env.DAYLIGHT_ENV = 'nonexistent-env';
+      fs.writeFileSync(
+        path.join(tmpDir, `system-local.${os.hostname()}.yml`),
+        'pickedBy: hostname\n'
+      );
+
+      const merged = hydrateProcessEnvFromConfigs(tmpDir);
+
+      expect(merged.pickedBy).toBe('hostname');
+    });
+
+    test('falls back to legacy system-local.yml when no env or hostname file exists', () => {
+      fs.writeFileSync(path.join(tmpDir, 'system-local.yml'), 'pickedBy: legacy\n');
+
+      const merged = hydrateProcessEnvFromConfigs(tmpDir);
+
+      expect(merged.pickedBy).toBe('legacy');
+    });
+
+    test('hostname-specific file beats legacy system-local.yml', () => {
+      fs.writeFileSync(path.join(tmpDir, `system-local.${os.hostname()}.yml`), 'pickedBy: hostname\n');
+      fs.writeFileSync(path.join(tmpDir, 'system-local.yml'), 'pickedBy: legacy\n');
+
+      const merged = hydrateProcessEnvFromConfigs(tmpDir);
+
+      expect(merged.pickedBy).toBe('hostname');
     });
   });
 
