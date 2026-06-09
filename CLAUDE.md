@@ -108,6 +108,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 - **Keep docs in /docs folder** - In appropriate subfolder
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 - **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
+- **Can't delete? Move to `_deleteme/`** - When `rm` is permission-blocked (e.g. cleaning up scratch/temp scripts), `mv` the files into a `_deleteme/` folder at repo root instead of leaving them in place. The user empties `_deleteme/` manually. `_deleteme/` is gitignored.
 
 ---
 
