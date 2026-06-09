@@ -440,6 +440,7 @@ const _consolidateEvents = (events) => {
       type: 'challenge',
       data: {
         challengeId: id,
+        type: s.type || e.type || null,
         zoneId: s.zoneId || e.zoneId || null,
         zoneLabel: s.zoneLabel || e.zoneLabel || null,
         title: s.title || e.title || null,
