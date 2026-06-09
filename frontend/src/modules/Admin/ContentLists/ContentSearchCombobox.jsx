@@ -150,16 +150,25 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       combobox.resetSelectedOption();
       // Reset search to null so input shows committed value when closed
       setSearch(null);
+      // Fully reset browse + stale stream state so reopening shows the committed
+      // value (not leftover search results under an untouched input). (§3.1-2/10)
+      setBreadcrumbs([]);
+      setBrowseResults([]);
+      setPagination(null);
+      setInitialLoadDone(false);
+      streamSearch(''); // hook clears results/pending for short queries
     },
     onDropdownOpen: () => {
       log.debug('dropdown.open', { value, search, initialLoadDone, resultCount: results.length });
-      // Start with empty search field so user can type immediately
+      // Seed the field with the committed value so the user SEES what's selected;
+      // the rAF select() below highlights it so typing replaces it. (§3.1-1)
       if (search === null) {
-        log.debug('dropdown.open.init_empty_search');
-        setSearch('');
+        log.debug('dropdown.open.init_value_search', { value });
+        setSearch(value || '');
       }
-      // When opening, if we have a value and haven't loaded siblings yet, browse to parent
-      if (value && !initialLoadDone && results.length === 0) {
+      // When opening, if we have a value and haven't loaded siblings yet, browse to
+      // parent. Stale stream results no longer block this (gate dropped). (§3.1-2)
+      if (value && !initialLoadDone) {
         log.info('dropdown.open.load_siblings', { value });
         loadSiblings(value);
       }
