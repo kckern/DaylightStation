@@ -1064,9 +1064,18 @@ start_avrcp_dispatcher() {
     read -r vol_default vol_min vol_max <<< "$(slot_volume "$slot")"
     : "${vol_default:=60}" "${vol_min:=0}" "${vol_max:=100}"
 
-    python3 "$BASE_DIR/avrcp_dispatch.py" "$event_path" "$socket" "$name" \
+    # Spawn in a subshell that closes FD 9 — same as mpv/spawn_bg_downloader.
+    # This dispatcher is started by start_playback WHILE that slot's playback.lock
+    # (FD 9) is held, and it outlives the call (it runs the whole connected
+    # session). Without `exec 9>&-` it inherits the locked FD and keeps the flock
+    # held until the headset disconnects — starving every mid-session membership
+    # reconcile (reconcile.skip reason=lock_busy), so a queue change that happens
+    # WITHOUT a reconnect (e.g. red's 21:00 day→lullaby schedule switch while
+    # still connected) never applies. `exec python3` makes $! the python pid so
+    # avrcp.pid / stop_avrcp_dispatcher stay correct.
+    ( exec 9>&-; exec python3 "$BASE_DIR/avrcp_dispatch.py" "$event_path" "$socket" "$name" \
         --min-volume "$vol_min" --max-volume "$vol_max" \
-        >>"$dir/avrcp.log" 2>&1 &
+        >>"$dir/avrcp.log" 2>&1 ) &
     local pid=$!
     echo "$pid" > "$dir/avrcp.pid"
     log "$name" "AVRCP dispatcher started (pid $pid, evdev $event_path)"
