@@ -15,7 +15,7 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
-import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers } from '../FitnessSessionDetailWidget/timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
@@ -590,12 +590,23 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					const h = Math.max(0, overlay.bottom - overlay.top);
 					return (
 						<g key={`co-chal-${i}`}>
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.12} />
-							{/* solid edge on the RIGHT (challenge end) */}
-								<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.bottom} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							{/* whisper fill — the bracket + edge line carry the duration signal */}
+							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.05} />
+							{/* duration bracket hanging under the badge row: start → end */}
+							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
+							{/* solid edge on the RIGHT (challenge end); runs through the axis strip */}
+							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
+							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
 						</g>
 					);
 				})}
+				{/* video-line extensions through the axis strip (labels paint on top) */}
+				{(overlay.videoMarkers || []).map((m, i) => (
+					<g key={`co-vid-ext-${i}`}>
+						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
+						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+					</g>
+				))}
 			</g>
 		)}
 		<g className="race-chart__grid">
@@ -673,8 +684,12 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				))}
 				{/* video-change markers (dashed, jut DOWN from the gutter) */}
 				{(overlay.videoMarkers || []).map((m, i) => (
-					<line key={`co-vid-${i}`} x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
-						stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+					<g key={`co-vid-${i}`}>
+						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
+							stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
+						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
+							stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+					</g>
 				))}
 			</g>
 		)}
@@ -783,9 +798,12 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				const cy = overlay.top + r + 1;
 				return (
 					<g key={`co-badge-${i}`} className="race-chart__challenge-badge" pointerEvents="none">
-						<circle cx={m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
+						{m.badgeX != null && Math.abs(m.badgeX - m.xEnd) > 1 && (
+							<line x1={m.xEnd} y1={cy + r} x2={m.badgeX} y2={cy + r} stroke={color} strokeWidth={1} opacity={0.5} />
+						)}
+						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
 						{m.requiredCount != null && (
-							<text x={m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
+							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
 						)}
 					</g>
 				);
@@ -1261,15 +1279,32 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		const intervalMs = Number(src?.timeline?.interval_seconds) > 0 ? Number(src.timeline.interval_seconds) * 1000 : 5000;
 		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left, sessionStartMs: resolveSessionStartMs(src) };
+		// Per-tick zone ids, keyed the same way the timeline/gutter do (entry.id || entry.profileId).
+		const zoneSeriesByUser = {};
+		for (const entry of chartParticipants || []) {
+			const userId = entry.id || entry.profileId;
+			zoneSeriesByUser[userId] = (typeof chartGetSeries === 'function'
+				? (chartGetSeries(userId, 'zone_id', { clone: false }) || chartGetSeries(userId, 'zone', { clone: false }))
+				: null) || [];
+		}
+		// Snap BEFORE badge collision-resolve so badges anchor to the snapped ends.
+		const challengeMarkers = withBadgeXs(
+			snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
+			{
+				minGap: 24, // badge diameter (22) + 2
+				min: CHART_MARGIN.left + 11,
+				max: CHART_MARGIN.left + innerWidth - 11
+			}
+		);
 		return {
 			bands: computeRaceBands(activities, opts),
 			seams: computeSeamLines(seams, opts),
-			challengeMarkers: computeChallengeMarkers(events, opts),
+			challengeMarkers,
 			videoMarkers: computeVideoMarkers(events, opts),
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
-	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight]);
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries]);
 
 	const hasData = allEntries.length > 0 && paths.length > 0;
 

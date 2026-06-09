@@ -71,8 +71,9 @@ export function computeChallengeMarkers(events, opts) {
   return events
     .filter((e) => e?.type === 'challenge' && Number.isFinite(e.data?.start))
     .map((e) => {
-      const startMs = e.data.start;
-      const endMs = Number.isFinite(e.data.end) ? e.data.end : axisEndMs;
+      const d = e.data;
+      const startMs = d.start;
+      const endMs = Number.isFinite(d.end) ? d.end : axisEndMs;
       const x = clampX(msToTickX(startMs - opts.sessionStartMs, opts), opts);
       const xEnd = clampX(msToTickX(Math.max(endMs, startMs) - opts.sessionStartMs, opts), opts);
       return {
@@ -80,10 +81,85 @@ export function computeChallengeMarkers(events, opts) {
         xEnd,
         width: Math.max(0, xEnd - x),
         type: resolveChallengeMarkerType(e),
-        zoneId: e.data.zoneId ?? null,
-        result: e.data.result || null,
-        label: e.data.zoneLabel || e.data.title || null,
-        requiredCount: Number.isFinite(e.data.requiredCount) ? e.data.requiredCount : null
+        zoneId: d.zoneId ?? null,
+        result: d.result || null,
+        label: d.zoneLabel || d.title || null,
+        requiredCount: Number.isFinite(d.requiredCount) ? d.requiredCount : null,
+        metUsers: Array.isArray(d.metUsers) ? d.metUsers : [],
+        endMs
       };
     });
+}
+
+/**
+ * Resolve 1-D badge positions so fixed-size badges never overlap.
+ * Greedy left-to-right pass enforces minGap; if the last badge spills past
+ * `max`, a right-to-left pass walks the cluster back; a final left clamp
+ * re-spreads forward. Input must be ascending. Pure; returns a new array.
+ */
+export function resolveBadgeXs(desired, { minGap, min, max }) {
+  const xs = [...desired];
+  for (let i = 1; i < xs.length; i++) {
+    if (xs[i] < xs[i - 1] + minGap) xs[i] = xs[i - 1] + minGap;
+  }
+  if (xs.length && xs[xs.length - 1] > max) {
+    xs[xs.length - 1] = max;
+    for (let i = xs.length - 2; i >= 0; i--) {
+      if (xs[i] > xs[i + 1] - minGap) xs[i] = xs[i + 1] - minGap;
+    }
+  }
+  if (xs.length && xs[0] < min) {
+    xs[0] = min;
+    for (let i = 1; i < xs.length; i++) {
+      if (xs[i] < xs[i - 1] + minGap) xs[i] = xs[i - 1] + minGap;
+    }
+  }
+  return xs;
+}
+
+/**
+ * Decorate challenge markers with a collision-free `badgeX` (anchored at each
+ * marker's xEnd). Sorts by xEnd internally but preserves the input order and
+ * does not mutate the input.
+ */
+export function withBadgeXs(markers, opts) {
+  const order = markers.map((_, i) => i).sort((a, b) => markers[a].xEnd - markers[b].xEnd);
+  const resolved = resolveBadgeXs(order.map((i) => markers[i].xEnd), opts);
+  const out = markers.map((m) => ({ ...m }));
+  order.forEach((mi, k) => { out[mi].badgeX = resolved[k]; });
+  return out;
+}
+
+const ZONE_RANK = { rest: 0, cool: 1, active: 2, warm: 3, hot: 4, fire: 5 };
+const SNAP_CAP_TICKS = 3; // bounded by the sampling error we measured (max ~1.6 ticks)
+
+/**
+ * The governance engine fires on per-second HR packets, but the saved zone series
+ * samples every 5s — the visible band can flip up to ~2 ticks after a challenge's
+ * true end. For zone challenges, slide xEnd right to the first tick (within the cap)
+ * where a met user's recorded zone reaches the target, so the line lands on the
+ * visible band edge. Truthful fallback: no qualifying tick -> keep the true x.
+ * @param {Array} markers - from computeChallengeMarkers (needs zoneId/metUsers/endMs)
+ * @param {Object} zoneSeriesByUser - { userId: string[] } per-tick zone ids
+ */
+export function snapChallengeEndsToZoneTicks(markers, zoneSeriesByUser, opts) {
+  if (!markers?.length || !zoneSeriesByUser) return markers || [];
+  const targetRankOf = (zoneId) => ZONE_RANK[zoneId] ?? null;
+  return markers.map((m) => {
+    const rank = m.type === 'zone' ? targetRankOf(m.zoneId) : null;
+    if (rank == null || !Number.isFinite(m.endMs) || !m.metUsers?.length) return m;
+    const endTick = (m.endMs - opts.sessionStartMs) / opts.intervalMs;
+    const from = Math.floor(endTick);
+    let snapTick = null;
+    for (let t = from; t <= from + SNAP_CAP_TICKS; t++) {
+      const hit = m.metUsers.some((u) => {
+        const z = zoneSeriesByUser[u]?.[t];
+        return z != null && (ZONE_RANK[z] ?? -1) >= rank;
+      });
+      if (hit) { snapTick = t; break; }
+    }
+    if (snapTick == null) return m;
+    const xEnd = Math.min(opts.marginLeft + opts.plotWidth, Math.max(m.x, msToTickX(snapTick * opts.intervalMs, opts)));
+    return { ...m, xEnd, width: Math.max(0, xEnd - m.x) };
+  });
 }

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_VISIBLE_TICKS } from '@/modules/Fitness/lib/chartConstants.js';
-import { computeChallengeMarkers, computeVideoMarkers } from './timelineOverlay.js';
+import { computeChallengeMarkers, computeVideoMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
 import { resolveSessionStartMs } from './sessionDetailUtils.js';
 
 /**
@@ -66,11 +66,16 @@ export function useTimelineMarkers(sessionData) {
       sessionStartMs: resolveSessionStartMs(sessionData)
     };
     const events = sessionData?.timeline?.events;
+    const zoneSeriesByUser = {};
+    for (const entry of roster || []) {
+      const userId = entry.id || entry.profileId;
+      zoneSeriesByUser[userId] = getSeries(userId, 'zone_id', { clone: false }) || getSeries(userId, 'zone', { clone: false }) || [];
+    }
     return {
       ref,
       width,
       height,
-      challengeMarkers: computeChallengeMarkers(events, opts),
+      challengeMarkers: snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
       videoMarkers: computeVideoMarkers(events, opts)
     };
   }, [sessionData, width, height, getSeries, roster, timebase]);
