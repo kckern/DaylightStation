@@ -15,7 +15,7 @@ import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitne
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
-import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers } from '../FitnessSessionDetailWidget/timelineOverlay.js';
+import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
@@ -783,9 +783,12 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				const cy = overlay.top + r + 1;
 				return (
 					<g key={`co-badge-${i}`} className="race-chart__challenge-badge" pointerEvents="none">
-						<circle cx={m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
+						{m.badgeX != null && Math.abs(m.badgeX - m.xEnd) > 1 && (
+							<line x1={m.xEnd} y1={cy + r} x2={m.badgeX} y2={cy + r} stroke={color} strokeWidth={1} opacity={0.5} />
+						)}
+						<circle cx={m.badgeX ?? m.xEnd} cy={cy} r={r} fill={color} stroke="rgba(0,0,0,0.7)" strokeWidth={1.5} />
 						{m.requiredCount != null && (
-							<text x={m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
+							<text x={m.badgeX ?? m.xEnd} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700} fill="#1a1a1a">{m.requiredCount}</text>
 						)}
 					</g>
 				);
@@ -1264,7 +1267,11 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		return {
 			bands: computeRaceBands(activities, opts),
 			seams: computeSeamLines(seams, opts),
-			challengeMarkers: computeChallengeMarkers(events, opts),
+			challengeMarkers: withBadgeXs(computeChallengeMarkers(events, opts), {
+				minGap: 24, // badge diameter (22) + 2
+				min: CHART_MARGIN.left + 11,
+				max: CHART_MARGIN.left + innerWidth - 11
+			}),
 			videoMarkers: computeVideoMarkers(events, opts),
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
