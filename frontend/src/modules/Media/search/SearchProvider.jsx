@@ -1,7 +1,12 @@
+// frontend/src/modules/Media/search/SearchProvider.jsx
+// Loads search scopes from the household media config, flattens parents +
+// children into one lookup tree, tracks and persists the current scope.
+// See docs/reference/media/search-scopes.md.
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { STORAGE_KEYS } from '../constants.js';
 
-export const SCOPE_KEY_LAST = 'media-scope-last';
+export const SCOPE_KEY_LAST = STORAGE_KEYS.SCOPE_LAST;
 
 const SearchContext = createContext(null);
 
@@ -11,7 +16,7 @@ export function SearchProvider({ children }) {
   const [scopeError, setScopeError] = useState(null);
 
   // Flatten parent scopes + their children so a stored child key resolves and
-  // currentScope can search the whole tree, not just the top level. (M10)
+  // currentScope can search the whole tree, not just the top level.
   const flatScopes = useMemo(
     () => scopes.flatMap((s) => [s, ...(Array.isArray(s.children) ? s.children : [])]),
     [scopes]

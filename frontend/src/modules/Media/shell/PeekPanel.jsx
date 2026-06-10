@@ -1,27 +1,28 @@
+// frontend/src/modules/Media/shell/PeekPanel.jsx
+// Remote control for one device. Transport uses explicit Play/Pause buttons
+// (you command a remote, you don't toggle blind state) with optimistic
+// overlay: the predicted state shows instantly, the control locks until the
+// device's broadcast confirms (or times out). Seek bar and queue panel are
+// the same components Now Playing uses, bound to the remote controller.
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSessionController } from '../session/useSessionController.js';
-import { usePeek } from '../peek/usePeek.js';
+import { Button, Title, Text, Group, Slider, Stack, Badge } from '@mantine/core';
+import {
+  IconPlayerPlayFilled,
+  IconPlayerPauseFilled,
+  IconPlayerStopFilled,
+  IconPlayerSkipBackFilled,
+  IconPlayerSkipForwardFilled,
+  IconVolume,
+} from '@tabler/icons-react';
+import { useSessionController } from '../controller/useSessionController.js';
+import { usePeek } from '../peek/PeekProvider.jsx';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
-import { QueuePanel } from './QueuePanel.jsx';
+import { useDevice } from '../fleet/useDevice.js';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
-import './PeekPanel.scss';
+import { useNav } from './NavProvider.jsx';
+import { QueuePanel } from './QueuePanel.jsx';
+import { SeekBar } from './SeekBar.jsx';
 
-/**
- * PeekPanel — remote-control surface for a single device.
- *
- * Interstitial state: every transport command takes a network round-trip
- * (~200ms HTTP + WS ACK) before the device-state WS topic reflects the
- * change. Without optimistic state the UI looks frozen between click and
- * confirmation. We overlay the predicted snapshot via useStatusOverlay so
- * the visible state flips immediately while the affected control greys +
- * locks until the real WS update catches up (or 5s timeout).
- *
- * Field map:
- *   state          (string)  - play/pause/stop predict against this
- *   currentItem    (object)  - skipNext/skipPrev pending lock on this
- *   config.volume  (number)  - left as-is for now; nested patch needs a
- *                              deep-merge variant of the overlay hook
- */
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
   useEffect(() => {
@@ -32,11 +33,13 @@ export function PeekPanel({ deviceId }) {
   const ctl = useSessionController({ deviceId });
   const realSnap = ctl.snapshot;
   const { devices } = useFleetContext();
+  const { entry } = useDevice(deviceId);
   const deviceName = devices?.find((d) => d.id === deviceId)?.name ?? deviceId;
-  const [scrub, setScrub] = useState(null);
+  const { pop } = useNav();
+  const [volumeScrub, setVolumeScrub] = useState(null);
 
-  // useStatusOverlay is map-based (so it can serve multi-device admins).
-  // PeekPanel has exactly one device, so wrap in a one-entry Map.
+  // useStatusOverlay is map-based (it can serve multi-device admins); wrap
+  // the single device in a one-entry Map.
   const realMap = useMemo(
     () => new Map([[deviceId, realSnap ?? {}]]),
     [deviceId, realSnap],
@@ -46,103 +49,86 @@ export function PeekPanel({ deviceId }) {
 
   const stateLabel = snap?.state ?? 'unknown';
   const itemLabel = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? 'nothing';
-  const volume = snap?.config?.volume ?? 50;
+  const volume = volumeScrub ?? snap?.config?.volume ?? 50;
   const pendingFields = snap?._pending;
-  const duration = snap?.currentItem?.duration ?? 0;
-  const position = scrub ?? snap?.position ?? 0;
-
   const statePending = pendingFields?.has('state');
   const currentItemPending = pendingFields?.has('currentItem');
 
-  const handlePlay = () => {
-    predict(deviceId, { state: 'playing' });
-    ctl.transport.play?.();
-  };
-  const handlePause = () => {
-    predict(deviceId, { state: 'paused' });
-    ctl.transport.pause?.();
-  };
-  const handleStop = () => {
-    predict(deviceId, { state: 'stopped' });
-    ctl.transport.stop?.();
-  };
-  const handleNext = () => {
-    pending(deviceId, ['currentItem']);
-    ctl.transport.skipNext?.();
-  };
-  const handlePrev = () => {
-    pending(deviceId, ['currentItem']);
-    ctl.transport.skipPrev?.();
-  };
+  const handlePlay = () => { predict(deviceId, { state: 'playing' }); ctl.transport.play?.(); };
+  const handlePause = () => { predict(deviceId, { state: 'paused' }); ctl.transport.pause?.(); };
+  const handleStop = () => { predict(deviceId, { state: 'stopped' }); ctl.transport.stop?.(); };
+  const handleNext = () => { pending(deviceId, ['currentItem']); ctl.transport.skipNext?.(); };
+  const handlePrev = () => { pending(deviceId, ['currentItem']); ctl.transport.skipPrev?.(); };
 
   return (
-    <div data-testid="peek-panel" className="peek-panel">
-      <h2>Peek: {deviceName}</h2>
-      <div data-pending={statePending ? 'true' : undefined}>state: {stateLabel}</div>
-      <div data-pending={currentItemPending ? 'true' : undefined}>item: {itemLabel}</div>
-      <div className="peek-transport">
-        <button
-          data-testid="peek-play"
-          onClick={handlePlay}
-          disabled={statePending}
-          data-pending={statePending ? 'true' : undefined}
-        >
+    <Stack data-testid="peek-panel" className="peek-panel" gap="md">
+      <Group justify="space-between">
+        <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
+          ← Fleet
+        </Button>
+        {entry?.isStale && <Badge color="yellow" variant="light">stale</Badge>}
+        {entry?.offline && <Badge color="gray" variant="light">offline</Badge>}
+      </Group>
+
+      <Title order={1}>Remote: {deviceName}</Title>
+
+      <Group gap="lg">
+        <Text size="sm" c="dimmed" data-pending={statePending ? 'true' : undefined}>
+          state: <Text span fw={600} c="bright">{stateLabel}</Text>
+        </Text>
+        <Text size="sm" c="dimmed" data-pending={currentItemPending ? 'true' : undefined}>
+          item: <Text span fw={600} c="bright">{itemLabel}</Text>
+        </Text>
+      </Group>
+
+      <Group className="peek-transport" gap="sm">
+        <Button data-testid="peek-play" leftSection={<IconPlayerPlayFilled size={16} />}
+                disabled={statePending} data-pending={statePending ? 'true' : undefined}
+                onClick={handlePlay}>
           Play
-        </button>
-        <button
-          data-testid="peek-pause"
-          onClick={handlePause}
-          disabled={statePending}
-          data-pending={statePending ? 'true' : undefined}
-        >
+        </Button>
+        <Button data-testid="peek-pause" variant="default" leftSection={<IconPlayerPauseFilled size={16} />}
+                disabled={statePending} data-pending={statePending ? 'true' : undefined}
+                onClick={handlePause}>
           Pause
-        </button>
-        <button
-          data-testid="peek-stop"
-          onClick={handleStop}
-          disabled={statePending}
-          data-pending={statePending ? 'true' : undefined}
-        >
+        </Button>
+        <Button data-testid="peek-stop" variant="default" leftSection={<IconPlayerStopFilled size={16} />}
+                disabled={statePending} data-pending={statePending ? 'true' : undefined}
+                onClick={handleStop}>
           Stop
-        </button>
-        <button
-          data-testid="peek-next"
-          onClick={handleNext}
-          disabled={currentItemPending}
-          data-pending={currentItemPending ? 'true' : undefined}
-        >
-          Next
-        </button>
-        <button
-          data-testid="peek-prev"
-          onClick={handlePrev}
-          disabled={currentItemPending}
-          data-pending={currentItemPending ? 'true' : undefined}
-        >
+        </Button>
+        <Button data-testid="peek-prev" variant="default" leftSection={<IconPlayerSkipBackFilled size={16} />}
+                disabled={currentItemPending} data-pending={currentItemPending ? 'true' : undefined}
+                onClick={handlePrev}>
           Prev
-        </button>
-      </div>
-      <div className="peek-seek-row">
-        <input data-testid="peek-seek" type="range" min="0" max={duration || 0} step="1"
-               value={Math.min(position, duration || 0)} disabled={!duration} aria-label="Seek"
-               onChange={(e) => setScrub(Number(e.target.value))}
-               onPointerUp={() => { if (scrub != null) { ctl.transport.seekAbs?.(scrub); setScrub(null); } }} />
-      </div>
-      <div className="peek-config">
-        <label>
-          Volume: {volume}
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            onChange={(e) => ctl.config.setVolume(Number(e.target.value))}
-            data-testid="peek-volume"
-          />
-        </label>
-      </div>
+        </Button>
+        <Button data-testid="peek-next" variant="default" leftSection={<IconPlayerSkipForwardFilled size={16} />}
+                disabled={currentItemPending} data-pending={currentItemPending ? 'true' : undefined}
+                onClick={handleNext}>
+          Next
+        </Button>
+      </Group>
+
+      {snap?.currentItem && <SeekBar target={{ deviceId }} />}
+
+      <Group gap="xs" className="peek-volume">
+        <IconVolume size={18} aria-hidden />
+        <Slider
+          data-testid="peek-volume"
+          min={0}
+          max={100}
+          step={1}
+          value={volume}
+          aria-label="Volume"
+          style={{ width: 'min(240px, 60%)' }}
+          onChange={setVolumeScrub}
+          onChangeEnd={(v) => { ctl.config.setVolume?.(v); setVolumeScrub(null); }}
+        />
+        <Text size="sm" c="dimmed">{volume}</Text>
+      </Group>
+
       <QueuePanel target={{ deviceId }} />
-    </div>
+    </Stack>
   );
 }
 

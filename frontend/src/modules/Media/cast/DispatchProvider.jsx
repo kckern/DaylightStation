@@ -1,9 +1,16 @@
+// frontend/src/modules/Media/cast/DispatchProvider.jsx
+// Dispatch orchestration: client-side fan-out (one /load per target,
+// independent dispatchIds), live wake-progress via homeline:* broadcasts,
+// idempotency dedupe window (C9.8), parameter-free retry of the last attempt
+// (C6.4). Transfer mode stops local playback only on confirmed success.
+// Hand-off sends the full SessionSnapshot with mode:"adopt" (§4.7).
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
-import { wsService } from '../../../services/WebSocketService.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { subscribeTopicKind } from '../net/ws.js';
 import { reduceDispatch, initialDispatchState } from './dispatchReducer.js';
 import { buildDispatchUrl } from './dispatchUrl.js';
-import { useSessionController } from '../session/useSessionController.js';
+import { LocalSessionContext } from '../session/LocalSessionContext.js';
+import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
 
 export const DispatchContext = createContext(null);
@@ -12,12 +19,6 @@ function uuid() {
   try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); } catch { /* ignore */ }
   return `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
-
-function isHomelineMsg(msg) {
-  return !!msg && typeof msg.topic === 'string' && msg.topic.startsWith('homeline:');
-}
-
-const DEDUP_WINDOW_MS = 5000;
 
 function buildDedupKey({ targetIds, play, queue, mode }) {
   const ids = [...targetIds].sort().join(',');
@@ -29,18 +30,19 @@ export function DispatchProvider({ children }) {
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
   const lastAttemptRef = useRef(null);
   const dedupCacheRef = useRef(new Map());
-  const localController = useSessionController('local');
-  const controllerRef = useRef(localController);
-  useEffect(() => { controllerRef.current = localController; }, [localController]);
+  // The controller object is stable for the provider's lifetime — no
+  // ref-mirroring needed to use it inside async callbacks.
+  const localCtx = useContext(LocalSessionContext);
+  const localController = localCtx?.controller ?? null;
 
   useEffect(() => {
-    const unsub = wsService.subscribe(isHomelineMsg, (msg) => {
+    return subscribeTopicKind('homeline', (msg) => {
       const { dispatchId, step, status, elapsedMs, error } = msg;
       if (typeof dispatchId !== 'string' || !dispatchId) return;
       if (!step || !status) return;
+      mediaLog.dispatchStep({ dispatchId, step, status, elapsedMs });
       dispatch({ type: 'STEP', dispatchId, step, status, elapsedMs, error });
     });
-    return unsub;
   }, []);
 
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) => {
@@ -48,18 +50,18 @@ export function DispatchProvider({ children }) {
 
     const key = buildDedupKey({ targetIds, play, queue, mode });
     const cached = dedupCacheRef.current.get(key);
-    if (cached && Date.now() - cached.ts < DEDUP_WINDOW_MS) {
+    if (cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS) {
       mediaLog.dispatchDeduplicated({
         targetIds,
         contentId: play ?? queue ?? 'adopt',
         mode: mode ?? 'transfer',
-        windowMs: DEDUP_WINDOW_MS,
+        windowMs: TIMING.DISPATCH_DEDUPE_WINDOW_MS,
         firstDispatchIds: cached.dispatchIds,
       });
       return cached.dispatchIds;
     }
 
-    const isAdopt = mode === 'adopt';
+    const isAdopt = !!snapshot;
     const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
     const dispatchIds = [];
     lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot };
@@ -78,8 +80,9 @@ export function DispatchProvider({ children }) {
           if (res?.ok) {
             dispatch({ type: 'SUCCEEDED', dispatchId, totalElapsedMs: res.totalElapsedMs ?? null });
             mediaLog.dispatchSucceeded({ dispatchId, totalElapsedMs: res.totalElapsedMs });
+            // Cast Transfer: local stops only after the target confirms.
             if (mode === 'transfer') {
-              try { controllerRef.current?.transport?.stop?.(); } catch { /* ignore */ }
+              try { localController?.transport?.stop?.(); } catch { /* ignore */ }
             }
           } else {
             dispatch({
@@ -98,16 +101,20 @@ export function DispatchProvider({ children }) {
 
     dedupCacheRef.current.set(key, { ts: Date.now(), dispatchIds });
     return dispatchIds;
-  }, []);
+  }, [localController]);
 
   const retryLast = useCallback(() => {
     if (!lastAttemptRef.current) return [];
     return dispatchToTarget(lastAttemptRef.current);
   }, [dispatchToTarget]);
 
+  const removeDispatch = useCallback((dispatchId) => {
+    dispatch({ type: 'REMOVED', dispatchId });
+  }, []);
+
   const value = useMemo(
-    () => ({ dispatches: state.byId, dispatchToTarget, retryLast }),
-    [state.byId, dispatchToTarget, retryLast]
+    () => ({ dispatches: state.byId, dispatchToTarget, retryLast, removeDispatch }),
+    [state.byId, dispatchToTarget, retryLast, removeDispatch]
   );
 
   return <DispatchContext.Provider value={value}>{children}</DispatchContext.Provider>;

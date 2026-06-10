@@ -1,7 +1,13 @@
+// frontend/src/modules/Media/search/ResultRow.jsx
+// One search result: thumbnail, title + context line, the full queue action
+// set, and Cast — all inline, none requiring navigation. Queue actions other
+// than Play Now keep the dropdown open and flash confirmation on the button;
+// the title toggles an inline metadata peek.
 import React, { useState, useRef, useEffect } from 'react';
-import { useSessionController } from '../session/useSessionController.js';
+import { useSessionController } from '../controller/useSessionController.js';
 import { resultToQueueInput } from './resultToQueueInput.js';
 import { CastButton } from '../cast/CastButton.jsx';
+import { TIMING } from '../constants.js';
 
 function thumbnailSrc(row) {
   if (row.thumbnail && typeof row.thumbnail === 'string' && row.thumbnail.length > 0) return row.thumbnail;
@@ -35,7 +41,7 @@ export function ResultRow({ row, onAction }) {
     if (closes) { onAction?.(); return; }
     setFlash(op);
     clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setFlash(null), 1200);
+    flashTimer.current = setTimeout(() => setFlash(null), TIMING.ACTION_FLASH_MS * 2);
   };
 
   const type = row.type ?? row.metadata?.type ?? row.mediaType;
@@ -62,14 +68,18 @@ export function ResultRow({ row, onAction }) {
           {subtitle && <span className="media-result-subtitle">{subtitle}</span>}
         </span>
         <span className="media-result-actions">
-          <button data-testid={`result-play-now-${id}`} onClick={fire('playNow', { closes: true })}>Play Now</button>
-          <button data-testid={`result-play-next-${id}`} onClick={fire('playNext')} className={flash === 'playNext' ? 'action-flash' : ''}>
+          <button data-testid={`result-play-now-${id}`} className="result-action result-action--primary"
+                  onClick={fire('playNow', { closes: true })}>Play Now</button>
+          <button data-testid={`result-play-next-${id}`} onClick={fire('playNext')}
+                  className={`result-action ${flash === 'playNext' ? 'action-flash' : ''}`}>
             {flash === 'playNext' ? '✓ Next' : 'Play Next'}
           </button>
-          <button data-testid={`result-upnext-${id}`} onClick={fire('addUpNext')} className={flash === 'addUpNext' ? 'action-flash' : ''}>
+          <button data-testid={`result-upnext-${id}`} onClick={fire('addUpNext')}
+                  className={`result-action ${flash === 'addUpNext' ? 'action-flash' : ''}`}>
             {flash === 'addUpNext' ? '✓ Queued' : 'Up Next'}
           </button>
-          <button data-testid={`result-add-${id}`} onClick={fire('add')} className={flash === 'add' ? 'action-flash' : ''}>
+          <button data-testid={`result-add-${id}`} onClick={fire('add')}
+                  className={`result-action ${flash === 'add' ? 'action-flash' : ''}`}>
             {flash === 'add' ? '✓ Added' : 'Add'}
           </button>
           <CastButton contentId={id} onAction={onAction} />

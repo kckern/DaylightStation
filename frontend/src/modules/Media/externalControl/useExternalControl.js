@@ -1,77 +1,43 @@
+// frontend/src/modules/Media/externalControl/useExternalControl.js
+// Inbound commands targeting this browser's local session (C8.4): subscribe
+// to client-control:<clientId>, apply via the shared command handler, ack
+// every command on client-ack.
 import { useEffect } from 'react';
-import { wsService } from '../../../services/WebSocketService.js';
-import { useClientIdentity } from '../session/ClientIdentityProvider.jsx';
-import { useSessionController } from '../session/useSessionController.js';
+import { subscribeTopic, publish, topics } from '../net/ws.js';
+import { useClientIdentity } from '../identity/ClientIdentityProvider.jsx';
+import { applyCommandEnvelope } from './commandHandler.js';
 import mediaLog from '../logging/mediaLog.js';
 
-function handleCommand(controller, envelope) {
-  const { command, params = {} } = envelope;
-  if (command === 'transport') {
-    const { action, value } = params;
-    const fn = controller.transport?.[action];
-    if (typeof fn === 'function') fn(value);
-  } else if (command === 'queue') {
-    const { op, contentId, queueItemId, clearRest, from, to, items } = params;
-    const q = controller.queue;
-    if (!q) return;
-    if (op === 'play-now') q.playNow?.({ contentId }, { clearRest });
-    else if (op === 'play-next') q.playNext?.({ contentId });
-    else if (op === 'add-up-next') q.addUpNext?.({ contentId });
-    else if (op === 'add') q.add?.({ contentId });
-    else if (op === 'remove') q.remove?.(queueItemId);
-    else if (op === 'jump') q.jump?.(queueItemId);
-    else if (op === 'clear') q.clear?.();
-    else if (op === 'reorder') q.reorder?.(items ? { items } : { from, to });
-  } else if (command === 'config') {
-    const { setting, value } = params;
-    const c = controller.config;
-    if (!c) return;
-    if (setting === 'shuffle') c.setShuffle?.(value);
-    else if (setting === 'repeat') c.setRepeat?.(value);
-    else if (setting === 'shader') c.setShader?.(value);
-    else if (setting === 'volume') c.setVolume?.(value);
-  } else if (command === 'adopt-snapshot') {
-    const { snapshot, autoplay = true } = params;
-    if (snapshot) controller.lifecycle?.adoptSnapshot?.(snapshot, { autoplay });
-  }
-}
-
-export function useExternalControl() {
+export function useExternalControl(controller) {
   const { clientId } = useClientIdentity();
-  const controller = useSessionController('local');
+
   useEffect(() => {
-    if (!clientId) return;
-    const topic = `client-control:${clientId}`;
-    const ackTopic = 'client-ack';
-    const unsub = wsService.subscribe(
-      (msg) => !!msg && msg.topic === topic,
-      (msg) => {
-        const commandId = msg.commandId;
-        if (!commandId) return;
-        try {
-          handleCommand(controller, msg);
+    if (!clientId || !controller) return undefined;
+    const topic = topics.clientControl(clientId);
+    return subscribeTopic(topic, (msg) => {
+      const commandId = msg.commandId;
+      if (!commandId) return;
+      const ack = (extra) => publish({
+        topic: 'client-ack',
+        clientId,
+        commandId,
+        appliedAt: new Date().toISOString(),
+        ...extra,
+      });
+      try {
+        const result = applyCommandEnvelope(controller, msg);
+        if (result.ok) {
           mediaLog.externalControlReceived({ commandId, command: msg.command });
-          wsService.send({
-            topic: ackTopic,
-            clientId,
-            commandId,
-            ok: true,
-            appliedAt: new Date().toISOString(),
-          });
-        } catch (err) {
-          mediaLog.externalControlRejected({ commandId, reason: err?.message });
-          wsService.send({
-            topic: ackTopic,
-            clientId,
-            commandId,
-            ok: false,
-            error: err?.message,
-            appliedAt: new Date().toISOString(),
-          });
+          ack({ ok: true });
+        } else {
+          mediaLog.externalControlRejected({ commandId, reason: result.reason });
+          ack({ ok: false, error: result.reason });
         }
+      } catch (err) {
+        mediaLog.externalControlRejected({ commandId, reason: err?.message });
+        ack({ ok: false, error: err?.message });
       }
-    );
-    return unsub;
+    });
   }, [clientId, controller]);
 }
 

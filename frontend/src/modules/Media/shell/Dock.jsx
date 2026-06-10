@@ -1,12 +1,13 @@
+// frontend/src/modules/Media/shell/Dock.jsx
+// The app's constant: search (always one keystroke away), fleet indicator,
+// cast target chip, settings. The mini player is the bottom bar (MediaShell).
 import React, { useState, useCallback } from 'react';
-import { MiniPlayer } from './MiniPlayer.jsx';
-import { useSessionController } from '../session/useSessionController.js';
 import { SearchBar } from '../search/SearchBar.jsx';
 import { FleetIndicator } from './FleetIndicator.jsx';
-import { CastTargetChip } from '../cast/CastTargetChip.jsx';
-import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
-import { ConfirmDialog } from './ConfirmDialog.jsx';
 import { SettingsMenu } from './SettingsMenu.jsx';
+import { ConfirmDialog } from './ConfirmDialog.jsx';
+import { CastTargetChip } from '../cast/CastTargetChip.jsx';
+import { useSessionController } from '../controller/useSessionController.js';
 
 export function Dock() {
   const { lifecycle } = useSessionController('local');
@@ -14,19 +15,17 @@ export function Dock() {
 
   const doReset = useCallback(() => {
     setConfirmOpen(false);
-    lifecycle.reset();
+    lifecycle.reset?.();
   }, [lifecycle]);
 
   return (
-    <div data-testid="media-dock">
+    <header className="media-dock" data-testid="media-dock">
       <SearchBar />
-      <div className="dock-status-cluster">
+      <div className="media-dock-cluster">
         <FleetIndicator />
         <CastTargetChip />
-        <MiniPlayer />
+        <SettingsMenu onResetSession={() => setConfirmOpen(true)} />
       </div>
-      <SettingsMenu onResetSession={() => setConfirmOpen(true)} />
-      <DispatchProgressTray />
       <ConfirmDialog
         open={confirmOpen}
         title="Reset local session?"
@@ -36,7 +35,7 @@ export function Dock() {
         onConfirm={doReset}
         onCancel={() => setConfirmOpen(false)}
       />
-    </div>
+    </header>
   );
 }
 

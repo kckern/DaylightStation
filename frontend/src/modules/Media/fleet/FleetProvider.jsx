@@ -1,60 +1,55 @@
-import React, { createContext, useContext, useEffect, useMemo, useReducer } from 'react';
-import { wsService } from '../../../services/WebSocketService.js';
+// frontend/src/modules/Media/fleet/FleetProvider.jsx
+// Wires the fleet store to the world: device roster from the Device API
+// (refreshed when the tab regains focus), live state from device-state:*
+// broadcasts, staleness from WS connection status.
+import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import { subscribeTopicKind, onStatus } from '../net/ws.js';
 import { useDevices } from './useDevices.js';
-import { reduceFleet, initialFleetState } from './fleetReducer.js';
+import { createFleetStore } from './fleetStore.js';
 import mediaLog from '../logging/mediaLog.js';
 
 export const FleetContext = createContext(null);
 
-function isDeviceStateBroadcast(msg) {
-  return !!msg && typeof msg.topic === 'string' && msg.topic.startsWith('device-state:');
-}
-
 export function FleetProvider({ children }) {
   const { devices, loading, error, refresh } = useDevices();
-  const [fleetState, dispatch] = useReducer(reduceFleet, initialFleetState);
+  const storeRef = useRef(null);
+  if (!storeRef.current) storeRef.current = createFleetStore();
+  const store = storeRef.current;
 
   useEffect(() => {
-    const unsub = wsService.subscribe(isDeviceStateBroadcast, (msg) => {
-      const deviceId = msg.deviceId;
-      if (typeof deviceId !== 'string' || deviceId.length === 0) return;
+    return subscribeTopicKind('device-state', (msg) => {
       if (!msg.snapshot && msg.reason !== 'offline') return;
-      dispatch({
-        type: 'RECEIVED',
-        deviceId,
+      store.receive({
+        deviceId: msg.deviceId,
         snapshot: msg.snapshot ?? null,
         reason: msg.reason ?? 'change',
-        ts: msg.ts ?? new Date().toISOString(),
+        ts: msg.ts,
       });
     });
-    return unsub;
-  }, []);
+  }, [store]);
 
   useEffect(() => {
-    const unsub = wsService.onStatusChange((status) => {
+    return onStatus((status) => {
       if (status && status.connected === false) {
-        dispatch({ type: 'STALE' });
+        store.markAllStale();
         mediaLog.wsDisconnected({});
       } else if (status && status.connected === true) {
         mediaLog.wsConnected({});
       }
     });
-    return unsub;
-  }, []);
+  }, [store]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        refresh();
-      }
+      if (document.visibilityState === 'visible') refresh();
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ devices, byDevice: fleetState.byDevice, loading, error, refresh }),
-    [devices, fleetState.byDevice, loading, error, refresh]
+    () => ({ devices, store, loading, error, refresh }),
+    [devices, store, loading, error, refresh]
   );
 
   return <FleetContext.Provider value={value}>{children}</FleetContext.Provider>;
