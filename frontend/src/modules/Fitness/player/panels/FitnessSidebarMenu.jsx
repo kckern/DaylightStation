@@ -408,6 +408,12 @@ const FitnessSidebarMenu = ({
 
     return (
       <div className="guest-mode-content">
+        {!baseName && (
+          <div className="guest-menu-hint">
+            Unrecognized heart-rate strap <strong>{monitorLabel}</strong>.
+            Pick who’s wearing it — or “Guest” if they’re visiting.
+          </div>
+        )}
         {/* Top options: Original and Guest */}
         {guestOptions.topOptions.length > 0 && (
           <div className="menu-section">
