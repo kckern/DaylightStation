@@ -47,18 +47,38 @@ export function directUPCHandler(container, options = {}) {
     // Get UPC from body or query
     const upc = req.body?.upc || req.query?.upc;
 
-    if (!upc) {
+    const cleanDashes = (value) => String(value).replace(/-/g, '');
+    const isValidUPC = (value) => /^\d{8,14}$/.test(value);
+
+    // Clean UPC (remove dashes)
+    let cleanUPC = upc ? cleanDashes(upc) : '';
+
+    // Fallback: barcode scanners (e.g. Binary Eye "GET, add content to URL")
+    // append the code as a bare query key with no value, arriving as
+    // ?upc=&0643843714477 or ?upc=%s&0643843714477
+    if (!isValidUPC(cleanUPC)) {
+      const bareKey = Object.keys(req.query || {}).map(cleanDashes).find(isValidUPC);
+      if (bareKey) {
+        logger.info?.('direct.upc.bareKeyFallback', {
+          traceId,
+          upcParam: upc ?? null,
+          upc: bareKey,
+        });
+        cleanUPC = bareKey;
+      }
+    }
+
+    if (!cleanUPC) {
+      logger.warn?.('direct.upc.rejected', { traceId, reason: 'missing', queryKeys: Object.keys(req.query || {}) });
       return res.status(400).json({
         ok: false,
         error: 'Missing required parameter: upc',
       });
     }
 
-    // Clean UPC (remove dashes)
-    const cleanUPC = String(upc).replace(/-/g, '');
-
     // Validate UPC format (8-14 digits)
-    if (!/^\d{8,14}$/.test(cleanUPC)) {
+    if (!isValidUPC(cleanUPC)) {
+      logger.warn?.('direct.upc.rejected', { traceId, reason: 'invalid_format', upcParam: String(upc).slice(0, 50) });
       return res.status(400).json({
         ok: false,
         error: 'Invalid UPC format. Expected 8-14 digits.',
