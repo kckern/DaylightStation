@@ -18,6 +18,11 @@ export function buildGuestOptions({
     if (candidate.id) multiAssignableKeys.add(String(candidate.id));
     if (candidate.profileId) multiAssignableKeys.add(String(candidate.profileId));
   });
+  // W2: generic "Guest" is a per-device alias (guest_<deviceId>), so the raw
+  // 'guest' candidate id must never globally block the option. The
+  // currently-selected check (currentlySelectedId) still hides it on the
+  // device where it is actively assigned.
+  multiAssignableKeys.add('guest');
 
   // Track the currently selected user to exclude them from the list
   const currentlySelectedId = activeAssignment?.metadata?.candidateId
