@@ -1,6 +1,6 @@
-// frontend/src/modules/Media/LiveStream/ChannelList.jsx
+// frontend/src/modules/LiveStream/ChannelList.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 import DJBoard from './DJBoard.jsx';
 import './LiveStream.scss';
 
