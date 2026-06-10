@@ -1,5 +1,9 @@
 # Media App — Functional Requirements
 
+> Intent, user stories, journeys, and high-level design live in
+> [`media-app.md`](./media-app.md). This document is the normative capability
+> spec (the numbered MUST/SHOULD requirements) that the intent implies.
+
 ## Purpose
 
 The Media App is the household's **universal content front door**. It is the single
@@ -114,67 +118,12 @@ When relating the local surface to an existing remote session:
 
 ## Primary User Journeys
 
-Each journey describes what a user can accomplish. All journeys are concurrent and
-non-exclusive — the app never forces a mode switch.
-
-### J1. Discover and play locally
-A user searches or browses the catalog, selects a content item, and plays it in
-the current browser. Queue interactions (J2) are available before, during, and
-after playback; the user can keep browsing, adding, and reorganizing while
-content plays.
-
-### J2. Build and manage the queue (Plex MP model)
-Against any content item, the user can:
-
-- **Play Now** — replace the current item immediately; queue is preserved or
-  cleared per user choice.
-- **Play Next** — insert after the current item (interrupts the existing
-  "up next" ordering).
-- **Add to Up Next** — append to a priority sub-queue that plays before the
-  rest of the queue.
-- **Add to Queue** — append to the end of the queue.
-
-At any time, against the queue itself, the user can: remove an item, reorder
-items, jump to a specific item, clear the queue, toggle shuffle, toggle repeat
-(off / one / all). All queue operations are available whether or not something
-is currently playing, and apply equally to local sessions and to remote sessions
-in peek mode (J5).
-
-### J3. Dispatch to a remote device
-A user finds content, selects one or more configured devices as the target, and
-dispatches the content. The target device wakes if needed, then begins playing.
-The local session is unaffected (fork) or stopped (transfer) based on the user's
-explicit choice.
-
-### J4. Observe the fleet
-A user views the current state of every configured device: online/offline, idle
-or playing, current item, progress, playback state, queue, and recent history.
-Updates are live.
-
-### J5. Peek and control a remote session
-A user inspects a playing remote session and drives its transport (play, pause,
-seek, skip, stop) and queue (add, remove, reorder, jump, clear, shuffle, repeat)
-from the app — without altering the local session.
-
-### J6. Take over a remote session
-A user pulls a remote session to the local surface. The remote stops; the local
-session adopts the remote's full state (current item, position, queue, config) and
-resumes playback seamlessly.
-
-### J7. Hand off local to a remote
-A user pushes the local session to a remote device. The target adopts the local
-session's state; local either stops (transfer) or keeps playing (fork), per the
-user's choice.
-
-### J8. Resume after disruption
-After a browser refresh, tab close-and-reopen, crash, or network interruption,
-the local session resumes from the last known state with minimal user action.
-The user can also explicitly reset the session to a clean slate.
-
-### J9. External trigger
-An external system opens the app with a content ID in the URL. The app
-autoplays that content in the current browser. (Remote dispatch from external
-systems happens via API, not via this app's URL.)
+The nine journeys (J1–J9) referenced throughout this document — discover &
+play locally, queue management, remote dispatch, fleet observation, peek
+control, take over, hand off, resume after disruption, external trigger — are
+defined narratively in [`media-app.md` § Primary User
+Journeys](./media-app.md#primary-user-journeys). All journeys are concurrent
+and non-exclusive; the app never forces a mode switch.
 
 ---
 
