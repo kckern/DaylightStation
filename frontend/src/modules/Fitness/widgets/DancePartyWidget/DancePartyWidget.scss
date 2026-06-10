@@ -10,9 +10,52 @@
 .dance-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dance-artist { font-size: 12px; opacity: .8; }
 .dance-controls { display: flex; gap: 14px; }
+.dance-volume-btn { display: flex; align-items: center;
+  &.is-muted { opacity: .45; }
+}
+// Party-lights toggle doubles as a status indicator: warm glow when on, dim when off.
+.dance-lights-btn { display: flex; align-items: center; border-radius: 50%; padding: 6px !important;
+  &.is-on { color: #ffd24a !important; filter: drop-shadow(0 0 6px rgba(255,210,74,.9)); background: rgba(255,210,74,.18) !important; }
+  &.is-off { opacity: .45; }
+}
+
+// Volume modal — compact sheet over the video, opened from the bar's icon.
+// TouchVolumeButtons inside (touch screen — discrete levels, no slider);
+// first segment (level 0) = mute.
+.dance-volume-modal { position: absolute; inset: 0; z-index: 8; }
+.dance-volume-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.dance-volume-modal__sheet {
+  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  width: min(520px, 92vw); padding: 16px; border-radius: 12px;
+  background: rgba(12,12,24,.92); border: 1px solid rgba(255,255,255,.18);
+  box-shadow: 0 12px 40px rgba(0,0,0,.6); color: #fff;
+}
+.dance-volume-modal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; font-size: 14px; font-weight: 600;
+  button { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+}
+.dance-volume-modal__sheet .touch-volume {
+  display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; width: 100%;
+  touch-action: none;
+  .touch-volume-button {
+    height: 48px; padding: 0; cursor: pointer; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .touch-volume-button.on { background: linear-gradient(180deg,#ff8a00,#ff2d95); border-color: rgba(255,255,255,.5); }
+  .touch-volume-button.active { box-shadow: 0 0 0 2px rgba(255,255,255,.6); }
+  .touch-volume-button:first-child.off { background: rgba(120,49,56,.8); border-color: rgba(220,53,69,.5); }
+  .touch-volume-button:first-child.on { background: linear-gradient(180deg,rgba(220,53,69,.95),rgba(185,43,58,.95)); }
+}
 .dance-controls button { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
 
 .dance-party { position: absolute; inset: 0; background: #000; overflow: hidden; }
+// Press-to-fullscreen: escape the module container / fitness sidebar and fill
+// the viewport. The now-playing bar and exit button live inside and remain.
+.dance-party.is-fullscreen { position: fixed; inset: 0; z-index: 1000; border-radius: 0; }
+// Transparent press target over the video, under the bar/exit controls (z 5).
+.dance-tapzone { position: absolute; inset: 0; z-index: 2; background: transparent; border: none; padding: 0; cursor: pointer; }
 .dance-video, .dance-video :is(video, .dash-video, .player) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .dance-audio-host { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 @keyframes danceHue { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
