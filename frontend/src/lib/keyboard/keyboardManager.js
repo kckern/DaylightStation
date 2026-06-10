@@ -207,6 +207,15 @@ export function useAdvancedKeyboardHandler(config = {}) {
     const handleKeyDown = (event) => {
       if (event.repeat) return;
 
+      // Never hijack typing: key events originating in editable elements
+      // (search boxes, forms) belong to those elements. Kiosk surfaces have
+      // no editable elements, so playback hotkeys are unaffected there.
+      const t = event.target;
+      if (t instanceof Element && (
+        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' || t.isContentEditable
+      )) return;
+
       // Log arrow key presses for debugging
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
         console.log('[keyboardManager] Arrow key pressed:', event.key, { 

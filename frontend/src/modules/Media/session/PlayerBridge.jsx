@@ -180,7 +180,10 @@ export function PlayerBridge() {
       style={hiddenStyle}
       aria-hidden={hidden ? 'true' : 'false'}
     >
-      <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} />
+      {/* ignoreKeys: the Player's global hotkeys (Space/Tab/Backspace/arrows)
+          are for kiosk surfaces with no text inputs or tab order. This app
+          has a search box and full transport UI — it owns its keys. */}
+      <Player ref={playerRef} play={playProp} clear={onClear} onProgress={onProgress} ignoreKeys />
     </div>
   );
   return hostEl ? createPortal(tree, hostEl) : tree;
