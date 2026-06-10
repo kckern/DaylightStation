@@ -1,23 +1,32 @@
 /**
- * Resolve the dance_party audio/video playlists with fallbacks.
- * - audio: configured id, else first music_playlists entry, else null.
- * - video: configured id, else null (caller renders a CSS disco backdrop).
- * @param {object} fitnessConfig
- * @param {Array<{name:string,id:number}>} musicPlaylists
+ * Resolve the dance_party audio/video playlists from the dance_party config
+ * block — the single source of truth (FitnessContext.dancePartyConfig).
+ *
+ * No silent fallbacks: a missing/empty block or missing ids resolve to null
+ * and `configured: false`, so the widget can fail loudly instead of quietly
+ * playing the wrong content.
+ *
+ * @param {object|null} dancePartyConfig - the `dance_party` block from fitness config
  */
-export function resolveDancePlaylists(fitnessConfig, musicPlaylists = []) {
-  const dp = fitnessConfig?.dance_party || {};
-  const audioPlaylistId = dp.audio_playlist_id
-    ?? (Array.isArray(musicPlaylists) && musicPlaylists[0]?.id) ?? null;
-  // Coerce: YAML may author the id as a string (e.g. "99"). Number.isFinite on a
-  // raw string is false, which would silently disable video. Convert first.
-  const v = Number(dp.video_playlist_id);
-  const videoPlaylistId = Number.isFinite(v) && v > 0 ? v : null;
+export function resolveDancePlaylists(dancePartyConfig) {
+  const dp = dancePartyConfig || null;
+  // Coerce: YAML may author ids as strings (e.g. "99"). Number.isFinite on a
+  // raw string is false, which would silently disable playback. Convert first.
+  const toId = (raw) => {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const audioPlaylistId = toId(dp?.audio_playlist_id);
+  const videoPlaylistId = toId(dp?.video_playlist_id);
   return {
+    configured: dp != null,
     audioPlaylistId,
     videoPlaylistId,
-    shuffle: dp.shuffle !== false,
-    hasVideo: videoPlaylistId != null
+    shuffle: dp?.shuffle !== false,
+    hasVideo: videoPlaylistId != null,
+    // Player shader for the video layer ('minimal' aliases to 'focused' in
+    // Player.jsx). Default keeps the party video chrome-free.
+    videoShader: typeof dp?.video_shader === 'string' && dp.video_shader ? dp.video_shader : 'focused'
   };
 }
 
