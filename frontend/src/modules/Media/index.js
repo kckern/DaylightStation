@@ -11,9 +11,18 @@ export { MediaAppShell } from './shell/MediaAppShell.jsx';
 export { NavProvider, useNav } from './shell/NavProvider.jsx';
 export { DismissStackProvider, useDismissLayer } from './shell/DismissStackProvider.jsx';
 
-// Controller seam (local + remote implementations land in later phases)
+// Controller seam — one interface, local and remote implementations
 export { assertController, CONTROLLER_METHOD_GROUPS } from './controller/controllerShape.js';
 export { createMockController } from './controller/mockController.js';
+export { useSessionController } from './controller/useSessionController.js';
+export { usePlaybackPosition } from './controller/usePlaybackPosition.js';
+
+// Local session engine
+export { ClientIdentityProvider, useClientIdentity } from './identity/ClientIdentityProvider.jsx';
+export { LocalSessionProvider } from './session/LocalSessionProvider.jsx';
+export { createLocalSessionController } from './session/LocalSessionController.js';
+export { usePlayerHost } from './session/usePlayerHost.js';
+export { readRecents } from './session/recents.js';
 
 // URL namespaces
 export {
