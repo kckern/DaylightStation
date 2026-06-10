@@ -1,0 +1,141 @@
+// frontend/src/modules/Media/shell/MediaShell.scss
+// Layout-only rules for the shell. Colors and radii come from Mantine CSS
+// variables (the mediaTheme dark ramp) — no second token system. App-specific
+// layout vars live on .media-app (MediaApp.scss).
+@use '../../../styles/breakpoints' as *;
+
+.media-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--mantine-color-dark-7);
+  color: var(--mantine-color-dark-0);
+}
+
+// ---- Dock (top bar) -------------------------------------------------------
+.media-dock {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  height: var(--media-dock-h);
+  padding: 0 var(--mantine-spacing-sm);
+  background: var(--mantine-color-dark-6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+
+  .media-dock-search {
+    flex: 1;
+    min-width: 0;
+    max-width: 560px;
+  }
+
+  .media-dock-cluster {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    margin-left: auto;
+  }
+}
+
+// ---- Body: nav rail + canvas ---------------------------------------------
+.media-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.media-canvas {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--mantine-spacing-md);
+  -webkit-overflow-scrolling: touch;
+
+  @include desktop-up {
+    padding: var(--mantine-spacing-lg) var(--mantine-spacing-xl);
+  }
+}
+
+// ---- Primary nav: rail (tablet+) / tab bar (mobile) ------------------------
+.media-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-1);
+  font-size: 11px;
+
+  &:hover { background: var(--mantine-color-dark-5); }
+
+  &--active {
+    color: var(--mantine-color-amber-5);
+    background: var(--mantine-color-dark-6);
+  }
+}
+
+.media-nav-rail {
+  display: none;
+
+  @include tablet-up {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--mantine-spacing-xs);
+    width: 64px;
+    padding: var(--mantine-spacing-sm) 6px;
+    background: var(--mantine-color-dark-6);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+  }
+
+  @include desktop-up {
+    width: 88px;
+    .media-nav-label { font-size: 12px; }
+  }
+}
+
+.media-tabbar {
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  height: calc(var(--media-tabbar-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--mantine-color-dark-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+
+  .media-nav-item { flex: 1; border-radius: 0; }
+
+  @include tablet-up { display: none; }
+}
+
+// Mobile dock: the fleet button collapses (fleet lives in the tab bar there,
+// but keep the dock indicator reachable — it is the canonical fleet entry).
+@include mobile-only {
+  .media-dock .media-dock-cluster [data-testid='fleet-indicator'] .mantine-Button-label {
+    // icon-only at phone width
+    font-size: 0;
+  }
+}
+
+// ---- Home cards ------------------------------------------------------------
+.home-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-dark-0);
+  font-weight: 600;
+
+  &:hover { background: var(--mantine-color-dark-4); }
+  &:active { transform: scale(0.99); }
+}
