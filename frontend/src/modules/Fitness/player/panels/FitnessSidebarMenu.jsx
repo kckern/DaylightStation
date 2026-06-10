@@ -3,7 +3,7 @@ import { useFitnessContext, FITNESS_DEBUG } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import DebugMicButton from './DebugMicButton.jsx';
-import { buildGuestOptions } from '../../lib/guestOptionsBuilder.js';
+import { buildGuestOptions, nextGenericGuestName } from '../../lib/guestOptionsBuilder.js';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -210,8 +210,12 @@ const FitnessSidebarMenu = ({
     const profileId = option.isGeneric
       ? `guest_${deviceIdStr}`
       : (option.profileId || option.id);
+    // Audit N3: simultaneous generic Guests get numbered names (Guest, Guest 2, ...)
+    const name = option.isGeneric
+      ? nextGenericGuestName(deviceAssignments)
+      : option.name;
     assignGuestToDevice(deviceIdStr, {
-      name: option.name,
+      name,
       profileId,
       candidateId: option.id,
       source: option.source,

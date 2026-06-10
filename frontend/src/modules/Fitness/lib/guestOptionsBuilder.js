@@ -1,6 +1,22 @@
 // Pure builder for the guest-picker option lists. Extracted from
 // FitnessSidebarMenu so the exclusion/tab logic is unit-testable.
 
+// Audit N3: simultaneous generic Guests get numbered display names —
+// "Guest", "Guest 2", "Guest 3", ... Numbers count past the highest
+// existing generic-Guest name so concurrent assignments never collide.
+export function nextGenericGuestName(deviceAssignments = []) {
+  const genericNames = (deviceAssignments || [])
+    .filter((a) => String(a?.metadata?.candidateId || '') === 'guest')
+    .map((a) => String(a?.occupantName || a?.metadata?.name || '').trim());
+  if (genericNames.length === 0) return 'Guest';
+  let highest = 1;
+  genericNames.forEach((n) => {
+    const m = /^Guest(?: (\d+))?$/.exec(n);
+    if (m) highest = Math.max(highest, m[1] ? parseInt(m[1], 10) : 1);
+  });
+  return `Guest ${highest + 1}`;
+}
+
 export function buildGuestOptions({
   guestCandidates = [],
   deviceAssignments = [],

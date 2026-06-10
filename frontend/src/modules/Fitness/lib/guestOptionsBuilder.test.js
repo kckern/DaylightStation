@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGuestOptions } from './guestOptionsBuilder.js';
+import { buildGuestOptions, nextGenericGuestName } from './guestOptionsBuilder.js';
 
 const friend = (id, name) => ({ id, name, profileId: id, category: 'Friend' });
 
@@ -75,5 +75,26 @@ describe('buildGuestOptions — multi-Guest (audit N2)', () => {
       selectedTab: 'friends'
     });
     expect(out.topOptions.some(o => o.id === 'guest' && o.isGeneric)).toBe(true);
+  });
+});
+
+describe('nextGenericGuestName (audit N3)', () => {
+  const generic = (deviceId, name) => ({
+    deviceId, occupantName: name,
+    metadata: { candidateId: 'guest', profileId: `guest_${deviceId}`, name }
+  });
+
+  it('first guest is plain "Guest"', () => {
+    expect(nextGenericGuestName([])).toBe('Guest');
+  });
+  it('second guest is "Guest 2"', () => {
+    expect(nextGenericGuestName([generic('A', 'Guest')])).toBe('Guest 2');
+  });
+  it('numbers past the highest existing, avoiding collisions', () => {
+    expect(nextGenericGuestName([generic('A', 'Guest'), generic('B', 'Guest 2')])).toBe('Guest 3');
+    expect(nextGenericGuestName([generic('B', 'Guest 2')])).toBe('Guest 3');
+  });
+  it('ignores named-guest assignments', () => {
+    expect(nextGenericGuestName([{ deviceId: 'A', occupantName: 'Eve', metadata: { candidateId: 'eve' } }])).toBe('Guest');
   });
 });
