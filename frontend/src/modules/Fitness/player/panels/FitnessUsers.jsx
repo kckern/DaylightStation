@@ -8,6 +8,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
+import { heartEmojiForColor } from '../../lib/strapColors.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -77,17 +78,6 @@ const CONFIG = {
       blue: '#6ab8ff'
     },
     overlayBg: '#00000088'
-  },
-  heartRate: {
-    colorIcons: {
-      red: '❤️',
-      yellow: '💛',
-      green: '💚',
-      blue: '💙',
-      watch: '🤍',
-      orange: '🧡'
-    },
-    fallbackIcon: '🧡'
   },
   color: {
     luminanceThreshold: 0.6,
@@ -467,12 +457,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (deviceId) => {
-    const deviceIdStr = String(deviceId);
-    const colorKey = hrColorMap[deviceIdStr];
-    if (!colorKey) return CONFIG.heartRate.fallbackIcon;
-    return CONFIG.heartRate.colorIcons[colorKey] || CONFIG.heartRate.fallbackIcon;
-  };
+  const heartColorIcon = (deviceId) => heartEmojiForColor(hrColorMap[String(deviceId)]);
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
