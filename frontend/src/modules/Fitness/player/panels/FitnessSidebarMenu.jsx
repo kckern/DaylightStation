@@ -3,7 +3,7 @@ import { useFitnessContext, FITNESS_DEBUG } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import DebugMicButton from './DebugMicButton.jsx';
-import { buildGuestOptions, nextGenericGuestName } from '../../lib/guestOptionsBuilder.js';
+import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -68,6 +68,9 @@ const FitnessSidebarMenu = ({
     || fitnessContext?.fitnessConfiguration
     || {};
   const usageThresholdSeconds = fitnessRoot?.governance?.usage_threshold_seconds;
+  // Audit N4: configured guest profiles (fitness.yml → guest_profiles) drive
+  // age-class generic options (e.g. kid zone-threshold overrides).
+  const guestProfiles = fitnessRoot?.guest_profiles || null;
   const usageThresholdMs = (Number.isFinite(usageThresholdSeconds) ? usageThresholdSeconds : 300) * 1000;
   const segmentAgeMs = Number.isFinite(activeAssignment?.updatedAt)
     ? Date.now() - activeAssignment.updatedAt
@@ -183,8 +186,9 @@ const FitnessSidebarMenu = ({
     activeHeartRateParticipants,
     baseName,
     baseUserId: baseName ? (fitnessContext?.getUserByName?.(baseName)?.id ?? null) : null,
-    selectedTab
-  }), [guestCandidates, activeAssignment, baseName, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext]);
+    selectedTab,
+    guestProfiles
+  }), [guestCandidates, activeAssignment, baseName, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext, guestProfiles]);
 
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {
@@ -225,12 +229,19 @@ const FitnessSidebarMenu = ({
     const name = option.isGeneric
       ? nextGenericGuestName(deviceAssignments)
       : option.name;
+    // Audit N4: age-class options (e.g. Guest kid) carry configured zone
+    // overrides into ledger metadata.zones, which
+    // UserManager.resolveUserForDevice applies via buildZoneConfig.
+    const ageClass = option.ageClass || null;
+    const zones = ageClass ? zonesMapToArray(guestProfiles?.[ageClass]?.zones) : null;
     assignGuestToDevice(deviceIdStr, {
       name,
       profileId,
       candidateId: option.id,
       source: option.source,
-      baseUserName: baseName
+      baseUserName: baseName,
+      ...(ageClass ? { ageClass } : {}),
+      ...(zones ? { zones } : {})
     });
     if (onClose) onClose();
   };
