@@ -1043,10 +1043,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                       // §3 ring uses outline, not box-shadow: every HR avatar
                       // carries a zone-*/no-zone class whose box-shadow is
                       // declared !important in FitnessSidebar.scss (it would
-                      // override any inline boxShadow). outline-offset keeps
-                      // the existing 2px zone glow visible inside the ring.
+                      // override any inline boxShadow). The ring is INSET
+                      // (negative offset) because card-horizontal has
+                      // padding: 0 + overflow: hidden — an outward ring gets
+                      // clipped to a partial arc at default density.
                       style={strapRingColor
-                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '2px' }
+                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '-3px' }
                         : undefined}
                     >
                       {isHeartRate ? (
