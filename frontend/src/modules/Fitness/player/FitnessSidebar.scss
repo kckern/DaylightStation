@@ -2350,6 +2350,15 @@
         strong { color: #fff; }
       }
 
+      .guest-menu-note {
+        padding: 0.4rem 0.75rem;
+        margin: 0 0 0.5rem;
+        font-size: 0.75rem;
+        color: #ffd76a;
+        background: rgba(255, 215, 106, 0.08);
+        border-radius: 4px;
+      }
+
       .guest-tabs {
         display: flex;
         gap: 0.5rem;
