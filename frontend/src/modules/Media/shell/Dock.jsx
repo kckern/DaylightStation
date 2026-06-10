@@ -2,8 +2,7 @@
 // The app's constant: search (always one keystroke away), fleet indicator,
 // cast target chip, settings. The mini player is the bottom bar (MediaShell).
 import React, { useState, useCallback } from 'react';
-import { TextInput } from '@mantine/core';
-import { IconSearch } from '@tabler/icons-react';
+import { SearchBar } from '../search/SearchBar.jsx';
 import { FleetIndicator } from './FleetIndicator.jsx';
 import { SettingsMenu } from './SettingsMenu.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
@@ -21,17 +20,7 @@ export function Dock() {
 
   return (
     <header className="media-dock" data-testid="media-dock">
-      {/* Placeholder until the search module lands (discovery phase) */}
-      <TextInput
-        className="media-dock-search"
-        size="md"
-        radius="md"
-        placeholder="Search…"
-        leftSection={<IconSearch size={18} />}
-        readOnly
-        data-testid="media-search-input"
-        aria-label="Search"
-      />
+      <SearchBar />
       <div className="media-dock-cluster">
         <FleetIndicator />
         <CastTargetChip />

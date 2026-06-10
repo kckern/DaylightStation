@@ -32,7 +32,12 @@ export function NowPlayingView() {
         <Text size="sm" c="dimmed" data-testid="np-state">{snapshot?.state}</Text>
       </div>
 
-      <Title order={1} className="now-playing-title">
+      <Title
+        order={1}
+        className="now-playing-title"
+        data-testid="now-playing-title"
+        data-content-id={item?.contentId ?? ''}
+      >
         {item ? `Now Playing: ${item.title ?? item.contentId}` : 'Nothing playing'}
       </Title>
 
