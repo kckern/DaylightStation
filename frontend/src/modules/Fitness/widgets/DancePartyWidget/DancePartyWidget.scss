@@ -10,7 +10,9 @@
 .dance-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dance-artist { font-size: 12px; opacity: .8; }
 .dance-controls { display: flex; gap: 14px; }
-.dance-volume-btn { font-size: 20px !important; }
+.dance-volume-btn { display: flex; align-items: center;
+  &.is-muted { opacity: .45; }
+}
 
 // Volume modal — compact sheet over the video, opened from the bar's icon.
 // TouchVolumeButtons inside (touch screen — discrete levels, no slider);
