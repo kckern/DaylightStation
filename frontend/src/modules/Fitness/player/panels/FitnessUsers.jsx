@@ -8,7 +8,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
-import { heartEmojiForColor } from '../../lib/strapColors.js';
+import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
 import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -901,6 +901,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
                 ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
                 : profileId;
+              // §3: surface the physical sticker color as a saturated avatar ring.
+              // Configured color wins; unidentified cards (no user, no assignment)
+              // get a deterministic per-device hash color so simultaneous
+              // unknown straps are visually distinct.
+              const strapRingColor = isHeartRate
+                ? (cssColorForStrap(hrColorMap[deviceIdStr])
+                    || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
+                : null;
               const progressInfo = isHeartRate
                 ? (lookupZoneProgress(participantEntry?.name)
                     || lookupZoneProgress(canonicalUserName)
@@ -931,6 +939,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 const resolved = getDisplayName(deviceIdStr);
                 deviceName = resolved.displayName;
                 deviceNameSource = `DisplayNameResolver:${resolved.source}`;
+                // §3: an unresolved card shows "Purple strap" instead of "#10366"
+                // when the strap has a configured sticker color.
+                if (resolved.source === 'fallback') {
+                  const colorLabel = strapLabel(hrColorMap[deviceIdStr]);
+                  if (colorLabel) {
+                    deviceName = colorLabel;
+                    deviceNameSource = 'strapColor';
+                  }
+                }
               } else {
                 deviceName = device.name || String(device.deviceId);
                 deviceNameSource = device.name ? 'device.name' : 'device.deviceId';
@@ -1023,6 +1040,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     )}
                     <div
                       className={`card-avatar ${zoneClass}`}
+                      // §3 ring uses outline, not box-shadow: every HR avatar
+                      // carries a zone-*/no-zone class whose box-shadow is
+                      // declared !important in FitnessSidebar.scss (it would
+                      // override any inline boxShadow). outline-offset keeps
+                      // the existing 2px zone glow visible inside the ring.
+                      style={strapRingColor
+                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '2px' }
+                        : undefined}
                     >
                       {isHeartRate ? (
                         <img
