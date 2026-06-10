@@ -13,6 +13,11 @@
 .dance-volume-btn { display: flex; align-items: center;
   &.is-muted { opacity: .45; }
 }
+// Party-lights toggle doubles as a status indicator: warm glow when on, dim when off.
+.dance-lights-btn { display: flex; align-items: center; border-radius: 50%; padding: 6px !important;
+  &.is-on { color: #ffd24a !important; filter: drop-shadow(0 0 6px rgba(255,210,74,.9)); background: rgba(255,210,74,.18) !important; }
+  &.is-off { opacity: .45; }
+}
 
 // Volume modal — compact sheet over the video, opened from the bar's icon.
 // TouchVolumeButtons inside (touch screen — discrete levels, no slider);

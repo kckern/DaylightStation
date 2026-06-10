@@ -13,9 +13,20 @@ const VolumeIcon = () => (
   </svg>
 );
 
+// Party-lights bulb (stroke follows currentColor): rays show only via CSS when on.
+const LightsIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.5.38.85.97.97 1.6l.13.6h5l.13-.6c.12-.63.46-1.22.97-1.6A6 6 0 0 0 12 3z"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function DanceNowPlayingBar({
   track, isPlaying, onPlayPause, onNext, onExit,
-  volumeLevel = 100, onVolumeSelect
+  volumeLevel = 100, onVolumeSelect,
+  lightsOn = false, onToggleLights
 }) {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const closeVolume = useCallback(() => setVolumeOpen(false), []);
@@ -34,6 +45,17 @@ export default function DanceNowPlayingBar({
           <div className="dance-artist">{track?.artist || ''}</div>
         </div>
         <div className="dance-controls">
+          {onToggleLights && (
+            <button
+              type="button"
+              className={`dance-lights-btn ${lightsOn ? 'is-on' : 'is-off'}`}
+              aria-label={lightsOn ? 'Turn party lights off' : 'Turn party lights on'}
+              aria-pressed={lightsOn}
+              onClick={onToggleLights}
+            >
+              <LightsIcon />
+            </button>
+          )}
           {onVolumeSelect && (
             <button
               type="button"
@@ -59,5 +81,7 @@ DanceNowPlayingBar.propTypes = {
   onNext: PropTypes.func.isRequired,
   onExit: PropTypes.func.isRequired,
   volumeLevel: PropTypes.number,
-  onVolumeSelect: PropTypes.func
+  onVolumeSelect: PropTypes.func,
+  lightsOn: PropTypes.bool,
+  onToggleLights: PropTypes.func
 };
