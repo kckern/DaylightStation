@@ -18,6 +18,19 @@ function ShellInner() {
     if (depth > 1) pop();
   }, [depth, pop]);
 
+  // `/` focuses search from anywhere (unless already typing somewhere).
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== '/' || e.defaultPrevented) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const input = document.querySelector('[data-testid="media-search-input"]');
+      if (input) { e.preventDefault(); input.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <div className="media-shell" data-testid="media-shell">

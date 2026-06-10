@@ -4,7 +4,7 @@
 // semantics are identical either way by design (J2 ≡ J5).
 import React from 'react';
 import { ActionIcon, Button, Group, Text, Badge } from '@mantine/core';
-import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll } from '@tabler/icons-react';
+import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
@@ -85,6 +85,25 @@ export function QueuePanel({ target = 'local' }) {
               {it.priority === 'upNext' && (
                 <Badge size="xs" color="amber" variant="light" className="queue-badge">up next</Badge>
               )}
+              {/* Reorder: discrete tap targets, not drag (touch-first) */}
+              <ActionIcon
+                size="md"
+                aria-label="Move up"
+                data-testid={`queue-moveup-${it.queueItemId}`}
+                disabled={idx === 0}
+                onClick={() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx - 1].queueItemId })}
+              >
+                <IconChevronUp size={16} />
+              </ActionIcon>
+              <ActionIcon
+                size="md"
+                aria-label="Move down"
+                data-testid={`queue-movedown-${it.queueItemId}`}
+                disabled={idx === q.items.length - 1}
+                onClick={() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx + 1].queueItemId })}
+              >
+                <IconChevronDown size={16} />
+              </ActionIcon>
               <ActionIcon
                 size="md"
                 aria-label="Remove from queue"
