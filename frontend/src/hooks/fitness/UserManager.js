@@ -1,6 +1,7 @@
 import { resolveDisplayLabel, buildZoneConfig, deriveZoneProgressSnapshot } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { DeviceOwnershipIndex } from './DeviceOwnershipIndex.js';
+import { isGenericGuestProfileId } from '../../modules/Fitness/lib/guestPlaceholders.js';
 
 export class User {
   constructor(name, birthyear, hrDeviceId = null, cadenceDeviceId = null, options = {}) {
@@ -618,6 +619,12 @@ export class UserManager {
 
     if (zones && Array.isArray(this._defaultZones)) {
       user.zoneConfig = buildZoneConfig(this._defaultZones, zones);
+    } else if (!zones && isGenericGuestProfileId(userId) && Array.isArray(this._defaultZones)) {
+      // Generic guest identities (guest_<deviceId>) are shared across
+      // re-tags (kid → adult). A re-tag without overrides must not inherit
+      // the previous occupant's zone thresholds. Configured users (non-guest_
+      // ids) keep their personal zone overrides through zone-less assignments.
+      user.zoneConfig = buildZoneConfig(this._defaultZones, null);
     }
     if (deviceId && user.hrDeviceIds.size === 0) {
       user.hrDeviceIds.add(String(deviceId));

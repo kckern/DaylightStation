@@ -3,7 +3,7 @@
 This document covers the guest assignment feature, which allows temporary user reassignment on fitness monitor devices.
 
 **Key files:**
-- `frontend/src/modules/Fitness/FitnessSidebar/FitnessSidebarMenu.jsx` - UI component
+- `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx` - UI component
 - `frontend/src/hooks/fitness/GuestAssignmentService.js` - Assignment logic and validation
 
 ---
@@ -15,7 +15,7 @@ The Assign Guest feature allows users to temporarily assign a different person (
 - A friend visits and uses a family member's device
 - The default device owner changes temporarily
 
-**Key file**: `frontend/src/modules/Fitness/FitnessSidebar/FitnessSidebarMenu.jsx`
+**Key file**: `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx`
 
 ---
 
@@ -56,10 +56,13 @@ The menu renders in two modes:
 - `mode='guest'` - Guest assignment interface
 
 When in guest mode, displays:
-1. **Top options section** - "Guest" (generic) and "Original" (restore base user)
-2. **Tab selector** - Friends / Family filter
-3. **Guest grid** - Filtered candidates with avatars
-4. **Remove User button** - Suppresses device until next reading
+1. **Contextual hints** - an explainer line for unrecognized straps (no base user), and a transfer note when the active segment is younger than the continuous-usage threshold ("{name}'s last N min on this strap will transfer to whoever you pick")
+2. **Top options section** - "Guest" (generic), a kid Guest option that displays "Guest" with a "Kid" source badge (when `guest_profiles.kid` is configured), and "Original" (restore base user; source badge "Give back")
+3. **Tab selector** - Friends / Family filter
+4. **Guest grid** - Filtered candidates with avatars
+5. **"⛔ Ignore This Strap" button** (formerly "Remove User") - Suppresses device until next reading
+
+The option-list construction (exclusion sets, tab filtering, generic options) lives in the pure, unit-tested builder `frontend/src/modules/Fitness/lib/guestOptionsBuilder.js`.
 
 ### Guest Option Structure
 
@@ -127,10 +130,11 @@ const filteredCandidates = guestCandidates.filter((candidate) => {
 
 ### 3. Top Options Logic
 
-Always-available options appear above the filtered list:
+Always-available options appear above the filtered list (built in `guestOptionsBuilder.js`):
 
-1. **Original owner** - Shows only when a guest is currently assigned, allows restoring base user
-2. **Generic "Guest"** - Always available (unless currently selected)
+1. **Original owner** - Shows only when a guest is currently assigned, allows restoring base user (source badge "Give back")
+2. **Generic "Guest"** - Available on every device — `'guest'` is inherently multi-assignable, so it is hidden only where a Guest is *currently* assigned
+3. **Kid Guest** - Displays "Guest" with a "Kid" source badge; shown when `fitness.yml → guest_profiles.kid` is configured
 
 ```javascript
 // Add original owner as first option if a guest is currently assigned
@@ -139,18 +143,25 @@ if (activeAssignment && baseName &&
   topOptions.push({
     id: baseUserId,
     name: baseName,
-    source: 'Original',
+    source: 'Give back',
     isOriginal: true
   });
 }
 
-// Add generic guest
+// Add generic guest — note: no profileId here. It is synthesized at
+// assignment time as `guest_<deviceId>` (W2) so each device gets a
+// distinct anonymous identity.
 topOptions.push({
   id: 'guest',
   name: 'Guest',
   source: 'Guest',
   isGeneric: true
 });
+
+// Kid variant (audit N4): carries configured kid zone thresholds at assign time
+if (guestProfiles?.kid && !seen.has('guest-kid')) {
+  topOptions.push({ id: 'guest-kid', name: 'Guest', source: 'Kid', isGeneric: true, ageClass: 'kid' });
+}
 ```
 
 ### 4. Making an Assignment
@@ -159,12 +170,28 @@ When user selects a guest:
 
 ```javascript
 const handleAssignGuest = (option) => {
+  // W2: generic "Guest" gets a device-keyed alias so two simultaneous
+  // Guests on different devices resolve to distinct User identities.
+  const profileId = option.isGeneric
+    ? `guest_${deviceIdStr}`
+    : (option.profileId || option.id);
+  // N3: simultaneous generic Guests get numbered names — "Guest", "Guest 2", ...
+  // (nextGenericGuestName counts adult AND kid generics jointly)
+  const name = option.isGeneric
+    ? nextGenericGuestName(deviceAssignments)
+    : option.name;
+  // N4: age-class options carry configured zone overrides (guest_profiles.kid.zones,
+  // converted map → [{id, min}] array by zonesMapToArray)
+  const ageClass = option.ageClass || null;
+  const zones = ageClass ? zonesMapToArray(guestProfiles?.[ageClass]?.zones) : null;
   assignGuestToDevice(deviceIdStr, {
-    name: option.name,
-    profileId: option.profileId,
+    name,
+    profileId,
     candidateId: option.id,
     source: option.source,
-    baseUserName: baseName  // Preserves original owner
+    baseUserName: baseName,  // Preserves original owner
+    ...(ageClass ? { ageClass } : {}),
+    ...(zones ? { zones } : {})
   });
   onClose();
 };
@@ -176,11 +203,13 @@ The metadata stored with each assignment:
 
 | Field | Purpose |
 |-------|---------|
-| `name` | Guest display name |
+| `name` | Guest display name (numbered for simultaneous generics: "Guest", "Guest 2", …) |
 | `profileId` | Avatar lookup ID |
-| `candidateId` | Original candidate ID |
-| `source` | Category (Friend/Family/Guest) |
+| `candidateId` | Original candidate ID (`'guest'` / `'guest-kid'` for generics) |
+| `source` | Category badge (Friend/Family/Guest/Kid/Give back) |
 | `baseUserName` | Original device owner (for restoration) |
+| `ageClass` | Optional — `'kid'` when assigned via the kid Guest option; persisted as `guest_profile` |
+| `zones` | Optional — `[{ id, min }]` zone-threshold overrides from `guest_profiles.{ageClass}.zones`, applied by UserManager |
 
 ---
 
@@ -197,9 +226,9 @@ const handleClearGuest = () => {
 };
 ```
 
-### Remove User
+### Ignore This Strap (Remove User)
 
-Suppresses device until next heart rate reading (effectively removes user from session):
+The "⛔ Ignore This Strap" button (formerly labeled "Remove User") suppresses the device until the next heart rate reading (effectively removes user from session):
 
 ```javascript
 const handleRemoveUser = () => {
@@ -243,9 +272,14 @@ guestCandidates.forEach((candidate) => {
     if (candidate.id) multiAssignableKeys.add(String(candidate.id));
   }
 });
+// W2: the generic candidate ids are ALWAYS multi-assignable — each
+// assignment resolves to a distinct guest_<deviceId> identity, so the raw
+// id must never globally block the option on other devices.
+multiAssignableKeys.add('guest');
+multiAssignableKeys.add('guest-kid');
 ```
 
-Users with `allowWhileAssigned: true` bypass the "already assigned" exclusion filter.
+Users with `allowWhileAssigned: true` bypass the "already assigned" exclusion filter. The generic `'guest'` / `'guest-kid'` ids get the same bypass unconditionally (`guestOptionsBuilder.js`).
 
 ---
 
@@ -295,12 +329,13 @@ This means governance requirements are evaluated based on **who is currently ass
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessSidebarMenu.jsx` | UI component |
+| `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx` | UI component |
+| `frontend/src/modules/Fitness/lib/guestOptionsBuilder.js` | Pure option-list builder (exclusions, generics, `nextGenericGuestName`, `zonesMapToArray`) |
 | `frontend/src/hooks/fitness/GuestAssignmentService.js` | Assignment logic, validation |
 | `frontend/src/hooks/fitness/DeviceAssignmentLedger.js` | Assignment state storage |
 | `frontend/src/context/FitnessContext.jsx` | State management |
 | `frontend/src/hooks/fitness/UserManager.js` | User-device mapping |
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessSidebar.scss` | Styles |
+| `frontend/src/modules/Fitness/player/FitnessSidebar.scss` | Styles |
 
 ---
 
@@ -480,7 +515,7 @@ After Carol assigned to Device #1:
   Device #2: (no assignment)  → Candidates: [Guest, Dave]
                                             ↑ Carol EXCLUDED
 
-Constraint enforcement (FitnessSidebarMenu.jsx:138-150):
+Constraint enforcement (guestOptionsBuilder.js):
 ┌─────────────────────────────────────────────────────────────────────┐
 │  deviceAssignments.forEach((assignment) => {                        │
 │    // Collect all IDs associated with this assignment               │
@@ -584,23 +619,34 @@ Alice reclaims Device #1:
 
 ### Scenario 6: allowWhileAssigned Override
 
-**Use case**: Generic "Guest" can be assigned to multiple devices.
+**Use case**: A displaced primary (their device was taken by a guest) can be
+assigned to any device — including reclaiming their own — even though their
+name is technically "assigned." `FitnessSidebar.jsx` sets
+`allowWhileAssigned: true` on these returnee candidates automatically.
 
 ```
 Configuration:
   guestCandidates: [
-    { id: 'guest', name: 'Guest', allowWhileAssigned: true },
+    { id: 'alice', name: 'Alice', allowWhileAssigned: true },   // displaced primary
     { id: 'eve', name: 'Eve', allowWhileAssigned: false }
   ]
 
 State:
-  Device #1: Guest assigned
+  Device #1: Alice's device, currently occupied by guest Eve
   Device #2: (selecting...)
 
 Available for Device #2:
-  [Guest, Eve]  ← Guest NOT excluded despite being on Device #1
+  [Guest, Alice]  ← Alice NOT excluded despite appearing in Device #1's assignment
 
-Constraint bypass (FitnessSidebarMenu.jsx:123-128):
+Note on generic "Guest": it is not a guestCandidates entry, but its ids
+('guest' and 'guest-kid') are added to multiAssignableKeys unconditionally
+in guestOptionsBuilder.js — the generic options are inherently
+multi-assignable. The picker now matches the W2 device-keyed identity model
+(guest_<deviceId>): any number of simultaneous generic Guests can be
+created, each getting a numbered display name ("Guest", "Guest 2", ...) via
+nextGenericGuestName. See guest-mode.md § Guest Identity Classes.
+
+Constraint bypass (guestOptionsBuilder.js):
 ┌─────────────────────────────────────────────────────────────────────┐
 │  const multiAssignableKeys = new Set();                             │
 │  guestCandidates.forEach((candidate) => {                           │

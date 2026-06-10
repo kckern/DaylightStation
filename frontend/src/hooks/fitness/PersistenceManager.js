@@ -196,11 +196,16 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
     const isPrimary = isExplicitlyPrimary || (!isExplicitlyGuest && !isExplicitlyPrimary);
     const isGuest = isExplicitlyGuest && !isExplicitlyPrimary;
 
+    // Audit N4: record which guest age-class profile (e.g. 'kid') the guest
+    // rode under, sourced from the assignment ledger metadata.
+    const guestAgeClass = assignment?.metadata?.ageClass || null;
+
     participants[participantId] = {
       ...(name ? { display_name: name } : {}),
       ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
       ...(isPrimary ? { is_primary: true } : {}),
       ...(isGuest ? { is_guest: true } : {}),
+      ...(isGuest && guestAgeClass ? { guest_profile: guestAgeClass } : {}),
       ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
     };
   });
