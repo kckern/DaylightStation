@@ -9,6 +9,7 @@ import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
 import { heartEmojiForColor } from '../../lib/strapColors.js';
+import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -895,6 +896,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     || resolvedUser?.id
                     || 'user') // Fallback to generic avatar instead of slugifying
                 : (equipmentInfo?.id || 'equipment');
+              // Audit N5: generic Guests get a distinct placeholder avatar so
+              // claimed-but-anonymous straps don't look like untagged ones.
+              const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
+                ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
+                : profileId;
               const progressInfo = isHeartRate
                 ? (lookupZoneProgress(participantEntry?.name)
                     || lookupZoneProgress(canonicalUserName)
@@ -1020,7 +1026,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     >
                       {isHeartRate ? (
                         <img
-                          src={DaylightMediaPath(`/static/img/users/${profileId}`)}
+                          src={DaylightMediaPath(`/static/img/users/${avatarImageId}`)}
                           alt={`${deviceName} profile`}
                           className="user-profile-img"
                           onError={(e) => {
