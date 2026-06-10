@@ -65,3 +65,15 @@ describe('buildGuestOptions — characterization', () => {
     expect(out.topOptions.some(o => o.id === 'guest')).toBe(false);
   });
 });
+
+describe('buildGuestOptions — multi-Guest (audit N2)', () => {
+  it('still offers generic Guest on device B while device A has a generic Guest', () => {
+    const out = buildGuestOptions({
+      guestCandidates: [],
+      deviceAssignments: [{ deviceId: 'A', metadata: { candidateId: 'guest', profileId: 'guest_A' }, occupantId: 'guest_A', occupantName: 'Guest' }],
+      activeAssignment: null,
+      selectedTab: 'friends'
+    });
+    expect(out.topOptions.some(o => o.id === 'guest' && o.isGeneric)).toBe(true);
+  });
+});
