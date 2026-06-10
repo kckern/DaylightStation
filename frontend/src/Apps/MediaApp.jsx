@@ -13,6 +13,7 @@ import { ClientIdentityProvider } from '../modules/Media/identity/ClientIdentity
 import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvider.jsx';
 import { SearchProvider } from '../modules/Media/search/SearchProvider.jsx';
 import { FleetProvider } from '../modules/Media/fleet/FleetProvider.jsx';
+import { PeekProvider } from '../modules/Media/peek/PeekProvider.jsx';
 import mediaLog from '../modules/Media/logging/mediaLog.js';
 import './MediaApp.scss';
 
@@ -30,11 +31,13 @@ export default function MediaApp() {
       <ClientIdentityProvider>
         <LocalSessionProvider>
           <FleetProvider>
-            <SearchProvider>
-              <div className="media-app">
-                <MediaAppShell />
-              </div>
-            </SearchProvider>
+            <PeekProvider>
+              <SearchProvider>
+                <div className="media-app">
+                  <MediaAppShell />
+                </div>
+              </SearchProvider>
+            </PeekProvider>
           </FleetProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
