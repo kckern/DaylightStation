@@ -10,15 +10,29 @@
 .dance-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dance-artist { font-size: 12px; opacity: .8; }
 .dance-controls { display: flex; gap: 14px; }
-// TouchVolumeButtons strip (touch screen — discrete levels, no slider),
-// themed for the dark now-playing gradient. First segment (level 0) = mute.
-.dance-volume { flex: 0 0 auto; width: min(320px, 32vw);
-  .touch-volume {
-    display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; width: 100%;
-    touch-action: none;
-  }
+.dance-volume-btn { font-size: 20px !important; }
+
+// Volume modal — compact sheet over the video, opened from the bar's icon.
+// TouchVolumeButtons inside (touch screen — discrete levels, no slider);
+// first segment (level 0) = mute.
+.dance-volume-modal { position: absolute; inset: 0; z-index: 8; }
+.dance-volume-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.dance-volume-modal__sheet {
+  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  width: min(520px, 92vw); padding: 16px; border-radius: 12px;
+  background: rgba(12,12,24,.92); border: 1px solid rgba(255,255,255,.18);
+  box-shadow: 0 12px 40px rgba(0,0,0,.6); color: #fff;
+}
+.dance-volume-modal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; font-size: 14px; font-weight: 600;
+  button { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+}
+.dance-volume-modal__sheet .touch-volume {
+  display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; width: 100%;
+  touch-action: none;
   .touch-volume-button {
-    height: 34px; padding: 0; cursor: pointer; border-radius: 4px;
+    height: 48px; padding: 0; cursor: pointer; border-radius: 5px;
     border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
     transition: background .15s ease, border-color .15s ease;
   }

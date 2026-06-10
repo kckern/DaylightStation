@@ -7,6 +7,8 @@ import { resolveDancePlaylists } from './resolveDancePlaylists.js';
 import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
+import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
+import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './DancePartyWidget.scss';
 
@@ -96,6 +98,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       const isFirstTrack = trackKeyRef.current == null;
       trackKeyRef.current = newKey;
       setTrack({
+        key: newKey,
         title: media.title || media.label || media.parentTitle || null,
         artist: media.artist || media.albumArtist || media.grandparentTitle || media.parentTitle || null,
         coverUrl: newKey ? ContentDisplayUrl(newKey) : null
@@ -143,14 +146,21 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     audioRef.current?.advance?.(1);
   }, []);
 
-  // Touch volume (now-playing bar): TouchVolumeButtons levels (0-100 in tens,
-  // 0 = mute) → Player's 0-1 session volume.
-  const [volumeLevel, setVolumeLevel] = useState(100);
+  // Persistent volume (VolumeProvider store): survives exits/reloads, scoped
+  // to the dance audio playlist. The current track key in the ids makes the
+  // hook re-apply the stored level whenever the audio element swaps on track
+  // change. TouchVolumeButtons levels (0-100 in tens, 0 = mute) ↔ linear 0-1.
+  const volumeState = usePersistentVolume({
+    grandparentId: 'fitness-dance',
+    parentId: audioPlaylistId != null ? String(audioPlaylistId) : 'global',
+    trackId: track?.key || 'dance',
+    playerRef: audioRef
+  });
+  const volumeLevel = snapToTouchLevel(linearLevelFromVolume(volumeState.muted ? 0 : volumeState.volume));
   const handleVolumeSelect = useCallback((level) => {
-    setVolumeLevel(level);
-    audioRef.current?.setVolume?.(level / 100);
+    volumeState.setVolume(linearVolumeFromLevel(level));
     logger.info('fitness.dance.volume_select', { level });
-  }, [logger]);
+  }, [volumeState, logger]);
 
   // Press the video → fullscreen party: the widget root escapes the app frame
   // (fixed overlay over the fitness sidebar/chrome); press again to restore.
