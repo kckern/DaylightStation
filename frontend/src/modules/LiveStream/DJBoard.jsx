@@ -1,6 +1,6 @@
-// frontend/src/modules/Media/LiveStream/DJBoard.jsx
+// frontend/src/modules/LiveStream/DJBoard.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 import ProgramStatus from './ProgramStatus.jsx';
 
 const DJBoard = ({ channel, onBack }) => {

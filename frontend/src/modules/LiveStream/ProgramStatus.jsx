@@ -1,6 +1,6 @@
-// frontend/src/modules/Media/LiveStream/ProgramStatus.jsx
+// frontend/src/modules/LiveStream/ProgramStatus.jsx
 import React from 'react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 
 const ProgramStatus = ({ channel, status, onUpdate }) => {
   if (!status.activeProgram) return null;
