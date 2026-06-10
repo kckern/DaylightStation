@@ -1,43 +1,49 @@
-import React, { useEffect, useState } from 'react';
-import { useSessionController } from '../session/useSessionController.js';
+// frontend/src/modules/Media/browse/RecentsRow.jsx
+// Horizontal strip of recently played items (local recents store). Tapping a
+// tile plays it now.
+import React, { useState, useEffect, useCallback } from 'react';
+import { UnstyledButton, Text, Title } from '@mantine/core';
 import { readRecents } from '../session/recents.js';
+import { useSessionController } from '../controller/useSessionController.js';
 
 export function RecentsRow() {
+  const [recents, setRecents] = useState(() => readRecents());
   const { queue } = useSessionController('local');
-  const [items, setItems] = useState(() => readRecents());
 
+  const refresh = useCallback(() => setRecents(readRecents()), []);
   useEffect(() => {
-    function refresh() { setItems(readRecents()); }
-    // Cross-tab: storage event fires for changes made in other tabs.
-    function onStorage(e) {
-      if (e.key === 'media-app.recents') refresh();
-    }
-    // Same-tab: custom event dispatched by recordRecent.
-    window.addEventListener('storage', onStorage);
     window.addEventListener('media-recents-updated', refresh);
+    window.addEventListener('storage', refresh);
     return () => {
-      window.removeEventListener('storage', onStorage);
       window.removeEventListener('media-recents-updated', refresh);
+      window.removeEventListener('storage', refresh);
     };
-  }, []);
+  }, [refresh]);
 
-  if (items.length === 0) return null;
+  if (recents.length === 0) {
+    return (
+      <Text c="dimmed" size="sm" data-testid="home-recents-empty">
+        Recently played items will appear here.
+      </Text>
+    );
+  }
 
   return (
     <section data-testid="recents-row" className="recents-row">
-      <h2 className="recents-row-title">Recently played</h2>
-      <div className="recents-row-items">
-        {items.map((it) => (
-          <button
-            key={it.contentId}
-            data-testid={`recent-${it.contentId}`}
-            className="recent-card"
-            onClick={() => queue.playNow({ contentId: it.contentId, title: it.title, thumbnail: it.thumbnail, format: it.format }, { clearRest: true })}
-            title={it.title ?? it.contentId}
+      <Title order={2} mb="sm">Recent</Title>
+      <div className="recents-scroll">
+        {recents.map((r) => (
+          <UnstyledButton
+            key={r.contentId}
+            data-testid={`recent-${r.contentId}`}
+            className="recent-tile"
+            onClick={() => queue.playNow?.({ contentId: r.contentId, title: r.title, format: r.format, thumbnail: r.thumbnail }, { clearRest: true })}
           >
-            {it.thumbnail && <img src={it.thumbnail} alt="" loading="lazy" className="recent-card-thumb" />}
-            <span className="recent-card-title">{it.title ?? it.contentId}</span>
-          </button>
+            {r.thumbnail
+              ? <img className="recent-tile-thumb" src={r.thumbnail} alt="" loading="lazy" />
+              : <div className="recent-tile-thumb recent-tile-thumb--blank" aria-hidden />}
+            <span className="recent-tile-title">{r.title ?? r.contentId}</span>
+          </UnstyledButton>
         ))}
       </div>
     </section>

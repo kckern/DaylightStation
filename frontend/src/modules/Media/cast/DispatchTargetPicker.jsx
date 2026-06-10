@@ -1,3 +1,7 @@
+// frontend/src/modules/Media/cast/DispatchTargetPicker.jsx
+// The dispatch form: pick device(s), pick Transfer (local stops on confirmed
+// success) or Fork (local keeps playing), submit. One component for inline
+// cast (rows), the detail page, and Now Playing hand-off.
 import React from 'react';
 import { useDispatchTargetPicker } from './useDispatchTargetPicker.js';
 
@@ -22,7 +26,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, sub
               checked={selected.has(d.id)}
               onChange={() => toggle(d.id)}
             />
-            <span className="picker-device-name">{d.name}</span>
+            <span className="picker-device-name">{d.name ?? d.id}</span>
             <span className="picker-device-location">{d.location ?? ''}</span>
           </label>
         ))}

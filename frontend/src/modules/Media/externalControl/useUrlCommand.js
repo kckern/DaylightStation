@@ -1,7 +1,14 @@
+// frontend/src/modules/Media/externalControl/useUrlCommand.js
+// URL deep-link protocol (C8.1, §8): ?play= autoplays, ?queue= appends, plus
+// shuffle/shader/volume modifiers. Processing is idempotent across refreshes
+// via a persisted dedupe token. Nav params (?view=…) are a separate
+// namespace handled by NavProvider — see lib/urlParams.js.
 import { useEffect, useRef } from 'react';
+import { STORAGE_KEYS } from '../constants.js';
+import { PLAYBACK_PARAM_KEYS, NAV_PARAM_KEYS } from '../lib/urlParams.js';
 import mediaLog from '../logging/mediaLog.js';
 
-export const URL_TOKEN_KEY = 'media-app.url-command-token';
+export const URL_TOKEN_KEY = STORAGE_KEYS.URL_COMMAND_TOKEN;
 
 function tokenFor(search) {
   return `v1:${search}`;
@@ -18,10 +25,10 @@ function parse(search) {
 
   const unknownKeys = [];
   for (const k of sp.keys()) {
-    if (!['play', 'queue', 'shuffle', 'shader', 'volume'].includes(k)) unknownKeys.push(k);
+    if (!PLAYBACK_PARAM_KEYS.includes(k) && !NAV_PARAM_KEYS.includes(k)) unknownKeys.push(k);
   }
 
-  // Volume: spec says URL is 0..1 float; snapshot stores 0..100 int.
+  // Spec §8: URL volume is a 0..1 float; the snapshot stores 0..100 int.
   let volume;
   if (volumeRaw != null) {
     const n = Number(volumeRaw);
@@ -59,6 +66,7 @@ export function useUrlCommand(controller, searchString = typeof window !== 'unde
     if (cmd.shader != null) controller.config.setShader(cmd.shader);
     if (cmd.volume != null) controller.config.setVolume(cmd.volume);
 
+    // Precedence (§8): play wins; queue appends after the played item.
     if (cmd.play) {
       controller.queue.playNow({ contentId: cmd.play }, { clearRest: true });
       mediaLog.urlCommandProcessed({ param: 'play', value: cmd.play });

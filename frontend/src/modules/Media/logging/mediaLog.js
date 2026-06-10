@@ -1,3 +1,4 @@
+// frontend/src/modules/Media/logging/mediaLog.js
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 
 let _logger;
@@ -48,7 +49,7 @@ export const mediaLog = {
   dispatchStep:           sampled('dispatch.step', { maxPerMinute: 30, aggregate: true }),
   dispatchSucceeded:      info('dispatch.succeeded'),
   dispatchFailed:         warn('dispatch.failed'),
-  dispatchDeduplicated:      info('dispatch.deduplicated'),
+  dispatchDeduplicated:   info('dispatch.deduplicated'),
   peekEntered:            info('peek.entered'),
   peekExited:             info('peek.exited'),
   peekCommand:            debug('peek.command'),
@@ -56,7 +57,7 @@ export const mediaLog = {
   takeoverInitiated:      info('takeover.initiated'),
   takeoverSucceeded:      info('takeover.succeeded'),
   takeoverFailed:         warn('takeover.failed'),
-  takeoverDrift:             warn('takeover.drift'),
+  takeoverDrift:          warn('takeover.drift'),
   handoffInitiated:       info('handoff.initiated'),
   handoffSucceeded:       info('handoff.succeeded'),
   handoffFailed:          warn('handoff.failed'),
@@ -64,11 +65,12 @@ export const mediaLog = {
   wsDisconnected:         info('ws.disconnected'),
   wsReconnected:          info('ws.reconnected'),
   wsStale:                warn('ws.stale'),
-  externalControlReceived:info('external-control.received'),
-  externalControlRejected:warn('external-control.rejected'),
+  externalControlReceived: info('external-control.received'),
+  externalControlRejected: warn('external-control.rejected'),
   urlCommandProcessed:    info('url-command.processed'),
   urlCommandIgnored:      debug('url-command.ignored'),
-  transportCommand:          sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
+  navPushed:              debug('nav.pushed'),
+  transportCommand:       sampled('transport.command', { maxPerMinute: 60, aggregate: true }),
 };
 
 export default mediaLog;

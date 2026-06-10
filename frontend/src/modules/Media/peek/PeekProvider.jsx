@@ -1,79 +1,68 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { wsService } from '../../../services/WebSocketService.js';
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
-import { RemoteSessionAdapter } from './RemoteSessionAdapter.js';
+// frontend/src/modules/Media/peek/PeekProvider.jsx
+// Owns the ack router (ONE device-ack:* subscription) and a cache of remote
+// session controllers. Multiple peeks may be active at once (C5.5); the
+// local session is never touched by anything here (C5.6).
+import React, { useContext, useEffect, useMemo, useRef, useCallback } from 'react';
+import { PeekContext } from './PeekContext.js';
+import { createAckRouter } from './ackRouter.js';
+import { createRemoteSessionController } from './RemoteSessionController.js';
+import { subscribeTopicKind } from '../net/ws.js';
+import { FleetContext } from '../fleet/FleetProvider.jsx';
 import mediaLog from '../logging/mediaLog.js';
 
-export const PeekContext = createContext(null);
-
-function isAckMsg(msg) {
-  return !!msg && typeof msg.topic === 'string' && msg.topic.startsWith('device-ack:');
-}
-
 export function PeekProvider({ children }) {
-  const { devices, byDevice } = useFleetContext();
-  const [activePeeks, setActivePeeks] = useState(new Map());
-  const adaptersRef = useRef(new Map());
-  const byDeviceRef = useRef(byDevice);
-  useEffect(() => { byDeviceRef.current = byDevice; }, [byDevice]);
+  const fleet = useContext(FleetContext);
+  if (!fleet) throw new Error('PeekProvider must be inside FleetProvider');
+  const { store: fleetStore } = fleet;
+
+  const ackRouterRef = useRef(null);
+  if (!ackRouterRef.current) ackRouterRef.current = createAckRouter();
+  const ackRouter = ackRouterRef.current;
+
+  const controllersRef = useRef(new Map()); // deviceId -> controller
 
   useEffect(() => {
-    const unsub = wsService.subscribe(isAckMsg, (msg) => {
-      const { deviceId, commandId, ok, error } = msg;
-      if (!deviceId || !commandId) return;
-      const adapter = adaptersRef.current.get(deviceId);
-      if (adapter) adapter._resolveAck({ commandId, ok, error });
+    return subscribeTopicKind('device-ack', (msg) => {
+      if (typeof msg.commandId !== 'string') return;
+      ackRouter.resolve({ commandId: msg.commandId, ok: msg.ok, error: msg.error });
     });
-    return unsub;
+  }, [ackRouter]);
+
+  useEffect(() => () => {
+    for (const ctl of controllersRef.current.values()) ctl.destroy?.();
+    controllersRef.current.clear();
   }, []);
 
-  const enterPeek = useCallback((deviceId) => {
-    const cfg = devices.find((d) => d.id === deviceId);
-    if (!cfg) return null;
-    let adapter = adaptersRef.current.get(deviceId);
-    if (!adapter) {
-      adapter = new RemoteSessionAdapter({
-        deviceId,
-        httpClient: DaylightAPI,
-        getSnapshot: () => byDeviceRef.current.get(deviceId)?.snapshot ?? null,
-      });
-      adaptersRef.current.set(deviceId, adapter);
+  const getController = useCallback((deviceId) => {
+    if (typeof deviceId !== 'string' || !deviceId) return null;
+    let ctl = controllersRef.current.get(deviceId);
+    if (!ctl) {
+      ctl = createRemoteSessionController({ deviceId, fleetStore, ackRouter });
+      controllersRef.current.set(deviceId, ctl);
     }
-    setActivePeeks((prev) => {
-      const next = new Map(prev);
-      next.set(deviceId, { controller: adapter, enteredAt: new Date().toISOString() });
-      return next;
-    });
+    return ctl;
+  }, [fleetStore, ackRouter]);
+
+  const enterPeek = useCallback((deviceId) => {
     mediaLog.peekEntered({ deviceId });
-    return adapter;
-  }, [devices]);
+    getController(deviceId);
+  }, [getController]);
 
   const exitPeek = useCallback((deviceId) => {
-    setActivePeeks((prev) => {
-      if (!prev.has(deviceId)) return prev;
-      const next = new Map(prev);
-      next.delete(deviceId);
-      return next;
-    });
     mediaLog.peekExited({ deviceId });
   }, []);
 
-  const getAdapter = useCallback((deviceId) => {
-    return adaptersRef.current.get(deviceId) ?? null;
-  }, []);
-
   const value = useMemo(
-    () => ({ activePeeks, enterPeek, exitPeek, getAdapter }),
-    [activePeeks, enterPeek, exitPeek, getAdapter]
+    () => ({ getController, enterPeek, exitPeek }),
+    [getController, enterPeek, exitPeek]
   );
 
   return <PeekContext.Provider value={value}>{children}</PeekContext.Provider>;
 }
 
-export function usePeekContext() {
+export function usePeek() {
   const ctx = useContext(PeekContext);
-  if (!ctx) throw new Error('usePeekContext must be used inside PeekProvider');
+  if (!ctx) throw new Error('usePeek must be used inside PeekProvider');
   return ctx;
 }
 

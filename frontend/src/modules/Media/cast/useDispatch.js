@@ -1,1 +1,1 @@
-export { useDispatch } from './DispatchProvider.jsx';
+export { useDispatch, useDispatch as default } from './DispatchProvider.jsx';

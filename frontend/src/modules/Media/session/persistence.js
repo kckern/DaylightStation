@@ -1,5 +1,11 @@
-export const PERSIST_KEY = 'media-app.session';
-export const PERSIST_SCHEMA_VERSION = 1;
+// frontend/src/modules/Media/session/persistence.js
+// PersistedSession v1 — byte-compatible with sessions written by the previous
+// app generation (docs/reference/media/media-app-technical.md §11.2/§11.3).
+// Do not change the serialized shape without a schema bump + migration.
+import { STORAGE_KEYS, SESSION_SCHEMA_VERSION } from '../constants.js';
+
+export const PERSIST_KEY = STORAGE_KEYS.SESSION;
+export const PERSIST_SCHEMA_VERSION = SESSION_SCHEMA_VERSION;
 
 function serialize(snapshot, { wasPlayingOnUnload } = {}) {
   return JSON.stringify({

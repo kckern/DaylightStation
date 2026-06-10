@@ -1,48 +1,28 @@
-import React, { useEffect, useRef } from 'react';
-import { useDismissable } from '../../../hooks/useDismissable.js';
+// frontend/src/modules/Media/shell/ConfirmDialog.jsx
+import React from 'react';
+import { Modal, Button, Group, Text } from '@mantine/core';
+import { useDismissLayer } from './DismissStackProvider.jsx';
 
-export function ConfirmDialog({
-  open,
-  title = 'Confirm',
-  message = 'Are you sure?',
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  onConfirm,
-  onCancel,
-}) {
-  const ref = useRef(null);
-  useDismissable(ref, { open, onDismiss: onCancel });
+export function ConfirmDialog({ open, title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', onConfirm, onCancel }) {
+  // Mantine Modal closes itself on Escape; register as a managed layer so the
+  // shell's base dismiss (view back) is suppressed while open.
+  useDismissLayer(open, onCancel, { managed: true });
 
-  useEffect(() => {
-    if (open) ref.current?.querySelector('[data-testid="confirm-cancel"]')?.focus();
-  }, [open]);
-
-  if (!open) return null;
   return (
-    <div className="confirm-backdrop">
-      <div
-        data-testid="confirm-dialog"
-        className="confirm-dialog"
-        role="dialog"
-        aria-modal="true"
-        ref={ref}
-      >
-        <div className="confirm-dialog__title">{title}</div>
-        <div className="confirm-dialog__message">{message}</div>
-        <div className="confirm-dialog__actions">
-          <button data-testid="confirm-cancel" className="confirm-btn" onClick={onCancel}>
+    <Modal opened={open} onClose={onCancel} title={title} centered size="sm">
+      {/* testid lives on the content (the Modal root has no box) */}
+      <div data-testid="confirm-dialog">
+        <Text size="sm" mb="md">{message}</Text>
+        <Group justify="flex-end" gap="sm">
+          <Button data-testid="confirm-cancel" variant="default" onClick={onCancel}>
             {cancelLabel}
-          </button>
-          <button
-            data-testid="confirm-ok"
-            className="confirm-btn confirm-btn--danger"
-            onClick={onConfirm}
-          >
+          </Button>
+          <Button data-testid="confirm-ok" color="red" onClick={onConfirm}>
             {confirmLabel}
-          </button>
-        </div>
+          </Button>
+        </Group>
       </div>
-    </div>
+    </Modal>
   );
 }
 

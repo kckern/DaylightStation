@@ -1,6 +1,11 @@
+// frontend/src/modules/Media/cast/useDispatchTargetPicker.js
+// State for the dispatch target picker: device multi-select (seeded from the
+// preferred cast target), transfer/fork mode, and submit. A `snapshot`
+// source dispatches in adopt mode (hand-off); transfer-vs-fork still
+// controls whether local stops on confirmed success.
 import { useCallback, useState } from 'react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
-import { useDispatch } from './useDispatch.js';
+import { useDispatch } from './DispatchProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
 
 export function useDispatchTargetPicker({ source, onComplete } = {}) {
@@ -10,7 +15,7 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const [selected, setSelected] = useState(() => new Set(defaultTargets));
   const [mode, setMode] = useState(defaultMode ?? 'transfer');
 
-  const devices = Object.values(fleet.devices ?? {});
+  const devices = fleet.devices ?? [];
 
   const toggle = useCallback((id) => {
     setSelected((prev) => {
@@ -27,22 +32,16 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     if (!canSubmit) return;
     const targetIds = Array.from(selected);
     const params = { targetIds, mode };
-    if (source?.play) params.play = source.play;
-    if (source?.queue) params.queue = source.queue;
-    if (source?.snapshot) params.snapshot = source.snapshot;
+    // Hand-off snapshots are captured AT SUBMIT so the position is current.
+    const snapshot = source?.getSnapshot?.() ?? source?.snapshot;
+    if (snapshot) params.snapshot = snapshot;
+    else if (source?.play) params.play = source.play;
+    else if (source?.queue) params.queue = source.queue;
     dispatchToTarget(params);
     onComplete?.({ targetIds, mode });
   }, [canSubmit, selected, mode, source, dispatchToTarget, onComplete]);
 
-  return {
-    devices,
-    selected,
-    mode,
-    canSubmit,
-    toggle,
-    setMode,
-    submit,
-  };
+  return { devices, selected, mode, canSubmit, toggle, setMode, submit };
 }
 
 export default useDispatchTargetPicker;
