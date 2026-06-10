@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGuestOptions, nextGenericGuestName } from './guestOptionsBuilder.js';
+import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from './guestOptionsBuilder.js';
 
 const friend = (id, name) => ({ id, name, profileId: id, category: 'Friend' });
 
@@ -96,5 +96,48 @@ describe('nextGenericGuestName (audit N3)', () => {
   });
   it('ignores named-guest assignments', () => {
     expect(nextGenericGuestName([{ deviceId: 'A', occupantName: 'Eve', metadata: { candidateId: 'eve' } }])).toBe('Guest');
+  });
+});
+
+describe('Guest (kid) option (audit N4)', () => {
+  it('adds a kid generic option when guestProfiles.kid is configured', () => {
+    const out = buildGuestOptions({
+      guestCandidates: [],
+      deviceAssignments: [],
+      selectedTab: 'friends',
+      guestProfiles: { kid: { zones: { active: 95, warm: 130, hot: 155, fire: 175 } } }
+    });
+    const kid = out.topOptions.find(o => o.id === 'guest-kid');
+    expect(kid).toMatchObject({ isGeneric: true, ageClass: 'kid', source: 'Kid' });
+    expect(out.topOptions.some(o => o.id === 'guest')).toBe(true);
+  });
+
+  it('omits the kid option without config', () => {
+    const out = buildGuestOptions({ guestCandidates: [], deviceAssignments: [], selectedTab: 'friends' });
+    expect(out.topOptions.some(o => o.id === 'guest-kid')).toBe(false);
+  });
+
+  it('kid option stays available across devices like the adult generic (W2)', () => {
+    const out = buildGuestOptions({
+      guestCandidates: [],
+      deviceAssignments: [{ deviceId: 'A', metadata: { candidateId: 'guest-kid', profileId: 'guest_A' }, occupantId: 'guest_A', occupantName: 'Guest' }],
+      selectedTab: 'friends',
+      guestProfiles: { kid: { zones: { active: 95 } } }
+    });
+    expect(out.topOptions.some(o => o.id === 'guest-kid')).toBe(true);
+  });
+});
+
+describe('zonesMapToArray', () => {
+  it('converts a users.yml-style zone map to the ledger array shape', () => {
+    expect(zonesMapToArray({ active: 95, warm: 130 })).toEqual([
+      { id: 'active', min: 95 },
+      { id: 'warm', min: 130 }
+    ]);
+  });
+  it('returns null for empty/invalid input', () => {
+    expect(zonesMapToArray(null)).toBeNull();
+    expect(zonesMapToArray({})).toBeNull();
+    expect(zonesMapToArray({ active: 'high' })).toBeNull();
   });
 });

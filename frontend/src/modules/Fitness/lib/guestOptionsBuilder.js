@@ -24,7 +24,8 @@ export function buildGuestOptions({
   activeHeartRateParticipants = [],
   baseName = null,
   baseUserId = null,
-  selectedTab = 'friends'
+  selectedTab = 'friends',
+  guestProfiles = null
 } = {}) {
   const seen = new Set();
   const topOptions = [];
@@ -39,6 +40,7 @@ export function buildGuestOptions({
   // currently-selected check (currentlySelectedId) still hides it on the
   // device where it is actively assigned.
   multiAssignableKeys.add('guest');
+  multiAssignableKeys.add('guest-kid');
 
   // Track the currently selected user to exclude them from the list
   const currentlySelectedId = activeAssignment?.metadata?.candidateId
@@ -96,6 +98,14 @@ export function buildGuestOptions({
     topOptions.push({ id: 'guest', name: 'Guest', source: 'Guest', isGeneric: true });
   }
 
+  // Audit N4: a configured kid guest profile (fitness.yml guest_profiles.kid)
+  // adds a second generic option whose zone thresholds override the strap
+  // owner's adult zones via ledger metadata.zones.
+  if (guestProfiles?.kid && !seen.has('guest-kid')) {
+    seen.add('guest-kid');
+    topOptions.push({ id: 'guest-kid', name: 'Guest', source: 'Kid', isGeneric: true, ageClass: 'kid' });
+  }
+
   // Filter candidates based on selected tab
   const filteredCandidates = guestCandidates.filter((candidate) => {
     if (!candidate || !candidate.name) return false;
@@ -125,4 +135,18 @@ export function buildGuestOptions({
     topOptions,
     filteredOptions
   };
+}
+
+// Converts a users.yml-style zone map ({ active: 95, warm: 130, ... }) into
+// the array shape the DeviceAssignmentLedger / UserManager.resolveUserForDevice
+// expects in ledger metadata.zones: [{ id, min }, ...]. Returns null if the
+// map is empty or any value is non-numeric (all-or-nothing — a partial zone
+// override would silently mix kid and adult thresholds).
+export function zonesMapToArray(zonesMap) {
+  if (!zonesMap || typeof zonesMap !== 'object') return null;
+  const entries = Object.entries(zonesMap)
+    .filter(([, min]) => Number.isFinite(min))
+    .map(([id, min]) => ({ id, min }));
+  if (entries.length === 0 || entries.length !== Object.keys(zonesMap).length) return null;
+  return entries;
 }
