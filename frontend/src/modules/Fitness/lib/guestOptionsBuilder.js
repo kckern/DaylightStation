@@ -108,29 +108,21 @@ export function buildGuestOptions({
     return false;
   });
 
-  // Separate candidates with and without avatars
-  const withAvatars = [];
-  const withoutAvatars = [];
-
+  const filteredOptions = [];
   filteredCandidates.forEach((candidate) => {
     const id = candidate.id || candidate.profileId;
     if (!id || seen.has(id)) return;
     seen.add(id);
-
-    const option = {
+    filteredOptions.push({
       id,
       name: candidate.name,
       profileId: id,
-      source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null,
-      hasAvatar: true // We'll determine this during render
-    };
-
-    // Put in withAvatars for now, will be sorted during render
-    withAvatars.push(option);
+      source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null
+    });
   });
 
   return {
     topOptions,
-    filteredOptions: [...withAvatars, ...withoutAvatars]
+    filteredOptions
   };
 }

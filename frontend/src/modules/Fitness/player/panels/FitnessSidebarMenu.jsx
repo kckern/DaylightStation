@@ -173,7 +173,7 @@ const FitnessSidebarMenu = ({
     baseName,
     baseUserId: baseName ? (fitnessContext?.getUserByName?.(baseName)?.id ?? null) : null,
     selectedTab
-  }), [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext]);
+  }), [guestCandidates, activeAssignment, baseName, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext]);
 
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {
