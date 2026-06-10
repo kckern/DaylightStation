@@ -11,6 +11,7 @@ import { mediaTheme } from '../modules/Media/theme/mediaTheme.js';
 import { MediaAppShell } from '../modules/Media/shell/MediaAppShell.jsx';
 import { ClientIdentityProvider } from '../modules/Media/identity/ClientIdentityProvider.jsx';
 import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvider.jsx';
+import { SearchProvider } from '../modules/Media/search/SearchProvider.jsx';
 import mediaLog from '../modules/Media/logging/mediaLog.js';
 import './MediaApp.scss';
 
@@ -27,9 +28,11 @@ export default function MediaApp() {
       <Notifications position="bottom-center" autoClose={3000} />
       <ClientIdentityProvider>
         <LocalSessionProvider>
-          <div className="media-app">
-            <MediaAppShell />
-          </div>
+          <SearchProvider>
+            <div className="media-app">
+              <MediaAppShell />
+            </div>
+          </SearchProvider>
         </LocalSessionProvider>
       </ClientIdentityProvider>
     </MantineProvider>
