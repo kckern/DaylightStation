@@ -1,34 +1,16 @@
+// frontend/src/modules/Media/browse/DetailView.jsx
+// Item detail. Skeleton until the discovery phase wires the Info API.
 import React from 'react';
-import { useContentInfo } from './useContentInfo.js';
-import { useSessionController } from '../session/useSessionController.js';
-import { resultToQueueInput } from '../search/resultToQueueInput.js';
-import { CastButton } from '../cast/CastButton.jsx';
+import { Stack, Title, Text } from '@mantine/core';
 
 export function DetailView({ contentId }) {
-  const { info, loading, error } = useContentInfo(contentId);
-  const { queue } = useSessionController('local');
-
-  if (loading) return <div data-testid="detail-loading">Loading…</div>;
-  if (error) return <div data-testid="detail-error">{error.message}</div>;
-  if (!info) return null;
-
-  const input = resultToQueueInput({ id: contentId, ...info }) ?? { contentId };
-
   return (
-    <div data-testid="detail-view" className="detail-view">
-      {info.thumbnail && <img src={info.thumbnail} alt={info.title ?? contentId} />}
-      <h1>{info.title ?? contentId}</h1>
-      {info.description && <p>{info.description}</p>}
-      <div className="detail-actions">
-        <button data-testid="detail-play-now" onClick={() => queue.playNow(input, { clearRest: true })}>
-          Play Now
-        </button>
-        <button data-testid="detail-play-next" onClick={() => queue.playNext(input)}>Play Next</button>
-        <button data-testid="detail-up-next" onClick={() => queue.addUpNext(input)}>Up Next</button>
-        <button data-testid="detail-add" onClick={() => queue.add(input)}>Add to Queue</button>
-        <CastButton contentId={contentId} />
-      </div>
-    </div>
+    <Stack data-testid="detail-view" className="detail-view" gap="md">
+      <Title order={1}>Detail</Title>
+      <Text c="dimmed" data-testid="detail-placeholder">
+        Item detail lands in the discovery phase.{contentId ? '' : ' No item selected.'}
+      </Text>
+    </Stack>
   );
 }
 
