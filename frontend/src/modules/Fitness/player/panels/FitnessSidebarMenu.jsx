@@ -4,6 +4,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
 import DebugMicButton from './DebugMicButton.jsx';
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
+import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -399,7 +400,9 @@ const FitnessSidebarMenu = ({
         >
           <div className={avatarClass.join(' ')}>
             <img
-              src={DaylightMediaPath(`/static/img/users/${option.profileId || option.id}`)}
+              src={DaylightMediaPath(`/static/img/users/${
+                option.isGeneric ? genericGuestImageId(option.ageClass) : (option.profileId || option.id)
+              }`)}
               alt={`${option.name} avatar`}
               data-generic={option.isGeneric ? '1' : undefined}
               onLoad={(e) => {
