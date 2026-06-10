@@ -82,7 +82,7 @@ export function buildGuestOptions({
         id: baseUserId,
         name: baseName,
         profileId: baseUserId,
-        source: 'Original',
+        source: 'Give back',
         isOriginal: true
       });
     }

@@ -447,7 +447,7 @@ const FitnessSidebarMenu = ({
             onClick={handleRemoveUser}
             disabled={!canRemoveUser}
           >
-            ⛔ Remove User
+            ⛔ Ignore This Strap
           </button>
         </div>
       </div>
