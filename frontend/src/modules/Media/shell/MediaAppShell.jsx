@@ -9,6 +9,7 @@ import { Dock } from './Dock.jsx';
 import { NavRail, TabBar } from './PrimaryNav.jsx';
 import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
+import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
 import './MediaShell.scss';
 
 function ShellInner() {
@@ -25,7 +26,7 @@ function ShellInner() {
           <NavRail />
           <Canvas />
         </div>
-        {/* dispatch tray strip mounts here (cast phase) */}
+        <DispatchProgressTray />
         <MiniPlayer />
         <TabBar />
       </div>

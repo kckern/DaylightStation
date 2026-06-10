@@ -9,6 +9,7 @@ import { IconDeviceRemote, IconAlertCircle } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDevice } from '../fleet/useDevice.js';
 import { useNav } from './NavProvider.jsx';
+import { useTakeOver } from '../peek/useTakeOver.js';
 import { stateColor } from '../theme/mediaTheme.js';
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
@@ -22,6 +23,7 @@ function fmt(s) {
 function FleetCard({ deviceId }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
+  const takeOver = useTakeOver();
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
   const devState = snap?.state ?? 'unknown';
@@ -77,8 +79,7 @@ function FleetCard({ deviceId }) {
             data-testid={`fleet-takeover-${deviceId}`}
             size="compact-sm"
             variant="light"
-            disabled
-            title="Take Over arrives with the portability phase"
+            onClick={() => takeOver(deviceId)}
           >
             Take Over
           </Button>
