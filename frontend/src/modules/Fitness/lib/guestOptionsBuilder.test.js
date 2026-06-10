@@ -97,6 +97,12 @@ describe('nextGenericGuestName (audit N3)', () => {
   it('ignores named-guest assignments', () => {
     expect(nextGenericGuestName([{ deviceId: 'A', occupantName: 'Eve', metadata: { candidateId: 'eve' } }])).toBe('Guest');
   });
+  it('numbers across adult and kid generics (no collision)', () => {
+    const kid = { deviceId: 'A', occupantName: 'Guest', metadata: { candidateId: 'guest-kid', profileId: 'guest_A', name: 'Guest' } };
+    expect(nextGenericGuestName([kid])).toBe('Guest 2');
+    const adult = { deviceId: 'B', occupantName: 'Guest 2', metadata: { candidateId: 'guest', profileId: 'guest_B', name: 'Guest 2' } };
+    expect(nextGenericGuestName([kid, adult])).toBe('Guest 3');
+  });
 });
 
 describe('Guest (kid) option (audit N4)', () => {

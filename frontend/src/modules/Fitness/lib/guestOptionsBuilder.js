@@ -4,9 +4,13 @@
 // Audit N3: simultaneous generic Guests get numbered display names —
 // "Guest", "Guest 2", "Guest 3", ... Numbers count past the highest
 // existing generic-Guest name so concurrent assignments never collide.
+// Counts BOTH generic candidate ids — adult ('guest') and kid ('guest-kid',
+// audit N4) — since both display as "Guest" and would otherwise collide.
+const GENERIC_GUEST_CANDIDATE_IDS = new Set(['guest', 'guest-kid']);
+
 export function nextGenericGuestName(deviceAssignments = []) {
   const genericNames = (deviceAssignments || [])
-    .filter((a) => String(a?.metadata?.candidateId || '') === 'guest')
+    .filter((a) => GENERIC_GUEST_CANDIDATE_IDS.has(String(a?.metadata?.candidateId || '')))
     .map((a) => String(a?.occupantName || a?.metadata?.name || '').trim());
   if (genericNames.length === 0) return 'Guest';
   let highest = 1;

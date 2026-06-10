@@ -195,6 +195,20 @@ const DEFAULT_ZONE_LOOKUP = DEFAULT_ZONE_CONFIG.reduce((acc, zone) => {
 
 const normalizeZoneOverrides = (overrides = {}) => {
   if (!overrides || typeof overrides !== 'object') return {};
+  // Ledger metadata.zones uses the array shape ([{ id, min }, ...], required
+  // by the Array.isArray gates in GuestAssignmentService / UserManager).
+  // Reduce it into the map shape ({ active: 95 }) first, then normalize as
+  // before — map-shape behavior is unchanged.
+  if (Array.isArray(overrides)) {
+    overrides = overrides.reduce((acc, entry) => {
+      const key = typeof entry?.id === 'string' ? entry.id
+        : (typeof entry?.name === 'string' ? entry.name : null);
+      if (key && Number.isFinite(Number(entry?.min))) {
+        acc[key] = Number(entry.min);
+      }
+      return acc;
+    }, {});
+  }
   return Object.entries(overrides).reduce((acc, [key, value]) => {
     const normalizedKey = normalizeZoneId(key);
     const numeric = Number(value);
