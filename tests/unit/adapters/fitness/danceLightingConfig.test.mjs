@@ -5,7 +5,7 @@ import { resolveDanceLightingConfig } from '#adapters/fitness/danceLightingConfi
 describe('resolveDanceLightingConfig', () => {
   it('applies all defaults when dance_party is absent', () => {
     expect(resolveDanceLightingConfig({})).toEqual({
-      enabled: true, colorStrips: [], whiteLights: [], baseEffect: 'colorloop',
+      enabled: true, colorStrips: [], whiteLights: [], baseEffect: 'colorloop', partyModeFlag: null,
       accent: { mode: 'flash', onTrackChange: true, intervalMs: 20000, minIntervalMs: 4000 }
     });
   });
@@ -23,6 +23,12 @@ describe('resolveDanceLightingConfig', () => {
   it('enabled=false is honored; unknown accent mode falls back to flash', () => {
     expect(resolveDanceLightingConfig({ dance_party: { enabled: false } }).enabled).toBe(false);
     expect(resolveDanceLightingConfig({ dance_party: { lighting: { accent: { mode: 'nope' } } } }).accent.mode).toBe('flash');
+  });
+
+  it('parses party_mode_flag when configured, null otherwise', () => {
+    const cfg = resolveDanceLightingConfig({ dance_party: { lighting: { party_mode_flag: 'input_boolean.garage_party_mode' } } });
+    expect(cfg.partyModeFlag).toBe('input_boolean.garage_party_mode');
+    expect(resolveDanceLightingConfig({}).partyModeFlag).toBe(null);
   });
 
   it('non-array strip config degrades to empty arrays', () => {

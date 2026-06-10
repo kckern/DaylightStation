@@ -60,4 +60,46 @@ describe('DanceLightingController', () => {
     expect(res.skipped).toBe(true);
     expect(gateway.callService).not.toHaveBeenCalled();
   });
+
+  it('start: raises the party-mode flag BEFORE turning off white lights', async () => {
+    const { gateway, controller } = make(cfg({ party_mode_flag: 'input_boolean.party' }));
+    await controller.start('h1');
+    const calls = gateway.callService.mock.calls;
+    const flagIdx = calls.findIndex(c => c[0] === 'input_boolean' && c[1] === 'turn_on');
+    const whiteIdx = calls.findIndex(c => c[0] === 'light' && c[1] === 'turn_off');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(flagIdx).toBeLessThan(whiteIdx);
+    expect(calls[flagIdx][2]).toEqual({ entity_id: 'input_boolean.party' });
+  });
+
+  it('start: if the flag call fails, skips white-light-off but still starts strips', async () => {
+    const { gateway, controller } = make(cfg({ party_mode_flag: 'input_boolean.party' }));
+    gateway.callService.mockImplementation((domain) =>
+      domain === 'input_boolean' ? Promise.reject(new Error('ha down')) : Promise.resolve({ ok: true }));
+    const res = await controller.start('h1');
+    expect(res.ok).toBe(true);
+    expect(gateway.callService).not.toHaveBeenCalledWith('light', 'turn_off', expect.anything());
+    expect(gateway.callService).toHaveBeenCalledWith('light', 'turn_on', { entity_id: ['light.strip1', 'light.strip2'], effect: 'colorloop' });
+  });
+
+  it('stop: clears the party-mode flag after restoring lights; flag failure does not fail stop', async () => {
+    const { gateway, controller } = make(cfg({ party_mode_flag: 'input_boolean.party' }));
+    await controller.stop('h1');
+    const calls = gateway.callService.mock.calls;
+    const flagIdx = calls.findIndex(c => c[0] === 'input_boolean' && c[1] === 'turn_off');
+    expect(flagIdx).toBe(calls.length - 1);
+
+    const second = make(cfg({ party_mode_flag: 'input_boolean.party' }));
+    second.gateway.callService.mockImplementation((domain) =>
+      domain === 'input_boolean' ? Promise.reject(new Error('ha down')) : Promise.resolve({ ok: true }));
+    const res = await second.controller.stop('h1');
+    expect(res.ok).toBe(true);
+  });
+
+  it('start/stop: no flag configured → identical behavior to before (no input_boolean calls)', async () => {
+    const { gateway, controller } = make();
+    await controller.start('h1');
+    await controller.stop('h1');
+    expect(gateway.callService).not.toHaveBeenCalledWith('input_boolean', expect.anything(), expect.anything());
+  });
 });

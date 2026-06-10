@@ -14,6 +14,7 @@ export function resolveDanceLightingConfig(fitnessConfig) {
     colorStrips: Array.isArray(lighting.color_strips) ? lighting.color_strips : [],
     whiteLights: Array.isArray(lighting.white_lights) ? lighting.white_lights : [],
     baseEffect: typeof lighting.base_effect === 'string' && lighting.base_effect ? lighting.base_effect : 'colorloop',
+    partyModeFlag: typeof lighting.party_mode_flag === 'string' && lighting.party_mode_flag ? lighting.party_mode_flag : null,
     accent: {
       mode: ACCENT_MODES.includes(accent.mode) ? accent.mode : 'flash',
       onTrackChange: accent.on_track_change !== false,
