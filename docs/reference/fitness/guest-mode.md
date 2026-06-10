@@ -32,7 +32,7 @@ Not all guests are the same kind of identity. There are three classes, and which
 | Class | Identity (profileId) | Name shown | Avatar | How it arises |
 |-------|---------------------|------------|--------|---------------|
 | **Named guest** | Configured user ID (e.g. `friend-b`) | Their configured name | `/static/img/users/{id}` (their photo) | Picked from the Friends/Family tabs, or BLE auto-match |
-| **Generic Guest** | `guest_<deviceId>` (device-keyed alias, W2) | "Guest" — numbered when simultaneous ("Guest 2", "Guest 3", …) | `guest-adult` / `guest-kid` placeholder (falls back to Pikachu `user` until the assets exist) | "Guest" or "Guest (kid)" top option in the picker |
+| **Generic Guest** | `guest_<deviceId>` (device-keyed alias, W2) | "Guest" — numbered when simultaneous ("Guest 2", "Guest 3", …) | `guest-adult` / `guest-kid` placeholder (falls back to Pikachu `user` until the assets exist) | "Guest" top option in the picker (adult, or the kid variant badged "Kid") |
 | **Untagged (Pikachu)** | Synthetic — `#<deviceId>` card label; `guest-<timestamp>` if GuestAssignmentService receives no profileId | `#<deviceId>` | Pikachu fallback | Unknown ANT+ strap broadcasts; nobody has tagged it |
 
 ### Generic Guest is a per-device alias (W2)
@@ -43,7 +43,7 @@ The picker matches the identity model: `'guest'` (and `'guest-kid'`) are inheren
 
 ### Guest (kid) — configured zone profile
 
-When `fitness.yml → guest_profiles.kid.zones` is configured, a second generic option **"Guest (kid)"** (source badge "Kid") appears in the picker. Selecting it carries the configured kid zone thresholds into the assignment `metadata.zones` (converted from the map form to the `[{ id, min }]` array form by `zonesMapToArray`), which UserManager applies as zone overrides — so a child on a borrowed adult strap is evaluated against kid zones, not the strap owner's. The identity is still `guest_<deviceId>`; the age class is persisted as `guest_profile: kid` in the saved participants block.
+When `fitness.yml → guest_profiles.kid.zones` is configured, a second generic option appears in the picker — it displays the name "Guest" with a **"Kid"** source badge. Selecting it carries the configured kid zone thresholds into the assignment `metadata.zones` (converted from the map form to the `[{ id, min }]` array form by `zonesMapToArray`), which UserManager applies as zone overrides — so a child on a borrowed adult strap is evaluated against kid zones, not the strap owner's. The identity is still `guest_<deviceId>`; the age class is persisted as `guest_profile: kid` in the saved participants block.
 
 ### Untagged ≠ Guest
 
@@ -108,7 +108,7 @@ Step-by-step for the common borrow case:
 
 1. **Strap on.** First HR reading registers the device; a card appears in the sidebar (`DeviceManager.registerDevice()`).
 2. **Tap the card.** `FitnessSidebarMenu` opens in `mode='guest'`; the header shows the current occupant (or `#<deviceId>` for unmapped straps).
-3. **Pick an identity.** Top options: "Original" (only if a guest currently displaces the owner, badge "Give back"), generic "Guest", and "Guest (kid)" when `guest_profiles.kid` is configured. Below: Friends/Family tabs of configured candidates with avatars. Friends tab auto-falls-back to Family when empty. Unmapped straps get an explainer line ("Unrecognized heart-rate strap #id…"); if the current occupant's segment is younger than the continuous-usage threshold, a note says their last N minutes will transfer to whoever you pick.
+3. **Pick an identity.** Top options: "Original" (only if a guest currently displaces the owner, badge "Give back"), generic "Guest", and a second "Guest" badged "Kid" when `guest_profiles.kid` is configured. Below: Friends/Family tabs of configured candidates with avatars. Friends tab auto-falls-back to Family when empty. Unmapped straps get an explainer line ("Unrecognized heart-rate strap #id…"); if the current occupant's segment is younger than the continuous-usage threshold, a note says their last N minutes will transfer to whoever you pick.
 4. **Assignment lands.** `assignGuestToDevice(deviceId, { name, profileId, candidateId, source, baseUserName })` → `GuestAssignmentService` validates, creates a session entity, updates the `DeviceAssignmentLedger`. The card swaps to the guest's name/avatar immediately.
 5. **They just work out.** HR → zones → coins → governance → timeline, identical to a household member.
 6. **Hand-back / leave.** Either tap the card → "Original" to restore the owner, tap "⛔ Ignore This Strap" to suppress the device, or just take the strap off (card grays at ~10 s, drops at ~30 s — the assignment survives, see Lifecycle below).
@@ -263,7 +263,7 @@ In `FitnessSidebarMenu` with `mode='guest'`:
 | Transfer note | When the active assignment segment is younger than the continuous-usage threshold: *"{name}'s last N min on this strap will transfer to whoever you pick."* |
 | Top option: "Original" | Appears ONLY when a guest is currently assigned AND differs from the base user; source badge **"Give back"**; selecting it assigns the base user back (it's an assignment, not a clear) |
 | Top option: "Guest" | Generic anonymous identity; synthesizes `guest_<deviceId>` at assign time (W2). Available on every device regardless of how many Guests exist (`'guest'` is inherently multi-assignable in `guestOptionsBuilder.js`); hidden only on the device where a Guest is currently assigned. Simultaneous Guests get numbered names via `nextGenericGuestName` ("Guest", "Guest 2", …) |
-| Top option: "Guest (kid)" | Appears when `fitness.yml → guest_profiles.kid.zones` is configured; source badge **"Kid"**. Same `guest_<deviceId>` identity, but carries kid zone thresholds into assignment `metadata.zones` and persists `guest_profile: kid` |
+| Top option: kid Guest | Displays "Guest" with source badge **"Kid"**; appears when `fitness.yml → guest_profiles.kid.zones` is configured. Same `guest_<deviceId>` identity, but carries kid zone thresholds into assignment `metadata.zones` and persists `guest_profile: kid` |
 | Tabs | "Friends" / "Family"; auto-switches Friends→Family when the Friends pool is empty |
 | Grid | Filtered candidates from the current tab, each with avatar + name + source badge (`Friend` / `Family` / `Give back` / `Guest` / `Kid`). Excludes: anyone assigned to any device (unless `allowWhileAssigned`), anyone actively broadcasting on their own HR monitor (Bug 06 fix), and the currently selected occupant — exclusion logic lives in `guestOptionsBuilder.js` |
 | "⛔ Ignore This Strap" | (was "Remove User") Calls `suppressDeviceUntilNextReading(deviceId)` — device drops from session until the next HR reading re-registers it |
@@ -314,7 +314,7 @@ participants:
   guest_10366:                  # second simultaneous generic Guest — numbered name
     display_name: Guest 2
     is_guest: true
-    guest_profile: kid          # tagged via "Guest (kid)" — kid zone overrides applied
+    guest_profile: kid          # tagged via the kid Guest option — kid zone overrides applied
     hr_device: "10366"
 timeline:
   series:
@@ -395,7 +395,7 @@ See [`assign-guest.md`](./assign-guest.md) § Continuous-Usage Threshold for the
 
 - **Tag before strap-on when possible.** The threshold model forgives owner-then-guest handoffs under 5 minutes; it cannot forgive an untagged full workout. The picker's transfer note now tells you when a sub-threshold segment will move.
 - **Simultaneous Guests are numbered, not described.** "Guest" vs "Guest 2" plus the sticker-color avatar ring is usually enough to tell cards apart, but the numbers carry no meaning across sessions — if two strangers work out together regularly, prefer tagging them as named friends.
-- **Kid guests need `guest_profiles` configured.** Without a `fitness.yml → guest_profiles.kid.zones` block, the "Guest (kid)" option doesn't appear and a kid on a borrowed adult strap inherits the owner's adult zone thresholds (wrong zones, inflated coins).
+- **Kid guests need `guest_profiles` configured.** Without a `fitness.yml → guest_profiles.kid.zones` block, the kid Guest option doesn't appear and a kid on a borrowed adult strap inherits the owner's adult zone thresholds (wrong zones, inflated coins).
 - **A guest can block the video.** Pikachu/guest cards count toward governance `active: all`. An idle strap someone left on the shelf (still broadcasting) can hold the session hostage — use "⛔ Ignore This Strap".
 - **No guest badge on live sidebar cards.** Sidebar cards render guests identically to household members (intentional); the guest distinction surfaces in the session-detail timeline ("guest" marker) and in the saved data (`is_guest`, `guest_profile`).
 - **Guest transitions are invisible in reports.** If a device changed hands mid-session, the saved chart shows each honored identity's lane but no marker explaining when/why the swap happened — the events that recorded it died with the EventJournal.
@@ -436,7 +436,7 @@ ble_users:                  # subset of user IDs reachable via BLE
   - family-a
   - friend-a
 
-guest_profiles:             # enables the "Guest (kid)" picker option
+guest_profiles:             # enables the kid Guest picker option (badge "Kid")
   kid:
     zones: { active: 95, warm: 130, hot: 155, fire: 175 }   # kid zone thresholds (map form)
 
@@ -457,7 +457,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 |------|------|
 | `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Builds `guestCandidates` from `family` + `friends` + displaced primaries (`allowWhileAssigned`) |
 | `frontend/src/modules/Fitness/player/panels/FitnessSidebarMenu.jsx` | Guest picker UI (W2 `guest_<deviceId>` synthesis, numbered names, kid zone metadata, hint/transfer-note copy, idle close) |
-| `frontend/src/modules/Fitness/lib/guestOptionsBuilder.js` | Pure option-list builder: exclusion sets, multi-assignable generics, `nextGenericGuestName`, "Guest (kid)" option, `zonesMapToArray` |
+| `frontend/src/modules/Fitness/lib/guestOptionsBuilder.js` | Pure option-list builder: exclusion sets, multi-assignable generics, `nextGenericGuestName`, kid Guest option, `zonesMapToArray` |
 | `frontend/src/modules/Fitness/lib/guestPlaceholders.js` | Placeholder avatar tiers — `guest-adult` / `guest-kid` image ids for generic-Guest profileIds |
 | `frontend/src/modules/Fitness/lib/strapColors.js` | Sticker-color SSOT: heart emoji, CSS ring color, deterministic hash color, "Purple strap" labels |
 | `frontend/src/modules/Fitness/player/FitnessUsers.jsx` | Card rendering: avatar profileId chain, strap ring + color labels, zone colors, display name lookup |
