@@ -24,9 +24,13 @@ export function attachPersistence(store, { write, timing = TIMING, setTimeoutFn 
     return result;
   };
 
-  const detachTransition = store.onTransition((prev, next) => {
+  // Lifecycle boundaries must hit disk immediately — a reset that only
+  // persists 500ms later loses to a fast tab close or test assertion.
+  const FLUSH_ACTIONS = new Set(['RESET', 'ADOPT_SNAPSHOT']);
+
+  const detachTransition = store.onTransition((prev, next, action) => {
     const since = nowFn() - lastWriteAt;
-    if (since >= timing.PERSIST_THROTTLE_MS) {
+    if (FLUSH_ACTIONS.has(action?.type) || since >= timing.PERSIST_THROTTLE_MS) {
       if (trailing) { clearTimeoutFn(trailing); trailing = null; }
       doWrite(next);
       return;

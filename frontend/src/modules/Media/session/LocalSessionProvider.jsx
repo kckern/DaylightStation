@@ -46,6 +46,14 @@ export function LocalSessionProvider({ children }) {
       persistedSnapshot,
       clearPersisted: clearPersistedSession,
     });
+    // Attach side effects synchronously: child effects (URL command,
+    // external control) fire before any parent effect could attach, and
+    // their first mutations must be persisted/logged too.
+    ctl.detachers = [
+      attachPersistence(ctl.store, { write: writePersistedSession }),
+      attachRecents(ctl.store),
+      attachLogging(ctl.store),
+    ];
     if (persistedSnapshot) {
       mediaLog.sessionResumed({
         sessionId: persistedSnapshot.sessionId,
@@ -57,15 +65,7 @@ export function LocalSessionProvider({ children }) {
     return ctl;
   }, [clientId]);
 
-  // Side-effect attachments ride store transitions; detach on teardown.
-  useEffect(() => {
-    const detachers = [
-      attachPersistence(controller.store, { write: writePersistedSession }),
-      attachRecents(controller.store),
-      attachLogging(controller.store),
-    ];
-    return () => detachers.forEach((d) => d());
-  }, [controller]);
+  useEffect(() => () => controller.detachers?.forEach((d) => d()), [controller]);
 
   const value = useMemo(() => ({ controller }), [controller]);
 

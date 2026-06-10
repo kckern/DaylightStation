@@ -8,6 +8,8 @@ import { SimpleGrid, UnstyledButton, Skeleton, Text, Title, Stack, Alert } from 
 import { IconChevronRight, IconAlertCircle } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useNav } from '../shell/NavProvider.jsx';
+import { ResumeCard } from './ResumeCard.jsx';
+import { RecentsRow } from './RecentsRow.jsx';
 
 function cardPath(entry) {
   return [entry.source, entry.mediaType].filter(Boolean).join('/');
@@ -34,7 +36,8 @@ export function HomeView() {
 
   return (
     <Stack data-testid="home-view" className="home-view" gap="lg">
-      {/* ResumeCard + RecentsRow mount here (Phases 2–3) */}
+      <ResumeCard />
+      <RecentsRow />
       <section>
         <Title order={2} mb="sm">Browse</Title>
         {error && (
