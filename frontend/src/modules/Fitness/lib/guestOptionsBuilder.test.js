@@ -24,7 +24,7 @@ describe('buildGuestOptions — characterization', () => {
       selectedTab: 'friends'
     });
     const original = out.topOptions.find(o => o.isOriginal);
-    expect(original).toMatchObject({ id: 'alice', name: 'Alice', source: 'Original' });
+    expect(original).toMatchObject({ id: 'alice', name: 'Alice', source: 'Give back' });
   });
 
   it('excludes candidates assigned to any device', () => {
