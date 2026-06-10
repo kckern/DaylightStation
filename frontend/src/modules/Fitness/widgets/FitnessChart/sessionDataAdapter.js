@@ -103,6 +103,8 @@ export function createChartDataSource(session) {
         zoneColor: getZoneColor(getLastZone(userId)),
         avatarUrl: DaylightMediaPath(`/static/img/users/${userId}`),
         isPrimary: meta.is_primary || meta.isPrimary || false,
+        isGuest: meta.is_guest || meta.isGuest || false,
+        guestProfile: meta.guest_profile || meta.guestProfile || null,
         hrDeviceId: meta.hr_device || meta.hrDevice || null,
       };
     });
@@ -119,6 +121,8 @@ export function createChartDataSource(session) {
         zoneColor: getZoneColor(getLastZone(userId)),
         avatarUrl: DaylightMediaPath(`/static/img/users/${userId}`),
         isPrimary: entry.isPrimary || false,
+        isGuest: false,
+        guestProfile: null,
         hrDeviceId: entry.hrDeviceId || null,
       };
     });
