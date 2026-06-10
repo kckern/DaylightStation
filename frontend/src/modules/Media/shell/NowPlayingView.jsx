@@ -10,9 +10,10 @@ import { useNav } from './NavProvider.jsx';
 import { TransportBar } from './TransportBar.jsx';
 import { SeekBar } from './SeekBar.jsx';
 import { QueuePanel } from './QueuePanel.jsx';
+import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
 
 export function NowPlayingView() {
-  const { snapshot } = useSessionController('local');
+  const { snapshot, portability } = useSessionController('local');
   const item = snapshot?.currentItem;
   const hostRef = useRef(null);
   usePlayerHost(hostRef);
@@ -52,7 +53,16 @@ export function NowPlayingView() {
 
       <QueuePanel target="local" />
 
-      {/* Hand-off picker mounts here in the cast phase (handoff-section) */}
+      {item && (
+        <div className="handoff-section" data-testid="handoff-section">
+          <Text size="sm" fw={600} mb="xs">Hand off to device</Text>
+          <DispatchTargetPicker
+            source={{ getSnapshot: () => portability.snapshotForHandoff?.() }}
+            submitLabel="Hand off"
+            autoFocus={false}
+          />
+        </div>
+      )}
     </Stack>
   );
 }

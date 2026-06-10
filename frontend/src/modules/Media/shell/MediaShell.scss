@@ -691,3 +691,122 @@
     .fleet-card-item-meta { flex: 1; min-width: 0; }
   }
 }
+
+// ---- Cast picker + popover (NOTE: .dispatch-target-picker and the cast
+// portal render into document.body — these selectors are deliberately
+// unscoped so portaled instances stay styled) -----------------------------------
+.dispatch-target-picker {
+  min-width: 260px;
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: var(--mantine-spacing-sm);
+  color: var(--mantine-color-dark-0);
+  font-size: 14px;
+
+  .picker-section { margin-bottom: var(--mantine-spacing-sm); }
+
+  .picker-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--mantine-color-dark-2);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  .picker-device,
+  .picker-mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 6px;
+    border-radius: var(--mantine-radius-sm);
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-dark-5); }
+  }
+
+  .picker-device--selected { background: var(--mantine-color-dark-5); }
+
+  .picker-device-location { color: var(--mantine-color-dark-2); font-size: 12px; margin-left: auto; }
+
+  .picker-empty { color: var(--mantine-color-dark-2); padding: 6px; }
+
+  .picker-submit {
+    width: 100%;
+    min-height: 40px;
+    background: var(--mantine-color-amber-5);
+    color: #1a1300;
+    border: none;
+    border-radius: var(--mantine-radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-amber-4); }
+    &:disabled { background: var(--mantine-color-dark-4); color: var(--mantine-color-dark-2); cursor: default; }
+  }
+}
+
+// Inside Now Playing the picker is inline, not floating.
+.handoff-section .dispatch-target-picker {
+  box-shadow: none;
+  background: var(--mantine-color-dark-5);
+}
+
+.cast-popover {
+  .cast-popover-section { margin-bottom: var(--mantine-spacing-sm); }
+  .cast-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+}
+
+// ---- Dispatch progress tray ----------------------------------------------------
+.dispatch-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px var(--mantine-spacing-sm);
+  background: var(--mantine-color-dark-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  font-size: 13px;
+
+  .dispatch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    min-height: 32px;
+
+    .dispatch-row-device { font-weight: 600; }
+    .dispatch-row-content {
+      color: var(--mantine-color-dark-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+    .dispatch-row-status { color: var(--mantine-color-dark-1); margin-left: auto; }
+
+    .dispatch-row-retry {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--mantine-color-dark-4);
+      border: none;
+      border-radius: var(--mantine-radius-sm);
+      color: var(--mantine-color-dark-0);
+      padding: 6px 10px;
+      cursor: pointer;
+
+      &:hover { background: var(--mantine-color-dark-3); }
+    }
+  }
+}

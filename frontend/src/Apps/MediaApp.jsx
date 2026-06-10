@@ -14,6 +14,8 @@ import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvi
 import { SearchProvider } from '../modules/Media/search/SearchProvider.jsx';
 import { FleetProvider } from '../modules/Media/fleet/FleetProvider.jsx';
 import { PeekProvider } from '../modules/Media/peek/PeekProvider.jsx';
+import { CastTargetProvider } from '../modules/Media/cast/CastTargetProvider.jsx';
+import { DispatchProvider } from '../modules/Media/cast/DispatchProvider.jsx';
 import mediaLog from '../modules/Media/logging/mediaLog.js';
 import './MediaApp.scss';
 
@@ -32,11 +34,15 @@ export default function MediaApp() {
         <LocalSessionProvider>
           <FleetProvider>
             <PeekProvider>
-              <SearchProvider>
-                <div className="media-app">
-                  <MediaAppShell />
-                </div>
-              </SearchProvider>
+              <CastTargetProvider>
+                <DispatchProvider>
+                  <SearchProvider>
+                    <div className="media-app">
+                      <MediaAppShell />
+                    </div>
+                  </SearchProvider>
+                </DispatchProvider>
+              </CastTargetProvider>
             </PeekProvider>
           </FleetProvider>
         </LocalSessionProvider>

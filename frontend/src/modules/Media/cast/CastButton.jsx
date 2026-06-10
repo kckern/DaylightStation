@@ -1,26 +1,64 @@
 // frontend/src/modules/Media/cast/CastButton.jsx
-// Per-item Cast affordance on result/browse rows and the detail page.
-// Placeholder until the cast phase wires the dispatch target picker; the
-// button identity (testid) is already the real contract.
-import React from 'react';
-import { Button } from '@mantine/core';
-import { IconCast } from '@tabler/icons-react';
+// Per-item Cast affordance: opens the DispatchTargetPicker in a body portal
+// positioned at the trigger. The portal carries .media-app-portal so the
+// search overlay's outside-click logic treats it as inside (the historical
+// unstyled/auto-closing portal bugs are both structural here: Mantine-free
+// markup styled via unscoped classes, dismissal owned by useDismissable).
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
+import { useDismissable } from '../../../hooks/useDismissable.js';
+
+const PICKER_WIDTH = 260; // mirrors .dispatch-target-picker min-width
 
 export function CastButton({ contentId, queue, onAction }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const buttonRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  const close = useCallback(() => setOpen(false), []);
+  useDismissable(popoverRef, { open, onDismiss: close });
+
   const id = contentId ?? queue;
+  const source = contentId ? { play: contentId } : { queue };
+
+  // Fixed position from the trigger's rect each open, clamped to viewport.
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const right = window.innerWidth - rect.right;
+    const adjustedRight = Math.max(8, Math.min(right, window.innerWidth - PICKER_WIDTH - 8));
+    setCoords({ top: rect.bottom + 6, right: adjustedRight });
+  }, [open]);
+
+  const onComplete = () => {
+    setOpen(false);
+    onAction?.();
+  };
+
   return (
-    <Button
-      data-testid={`cast-button-${id}`}
-      className="cast-button"
-      size="compact-sm"
-      variant="subtle"
-      color="gray"
-      leftSection={<IconCast size={16} />}
-      disabled
-      title="Casting arrives with the cast phase"
-    >
-      Cast
-    </Button>
+    <>
+      <button
+        ref={buttonRef}
+        data-testid={`cast-button-${id}`}
+        className="result-action cast-button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+      >
+        Cast
+      </button>
+      {open && coords && createPortal(
+        <div
+          ref={popoverRef}
+          data-testid={`cast-button-popover-${id}`}
+          className="media-app-portal cast-button-popover-portal"
+          style={{ position: 'fixed', top: `${coords.top}px`, right: `${coords.right}px`, zIndex: 1000 }}
+        >
+          <DispatchTargetPicker source={source} onComplete={onComplete} />
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
