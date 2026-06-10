@@ -8,7 +8,7 @@ import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
-import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
+import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './DancePartyWidget.scss';
 
@@ -36,7 +36,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader } =
     useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
 
-  const { accent } = useDanceLighting({ enabled: true });
+  const { accent, lightsOn, toggleLights } = useDanceLighting({ enabled: true });
 
   const audioRef = useRef(null);
   const videoRef = useRef(null);
@@ -149,17 +149,18 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Persistent volume (VolumeProvider store): survives exits/reloads, scoped
   // to the dance audio playlist. The current track key in the ids makes the
   // hook re-apply the stored level whenever the audio element swaps on track
-  // change. TouchVolumeButtons levels (0-100 in tens, 0 = mute) ↔ linear 0-1.
+  // change. Touch levels map through the shared log curve (level 50 ≈ 10%
+  // output) so the low buttons are meaningful loudness choices.
   const volumeState = usePersistentVolume({
     grandparentId: 'fitness-dance',
     parentId: audioPlaylistId != null ? String(audioPlaylistId) : 'global',
     trackId: track?.key || 'dance',
     playerRef: audioRef
   });
-  const volumeLevel = snapToTouchLevel(linearLevelFromVolume(volumeState.muted ? 0 : volumeState.volume));
+  const volumeLevel = snapToTouchLevel(logLevelFromVolume(volumeState.muted ? 0 : volumeState.volume));
   const handleVolumeSelect = useCallback((level) => {
-    volumeState.setVolume(linearVolumeFromLevel(level));
-    logger.info('fitness.dance.volume_select', { level });
+    volumeState.setVolume(logVolumeFromLevel(level));
+    logger.info('fitness.dance.volume_select', { level, volume: logVolumeFromLevel(level) });
   }, [volumeState, logger]);
 
   // Press the video → fullscreen party: the widget root escapes the app frame
@@ -210,6 +211,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         onExit={onClose}
         volumeLevel={volumeLevel}
         onVolumeSelect={handleVolumeSelect}
+        lightsOn={lightsOn}
+        onToggleLights={toggleLights}
       />
     </div>
   );

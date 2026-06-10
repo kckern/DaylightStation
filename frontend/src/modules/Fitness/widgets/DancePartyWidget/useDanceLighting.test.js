@@ -30,4 +30,22 @@ describe('useDanceLighting', () => {
     unmount();
     expect(post).not.toHaveBeenCalled();
   });
+
+  it('toggleLights posts stop then start, and gates accent while off', () => {
+    const { result } = renderHook(() => useDanceLighting({ enabled: true }));
+    expect(result.current.lightsOn).toBe(true);
+    post.mockClear();
+
+    act(() => result.current.toggleLights());
+    expect(result.current.lightsOn).toBe(false);
+    expect(post).toHaveBeenCalledWith('api/v1/fitness/dance/stop', {}, 'POST');
+
+    post.mockClear();
+    act(() => result.current.accent());
+    expect(post).not.toHaveBeenCalled(); // accent is a no-op while lights are off
+
+    act(() => result.current.toggleLights());
+    expect(result.current.lightsOn).toBe(true);
+    expect(post).toHaveBeenCalledWith('api/v1/fitness/dance/start', {}, 'POST');
+  });
 });

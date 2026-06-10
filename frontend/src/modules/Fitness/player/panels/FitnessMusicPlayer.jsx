@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, u
 import { DaylightMediaPath, ContentDisplayUrl } from '@/lib/api.mjs';
 import Player from '@/modules/Player/Player.jsx';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
-import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
+import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume, logVolumeFromLevel, logLevelFromVolume } from './TouchVolumeButtons.jsx';
 import FitnessPlaylistSelector from './FitnessPlaylistSelector.jsx';
 import '../FitnessSidebar.scss';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
@@ -11,29 +11,6 @@ import { guid } from '@/modules/Player/lib/helpers.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useMusicRecovery } from './useMusicRecovery.js';
 import { formatMusicErrorMessage, isRecoverableMusicError } from './musicPlayerErrorFormat.js';
-
-const LOG_CURVE_TARGET_LEVEL = 50; // midpoint of the touch buttons
-const LOG_CURVE_TARGET_VOLUME = 0.1; // 10% output should align with midpoint
-const LOG_CURVE_EXPONENT_PER_LEVEL = (() => {
-  const denominator = LOG_CURVE_TARGET_LEVEL - 100; // negative value
-  const numerator = Math.log10(Math.max(0.0001, LOG_CURVE_TARGET_VOLUME)); // avoid log10(0)
-  if (denominator === 0) return -0.01; // fallback to gentle slope
-  return numerator / denominator;
-})();
-
-const logVolumeFromLevel = (level) => {
-  if (!Number.isFinite(level) || level <= 0) return 0;
-  const exponent = (level - 100) * LOG_CURVE_EXPONENT_PER_LEVEL;
-  return Math.min(1, Math.max(0, Math.pow(10, exponent)));
-};
-
-const logLevelFromVolume = (volume) => {
-  if (!Number.isFinite(volume) || volume <= 0) return 0;
-  const percent = 100 + (Math.log10(volume) / (LOG_CURVE_EXPONENT_PER_LEVEL || -0.01));
-  return Math.min(100, Math.max(0, Math.round(percent)));
-};
-
-
 
 const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, videoVolume }, ref) => {
   const [currentTrack, setCurrentTrack] = useState(null);
