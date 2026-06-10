@@ -95,4 +95,51 @@ describe('UserManager — kid guest array-shaped zone overrides (Task 9 review)'
     expect(minOf(user.zoneConfig, 'active')).toBe(100);
     expect(minOf(user.zoneConfig, 'fire')).toBe(160);
   });
+
+  it('re-tagging kid → plain Guest on the same device resets to global thresholds', () => {
+    // Kid first: zone overrides applied to the shared guest_<deviceId> identity.
+    manager.assignGuest('48291', 'Guest', {
+      profileId: 'guest_48291',
+      occupantType: 'guest',
+      candidateId: 'guest-kid',
+      zones: KID_ZONES_ARRAY
+    });
+    let user = manager.resolveUserForDevice('48291');
+    expect(minOf(user.zoneConfig, 'active')).toBe(95);
+
+    // Re-tag the SAME strap as a plain adult Guest (no zones). The reused
+    // User object must NOT keep the previous occupant's kid thresholds.
+    manager.assignGuest('48291', 'Guest', {
+      profileId: 'guest_48291',
+      occupantType: 'guest',
+      candidateId: 'guest'
+    });
+    user = manager.resolveUserForDevice('48291');
+    expect(minOf(user.zoneConfig, 'active')).toBe(100);
+    expect(minOf(user.zoneConfig, 'warm')).toBe(120);
+    expect(minOf(user.zoneConfig, 'hot')).toBe(140);
+    expect(minOf(user.zoneConfig, 'fire')).toBe(160);
+  });
+
+  it('a configured user with personal zone overrides keeps them when guest-assigned without zones', () => {
+    // Configured friend with personal zone overrides from household config.
+    manager.configure({
+      primary: [],
+      family: [],
+      friends: [{ id: 'friend-b', name: 'Friend B', zones: KID_ZONES_ARRAY }]
+    }, GLOBAL_ZONES);
+
+    // Guest-assign them to a device WITHOUT zones in the assignment metadata.
+    manager.assignGuest('48295', 'Friend B', {
+      profileId: 'friend-b',
+      occupantType: 'guest',
+      candidateId: 'friend-b'
+    });
+    const user = manager.resolveUserForDevice('48295');
+    expect(user.id).toBe('friend-b');
+    // Personal overrides must survive — the no-zones reset is scoped to
+    // generic guest_<deviceId> identities only.
+    expect(minOf(user.zoneConfig, 'active')).toBe(95);
+    expect(minOf(user.zoneConfig, 'fire')).toBe(175);
+  });
 });

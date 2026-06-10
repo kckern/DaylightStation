@@ -57,7 +57,7 @@ The menu renders in two modes:
 
 When in guest mode, displays:
 1. **Contextual hints** - an explainer line for unrecognized straps (no base user), and a transfer note when the active segment is younger than the continuous-usage threshold ("{name}'s last N min on this strap will transfer to whoever you pick")
-2. **Top options section** - "Guest" (generic), "Guest (kid)" (when `guest_profiles.kid` is configured; source badge "Kid"), and "Original" (restore base user; source badge "Give back")
+2. **Top options section** - "Guest" (generic), a kid Guest option that displays "Guest" with a "Kid" source badge (when `guest_profiles.kid` is configured), and "Original" (restore base user; source badge "Give back")
 3. **Tab selector** - Friends / Family filter
 4. **Guest grid** - Filtered candidates with avatars
 5. **"⛔ Ignore This Strap" button** (formerly "Remove User") - Suppresses device until next reading
@@ -134,7 +134,7 @@ Always-available options appear above the filtered list (built in `guestOptionsB
 
 1. **Original owner** - Shows only when a guest is currently assigned, allows restoring base user (source badge "Give back")
 2. **Generic "Guest"** - Available on every device — `'guest'` is inherently multi-assignable, so it is hidden only where a Guest is *currently* assigned
-3. **"Guest (kid)"** - Shown when `fitness.yml → guest_profiles.kid` is configured (source badge "Kid")
+3. **Kid Guest** - Displays "Guest" with a "Kid" source badge; shown when `fitness.yml → guest_profiles.kid` is configured
 
 ```javascript
 // Add original owner as first option if a guest is currently assigned
@@ -208,7 +208,7 @@ The metadata stored with each assignment:
 | `candidateId` | Original candidate ID (`'guest'` / `'guest-kid'` for generics) |
 | `source` | Category badge (Friend/Family/Guest/Kid/Give back) |
 | `baseUserName` | Original device owner (for restoration) |
-| `ageClass` | Optional — `'kid'` when assigned via "Guest (kid)"; persisted as `guest_profile` |
+| `ageClass` | Optional — `'kid'` when assigned via the kid Guest option; persisted as `guest_profile` |
 | `zones` | Optional — `[{ id, min }]` zone-threshold overrides from `guest_profiles.{ageClass}.zones`, applied by UserManager |
 
 ---
