@@ -62,6 +62,17 @@ const FitnessSidebarMenu = ({
   const baseName = activeAssignment?.metadata?.baseUserName || targetDefaultName || baseUser?.name || null;
   const monitorLabel = deviceIdStr ? `#${deviceIdStr}` : 'Unknown';
   const currentLabel = activeAssignment?.occupantName || activeAssignment?.metadata?.name || baseName || 'Unassigned';
+  // Continuous-usage threshold (fitness.yml → governance.usage_threshold_seconds,
+  // 300s default — same resolution FitnessContext uses for GuestAssignmentService).
+  const fitnessRoot = fitnessContext?.fitnessConfiguration?.fitness
+    || fitnessContext?.fitnessConfiguration
+    || {};
+  const usageThresholdSeconds = fitnessRoot?.governance?.usage_threshold_seconds;
+  const usageThresholdMs = (Number.isFinite(usageThresholdSeconds) ? usageThresholdSeconds : 300) * 1000;
+  const segmentAgeMs = Number.isFinite(activeAssignment?.updatedAt)
+    ? Date.now() - activeAssignment.updatedAt
+    : null;
+  const segmentWillTransfer = Number.isFinite(segmentAgeMs) && segmentAgeMs < usageThresholdMs;
   const currentSummaryClass = `guest-summary-value${activeAssignment ? ' guest-summary-value--active' : ''}`;
   const [mediaElement, setMediaElement] = React.useState(() => playerRef?.current?.getMediaElement?.() || null);
 
@@ -412,6 +423,12 @@ const FitnessSidebarMenu = ({
           <div className="guest-menu-hint">
             Unrecognized heart-rate strap <strong>{monitorLabel}</strong>.
             Pick who’s wearing it — or “Guest” if they’re visiting.
+          </div>
+        )}
+        {segmentWillTransfer && (
+          <div className="guest-menu-note">
+            {currentLabel}’s last {Math.max(1, Math.round(segmentAgeMs / 60000))} min on this
+            strap will transfer to whoever you pick.
           </div>
         )}
         {/* Top options: Original and Guest */}
