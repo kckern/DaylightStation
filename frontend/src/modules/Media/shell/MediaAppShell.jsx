@@ -8,6 +8,7 @@ import { DismissStackProvider } from './DismissStackProvider.jsx';
 import { Dock } from './Dock.jsx';
 import { NavRail, TabBar } from './PrimaryNav.jsx';
 import { Canvas } from './Canvas.jsx';
+import { MiniPlayer } from './MiniPlayer.jsx';
 import './MediaShell.scss';
 
 function ShellInner() {
@@ -24,7 +25,8 @@ function ShellInner() {
           <NavRail />
           <Canvas />
         </div>
-        {/* dispatch tray strip + mini player mount here (Phases 2/6) */}
+        {/* dispatch tray strip mounts here (cast phase) */}
+        <MiniPlayer />
         <TabBar />
       </div>
     </DismissStackProvider>
