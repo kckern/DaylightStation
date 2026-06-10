@@ -9,6 +9,8 @@ import '@mantine/notifications/styles.css';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { mediaTheme } from '../modules/Media/theme/mediaTheme.js';
 import { MediaAppShell } from '../modules/Media/shell/MediaAppShell.jsx';
+import { ClientIdentityProvider } from '../modules/Media/identity/ClientIdentityProvider.jsx';
+import { LocalSessionProvider } from '../modules/Media/session/LocalSessionProvider.jsx';
 import mediaLog from '../modules/Media/logging/mediaLog.js';
 import './MediaApp.scss';
 
@@ -23,9 +25,13 @@ export default function MediaApp() {
   return (
     <MantineProvider theme={mediaTheme} defaultColorScheme="dark" forceColorScheme="dark">
       <Notifications position="bottom-center" autoClose={3000} />
-      <div className="media-app">
-        <MediaAppShell />
-      </div>
+      <ClientIdentityProvider>
+        <LocalSessionProvider>
+          <div className="media-app">
+            <MediaAppShell />
+          </div>
+        </LocalSessionProvider>
+      </ClientIdentityProvider>
     </MantineProvider>
   );
 }
