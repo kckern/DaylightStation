@@ -13,8 +13,8 @@ The system treats an inbound HR signal at one of three recognition tiers, depend
 | Tier | Config presence | Card appears? | Avatar | Name |
 |------|----------------|---------------|--------|------|
 | **1. Mapped** | `devices.heart_rate: {id: userId}` AND user has profile | Yes | User's profile photo | User's name |
-| **2. Color-allocated** | `device_colors.heart_rate: {id: color}` only, no user mapping | Yes | **Pikachu** | `#<deviceId>` |
-| **3. Wild** | Not in config at all | ANT+: yes / BLE: no | **Pikachu** | `#<deviceId>` |
+| **2. Color-allocated** | `device_colors.heart_rate: {id: color}` only, no user mapping | Yes | **Pikachu** + sticker-color avatar ring | **"Purple strap"** (color-name label) |
+| **3. Wild** | Not in config at all | ANT+: yes / BLE: no | **Pikachu** + deterministic hash-color ring | `#<deviceId>` |
 
 Tier 2 is a pattern for recurring visitors — the device gets a stable color (so the human eye can identify "the orange one") without committing the device ID to a permanent user. From `fitness.yml`:
 
@@ -27,7 +27,7 @@ device_colors:
     10266: teal     # guest3
 ```
 
-These three IDs have colors but no `devices.heart_rate` entry — they're reserved slots for "someone visiting wearing an unknown strap." Cards render with a recognizable color border but a Pikachu face.
+These three IDs have colors but no `devices.heart_rate` entry — they're reserved slots for "someone visiting wearing an unknown strap." Cards render with a Pikachu face but the sticker color surfaces three ways (via `frontend/src/modules/Fitness/lib/strapColors.js`): a **matching heart emoji** (💜/🤎/🩵 — the full palette resolves, not just the six legacy colors), a **saturated 3px inset ring around the avatar** in the sticker color, and a **color-name card label** ("Purple strap" instead of `#10366`). Tier 3 wild devices, which have no configured color, get a **deterministic per-device hash-color ring** instead — so simultaneous Pikachus are still visually distinct.
 
 ---
 
@@ -55,6 +55,8 @@ When everything in the resolution chain returns null, `profileId = 'user'`, and 
 
 **The Pikachu signal:** any time you see Pikachu on a card, it means the device is broadcasting HR but the system has no idea whose chest it's on. The device is real and the data is flowing into the session; it's just unattributed.
 
+The signal got stronger: devices tagged as a generic **Guest** no longer Pikachu — they show a distinct placeholder (`/static/img/users/guest-adult` or `guest-kid`, per `guestPlaceholders.js`; degrades to Pikachu only until those asset files exist). So Pikachu now specifically means **untagged** (or a named user with a missing photo), not "anonymous but claimed."
+
 **Asset location:** `data/household/.../media/img/users/user.jpg`. Replacing this file changes the fallback for the whole household.
 
 ---
@@ -67,17 +69,18 @@ Pikachu shows up whenever the avatar URL resolves to `/static/img/users/user.jpg
 The device broadcasts but has no entry in `devices.heart_rate`. The `profileId` resolution chain at `FitnessUsers.jsx:896-907` falls through to the literal `'user'` fallback. Card label shows `#<deviceId>`. This is the only case that creates a *new* Pikachu card from nothing.
 
 **2. Color-allocated visitor slots**
-Same mechanism as #1 — IDs like `10366` / `11521` / `10266` are in `device_colors.heart_rate` but NOT in `devices.heart_rate`. Card gets a colored border but no user, so the avatar Pikachus.
+Same mechanism as #1 — IDs like `10366` / `11521` / `10266` are in `device_colors.heart_rate` but NOT in `devices.heart_rate`. The card gets the sticker-color treatment (heart emoji + inset avatar ring + "Purple strap" label) but no user, so the avatar Pikachus.
 
 **3. Mapped user with a missing avatar file**
 The `profileId` resolves correctly (e.g. `family-a`), the URL `/static/img/users/family-a.jpg` is requested, the file 404s, and the `<img onError>` handler swaps to `user.jpg`. The card's *name* is still correct — only the avatar Pikachus. This is the "silent" Pikachu: easy to miss because the label looks fine.
 
 **Where Pikachu does NOT appear:**
+- Tagged generic Guests — once a card is tagged "Guest" / "Guest (kid)", the avatar swaps to the `guest-adult` / `guest-kid` placeholder (falling back to Pikachu only while those assets are missing).
 - Unmapped BLE devices — dropped at `ble.mjs:~415` (`if (!userId) return;`) before reaching the frontend. No card, no Pikachu.
 - Non-HR equipment with no mapping — falls back to `equipment`, not `user`.
 - Before the first HR reading from a device — cards are only rendered after `DeviceManager.registerDevice()` fires.
 
-In plain terms: **Pikachu = "an ANT+ HR strap is broadcasting and I have no idea whose chest it's on, OR I know whose chest it is but their photo is missing."**
+In plain terms: **Pikachu = "an ANT+ HR strap is broadcasting and I have no idea whose chest it's on, OR I know whose chest it is but their photo is missing."** A claimed-but-anonymous Guest is no longer part of that set.
 
 ---
 
@@ -212,7 +215,7 @@ ble_users:
 ## Things to Know (Footguns)
 
 - **"Type: unknown" is a different concept.** `FitnessUsers.jsx:38` and `FitnessSidebar.scss:838` reference an `unknown` class — that's for device payloads of an *unrecognized sensor type* (not heart_rate, not cadence, not power), styled with a gray `📡` icon. It is NOT the same as "HR device with unknown owner." The latter is Pikachu, the former is `📡`.
-- **Pikachu cards count toward governance.** An ANT+ stranger walking past will be evaluated for the `active: all` base requirement and can prevent the video from unlocking. If this happens, tag the device as "Guest" (`allowWhileAssigned: true`) to clear the noise, or use "Remove User" to suppress it until the next reading.
+- **Pikachu cards count toward governance.** An ANT+ stranger walking past will be evaluated for the `active: all` base requirement and can prevent the video from unlocking. If this happens, tag the device as "Guest" to clear the noise, or use "⛔ Ignore This Strap" (formerly "Remove User") to suppress it until the next reading.
 - **`device_colors` works on un-mapped devices.** You don't need a `devices.heart_rate` entry to set a color — Tier 2 (color-only) is a valid config state and is used intentionally for visitor slots.
 - **The Pikachu image is shared with non-fitness apps.** `user.jpg` is the general household fallback avatar — replacing it affects every place a user avatar can fall through to the default (Gratitude, governance overlays, etc.).
 - **BLE silence is real silence.** If you expect a registered user's Apple Watch to show up and it doesn't, the failure mode is "no card at all," not "Pikachu card." Check the fitness extension logs (`_extensions/fitness/src/ble.mjs` output) for `BLE HR device ... found but ...` warnings.
@@ -226,7 +229,7 @@ ble_users:
 |---------|--------|
 | First HR reading from unknown ANT+ ID | Pikachu card appears immediately |
 | User taps card → assigns identity | Card switches to assigned person's avatar/name; data from this point attributes to them |
-| User taps "Remove User" | Card disappears until next HR reading from same device |
+| User taps "⛔ Ignore This Strap" | Card disappears until next HR reading from same device |
 | No HR data for `ant_devices.timeout.inactive` (10s in current config) | Card grays out |
 | No HR data for `ant_devices.timeout.remove` (30s in current config) | Card removed |
 | BLE device fails best-effort match | Never shown; logged as warning, data discarded |

@@ -8,6 +8,8 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
+import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
+import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -77,17 +79,6 @@ const CONFIG = {
       blue: '#6ab8ff'
     },
     overlayBg: '#00000088'
-  },
-  heartRate: {
-    colorIcons: {
-      red: '❤️',
-      yellow: '💛',
-      green: '💚',
-      blue: '💙',
-      watch: '🤍',
-      orange: '🧡'
-    },
-    fallbackIcon: '🧡'
   },
   color: {
     luminanceThreshold: 0.6,
@@ -467,12 +458,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [equipment]);
 
-  const heartColorIcon = (deviceId) => {
-    const deviceIdStr = String(deviceId);
-    const colorKey = hrColorMap[deviceIdStr];
-    if (!colorKey) return CONFIG.heartRate.fallbackIcon;
-    return CONFIG.heartRate.colorIcons[colorKey] || CONFIG.heartRate.fallbackIcon;
-  };
+  const heartColorIcon = (deviceId) => heartEmojiForColor(hrColorMap[String(deviceId)]);
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return UI_LABELS.TIME_NEVER;
@@ -910,6 +896,19 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     || resolvedUser?.id
                     || 'user') // Fallback to generic avatar instead of slugifying
                 : (equipmentInfo?.id || 'equipment');
+              // Audit N5: generic Guests get a distinct placeholder avatar so
+              // claimed-but-anonymous straps don't look like untagged ones.
+              const avatarImageId = isHeartRate && isGenericGuestProfileId(profileId)
+                ? genericGuestImageId(guestAssignment?.metadata?.ageClass)
+                : profileId;
+              // §3: surface the physical sticker color as a saturated avatar ring.
+              // Configured color wins; unidentified cards (no user, no assignment)
+              // get a deterministic per-device hash color so simultaneous
+              // unknown straps are visually distinct.
+              const strapRingColor = isHeartRate
+                ? (cssColorForStrap(hrColorMap[deviceIdStr])
+                    || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
+                : null;
               const progressInfo = isHeartRate
                 ? (lookupZoneProgress(participantEntry?.name)
                     || lookupZoneProgress(canonicalUserName)
@@ -940,6 +939,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 const resolved = getDisplayName(deviceIdStr);
                 deviceName = resolved.displayName;
                 deviceNameSource = `DisplayNameResolver:${resolved.source}`;
+                // §3: an unresolved card shows "Purple strap" instead of "#10366"
+                // when the strap has a configured sticker color.
+                if (resolved.source === 'fallback') {
+                  const colorLabel = strapLabel(hrColorMap[deviceIdStr]);
+                  if (colorLabel) {
+                    deviceName = colorLabel;
+                    deviceNameSource = 'strapColor';
+                  }
+                }
               } else {
                 deviceName = device.name || String(device.deviceId);
                 deviceNameSource = device.name ? 'device.name' : 'device.deviceId';
@@ -1032,10 +1040,20 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     )}
                     <div
                       className={`card-avatar ${zoneClass}`}
+                      // §3 ring uses outline, not box-shadow: every HR avatar
+                      // carries a zone-*/no-zone class whose box-shadow is
+                      // declared !important in FitnessSidebar.scss (it would
+                      // override any inline boxShadow). The ring is INSET
+                      // (negative offset) because card-horizontal has
+                      // padding: 0 + overflow: hidden — an outward ring gets
+                      // clipped to a partial arc at default density.
+                      style={strapRingColor
+                        ? { outline: `3px solid ${strapRingColor}`, outlineOffset: '-3px' }
+                        : undefined}
                     >
                       {isHeartRate ? (
                         <img
-                          src={DaylightMediaPath(`/static/img/users/${profileId}`)}
+                          src={DaylightMediaPath(`/static/img/users/${avatarImageId}`)}
                           alt={`${deviceName} profile`}
                           className="user-profile-img"
                           onError={(e) => {

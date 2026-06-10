@@ -29,8 +29,21 @@ export class DanceLightingController {
     if (!cfg.enabled || cfg.colorStrips.length === 0) {
       return { ok: true, skipped: true, reason: 'lighting_not_configured' };
     }
+    let flagFailed = false;
+    if (cfg.partyModeFlag) {
+      try {
+        // Raise the HA party-mode flag BEFORE touching any lights so the
+        // garage deactivation guards yield to the party.
+        await this.#gateway.callService('input_boolean', 'turn_on', { entity_id: cfg.partyModeFlag });
+      } catch (error) {
+        flagFailed = true;
+        this.#logger.warn?.('fitness.dance.lighting.party_flag_on_failed', { entity: cfg.partyModeFlag, error: error.message });
+      }
+    }
     try {
-      if (cfg.whiteLights.length) {
+      // If the flag failed to raise, skip the white-lights turn_off so the
+      // unguarded deactivation trigger can't fire; party proceeds with overheads on.
+      if (cfg.whiteLights.length && !flagFailed) {
         await this.#gateway.callService('light', 'turn_off', { entity_id: cfg.whiteLights });
       }
       await this.#gateway.callService('light', 'turn_on', { entity_id: cfg.colorStrips, effect: cfg.baseEffect });
@@ -76,11 +89,20 @@ export class DanceLightingController {
         await this.#gateway.callService('light', 'turn_off', { entity_id: cfg.colorStrips });
       }
       this.#logger.info?.('fitness.dance.lighting.stop', {});
-      return { ok: true, stopped: true };
     } catch (error) {
       this.#logger.error?.('fitness.dance.lighting.stop_failed', { error: error.message });
       return { ok: false, error: error.message };
     }
+    if (cfg.partyModeFlag) {
+      try {
+        // Clear the HA party-mode flag AFTER restoring lights; the 4h HA
+        // auto-expire automation is the backstop if this fails.
+        await this.#gateway.callService('input_boolean', 'turn_off', { entity_id: cfg.partyModeFlag });
+      } catch (error) {
+        this.#logger.warn?.('fitness.dance.lighting.party_flag_off_failed', { entity: cfg.partyModeFlag, error: error.message });
+      }
+    }
+    return { ok: true, stopped: true };
   }
 }
 

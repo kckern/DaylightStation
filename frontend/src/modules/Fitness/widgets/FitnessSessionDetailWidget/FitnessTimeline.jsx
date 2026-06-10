@@ -273,6 +273,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
         userId,
         name: entry.displayLabel || entry.name || userId,
         avatarUrl: entry.avatarUrl,
+        isGuest: entry.isGuest === true,
         laneTop,
         laneHeight,
         fills,
@@ -367,6 +368,22 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
                 strokeWidth={borderWidth}
               />
             </g>
+          );
+        })}
+        {/* guest chips — small muted marker beside the avatar (audit N10) */}
+        {lanes.map((lane) => {
+          if (!lane.isGuest) return null;
+          const size = maxAvatarSize > 0 ? Math.min(lane.laneHeight, maxAvatarSize) : lane.laneHeight;
+          return (
+            <text
+              key={`guest-${lane.userId}`}
+              className="fitness-timeline__guest-chip"
+              x={size + 6}
+              y={lane.laneTop + lane.laneHeight / 2}
+              dominantBaseline="central"
+            >
+              guest
+            </text>
           );
         })}
       </svg>

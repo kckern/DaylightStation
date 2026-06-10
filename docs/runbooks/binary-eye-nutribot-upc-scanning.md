@@ -27,7 +27,7 @@ GET https://{APP_DOMAIN}/api/v1/nutribot/upc?upc={BARCODE}
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `upc` | Yes | 8-14 digit barcode (UPC-A, UPC-E, EAN-13, EAN-8) |
+| `upc` | Yes* | 8-14 digit barcode (UPC-A, UPC-E, EAN-13, EAN-8). *If `upc` is missing/empty, the endpoint falls back to any bare 8-14 digit query key (the shape Binary Eye produces when it appends the scan to the URL, e.g. `?member=popeye&0643843714477`). |
 | `member` | No | Household member username (e.g., `popeye`). Resolves to Telegram ID via identity mappings. |
 | `user_id` | No | Raw Telegram user ID. Fallback if `member` not provided. Defaults to head of household. |
 
@@ -37,22 +37,21 @@ GET https://{APP_DOMAIN}/api/v1/nutribot/upc?upc={BARCODE}
 
 Install from [F-Droid](https://f-droid.org/packages/de.markusfisch.android.binaryeye/) or [Google Play](https://play.google.com/store/apps/details?id=de.markusfisch.android.binaryeye).
 
-### 2. Configure Custom URL Action
+### 2. Configure "Send scan to URL"
 
 1. Open Binary Eye → Settings (gear icon)
-2. Scroll to **Custom URL** section
-3. Set the custom URL to:
+2. Enable **Send scan to URL** ("forward scans to a given URL")
+3. Set **URL to forward to**:
 
 ```
-https://{APP_DOMAIN}/api/v1/nutribot/upc?upc=%s&member={YOUR_USERNAME}
+https://{APP_DOMAIN}/api/v1/nutribot/upc?member={YOUR_USERNAME}
 ```
 
-The `%s` placeholder is replaced by the scanned barcode value. Replace `{YOUR_USERNAME}` with your household member name (e.g., `popeye`). Omit `&member=...` if you're the head of household.
+4. Set the send type to **GET, add content to URL**
 
-### 3. Set Default Action
+**Important:** Binary Eye's send-scan feature has NO placeholder substitution — do not put `%s` or `upc=` in the URL. It simply appends the scanned code to the URL (`...?member=popeye&0643843714477`), and the endpoint detects the appended barcode automatically (see `directInput.mjs` bare-key fallback). Replace `{YOUR_USERNAME}` with your household member name (e.g., `popeye`), or omit `?member=...` entirely if you're the head of household.
 
-1. Settings → **Open with** → Set to "Custom URL"
-2. This makes scanning automatically send the UPC to NutriBot
+(Binary Eye's `{RESULT}` placeholder only exists in its separate "Automated actions" and deep-link `ret` features, which open a browser per scan — the background send-scan feature is the better UX.)
 
 ## Usage
 
@@ -87,6 +86,7 @@ Expected response:
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | 403 Forbidden | Not on VPN | Connect WireGuard before scanning |
+| `Missing required parameter: upc` / `Invalid UPC format` with `upc=` or `upc=%s` in proxy logs | URL template contains `upc=` or `%s` — Binary Eye sends these literally and appends the code after `&` | Remove `upc=%s` from the URL; rely on append + server-side bare-key fallback (see step 2) |
 | `Invalid UPC format` | Non-numeric barcode scanned | Only EAN/UPC barcodes work (not QR codes) |
 | `Product not found` | UPC not in database | Describe the food via text in Telegram instead |
 | No Telegram message | Wrong user_id | Add `&user_id={YOUR_TELEGRAM_ID}` to custom URL |
