@@ -104,6 +104,7 @@ dance_party:
   audio_playlist_id: 463801          # Plex music playlist (fallback: first plex.music_playlists)
   video_playlist_id: 0               # Plex disco-visual playlist (fallback: CSS disco backdrop)
   shuffle: true
+  strobe_bpm: 60                     # video strobe beat rate (fallback: 60); toggled from the bar
   lighting:
     color_strips:                    # colorloop + strobe targets (fallback: [] → lighting skipped)
       - light.garage_ceiling_led_strip

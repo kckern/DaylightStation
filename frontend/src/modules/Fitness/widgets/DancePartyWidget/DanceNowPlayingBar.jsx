@@ -23,10 +23,21 @@ const LightsIcon = () => (
   </svg>
 );
 
+// Lightning bolt (feather "zap", stroke follows currentColor): strobe toggle.
+const StrobeIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function DanceNowPlayingBar({
   track, isPlaying, onPlayPause, onNext, onExit,
   volumeLevel = 100, onVolumeSelect,
-  lightsOn = false, onToggleLights
+  lightsOn = false, onToggleLights,
+  strobeOn = false, onToggleStrobe
 }) {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const closeVolume = useCallback(() => setVolumeOpen(false), []);
@@ -45,6 +56,17 @@ export default function DanceNowPlayingBar({
           <div className="dance-artist">{track?.artist || ''}</div>
         </div>
         <div className="dance-controls">
+          {onToggleStrobe && (
+            <button
+              type="button"
+              className={`dance-strobe-btn ${strobeOn ? 'is-on' : 'is-off'}`}
+              aria-label={strobeOn ? 'Turn strobe off' : 'Turn strobe on'}
+              aria-pressed={strobeOn}
+              onClick={onToggleStrobe}
+            >
+              <StrobeIcon />
+            </button>
+          )}
           {onToggleLights && (
             <button
               type="button"
@@ -83,5 +105,7 @@ DanceNowPlayingBar.propTypes = {
   volumeLevel: PropTypes.number,
   onVolumeSelect: PropTypes.func,
   lightsOn: PropTypes.bool,
-  onToggleLights: PropTypes.func
+  onToggleLights: PropTypes.func,
+  strobeOn: PropTypes.bool,
+  onToggleStrobe: PropTypes.func
 };

@@ -18,6 +18,8 @@ export function resolveDancePlaylists(dancePartyConfig) {
   };
   const audioPlaylistId = toId(dp?.audio_playlist_id);
   const videoPlaylistId = toId(dp?.video_playlist_id);
+  const rawBpm = Number(dp?.strobe_bpm);
+  const strobeBpm = Number.isFinite(rawBpm) && rawBpm > 0 ? rawBpm : 60;
   return {
     configured: dp != null,
     audioPlaylistId,
@@ -26,7 +28,9 @@ export function resolveDancePlaylists(dancePartyConfig) {
     hasVideo: videoPlaylistId != null,
     // Player shader for the video layer ('minimal' aliases to 'focused' in
     // Player.jsx). Default keeps the party video chrome-free.
-    videoShader: typeof dp?.video_shader === 'string' && dp.video_shader ? dp.video_shader : 'focused'
+    videoShader: typeof dp?.video_shader === 'string' && dp.video_shader ? dp.video_shader : 'focused',
+    // Beats per minute for the strobe overlay (useDanceStrobe); 60 = 1 beat/sec.
+    strobeBpm
   };
 }
 
