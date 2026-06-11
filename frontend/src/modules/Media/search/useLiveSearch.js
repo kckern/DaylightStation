@@ -1,9 +1,11 @@
+// frontend/src/modules/Media/search/useLiveSearch.js
+// Debounced live search over the streaming (SSE) search endpoint.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStreamingSearch } from '../../../hooks/useStreamingSearch.js';
+import { TIMING } from '../constants.js';
 import mediaLog from '../logging/mediaLog.js';
 
 const SEARCH_ENDPOINT = '/api/v1/content/query/search/stream';
-const DEBOUNCE_MS = 250;
 
 export function useLiveSearch({ scopeParams = '' } = {}) {
   const inner = useStreamingSearch(SEARCH_ENDPOINT, scopeParams);
@@ -29,7 +31,7 @@ export function useLiveSearch({ scopeParams = '' } = {}) {
       setWaiting(false);
       mediaLog.searchIssued({ text: query, scopeParams });
       inner.search(query, scopeParams);
-    }, DEBOUNCE_MS);
+    }, TIMING.SEARCH_DEBOUNCE_MS);
   }, [inner, scopeParams]);
 
   const retry = useCallback(() => {

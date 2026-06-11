@@ -1,4 +1,11 @@
+// frontend/src/modules/Media/search/SearchBar.jsx
+// The dock's live search: scope selector + input + inline results dropdown
+// (C1.1 — a combobox, never a results page). Queue actions keep the dropdown
+// open; Play Now closes it and clears the query. A content-ID-looking query
+// gets a pinned deep-link affordance instead of hijacking the search.
 import React, { useState, useRef, useCallback } from 'react';
+import { TextInput } from '@mantine/core';
+import { IconSearch, IconAlertTriangle } from '@tabler/icons-react';
 import { useLiveSearch } from './useLiveSearch.js';
 import { useSearchContext } from './SearchProvider.jsx';
 import { SearchResults } from './SearchResults.jsx';
@@ -8,7 +15,7 @@ import { SearchErrorState } from './SearchErrorState.jsx';
 import { deriveSearchState, SEARCH_STATE } from './searchStates.js';
 import { parseContentId } from './contentIdParser.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
-import { useSessionController } from '../session/useSessionController.js';
+import { useSessionController } from '../controller/useSessionController.js';
 
 export function SearchBar() {
   const { scopes, currentScopeKey, currentScope, scopeError, setScopeKey } = useSearchContext();
@@ -28,7 +35,9 @@ export function SearchBar() {
     setQuery('');
   }, [setQuery]);
 
-  useDismissable(rootRef, { open: isOpen, onDismiss: close, ignore: '.media-app-portal' });
+  // Mantine portals (cast popovers opened from result rows) live outside this
+  // subtree; pointerdowns inside them must not dismiss the search overlay.
+  useDismissable(rootRef, { open: isOpen, onDismiss: close, ignore: '.media-app-portal, [data-portal]' });
 
   const onChange = (e) => {
     const next = e.target.value;
@@ -42,12 +51,7 @@ export function SearchBar() {
     close();
   };
 
-  const state = deriveSearchState({
-    query: value,
-    isSearching,
-    results,
-    error,
-  });
+  const state = deriveSearchState({ query: value, isSearching, results, error });
   const parsedId = parseContentId(value);
 
   return (
@@ -57,29 +61,42 @@ export function SearchBar() {
       ref={rootRef}
       onFocus={() => setFocused(true)}
     >
-      <select
-        data-testid="media-search-scope"
-        value={currentScopeKey ?? ''}
-        onChange={(e) => setScopeKey(e.target.value)}
-      >
-        {scopes.map((s) => (
-          Array.isArray(s.children) && s.children.length > 0 ? (
-            <optgroup key={s.key} label={s.label}>
-              {s.params != null && <option value={s.key}>All {s.label}</option>}
-              {s.children.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-            </optgroup>
-          ) : (
-            <option key={s.key} value={s.key}>{s.label}</option>
-          )
-        ))}
-      </select>
-      {scopeError && <span data-testid="scope-error" className="scope-error" title={scopeError.message}>⚠</span>}
-      <input
-        data-testid="media-search-input"
-        value={value}
-        onChange={onChange}
-        placeholder="Search media — title, artist, or paste a content ID (plex-main:12345)"
-      />
+      <div className="media-search-controls">
+        <select
+          data-testid="media-search-scope"
+          className="media-search-scope"
+          aria-label="Search scope"
+          value={currentScopeKey ?? ''}
+          onChange={(e) => setScopeKey(e.target.value)}
+        >
+          {scopes.map((s) => (
+            Array.isArray(s.children) && s.children.length > 0 ? (
+              <optgroup key={s.key} label={s.label}>
+                {s.params != null && <option value={s.key}>All {s.label}</option>}
+                {s.children.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </optgroup>
+            ) : (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            )
+          ))}
+        </select>
+        {scopeError && (
+          <span data-testid="scope-error" className="scope-error" title={scopeError.message}>
+            <IconAlertTriangle size={16} aria-label="Scope config failed to load" />
+          </span>
+        )}
+        <TextInput
+          className="media-search-input-wrap"
+          size="md"
+          radius="md"
+          data-testid="media-search-input"
+          leftSection={<IconSearch size={18} />}
+          value={value}
+          onChange={onChange}
+          placeholder="Search media…"
+          aria-label="Search"
+        />
+      </div>
       {isOpen && (
         <div data-testid="search-overlay" className="media-search-overlay">
           {parsedId && state.kind !== SEARCH_STATE.IDLE && (

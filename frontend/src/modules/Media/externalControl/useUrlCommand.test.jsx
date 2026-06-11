@@ -57,3 +57,20 @@ describe('useUrlCommand', () => {
     expect(ctl.queue.add).not.toHaveBeenCalled();
   });
 });
+
+// Audit P1#3: the dedupe token must cover ONLY the playback namespace —
+// nav params change as the user navigates, and a raw-search token replayed
+// ?play on reload-after-navigation, destroying the session.
+import { tokenFor } from './useUrlCommand.js';
+
+describe('tokenFor', () => {
+  it('is identical with and without nav params', () => {
+    expect(tokenFor('?play=plex:1')).toBe(tokenFor('?play=plex:1&view=fleet'));
+    expect(tokenFor('?play=plex:1&view=browse&path=plex/video')).toBe(tokenFor('?play=plex:1'));
+  });
+
+  it('differs when playback params differ', () => {
+    expect(tokenFor('?play=plex:1')).not.toBe(tokenFor('?play=plex:2'));
+    expect(tokenFor('?play=plex:1')).not.toBe(tokenFor('?play=plex:1&shuffle=1'));
+  });
+});

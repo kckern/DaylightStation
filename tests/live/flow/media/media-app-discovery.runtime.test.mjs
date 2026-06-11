@@ -30,7 +30,12 @@ test.describe('MediaApp — P2 discovery', () => {
     await page.getByTestId(`result-play-now-${contentId}`).evaluate((el) => el.click());
 
     await page.getByTestId('mini-player-open-nowplaying').click();
-    await expect(page.getByRole('heading', { name: new RegExp(`Now Playing: ${contentId}`, 'i') })).toBeVisible({ timeout: 10000 });
+    // The heading shows the human title; the canonical id is exposed as a
+    // data attribute so we can assert the RIGHT item is playing.
+    const npTitle = page.getByTestId('now-playing-title');
+    await expect(npTitle).toBeVisible({ timeout: 10000 });
+    await expect(npTitle).toContainText(/Now Playing:/i);
+    await expect(npTitle).toHaveAttribute('data-content-id', contentId, { timeout: 10000 });
   });
 
   test('clicking a search result title opens inline peek (no navigation)', async ({ page }) => {

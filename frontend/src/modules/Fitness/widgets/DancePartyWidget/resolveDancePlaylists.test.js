@@ -4,7 +4,17 @@ import { resolveDancePlaylists } from './resolveDancePlaylists.js';
 describe('resolveDancePlaylists', () => {
   it('uses configured audio + video ids', () => {
     const r = resolveDancePlaylists({ audio_playlist_id: 463801, video_playlist_id: 99, shuffle: true });
-    expect(r).toEqual({ configured: true, audioPlaylistId: 463801, videoPlaylistId: 99, shuffle: true, hasVideo: true, videoShader: 'focused' });
+    expect(r).toEqual({ configured: true, audioPlaylistId: 463801, videoPlaylistId: 99, shuffle: true, hasVideo: true, videoShader: 'focused', strobeBpm: 60 });
+  });
+
+  it('strobe bpm defaults to 60, honors strobe_bpm config (string coerced), rejects junk', () => {
+    expect(resolveDancePlaylists({}).strobeBpm).toBe(60);
+    expect(resolveDancePlaylists(null).strobeBpm).toBe(60);
+    expect(resolveDancePlaylists({ strobe_bpm: 90 }).strobeBpm).toBe(90);
+    expect(resolveDancePlaylists({ strobe_bpm: '120' }).strobeBpm).toBe(120);
+    expect(resolveDancePlaylists({ strobe_bpm: 0 }).strobeBpm).toBe(60);
+    expect(resolveDancePlaylists({ strobe_bpm: -5 }).strobeBpm).toBe(60);
+    expect(resolveDancePlaylists({ strobe_bpm: 'fast' }).strobeBpm).toBe(60);
   });
 
   it('video shader defaults to focused, honors video_shader config', () => {

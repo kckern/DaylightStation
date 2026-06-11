@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import getLogger from '@/lib/logging/Logger.js';
+import getLogger, { configure } from '@/lib/logging/Logger.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import MenuNavigationContext from '@/context/MenuNavigationContext.jsx';
 import DayColumn from './components/DayColumn.jsx';
@@ -15,13 +15,31 @@ import { viewReducer, initialViewState } from './state/viewReducer.js';
 import { resolveKey } from './state/keymap.js';
 import './WeeklyReview.scss';
 
-const logger = getLogger().child({ component: 'weekly-review' });
 // Most-recent-8-day grid is 4 columns wide.
 const GRID_COLS = 4;
 // Two presses of the same horizontal direction within this window cross to the adjacent day.
 const DOUBLE_EDGE_WINDOW_MS = 500;
 
 export default function WeeklyReview({ dispatch, dismiss, clear }) {
+  // Persist this review's logs to media/logs/weekly-review/*.jsonl. The session-file
+  // transport only writes events whose context carries app + sessionLog. Set them on
+  // global config SYNCHRONOUSLY on first render (not in an effect) so the lazy hook
+  // loggers (recorder/uploader), which emit from effects registered below this point,
+  // inherit the context before their first event. See audit
+  // docs/_wip/audits/2026-06-07-weekly-review-session-logging-gap.md.
+  const sessionLogConfiguredRef = useRef(false);
+  if (!sessionLogConfiguredRef.current) {
+    configure({ context: { app: 'weekly-review', sessionLog: true } });
+    sessionLogConfiguredRef.current = true;
+  }
+  // This child carries sessionLog in its own context, so it emits the single
+  // session-log.start that opens the session file (hooks/DayReel inherit from global
+  // config and route to the same file without re-firing start).
+  const logger = useMemo(
+    () => getLogger().child({ app: 'weekly-review', component: 'weekly-review', sessionLog: true }),
+    []
+  );
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -137,7 +155,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   }, [stopRecording, startRecording]);
   useEffect(() => {
     logger.info('mount');
-    return () => logger.info('unmount');
+    return () => {
+      logger.info('unmount');
+      // Stop routing global logs to the weekly-review session file once we leave.
+      configure({ context: { sessionLog: false } });
+    };
   }, []);
 
   useEffect(() => {

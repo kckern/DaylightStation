@@ -1,71 +1,83 @@
+// frontend/src/modules/Media/shell/NavProvider.jsx
+// Single-route navigation: views are URL query state (?view=…), in-app
+// navigation is a stack mirrored into history.state so browser Back, reload,
+// and shared URLs all restore correctly. The stack itself is serialized into
+// each history entry (mediaNavStack) — popstate restores the full stack, not
+// a flattened single entry.
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { readNavFromSearch, writeNavToSearch } from '../lib/urlParams.js';
+import mediaLog from '../logging/mediaLog.js';
 
 const NavContext = createContext(null);
 
-const INITIAL_ENTRY = { view: 'home', params: {} };
-
-const NAV_PARAM_KEYS = ['view', 'path', 'contentId', 'deviceId'];
-
-function readStateFromUrl() {
-  if (typeof window === 'undefined') return INITIAL_ENTRY;
-  const sp = new URLSearchParams(window.location.search);
-  const view = sp.get('view') || 'home';
-  const params = {};
-  for (const key of NAV_PARAM_KEYS) {
-    if (key === 'view') continue;
-    const v = sp.get(key);
-    if (v != null) params[key] = v;
+function initialStack() {
+  if (typeof window === 'undefined') return [{ view: 'home', params: {} }];
+  const hs = window.history.state;
+  if (hs && Array.isArray(hs.mediaNavStack) && hs.mediaNavStack.length > 0) {
+    return hs.mediaNavStack;
   }
-  return { view, params };
+  return [readNavFromSearch(window.location.search)];
 }
 
-function writeStateToUrl(view, params, method = 'push') {
+function syncHistory(stack, method) {
   if (typeof window === 'undefined') return;
-  const sp = new URLSearchParams(window.location.search);
-  // Strip existing nav keys; preserve everything else (e.g. ?play=, ?shader=).
-  for (const key of NAV_PARAM_KEYS) sp.delete(key);
-  if (view && view !== 'home') sp.set('view', view);
-  for (const [k, v] of Object.entries(params || {})) {
-    if (!NAV_PARAM_KEYS.includes(k)) continue;
-    if (v != null && v !== '') sp.set(k, String(v));
-  }
-  const qs = sp.toString();
+  const top = stack[stack.length - 1];
+  const qs = writeNavToSearch(window.location.search, top.view, top.params);
   const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
-  const fn = method === 'replace' ? window.history.replaceState : window.history.pushState;
-  fn.call(window.history, { view, params }, '', url);
+  const state = { ...(window.history.state || {}), mediaNavStack: stack };
+  if (method === 'push') window.history.pushState(state, '', url);
+  else window.history.replaceState(state, '', url);
 }
 
 export function NavProvider({ children }) {
-  const [stack, setStack] = useState(() => [readStateFromUrl()]);
+  const [stack, setStack] = useState(initialStack);
+
+  // Make sure the initial entry carries the stack so a reload restores it.
+  useEffect(() => {
+    syncHistory(stack, 'replace');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    const onPop = () => {
-      const next = readStateFromUrl();
-      // Replace the stack with the URL-derived entry; that's the browser's truth now.
-      setStack([next]);
+    const onPop = (e) => {
+      const s = e.state?.mediaNavStack;
+      setStack(Array.isArray(s) && s.length > 0 ? s : [readNavFromSearch(window.location.search)]);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   const push = useCallback((view, params = {}) => {
-    setStack((prev) => [...prev, { view, params }]);
-    writeStateToUrl(view, params, 'push');
+    setStack((prev) => {
+      const next = [...prev, { view, params }];
+      syncHistory(next, 'push');
+      mediaLog.navPushed({ view, depth: next.length });
+      return next;
+    });
   }, []);
 
+  // pop() drives the browser history so in-app Back and browser Back are the
+  // same operation; the popstate handler restores the previous stack.
   const pop = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.state?.mediaNavStack?.length > 1) {
+      window.history.back();
+      return;
+    }
+    // No in-app history (deep-linked entry): fall back to home.
     setStack((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.slice(0, -1);
-      const top = next[next.length - 1];
-      writeStateToUrl(top.view, top.params, 'replace');
+      if (prev.length <= 1 && prev[0]?.view === 'home') return prev;
+      const next = [{ view: 'home', params: {} }];
+      syncHistory(next, 'replace');
       return next;
     });
   }, []);
 
   const replace = useCallback((view, params = {}) => {
-    setStack((prev) => [...prev.slice(0, -1), { view, params }]);
-    writeStateToUrl(view, params, 'replace');
+    setStack((prev) => {
+      const next = [...prev.slice(0, -1), { view, params }];
+      syncHistory(next, 'replace');
+      return next;
+    });
   }, []);
 
   const current = stack[stack.length - 1];

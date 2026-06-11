@@ -18,6 +18,11 @@
   &.is-on { color: #ffd24a !important; filter: drop-shadow(0 0 6px rgba(255,210,74,.9)); background: rgba(255,210,74,.18) !important; }
   &.is-off { opacity: .45; }
 }
+// Strobe toggle (left of the lights button): electric-blue glow when on.
+.dance-strobe-btn { display: flex; align-items: center; border-radius: 50%; padding: 6px !important;
+  &.is-on { color: #6ee2ff !important; filter: drop-shadow(0 0 6px rgba(110,226,255,.9)); background: rgba(110,226,255,.18) !important; }
+  &.is-off { opacity: .45; }
+}
 
 // Volume modal — compact sheet over the video, opened from the bar's icon.
 // TouchVolumeButtons inside (touch screen — discrete levels, no slider);

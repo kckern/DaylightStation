@@ -1,14 +1,13 @@
 // frontend/src/modules/Media/session/usePlayerHost.js
-import { useEffect } from 'react';
-import { usePlayerHostSetter } from './LocalSessionProvider.jsx';
+import { useContext, useEffect } from 'react';
+import { PlayerHostSetterContext } from './playerHostContext.js';
 
 /**
- * Claim the Player host for the lifetime of the mounted view.
- * When the view unmounts, the host reverts to null so HiddenPlayerMount
- * renders inline (the default hidden container).
+ * Claim the Player host for the lifetime of the mounted view. On unmount the
+ * host reverts to null and PlayerBridge returns to the hidden mount.
  */
 export function usePlayerHost(ref) {
-  const setHost = usePlayerHostSetter();
+  const setHost = useContext(PlayerHostSetterContext);
   useEffect(() => {
     setHost(ref.current ?? null);
     return () => setHost(null);

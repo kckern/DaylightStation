@@ -15,6 +15,10 @@ export function resolveDanceLightingConfig(fitnessConfig) {
     whiteLights: Array.isArray(lighting.white_lights) ? lighting.white_lights : [],
     baseEffect: typeof lighting.base_effect === 'string' && lighting.base_effect ? lighting.base_effect : 'colorloop',
     partyModeFlag: typeof lighting.party_mode_flag === 'string' && lighting.party_mode_flag ? lighting.party_mode_flag : null,
+    // input_number entity that mirrors the music's live BPM for HA-side strobe
+    // scripts; null → setBpm degrades to a no-op.
+    bpmEntity: typeof lighting.bpm_entity === 'string' && lighting.bpm_entity ? lighting.bpm_entity : null,
+    bpmMinIntervalMs: Number.isFinite(lighting.bpm_min_interval_ms) ? lighting.bpm_min_interval_ms : 2000,
     accent: {
       mode: ACCENT_MODES.includes(accent.mode) ? accent.mode : 'flash',
       onTrackChange: accent.on_track_change !== false,

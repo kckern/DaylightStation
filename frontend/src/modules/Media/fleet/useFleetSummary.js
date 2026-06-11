@@ -1,20 +1,21 @@
-import { useMemo } from 'react';
+// frontend/src/modules/Media/fleet/useFleetSummary.js
+// Fleet-at-a-glance numbers for the dock indicator.
+import { useCallback, useSyncExternalStore } from 'react';
 import { useFleetContext } from './FleetProvider.jsx';
 
+const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
+
 export function useFleetSummary() {
-  const { devices, byDevice } = useFleetContext();
-  return useMemo(() => {
-    const total = devices.length;
-    let online = 0;
-    let offline = 0;
-    for (const d of devices) {
-      const entry = byDevice.get(d.id);
-      if (!entry) continue;
-      if (entry.offline) { offline += 1; continue; }
-      if (entry.snapshot) online += 1;
-    }
-    return { total, online, offline };
-  }, [devices, byDevice]);
+  const { store, devices } = useFleetContext();
+  const subscribe = useCallback((cb) => store.subscribeAll(cb), [store]);
+  const get = useCallback(() => store.getAll(), [store]);
+  const byDevice = useSyncExternalStore(subscribe, get, get);
+
+  let active = 0;
+  for (const [, entry] of byDevice) {
+    if (!entry.offline && ACTIVE_STATES.has(entry.snapshot?.state)) active += 1;
+  }
+  return { active, total: devices.length, byDevice };
 }
 
 export default useFleetSummary;
