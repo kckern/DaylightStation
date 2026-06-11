@@ -6,6 +6,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { resolveDancePlaylists } from './resolveDancePlaylists.js';
 import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
+import { useDanceStrobe } from './useDanceStrobe.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
 import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
@@ -33,10 +34,11 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // host's `config` prop is only honored when it explicitly carries its own
   // dance_party block (e.g. unit tests) — never merged, never substituted.
   const dancePartyConfig = config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null;
-  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader } =
+  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm } =
     useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
 
   const { accent, lightsOn, toggleLights } = useDanceLighting({ enabled: true });
+  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: strobeBpm });
 
   const audioRef = useRef(null);
   const videoRef = useRef(null);
@@ -67,14 +69,18 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
 
   // Mirror FitnessMusicPlayer: the queue prop is a memoized object so the inner
   // Player's queue controller does not re-init every render.
+  // resume: false + seconds: 0 ride the queue object into every generated item
+  // (useQueueController itemOverrides): party content always starts from 0:00,
+  // never from a saved watch position. An explicit `seconds` key wins over any
+  // resume_position the backend attaches (Player.jsx explicitStartProvided).
   const audioQueue = useMemo(
-    () => (audioPlaylistId ? { contentId: `plex:${audioPlaylistId}`, plex: audioPlaylistId, shuffle } : null),
+    () => (audioPlaylistId ? { contentId: `plex:${audioPlaylistId}`, plex: audioPlaylistId, shuffle, resume: false, seconds: 0 } : null),
     [audioPlaylistId, shuffle]
   );
   // continuous: true loops the playlist (see useQueueController reset-continuous).
   // shader rides the queue object — Player resolves play?.shader || queue?.shader.
   const videoQueue = useMemo(
-    () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true, shader: videoShader } : null),
+    () => (videoPlaylistId ? { contentId: `plex:${videoPlaylistId}`, plex: videoPlaylistId, shuffle, continuous: true, shader: videoShader, resume: false, seconds: 0 } : null),
     [videoPlaylistId, shuffle, videoShader]
   );
   // Mute the video layer at the element level. Player has no `muted` prop and
@@ -176,7 +182,9 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
 
   return (
     <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}`}>
-      <div className="dance-video" ref={videoContainerRef}>
+      {/* strobeStyle flips opacity bright/dim and walks hue-rotate per beat;
+          scoped to the video layer so the bar/controls never flash. */}
+      <div className="dance-video" ref={videoContainerRef} style={strobeStyle || undefined}>
         {hasVideo && videoQueue ? (
           <Player ref={videoRef} queue={videoQueue} playerType="video" onProgress={handleVideoProgress} onError={handleVideoError} />
         ) : (
@@ -213,6 +221,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         onVolumeSelect={handleVolumeSelect}
         lightsOn={lightsOn}
         onToggleLights={toggleLights}
+        strobeOn={strobeOn}
+        onToggleStrobe={toggleStrobe}
       />
     </div>
   );
