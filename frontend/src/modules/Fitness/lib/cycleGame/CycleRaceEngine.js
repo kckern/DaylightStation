@@ -1,4 +1,10 @@
 import { computeDistanceDelta, zoneMultiplierFor } from './distanceModel.js';
+import { kmh } from './speed.js';
+
+// Display speed is averaged over this many ticks. Recorded/replayed distance
+// series hold integer metres, so a 1-tick delta jitters by ±1 m (±3.6 km/h at
+// 1 s ticks); a 5-tick window bounds that error to under 1 km/h.
+const SPEED_WINDOW_TICKS = 5;
 
 export class CycleRaceEngine {
   constructor({
@@ -33,6 +39,9 @@ export class CycleRaceEngine {
         hrSeries: [],
         rpmSeries: [],
         zoneSeries: [],
+        // Unrounded cumulative distances for the display-speed window — kept
+        // separate from distanceSeries, whose Math.round quantizes 1-tick deltas.
+        recentDist: [0],
         heartRate: null,
         rpm: 0,
         zoneId: null,
@@ -71,6 +80,15 @@ export class CycleRaceEngine {
     const idx = Math.min(arr.length - 1, Math.max(0, Math.round(t / intervalS) - 1));
     const v = arr[idx];
     return v === undefined ? null : v;
+  }
+
+  // Display speed over the trailing window. A rider parked at the finish line
+  // of a distance race reads 0 immediately — including the tick they cross.
+  _speedKmh(rider) {
+    if (this.winCondition === 'distance' && rider.finishTimeS != null) return 0;
+    const ring = rider.recentDist;
+    if (!ring || ring.length < 2) return 0;
+    return kmh(ring[ring.length - 1] - ring[0], (ring.length - 1) * this.intervalSeconds);
   }
 
   tick(inputs = {}) {
@@ -125,6 +143,8 @@ export class CycleRaceEngine {
       const hr = Number.isFinite(hrRaw) ? hrRaw : null;
       rider.heartRate = hr;
       rider.hrSeries.push(hr);
+      rider.recentDist.push(rider.cumulativeDistanceM);
+      if (rider.recentDist.length > SPEED_WINDOW_TICKS + 1) rider.recentDist.shift();
     }
     this.finished = this.winCondition === 'distance'
       ? [...this.riders.values()].every((r) => r.finishTimeS != null)
@@ -167,7 +187,11 @@ export class CycleRaceEngine {
         rpm: Number.isFinite(r.rpm) ? r.rpm : 0,
         zoneId: r.zoneId ?? null,
         finishTimeS: r.finishTimeS,
-        isGhost: !!r.isGhost
+        isGhost: !!r.isGhost,
+        speedKmh: this._speedKmh(r),
+        // False only for ghosts whose source record predates rpm_series — the
+        // view can synthesize a display cadence instead of parking the needle.
+        hasRpmData: r.isGhost ? !!(r.ghostRpmArr && r.ghostRpmArr.length) : true
       }])),
       standings: this.standings()
     };

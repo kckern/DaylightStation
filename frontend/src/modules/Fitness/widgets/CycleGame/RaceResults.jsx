@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
+import resolveParticipantIdentity from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import SplitsChart from './panels/SplitsChart.jsx';
 import './RaceResults.scss';
 
@@ -47,7 +48,7 @@ function ResultRow({ s, riders, winCondition, dnfSet, penalizedSet, index, anima
   const isWinner = s.placement === 1 && !isDnf;
   const rider = riders[s.userId] || {};
   const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
-  const sourceId = isGhost ? String(s.userId).split(':')[2] || s.userId : s.userId;
+  const sourceId = isGhost ? resolveParticipantIdentity(String(s.userId)).sourceId : s.userId;
   const avatarSrc = rider.avatarSrc || `${AVATAR_BASE}/${sourceId}`;
   const medalClass = s.placement <= 3 ? ` race-results__row--p${s.placement}` : '';
 
