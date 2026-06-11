@@ -8,6 +8,7 @@ import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
 import { useDanceStrobe } from './useDanceStrobe.js';
 import { useDanceBpm } from './useDanceBpm.js';
+import { useBpmPublisher } from './useBpmPublisher.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
 import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
@@ -51,7 +52,11 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // strobe_bpm is the fallback until the analyzer locks (or if Web Audio is
   // unavailable). trackKey resets the analyzer's votes on song change.
   const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null });
-  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: detectedBpm ?? strobeBpm });
+  const effectiveBpm = detectedBpm ?? strobeBpm;
+  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: effectiveBpm });
+  // Mirror the tempo to HA (input_number via backend) so the physical party
+  // strobe follows the music; throttled here AND rate-capped server-side.
+  useBpmPublisher({ bpm: effectiveBpm });
 
   // Notify the host container we've mounted (parity with other widgets).
   useEffect(() => {

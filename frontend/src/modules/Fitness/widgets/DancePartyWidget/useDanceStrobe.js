@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
@@ -62,6 +62,13 @@ export function useDanceStrobe({ bpm = 60, rng = Math.random } = {}) {
 
   const safeBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 60;
 
+  // rng rides a ref so its identity is NOT an effect dependency: an inline
+  // rng prop would otherwise re-fire the orientation effect every render,
+  // and since pickOrientation never returns the current value, that loops
+  // render → new orientation → render forever.
+  const rngRef = useRef(rng);
+  rngRef.current = rng;
+
   useEffect(() => {
     if (!strobeOn) return undefined;
     const id = setInterval(() => setBeatIndex((i) => i + 1), 60000 / safeBpm);
@@ -72,8 +79,8 @@ export function useDanceStrobe({ bpm = 60, rng = Math.random } = {}) {
   // orientation, hidden behind the 20% dip until the next bright flash.
   useEffect(() => {
     if (!strobeOn || beatIndex % 2 === 0) return;
-    setOrientation((current) => pickOrientation(current, rng));
-  }, [strobeOn, beatIndex, rng]);
+    setOrientation((current) => pickOrientation(current, rngRef.current));
+  }, [strobeOn, beatIndex]);
 
   const toggleStrobe = useCallback(() => {
     setBeatIndex(0);
