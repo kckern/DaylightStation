@@ -37,3 +37,8 @@ test('returns null for non-string input', () => {
   expect(parseContentId(undefined)).toBeNull();
   expect(parseContentId(123)).toBeNull();
 });
+
+test('returns null for natural titles containing colons', () => {
+  expect(parseContentId('Frozen: Part 2')).toBeNull();
+  expect(parseContentId('Star Trek: The Next Generation')).toBeNull();
+});

@@ -72,8 +72,21 @@ export function createLocalSessionController({
     });
   };
 
+  // Move the current cursor to `entry` by IDENTITY (jump recomputes the
+  // index), demoting the spent current's upNext priority on the way past.
+  const moveCurrentTo = (entry) => {
+    let working = snap();
+    const oldCurrent = working.queue.items[working.queue.currentIndex];
+    if (oldCurrent && oldCurrent.priority === 'upNext' && oldCurrent.queueItemId !== entry.queueItemId) {
+      working = qOps.demote(working, oldCurrent.queueItemId);
+    }
+    store.replace(qOps.jump(working, entry.queueItemId));
+    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(entry) });
+    position.set(0);
+  };
+
   const advance = (reason) => {
-    const next = pickNextQueueItem(snap());
+    const next = pickNextQueueItem(snap(), { reason });
     mediaLog.playbackAdvanced({
       sessionId: snap().sessionId,
       reason,
@@ -83,25 +96,13 @@ export function createLocalSessionController({
       store.dispatch({ type: 'PLAYER_STATE', playerState: 'ended' });
       return;
     }
-    const idx = snap().queue.items.findIndex((i) => i.queueItemId === next.queueItemId);
-    store.dispatch({
-      type: 'REPLACE_QUEUE',
-      queue: { items: [...snap().queue.items], currentIndex: idx, upNextCount: snap().queue.upNextCount },
-    });
-    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(next) });
-    position.set(0);
+    moveCurrentTo(next);
   };
 
   const advanceBack = () => {
     const prevIdx = Math.max(-1, snap().queue.currentIndex - 1);
     if (prevIdx < 0) return;
-    const item = snap().queue.items[prevIdx];
-    store.dispatch({
-      type: 'REPLACE_QUEUE',
-      queue: { items: snap().queue.items, currentIndex: prevIdx, upNextCount: snap().queue.upNextCount },
-    });
-    store.dispatch({ type: 'LOAD_ITEM', item: itemFromQueueEntry(item) });
-    position.set(0);
+    moveCurrentTo(snap().queue.items[prevIdx]);
   };
 
   const setConfig = (patch) => {
@@ -121,18 +122,31 @@ export function createLocalSessionController({
     transport: {
       play: () => {
         mediaLog.transportCommand({ action: 'play', target: 'local' });
+        // Playing from a stopped/ready session starts the queue head.
+        if (!snap().currentItem) {
+          const first = snap().queue.items[0];
+          if (!first) return;
+          moveCurrentTo(first);
+        }
         player.play();
         store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
       },
       pause: () => {
         mediaLog.transportCommand({ action: 'pause', target: 'local' });
+        // Flush the hot-tier position durably — pausing is the moment the
+        // user expects "their place" to be saved.
+        const here = position.get().seconds;
+        if (Number.isFinite(here) && here > 0) setDurablePosition(here);
         player.pause();
         store.dispatch({ type: 'PLAYER_STATE', playerState: 'paused' });
       },
       stop: () => {
         mediaLog.transportCommand({ action: 'stop', target: 'local' });
         player.pause();
-        store.dispatch({ type: 'RESET' });
+        // Stop ends playback but does NOT destroy the queue — only the
+        // explicit, confirmed reset does that (C2.3 / session state table:
+        // stop → 'ready' while items remain, 'idle' when none).
+        store.dispatch({ type: 'STOP' });
         position.set(0);
       },
       seekAbs: (seconds) => {
@@ -163,9 +177,12 @@ export function createLocalSessionController({
         loadCurrent(next);
       },
       playNext: (input) => {
+        const wasEmpty = snap().queue.items.length === 0;
         const next = qOps.playNext(snap(), input);
         logQueueMutation('playNext', next, { contentId: input?.contentId });
         store.replace(next);
+        // Play Next into an empty queue starts it (parity with add).
+        if (wasEmpty && next.queue.items.length === 1) moveCurrentTo(next.queue.items[0]);
       },
       addUpNext: (input) => {
         const next = qOps.addUpNext(snap(), input);
@@ -180,9 +197,17 @@ export function createLocalSessionController({
         if (wasEmpty && next.queue.currentIndex === 0) loadCurrent(next);
       },
       remove: (queueItemId) => {
+        const wasCurrent = snap().queue.items[snap().queue.currentIndex]?.queueItemId === queueItemId;
         const next = qOps.remove(snap(), queueItemId);
         logQueueMutation('remove', next, { queueItemId });
         store.replace(next);
+        if (wasCurrent) {
+          // Removing the playing item: its successor takes over cleanly, or
+          // playback stops when nothing is left.
+          const successor = next.queue.items[next.queue.currentIndex];
+          if (successor) moveCurrentTo(successor);
+          else { player.pause(); store.dispatch({ type: 'STOP' }); position.set(0); }
+        }
       },
       reorder: (input) => {
         const next = qOps.reorder(snap(), input);

@@ -1,8 +1,15 @@
-/**
- * Queue operations for Media App sessions.
- * Pure functions that transform queue state immutably.
- * All ops: (snapshot, input, opts?) => newSnapshot
- */
+// frontend/src/modules/Media/session/queueOps.js
+// Queue operations — pure functions implementing the Plex MP model
+// (requirements C3 / technical doc §4.4). Rebuilt from spec.
+//
+// Two invariants the previous generation violated, now structural:
+// 1. "Current" is tracked by ITEM IDENTITY, not index. Every op resolves the
+//    current item's id first and recomputes currentIndex afterwards, so
+//    reordering around the playing item can never change what's playing.
+// 2. The Up Next band is POSITIONAL: the consecutive run of priority='upNext'
+//    items immediately after the current item. Items behind the current item
+//    are spent regardless of their priority flag; advancement and insertion
+//    both reason about the band, never about a global upNext count.
 
 function uid() {
   try {
@@ -28,184 +35,177 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
 }
 
 function countUpNext(items) {
-  return items.filter(i => i.priority === 'upNext').length;
+  return items.filter((i) => i.priority === 'upNext').length;
 }
 
-function withQueue(snapshot, queue) {
-  const currentItem = queue.currentIndex >= 0 && queue.items[queue.currentIndex]
-    ? {
-        contentId: queue.items[queue.currentIndex].contentId,
-        format: queue.items[queue.currentIndex].format,
-        title: queue.items[queue.currentIndex].title,
-        duration: queue.items[queue.currentIndex].duration,
-        thumbnail: queue.items[queue.currentIndex].thumbnail,
-      }
-    : snapshot.currentItem;
-  return { ...snapshot, queue, currentItem };
+function currentIdOf(snapshot) {
+  const { items, currentIndex } = snapshot.queue;
+  return currentIndex >= 0 && items[currentIndex] ? items[currentIndex].queueItemId : null;
+}
+
+function itemFields(entry) {
+  return {
+    contentId: entry.contentId,
+    format: entry.format,
+    title: entry.title,
+    duration: entry.duration,
+    thumbnail: entry.thumbnail,
+  };
 }
 
 /**
- * Play item immediately, optionally clearing remaining queue.
- * @param snapshot
- * @param input {contentId, title?, format?, duration?, thumbnail?}
- * @param opts {clearRest?}
+ * Rebuild the snapshot's queue around an items array and the id of the item
+ * that should be current. currentIndex is recomputed from identity;
+ * currentItem follows it. `currentId: null` clears the current item.
+ */
+function withQueue(snapshot, items, currentId) {
+  const currentIndex = currentId == null
+    ? -1
+    : items.findIndex((i) => i.queueItemId === currentId);
+  const currentItem = currentIndex >= 0 ? itemFields(items[currentIndex]) : null;
+  return {
+    ...snapshot,
+    queue: { items, currentIndex, upNextCount: countUpNext(items) },
+    currentItem,
+  };
+}
+
+/** Length of the consecutive upNext band immediately after `index`. */
+export function upNextBandLength(items, index) {
+  let n = 0;
+  for (let i = index + 1; i < items.length && items[i].priority === 'upNext'; i += 1) n += 1;
+  return n;
+}
+
+/**
+ * Play Now (§4.4 play-now): the new item REPLACES the current item in place.
+ * clearRest=true additionally drops everything else.
  */
 export function playNow(snapshot, input, { clearRest = false } = {}) {
   const newItem = toQueueItem(input);
   if (clearRest) {
-    return withQueue(snapshot, {
-      items: [newItem],
-      currentIndex: 0,
-      upNextCount: countUpNext([newItem]),
-    });
+    return withQueue(snapshot, [newItem], newItem.queueItemId);
   }
-  const items = [newItem, ...snapshot.queue.items];
-  return withQueue(snapshot, {
-    items,
-    currentIndex: 0,
-    upNextCount: countUpNext(items),
-  });
+  const { items, currentIndex } = snapshot.queue;
+  const next = [...items];
+  if (currentIndex >= 0) next.splice(currentIndex, 1, newItem);
+  else next.unshift(newItem);
+  return withQueue(snapshot, next, newItem.queueItemId);
 }
 
 /**
- * Insert item immediately after current, keep current playing.
- * @param snapshot
- * @param input
+ * Play Next (J2): insert directly after the current item, AT THE FRONT of
+ * the Up Next band — "interrupts the existing up-next ordering". Carries
+ * upNext priority so advancement honors it.
  */
 export function playNext(snapshot, input) {
-  const newItem = toQueueItem(input);
-  const items = [...snapshot.queue.items];
-  const after = Math.max(0, snapshot.queue.currentIndex) + 1;
-  items.splice(after, 0, newItem);
-  return withQueue(snapshot, {
-    items,
-    currentIndex: snapshot.queue.currentIndex,
-    upNextCount: countUpNext(items),
-  });
+  const newItem = toQueueItem(input, { priority: 'upNext' });
+  const { items, currentIndex } = snapshot.queue;
+  const next = [...items];
+  next.splice(currentIndex >= 0 ? currentIndex + 1 : 0, 0, newItem);
+  return withQueue(snapshot, next, currentIdOf(snapshot));
 }
 
 /**
- * Add to Up Next sub-queue (after current item, before remaining queue).
- * @param snapshot
- * @param input
+ * Add to Up Next (J2): append to the END of the Up Next band (after current
+ * + any existing band members, before the regular queue).
  */
 export function addUpNext(snapshot, input) {
   const newItem = toQueueItem(input, { priority: 'upNext' });
-  const items = [...snapshot.queue.items];
-
-  // Insert after current item + existing upNext items
-  const current = snapshot.queue.currentIndex;
-  let targetIdx;
-
-  if (current >= 0 && current < items.length) {
-    // Current item exists: insert after it + all existing upNext items
-    targetIdx = current + 1 + snapshot.queue.upNextCount;
-  } else {
-    // No current: insert at beginning
-    targetIdx = 0;
-  }
-
-  items.splice(targetIdx, 0, newItem);
-  const newCurrentIndex = snapshot.queue.currentIndex;
-
-  return withQueue(snapshot, {
-    items,
-    currentIndex: newCurrentIndex,
-    upNextCount: countUpNext(items),
-  });
+  const { items, currentIndex } = snapshot.queue;
+  const next = [...items];
+  const insertAt = currentIndex >= 0
+    ? currentIndex + 1 + upNextBandLength(items, currentIndex)
+    : upNextBandLength(items, -1); // no current: band starts at 0
+  next.splice(insertAt, 0, newItem);
+  return withQueue(snapshot, next, currentIdOf(snapshot));
 }
 
-/**
- * Append to end of queue.
- * @param snapshot
- * @param input
- */
+/** Add to Queue: append to the end. First-into-empty becomes current. */
 export function add(snapshot, input) {
   const newItem = toQueueItem(input);
   const items = [...snapshot.queue.items, newItem];
-  const currentIndex = snapshot.queue.currentIndex === -1 && items.length === 1
-    ? 0
-    : snapshot.queue.currentIndex;
-  return withQueue(snapshot, {
-    items,
-    currentIndex,
-    upNextCount: countUpNext(items),
-  });
+  const currentId = currentIdOf(snapshot)
+    ?? (snapshot.queue.items.length === 0 ? newItem.queueItemId : null);
+  return withQueue(snapshot, items, currentId);
 }
 
-/**
- * Empty queue and reset currentIndex.
- * @param snapshot
- */
+/** Clear the queue. The current item keeps playing (it leaves the queue). */
 export function clear(snapshot) {
-  return withQueue(snapshot, {
-    items: [],
-    currentIndex: -1,
-    upNextCount: 0,
-  });
+  return {
+    ...snapshot,
+    queue: { items: [], currentIndex: -1, upNextCount: 0 },
+    // currentItem intentionally preserved: clearing upcoming items does not
+    // stop playback (C3.4).
+  };
 }
 
 /**
- * Remove item by queueItemId, adjust currentIndex.
- * @param snapshot
- * @param queueItemId
+ * Remove an item. Removing the CURRENT item promotes the item that followed
+ * it (the caller decides whether to load/play it); removing the last
+ * remaining current item clears currentItem.
  */
 export function remove(snapshot, queueItemId) {
-  const idx = snapshot.queue.items.findIndex(i => i.queueItemId === queueItemId);
+  const { items } = snapshot.queue;
+  const idx = items.findIndex((i) => i.queueItemId === queueItemId);
   if (idx === -1) return snapshot;
-  const items = snapshot.queue.items.filter((_, i) => i !== idx);
-  let currentIndex = snapshot.queue.currentIndex;
-  if (idx < currentIndex) {
-    currentIndex -= 1;
-  } else if (idx === currentIndex) {
-    currentIndex = items.length > 0 ? Math.min(currentIndex, items.length - 1) : -1;
+  const next = items.filter((_, i) => i !== idx);
+  const currentId = currentIdOf(snapshot);
+  if (queueItemId !== currentId) {
+    return withQueue(snapshot, next, currentId);
   }
-  return withQueue(snapshot, {
-    items,
-    currentIndex,
-    upNextCount: countUpNext(items),
-  });
+  // Removed the current item: the successor (same index in the new array)
+  // becomes current; nothing left → no current.
+  const successor = next.length > 0 ? next[Math.min(idx, next.length - 1)] : null;
+  const result = withQueue(snapshot, next, successor?.queueItemId ?? null);
+  // Position belongs to the removed item, not its successor.
+  return { ...result, position: 0 };
 }
 
-/**
- * Jump to item by queueItemId.
- * @param snapshot
- * @param queueItemId
- */
+/** Jump to a specific item. */
 export function jump(snapshot, queueItemId) {
-  const idx = snapshot.queue.items.findIndex(i => i.queueItemId === queueItemId);
+  const { items } = snapshot.queue;
+  const idx = items.findIndex((i) => i.queueItemId === queueItemId);
   if (idx === -1) return snapshot;
-  return withQueue(snapshot, {
-    items: snapshot.queue.items,
-    currentIndex: idx,
-    upNextCount: snapshot.queue.upNextCount,
-  });
+  return withQueue(snapshot, items, queueItemId);
 }
 
 /**
- * Reorder queue. Accepts {from, to} (swap) or {items} (full reorder by ID list).
- * @param snapshot
- * @param input {from, to} | {items}
+ * Reorder: {from, to} moves one item; {items} replaces the ordering by id
+ * list — ids missing from the list keep their relative order at the END
+ * (never silently dropped, §4.4 "replace ordering"). The current item is
+ * identity-stable across both paths.
  */
 export function reorder(snapshot, input) {
-  const items = [...snapshot.queue.items];
+  const { items } = snapshot.queue;
+  const currentId = currentIdOf(snapshot);
+
   if (Array.isArray(input?.items)) {
-    const byId = new Map(items.map(i => [i.queueItemId, i]));
-    const reordered = input.items.map(id => byId.get(id)).filter(Boolean);
-    return withQueue(snapshot, {
-      items: reordered,
-      currentIndex: snapshot.queue.currentIndex,
-      upNextCount: countUpNext(reordered),
-    });
+    const byId = new Map(items.map((i) => [i.queueItemId, i]));
+    const listed = input.items.map((id) => byId.get(id)).filter(Boolean);
+    const listedIds = new Set(input.items);
+    const unlisted = items.filter((i) => !listedIds.has(i.queueItemId));
+    return withQueue(snapshot, [...listed, ...unlisted], currentId);
   }
-  const fromIdx = items.findIndex(i => i.queueItemId === input.from);
-  const toIdx = items.findIndex(i => i.queueItemId === input.to);
+
+  const next = [...items];
+  const fromIdx = next.findIndex((i) => i.queueItemId === input.from);
+  const toIdx = next.findIndex((i) => i.queueItemId === input.to);
   if (fromIdx === -1 || toIdx === -1) return snapshot;
-  const [moved] = items.splice(fromIdx, 1);
-  items.splice(toIdx, 0, moved);
-  return withQueue(snapshot, {
-    items,
-    currentIndex: snapshot.queue.currentIndex,
-    upNextCount: countUpNext(items),
-  });
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+  return withQueue(snapshot, next, currentId);
+}
+
+/**
+ * Demote a spent Up Next item to regular priority once playback moves past
+ * it — the band is consumable, not a permanent attribute.
+ */
+export function demote(snapshot, queueItemId) {
+  const { items } = snapshot.queue;
+  const idx = items.findIndex((i) => i.queueItemId === queueItemId);
+  if (idx === -1 || items[idx].priority !== 'upNext') return snapshot;
+  const next = [...items];
+  next[idx] = { ...next[idx], priority: 'queue' };
+  return withQueue(snapshot, next, currentIdOf(snapshot));
 }
