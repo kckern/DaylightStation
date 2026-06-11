@@ -5,13 +5,18 @@
 // namespace handled by NavProvider — see lib/urlParams.js.
 import { useEffect, useRef } from 'react';
 import { STORAGE_KEYS } from '../constants.js';
-import { PLAYBACK_PARAM_KEYS, NAV_PARAM_KEYS } from '../lib/urlParams.js';
+import { PLAYBACK_PARAM_KEYS, NAV_PARAM_KEYS, readPlaybackParams } from '../lib/urlParams.js';
 import mediaLog from '../logging/mediaLog.js';
 
 export const URL_TOKEN_KEY = STORAGE_KEYS.URL_COMMAND_TOKEN;
 
-function tokenFor(search) {
-  return `v1:${search}`;
+// The dedupe token covers ONLY the playback namespace. Nav params share the
+// URL and change as the user navigates (?play=X → ?play=X&view=fleet), so a
+// raw-search token would treat reload-after-navigation as a brand-new
+// command and replay ?play, destroying the session (§8 idempotency).
+export function tokenFor(search) {
+  const p = readPlaybackParams(search);
+  return `v2:${PLAYBACK_PARAM_KEYS.map((k) => `${k}=${p[k] ?? ''}`).join('&')}`;
 }
 
 function parse(search) {

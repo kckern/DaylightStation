@@ -25,6 +25,10 @@ export function PlayerBridge() {
   if (!ctx) throw new Error('PlayerBridge must be inside LocalSessionProvider');
   const { controller } = ctx;
   const [currentItem, setCurrentItem] = useState(() => controller.getSnapshot().currentItem);
+  // Where this item should START: the persisted/adopted position captured at
+  // the moment the item becomes current (C9.1 resume, C7.3 take-over).
+  // Normal advancement loads items with position 0, so this is 0 for them.
+  const startSecondsRef = useRef(controller.getSnapshot().position ?? 0);
   const lastPersistedPosition = useRef(0);
   const hasStartedRef = useRef(false);
   const stallTimerRef = useRef(null);
@@ -85,6 +89,9 @@ export function PlayerBridge() {
             && prev.thumbnail === next.thumbnail) {
           return prev; // same content, ignore new reference
         }
+        // New item: its start position is whatever the snapshot carries at
+        // adoption time (persisted resume, claimed take-over, or 0).
+        startSecondsRef.current = snap.position ?? 0;
         return next;
       });
     };
@@ -151,10 +158,12 @@ export function PlayerBridge() {
     }
   }, [controller, currentItem?.isLive]);
 
-  // Stable play prop across re-renders of the same item.
+  // Stable play prop across re-renders of the same item. The platform
+  // Player honors `seconds` as the start offset.
   const playProp = useMemo(() => {
     if (!currentItem) return null;
-    return { ...currentItem };
+    const seconds = startSecondsRef.current;
+    return seconds > 0 ? { ...currentItem, seconds } : { ...currentItem };
   }, [currentItem]);
 
   const hostEl = useContext(PlayerHostContext);

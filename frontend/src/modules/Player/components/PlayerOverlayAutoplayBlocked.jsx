@@ -30,6 +30,13 @@ export function PlayerOverlayAutoplayBlocked({
   useEffect(() => {
     if (!autoplayBlocked) return;
     const handleKeyDown = (event) => {
+      // Never hijack typing — same guard as keyboardManager. A controller
+      // app can host this Player off-screen while the user types elsewhere.
+      const t = event.target;
+      if (t instanceof Element && (
+        t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+        t.tagName === 'SELECT' || t.isContentEditable
+      )) return;
       if (event.key === ' ' || event.key === 'Enter' || event.key === 'MediaPlayPause') {
         event.preventDefault();
         event.stopPropagation();

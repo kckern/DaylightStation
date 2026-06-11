@@ -5,6 +5,7 @@
 // actually active (portability phase wires the action).
 import React from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Skeleton, Alert, Stack } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { IconDeviceRemote, IconAlertCircle } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDevice } from '../fleet/useDevice.js';
@@ -79,7 +80,17 @@ function FleetCard({ deviceId }) {
             data-testid={`fleet-takeover-${deviceId}`}
             size="compact-sm"
             variant="light"
-            onClick={() => takeOver(deviceId)}
+            onClick={async () => {
+              const result = await takeOver(deviceId);
+              if (!result?.ok) {
+                // C7.4: the user MUST be informed when a take-over fails.
+                notifications.show({
+                  color: 'red',
+                  title: 'Take Over failed',
+                  message: result?.error ?? 'Device did not release its session.',
+                });
+              }
+            }}
           >
             Take Over
           </Button>

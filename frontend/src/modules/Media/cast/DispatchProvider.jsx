@@ -20,9 +20,14 @@ function uuid() {
   return `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildDedupKey({ targetIds, play, queue, mode }) {
+function buildDedupKey({ targetIds, play, queue, mode, snapshot }) {
   const ids = [...targetIds].sort().join(',');
-  const content = play ?? queue ?? 'adopt';
+  // Adopt-mode (hand-off) keys carry the snapshot's identity — two
+  // consecutive hand-offs of DIFFERENT content/positions are different
+  // dispatches, not duplicates (C9.8 covers identical parameters only).
+  const content = play ?? queue ?? (snapshot
+    ? `adopt:${snapshot.sessionId}:${snapshot.currentItem?.contentId ?? 'none'}:${Math.round(snapshot.position ?? 0)}`
+    : 'adopt');
   return `${ids}|${content}|${mode ?? 'transfer'}`;
 }
 
@@ -45,12 +50,12 @@ export function DispatchProvider({ children }) {
     });
   }, []);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
 
-    const key = buildDedupKey({ targetIds, play, queue, mode });
+    const key = buildDedupKey({ targetIds, play, queue, mode, snapshot });
     const cached = dedupCacheRef.current.get(key);
-    if (cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS) {
+    if (!bypassDedupe && cached && Date.now() - cached.ts < TIMING.DISPATCH_DEDUPE_WINDOW_MS) {
       mediaLog.dispatchDeduplicated({
         targetIds,
         contentId: play ?? queue ?? 'adopt',
@@ -85,6 +90,9 @@ export function DispatchProvider({ children }) {
               try { localController?.transport?.stop?.(); } catch { /* ignore */ }
             }
           } else {
+            // Failure must not poison the idempotency cache — the user's
+            // retry within the window has to actually re-dispatch (C6.4).
+            dedupCacheRef.current.delete(key);
             dispatch({
               type: 'FAILED', dispatchId,
               error: res?.error ?? 'unknown',
@@ -94,6 +102,7 @@ export function DispatchProvider({ children }) {
           }
         })
         .catch((err) => {
+          dedupCacheRef.current.delete(key);
           dispatch({ type: 'FAILED', dispatchId, error: err?.message ?? 'network-error', failedStep: null });
           mediaLog.dispatchFailed({ dispatchId, error: err?.message });
         });
@@ -105,7 +114,8 @@ export function DispatchProvider({ children }) {
 
   const retryLast = useCallback(() => {
     if (!lastAttemptRef.current) return [];
-    return dispatchToTarget(lastAttemptRef.current);
+    // Explicit user retry is never a duplicate.
+    return dispatchToTarget(lastAttemptRef.current, { bypassDedupe: true });
   }, [dispatchToTarget]);
 
   const removeDispatch = useCallback((dispatchId) => {

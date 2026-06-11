@@ -13,6 +13,7 @@ import {
   writePersistedSession,
   clearPersistedSession,
 } from './persistence.js';
+import { STORAGE_KEYS } from '../constants.js';
 import { useClientIdentity } from '../identity/ClientIdentityProvider.jsx';
 import { PlayerBridge } from './PlayerBridge.jsx';
 import { useSessionController } from '../controller/useSessionController.js';
@@ -44,7 +45,12 @@ export function LocalSessionProvider({ children }) {
     const ctl = createLocalSessionController({
       clientId,
       persistedSnapshot,
-      clearPersisted: clearPersistedSession,
+      // §11.3: reset clears the session AND the URL-command dedupe token,
+      // so a deep link works again after an explicit reset.
+      clearPersisted: () => {
+        clearPersistedSession();
+        try { localStorage.removeItem(STORAGE_KEYS.URL_COMMAND_TOKEN); } catch { /* ignore */ }
+      },
     });
     // Attach side effects synchronously: child effects (URL command,
     // external control) fire before any parent effect could attach, and

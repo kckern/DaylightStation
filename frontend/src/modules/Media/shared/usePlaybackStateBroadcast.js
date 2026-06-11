@@ -56,20 +56,25 @@ export function usePlaybackStateBroadcast({ send, clientId, displayName, snapsho
     return () => clearInterval(id);
   }, [send, clientId, displayName, snapshot]);
 
+  // Terminal stopped on unmount. The cleanup must report the CURRENT
+  // session, not the one from first render — sessions rotate on reset and
+  // adoption, and external consumers correlate by sessionId (§10.3).
+  const latestRef = useRef({ snapshot, send, clientId, displayName });
+  latestRef.current = { snapshot, send, clientId, displayName };
   useEffect(() => {
     return () => {
-      send({
+      const latest = latestRef.current;
+      latest.send({
         topic: 'playback_state',
-        clientId,
-        sessionId: snapshot?.sessionId,
-        displayName,
+        clientId: latest.clientId,
+        sessionId: latest.snapshot?.sessionId,
+        displayName: latest.displayName,
         state: 'stopped',
         currentItem: null,
         position: 0,
         ts: new Date().toISOString(),
       });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 

@@ -17,6 +17,7 @@ import { PeekProvider } from '../modules/Media/peek/PeekProvider.jsx';
 import { CastTargetProvider } from '../modules/Media/cast/CastTargetProvider.jsx';
 import { DispatchProvider } from '../modules/Media/cast/DispatchProvider.jsx';
 import mediaLog from '../modules/Media/logging/mediaLog.js';
+import { wsService } from '../services/WebSocketService.js';
 import './MediaApp.scss';
 
 export default function MediaApp() {
@@ -24,7 +25,13 @@ export default function MediaApp() {
 
   useEffect(() => {
     mediaLog.mounted({});
-    return () => mediaLog.unmounted({});
+    // C9.4/C9.7: a backend outage must never reload this page out from
+    // under local playback. Kiosk routes keep the default behavior.
+    wsService.setAutoReloadEnabled(false);
+    return () => {
+      wsService.setAutoReloadEnabled(true);
+      mediaLog.unmounted({});
+    };
   }, []);
 
   return (

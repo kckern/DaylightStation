@@ -196,10 +196,23 @@ class WebSocketService {
   }
 
   /**
+   * Allow apps to opt out of the degraded-mode page reload. Kiosk surfaces
+   * want it (a fresh page beats waiting an hour); controller apps with live
+   * local playback must NOT be reloaded out from under the user (media spec
+   * C9.4: local playback continues unaffected during backend outages).
+   */
+  setAutoReloadEnabled(enabled) {
+    this._autoReloadEnabled = enabled !== false;
+    if (!this._autoReloadEnabled) this._clearAutoReloadTimer();
+    else if (this.degradedMode && !this._autoReloadTimeout) this._startAutoReloadTimer();
+  }
+
+  /**
    * Auto-reload the page after sustained degraded mode.
    * On a kiosk, a fresh page load is better than waiting an hour to reconnect.
    */
   _startAutoReloadTimer() {
+    if (this._autoReloadEnabled === false) return;
     this._clearAutoReloadTimer();
     console.warn(`[WebSocketService] Will auto-reload page in ${AUTO_RELOAD_DELAY / 1000}s if connection not restored`);
     this._autoReloadTimeout = setTimeout(() => {

@@ -75,7 +75,23 @@ export function reduce(snapshot, action) {
       return touch(snapshot, { currentItem: action.item, position: 0, state: 'loading' });
 
     case 'ADOPT_SNAPSHOT':
-      return touch(action.snapshot, {});
+      // The adopted state becomes ours: keep THIS session's owner identity
+      // (§9.2 — meta.ownerId is the owning surface, not the source's).
+      return touch(action.snapshot, {
+        meta: { ownerId: snapshot.meta?.ownerId ?? action.snapshot.meta?.ownerId },
+      });
+
+    case 'STOP': {
+      // Stop ends playback without destroying the queue (state table:
+      // 'ready' = queue has items, no current; 'idle' = nothing at all).
+      const hasItems = snapshot.queue.items.length > 0;
+      return touch(snapshot, {
+        state: hasItems ? 'ready' : 'idle',
+        currentItem: null,
+        position: 0,
+        queue: { ...snapshot.queue, currentIndex: -1 },
+      });
+    }
 
     case 'RESET': {
       const fresh = createIdleSessionSnapshot({

@@ -7,6 +7,7 @@ import { useCallback, useState } from 'react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDispatch } from './DispatchProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
+import mediaLog from '../logging/mediaLog.js';
 
 export function useDispatchTargetPicker({ source, onComplete } = {}) {
   const fleet = useFleetContext();
@@ -34,7 +35,10 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     const params = { targetIds, mode };
     // Hand-off snapshots are captured AT SUBMIT so the position is current.
     const snapshot = source?.getSnapshot?.() ?? source?.snapshot;
-    if (snapshot) params.snapshot = snapshot;
+    if (snapshot) {
+      params.snapshot = snapshot;
+      mediaLog.handoffInitiated({ deviceIds: targetIds, mode });
+    }
     else if (source?.play) params.play = source.play;
     else if (source?.queue) params.queue = source.queue;
     dispatchToTarget(params);
