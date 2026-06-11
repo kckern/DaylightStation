@@ -3,6 +3,8 @@ import { renderHook, act } from '@testing-library/react';
 import {
   useDanceStrobe,
   strobeFrame,
+  pickOrientation,
+  ORIENTATIONS,
   STROBE_HUE_GRADES,
   STROBE_HUE_STEP_DEG,
   STROBE_DIM_OPACITY
@@ -56,6 +58,30 @@ describe('strobeFrame (pure beat math)', () => {
   });
 });
 
+describe('pickOrientation', () => {
+  it('covers all four flip permutations (normal, mirror, upside-down, both)', () => {
+    expect(ORIENTATIONS).toEqual(expect.arrayContaining([
+      { x: 1, y: 1 }, { x: -1, y: 1 }, { x: 1, y: -1 }, { x: -1, y: -1 }
+    ]));
+    expect(ORIENTATIONS).toHaveLength(4);
+  });
+
+  it('always returns a DIFFERENT orientation than the current one', () => {
+    for (const current of ORIENTATIONS) {
+      for (let i = 0; i < 20; i++) {
+        const next = pickOrientation(current);
+        expect(ORIENTATIONS).toContainEqual(next);
+        expect(next).not.toEqual(current);
+      }
+    }
+  });
+
+  it('is deterministic under an injected rng', () => {
+    expect(pickOrientation({ x: 1, y: 1 }, () => 0)).toEqual({ x: -1, y: 1 });
+    expect(pickOrientation({ x: 1, y: 1 }, () => 0.99)).toEqual({ x: -1, y: -1 });
+  });
+});
+
 describe('useDanceStrobe', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -66,11 +92,11 @@ describe('useDanceStrobe', () => {
     expect(result.current.strobeStyle).toBeNull();
   });
 
-  it('toggling on yields bright hue-0 immediately, then beats at the configured bpm', () => {
+  it('toggling on yields bright hue-0 unflipped immediately, then beats at the configured bpm', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
     act(() => result.current.toggleStrobe());
     expect(result.current.strobeOn).toBe(true);
-    expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1 });
+    expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1, transform: 'scale(1, 1)' });
 
     act(() => vi.advanceTimersByTime(1000)); // 60 bpm = 1 beat/sec
     expect(result.current.strobeStyle.opacity).toBe(STROBE_DIM_OPACITY);
@@ -102,13 +128,44 @@ describe('useDanceStrobe', () => {
     expect(result.current.beatIndex).toBe(before);
   });
 
-  it('re-enabling restarts the cycle at hue 0 bright', () => {
+  it('re-enabling restarts the cycle at hue 0 bright, unflipped', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
     act(() => result.current.toggleStrobe());
     act(() => vi.advanceTimersByTime(3000));
     act(() => result.current.toggleStrobe()); // off
     act(() => result.current.toggleStrobe()); // on again
-    expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1 });
+    expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1, transform: 'scale(1, 1)' });
+  });
+
+  it('re-orients on each light→dark transition, holding through the next bright beat', () => {
+    // rng = 0 deterministically picks the first non-current orientation:
+    // {1,1} → {-1,1} → {1,1} → ...
+    const { result } = renderHook(() => useDanceStrobe({ bpm: 60, rng: () => 0 }));
+    act(() => result.current.toggleStrobe());
+    expect(result.current.strobeStyle.transform).toBe('scale(1, 1)');
+
+    act(() => vi.advanceTimersByTime(1000)); // beat 1: dark — new orientation
+    expect(result.current.strobeStyle.opacity).toBe(STROBE_DIM_OPACITY);
+    expect(result.current.strobeStyle.transform).toBe('scale(-1, 1)');
+
+    act(() => vi.advanceTimersByTime(1000)); // beat 2: bright — orientation held
+    expect(result.current.strobeStyle.opacity).toBe(1);
+    expect(result.current.strobeStyle.transform).toBe('scale(-1, 1)');
+
+    act(() => vi.advanceTimersByTime(1000)); // beat 3: dark — re-orients again
+    expect(result.current.strobeStyle.transform).toBe('scale(1, 1)');
+  });
+
+  it('orientation is always one of the four permutations under real randomness', () => {
+    const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
+    act(() => result.current.toggleStrobe());
+    const seen = new Set();
+    for (let beat = 0; beat < 20; beat++) {
+      act(() => vi.advanceTimersByTime(1000));
+      seen.add(result.current.strobeStyle.transform);
+    }
+    const valid = ORIENTATIONS.map((o) => `scale(${o.x}, ${o.y})`);
+    for (const transform of seen) expect(valid).toContain(transform);
   });
 
   it('falls back to 60 bpm on invalid input', () => {

@@ -27,16 +27,38 @@ export function strobeFrame(beatIndex) {
   return { hue, bright, opacity: bright ? 1 : STROBE_DIM_OPACITY };
 }
 
+// The four video orientations: normal, mirrored, upside-down, and both.
+// Applied as scale(x, y) on the video layer.
+export const ORIENTATIONS = [
+  { x: 1, y: 1 },
+  { x: -1, y: 1 },
+  { x: 1, y: -1 },
+  { x: -1, y: -1 }
+];
+
+/**
+ * Pick a random orientation that is guaranteed to DIFFER from the current
+ * one, so every light→dark transition produces a visible flip. rng is
+ * injectable for deterministic tests.
+ */
+export function pickOrientation(current, rng = Math.random) {
+  const options = ORIENTATIONS.filter((o) => !(o.x === current.x && o.y === current.y));
+  return options[Math.min(options.length - 1, Math.floor(rng() * options.length))];
+}
+
 /**
  * BPM-clocked strobe filter for the dance video layer: off by default,
  * toggled from the now-playing bar. While on, emits a style object
- * ({ filter: hue-rotate, opacity }) that flips bright/dim and walks the hue
- * wheel one beat at a time (see strobeFrame). Re-enabling always restarts
- * the cycle at hue 0, bright.
+ * ({ filter: hue-rotate, opacity, transform }) that flips bright/dim and
+ * walks the hue wheel one beat at a time (see strobeFrame). Each light→dark
+ * transition also re-orients the video to a random different flip
+ * permutation (pickOrientation), which the next bright beat reveals.
+ * Re-enabling always restarts the cycle at hue 0, bright, unflipped.
  */
-export function useDanceStrobe({ bpm = 60 } = {}) {
+export function useDanceStrobe({ bpm = 60, rng = Math.random } = {}) {
   const [strobeOn, setStrobeOn] = useState(false);
   const [beatIndex, setBeatIndex] = useState(0);
+  const [orientation, setOrientation] = useState(ORIENTATIONS[0]);
 
   const safeBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 60;
 
@@ -46,8 +68,16 @@ export function useDanceStrobe({ bpm = 60 } = {}) {
     return () => clearInterval(id);
   }, [strobeOn, safeBpm]);
 
+  // Odd beats are the dim ones (strobeFrame): entering dark picks the new
+  // orientation, hidden behind the 20% dip until the next bright flash.
+  useEffect(() => {
+    if (!strobeOn || beatIndex % 2 === 0) return;
+    setOrientation((current) => pickOrientation(current, rng));
+  }, [strobeOn, beatIndex, rng]);
+
   const toggleStrobe = useCallback(() => {
     setBeatIndex(0);
+    setOrientation(ORIENTATIONS[0]);
     setStrobeOn((prev) => {
       const next = !prev;
       logger().info('fitness.dance.strobe.toggle', { strobeOn: next, bpm: safeBpm });
@@ -57,7 +87,11 @@ export function useDanceStrobe({ bpm = 60 } = {}) {
 
   const frame = strobeFrame(beatIndex);
   const strobeStyle = strobeOn
-    ? { filter: `hue-rotate(${frame.hue}deg)`, opacity: frame.opacity }
+    ? {
+        filter: `hue-rotate(${frame.hue}deg)`,
+        opacity: frame.opacity,
+        transform: `scale(${orientation.x}, ${orientation.y})`
+      }
     : null;
 
   return { strobeOn, toggleStrobe, strobeStyle, beatIndex };
