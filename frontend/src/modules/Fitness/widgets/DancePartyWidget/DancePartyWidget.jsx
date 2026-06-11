@@ -7,6 +7,7 @@ import { resolveDancePlaylists } from './resolveDancePlaylists.js';
 import { muteVideosIn } from './muteVideosIn.js';
 import { useDanceLighting } from './useDanceLighting.js';
 import { useDanceStrobe } from './useDanceStrobe.js';
+import { useDanceBpm } from './useDanceBpm.js';
 import DanceNowPlayingBar from './DanceNowPlayingBar.jsx';
 import { usePersistentVolume } from '../../nav/usePersistentVolume.js';
 import { snapToTouchLevel, logVolumeFromLevel, logLevelFromVolume } from '../../player/panels/TouchVolumeButtons.jsx';
@@ -38,7 +39,6 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
 
   const { accent, lightsOn, toggleLights } = useDanceLighting({ enabled: true });
-  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: strobeBpm });
 
   const audioRef = useRef(null);
   const videoRef = useRef(null);
@@ -46,6 +46,12 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   const [track, setTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const trackKeyRef = useRef(null);
+
+  // Strobe clock: live-detected BPM from the music wins; the configured
+  // strobe_bpm is the fallback until the analyzer locks (or if Web Audio is
+  // unavailable). trackKey resets the analyzer's votes on song change.
+  const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null });
+  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: detectedBpm ?? strobeBpm });
 
   // Notify the host container we've mounted (parity with other widgets).
   useEffect(() => {

@@ -14,7 +14,7 @@ function logger() {
 // every grade is shown in BOTH the bright and the dim state.
 export const STROBE_HUE_GRADES = 7;
 export const STROBE_HUE_STEP_DEG = 180 + 360 / (2 * STROBE_HUE_GRADES); // 1440/7 ≈ 205.71°
-export const STROBE_DIM_OPACITY = 0.1; // dim beats stay faintly visible, never black
+export const STROBE_DIM_OPACITY = 0.2; // dim beats stay faintly visible, never black
 
 /**
  * Pure beat math: which hue/brightness the strobe shows at a given beat.

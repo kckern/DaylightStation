@@ -13,13 +13,14 @@ describe('strobeFrame (pure beat math)', () => {
     expect(strobeFrame(0)).toEqual({ hue: 0, bright: true, opacity: 1 });
   });
 
-  it('alternates bright/dim every beat; dim is 10% opacity, never zero', () => {
+  it('alternates bright/dim every beat; dim is 20% opacity, never zero', () => {
     for (let beat = 0; beat < 14; beat++) {
       const f = strobeFrame(beat);
       expect(f.bright).toBe(beat % 2 === 0);
       expect(f.opacity).toBe(beat % 2 === 0 ? 1 : STROBE_DIM_OPACITY);
       expect(f.opacity).toBeGreaterThan(0);
     }
+    expect(STROBE_DIM_OPACITY).toBe(0.2);
   });
 
   it('each beat crosses the wheel (180°) plus half a grade', () => {
