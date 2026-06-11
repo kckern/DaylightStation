@@ -1,7 +1,7 @@
 // frontend/src/Apps/LiveStreamApp.jsx
 import React from 'react';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import ChannelList from '../modules/Media/LiveStream/ChannelList.jsx';
+import ChannelList from '../modules/LiveStream/ChannelList.jsx';
 
 const LiveStreamApp = () => {
   useDocumentTitle('Live');

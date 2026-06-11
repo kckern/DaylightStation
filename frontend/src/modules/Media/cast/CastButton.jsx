@@ -1,3 +1,9 @@
+// frontend/src/modules/Media/cast/CastButton.jsx
+// Per-item Cast affordance: opens the DispatchTargetPicker in a body portal
+// positioned at the trigger. The portal carries .media-app-portal so the
+// search overlay's outside-click logic treats it as inside (the historical
+// unstyled/auto-closing portal bugs are both structural here: Mantine-free
+// markup styled via unscoped classes, dismissal owned by useDismissable).
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
@@ -12,22 +18,16 @@ export function CastButton({ contentId, queue, onAction }) {
   const popoverRef = useRef(null);
 
   const close = useCallback(() => setOpen(false), []);
-
-  // useDismissable watches the popover node for outside clicks/Escape.
-  // The button itself is outside the popover, so we suppress the dismiss when
-  // the click target is the button (the toggle logic in onClick handles that).
   useDismissable(popoverRef, { open, onDismiss: close });
 
   const id = contentId ?? queue;
   const source = contentId ? { play: contentId } : { queue };
 
-  // Compute fixed position from the trigger button's bounding rect each time
-  // the picker opens so it tracks the button wherever it sits on screen.
+  // Fixed position from the trigger's rect each open, clamped to viewport.
   useEffect(() => {
     if (!open || !buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
     const right = window.innerWidth - rect.right;
-    // Clamp so the picker stays within the viewport horizontally.
     const adjustedRight = Math.max(8, Math.min(right, window.innerWidth - PICKER_WIDTH - 8));
     setCoords({ top: rect.bottom + 6, right: adjustedRight });
   }, [open]);
@@ -37,18 +37,13 @@ export function CastButton({ contentId, queue, onAction }) {
     onAction?.();
   };
 
-  const handleButtonClick = (e) => {
-    e.stopPropagation();
-    setOpen((v) => !v);
-  };
-
   return (
     <>
       <button
         ref={buttonRef}
         data-testid={`cast-button-${id}`}
-        className="cast-button"
-        onClick={handleButtonClick}
+        className="result-action cast-button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
       >
         Cast
       </button>
@@ -61,7 +56,7 @@ export function CastButton({ contentId, queue, onAction }) {
         >
           <DispatchTargetPicker source={source} onComplete={onComplete} />
         </div>,
-        document.body,
+        document.body
       )}
     </>
   );

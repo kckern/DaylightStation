@@ -7,9 +7,11 @@ endpoints, WebSocket protocols, URL parameters, data shapes, event schemas,
 log event taxonomy, and client-side persistence schemas.
 
 This document does **not** cover: UI layout, component structure, rendering
-logic, or internal state-management mechanisms. For user-facing behavior and
-requirements, see [`media-app-requirements.md`](./media-app-requirements.md).
-For the content paradigm (content IDs, formats, Playable Contract), see
+logic, or internal state-management mechanisms. For intent, user stories, and
+high-level design, see [`media-app.md`](./media-app.md). For the numbered
+capability requirements, see
+[`media-app-requirements.md`](./media-app-requirements.md). For the content
+paradigm (content IDs, formats, Playable Contract), see
 [`docs/reference/content/`](../content/).
 
 ### Conventions
@@ -194,34 +196,15 @@ warn on every call.
 
 ---
 
-## 3. Contract Gap Analysis
+## 3. Reserved
 
-| Requirement | Existing? | Gap |
-|---|---|---|
-| C1.* (discovery, search) | ✅ | — |
-| C2.* (local session) | Client | — |
-| C3.1–C3.4 (local queue) | Client | — |
-| C3.5 (queue ops on remote) | ❌ | Required: remote queue-control API. |
-| C4.1 (fleet enumeration) | ✅ | Amended: support live config updates. |
-| C4.2 (live remote state) | ⚠️ | Required: per-device state topic. |
-| C4.3 (remote history) | ❌ | **Deferred** — out of scope for v1. |
-| C4.4 (stale indicator) | Client | — |
-| C5.2 (remote transport) | ❌ | Required: remote transport-control API. |
-| C5.3 (remote queue ops) | ❌ | Required (same as C3.5). |
-| C5.4 (remote volume, shader) | ⚠️ | Required: shader-set API; amend volume. |
-| C6.1 (multi-target dispatch) | ⚠️ | Client-side fan-out (§4.8). |
-| C6.3 (dispatch progress stream) | ✅ | Amended: include `dispatchId`. |
-| C7.1 (Take Over snapshot) | ❌ | Required: `claim` endpoint (§4.6). |
-| C7.2 (Hand Off full state) | ⚠️ | Required: amended dispatch with `SessionSnapshot`. |
-| C8.1 (URL deep-link) | Client routing | Formal contract (§8). |
-| C8.3 (local state broadcast) | ⚠️ | Required: formal `PlaybackStateBroadcast` (§9.10). |
-| C8.4 (external control) | ❌ | Required: external-control WS channel + command schema. |
-| C9.8 (dispatch idempotency) | ❌ | Required: `dispatchId` idempotency. |
-| C10.* (observability) | Framework | Required: log taxonomy (§10). |
+*(A point-in-time contract gap analysis previously lived here; it tracked the
+initial build-out and is obsolete. Delivery status belongs in `docs/_wip/`
+plans, not in this reference.)*
 
 ---
 
-## 4. Required HTTP APIs
+## 4. Device Session HTTP APIs
 
 ### 4.1 `GET /api/v1/device/:id/session`
 
@@ -247,7 +230,7 @@ already broadcast on `device-state:<id>` (§7) within 500ms.
 - `backend/tests/unit/suite/4_api/v1/routers/device.session.test.mjs` — all response codes + consistency-with-liveness
 - `backend/tests/unit/suite/4_api/v1/routers/device.session.integration.test.mjs` — end-to-end round trip
 
-### 4.2 Device history — **Deferred** (see §3, C4.3)
+### 4.2 Device history — **Deferred** (requirement C4.3; no contract defined yet)
 
 ### 4.3 `POST /api/v1/device/:id/session/transport`
 

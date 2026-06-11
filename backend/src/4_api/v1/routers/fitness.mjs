@@ -950,6 +950,24 @@ export function createFitnessRouter(config) {
   router.post('/dance/accent', danceAction('accent'));
   router.post('/dance/stop', danceAction('stop'));
 
+  /**
+   * POST /dance/bpm {bpm} — mirror the live music BPM into the configured HA
+   * input_number (controller clamps + rate-caps; see DanceLightingController.setBpm).
+   */
+  router.post('/dance/bpm', async (req, res) => {
+    try {
+      if (!danceLightingController || typeof danceLightingController.setBpm !== 'function') {
+        return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
+      }
+      const householdId = req.query.householdId || req.body?.householdId;
+      const result = await danceLightingController.setBpm(householdId, req.body?.bpm);
+      return res.json(result);
+    } catch (error) {
+      logger.error?.('fitness.dance.error', { action: 'bpm', error: error.message });
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   // =============================================================================
   // Equipment Fan Endpoints (require Home Assistant configuration)
   // =============================================================================

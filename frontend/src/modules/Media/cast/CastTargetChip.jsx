@@ -1,34 +1,79 @@
-import React, { useState, useRef, useCallback } from 'react';
+// frontend/src/modules/Media/cast/CastTargetChip.jsx
+// The dock's cast preferences: preferred target device(s) and the default
+// Transfer/Fork mode, persisted per browser. Inline cast pickers seed from
+// these so a configured household is one tap per cast.
+import React, { useState, useCallback } from 'react';
+import { Popover, ActionIcon, Indicator, Text } from '@mantine/core';
+import { IconCast } from '@tabler/icons-react';
+import { useDismissLayer } from '../shell/DismissStackProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
-import { CastPopover } from './CastPopover.jsx';
-import { useDismissable } from '../../../hooks/useDismissable.js';
 
 export function CastTargetChip() {
-  const { targetIds } = useCastTarget();
-  const { devices } = useFleetContext();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-
   const close = useCallback(() => setOpen(false), []);
-  useDismissable(rootRef, { open, onDismiss: close });
+  useDismissLayer(open, close);
+  const { mode, targetIds, setMode, toggleTarget } = useCastTarget();
+  const { devices } = useFleetContext();
 
-  const selectedNames = targetIds
-    .map((id) => devices.find((d) => d.id === id)?.name ?? id)
-    .join(', ');
-  const label = targetIds.length === 0 ? 'No target' : selectedNames;
+  const chip = (
+    <ActionIcon
+      data-testid="cast-target-chip"
+      aria-label="Cast target"
+      onClick={() => setOpen((v) => !v)}
+    >
+      <IconCast size={20} />
+    </ActionIcon>
+  );
 
   return (
-    <div className="cast-target-chip-root" ref={rootRef}>
-      <button
-        data-testid="cast-target-chip"
-        className="cast-target-chip"
-        onClick={() => setOpen((o) => !o)}
-      >
-        Cast: {label}
-      </button>
-      {open && <CastPopover />}
-    </div>
+    <Popover opened={open} onChange={setOpen} position="bottom-end" withinPortal closeOnEscape={false}>
+      <Popover.Target>
+        {targetIds.length > 0
+          ? <Indicator color="amber" size={8} offset={4}>{chip}</Indicator>
+          : chip}
+      </Popover.Target>
+      <Popover.Dropdown data-testid="cast-popover" className="cast-popover">
+        <div className="cast-popover-section">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Mode</Text>
+          <label className="cast-popover-row">
+            <input
+              type="radio"
+              name="cast-mode"
+              checked={mode === 'transfer'}
+              onChange={() => setMode('transfer')}
+              data-testid="cast-mode-transfer"
+            />
+            <span>Transfer (stop local)</span>
+          </label>
+          <label className="cast-popover-row">
+            <input
+              type="radio"
+              name="cast-mode"
+              checked={mode === 'fork'}
+              onChange={() => setMode('fork')}
+              data-testid="cast-mode-fork"
+            />
+            <span>Fork (keep local)</span>
+          </label>
+        </div>
+        <div className="cast-popover-section">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Preferred targets</Text>
+          {devices.length === 0 && <Text size="sm" c="dimmed">No devices</Text>}
+          {devices.map((d) => (
+            <label key={d.id} className="cast-popover-row">
+              <input
+                type="checkbox"
+                checked={targetIds.includes(d.id)}
+                onChange={() => toggleTarget(d.id)}
+                data-testid={`cast-target-checkbox-${d.id}`}
+              />
+              <span>{d.name ?? d.id}</span>
+            </label>
+          ))}
+        </div>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 

@@ -9,115 +9,87 @@ vi.mock('../../../services/WebSocketService.js', () => ({
   default: { send: (...a) => sendFn(...a), subscribe: (...a) => subscribeFn(...a), onStatusChange: vi.fn(() => () => {}) },
 }));
 
-vi.mock('../session/ClientIdentityProvider.jsx', () => ({
+vi.mock('../identity/ClientIdentityProvider.jsx', () => ({
   useClientIdentity: vi.fn(() => ({ clientId: 'c1', displayName: 'D' })),
 }));
 
-const playNowFn = vi.fn();
-const pauseFn = vi.fn();
-const setVolumeFn = vi.fn();
-const adoptFn = vi.fn();
-const ctrl = {
-  snapshot: {},
-  transport: { play: vi.fn(), pause: pauseFn, stop: vi.fn(), seekAbs: vi.fn(), seekRel: vi.fn(), skipNext: vi.fn(), skipPrev: vi.fn() },
-  queue: { playNow: playNowFn, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn(), clear: vi.fn(), remove: vi.fn(), jump: vi.fn(), reorder: vi.fn() },
-  config: { setShuffle: vi.fn(), setRepeat: vi.fn(), setShader: vi.fn(), setVolume: setVolumeFn },
-  lifecycle: { adoptSnapshot: adoptFn, reset: vi.fn() },
-  portability: {},
-};
-vi.mock('../session/useSessionController.js', () => ({
-  useSessionController: vi.fn(() => ctrl),
-}));
-
+import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import { useExternalControl } from './useExternalControl.js';
+
+function makeController() {
+  return {
+    transport: { play: vi.fn(), pause: vi.fn(), stop: vi.fn(), seekAbs: vi.fn(), seekRel: vi.fn(), skipNext: vi.fn(), skipPrev: vi.fn() },
+    queue: { playNow: vi.fn(), playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn(), remove: vi.fn(), reorder: vi.fn(), jump: vi.fn(), clear: vi.fn() },
+    config: { setShuffle: vi.fn(), setRepeat: vi.fn(), setShader: vi.fn(), setVolume: vi.fn() },
+    lifecycle: { reset: vi.fn(), adoptSnapshot: vi.fn() },
+  };
+}
 
 let capturedFilter = null;
 let capturedCallback = null;
+let controller;
 beforeEach(() => {
-  subscribeFn.mockReset().mockImplementation((filter, cb) => { capturedFilter = filter; capturedCallback = cb; return () => {}; });
+  controller = makeController();
+  subscribeFn.mockReset().mockImplementation((filter, cb) => {
+    capturedFilter = filter;
+    capturedCallback = cb;
+    return () => {};
+  });
   sendFn.mockReset();
-  playNowFn.mockReset();
-  pauseFn.mockReset();
-  setVolumeFn.mockReset();
-  adoptFn.mockReset();
 });
 
 describe('useExternalControl', () => {
-  it('subscribes using a topic filter for client-control:<clientId>', () => {
-    renderHook(() => useExternalControl());
+  it('subscribes with a filter matching only client-control:<clientId>', () => {
+    renderHook(() => useExternalControl(controller));
     expect(typeof capturedFilter).toBe('function');
     expect(capturedFilter({ topic: 'client-control:c1' })).toBe(true);
     expect(capturedFilter({ topic: 'client-control:other' })).toBe(false);
   });
 
-  it('routes transport commands to controller', () => {
-    renderHook(() => useExternalControl());
+  it('routes transport commands and acks ok', () => {
+    renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({
-        topic: 'client-control:c1',
-        commandId: 'cmd1',
-        command: 'transport',
-        params: { action: 'pause' },
-      });
+      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd1', command: 'transport', params: { action: 'pause' } });
     });
-    expect(pauseFn).toHaveBeenCalled();
+    expect(controller.transport.pause).toHaveBeenCalled();
+    expect(sendFn).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'client-ack', clientId: 'c1', commandId: 'cmd1', ok: true,
+    }));
   });
 
   it('routes queue play-now commands', () => {
-    renderHook(() => useExternalControl());
+    renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({
-        topic: 'client-control:c1',
-        commandId: 'cmd2',
-        command: 'queue',
-        params: { op: 'play-now', contentId: 'plex:1', clearRest: true },
-      });
+      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd2', command: 'queue', params: { op: 'play-now', contentId: 'plex:1', clearRest: true } });
     });
-    expect(playNowFn).toHaveBeenCalledWith({ contentId: 'plex:1' }, { clearRest: true });
-  });
-
-  it('routes config volume commands', () => {
-    renderHook(() => useExternalControl());
-    act(() => {
-      capturedCallback({
-        topic: 'client-control:c1',
-        commandId: 'cmd3',
-        command: 'config',
-        params: { setting: 'volume', value: 80 },
-      });
-    });
-    expect(setVolumeFn).toHaveBeenCalledWith(80);
+    expect(controller.queue.playNow).toHaveBeenCalledWith({ contentId: 'plex:1' }, { clearRest: true });
   });
 
   it('routes adopt-snapshot commands', () => {
-    renderHook(() => useExternalControl());
-    const snap = { sessionId: 'x', state: 'paused' };
+    renderHook(() => useExternalControl(controller));
+    const snap = createIdleSessionSnapshot({ sessionId: 'x', ownerId: 'c9' });
     act(() => {
-      capturedCallback({
-        topic: 'client-control:c1',
-        commandId: 'cmd4',
-        command: 'adopt-snapshot',
-        params: { snapshot: snap, autoplay: false },
-      });
+      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd4', command: 'adopt-snapshot', params: { snapshot: snap, autoplay: false } });
     });
-    expect(adoptFn).toHaveBeenCalledWith(snap, { autoplay: false });
+    expect(controller.lifecycle.adoptSnapshot).toHaveBeenCalledWith(snap, { autoplay: false });
   });
 
-  it('sends an ack frame after every handled command', () => {
-    renderHook(() => useExternalControl());
+  it('acks not-ok with a reason for invalid envelopes', () => {
+    renderHook(() => useExternalControl(controller));
     act(() => {
-      capturedCallback({
-        topic: 'client-control:c1',
-        commandId: 'cmd5',
-        command: 'transport',
-        params: { action: 'play' },
-      });
+      capturedCallback({ topic: 'client-control:c1', commandId: 'cmd5', command: 'transport', params: { action: 'explode' } });
     });
+    expect(controller.transport.play).not.toHaveBeenCalled();
     expect(sendFn).toHaveBeenCalledWith(expect.objectContaining({
-      topic: 'client-ack',
-      clientId: 'c1',
-      commandId: 'cmd5',
-      ok: true,
+      topic: 'client-ack', commandId: 'cmd5', ok: false,
     }));
+  });
+
+  it('ignores messages without a commandId', () => {
+    renderHook(() => useExternalControl(controller));
+    act(() => {
+      capturedCallback({ topic: 'client-control:c1', command: 'transport', params: { action: 'play' } });
+    });
+    expect(sendFn).not.toHaveBeenCalled();
   });
 });

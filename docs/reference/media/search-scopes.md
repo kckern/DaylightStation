@@ -1,15 +1,21 @@
 # Media Search Scopes
 
-## Overview
+## Purpose
 
-The ContentBrowser uses a config-driven scope dropdown to filter search results by content type and source. Scopes are defined in `data/household/apps/media/config.yml` under `searchScopes` and served via `GET /api/v1/media/config`.
+Search in the Media App is catalog-wide by default, but a user can narrow it
+to a **scope** — a named slice of the catalog ("Movies", "Music", "Books") —
+directly from the search affordance. Scopes are household configuration, not
+code: adding or reshaping them is a config edit.
+
+Scopes are defined in `data/household/apps/media/config.yml` under
+`searchScopes` and served via `GET /api/v1/media/config`.
 
 ## Config Structure
 
 ```yaml
 searchScopes:
-  - label: Movies          # Display name in dropdown
-    key: video-movies      # Unique key (used for localStorage persistence)
+  - label: Movies          # Display name in the scope selector
+    key: video-movies      # Unique key (used for persistence)
     params: "source=plex&plex.libraryId=6,12"  # Query params appended to search
     children:              # Optional sub-items (two-level hierarchy)
       - label: ...
@@ -19,13 +25,16 @@ searchScopes:
 
 ### Hierarchy
 
-- **Top-level scopes** (All, Video, Music, Books) appear as group headers or standalone items
-- **Children** appear indented under their parent
-- Parents with `children` can also have their own `params` for searching the whole category
+- **Top-level scopes** (All, Video, Music, Books) appear as group headers or
+  standalone items.
+- **Children** appear nested under their parent.
+- A parent with `children` may also carry its own `params`, making the whole
+  category searchable ("All Video") in addition to its leaves.
 
 ### Params
 
-The `params` string is appended directly to the SSE search endpoint URL. Valid params:
+The `params` string is appended directly to the streaming search endpoint URL
+(`GET /api/v1/content/query/search/stream`). Valid params:
 
 | Param | Description | Example |
 |-------|-------------|---------|
@@ -37,7 +46,9 @@ The `params` string is appended directly to the SSE search endpoint URL. Valid p
 
 ## Plex Library IDs
 
-The `plex.libraryId` adapter-specific parameter filters Plex hub search to specific library sections. Multiple IDs can be comma-separated — each runs a separate hub search and results are merged.
+The `plex.libraryId` adapter-specific parameter filters Plex hub search to
+specific library sections. Multiple IDs can be comma-separated — each runs a
+separate hub search and results are merged.
 
 To discover library IDs:
 
@@ -48,33 +59,35 @@ curl -s "http://localhost:{port}/api/v1/proxy/plex/library/sections" | \
 
 ### Capability Note
 
-Plex hub search returns unhydrated items (containers like shows, or movies without streaming URLs). These items lack `mediaUrl`, so `capability=playable` will filter them out. For Plex scopes, omit `capability=playable` and rely on `source` + `plex.libraryId` filtering instead.
+Plex hub search returns unhydrated items (containers like shows, or movies
+without streaming URLs). These items lack `mediaUrl`, so `capability=playable`
+filters them out. For Plex scopes, omit `capability=playable` and rely on
+`source` + `plex.libraryId` filtering instead.
 
-## Frontend Surface
+## App Behavior
 
-The Media App's search scope UI is intentionally minimal (rebuilt in the P1–P7
-overhaul). There is **no** `ScopeDropdown`, `ScopeChips`, or `useScopePrefs` — earlier
-revisions of this doc described components that were never shipped in the current app.
+- On load, the app fetches the scope config, flattens parents and children
+  into one lookup tree, and tracks a single current scope key.
+- The scope selector lives **in the search bar** — a native select where a
+  parent with children renders as a group (with an "All {label}" option when
+  the parent itself carries `params`) and leaves render as plain options.
+- Selecting any scope (parent-with-params or leaf) applies its `params` to
+  every subsequent search request.
+- The last-used scope persists per browser and is restored on the next visit
+  (validated against the current scope tree; a vanished key falls back to the
+  default).
+- If the scope config fails to load, search still works catalog-wide; the
+  search bar shows a small error indicator next to the selector.
 
-| Piece | File | Purpose |
-|-------|------|---------|
-| `SearchProvider` | `frontend/src/modules/Media/search/SearchProvider.jsx` | Loads `searchScopes` from `/api/v1/media/config`, flattens parent + children, tracks `currentScopeKey`, persists last scope, exposes `scopeError` on config-load failure |
-| Scope `<select>` | `frontend/src/modules/Media/search/SearchBar.jsx` | Native `<select>`; parents with `children` render as an `<optgroup>` (with an optional "All {label}" option when the parent itself has `params`); leaf scopes render as plain `<option>` |
-
-Selecting any option (parent-with-params or a child leaf) sets `currentScopeKey`; the
-resolved scope's `params` string is forwarded to the SSE search endpoint. A child key
-resolves correctly because `SearchProvider` searches the flattened scope tree, not just
-the top level.
-
-If the config fetch fails, `SearchProvider` sets `scopeError` and `SearchBar` renders a
-small ⚠ indicator (testid `scope-error`) next to the dropdown.
-
-## Persistence (localStorage)
+### Persistence (localStorage)
 
 | Key | Value |
 |-----|-------|
-| `media-scope-last` (`SCOPE_KEY_LAST`) | Key of the last-used scope (validated against the flattened scope tree, restored on mount) |
+| `media-scope-last` | Key of the last-used scope. |
 
-> Favorites, recents, and result-count re-scoping chips are **not currently implemented**
-> (the `media-scope-recents` / `media-scope-favorites` keys and the chip/source-badge
-> re-scoping flows were removed in the P1–P7 rebuild). Only `media-scope-last` persists.
+## Code Pointers
+
+- Scope loading & state: `frontend/src/modules/Media/search/SearchProvider.jsx`
+- Scope selector UI: `frontend/src/modules/Media/search/SearchBar.jsx`
+- Search endpoint: `GET /api/v1/content/query/search/stream` (see
+  [`media-app-technical.md` §2.2](./media-app-technical.md))

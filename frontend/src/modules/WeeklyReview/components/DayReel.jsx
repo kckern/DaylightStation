@@ -3,7 +3,10 @@ import React, { useEffect, useRef } from 'react';
 import FullscreenImage from './FullscreenImage.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
-const logger = getLogger().child({ component: 'weekly-review-reel' });
+// Lazy so the child snapshots context AFTER WeeklyReview sets app + sessionLog on
+// global config at mount — otherwise these events miss the session-log routing.
+let _logger;
+const logger = () => (_logger ||= getLogger().child({ component: 'weekly-review-reel' }));
 
 function ReelVideo({ item, muted, paused, onEnded }) {
   const ref = useRef(null);
@@ -11,8 +14,8 @@ function ReelVideo({ item, muted, paused, onEnded }) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const onErr = () => logger.error('reel.video-error', { error: el.error?.message || 'unknown' });
-    const onEnd = () => { logger.info('reel.video-ended'); onEnded?.(); };
+    const onErr = () => logger().error('reel.video-error', { error: el.error?.message || 'unknown' });
+    const onEnd = () => { logger().info('reel.video-ended'); onEnded?.(); };
     el.addEventListener('error', onErr);
     el.addEventListener('ended', onEnd);
     return () => { el.removeEventListener('error', onErr); el.removeEventListener('ended', onEnd); };
@@ -25,7 +28,7 @@ function ReelVideo({ item, muted, paused, onEnded }) {
     if (paused) el.pause();
     else {
       const p = el.play();
-      if (p && p.catch) p.catch(err => logger.warn('reel.play-rejected', { error: err.message }));
+      if (p && p.catch) p.catch(err => logger().warn('reel.play-rejected', { error: err.message }));
     }
   }, [paused]);
 

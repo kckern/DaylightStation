@@ -1,61 +1,44 @@
-/**
- * Picks the next queue item to play given the current snapshot.
- * Handles repeat modes (off/one/all), shuffle, and upNext priority.
- *
- * Semantics:
- * - Empty queue → null
- * - repeat='one' AND currentIndex is valid → return current item
- * - Else: prefer an upNext item (any index ≠ currentIndex with priority='upNext')
- * - Else: if shuffle, pick a random non-current item
- *   (repeat='all' → wrap to item 0; otherwise null if only 1 item)
- * - Else (sequential): next idx; if past end → wrap if repeat='all', else null
- *
- * @param {Object} snapshot - The session snapshot
- * @param {Object} snapshot.queue - Queue state {items, currentIndex, upNextCount}
- * @param {Array} snapshot.queue.items - Queue items, each with priority field
- * @param {number} snapshot.queue.currentIndex - Index of the currently playing item
- * @param {Object} snapshot.config - Session config {shuffle, repeat, ...}
- * @param {boolean} snapshot.config.shuffle - Whether shuffle is enabled
- * @param {string} snapshot.config.repeat - Repeat mode: 'off'|'one'|'all'
- * @param {Object} options - Options for testing/determinism
- * @param {Function} options.randomFn - Custom random function (default: Math.random)
- * @returns {Object|null} The next queue item, or null if none
- */
-export function pickNextQueueItem(snapshot, { randomFn = Math.random } = {}) {
+// frontend/src/modules/Media/session/advancement.js
+// Picks the next queue item. Rebuilt from spec (C3.3, J2):
+//
+// - `reason` distinguishes natural end from explicit user skip. repeat='one'
+//   repeats the item ONLY on natural advancement — an explicit skip is user
+//   navigation and moves on (the previous generation trapped Skip forever).
+// - The Up Next band is POSITIONAL: only the consecutive upNext run directly
+//   AFTER the current index counts. Spent band members behind the cursor are
+//   never revisited, so repeat='off' terminates (the previous generation
+//   looped two upNext items infinitely).
+// - Shuffle with repeat='off' draws only from items ahead of the cursor so
+//   a shuffled session also ends; repeat='all' draws from everything.
+
+export function pickNextQueueItem(snapshot, { reason = 'item-ended', randomFn = Math.random } = {}) {
   const { items, currentIndex } = snapshot.queue;
   if (!items || items.length === 0) return null;
 
   const { repeat, shuffle } = snapshot.config;
+  const isExplicitSkip = reason === 'skip-next';
 
-  // If repeat=one and currentIndex is valid, always return current item
-  if (repeat === 'one' && currentIndex >= 0 && currentIndex < items.length) {
+  // repeat=one governs natural end-of-item advancement only.
+  if (repeat === 'one' && !isExplicitSkip && currentIndex >= 0 && currentIndex < items.length) {
     return items[currentIndex];
   }
 
-  // Prefer upNext items first (any item with priority='upNext' that isn't current)
-  const upNextIdx = items.findIndex((it, i) => i !== currentIndex && it.priority === 'upNext');
-  if (upNextIdx !== -1) return items[upNextIdx];
+  // Up Next band: the item directly after current, if it carries upNext.
+  const bandHead = items[currentIndex + 1];
+  if (bandHead && bandHead.priority === 'upNext') return bandHead;
 
   if (shuffle) {
-    // Pick a random non-current item from the queue
-    const candidates = items
+    const pool = items
       .map((item, i) => ({ item, i }))
-      .filter(({ i }) => i !== currentIndex);
-
-    if (candidates.length === 0) {
-      // Only one item in queue; wrap if repeat=all, else null
+      .filter(({ i }) => (repeat === 'all' ? i !== currentIndex : i > currentIndex));
+    if (pool.length === 0) {
       return repeat === 'all' && items.length > 0 ? items[0] : null;
     }
-
-    const pick = candidates[Math.floor(randomFn() * candidates.length)];
-    return pick.item;
+    return pool[Math.floor(randomFn() * pool.length)].item;
   }
 
-  // Sequential: advance to next index
   const nextIdx = currentIndex + 1;
   if (nextIdx < items.length) return items[nextIdx];
-
-  // Reached end: wrap if repeat=all, else null
   if (repeat === 'all') return items[0];
   return null;
 }

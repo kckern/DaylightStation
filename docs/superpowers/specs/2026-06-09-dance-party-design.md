@@ -104,6 +104,7 @@ dance_party:
   audio_playlist_id: 463801          # Plex music playlist (fallback: first plex.music_playlists)
   video_playlist_id: 0               # Plex disco-visual playlist (fallback: CSS disco backdrop)
   shuffle: true
+  strobe_bpm: 60                     # strobe beat fallback (default 60); live BPM detection from the music overrides it once locked
   lighting:
     color_strips:                    # colorloop + strobe targets (fallback: [] → lighting skipped)
       - light.garage_ceiling_led_strip
@@ -113,6 +114,8 @@ dance_party:
     white_lights:                    # off during party, restored on exit (fallback: [] → skip)
       - light.garage_light_switch
     base_effect: colorloop           # fallback: colorloop
+    bpm_entity: input_number.garage_party_bpm  # HA input_number mirroring live music BPM (fallback: none → skipped)
+    bpm_min_interval_ms: 2000        # server-side rate cap on set_value (fallback: 2000)
     accent:
       mode: flash                    # flash | breathe | blink (fallback: flash)
       on_track_change: true          # fallback: true
