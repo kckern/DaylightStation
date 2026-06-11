@@ -26,3 +26,17 @@ export function participantDurationS(participant, timeCapS) {
 export function kmhLabel(distanceM, durationS) {
   return `${Math.round(kmh(distanceM, durationS))} km/h`;
 }
+
+/**
+ * Display speed (km/h) at one tick of a cumulative-distance series, averaged over
+ * a trailing window. Recorded series hold integer metres (rounded at save time),
+ * so a single-sample delta jitters by ±1 m — the window bounds that error.
+ * tickIndex is clamped into the series; tick 0 reads the first sample alone.
+ */
+export function windowedSeriesKmh(series, tickIndex, intervalS, windowTicks = 5) {
+  if (!Array.isArray(series) || series.length === 0) return 0;
+  const t = Math.min(Math.max(0, tickIndex), series.length - 1);
+  if (t === 0) return kmh(series[0], intervalS);
+  const from = Math.max(0, t - windowTicks);
+  return kmh(series[t] - series[from], (t - from) * intervalS);
+}

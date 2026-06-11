@@ -192,7 +192,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         riders.push({
           userId: g.userId,
           displayName: g.displayName,
-          equipmentId: null,
+          // The recording equipment — drives the gauge's maxRpm and the synth-rpm
+          // wheel size. Distance still replays from the recorded series (the ghost
+          // branch in the engine), so this never double-applies wheel physics.
+          equipmentId: g.equipmentId || null,
           wheelCircumferenceM: 0,
           ghostSeries: g.ghostSeries,
           ghostHrSeries: g.ghostHrSeries,
@@ -514,6 +517,10 @@ export default function CycleGameContainer({ onMount } = {}) {
             isGhost: ident.isGhost,
             displayName,
             avatarSrc: ident.avatarSrc,
+            equipment: p.equipment || null,
+            // Gauge scale of the recording equipment, resolved here (the recap
+            // has no bikes config). Default 120 for records predating the field.
+            gaugeMaxRpm: resolveRpmLimits(bikeById.get(p.equipment) || {}).gaugeMaxRpm,
             distanceSeries: p.distance_series || null,
             hrSeries: p.hr_series || null,
             rpmSeries: p.rpm_series || null,
@@ -552,7 +559,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         scoreLabel: winCondition === 'distance' ? fmtMs(winner.finalTimeS) : formatDistance(winner.finalDistanceM || 0)
       };
     }).filter(Boolean);
-  }, [pastRaces, getDisplayLabel]);
+  }, [pastRaces, getDisplayLabel, bikeById]);
 
   // History table rows: winner + both metric columns + which is the goal + when.
   // "today" is computed once here (the container may read the clock); recordRow
@@ -752,7 +759,9 @@ export default function CycleGameContainer({ onMount } = {}) {
       // Per-rider race readback so a driver (sim panel / tests) can close the loop:
       // see who is penalty-boxed (false start) and whether distance is advancing,
       // instead of blindly holding RPM down a course that may be wedged. Keyed by
-      // equipmentId so the caller can map a bike → its rider's live state.
+      // equipmentId so the caller can map a bike → its rider's live state. Note a
+      // ghost can carry the SAME equipmentId as a live rider (gauge scaling only),
+      // so callers mapping bike → rider should filter out `isGhost` entries.
       getRaceState: () => {
         const st = controllerRef.current?.getState?.();
         if (!st) return null;
@@ -861,9 +870,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       const cadenceConnected = {}; // userId → bool, for the firehose + drop detection
       Object.keys(before.engineState?.riders || {}).forEach((userId) => {
         const rider = before.engineState.riders[userId];
+        // Ghosts replay recorded series — the engine ignores inputs for them, and
+        // their equipmentId only drives gauge scaling (it can be the SAME bike a
+        // live rider is on). Skip all cadence/inputs bookkeeping so a ghost never
+        // mirrors the live bike's sensor (dup telemetry, phantom hot-start rpm).
+        if (rider.isGhost) return;
         const cadence = liveSession?.getEquipmentCadence?.(rider.equipmentId);
         const connected = !!(cadence && cadence.connected);
-        if (rider.equipmentId) cadenceConnected[userId] = connected; // ghosts have no equipment
+        if (rider.equipmentId) cadenceConnected[userId] = connected;
         const vitals = liveGetUserVitals?.(userId);
         const { abuseMaxRpm } = resolveRpmLimits(bikeByIdRef.current.get(rider.equipmentId) || {});
         // Cadence gap tolerance (racing only — this loop runs only while racing).
@@ -1103,6 +1117,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       return {
         userId: `ghost:${candidate.raceId}:${sourceId}`,
         displayName: `${baseName} 👻`,
+        equipmentId: p.equipment || null,
         ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
         ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
         ghostRpmSeries: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
@@ -1319,25 +1334,31 @@ export default function CycleGameContainer({ onMount } = {}) {
       // Ghost rider ids are `ghost:<raceId>:<sourceUserId>` — resolve the avatar
       // from the original user so the speedometer shows their face.
       const isGhostRider = userId.startsWith('ghost:');
-      const sourceId = isGhostRider ? userId.split(':')[2] : userId;
+      const sourceId = isGhostRider ? resolveParticipantIdentity(userId).sourceId : userId;
       // A finished distance-race rider is parked at the line: gauge reads idle.
       const isFinished = winConditionNow === 'distance' && rider.finishTimeS != null;
       const cadence = isGhostRider ? null : session?.getEquipmentCadence?.(rider.equipmentId);
       const vitals = isGhostRider ? {} : (getUserVitals?.(userId) || {});
       // Ghosts replay their recorded rpm + zone; live riders read cadence/vitals.
       const zoneId = isGhostRider ? (rider.zoneId || null) : (vitals.zoneId || null);
-      const liveRpm = isGhostRider
-        ? (Number.isFinite(rider.rpm) ? rider.rpm : 0)
-        : (cadence && cadence.connected ? cadence.rpm : 0);
-      const effRpm = isFinished ? 0 : liveRpm;
-      const mult = isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier);
-      // Effective speed = the SAME physics the engine uses to accrue distance, taken
-      // per second (rpm/60 rotations) → km/h. Surfaces the otherwise-hidden
-      // rpm × wheel-size × boost product as the gauge's hero number.
       const wheelM = Number.isFinite(rider.wheelCircumferenceM) && rider.wheelCircumferenceM > 0
         ? rider.wheelCircumferenceM
         : (bikeById.get(rider.equipmentId)?.wheel_circumference_m || 0);
-      const speedKmh = computeDistanceDelta(effRpm / 60, wheelM, mult) * 3.6;
+      // Ghost speed comes from the engine (windowed distance delta, already 0
+      // once finished). Records predating rpm_series have no cadence to replay —
+      // synthesize one from speed + wheel size so the needle doesn't park at 0
+      // under a moving km/h. (Approximate: recorded distance bakes in the zone
+      // boost, so the synth needle overreads during boosted stretches.)
+      const ghostSpeedKmh = Number.isFinite(rider.speedKmh) ? rider.speedKmh : 0;
+      const ghostRpm = rider.hasRpmData === false && wheelM > 0
+        ? (ghostSpeedKmh / 3.6 / wheelM) * 60
+        : (Number.isFinite(rider.rpm) ? rider.rpm : 0);
+      const liveRpm = isGhostRider ? ghostRpm : (cadence && cadence.connected ? cadence.rpm : 0);
+      const effRpm = isFinished ? 0 : liveRpm;
+      const mult = isFinished ? 1 : zoneMultiplierFor(zoneId, zones, hrlessMultiplier);
+      // Live speed = the SAME physics the engine uses to accrue distance, taken
+      // per second (rpm/60 rotations) → km/h.
+      const speedKmh = isGhostRider ? ghostSpeedKmh : computeDistanceDelta(effRpm / 60, wheelM, mult) * 3.6;
       riderLive[userId] = {
         rpm: effRpm,
         speedKmh,

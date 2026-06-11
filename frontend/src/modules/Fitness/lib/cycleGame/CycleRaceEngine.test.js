@@ -246,6 +246,61 @@ describe('CycleRaceEngine — ghost HR replay', () => {
   });
 });
 
+describe('CycleRaceEngine — display speedKmh', () => {
+  const ghostRace = (ghostSeries, goalM = 1000) => new CycleRaceEngine({
+    winCondition: 'distance', goalM, intervalMs: 1000,
+    riders: [{ userId: 'g', displayName: 'G', ghostSeries, ghostIntervalS: 1 }]
+  });
+
+  it('averages ghost speed over a window, smoothing integer-metre jitter', () => {
+    // Steady 8.4 m/s saved rounded: [8,17,25,34,42,50,59,67,76,84]
+    const series = Array.from({ length: 10 }, (_, i) => Math.round((i + 1) * 8.4));
+    const e = ghostRace(series);
+    for (let i = 0; i < 6; i++) e.tick({});
+    expect(e.getState().riders.g.speedKmh).toBeCloseTo(30.24, 1);
+  });
+
+  it('reads 0 from the very tick a distance-race rider crosses the line', () => {
+    const e = ghostRace([10, 20, 30], 25); // crosses on tick 3 (30 ≥ 25)
+    e.tick({}); e.tick({});
+    expect(e.getState().riders.g.speedKmh).toBeGreaterThan(0);
+    e.tick({});
+    const s = e.getState();
+    expect(s.riders.g.finishTimeS).toBe(3);
+    expect(s.riders.g.speedKmh).toBe(0);
+  });
+
+  it('scales with the engine tick interval', () => {
+    // 60 rpm × 2.1 m wheel × hot(2) = 21 m per 5 s tick → 4.2 m/s → 15.12 km/h, NOT 21·3.6.
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 10000, intervalMs: 5000, zones: HOT,
+      riders: [{ userId: 'a', displayName: 'A', equipmentId: 'x', wheelCircumferenceM: 2.1 }]
+    });
+    e.tick({ a: { rpm: 60, zoneId: 'hot' } });
+    expect(e.getState().riders.a.speedKmh).toBeCloseTo(15.12, 2);
+  });
+
+  it('reads 0 before any tick has run', () => {
+    const e = ghostRace([10, 20, 30]);
+    expect(e.getState().riders.g.speedKmh).toBe(0);
+  });
+
+  it('flags hasRpmData false only for ghosts without an rpm series', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 1000, intervalMs: 1000,
+      riders: [
+        { userId: 'g1', displayName: 'G1', ghostSeries: [5, 10], ghostIntervalS: 1 },
+        { userId: 'g2', displayName: 'G2', ghostSeries: [5, 10], ghostRpmSeries: [60, 60], ghostIntervalS: 1 },
+        { userId: 'live', displayName: 'L', equipmentId: 'x', wheelCircumferenceM: 2.1 }
+      ]
+    });
+    const s = e.tick({});
+    expect(s.riders.g1.hasRpmData).toBe(false);
+    expect(s.riders.g2.hasRpmData).toBe(true);
+    expect(s.riders.live.hasRpmData).toBe(true);
+  });
+});
+
 describe('CycleRaceEngine lap splits', () => {
   it('records interpolated lap-crossing times when lapLengthM is set', () => {
     // 1 rider, wheel 1m/rotation, hrless mult 1, 1s ticks, lap = 100m.

@@ -3,6 +3,8 @@ import PropTypes from 'prop-types';
 import CycleRaceScreen from './CycleRaceScreen.jsx';
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
+import resolveParticipantIdentity from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
+import { windowedSeriesKmh } from '@/modules/Fitness/lib/cycleGame/speed.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './RaceRecap.scss';
 
@@ -20,18 +22,28 @@ const REPLAY_TARGET_MS = 12000; // whole race replays in ~12s regardless of leng
  */
 export default function RaceRecap({ candidate, onClose }) {
   const decoded = useMemo(() => {
-    const parts = (candidate?.participants || []).map((p, idx) => ({
-      id: p.id,
-      displayName: p.displayName || p.id,
-      avatarSrc: p.avatarSrc || `/api/v1/static/img/users/${p.id}`,
-      color: LINE_COLORS[idx % LINE_COLORS.length],
-      dist: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
-      hr: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
-      rpm: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
-      finalDistanceM: p.finalDistanceM ?? 0,
-      finalTimeS: p.finalTimeS ?? null,
-      placement: p.placement ?? null
-    }));
+    const parts = (candidate?.participants || []).map((p, idx) => {
+      // Candidates from the lobby rail arrive with identity already resolved
+      // (isGhost/avatarSrc via resolveParticipantIdentity upstream); the resolver
+      // is the fallback for callers passing bare persisted records. It handles
+      // nested ghost ids (ghost:R2:ghost:R1:user → final segment), so never
+      // re-parse the id by hand here.
+      const ident = resolveParticipantIdentity(p.id, p.displayName);
+      return {
+        id: p.id,
+        isGhost: p.isGhost ?? ident.isGhost,
+        displayName: p.displayName || ident.displayName,
+        avatarSrc: p.avatarSrc || ident.avatarSrc,
+        maxRpm: Number.isFinite(p.gaugeMaxRpm) ? p.gaugeMaxRpm : null,
+        color: LINE_COLORS[idx % LINE_COLORS.length],
+        dist: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
+        hr: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
+        rpm: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
+        finalDistanceM: p.finalDistanceM ?? 0,
+        finalTimeS: p.finalTimeS ?? null,
+        placement: p.placement ?? null
+      };
+    });
     const maxLen = Math.max(1, ...parts.map((p) => p.dist.length));
     return { parts, maxLen };
   }, [candidate]);
@@ -59,19 +71,24 @@ export default function RaceRecap({ candidate, onClose }) {
   const riders = {};
   const riderLive = {};
   decoded.parts.forEach((p) => {
+    const distNow = sampleAt(p.dist, t);
     riders[p.id] = {
       userId: p.id,
       displayName: p.displayName,
       equipmentId: null,
-      cumulativeDistanceM: sampleAt(p.dist, t),
+      cumulativeDistanceM: distNow,
       distanceSeries: p.dist.slice(0, t + 1),
       finishTimeS: p.finalTimeS,
-      isGhost: false
+      isGhost: p.isGhost
     };
     const hr = p.hr.length ? p.hr[Math.min(t, p.hr.length - 1)] : null;
-    const rpm = p.rpm.length ? p.rpm[Math.min(t, p.rpm.length - 1)] : 0;
+    const rpm = t < p.dist.length && p.rpm.length ? p.rpm[Math.min(t, p.rpm.length - 1)] : 0;
     riderLive[p.id] = {
       rpm: Number.isFinite(rpm) ? Math.round(rpm) : 0,
+      // Windowed so the integer-metre series doesn't strobe at replay speed;
+      // a rider whose series has ended is parked at the line → 0.
+      speedKmh: t < p.dist.length ? windowedSeriesKmh(p.dist, t, intervalS) : 0,
+      maxRpm: p.maxRpm ?? undefined,
       avatarSrc: p.avatarSrc,
       heartRate: Number.isFinite(hr) ? hr : null,
       zoneId: null,
