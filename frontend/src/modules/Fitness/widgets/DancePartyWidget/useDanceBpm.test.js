@@ -86,13 +86,17 @@ describe('useDanceBpm', () => {
     delete global.AudioContext;
   });
 
-  it('attaches the current media element to the analyzer and routes audio to destination', async () => {
+  it('routes the element source to the SPEAKERS first, with the analyzer as a side tap', async () => {
     renderHook(() => useDanceBpm({ playerRef }));
     await flush();
     expect(createRealtimeBpmAnalyzer).toHaveBeenCalledWith(ctx, expect.objectContaining({ continuousAnalysis: true }));
     expect(ctx.createMediaElementSource).toHaveBeenCalledWith(mediaEl);
-    expect(ctx._sources[0].connect).toHaveBeenCalledWith(fakeAnalyzer.node);
-    expect(fakeAnalyzer.node.connect).toHaveBeenCalledWith(ctx.destination);
+    // The worklet is a sink (never writes outputs): audio routed only through
+    // it is SILENT. The source must hit the destination directly, before the
+    // analyzer tap, and the analyzer node must NOT sit on the audible path.
+    expect(ctx._sources[0].connect).toHaveBeenNthCalledWith(1, ctx.destination);
+    expect(ctx._sources[0].connect).toHaveBeenNthCalledWith(2, fakeAnalyzer.node);
+    expect(fakeAnalyzer.node.connect).not.toHaveBeenCalled();
   });
 
   it('bpm events update detectedBpm via pickBpm', async () => {

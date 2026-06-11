@@ -32,9 +32,11 @@ export function pickBpm(candidates, current) {
 
 /**
  * Live BPM detection from the dance audio Player, via realtime-bpm-analyzer
- * (AudioWorklet). Audio graph: media element source → analyzer node →
- * destination (the worklet passes audio through, per the library's
- * documented element wiring).
+ * (AudioWorklet). Audio graph: media element source → destination (speakers)
+ * with the analyzer node as a side tap (source → analyzer). The worklet is a
+ * SINK — its process(inputs, _outputs) never writes outputs, so routing audio
+ * *through* it (as the library README suggests) silences playback. The source
+ * must connect to the destination directly.
  *
  * Safety invariant: createMediaElementSource permanently reroutes the
  * element's audio through the AudioContext, so we ONLY attach while the
@@ -99,7 +101,6 @@ export function useDanceBpm({ playerRef, enabled = true, trackKey = null } = {})
               return next;
             });
           });
-          analyzer.node.connect(ctx.destination);
           analyzerRef.current = analyzer;
           logger().info('fitness.dance.bpm.analyzer_ready', {});
         } catch (err) {
@@ -123,6 +124,9 @@ export function useDanceBpm({ playerRef, enabled = true, trackKey = null } = {})
       try {
         const source = ctxRef.current.createMediaElementSource(liveEl);
         sourceRef.current?.disconnect?.();
+        // Speakers FIRST: the element is rerouted the moment the source is
+        // created, so the destination hookup is what keeps the music audible.
+        source.connect(ctxRef.current.destination);
         source.connect(analyzer.node);
         sourceRef.current = source;
         attachedElRef.current = liveEl;
