@@ -86,15 +86,17 @@ describe('useDanceStrobe', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('starts off with no style applied', () => {
+  it('starts ON by default, bright at hue 0 unflipped; toggle turns it off', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
+    expect(result.current.strobeOn).toBe(true);
+    expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1, transform: 'scale(1, 1)' });
+    act(() => result.current.toggleStrobe());
     expect(result.current.strobeOn).toBe(false);
     expect(result.current.strobeStyle).toBeNull();
   });
 
-  it('toggling on yields bright hue-0 unflipped immediately, then beats at the configured bpm', () => {
+  it('beats at the configured bpm from mount', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
-    act(() => result.current.toggleStrobe());
     expect(result.current.strobeOn).toBe(true);
     expect(result.current.strobeStyle).toEqual({ filter: 'hue-rotate(0deg)', opacity: 1, transform: 'scale(1, 1)' });
 
@@ -109,7 +111,6 @@ describe('useDanceStrobe', () => {
 
   it('honors a faster bpm (120 → beat every 500ms)', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 120 }));
-    act(() => result.current.toggleStrobe());
     act(() => vi.advanceTimersByTime(499));
     expect(result.current.strobeStyle.opacity).toBe(1);
     act(() => vi.advanceTimersByTime(1));
@@ -118,7 +119,6 @@ describe('useDanceStrobe', () => {
 
   it('toggling off removes the style and stops the beat clock', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
-    act(() => result.current.toggleStrobe());
     act(() => vi.advanceTimersByTime(3000));
     act(() => result.current.toggleStrobe());
     expect(result.current.strobeOn).toBe(false);
@@ -130,7 +130,6 @@ describe('useDanceStrobe', () => {
 
   it('re-enabling restarts the cycle at hue 0 bright, unflipped', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
-    act(() => result.current.toggleStrobe());
     act(() => vi.advanceTimersByTime(3000));
     act(() => result.current.toggleStrobe()); // off
     act(() => result.current.toggleStrobe()); // on again
@@ -141,7 +140,6 @@ describe('useDanceStrobe', () => {
     // rng = 0 deterministically picks the first non-current orientation:
     // {1,1} → {-1,1} → {1,1} → ...
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60, rng: () => 0 }));
-    act(() => result.current.toggleStrobe());
     expect(result.current.strobeStyle.transform).toBe('scale(1, 1)');
 
     act(() => vi.advanceTimersByTime(1000)); // beat 1: dark — new orientation
@@ -158,7 +156,6 @@ describe('useDanceStrobe', () => {
 
   it('orientation is always one of the four permutations under real randomness', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 60 }));
-    act(() => result.current.toggleStrobe());
     const seen = new Set();
     for (let beat = 0; beat < 20; beat++) {
       act(() => vi.advanceTimersByTime(1000));
@@ -170,7 +167,6 @@ describe('useDanceStrobe', () => {
 
   it('falls back to 60 bpm on invalid input', () => {
     const { result } = renderHook(() => useDanceStrobe({ bpm: 0 }));
-    act(() => result.current.toggleStrobe());
     act(() => vi.advanceTimersByTime(1000));
     expect(result.current.strobeStyle.opacity).toBe(STROBE_DIM_OPACITY);
   });

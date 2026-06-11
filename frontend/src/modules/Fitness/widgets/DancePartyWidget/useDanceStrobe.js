@@ -47,7 +47,7 @@ export function pickOrientation(current, rng = Math.random) {
 }
 
 /**
- * BPM-clocked strobe filter for the dance video layer: off by default,
+ * BPM-clocked strobe filter for the dance video layer: ON by default,
  * toggled from the now-playing bar. While on, emits a style object
  * ({ filter: hue-rotate, opacity, transform }) that flips bright/dim and
  * walks the hue wheel one beat at a time (see strobeFrame). Each light→dark
@@ -56,7 +56,7 @@ export function pickOrientation(current, rng = Math.random) {
  * Re-enabling always restarts the cycle at hue 0, bright, unflipped.
  */
 export function useDanceStrobe({ bpm = 60, rng = Math.random } = {}) {
-  const [strobeOn, setStrobeOn] = useState(false);
+  const [strobeOn, setStrobeOn] = useState(true);
   const [beatIndex, setBeatIndex] = useState(0);
   const [orientation, setOrientation] = useState(ORIENTATIONS[0]);
 
