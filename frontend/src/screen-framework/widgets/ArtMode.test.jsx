@@ -209,7 +209,22 @@ describe('ArtMode', () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
     await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
-    expect(getByTestId('artmode-placard').style.maxWidth).toMatch(/%$/);
+    const mw = getByTestId('artmode-placard').style.maxWidth;
+    expect(mw).toMatch(/%$/);
+    const pct = parseFloat(mw);
+    expect(pct).toBeGreaterThan(40);          // a real artwork width, not zero
+    expect(pct).toBeLessThanOrEqual(100);
+  });
+
+  it('parts the curtain after the artwork loads in an object-fit mode', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    press('Tab');  // framed-contain → object-fit render path
+    expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
+    fireEvent.load(getByTestId('artmode-image'));
+    await waitFor(() =>
+      expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'));
   });
 
   it('splits a long title into two balanced placard lines', async () => {
