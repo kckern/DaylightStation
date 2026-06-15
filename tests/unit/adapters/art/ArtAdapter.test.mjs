@@ -47,9 +47,9 @@ describe('ArtAdapter', () => {
     const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     let pool;
     await adapter.selectFeatured({ pick: (a) => { pool = a; return a.find((e) => e.kind === 'landscape'); } });
-    expect(pool.map((e) => e.folder).sort()).toEqual(['Land', 'Square', 'Tall']);
-    expect(pool.find((e) => e.folder === 'Square').kind).toBe('portrait');
-    expect(pool.find((e) => e.folder === 'Land').kind).toBe('landscape');
+    expect(pool.map((e) => e.id).sort()).toEqual(['Land', 'Square', 'Tall']);
+    expect(pool.find((e) => e.id === 'Square').kind).toBe('portrait');
+    expect(pool.find((e) => e.id === 'Land').kind).toBe('landscape');
   });
 
   it('portrait primary → diptych with a companion + shared matte', async () => {

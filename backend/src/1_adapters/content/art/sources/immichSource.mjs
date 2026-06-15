@@ -55,7 +55,8 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
       id: `immich:${asset.id}`,
       image: `${proxyPath}/assets/${asset.id}/thumbnail?size=preview`,
       width, height, kind,
-      meta: { title: place, artist: subtitle, date: formattedDate },
+      // width/height in meta feed the frontend artLayout aspect-ratio math.
+      meta: { title: place, artist: subtitle, date: formattedDate, width, height },
       loadImage: async () => Jimp.read(await fetchImageBytes(asset.id)),
     };
   }

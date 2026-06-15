@@ -74,6 +74,8 @@ export function createArtSource({ imgBasePath, logger = console }) {
           title: meta.title, artist: meta.artist, date: meta.date,
           origin: meta.origin, medium: meta.medium,
           department: meta.department, credit: meta.credit,
+          // width/height feed the frontend artLayout aspect-ratio math.
+          width: meta.width, height: meta.height,
         },
         loadImage: () => Jimp.read(localPath),
       });
