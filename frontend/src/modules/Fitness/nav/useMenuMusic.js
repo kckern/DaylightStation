@@ -67,6 +67,9 @@ const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.15, trackUrls = [] 
   const trackUrlsRef = useRef(trackUrls);
   useEffect(() => { trackUrlsRef.current = trackUrls; }, [trackUrls]);
 
+  const isActiveRef = useRef(isActive);
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+
   const getSlot = (name) => name === 'a' ? audioA.current : audioB.current;
   const getFadeHandle = (name) => name === 'a' ? fadeHandleA : fadeHandleB;
 
@@ -83,15 +86,44 @@ const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.15, trackUrls = [] 
     return candidate;
   }, []);
 
+  // Start a brand-new random track on the given slot, fading in from 0.
+  // Used both for track-end continuation and could be reused elsewhere.
+  const startFreshTrack = useCallback((slotName) => {
+    const audio = slotName === 'a' ? audioA.current : audioB.current;
+    const handle = slotName === 'a' ? fadeHandleA : fadeHandleB;
+    if (!audio) return;
+    const url = pickTrack();
+    if (!url) return;
+    lastUrl.current = url;
+    audio.src = url;
+    audio.volume = 0;
+    audio.load();
+    audio.play().catch(err => logger().warn('menu-music.continue-play-failed', { message: err?.message }));
+    startFade(audio, 0, volumeRef.current, FADE_MS, handle, null);
+    logger().info('menu-music.track-ended-continue', { slot: slotName });
+  }, [pickTrack]);
+
   // Create Audio elements once on mount, destroy on unmount
   useEffect(() => {
     audioA.current = new Audio();
     audioA.current.volume = 0;
     audioB.current = new Audio();
     audioB.current.volume = 0;
+
+    const onEndedA = () => {
+      if (isActiveRef.current && activeSlot.current === 'a') startFreshTrack('a');
+    };
+    const onEndedB = () => {
+      if (isActiveRef.current && activeSlot.current === 'b') startFreshTrack('b');
+    };
+    audioA.current.addEventListener('ended', onEndedA);
+    audioB.current.addEventListener('ended', onEndedB);
+
     logger().info('menu-music.init');
 
     return () => {
+      audioA.current?.removeEventListener('ended', onEndedA);
+      audioB.current?.removeEventListener('ended', onEndedB);
       cancelFade(fadeHandleA);
       cancelFade(fadeHandleB);
       audioA.current?.pause();
