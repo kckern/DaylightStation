@@ -27,7 +27,7 @@ export function createArtRouter(config = {}) {
     '/featured',
     asyncHandler(async (req, res) => {
       try {
-        const result = await artAdapter.selectFeatured();
+        const result = await artAdapter.selectFeatured({ collection: req.query.collection });
         logger.debug?.('art.featured.served', { title: result?.meta?.title ?? null });
         res.json(result);
       } catch (err) {

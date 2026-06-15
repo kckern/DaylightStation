@@ -1210,9 +1210,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Art router — selects a classic artwork (image + metadata) for ArtMode
+  // Art collections (data/household/config/art.yml → households[hid].apps.art)
+  const artConfig = configService.getHouseholdAppConfig(null, 'art') || {};
   v1Routers.art = createArtRouter({
     artAdapter: createArtAdapter({
       imgBasePath,
+      collections: artConfig.collections || {},
       logger: rootLogger.child({ module: 'art-adapter' })
     }),
     logger: rootLogger.child({ module: 'art-api' })
