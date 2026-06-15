@@ -8,6 +8,7 @@ import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows } fro
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
+import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import './ArtMode.css';
 
 const DIM_STEP = 0.1;
@@ -46,7 +47,7 @@ function ArtMode({
   placard = true, onExit, dismiss,
   frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
-  curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS,
+  curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, music = null,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -106,6 +107,9 @@ function ArtMode({
     const remaining = Math.max(0, curtainMinMs - (nowMs() - dropAtRef.current));
     revealTimerRef.current = setTimeout(openCurtain, remaining);
   }, [curtainMinMs, openCurtain]);
+
+  const musicRef = useRef(null);
+  const { track: musicTrack } = useBackgroundMusic(musicRef, music);
 
   const load = useCallback(() => {
     // Drop the curtain (covers the swap); it parts after the MIN dwell once the
@@ -257,6 +261,21 @@ function ArtMode({
 
         {mode.frame && (
           <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
+        )}
+
+        {music && (
+          <audio ref={musicRef} className="artmode__audio" data-testid="artmode-music" />
+        )}
+
+        {music && musicTrack && mode.frame && (
+          <div className="artmode__placard artmode__music-plaque" data-testid="artmode-music-plaque">
+            {musicTrack.title && (
+              <span className="artmode__placard-title artmode__placard-line">{`♪ ${smartQuotes(musicTrack.title)}`}</span>
+            )}
+            {musicTrack.artist && (
+              <span className="artmode__placard-artist artmode__placard-line">{smartQuotes(musicTrack.artist)}</span>
+            )}
+          </div>
         )}
 
         {placard && mode.placard && placardGeom.map((g, i) => {

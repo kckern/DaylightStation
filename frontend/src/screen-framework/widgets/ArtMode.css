@@ -247,3 +247,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---- Background audio element (no UI) ---- */
+.artmode__audio { display: none; }
+
+/* ---- Music plaque: a brass nameplate on the TOP frame rail (static) ---- */
+.artmode__music-plaque {
+  top: 2.4%;
+  bottom: auto;
+  left: 50%;
+  max-width: 56%;
+}
