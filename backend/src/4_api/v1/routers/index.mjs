@@ -3,6 +3,7 @@ export { createApiRouter } from './api.mjs';
 export { createConfigRouter } from './config.mjs';
 export { createHealthRouter } from './health.mjs';
 export { createStaticRouter } from './static.mjs';
+export { createArtRouter } from './art.mjs';
 
 // Domain routers - Agents & AI
 export { createAIRouter } from './ai.mjs';
