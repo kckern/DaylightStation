@@ -44,6 +44,25 @@
   background-blend-mode: normal, multiply;
 }
 
+/* ---- Loading: dark mat + a quiet brass throbber until the first artwork lands ---- */
+.artmode__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #14110c;          /* darken the mat while waiting (museum hush) */
+}
+.artmode__loader {
+  width: 5.5vh;
+  height: 5.5vh;
+  border-radius: 50%;
+  border: 0.25vh solid rgba(214, 180, 110, 0.16);   /* faint brass ring */
+  border-top-color: rgba(234, 206, 142, 0.7);       /* one lit arc */
+  animation: artmode-spin 1.8s linear infinite;
+}
+@keyframes artmode-spin { to { transform: rotate(360deg); } }
+
 /* ---- Opening: where the painting(s) sit; insets + justify come from inline style ---- */
 .artmode__opening {
   position: absolute;
@@ -55,14 +74,25 @@
 .artmode__window {
   position: relative;
   line-height: 0;
+  overflow: hidden;          /* contain the materialize zoom within the cut */
 }
 
-/* The painting — whole image, never cropped. */
+/* The painting fills the cut. It "materializes" — blur + fade + a hair of zoom
+   — once loaded (the .--in class is added on load), instead of a raw raster. */
 .artmode__image {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  filter: blur(14px);
+  transform: scale(1.04);
+  transition: opacity 1s ease, filter 1.1s ease, transform 1.2s ease;
+}
+.artmode__image--in {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
 }
 
 /* ---- The cut: the mat's beveled edge overhanging the painting + the recess ----

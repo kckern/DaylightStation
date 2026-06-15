@@ -97,6 +97,11 @@ function ArtMode({
     <div className="artmode" data-testid="artmode" style={matteVars}>
       <div className="artmode__stage">
         <div className="artmode__matte" aria-hidden="true" />
+        {!art && !failed && (
+          <div className="artmode__loading" data-testid="artmode-loading" aria-hidden="true">
+            <span className="artmode__loader" />
+          </div>
+        )}
         {layout && (
           <div className="artmode__opening" style={{
             top: `${layout.opening.top}%`, bottom: `${layout.opening.bottom}%`,
@@ -104,10 +109,12 @@ function ArtMode({
             justifyContent: layout.justify,
           }}>
             {panels.map((p, i) => (
-              <div key={i} className="artmode__window" data-testid={testid('artmode-window', i)}
+              <div key={p.image} className="artmode__window" data-testid={testid('artmode-window', i)}
                    style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
                 <img className="artmode__image" data-testid={testid('artmode-image', i)}
-                     src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'} />
+                     src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                     ref={(el) => { if (el && el.complete) el.classList.add('artmode__image--in'); }}
+                     onLoad={(e) => e.currentTarget.classList.add('artmode__image--in')} />
                 <span className="artmode__cut" aria-hidden="true" />
               </div>
             ))}
