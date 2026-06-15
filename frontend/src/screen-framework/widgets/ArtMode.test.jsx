@@ -104,4 +104,29 @@ describe('ArtMode', () => {
     press('ArrowDown');
     expect(onExit).not.toHaveBeenCalled();
   });
+
+  it('applies the matte palette as CSS custom properties', async () => {
+    DaylightAPI.mockResolvedValue({
+      image: '/x.jpg',
+      meta: { title: 'T', artist: 'A', date: '1' },
+      color: { average: '#75879c', hue: 212, saturation: 0.25, value: 0.61 },
+      matte: {
+        branch: 'match', base: '#58616b', glow: '#6b7682', edge: '#474e56',
+        bevelTop: '#474e56', bevelLeft: '#4e555d', bevelRight: '#626c77', bevelBottom: '#6b7682',
+      },
+    });
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const root = getByTestId('artmode');
+    expect(root.style.getPropertyValue('--matte-base')).toBe('#58616b');
+    expect(root.style.getPropertyValue('--cut-top')).toBe('#474e56');
+    expect(root.style.getPropertyValue('--cut-bottom')).toBe('#6b7682');
+  });
+
+  it('sets no matte custom properties when matte is absent', async () => {
+    DaylightAPI.mockResolvedValue({ image: '/x.jpg', meta: { title: 'T', artist: 'A', date: '1' } });
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(getByTestId('artmode').style.getPropertyValue('--matte-base')).toBe('');
+  });
 });

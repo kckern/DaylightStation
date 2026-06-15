@@ -101,8 +101,24 @@ function ArtMode({ placard = true, onExit, dismiss }) {
     return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? { w, h } : null;
   }, [art]);
 
+  // Map the API matte palette to CSS custom properties on the root. Absent →
+  // undefined, so the stylesheet's cream fallbacks apply.
+  const matteVars = useMemo(() => {
+    const m = art?.matte;
+    if (!m) return undefined;
+    return {
+      '--matte-base': m.base,
+      '--matte-glow': m.glow,
+      '--matte-edge': m.edge,
+      '--cut-top': m.bevelTop,
+      '--cut-left': m.bevelLeft,
+      '--cut-right': m.bevelRight,
+      '--cut-bottom': m.bevelBottom,
+    };
+  }, [art]);
+
   return (
-    <div className="artmode" data-testid="artmode">
+    <div className="artmode" data-testid="artmode" style={matteVars}>
       <div className="artmode__stage">
         <div className="artmode__matte" aria-hidden="true" />
         <div className="artmode__opening">
