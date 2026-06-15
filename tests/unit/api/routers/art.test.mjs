@@ -2,9 +2,11 @@ import request from 'supertest';
 import express from 'express';
 import { createArtRouter } from '../../../../backend/src/4_api/v1/routers/art.mjs';
 
+const noopLogger = { debug: () => {}, warn: () => {}, error: () => {}, info: () => {} };
+
 const makeApp = (artAdapter) => {
   const app = express();
-  app.use('/art', createArtRouter({ artAdapter }));
+  app.use('/art', createArtRouter({ artAdapter, logger: noopLogger }));
   return app;
 };
 
