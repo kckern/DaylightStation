@@ -5,13 +5,14 @@ import { getChildLogger } from '../../lib/logging/singleton.js';
 import './ArtMode.css';
 
 /**
- * ArtMode — screensaver widget showing a framed classic painting.
+ * ArtMode — screensaver widget showing a matted, framed classic painting.
  *
- * Layers (bottom → top): painting (object-fit cover) → frame.png overlay →
- * optional museum placard. Fetches a random artwork from /api/v1/art/featured.
+ * Layers (bottom → top): rag-paper matte → recessed painting (whole image,
+ * never cropped) with a beveled mat window + cast shadow → frame.png overlay →
+ * engraved brass nameplate. Fetches a random artwork from /api/v1/art/featured.
  *
  * Props (from screen YAML / screensaver config):
- *   placard: boolean   show the title/artist/year placard (default true)
+ *   placard: boolean   show the engraved title/artist/year nameplate (default true)
  */
 function ArtMode({ placard = true }) {
   const [art, setArt] = useState(null);
@@ -44,22 +45,27 @@ function ArtMode({ placard = true }) {
 
   return (
     <div className="artmode" data-testid="artmode">
-      {art?.image && !failed && (
-        <img
-          className="artmode__image"
-          data-testid="artmode-image"
-          src={DaylightMediaPath(art.image)}
-          alt={caption?.title || 'Artwork'}
-        />
-      )}
+      <div className="artmode__matte" aria-hidden="true" />
+      <div className="artmode__opening">
+        {art?.image && !failed && (
+          <div className="artmode__window">
+            <img
+              className="artmode__image"
+              data-testid="artmode-image"
+              src={DaylightMediaPath(art.image)}
+              alt={caption?.title || 'Artwork'}
+            />
+          </div>
+        )}
+      </div>
       <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
       {placard && caption && (caption.title || caption.artist) && (
         <div className="artmode__placard" data-testid="artmode-placard">
-          {caption.title && <div className="artmode__placard-title">{caption.title}</div>}
+          {caption.title && <span className="artmode__placard-title">{caption.title}</span>}
           {(caption.artist || caption.date) && (
-            <div className="artmode__placard-artist">
-              {[caption.artist, caption.date].filter(Boolean).join(', ')}
-            </div>
+            <span className="artmode__placard-artist">
+              {[caption.artist, caption.date].filter(Boolean).join(' · ')}
+            </span>
           )}
         </div>
       )}

@@ -1,19 +1,89 @@
+/* ArtMode — matted, framed painting with an engraved brass nameplate.
+   Layer stack (DOM order = paint order): matte → opening/window/painting →
+   frame overlay → nameplate. */
+
 .artmode {
   position: relative;
   width: 100%;
   height: 100%;
-  background: #000;
+  background: #14110c;
   overflow: hidden;
+
+  /* Fine paper grain for the mat — grayscale fractal noise, no asset needed. */
+  --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
 }
 
-.artmode__image {
+/* ---- Mat board: warm rag paper filling the frame opening ---- */
+/* Sits at inset 0; the frame overlay covers everything outside its window. */
+.artmode__matte {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  background-color: #e7dcc1;
+  background-image:
+    radial-gradient(ellipse 78% 78% at 50% 40%,
+      rgba(255, 252, 243, 0.75),
+      rgba(206, 190, 156, 0.20) 68%,
+      rgba(116, 100, 68, 0.45)),
+    var(--paper-noise);
+  background-size: cover, 180px 180px;
+  background-blend-mode: multiply, multiply;
+  /* Depth: the mat recedes slightly inside the frame opening. */
+  box-shadow: inset 0 0 70px rgba(64, 50, 26, 0.4);
 }
 
+/* ---- Opening: the area inside the mat where the painting floats ---- */
+/* Inset beyond the frame's window so a generous mat border shows around art. */
+.artmode__opening {
+  position: absolute;
+  top: 19%;
+  bottom: 19%;
+  left: 14%;
+  right: 14%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Mat window + bevel: shrink-wraps the painting at its own aspect ---- */
+.artmode__window {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  padding: 0.5vh;                      /* the visible bevel face of the mat cut */
+  /* Beveled core, lit from the top-left like a real 45° mat cut. */
+  background: linear-gradient(135deg, #fcf7ec 0%, #efe6cf 48%, #d8c9a2 100%);
+  box-shadow:
+    0 0 0 1px rgba(120, 98, 55, 0.5),                 /* fillet line at mat edge */
+    0.8vh 1.1vh 2.4vh rgba(34, 24, 10, 0.5),          /* assembly cast onto the mat */
+    inset 1px 1px 0 rgba(255, 255, 255, 0.85),        /* bevel highlight (top-left) */
+    inset -1px -1px 0 rgba(92, 72, 40, 0.55);         /* bevel shade (bottom-right) */
+}
+
+/* The painting — whole image, never cropped. */
+.artmode__image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  outline: 1px solid rgba(0, 0, 0, 0.4);
+  outline-offset: -1px;
+}
+
+/* Recess: the mat-cut bevel casts a soft shadow onto the painting (emboss). */
+.artmode__window::after {
+  content: "";
+  position: absolute;
+  inset: 0.5vh;                        /* match padding → overlay the painting */
+  pointer-events: none;
+  box-shadow:
+    inset 0.3vh 0.3vh 0.7vh rgba(0, 0, 0, 0.5),
+    inset -0.12vh -0.12vh 0.4vh rgba(0, 0, 0, 0.28);
+}
+
+/* ---- Frame overlay (ornate wood; transparent center) ---- */
 .artmode__frame {
   position: absolute;
   inset: 0;
@@ -23,27 +93,71 @@
   pointer-events: none;
 }
 
+/* ---- Engraved brass nameplate, screwed onto the frame's bottom rail ---- */
 .artmode__placard {
   position: absolute;
-  bottom: 15%;
-  right: 9%;
-  max-width: 40%;
-  padding: 0.5rem 0.9rem;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 6px;
-  color: #f3ecdd;
-  font-family: 'Roboto Condensed', sans-serif;
-  text-align: right;
-  line-height: 1.3;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  bottom: 2.4%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05em;
+  max-width: 56%;
+  padding: 0.5em 1.7em;
+  text-align: center;
+  border-radius: 2px;
+  border: 1px solid #5d4514;
+  /* Polished brass: dark base, bright top sheen, warm body. */
+  background: linear-gradient(180deg,
+    #7a5c1d 0%,
+    #e7c266 16%,
+    #f6e3a0 36%,
+    #d8ad4d 62%,
+    #9a772b 100%);
+  box-shadow:
+    0 0.4vh 0.8vh rgba(0, 0, 0, 0.6),                 /* drop shadow on the wood */
+    inset 0 1px 0 rgba(255, 248, 214, 0.85),          /* top edge sheen */
+    inset 0 -1px 0 rgba(78, 56, 18, 0.75);            /* bottom edge */
+}
+
+/* Two engraved screws at the ends of the plate. */
+.artmode__placard::before,
+.artmode__placard::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0.7em;
+  height: 0.7em;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #fdeeb8, #8a6a23 68%, #5a4412);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 245, 210, 0.4);
+}
+.artmode__placard::before { left: 0.55em; }
+.artmode__placard::after { right: 0.55em; }
+
+/* Intaglio text: dark groove with a light lower edge so it reads as carved. */
+.artmode__placard-title,
+.artmode__placard-artist {
+  font-family: "Cormorant Garamond", "Hoefler Text", "EB Garamond",
+    Georgia, "Times New Roman", serif;
+  color: #43300a;
+  text-shadow: 0 1px 0 rgba(255, 246, 214, 0.55);
+  line-height: 1.2;
 }
 
 .artmode__placard-title {
+  font-size: clamp(0.95rem, 2.1vh, 1.7rem);
   font-style: italic;
-  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .artmode__placard-artist {
-  font-size: 1.1rem;
-  opacity: 0.85;
+  font-size: clamp(0.72rem, 1.4vh, 1.1rem);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
