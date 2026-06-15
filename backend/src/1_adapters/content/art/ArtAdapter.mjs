@@ -14,6 +14,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { Jimp } from 'jimp';
+import { deriveMatte, rgbToHsv } from '../../../2_domains/art/deriveMatte.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 const MIN_RATIO = 4 / 3;   // narrowest allowed (>= 4:3); narrower → excluded
@@ -24,6 +26,25 @@ const toInt = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null)
 export function createArtAdapter({ imgBasePath, logger = console }) {
   const artDir = path.join(imgBasePath, 'art', 'classic');
   let eligibleCache = null; // [{ folder, meta }] — built once, reused
+  const colorCache = new Map(); // folder → { color, matte }
+
+  async function analyzeColor(imagePath) {
+    const img = await Jimp.read(imagePath);
+    const small = img.resize({ w: 32, h: 32 });
+    const d = small.bitmap.data; // RGBA
+    let r = 0, g = 0, b = 0;
+    const n = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    const avg = [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+    const [h, s, v] = rgbToHsv(avg);
+    const color = {
+      average: '#' + avg.map((c) => c.toString(16).padStart(2, '0')).join(''),
+      hue: Math.round(h * 360),
+      saturation: Math.round(s * 1000) / 1000,
+      value: Math.round(v * 1000) / 1000,
+    };
+    return { color, matte: deriveMatte(avg) };
+  }
 
   async function readMeta(folder) {
     try {
@@ -89,7 +110,18 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
 
     const image =
       `/media/img/art/classic/${encodeURIComponent(chosen.folder)}/${encodeURIComponent(imageFile)}`;
-    return { image, meta: chosen.meta };
+
+    let palette = colorCache.get(chosen.folder);
+    if (!palette) {
+      try {
+        palette = await analyzeColor(path.join(folderPath, imageFile));
+        colorCache.set(chosen.folder, palette);
+      } catch (err) {
+        logger.warn?.('art.color.failed', { folder: chosen.folder, error: err.message });
+        palette = { color: null, matte: null };
+      }
+    }
+    return { image, meta: chosen.meta, color: palette.color, matte: palette.matte };
   }
 
   return { selectFeatured };

@@ -2,6 +2,17 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createArtAdapter } from '../../../../backend/src/1_adapters/content/art/ArtAdapter.mjs';
+import { Jimp } from 'jimp';
+
+// Write a real solid-color PNG so jimp's average matches the input color.
+const writeSolidArt = async (folder, [r, g, b], metaYamlStr) => {
+  const dir = path.join(imgBasePath, 'art', 'classic', folder);
+  fs.mkdirSync(dir, { recursive: true });
+  const color = ((r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0; // RGBA
+  const img = new Jimp({ width: 16, height: 12, color });
+  await img.write(path.join(dir, 'art.png'));
+  fs.writeFileSync(path.join(dir, 'metadata.yaml'), metaYamlStr);
+};
 
 const noopLogger = { warn: () => {}, error: () => {}, debug: () => {}, info: () => {} };
 
@@ -107,5 +118,27 @@ describe('ArtAdapter', () => {
     writeArt('Tall', 'a.jpg', metaYaml(1000, 2000));         // portrait → excluded
     const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     await expect(adapter.selectFeatured({ pick: (arr) => arr[0] })).rejects.toThrow('No artwork available');
+  });
+
+  it('returns color + matte for the selected painting (match branch)', async () => {
+    await writeSolidArt('Cool - 1900 - Blue', [117, 135, 156], metaYaml(1500, 1000));
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
+    const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
+
+    expect(result.color.average).toMatch(/^#[0-9a-f]{6}$/);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(result.color.average.slice(i, i + 2), 16));
+    expect(Math.abs(r - 117)).toBeLessThanOrEqual(6);
+    expect(Math.abs(g - 135)).toBeLessThanOrEqual(6);
+    expect(Math.abs(b - 156)).toBeLessThanOrEqual(6);
+    expect(result.matte.branch).toBe('match');
+    expect(result.matte.base).toMatch(/^#[0-9a-f]{6}$/);
+    expect(result.matte.bevelTop).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('uses the warm-neutral branch for a near-greyscale painting', async () => {
+    await writeSolidArt('Grey - 1900 - Stone', [180, 178, 176], metaYaml(1500, 1000));
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
+    const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
+    expect(result.matte.branch).toBe('neutral');
   });
 });
