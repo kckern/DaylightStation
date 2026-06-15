@@ -14,6 +14,13 @@ const DIMMER_KEYS = new Set(['ArrowDown']);
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 
+// Typographic quotes/apostrophes so the plaque doesn't show straight ASCII marks.
+const smartQuotes = (s) =>
+  s == null ? s : String(s)
+    .replace(/(\p{L})'(\p{L})/gu, '$1’$2') // internal apostrophe (d'Amont)
+    .replace(/'/g, '’')                      // any remaining single quotes
+    .replace(/"([^"]*)"/g, '“$1”');     // straight double quotes → curly
+
 /**
  * ArtMode — single landscape or portrait diptych, matted + framed, with engraved
  * brass nameplate(s). Home screensaver.
@@ -115,10 +122,10 @@ function ArtMode({
           return (
             <div key={i} className="artmode__placard" data-testid={testid('artmode-placard', i)}
                  style={{ left: `${layout.panels[i].centerXPct}%` }}>
-              {p.meta.title && <span className="artmode__placard-title">{p.meta.title}</span>}
+              {p.meta.title && <span className="artmode__placard-title">{smartQuotes(p.meta.title)}</span>}
               {(p.meta.artist || p.meta.date) && (
                 <span className="artmode__placard-artist">
-                  {[p.meta.artist, p.meta.date].filter(Boolean).join(' · ')}
+                  {smartQuotes([p.meta.artist, p.meta.date].filter(Boolean).join(' · '))}
                 </span>
               )}
             </div>
