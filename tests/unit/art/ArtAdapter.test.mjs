@@ -59,4 +59,45 @@ describe('ArtAdapter.selectFeatured', () => {
     expect(r.mode).toBe('single');
     expect(r.panels[0].image).toBe('/media/img/land.jpg');
   });
+
+  it('pairs a companion across artist/credit via the any tier', async () => {
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      artSource: fakeSource(() => [
+        cand('p1', 'portrait', { meta: { title: 'p1', artist: 'A', credit: 'C' } }),
+        cand('p2', 'portrait', { meta: { title: 'p2', artist: 'Z', credit: 'Q' } }),
+      ]),
+    });
+    const r = await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(r.mode).toBe('diptych');
+    expect(r.panels.map((p) => p.image)).toEqual(['/media/img/p1.jpg', '/media/img/p2.jpg']);
+  });
+
+  it('a lone portrait with no companion → single', async () => {
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      artSource: fakeSource(() => [cand('p1', 'portrait')]),
+    });
+    const r = await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(r.mode).toBe('single');
+    expect(r.panels[0].image).toBe('/media/img/p1.jpg');
+  });
+
+  it('caches per-candidate color (loadImage called once across selects)', async () => {
+    let loads = 0;
+    const one = { ...cand('land', 'landscape'), loadImage: async () => { loads += 1; return solid(8, 8, 0x223344ff); } };
+    const adapter = createArtAdapter({ collections: { all: {} }, artSource: fakeSource(() => [one]) });
+    await adapter.selectFeatured({ pick: (a) => a[0] });
+    await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(loads).toBe(1);
+  });
+
+  it('survives a loadImage failure → single with null matte', async () => {
+    const broken = { ...cand('land', 'landscape'), loadImage: async () => { throw new Error('decode boom'); } };
+    const adapter = createArtAdapter({ collections: { all: {} }, artSource: fakeSource(() => [broken]) });
+    const r = await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(r.mode).toBe('single');
+    expect(r.matte).toBeNull();
+    expect(r.panels[0].image).toBe('/media/img/land.jpg');
+  });
 });
