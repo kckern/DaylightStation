@@ -1253,8 +1253,10 @@ const FitnessApp = () => {
     menuMusicTracks.length > 0
   );
 
-  // Track changes on collection nav; stays stable when entering FitnessShow so music plays through
-  const menuMusicTrackKey = activeCollection;
+  // Track changes on collection nav; stays stable when entering FitnessShow so music plays through.
+  // Normalize to a primitive so an array activeCollection (collection_group) can't mint a
+  // same-contents-new-reference key that triggers a spurious crossfade.
+  const menuMusicTrackKey = Array.isArray(activeCollection) ? activeCollection.join(',') : activeCollection;
 
   useMenuMusic({
     isActive: menuMusicActive,
