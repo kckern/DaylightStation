@@ -31,6 +31,26 @@
     letter-spacing: 0.08em;
     pointer-events: none;
   }
+
+  &__caption {
+    fill: rgba(255, 255, 255, 0.5);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  &__hr-max {
+    fill: rgba(255, 255, 255, 0.7);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  &__end-dot {
+    fill: rgba(255, 255, 255, 0.85);
+    stroke: rgba(0, 0, 0, 0.6);
+    stroke-width: 1;
+  }
 }
 
 .timeline-band,
