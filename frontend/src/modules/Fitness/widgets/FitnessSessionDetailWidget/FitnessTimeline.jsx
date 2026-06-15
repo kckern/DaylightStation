@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
-import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER_FILL_OPACITY } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
 import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
 import { resolveSessionStartMs } from './sessionDetailUtils.js';
@@ -111,8 +111,8 @@ function buildLongGapMask(hrSeries, intervalMs) {
  * Long gaps (>= 2 min of no HR data) are zeroed to match the grey dotted line
  * in the race chart. Short gaps are linearly interpolated for visual continuity.
  */
-function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs) {
-  if (!hrSeries || hrSeries.length === 0) return { fills: [] };
+export function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs) {
+  if (!hrSeries || hrSeries.length === 0) return { fills: [], hrMin: null, hrMax: null, lastActiveTick: -1 };
 
   const longGap = buildLongGapMask(hrSeries, intervalMs);
 
@@ -127,7 +127,7 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
       lastValid = i;
     }
   }
-  if (firstValid < 0) return { fills: [] };
+  if (firstValid < 0) return { fills: [], hrMin: null, hrMax: null, lastActiveTick: -1 };
 
   let hrMin = Infinity, hrMax = -Infinity;
   for (let i = firstValid; i <= lastValid; i++) {
@@ -201,7 +201,7 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
   // Flush final segment
   if (segStart >= 0) flushSegment(lastValid);
 
-  return { fills };
+  return { fills, hrMin, hrMax, lastActiveTick: lastValid };
 }
 
 export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
@@ -267,7 +267,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
       const zoneSeries = getSeries(userId, 'zone_id', { clone: false }) || getSeries(userId, 'zone', { clone: false });
 
       const laneTop = idx * (laneHeight + laneGap);
-      const { fills } = buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs);
+      const { fills, hrMax, lastActiveTick } = buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs);
 
       return {
         userId,
@@ -277,6 +277,8 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
         laneTop,
         laneHeight,
         fills,
+        hrMax,
+        lastActiveTick,
       };
     });
   }, [roster, getSeries, effectiveTicks, plotWidth, plotHeight, intervalMs]);
@@ -318,28 +320,40 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             ))}
           </g>
         ))}
+        {/* group caption — parked in the empty right-margin strip (clear of lane fills + per-lane bpm labels) */}
+        <text className="fitness-timeline__caption" x={width - 8} y={12} textAnchor="end">HEART RATE</text>
+        {/* per-lane peak HR + early-stop marker */}
+        {lanes.map((lane) => {
+          const cy = lane.laneTop + lane.laneHeight / 2;
+          const endX = tickToX(lane.lastActiveTick, effectiveTicks, plotWidth);
+          const stoppedEarly = lane.lastActiveTick >= 0 && lane.lastActiveTick < effectiveTicks - 2;
+          return (
+            <g key={`lane-meta-${lane.userId}`}>
+              {Number.isFinite(lane.hrMax) && (
+                <text className="fitness-timeline__hr-max" x={lane.laneHeight + 8} y={lane.laneTop + 12}>
+                  {Math.round(lane.hrMax)} bpm
+                </text>
+              )}
+              {stoppedEarly && (
+                <circle className="fitness-timeline__end-dot" cx={endX} cy={cy} r={3} />
+              )}
+            </g>
+          );
+        })}
         {/* challenge duration rectangles — solid edge on the RIGHT (challenge end) */}
         {overlay.challengeMarkers.map((m, i) => {
           const color = getChallengeMarkerColor(m);
           const w = Math.max(m.width, 2);
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
-              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.06} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke={color} strokeWidth={1.5} opacity={0.9} />
+              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={MARKER_FILL_OPACITY} />
             </g>
           );
         })}
-        {/* seams + video-change markers (dashed) */}
+        {/* seams (dashed) */}
         {overlay.seams.map((s, i) => (
           <g key={`seam-${i}`} className="timeline-seam">
             <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
-          </g>
-        ))}
-        {overlay.videoMarkers.map((m, i) => (
-          <g key={`vid-${i}`} className="timeline-video-marker">
-            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
         {/* avatars — drawn LAST so they sit above every indicator line/rect */}

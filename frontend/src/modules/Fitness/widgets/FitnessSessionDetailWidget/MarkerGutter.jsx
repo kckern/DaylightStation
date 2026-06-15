@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTimelineMarkers } from './useTimelineMarkers.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
+import { MARKER_FILL_OPACITY } from '@/modules/Fitness/lib/chartConstants.js';
 import './MarkerGutter.scss';
 
 /**
@@ -23,18 +24,15 @@ export default function MarkerGutter({ sessionData }) {
           const w = Math.max(m.width, 2);
           return (
             <g key={`gl-chal-${i}`}>
-              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={0.06} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
+              <rect x={m.x} y={0} width={w} height={height} fill={color} opacity={MARKER_FILL_OPACITY} />
+              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.8} />
             </g>
           );
         })}
         {videoMarkers.map((m, i) => (
           <g key={`gl-vid-${i}`}>
             <line x1={m.x} y1={0} x2={m.x} y2={height}
-              stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-            <line x1={m.x} y1={0} x2={m.x} y2={height}
-              stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
+              stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
       </svg>
