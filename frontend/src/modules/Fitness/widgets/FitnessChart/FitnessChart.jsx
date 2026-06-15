@@ -14,6 +14,7 @@ import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitness/domain';
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
+import { resolveTieFan } from './layout/utils/tieFan.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
 import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
@@ -742,17 +743,19 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 									<circle r={AVATAR_RADIUS} cx={0} cy={0} />
 								</clipPath>
 							</defs>
-							<text
-								x={labelX}
-								y={labelY}
-								className="race-chart__coin-label"
-								textAnchor={textAnchor}
-								dominantBaseline="middle"
-								fontSize={COIN_FONT_SIZE}
-								aria-hidden="true"
-							>
-								{formatCompactNumber(avatar.value)}
-							</text>
+							{!avatar.labelHidden && (
+								<text
+									x={labelX}
+									y={labelY}
+									className="race-chart__coin-label"
+									textAnchor={textAnchor}
+									dominantBaseline="middle"
+									fontSize={COIN_FONT_SIZE}
+									aria-hidden="true"
+								>
+									{formatCompactNumber(avatar.value)}
+								</text>
+							)}
 							<circle className="race-chart__avatar-backdrop" r={AVATAR_RADIUS + 6} />
 							<circle
 								className="race-chart__avatar-zone"
@@ -1192,7 +1195,10 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		const { elements, connectors: layoutConnectors } = layoutManager.layout([...avatarElements, ...badgeElements]);
 
 		// Separate back into avatars and badges
-		const resolvedAvatars = elements.filter(e => e.type === 'avatar');
+		const resolvedAvatars = resolveTieFan(
+			elements.filter(e => e.type === 'avatar'),
+			{ spacing: AVATAR_RADIUS * 2 + 4 }
+		);
 		const resolvedBadges = elements.filter(e => e.type === 'badge');
 
 		return {
