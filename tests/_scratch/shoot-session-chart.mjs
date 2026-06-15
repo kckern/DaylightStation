@@ -10,10 +10,12 @@ const OUT = `/tmp/session-chart-${LABEL}.png`;
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1728, height: 1200 }, deviceScaleFactor: 2 });
-await page.goto(`${BASE}/fitness/home/session-${SESSION}`, { waitUntil: 'networkidle' });
-// The chart mounts async; wait for the race-chart svg + at least one avatar image.
-await page.waitForSelector('.session-detail svg.race-chart__svg', { timeout: 20000 });
-await page.waitForTimeout(1500);
+// Use domcontentloaded (not networkidle): the page holds a live eventbus WebSocket
+// that never lets the network go idle.
+await page.goto(`${BASE}/fitness/home/session-${SESSION}`, { waitUntil: 'domcontentloaded' });
+// The chart mounts async; wait for the race-chart svg.
+await page.waitForSelector('.session-detail svg.race-chart__svg', { timeout: 30000 });
+await page.waitForTimeout(2000);
 const target = await page.$('.session-detail');
 await (target || page).screenshot({ path: OUT });
 console.log(`wrote ${OUT}`);
