@@ -6,6 +6,11 @@
      matte (mat surface) → opening › window › image + cut (bevel/recess)
      → frame overlay → nameplate. */
 
+/* Nameplate typefaces. Without these the plaque text silently falls back to a
+   default serif (no Cormorant/Garamond is installed on the kiosk). EB Garamond
+   carries true small-caps for the artist line. */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,500;0,600;1,500&display=swap");
+
 .artmode {
   position: relative;
   width: 100%;
@@ -180,7 +185,11 @@
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
 }
 .artmode__placard::before { left: 0.55em; }
-.artmode__placard::after { right: 0.55em; }
+/* Rotate the right screw 90° so its slot doesn't mirror the left (no separate asset). */
+.artmode__placard::after {
+  right: 0.55em;
+  transform: translateY(-50%) rotate(90deg);
+}
 
 /* Etched into the brass: multiply blend lets the metal grain show through the
    letters; the light lower edge reads as a carved groove. */
@@ -202,8 +211,15 @@
 }
 
 .artmode__placard-artist {
-  font-size: clamp(0.72rem, 1.4vh, 1.1rem);
+  /* Garamond small-caps. Source stays title-case so real small caps render
+     (capitals tall, the rest as small caps) — far more legible than the old
+     tracked all-uppercase in a fallback serif. */
+  font-family: "EB Garamond", "Cormorant Garamond", "Garamond", Georgia, serif;
+  font-size: clamp(0.8rem, 1.6vh, 1.2rem);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-style: normal;
+  text-transform: none;
+  font-variant-caps: small-caps;
+  font-feature-settings: "smcp" 1;
+  letter-spacing: 0.06em;
 }
