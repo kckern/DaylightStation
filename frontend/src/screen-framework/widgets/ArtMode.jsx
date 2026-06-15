@@ -47,7 +47,7 @@ function ArtMode({
   placard = true, onExit, dismiss,
   frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
-  curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, music = null,
+  curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, music = null, collection = null,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -119,7 +119,10 @@ function ArtMode({
     setRevealed(false);
     dropAtRef.current = nowMs();
     maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
-    DaylightAPI('api/v1/art/featured')
+    const featuredUrl = collection
+      ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
+      : 'api/v1/art/featured';
+    DaylightAPI(featuredUrl)
       .then((data) => {
         if (!mountedRef.current) return;
         setFailed(false);
@@ -131,7 +134,7 @@ function ArtMode({
         setFailed(true);
         logger.error('artmode.load-failed', { error: err.message });
       });
-  }, [logger, clearCurtainTimers, openCurtain, curtainMaxMs]);
+  }, [logger, clearCurtainTimers, openCurtain, curtainMaxMs, collection]);
 
   // If the fetch fails there are no images to wait on — part the curtain (still
   // honoring the minimum dwell so the effect never flashes by).

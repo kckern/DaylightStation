@@ -291,4 +291,16 @@ describe('ArtMode', () => {
     expect(queryByTestId('artmode-music-plaque')).toBeNull();
     expect(getByTestId('artmode-music')).toBeTruthy();        // audio still mounted
   });
+
+  it('requests the configured collection from the art API', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    render(<ArtMode collection="baroque" />);
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith('api/v1/art/featured?collection=baroque'));
+  });
+
+  it('requests the default endpoint when no collection is set', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    render(<ArtMode />);
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith('api/v1/art/featured'));
+  });
 });
