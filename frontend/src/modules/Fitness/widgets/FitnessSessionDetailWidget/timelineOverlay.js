@@ -17,9 +17,21 @@ export function computeRaceBands(activities, opts) {
   const bands = [];
   for (const act of activities) {
     for (const it of act.items || []) {
-      if (!Number.isFinite(it.axisStartMs) || !Number.isFinite(it.axisEndMs)) continue;
-      const x = clampX(msToTickX(it.axisStartMs, opts), opts);
-      const xEnd = clampX(msToTickX(it.axisEndMs, opts), opts);
+      // Group detail pre-rebases bands onto the compressed merged axis (axisStartMs).
+      // Single-session detail ships raw absolute startMs/endMs (no gap compression to
+      // honor) — rebase against the session's own tick-axis origin here.
+      let axisStart = it.axisStartMs;
+      let axisEnd = it.axisEndMs;
+      if (!Number.isFinite(axisStart) || !Number.isFinite(axisEnd)) {
+        if (Number.isFinite(it.startMs) && Number.isFinite(it.endMs) && Number.isFinite(opts?.sessionStartMs)) {
+          axisStart = it.startMs - opts.sessionStartMs;
+          axisEnd = it.endMs - opts.sessionStartMs;
+        } else {
+          continue;
+        }
+      }
+      const x = clampX(msToTickX(axisStart, opts), opts);
+      const xEnd = clampX(msToTickX(axisEnd, opts), opts);
       bands.push({ x, width: Math.max(0, xEnd - x), winnerId: it.meta?.winnerId ?? null, raceId: it.meta?.raceId ?? null });
     }
   }
