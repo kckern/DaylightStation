@@ -61,3 +61,17 @@ describe('artLayout diptych', () => {
     expect(L.panels[0].heightPct).toBeCloseTo(L.panels[1].heightPct, 6);
   });
 });
+
+describe('artLayout widthPct', () => {
+  it('single panel reports widthPct (% of stage)', () => {
+    const out = artLayout({ mode: 'single', ratios: [1.6], ...CFG });
+    expect(out.panels[0].widthPct).toBeGreaterThan(0);
+    expect(out.panels[0].widthPct).toBeLessThanOrEqual(100);
+  });
+
+  it('diptych panels report widthPct', () => {
+    const out = artLayout({ mode: 'diptych', ratios: [0.75, 0.7], ...CFG });
+    expect(out.panels[0].widthPct).toBeGreaterThan(0);
+    expect(out.panels[1].widthPct).toBeGreaterThan(0);
+  });
+});
