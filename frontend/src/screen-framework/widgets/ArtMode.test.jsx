@@ -46,7 +46,9 @@ describe('ArtMode', () => {
   it('renders a black fallback (no image) when the fetch fails', async () => {
     DaylightAPI.mockRejectedValue(new Error('boom'));
     const { queryByTestId, getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode')).toBeTruthy());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalled());
+    // let the rejected promise + state update flush
+    await waitFor(() => expect(getByTestId('artmode-frame')).toBeTruthy());
     expect(queryByTestId('artmode-image')).toBeNull();
   });
 });

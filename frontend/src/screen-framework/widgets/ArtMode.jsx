@@ -4,8 +4,6 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import './ArtMode.css';
 
-const FRAME_SRC = DaylightMediaPath('media/img/ui/frame.png');
-
 /**
  * ArtMode — screensaver widget showing a framed classic painting.
  *
@@ -19,10 +17,11 @@ function ArtMode({ placard = true }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
+  const frameSrc = useMemo(() => DaylightMediaPath('media/img/ui/frame.png'), []);
 
   useEffect(() => {
     let cancelled = false;
-    logger.info('artmode.mount', {});
+    logger.info('artmode.mount', { placard });
     DaylightAPI('api/v1/art/featured')
       .then((data) => {
         if (cancelled) return;
@@ -53,13 +52,15 @@ function ArtMode({ placard = true }) {
           alt={caption?.title || 'Artwork'}
         />
       )}
-      <img className="artmode__frame" data-testid="artmode-frame" src={FRAME_SRC} alt="" />
+      <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
       {placard && caption && (caption.title || caption.artist) && (
         <div className="artmode__placard" data-testid="artmode-placard">
           {caption.title && <div className="artmode__placard-title">{caption.title}</div>}
-          <div className="artmode__placard-artist">
-            {[caption.artist, caption.date].filter(Boolean).join(', ')}
-          </div>
+          {(caption.artist || caption.date) && (
+            <div className="artmode__placard-artist">
+              {[caption.artist, caption.date].filter(Boolean).join(', ')}
+            </div>
+          )}
         </div>
       )}
     </div>
