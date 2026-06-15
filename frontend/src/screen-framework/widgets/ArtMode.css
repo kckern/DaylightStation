@@ -137,7 +137,7 @@
   z-index: 4;                 /* above frame + nameplate — dims everything */
   background: #000;
   pointer-events: none;
-  transition: opacity 0.35s ease;
+  transition: opacity 1.5s ease;
 }
 
 /* ---- Engraved brass nameplate, screwed onto the frame's bottom rail ---- */

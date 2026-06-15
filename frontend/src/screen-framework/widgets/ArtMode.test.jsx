@@ -11,6 +11,11 @@ vi.mock('../../lib/api.mjs', () => ({
   DaylightMediaPath: (p) => String(p),
 }));
 
+let ambientCb = null;
+vi.mock('../../hooks/useWebSocket.js', () => ({
+  useWebSocketSubscription: (_filter, cb) => { ambientCb = cb; },
+}));
+
 const matte = {
   branch: 'match', base: '#58616b', glow: '#6b7682', edge: '#474e56',
   bevelTop: '#474e56', bevelLeft: '#4e555d', bevelRight: '#626c77', bevelBottom: '#6b7682',
@@ -100,5 +105,30 @@ describe('ArtMode', () => {
     fireEvent.load(getByTestId('artmode-image'));
     await waitFor(() =>
       expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'));
+  });
+
+  it('auto-dims from an ambient lux message via the curve', async () => {
+    ambientCb = null;
+    DaylightAPI.mockResolvedValue(single());
+    const ambient = { defaultLux: 80, curve: [{ lux: 0, dim: 0.9 }, { lux: 100, dim: 0.2 }] };
+    const { getByTestId } = render(<ArtMode ambient={ambient} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    act(() => ambientCb({ lux: 0 }));   // dark room → 0.9 clamped to 0.85 ceiling
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.85');
+    act(() => ambientCb({ lux: 100 })); // bright → 0.2
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.2');
+  });
+
+  it('manual Up/Down biases the auto level', async () => {
+    ambientCb = null;
+    DaylightAPI.mockResolvedValue(single());
+    const ambient = { defaultLux: 80, curve: [{ lux: 0, dim: 0.9 }, { lux: 100, dim: 0.2 }] };
+    const { getByTestId } = render(<ArtMode ambient={ambient} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    act(() => ambientCb({ lux: 100 }));   // auto 0.2
+    press('ArrowDown');                    // +0.1 bias → 0.3
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.3');
+    press('ArrowUp'); press('ArrowUp');    // -0.2 → 0.1
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.1');
   });
 });
