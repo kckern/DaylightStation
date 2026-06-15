@@ -44,26 +44,16 @@
   background-blend-mode: normal, multiply;
 }
 
-/* ---- Opening: where the painting may sit; inset to leave a mat border ---- */
+/* ---- Opening: where the painting(s) sit; insets + justify come from inline style ---- */
 .artmode__opening {
   position: absolute;
-  top: 17%;
-  bottom: 17%;
-  left: 13%;
-  right: 13%;
   display: flex;
   align-items: center;
-  justify-content: center;
 }
 
-/* ---- Window: takes the painting's exact aspect (set inline from API dims) ---- */
-/* height:100% + aspect-ratio + max-width:100% = letterbox-fit inside the opening,
-   so the mat is shaped tightly around the art and the art never overflows it. */
+/* ---- Window: height + aspect-ratio come from inline style (geometry helper) ---- */
 .artmode__window {
   position: relative;
-  height: 100%;
-  max-width: 100%;
-  aspect-ratio: 1 / 1;        /* fallback; overridden inline by the real ratio */
   line-height: 0;
 }
 
@@ -72,7 +62,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 /* ---- The cut: the mat's beveled edge overhanging the painting + the recess ----
@@ -121,7 +111,6 @@
 .artmode__placard {
   position: absolute;
   bottom: 2.4%;
-  left: 50%;
   transform: translateX(-50%);
   z-index: 3;
   display: flex;
