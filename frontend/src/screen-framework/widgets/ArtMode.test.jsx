@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor, act } from '@testing-library/react';
+import { render, waitFor, act, fireEvent } from '@testing-library/react';
 import { DaylightAPI } from '../../lib/api.mjs';
 import ArtMode from './ArtMode.jsx';
 
@@ -90,5 +90,15 @@ describe('ArtMode', () => {
     await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
     expect(getByTestId('artmode-placard').textContent).toContain('d’Amont');
     expect(getByTestId('artmode-placard').textContent).not.toContain("d'Amont");
+  });
+
+  it('curtain is down until the artwork loads, then parts', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
+    fireEvent.load(getByTestId('artmode-image'));
+    await waitFor(() =>
+      expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'));
   });
 });
