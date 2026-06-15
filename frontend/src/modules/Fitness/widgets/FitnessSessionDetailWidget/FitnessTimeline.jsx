@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
-import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER_FILL_OPACITY } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
 import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
 import { resolveSessionStartMs } from './sessionDetailUtils.js';
@@ -324,22 +324,14 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
           const w = Math.max(m.width, 2);
           return (
             <g key={`chal-${i}`} className="timeline-challenge-marker">
-              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={0.06} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
-              <line x1={m.xEnd} y1={0} x2={m.xEnd} y2={plotHeight} stroke={color} strokeWidth={1.5} opacity={0.9} />
+              <rect x={m.x} y={0} width={w} height={plotHeight} fill={color} opacity={MARKER_FILL_OPACITY} />
             </g>
           );
         })}
-        {/* seams + video-change markers (dashed) */}
+        {/* seams (dashed) */}
         {overlay.seams.map((s, i) => (
           <g key={`seam-${i}`} className="timeline-seam">
             <line x1={s.x} y1={0} x2={s.x} y2={plotHeight} stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
-          </g>
-        ))}
-        {overlay.videoMarkers.map((m, i) => (
-          <g key={`vid-${i}`} className="timeline-video-marker">
-            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-            <line x1={m.x} y1={0} x2={m.x} y2={plotHeight} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
           </g>
         ))}
         {/* avatars — drawn LAST so they sit above every indicator line/rect */}
