@@ -1,12 +1,15 @@
 // Identity palette — deliberately distinct from the HR zone palette
 // (blue/green/yellow/orange/red/gray). Used as a soft underglow + avatar ring so a
 // racer's line is traceable WITHOUT replacing the zone-colored stroke (audit Sin 11).
+// Order chosen so the FIRST FIVE (the common roster size) are maximally separated
+// from each other AND from the zone palette: violet, magenta, teal, periwinkle, taupe.
+// (Earlier coral read like the orange zone, and two purples sat too close — vision-tuned.)
 export const IDENTITY_PALETTE = Object.freeze([
 	'#b388ff', // violet
 	'#ff6fd8', // magenta-pink
 	'#00bfa5', // teal
-	'#7e57c2', // deep purple
-	'#ff8f6b', // coral
+	'#8c9eff', // periwinkle (blue-purple — clearly apart from violet)
+	'#a1887f', // taupe (muted — does not read as the warm orange zone)
 	'#26c6da', // cyan (only reached for a 6th rider)
 ]);
 
