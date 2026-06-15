@@ -111,8 +111,8 @@ function buildLongGapMask(hrSeries, intervalMs) {
  * Long gaps (>= 2 min of no HR data) are zeroed to match the grey dotted line
  * in the race chart. Short gaps are linearly interpolated for visual continuity.
  */
-function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs) {
-  if (!hrSeries || hrSeries.length === 0) return { fills: [] };
+export function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs) {
+  if (!hrSeries || hrSeries.length === 0) return { fills: [], hrMin: null, hrMax: null, lastActiveTick: -1 };
 
   const longGap = buildLongGapMask(hrSeries, intervalMs);
 
@@ -127,7 +127,7 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
       lastValid = i;
     }
   }
-  if (firstValid < 0) return { fills: [] };
+  if (firstValid < 0) return { fills: [], hrMin: null, hrMax: null, lastActiveTick: -1 };
 
   let hrMin = Infinity, hrMax = -Infinity;
   for (let i = firstValid; i <= lastValid; i++) {
@@ -201,7 +201,7 @@ function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTo
   // Flush final segment
   if (segStart >= 0) flushSegment(lastValid);
 
-  return { fills };
+  return { fills, hrMin, hrMax, lastActiveTick: lastValid };
 }
 
 export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
