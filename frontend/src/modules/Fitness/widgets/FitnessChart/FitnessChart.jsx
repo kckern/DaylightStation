@@ -10,10 +10,11 @@ import {
 	buildSegments,
 	createPaths
 } from '@/modules/Fitness/lib/chartHelpers.js';
-import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER_FILL_OPACITY, MARKER_CHART_TICK_LEN } from '@/modules/Fitness/lib/chartConstants.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitness/domain';
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
+import { resolveTieFan } from './layout/utils/tieFan.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
 import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
@@ -21,6 +22,8 @@ import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challe
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
+import { assignIdentityColors } from '@/modules/Fitness/lib/participantColors.js';
+import { niceTicks } from '@/modules/Fitness/lib/chartScale.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -591,22 +594,14 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					return (
 						<g key={`co-chal-${i}`}>
 							{/* whisper fill — the bracket + edge line carry the duration signal */}
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.05} />
+							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
 							{/* duration bracket hanging under the badge row: start → end */}
 							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
-							{/* solid edge on the RIGHT (challenge end); runs through the axis strip */}
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8) */}
+							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />
 						</g>
 					);
 				})}
-				{/* video-line extensions through the axis strip (labels paint on top) */}
-				{(overlay.videoMarkers || []).map((m, i) => (
-					<g key={`co-vid-ext-${i}`}>
-						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
-					</g>
-				))}
 			</g>
 		)}
 		<g className="race-chart__grid">
@@ -629,6 +624,16 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					<text x="12" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
 				</g>
 			))}
+			<text
+				className="race-chart__axis-title"
+				x={-CHART_MARGIN.top}
+				y={14}
+				transform="rotate(-90)"
+				textAnchor="end"
+				fontSize={12}
+			>
+				COINS
+			</text>
 		</g>
 		<g className="race-chart__paths">
 			{(() => {
@@ -642,17 +647,30 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					const baseOpacity = isShortGap ? 0.7 : (path.opacity ?? 1);
 					const finalOpacity = focusedUserId ? (isFocused ? baseOpacity : 0.1) : baseOpacity;
 					return (
-						<path
-							key={`${path.zone || 'seg'}-${idx}`}
-							d={path.d}
-							stroke={isLongGap ? ZONE_COLOR_MAP.default : path.color}
-							fill="none"
-							strokeWidth={PATH_STROKE_WIDTH}
-							opacity={finalOpacity}
-							strokeLinecap={isLongGap ? 'butt' : 'round'}
-							strokeLinejoin="round"
-							strokeDasharray={isLongGap ? '4 4' : undefined}
-						/>
+						<g key={`${path.zone || 'seg'}-${idx}`}>
+							{!path.isGap && path.glowColor && (
+								<path
+									d={path.d}
+									stroke={path.glowColor}
+									fill="none"
+									strokeWidth={PATH_STROKE_WIDTH + 6}
+									opacity={finalOpacity * 0.35}
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									style={{ filter: 'blur(2px)' }}
+								/>
+							)}
+							<path
+								d={path.d}
+								stroke={isLongGap ? ZONE_COLOR_MAP.default : path.color}
+								fill="none"
+								strokeWidth={PATH_STROKE_WIDTH}
+								opacity={finalOpacity}
+								strokeLinecap={isLongGap ? 'butt' : 'round'}
+								strokeLinejoin="round"
+								strokeDasharray={isLongGap ? '4 4' : undefined}
+							/>
+						</g>
 					);
 				});
 			})()}
@@ -681,15 +699,6 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				{overlay.seams.map((s, i) => (
 					<line key={`sm-${i}`} x1={s.x} x2={s.x} y1={overlay.top} y2={overlay.bottom}
 						stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
-				))}
-				{/* video-change markers (dashed, jut DOWN from the gutter) */}
-				{(overlay.videoMarkers || []).map((m, i) => (
-					<g key={`co-vid-${i}`}>
-						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
-							stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
-							stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
-					</g>
 				))}
 			</g>
 		)}
@@ -759,22 +768,24 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 									<circle r={AVATAR_RADIUS} cx={0} cy={0} />
 								</clipPath>
 							</defs>
-							<text
-								x={labelX}
-								y={labelY}
-								className="race-chart__coin-label"
-								textAnchor={textAnchor}
-								dominantBaseline="middle"
-								fontSize={COIN_FONT_SIZE}
-								aria-hidden="true"
-							>
-								{formatCompactNumber(avatar.value)}
-							</text>
+							{!avatar.labelHidden && (
+								<text
+									x={labelX}
+									y={labelY}
+									className="race-chart__coin-label"
+									textAnchor={textAnchor}
+									dominantBaseline="middle"
+									fontSize={COIN_FONT_SIZE}
+									aria-hidden="true"
+								>
+									{formatCompactNumber(avatar.value)}
+								</text>
+							)}
 							<circle className="race-chart__avatar-backdrop" r={AVATAR_RADIUS + 6} />
 							<circle
 								className="race-chart__avatar-zone"
 								r={AVATAR_RADIUS + 1.5}
-								stroke={avatar.color}
+								stroke={avatar.identityColor || avatar.color}
 							/>
 							<image
 								href={avatar.avatarUrl}
@@ -903,6 +914,11 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		chartTimebase,
 		chartHistorical,
 		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId, resolveHistorical }
+	);
+
+	const identityColors = useMemo(
+		() => assignIdentityColors(allEntries.map((e) => e.id)),
+		[allEntries]
 	);
 
 	// TELEMETRY: Expose chart stats for memory leak profiling
@@ -1128,15 +1144,15 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 				yScaleBase,
 				scaleY
 			});
-			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
+			return created.map((p, idx) => ({
+				...p,
+				id: entry.id,
+				glowColor: identityColors.get(entry.id) || null,
+				key: `${entry.id}-${globalIdx++}-${idx}`
+			}));
 		});
-		// Debug: log gap paths
-		const gapPaths = allSegments.filter(p => p.isGap);
-		if (gapPaths.length > 0) {
-			console.log('[FitnessChart] Gap paths in render:', gapPaths.map(p => ({ isGap: p.isGap, d: p.d, opacity: p.opacity })));
-		}
 		return allSegments;
-	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY]);
+	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY, identityColors]);
 
 	// Create LayoutManager instance for unified avatar/badge collision resolution
 	const layoutManager = useMemo(() => new LayoutManager({
@@ -1179,6 +1195,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 				y,
 				name: entry.name,
 				color: entry.color,
+				identityColor: identityColors.get(entry.id) || entry.color,
 				avatarUrl: entry.avatarUrl,
 				value: lastValue
 			};
@@ -1209,7 +1226,10 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		const { elements, connectors: layoutConnectors } = layoutManager.layout([...avatarElements, ...badgeElements]);
 
 		// Separate back into avatars and badges
-		const resolvedAvatars = elements.filter(e => e.type === 'avatar');
+		const resolvedAvatars = resolveTieFan(
+			elements.filter(e => e.type === 'avatar'),
+			{ spacing: AVATAR_RADIUS * 2 + 4 }
+		);
 		const resolvedBadges = elements.filter(e => e.type === 'badge');
 
 		return {
@@ -1217,7 +1237,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 			badges: resolvedBadges,
 			connectors: layoutConnectors || []
 		};
-	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager]);
+	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager, identityColors]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
@@ -1226,17 +1246,10 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		// Multi-user: gridlines span from lowest avatar to max (focus on relative positions)
 		const isSingleUser = allEntries.length === 1;
 		const start = isSingleUser ? 0 : Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
-		// Use MIN_GRID_LINES to ensure consistent grid distribution
-		// For single user, we need MIN_GRID_LINES + 1 ticks total because the X-axis
-		// serves as the bottom reference (value=0), so we skip value=0 in yTicks
-		const tickCount = isSingleUser ? MIN_GRID_LINES + 1 : MIN_GRID_LINES;
-		const span = Math.max(1, paddedMaxValue - start);
-		const values = Array.from({ length: tickCount }, (_, idx) => {
-			const t = idx / Math.max(1, tickCount - 1);
-			return start + span * t;
-		});
-		// For single user, filter out value=0 since the X-axis line already provides this reference
-		const filteredValues = isSingleUser ? values.filter(v => v > 0) : values;
+		const top = paddedMaxValue;
+		const ticks = niceTicks(start, top, MIN_GRID_LINES + 1)
+			.filter((v) => v >= start - 0.5 && v <= top + 0.5);
+		const filteredValues = isSingleUser ? ticks.filter((v) => v > 0) : ticks;
 		return filteredValues.map((value) => ({
 			value,
 			label: value.toFixed(0),
