@@ -997,9 +997,23 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
 
+    // Short "browse" exit: the video never ran long enough to trigger the
+    // voice-memo prompt (see handleClose's meetsPromptThreshold) and no memo was
+    // recorded. In that case we return to the show the user was browsing instead
+    // of bouncing to home, preserving FitnessShow's selection/scroll state.
+    const sessionStartTime = fitnessSessionInstance?.startTime;
+    const promptThreshold = plexConfig?.voice_memo_prompt_threshold_seconds ?? 480;
+    const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
+    const metPromptThreshold = Boolean(sessionStartTime)
+      && ((Date.now() - sessionStartTime) / 1000 > promptThreshold);
+    const browseShowId = currentItem?.showId || currentItem?.grandparentId || null;
+    const returnToShow = !metPromptThreshold && !hasMemos && Boolean(browseShowId);
+
     const redirect = resolvePostEpisodeRedirect({
       hasActiveSession: Boolean(sid),
       sessionId: sid,
+      returnToShow,
+      showId: browseShowId,
     });
     if (redirect && typeof onSessionEndRedirect === 'function') {
       try {
@@ -1028,7 +1042,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
     logger.info('fitness.player.close.completed', { sessionId: sid });
     closeWatchdog.completed({ sessionId: sid });
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, fitnessSessionInstance, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, currentItem?.showId, fitnessSessionInstance, plexConfig, voiceMemos, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null
