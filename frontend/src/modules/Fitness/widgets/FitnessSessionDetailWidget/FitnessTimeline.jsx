@@ -267,7 +267,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
       const zoneSeries = getSeries(userId, 'zone_id', { clone: false }) || getSeries(userId, 'zone', { clone: false });
 
       const laneTop = idx * (laneHeight + laneGap);
-      const { fills } = buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs);
+      const { fills, hrMax, lastActiveTick } = buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth, laneTop, laneHeight, intervalMs);
 
       return {
         userId,
@@ -277,6 +277,8 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
         laneTop,
         laneHeight,
         fills,
+        hrMax,
+        lastActiveTick,
       };
     });
   }, [roster, getSeries, effectiveTicks, plotWidth, plotHeight, intervalMs]);
@@ -318,6 +320,26 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             ))}
           </g>
         ))}
+        {/* group caption */}
+        <text className="fitness-timeline__caption" x={CHART_MARGIN.left} y={12}>HEART RATE</text>
+        {/* per-lane peak HR + early-stop marker */}
+        {lanes.map((lane) => {
+          const cy = lane.laneTop + lane.laneHeight / 2;
+          const endX = tickToX(lane.lastActiveTick, effectiveTicks, plotWidth);
+          const stoppedEarly = lane.lastActiveTick >= 0 && lane.lastActiveTick < effectiveTicks - 2;
+          return (
+            <g key={`lane-meta-${lane.userId}`}>
+              {Number.isFinite(lane.hrMax) && (
+                <text className="fitness-timeline__hr-max" x={lane.laneHeight + 8} y={lane.laneTop + 12}>
+                  {Math.round(lane.hrMax)} bpm
+                </text>
+              )}
+              {stoppedEarly && (
+                <circle className="fitness-timeline__end-dot" cx={endX} cy={cy} r={3} />
+              )}
+            </g>
+          );
+        })}
         {/* challenge duration rectangles — solid edge on the RIGHT (challenge end) */}
         {overlay.challengeMarkers.map((m, i) => {
           const color = getChallengeMarkerColor(m);
