@@ -27,9 +27,18 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
 
     const folder = pick(folders);
     const folderPath = path.join(artDir, folder);
-    const files = await fs.readdir(folderPath);
+    let files;
+    try {
+      files = await fs.readdir(folderPath);
+    } catch (err) {
+      logger.warn?.('art.folder.unreadable', { folder, error: err.message });
+      throw new Error(`No artwork available: ${err.message}`);
+    }
     const imageFile = files.find((f) => IMAGE_EXTS.includes(path.extname(f).toLowerCase()));
-    if (!imageFile) throw new Error(`No image file in art folder: ${folder}`);
+    if (!imageFile) {
+      logger.warn?.('art.image.missing', { folder });
+      throw new Error(`No image file in art folder: ${folder}`);
+    }
 
     let meta = { title: null, artist: null, date: null, origin: null, medium: null };
     try {
