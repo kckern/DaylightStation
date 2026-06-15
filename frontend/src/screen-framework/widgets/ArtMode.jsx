@@ -158,13 +158,18 @@ function ArtMode({
     return (s) => ctx.measureText(s).width;
   }, [measureText, fontPx]);
 
-  const titleLinesFor = (title, widthPct) => {
-    const panelPx = (widthPct / 100) * stage.w;
-    const textPx = Math.max(0, panelPx - 3.4 * fontPx); // minus ~horizontal padding
-    return layoutTitle(smartQuotes(title), textPx, measure);
-  };
-
   const placardGeom = isGallery ? (layout?.panels ?? []) : fitWindows;
+  // Pre-split titles into 1-2 balanced lines per panel (memoized so brightness
+  // keypresses, which re-render, don't re-measure every title).
+  const placardLines = useMemo(
+    () => placardGeom.map((g, i) => {
+      const t = panels[i]?.meta?.title;
+      if (!t) return [];
+      const textPx = Math.max(0, (g.widthPct / 100) * stage.w - 3.4 * fontPx); // minus ~h-padding
+      return layoutTitle(smartQuotes(t), textPx, measure);
+    }),
+    [placardGeom, panels, stage.w, fontPx, measure],
+  );
   const testid = (base, i) => (i === 0 ? base : `${base}-${i}`);
 
   const onLoaded = () => {
@@ -173,8 +178,8 @@ function ArtMode({
   };
 
   return (
-    <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars} ref={stageRef}>
-      <div className="artmode__stage">
+    <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars}>
+      <div className="artmode__stage" ref={stageRef}>
         <div className="artmode__matte" aria-hidden="true" />
 
         {isGallery && layout && (
@@ -222,9 +227,9 @@ function ArtMode({
         {placard && mode.placard && placardGeom.map((g, i) => {
           const p = panels[i];
           if (!p || !(p.meta && (p.meta.title || p.meta.artist))) return null;
-          const lines = p.meta.title ? titleLinesFor(p.meta.title, g.widthPct) : [];
+          const lines = placardLines[i] ?? [];
           return (
-            <div key={i} className="artmode__placard" data-testid={testid('artmode-placard', i)}
+            <div key={panels[i]?.image ?? i} className="artmode__placard" data-testid={testid('artmode-placard', i)}
                  style={{ left: `${g.centerXPct}%`, maxWidth: `${g.widthPct}%` }}>
               {lines.map((ln, j) => (
                 <span key={j} className="artmode__placard-title artmode__placard-line">{ln}</span>
