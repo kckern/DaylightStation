@@ -54,11 +54,37 @@ describe('ScreenScreensaver', () => {
 
   it('resets the idle timer on activity (does not show while active)', () => {
     const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 4, showOnLoad: false });
+    // idle=4s; advance 3s, then activity resets the timer, so 4s must elapse anew before showing.
     act(() => { vi.advanceTimersByTime(3000); });
     act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); });
     act(() => { vi.advanceTimersByTime(3000); }); // 6s total, but timer was reset at 3s
     expect(queryByTestId('dummy-art')).toBeNull();
     act(() => { vi.advanceTimersByTime(1000); }); // now 4s since reset
     expect(queryByTestId('dummy-art')).toBeTruthy();
+  });
+
+  it('dismisses a shown screensaver when the config changes mid-cycle', () => {
+    function DummyArt2() { return <div data-testid="dummy-art-2">art2</div>; }
+    getWidgetRegistry().register('art2', DummyArt2);
+
+    const { queryByTestId, rerender } = render(
+      <MenuNavigationProvider>
+        <ScreenOverlayProvider>
+          <ScreenScreensaver config={{ widget: 'art', idle: 99, showOnLoad: true }} />
+        </ScreenOverlayProvider>
+      </MenuNavigationProvider>
+    );
+    expect(queryByTestId('dummy-art')).toBeTruthy();
+
+    rerender(
+      <MenuNavigationProvider>
+        <ScreenOverlayProvider>
+          <ScreenScreensaver config={{ widget: 'art2', idle: 99, showOnLoad: false }} />
+        </ScreenOverlayProvider>
+      </MenuNavigationProvider>
+    );
+
+    // Old screensaver overlay must be torn down (not orphaned); new config does not auto-show.
+    expect(queryByTestId('dummy-art')).toBeNull();
   });
 });

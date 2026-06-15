@@ -46,6 +46,7 @@ export function ScreenScreensaver({ config }) {
     let timer = null;
 
     const schedule = () => {
+      if (!idleSeconds) return; // 0 / falsy → no idle timer
       if (timer) clearTimeout(timer);
       timer = setTimeout(show, idleSeconds * 1000);
     };
@@ -56,7 +57,7 @@ export function ScreenScreensaver({ config }) {
       shown = false;
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, wake, true));
       dismissOverlay('fullscreen');
-      logger().info('screensaver.wake', {});
+      logger().info('screensaver.wake', { widget: widgetKey });
       schedule();
     }
 
@@ -81,6 +82,7 @@ export function ScreenScreensaver({ config }) {
       if (timer) clearTimeout(timer);
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, wake, true));
+      if (shown) dismissOverlay('fullscreen');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgetKey, idleSeconds, showOnLoad, propsJson, showOverlay, dismissOverlay, reset]);
