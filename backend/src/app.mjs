@@ -1654,7 +1654,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Ambient brightness: HA illuminance sensors → eventbus 'ambient' → ArtMode dim.
-  const ambientConfig = configService.getAppConfig('ambient') || {};
+  // ambient.yml lives under the household config dir → read via the household apps map.
+  const ambientConfig = configService.getHouseholdAppConfig(null, 'ambient') || {};
   if (ambientConfig?.illuminance?.entities?.length && homeAutomationAdapters.haGateway?.getConnection) {
     const ambientLight = createAmbientLightService({
       haGateway: homeAutomationAdapters.haGateway,
