@@ -283,6 +283,14 @@ export class HomeAssistantAdapter {
   }
 
   /**
+   * Connection info for a websocket client (the WS listener builds ws(s)://…/api/websocket).
+   * @returns {{ baseUrl: string, token: string }}
+   */
+  getConnection() {
+    return { baseUrl: this.#baseUrl, token: this.#token };
+  }
+
+  /**
    * Check if adapter is connected/configured
    * @returns {boolean}
    */
