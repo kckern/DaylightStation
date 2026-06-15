@@ -10,7 +10,7 @@ import {
 	buildSegments,
 	createPaths
 } from '@/modules/Fitness/lib/chartHelpers.js';
-import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS } from '@/modules/Fitness/lib/chartConstants.js';
+import { CHART_MARGIN, MIN_VISIBLE_TICKS, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER_FILL_OPACITY, MARKER_CHART_TICK_LEN } from '@/modules/Fitness/lib/chartConstants.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '@/modules/Fitness/domain';
 import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
@@ -591,22 +591,14 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					return (
 						<g key={`co-chal-${i}`}>
 							{/* whisper fill — the bracket + edge line carry the duration signal */}
-							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={0.05} />
+							<rect x={m.x} y={overlay.top} width={Math.max(m.width, 2)} height={h} fill={color} opacity={MARKER_FILL_OPACITY} />
 							{/* duration bracket hanging under the badge row: start → end */}
 							<rect x={m.x} y={overlay.top + 25} width={Math.max(m.width, 2)} height={3} rx={1.5} fill={color} opacity={0.85} />
-							{/* solid edge on the RIGHT (challenge end); runs through the axis strip */}
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} />
-							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={height} stroke={color} strokeWidth={1.5} opacity={0.9} />
+							{/* SHORT end tick under the badge row — the gutter carries the full cut (audit Sin 8) */}
+							<line x1={m.xEnd} y1={overlay.top} x2={m.xEnd} y2={overlay.top + MARKER_CHART_TICK_LEN} stroke={color} strokeWidth={1.5} opacity={0.9} />
 						</g>
 					);
 				})}
-				{/* video-line extensions through the axis strip (labels paint on top) */}
-				{(overlay.videoMarkers || []).map((m, i) => (
-					<g key={`co-vid-ext-${i}`}>
-						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-						<line x1={m.x} x2={m.x} y1={overlay.bottom} y2={height} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
-					</g>
-				))}
 			</g>
 		)}
 		<g className="race-chart__grid">
@@ -681,15 +673,6 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 				{overlay.seams.map((s, i) => (
 					<line key={`sm-${i}`} x1={s.x} x2={s.x} y1={overlay.top} y2={overlay.bottom}
 						stroke="rgba(255,255,255,0.55)" strokeWidth={1.5} strokeDasharray="3 3" />
-				))}
-				{/* video-change markers (dashed, jut DOWN from the gutter) */}
-				{(overlay.videoMarkers || []).map((m, i) => (
-					<g key={`co-vid-${i}`}>
-						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
-							stroke="rgba(0,0,0,0.55)" strokeWidth={3.5} strokeDasharray="6 4" />
-						<line x1={m.x} x2={m.x} y1={overlay.top} y2={overlay.bottom}
-							stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeDasharray="6 4" />
-					</g>
 				))}
 			</g>
 		)}
