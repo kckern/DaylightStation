@@ -155,7 +155,8 @@ const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.15, trackUrls = [] 
     startFade(inAudio, 0, volumeRef.current, FADE_MS, inHandle, null);
     startFade(outAudio, outAudio.volume, 0, FADE_MS, outHandle, () => {
       outAudio.pause();
-      outAudio.src = '';
+      outAudio.removeAttribute('src');
+      outAudio.load();
     });
 
     activeSlot.current = inSlot;
