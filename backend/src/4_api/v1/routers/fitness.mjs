@@ -1230,7 +1230,8 @@ export function createFitnessRouter(config) {
 
     const tracks = filenames.map(f => `media/apps/fitness/ux/menus/${f}`);
 
-    const fitnessConfig = await configService.get('fitness') || {};
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
     const volume = fitnessConfig?.menu_music?.volume ?? 0.15;
 
     res.json({ tracks, volume });
