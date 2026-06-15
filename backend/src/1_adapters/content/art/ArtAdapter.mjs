@@ -30,8 +30,8 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
 
   async function analyzeColor(imagePath) {
     const img = await Jimp.read(imagePath);
-    const small = img.resize({ w: 32, h: 32 });
-    const d = small.bitmap.data; // RGBA
+    img.resize({ w: 32, h: 32 }); // jimp mutates in place
+    const d = img.bitmap.data; // RGBA
     let r = 0, g = 0, b = 0;
     const n = d.length / 4;
     for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
