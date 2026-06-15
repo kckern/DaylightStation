@@ -101,15 +101,17 @@ export class DiscoveryStrategy {
       ...(cfg.discovery_exclude_labels || []),
     ]);
 
-    // Resolve one episode per selected show, filtering by labels
+    // Resolve one episode per selected show, filtering by labels. Fetch all
+    // picks concurrently — these are distinct shows, so the sequential awaits
+    // were the strategy's main cost; the filtering below stays per-show.
+    const fetched = await Promise.allSettled(
+      selected.map(show => fitnessPlayableService.getPlayableEpisodes(show.id))
+    );
     const results = [];
-    for (const show of selected) {
-      let episodeData;
-      try {
-        episodeData = await fitnessPlayableService.getPlayableEpisodes(show.id);
-      } catch {
-        continue;
-      }
+    for (let s = 0; s < selected.length; s++) {
+      const show = selected[s];
+      if (fetched[s].status !== 'fulfilled' || !fetched[s].value) continue;
+      const episodeData = fetched[s].value;
 
       const episodes = episodeData.items || [];
       if (episodes.length === 0) continue;
