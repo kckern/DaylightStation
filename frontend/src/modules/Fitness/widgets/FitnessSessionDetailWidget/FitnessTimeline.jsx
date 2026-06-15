@@ -320,8 +320,8 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
             ))}
           </g>
         ))}
-        {/* group caption */}
-        <text className="fitness-timeline__caption" x={CHART_MARGIN.left} y={12}>HEART RATE</text>
+        {/* group caption — parked in the empty right-margin strip (clear of lane fills + per-lane bpm labels) */}
+        <text className="fitness-timeline__caption" x={width - 8} y={12} textAnchor="end">HEART RATE</text>
         {/* per-lane peak HR + early-stop marker */}
         {lanes.map((lane) => {
           const cy = lane.laneTop + lane.laneHeight / 2;
