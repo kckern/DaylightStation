@@ -5,6 +5,8 @@ import ArtMode from './ArtMode.jsx';
 
 const press = (key) =>
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
+const pressShift = (key) =>
+  act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey: true, bubbles: true, cancelable: true })); });
 
 vi.mock('../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
@@ -130,5 +132,93 @@ describe('ArtMode', () => {
     expect(getByTestId('artmode-dim').style.opacity).toBe('0.3');
     press('ArrowUp'); press('ArrowUp');    // -0.2 → 0.1
     expect(getByTestId('artmode-dim').style.opacity).toBe('0.1');
+  });
+
+  it('Tab cycles view modes (wraps); Shift+Tab reverses', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
+    expect(modeOf()).toBe('gallery');
+    press('Tab'); expect(modeOf()).toBe('framed-contain');
+    press('Tab'); expect(modeOf()).toBe('framed-cover');
+    press('Tab'); expect(modeOf()).toBe('bare-contain');
+    press('Tab'); expect(modeOf()).toBe('bare-cover');
+    press('Tab'); expect(modeOf()).toBe('gallery');         // wrap forward
+    pressShift('Tab'); expect(modeOf()).toBe('bare-cover');  // reverse wrap
+  });
+
+  it('hides the frame in bare modes, shows it in framed modes', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId, queryByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(getByTestId('artmode-frame')).toBeTruthy();          // gallery
+    press('Tab'); press('Tab'); press('Tab');                   // bare-contain
+    expect(queryByTestId('artmode-frame')).toBeNull();
+  });
+
+  it('hides placards in bare modes', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId, queryByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(getByTestId('artmode-placard')).toBeTruthy();
+    press('Tab'); press('Tab'); press('Tab'); press('Tab');     // bare-cover
+    expect(queryByTestId('artmode-placard')).toBeNull();
+  });
+
+  it('applies object-fit per mode (contain then cover)', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    press('Tab');  // framed-contain
+    expect(getByTestId('artmode-image').className).toContain('artmode__fitimage--contain');
+    press('Tab');  // framed-cover
+    expect(getByTestId('artmode-image').className).toContain('artmode__fitimage--cover');
+  });
+
+  it('keeps diptych two-up in object-fit modes', async () => {
+    DaylightAPI.mockResolvedValue(diptych());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    press('Tab');  // framed-contain
+    expect(getByTestId('artmode-image')).toBeTruthy();
+    expect(getByTestId('artmode-image-1')).toBeTruthy();
+  });
+
+  it('preserves the mode across a shuffle', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    press('Tab'); press('Tab');  // framed-cover
+    expect(getByTestId('artmode').getAttribute('data-mode')).toBe('framed-cover');
+    press('ArrowRight');         // shuffle
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    expect(getByTestId('artmode').getAttribute('data-mode')).toBe('framed-cover');
+  });
+
+  it('Tab is preventDefaulted (kiosk focus never moves)', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    act(() => { window.dispatchEvent(ev); });
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('placard max-width tracks the panel width', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
+    expect(getByTestId('artmode-placard').style.maxWidth).toMatch(/%$/);
+  });
+
+  it('splits a long title into two balanced placard lines', async () => {
+    DaylightAPI.mockResolvedValue(single({
+      panels: [{ image: '/a.jpg', meta: { title: 'one two three four', artist: 'X', date: '1', width: 1600, height: 1000 } }],
+    }));
+    const measureText = (s) => s.length * 1000;  // force a split
+    const { getByTestId, container } = render(<ArtMode measureText={measureText} />);
+    await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
+    expect(container.querySelectorAll('.artmode__placard-title').length).toBe(2);
   });
 });
