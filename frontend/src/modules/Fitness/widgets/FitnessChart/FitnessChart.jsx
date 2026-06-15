@@ -22,6 +22,7 @@ import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challe
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
+import { assignIdentityColors } from '@/modules/Fitness/lib/participantColors.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -635,17 +636,30 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					const baseOpacity = isShortGap ? 0.7 : (path.opacity ?? 1);
 					const finalOpacity = focusedUserId ? (isFocused ? baseOpacity : 0.1) : baseOpacity;
 					return (
-						<path
-							key={`${path.zone || 'seg'}-${idx}`}
-							d={path.d}
-							stroke={isLongGap ? ZONE_COLOR_MAP.default : path.color}
-							fill="none"
-							strokeWidth={PATH_STROKE_WIDTH}
-							opacity={finalOpacity}
-							strokeLinecap={isLongGap ? 'butt' : 'round'}
-							strokeLinejoin="round"
-							strokeDasharray={isLongGap ? '4 4' : undefined}
-						/>
+						<g key={`${path.zone || 'seg'}-${idx}`}>
+							{!path.isGap && path.glowColor && (
+								<path
+									d={path.d}
+									stroke={path.glowColor}
+									fill="none"
+									strokeWidth={PATH_STROKE_WIDTH + 6}
+									opacity={finalOpacity * 0.35}
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									style={{ filter: 'blur(2px)' }}
+								/>
+							)}
+							<path
+								d={path.d}
+								stroke={isLongGap ? ZONE_COLOR_MAP.default : path.color}
+								fill="none"
+								strokeWidth={PATH_STROKE_WIDTH}
+								opacity={finalOpacity}
+								strokeLinecap={isLongGap ? 'butt' : 'round'}
+								strokeLinejoin="round"
+								strokeDasharray={isLongGap ? '4 4' : undefined}
+							/>
+						</g>
 					);
 				});
 			})()}
@@ -760,7 +774,7 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 							<circle
 								className="race-chart__avatar-zone"
 								r={AVATAR_RADIUS + 1.5}
-								stroke={avatar.color}
+								stroke={avatar.identityColor || avatar.color}
 							/>
 							<image
 								href={avatar.avatarUrl}
@@ -889,6 +903,11 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		chartTimebase,
 		chartHistorical,
 		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId, resolveHistorical }
+	);
+
+	const identityColors = useMemo(
+		() => assignIdentityColors(allEntries.map((e) => e.id)),
+		[allEntries]
 	);
 
 	// TELEMETRY: Expose chart stats for memory leak profiling
@@ -1114,15 +1133,15 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 				yScaleBase,
 				scaleY
 			});
-			return created.map((p, idx) => ({ ...p, id: entry.id, key: `${entry.id}-${globalIdx++}-${idx}` }));
+			return created.map((p, idx) => ({
+				...p,
+				id: entry.id,
+				glowColor: identityColors.get(entry.id) || null,
+				key: `${entry.id}-${globalIdx++}-${idx}`
+			}));
 		});
-		// Debug: log gap paths
-		const gapPaths = allSegments.filter(p => p.isGap);
-		if (gapPaths.length > 0) {
-			console.log('[FitnessChart] Gap paths in render:', gapPaths.map(p => ({ isGap: p.isGap, d: p.d, opacity: p.opacity })));
-		}
 		return allSegments;
-	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY]);
+	}, [allEntries, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, minAxisValue, yScaleBase, scaleY, identityColors]);
 
 	// Create LayoutManager instance for unified avatar/badge collision resolution
 	const layoutManager = useMemo(() => new LayoutManager({
@@ -1165,6 +1184,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 				y,
 				name: entry.name,
 				color: entry.color,
+				identityColor: identityColors.get(entry.id) || entry.color,
 				avatarUrl: entry.avatarUrl,
 				value: lastValue
 			};
@@ -1206,7 +1226,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 			badges: resolvedBadges,
 			connectors: layoutConnectors || []
 		};
-	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager]);
+	}, [presentEntries, dropoutMarkers, paddedMaxValue, effectiveTicks, chartWidth, chartHeight, scaleY, layoutManager, identityColors]);
 
 	const yTicks = useMemo(() => {
 		if (!(paddedMaxValue > 0)) return [];
