@@ -143,23 +143,6 @@ export class FitnessSuggestionService {
       excludedShowIds,
     };
 
-    // Prewarm the memo for every distinct recent-session show, concurrently.
-    // Resume / NextUp / Favorite / Memorable each walk these shows sequentially;
-    // kicking the (deduped) fetches off in parallel up front collapses their
-    // per-show awaits into warm-cache hits. allSettled so one bad show can't
-    // break startup, and so no prewarmed promise is left unhandled.
-    const recentShowIds = [...new Set(
-      recentSessions
-        .map(s => s?.media?.primary?.grandparentId)
-        .filter(Boolean)
-        .map(gid => String(gid).replace(/^plex:/, ''))
-    )];
-    if (recentShowIds.length) {
-      await Promise.allSettled(
-        recentShowIds.map(id => memoizedPlayableService.getPlayableEpisodes(id))
-      );
-    }
-
     // Run strategies in order, dedup by showId
     // Collect beyond gridSize into overflow for client-side card replacement
     const OVERFLOW_CAP = 4;
