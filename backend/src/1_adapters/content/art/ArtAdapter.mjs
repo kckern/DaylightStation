@@ -93,12 +93,19 @@ export function createArtAdapter({ imgBasePath, logger = console, collections = 
     const { resolveCollection } = await import('./collections.mjs');
     const { def } = resolveCollection(collections, collection);
     const src = await sourceFor(def);
+    if (!src) logger.warn?.('art.source.unavailable', { collection, source: def.source });
     let cands = src ? await src.resolveCandidates(def) : [];
-    if ((!cands || cands.length === 0)) {
-      // Fall back to the full art pool so the screensaver never blanks.
-      logger.warn?.('art.collection.empty', { collection });
-      const art = await getArtSource();
-      cands = await art.resolveCandidates({});
+    // If a *narrowing* collection (immich source, or any art selector) yields
+    // nothing, widen to the full art pool so the screensaver never blanks. An
+    // already-unfiltered `all` pool that comes back empty has nothing to widen
+    // to — let it surface as "No artwork available" rather than re-querying.
+    if (!cands || cands.length === 0) {
+      const narrowing = def.source === 'immich' || Object.keys(def).length > 0;
+      if (narrowing) {
+        logger.warn?.('art.collection.empty', { collection, source: def.source ?? 'art' });
+        const art = await getArtSource();
+        cands = await art.resolveCandidates({});
+      }
     }
     return cands;
   }
