@@ -1,86 +1,99 @@
-/* ArtMode — matted, framed painting with an engraved brass nameplate.
-   Layer stack (DOM order = paint order): matte → opening/window/painting →
-   frame overlay → nameplate. */
+/* ArtMode — a painting recessed UNDER a cut mat, inside an ornate frame, with
+   an engraved brass nameplate. The mat is the foreground plane; the painting
+   sits in a window cut into it, lit from the top-left.
+
+   Layer stack (DOM order = paint order, within a 16:9 stage):
+     matte (mat surface) → opening › window › image + cut (bevel/recess)
+     → frame overlay → nameplate. */
 
 .artmode {
   position: relative;
   width: 100%;
   height: 100%;
-  background: #14110c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;            /* letterbox when the app area isn't 16:9 */
   overflow: hidden;
 
   /* Fine paper grain for the mat — grayscale fractal noise, no asset needed. */
   --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
 }
 
-/* ---- Mat board: warm rag paper filling the frame opening ---- */
-/* Sits at inset 0; the frame overlay covers everything outside its window. */
+/* The frame is 16:9 — render it at that aspect, filling the app but never the
+   whole viewport (no distortion when the surrounding area is a different shape). */
+.artmode__stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-height: 100%;
+}
+
+/* ---- Mat board: warm rag paper filling the frame opening (the foreground plane) ---- */
 .artmode__matte {
   position: absolute;
   inset: 0;
   background-color: #e7dcc1;
   background-image:
-    radial-gradient(ellipse 78% 78% at 50% 40%,
-      rgba(255, 252, 243, 0.75),
+    radial-gradient(ellipse 80% 80% at 50% 40%,
+      rgba(255, 252, 243, 0.78),
       rgba(206, 190, 156, 0.20) 68%,
-      rgba(116, 100, 68, 0.45)),
+      rgba(116, 100, 68, 0.42)),
     var(--paper-noise);
   background-size: cover, 180px 180px;
   background-blend-mode: multiply, multiply;
-  /* Depth: the mat recedes slightly inside the frame opening. */
-  box-shadow: inset 0 0 70px rgba(64, 50, 26, 0.4);
 }
 
-/* ---- Opening: the area inside the mat where the painting floats ---- */
-/* Inset beyond the frame's window so a generous mat border shows around art. */
+/* ---- Opening: where the painting may sit; inset to leave a mat border ---- */
 .artmode__opening {
   position: absolute;
-  top: 19%;
-  bottom: 19%;
-  left: 14%;
-  right: 14%;
+  top: 17%;
+  bottom: 17%;
+  left: 13%;
+  right: 13%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* ---- Mat window + bevel: shrink-wraps the painting at its own aspect ---- */
+/* ---- Window: takes the painting's exact aspect (set inline from API dims) ---- */
+/* height:100% + aspect-ratio + max-width:100% = letterbox-fit inside the opening,
+   so the mat is shaped tightly around the art and the art never overflows it. */
 .artmode__window {
   position: relative;
-  display: inline-block;
-  line-height: 0;
+  height: 100%;
   max-width: 100%;
-  max-height: 100%;
-  padding: 0.5vh;                      /* the visible bevel face of the mat cut */
-  /* Beveled core, lit from the top-left like a real 45° mat cut. */
-  background: linear-gradient(135deg, #fcf7ec 0%, #efe6cf 48%, #d8c9a2 100%);
-  box-shadow:
-    0 0 0 1px rgba(120, 98, 55, 0.5),                 /* fillet line at mat edge */
-    0.8vh 1.1vh 2.4vh rgba(34, 24, 10, 0.5),          /* assembly cast onto the mat */
-    inset 1px 1px 0 rgba(255, 255, 255, 0.85),        /* bevel highlight (top-left) */
-    inset -1px -1px 0 rgba(92, 72, 40, 0.55);         /* bevel shade (bottom-right) */
+  aspect-ratio: 1 / 1;        /* fallback; overridden inline by the real ratio */
+  line-height: 0;
 }
 
 /* The painting — whole image, never cropped. */
 .artmode__image {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  outline: 1px solid rgba(0, 0, 0, 0.4);
-  outline-offset: -1px;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-/* Recess: the mat-cut bevel casts a soft shadow onto the painting (emboss). */
-.artmode__window::after {
-  content: "";
+/* ---- The cut: the mat's beveled edge overhanging the painting + the recess ----
+   Light source top-left → top/left bevel walls shaded, bottom/right walls lit;
+   an inner well-shadow (strong top-left, faint bottom-right) sinks the painting
+   beneath the mat. The cream border is the mat lip lying OVER the art edge. */
+.artmode__cut {
   position: absolute;
-  inset: 0.5vh;                        /* match padding → overlay the painting */
+  inset: 0;
   pointer-events: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 0.85vh;
+  border-top-color: #c8ba95;       /* shaded cream (top wall) */
+  border-left-color: #d4c7a3;      /* shaded cream (left wall) */
+  border-right-color: #fbf6ea;     /* lit cream (right wall) */
+  border-bottom-color: #fffdf6;    /* lit cream (bottom wall) */
   box-shadow:
-    inset 0.3vh 0.3vh 0.7vh rgba(0, 0, 0, 0.5),
-    inset -0.12vh -0.12vh 0.4vh rgba(0, 0, 0, 0.28);
+    inset 0 0 0 0.14vh rgba(34, 24, 10, 0.5),          /* hairline where art meets the cut */
+    inset 1.1vh 1.1vh 1.8vh rgba(0, 0, 0, 0.52),       /* well shadow — top-left, strong */
+    inset -0.8vh -0.8vh 1.3vh rgba(255, 250, 236, 0.30); /* inverse light — bottom-right */
 }
 
 /* ---- Frame overlay (ornate wood; transparent center) ---- */
@@ -89,7 +102,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: fill;            /* frame.png is 16:9; stage is 16:9 → no distortion */
   pointer-events: none;
 }
 

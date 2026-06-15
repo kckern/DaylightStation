@@ -43,32 +43,48 @@ function ArtMode({ placard = true }) {
     return { title: title || null, artist: artist || null, date: date || null };
   }, [art]);
 
+  // Intrinsic dimensions let the mat window take the painting's exact shape
+  // before the image loads (no reflow) and guarantee it never overflows the mat.
+  const dims = useMemo(() => {
+    const w = art?.meta?.width;
+    const h = art?.meta?.height;
+    return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? { w, h } : null;
+  }, [art]);
+
   return (
     <div className="artmode" data-testid="artmode">
-      <div className="artmode__matte" aria-hidden="true" />
-      <div className="artmode__opening">
-        {art?.image && !failed && (
-          <div className="artmode__window">
-            <img
-              className="artmode__image"
-              data-testid="artmode-image"
-              src={DaylightMediaPath(art.image)}
-              alt={caption?.title || 'Artwork'}
-            />
+      <div className="artmode__stage">
+        <div className="artmode__matte" aria-hidden="true" />
+        <div className="artmode__opening">
+          {art?.image && !failed && (
+            <div
+              className="artmode__window"
+              style={dims ? { aspectRatio: `${dims.w} / ${dims.h}` } : undefined}
+            >
+              <img
+                className="artmode__image"
+                data-testid="artmode-image"
+                src={DaylightMediaPath(art.image)}
+                alt={caption?.title || 'Artwork'}
+                width={dims?.w}
+                height={dims?.h}
+              />
+              <span className="artmode__cut" aria-hidden="true" />
+            </div>
+          )}
+        </div>
+        <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
+        {placard && caption && (caption.title || caption.artist) && (
+          <div className="artmode__placard" data-testid="artmode-placard">
+            {caption.title && <span className="artmode__placard-title">{caption.title}</span>}
+            {(caption.artist || caption.date) && (
+              <span className="artmode__placard-artist">
+                {[caption.artist, caption.date].filter(Boolean).join(' · ')}
+              </span>
+            )}
           </div>
         )}
       </div>
-      <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
-      {placard && caption && (caption.title || caption.artist) && (
-        <div className="artmode__placard" data-testid="artmode-placard">
-          {caption.title && <span className="artmode__placard-title">{caption.title}</span>}
-          {(caption.artist || caption.date) && (
-            <span className="artmode__placard-artist">
-              {[caption.artist, caption.date].filter(Boolean).join(' · ')}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -40,16 +40,22 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
       throw new Error(`No image file in art folder: ${folder}`);
     }
 
-    let meta = { title: null, artist: null, date: null, origin: null, medium: null };
+    let meta = {
+      title: null, artist: null, date: null, origin: null, medium: null,
+      width: null, height: null,
+    };
     try {
       const raw = await fs.readFile(path.join(folderPath, 'metadata.yaml'), 'utf-8');
       const parsed = yaml.load(raw) || {};
+      const toInt = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
       meta = {
         title: parsed.title ?? null,
         artist: parsed.artist ?? null,
         date: parsed.date != null ? String(parsed.date) : null,
         origin: parsed.origin ?? null,
         medium: parsed.medium ?? null,
+        width: toInt(parsed.width),
+        height: toInt(parsed.height),
       };
     } catch (err) {
       logger.warn?.('art.metadata.missing', { folder, error: err.message });

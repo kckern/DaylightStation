@@ -26,7 +26,7 @@ describe('ArtAdapter', () => {
     writeArt(
       'Adriaen van Ostade - 1674 - Merrymakers in an Inn',
       'Merrymakers in an Inn.jpg',
-      "title: Merrymakers in an Inn\nartist: Adriaen van Ostade\ndate: '1674'\norigin: Holland\nmedium: Oil on panel\n"
+      "title: Merrymakers in an Inn\nartist: Adriaen van Ostade\ndate: '1674'\norigin: Holland\nmedium: Oil on panel\nwidth: 1971\nheight: 2250\n"
     );
     const adapter = createArtAdapter({ imgBasePath });
     const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
@@ -40,6 +40,8 @@ describe('ArtAdapter', () => {
       date: '1674',
       origin: 'Holland',
       medium: 'Oil on panel',
+      width: 1971,
+      height: 2250,
     });
   });
 
@@ -48,7 +50,7 @@ describe('ArtAdapter', () => {
     const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
     expect(result.image).toBe('/media/img/art/classic/Unknown%20-%200000%20-%20Untitled/art.png');
-    expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null });
+    expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null, width: null, height: null });
   });
 
   it('throws when no artwork folders exist', async () => {
@@ -62,6 +64,6 @@ describe('ArtAdapter', () => {
     const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
     expect(result.image).toBe('/media/img/art/classic/Bad%20-%200000%20-%20Corrupt/art.jpg');
-    expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null });
+    expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null, width: null, height: null });
   });
 });
