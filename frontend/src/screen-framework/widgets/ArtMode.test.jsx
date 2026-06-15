@@ -109,6 +109,29 @@ describe('ArtMode', () => {
       expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'));
   });
 
+  it('holds the curtain down for the minimum even on a fast load', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode curtainMinMs={800} curtainMaxMs={5000} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    fireEvent.load(getByTestId('artmode-image'));
+    // Image is loaded, but the curtain must NOT have parted yet (min dwell pending).
+    expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
+    // It parts once the minimum elapses.
+    await waitFor(
+      () => expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'),
+      { timeout: 1500 });
+  });
+
+  it('parts the curtain by the maximum even if assets never load', async () => {
+    DaylightAPI.mockResolvedValue(single());   // resolves, but the image load never fires
+    const { getByTestId } = render(<ArtMode curtainMaxMs={300} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    // No fireEvent.load — only the safety rail can open it.
+    await waitFor(
+      () => expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'),
+      { timeout: 1200 });
+  });
+
   it('auto-dims from an ambient lux message via the curve', async () => {
     ambientCb = null;
     DaylightAPI.mockResolvedValue(single());
