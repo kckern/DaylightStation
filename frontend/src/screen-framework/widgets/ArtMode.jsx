@@ -36,12 +36,17 @@ function ArtMode({
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
   const [dim, setDim] = useState(0);
+  const [revealed, setRevealed] = useState(false);   // curtain open?
+  const loadedRef = useRef(0);                        // how many panel images have loaded
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
   const frameSrc = useMemo(() => DaylightMediaPath('media/img/ui/frame.png'), []);
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   const load = useCallback(() => {
+    // Drop the curtain immediately (covers the swap), then fetch + reveal on load.
+    loadedRef.current = 0;
+    setRevealed(false);
     DaylightAPI('api/v1/art/featured')
       .then((data) => {
         if (!mountedRef.current) return;
@@ -55,6 +60,9 @@ function ArtMode({
         logger.error('artmode.load-failed', { error: err.message });
       });
   }, [logger]);
+
+  // If the fetch fails there are no images to wait on — part the curtain anyway.
+  useEffect(() => { if (failed) setRevealed(true); }, [failed]);
   useEffect(() => { logger.info('artmode.mount', { placard }); load(); }, [logger, load, placard]);
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
@@ -97,29 +105,36 @@ function ArtMode({
     <div className="artmode" data-testid="artmode" style={matteVars}>
       <div className="artmode__stage">
         <div className="artmode__matte" aria-hidden="true" />
-        {!art && !failed && (
-          <div className="artmode__loading" data-testid="artmode-loading" aria-hidden="true">
-            <span className="artmode__loader" />
-          </div>
-        )}
         {layout && (
           <div className="artmode__opening" style={{
             top: `${layout.opening.top}%`, bottom: `${layout.opening.bottom}%`,
             left: `${layout.opening.left}%`, right: `${layout.opening.right}%`,
             justifyContent: layout.justify,
           }}>
-            {panels.map((p, i) => (
-              <div key={p.image} className="artmode__window" data-testid={testid('artmode-window', i)}
-                   style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
-                <img className="artmode__image" data-testid={testid('artmode-image', i)}
-                     src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
-                     ref={(el) => { if (el && el.complete) el.classList.add('artmode__image--in'); }}
-                     onLoad={(e) => e.currentTarget.classList.add('artmode__image--in')} />
-                <span className="artmode__cut" aria-hidden="true" />
-              </div>
-            ))}
+            {panels.map((p, i) => {
+              const onLoaded = () => {
+                loadedRef.current += 1;
+                if (loadedRef.current >= panels.length) setRevealed(true);
+              };
+              return (
+                <div key={p.image} className="artmode__window" data-testid={testid('artmode-window', i)}
+                     style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
+                  <img className="artmode__image" data-testid={testid('artmode-image', i)}
+                       src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                       onLoad={onLoaded} onError={onLoaded} />
+                  <span className="artmode__cut" aria-hidden="true" />
+                </div>
+              );
+            })}
           </div>
         )}
+        {/* Curtain: down by default, parts once the artwork has loaded. */}
+        <div className={`artmode__curtain${revealed ? ' artmode__curtain--open' : ''}`}
+             data-testid="artmode-curtain" aria-hidden="true">
+          <div className="artmode__curtain-panel artmode__curtain-panel--l" />
+          <div className="artmode__curtain-panel artmode__curtain-panel--r" />
+          {!revealed && <span className="artmode__loader" />}
+        </div>
         <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
         {placard && layout && panels.map((p, i) => {
           if (!(p.meta && (p.meta.title || p.meta.artist))) return null;
