@@ -110,12 +110,33 @@ export class FitnessSuggestionService {
       fitnessConfig?.suggestions?.exclude_collections
     );
 
+    // Request-scoped memo for getPlayableEpisodes. The same show is resolved by
+    // multiple strategies (Resume + NextUp both walk recent shows; Favorite /
+    // Memorable overlap), and each resolution is ~3-4 Plex round-trips. Dedupe
+    // within a single request so each show is fetched at most once. Results are
+    // used read-only by strategies, so sharing the object is safe. We cache the
+    // promise so an in-flight resolution is shared too.
+    const playableMemo = new Map(); // 'showId::hid' -> Promise
+    const playableStats = { calls: 0, misses: 0 };
+    const memoizedPlayableService = {
+      getPlayableEpisodes: (showId, hhid = hid) => {
+        playableStats.calls++;
+        const memoKey = `${showId}::${hhid ?? ''}`;
+        if (!playableMemo.has(memoKey)) {
+          playableStats.misses++;
+          playableMemo.set(memoKey, this.#fitnessPlayableService.getPlayableEpisodes(showId, hhid));
+        }
+        return playableMemo.get(memoKey);
+      },
+      listFitnessShows: (...args) => this.#fitnessPlayableService.listFitnessShows(...args),
+    };
+
     // Build shared context
     const context = {
       recentSessions,
       fitnessConfig,
       householdId: hid,
-      fitnessPlayableService: this.#fitnessPlayableService,
+      fitnessPlayableService: memoizedPlayableService,
       contentAdapter: this.#contentAdapter,
       contentQueryService: this.#contentQueryService,
       sessionDatastore: this.#sessionDatastore,
@@ -128,12 +149,14 @@ export class FitnessSuggestionService {
     const allCards = [];
     const usedShowIds = new Set();
     const maxCollect = slots + OVERFLOW_CAP;
+    const strategyTimings = [];
 
     for (const strategy of this.#strategies) {
       const remaining = maxCollect - allCards.length;
       if (remaining <= 0) break;
 
       let cards;
+      const stratStart = Date.now();
       try {
         cards = await strategy.suggest(context, remaining);
       } catch (err) {
@@ -143,6 +166,11 @@ export class FitnessSuggestionService {
         });
         continue;
       }
+      strategyTimings.push({
+        strategy: strategy.constructor?.name,
+        ms: Date.now() - stratStart,
+        cards: Array.isArray(cards) ? cards.length : 0,
+      });
 
       for (const card of cards) {
         if (allCards.length >= maxCollect) break;
@@ -151,6 +179,16 @@ export class FitnessSuggestionService {
         if (card.showId) usedShowIds.add(card.showId);
       }
     }
+
+    // Per-strategy + memo-hit breakdown so the suggestions latency is attributable
+    // (playable.calls vs playable.misses shows how much the memo deduped).
+    this.#logger.info?.('suggestions.breakdown', {
+      slots,
+      strategyTimings,
+      playableCalls: playableStats.calls,
+      playableMisses: playableStats.misses,
+      playableDeduped: playableStats.calls - playableStats.misses,
+    });
 
     const results = allCards.slice(0, slots);
     const overflow = allCards.slice(slots, slots + OVERFLOW_CAP);
