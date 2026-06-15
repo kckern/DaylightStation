@@ -223,3 +223,27 @@
   font-feature-settings: "smcp" 1;
   letter-spacing: 0.06em;
 }
+
+/* ---- Object-fit windows (view modes 2-5) ----
+   Absolute window keyed off inline inset %; matte shows through any contain-box. */
+.artmode__fitwindow {
+  position: absolute;
+  overflow: hidden;
+  line-height: 0;
+}
+.artmode__fitimage {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.artmode__fitimage--contain { object-fit: contain; }
+.artmode__fitimage--cover { object-fit: cover; }
+
+/* ---- Placard title may render as 1-2 balanced lines; truncate each with … ---- */
+.artmode__placard-line {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
