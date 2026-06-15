@@ -76,3 +76,44 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(detail.timeline.series['milo:heart_rate']).toEqual([100, 100, 100, 120, 120]);
   });
 });
+
+describe('SessionGroupingService.enrichSession (standalone session detail)', () => {
+  // A lone session that groupSessions keeps standalone (group id === sessionId).
+  const SOLO = '20260612081413';
+  const SOLO_START = Date.parse('2026-06-12T08:14:13-07:00');
+  const solo = {
+    sessionId: SOLO, date: '2026-06-12', startTime: SOLO_START, durationMs: 690000,
+    participants: { felix: { displayName: 'Felix' } }, media: null, totalCoins: 216,
+  };
+  const raceReg = { enrich: async () => [{ type: 'cycle-game', count: 2, items: [
+    { startMs: SOLO_START + 70000, endMs: SOLO_START + 130000, participants: ['felix'], meta: { raceId: 'a', winnerId: 'felix' } },
+    { startMs: SOLO_START + 200000, endMs: SOLO_START + 380000, participants: ['felix'], meta: { raceId: 'b', winnerId: 'felix' } },
+  ] }] };
+  const sessions = { resolveHouseholdId: () => 'household', listSessionsByDate: async () => [ { ...solo } ] };
+
+  it('returns overlapping race activities for a standalone session (raw absolute startMs)', async () => {
+    const svc = new SessionGroupingService({ activityRegistry: raceReg, sessionService: sessions });
+    const activities = await svc.enrichSession(SOLO, 'household');
+    expect(activities).toHaveLength(1);
+    expect(activities[0]).toMatchObject({ type: 'cycle-game', count: 2 });
+    // items keep absolute startMs (no axis rebase — the single-session timeline does that client-side)
+    expect(activities[0].items[0].startMs).toBe(SOLO_START + 70000);
+    expect(activities[0].items[0].axisStartMs).toBeUndefined();
+  });
+
+  it('returns [] when the session has media (video sessions are not activity-enriched)', async () => {
+    const withMedia = { resolveHouseholdId: () => 'household', listSessionsByDate: async () => [ { ...solo, media: { primary: { contentId: 'plex:1' } } } ] };
+    const svc = new SessionGroupingService({ activityRegistry: raceReg, sessionService: withMedia });
+    expect(await svc.enrichSession(SOLO, 'household')).toEqual([]);
+  });
+
+  it('returns [] when the session id is not present that day', async () => {
+    const svc = new SessionGroupingService({ activityRegistry: raceReg, sessionService: sessions });
+    expect(await svc.enrichSession('20260612999999', 'household')).toEqual([]);
+  });
+
+  it('returns [] without an activity registry', async () => {
+    const svc = new SessionGroupingService({ activityRegistry: null, sessionService: sessions });
+    expect(await svc.enrichSession(SOLO, 'household')).toEqual([]);
+  });
+});

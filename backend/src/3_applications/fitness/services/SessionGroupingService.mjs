@@ -126,6 +126,41 @@ export class SessionGroupingService {
     };
   }
 
+  /**
+   * Activities (e.g. cycle-game races) overlapping a single, non-grouped session —
+   * the same enrichment group()/getGroupDetail attach, so the per-session DETAIL
+   * shows races + bands consistently with the session LIST. Without this, the
+   * detail endpoint returns a bare session (no `activities`), so the widget header
+   * falls back to "Workout" and the timeline renders no race bands.
+   *
+   * Returns a raw activities array: items keep absolute startMs/endMs. There is no
+   * gap compression for a single session, so the single-session timeline rebases
+   * the bands against its own axis origin (sessionStartMs) on the client. [] when
+   * the session has media, isn't a standalone session, or no registry is wired.
+   *
+   * @param {string} sessionId
+   * @param {string} householdId
+   * @returns {Promise<Array>} activities array (possibly empty)
+   */
+  async enrichSession(sessionId, householdId) {
+    if (!this.activityRegistry || !this.sessionService) return [];
+    const id = String(sessionId);
+    if (id.length < 8) return [];
+    const date = `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`;
+    const summaries = await this.sessionService.listSessionsByDate(date, householdId);
+    const groups = groupSessions(summaries);
+    // Only standalone sessions land here; multi-session groups are fetched via their
+    // group: id (getGroupDetail). A singleton group's id is the sessionId itself.
+    const group = groups.find((g) => String(g.id) === id);
+    if (!group || group.media) return [];
+    try {
+      return await this.activityRegistry.enrich(group, householdId);
+    } catch (e) {
+      this.logger?.warn?.('fitness.session.enrich.failed', { id, error: e?.message });
+      return [];
+    }
+  }
+
   async group(sessions, householdId, { enrich = true } = {}) {
     const groups = groupSessions(sessions);
     if (!enrich || !this.activityRegistry) return groups;

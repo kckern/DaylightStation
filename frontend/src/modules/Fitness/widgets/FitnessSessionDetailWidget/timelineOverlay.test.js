@@ -30,6 +30,19 @@ describe('computeRaceBands', () => {
     expect(computeRaceBands(undefined, OPTS)).toEqual([]);
     expect(computeRaceBands([], OPTS)).toEqual([]);
   });
+  it('rebases raw single-session items against sessionStartMs when axis fields are absent', () => {
+    // Standalone session: items carry absolute startMs/endMs, no axisStartMs.
+    const sessionStartMs = 1_000_000;
+    const activities = [{ type: 'cycle-game', items: [
+      { startMs: sessionStartMs + 15000, endMs: sessionStartMs + 20000, meta: { winnerId: 'felix', raceId: 'r1' } },
+    ] }];
+    const bands = computeRaceBands(activities, { ...OPTS, sessionStartMs });
+    expect(bands).toEqual([{ x: 75, width: 25, winnerId: 'felix', raceId: 'r1' }]);
+  });
+  it('still skips raw items when no sessionStartMs is available', () => {
+    const activities = [{ type: 'cycle-game', items: [{ startMs: 5000, endMs: 9000, meta: {} }] }];
+    expect(computeRaceBands(activities, OPTS)).toEqual([]); // OPTS has no sessionStartMs
+  });
 });
 
 describe('computeSeamLines', () => {

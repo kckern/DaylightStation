@@ -372,7 +372,19 @@ export function createFitnessRouter(config) {
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
-      return res.json({ session: session.toJSON() });
+      const json = session.toJSON();
+      // Enrich a standalone session with overlapping game activities (e.g. cycle
+      // races) so the detail header/timeline match the session list, which runs the
+      // same enrichment. Best-effort: a failure here must not break session detail.
+      if (sessionGroupingService) {
+        try {
+          const activities = await sessionGroupingService.enrichSession(sessionId, household);
+          if (Array.isArray(activities) && activities.length) json.activities = activities;
+        } catch (err) {
+          logger.warn?.('fitness.sessions.detail.enrich.error', { sessionId, error: err?.message });
+        }
+      }
+      return res.json({ session: json });
     } catch (err) {
       logger.error?.('fitness.sessions.detail.error', { sessionId, error: err?.message });
       return res.status(500).json({ error: 'Failed to load session' });
