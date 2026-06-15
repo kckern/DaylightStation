@@ -125,4 +125,40 @@ describe('FitnessSuggestionService', () => {
     expect(result.suggestions).toHaveLength(2);
     expect(result.overflow).toEqual([]);
   });
+
+  test('memoizes getPlayableEpisodes across strategies (same show fetched once)', async () => {
+    let underlyingCalls = 0;
+    const callsByStrategy = [];
+    // Two strategies both resolve the SAME show via the (memoized) context service.
+    const playableStrategy = (label) => ({
+      suggest: async (ctx) => {
+        await ctx.fitnessPlayableService.getPlayableEpisodes('999');
+        callsByStrategy.push(label);
+        return [];
+      },
+    });
+    const service = new FitnessSuggestionService({
+      strategies: [playableStrategy('a'), playableStrategy('b')],
+      sessionService: {
+        listSessionsInRange: async () => [],
+        resolveHouseholdId: (h) => h || 'default',
+      },
+      sessionDatastore: { findInRange: async () => [] },
+      fitnessConfigService: {
+        loadRawConfig: () => ({ suggestions: { lookback_days: 10, grid_size: 8 } }),
+      },
+      fitnessPlayableService: {
+        getPlayableEpisodes: async () => { underlyingCalls++; return { items: [], info: {} }; },
+        listFitnessShows: async () => ({ shows: [] }),
+      },
+      contentAdapter: null,
+      contentQueryService: null,
+      logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
+    });
+
+    await service.getSuggestions({ gridSize: 8 });
+
+    expect(callsByStrategy).toEqual(['a', 'b']); // both strategies ran
+    expect(underlyingCalls).toBe(1);             // but the show was fetched once
+  });
 });
