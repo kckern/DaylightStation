@@ -18,6 +18,9 @@ const BRIGHTER_KEYS = new Set(['ArrowUp']);
 const DIMMER_KEYS = new Set(['ArrowDown']);
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
+const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
+const CURTAIN_MAX_MS = 8000;  // safety rail: always part by this, even if assets stall
+const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // Typographic quotes/apostrophes via the smartquotes library (no hand-rolled regex).
 const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
@@ -43,6 +46,7 @@ function ArtMode({
   placard = true, onExit, dismiss,
   frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
+  curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -52,13 +56,20 @@ function ArtMode({
   const dim = round2(Math.max(0, Math.min(DIM_MAX, autoDim + manualBias)));
   const [revealed, setRevealed] = useState(false);   // curtain open?
   const loadedRef = useRef(0);                        // how many panel images have loaded
+  const dropAtRef = useRef(0);                        // when the curtain last dropped (ms)
+  const revealTimerRef = useRef(null);               // pending min-dwell reveal
+  const maxTimerRef = useRef(null);                  // pending safety-rail reveal
   const [modeIdx, setModeIdx] = useState(() => modeIndexByName(defaultViewMode));
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
   const frameSrc = useMemo(() => DaylightMediaPath('media/img/ui/frame.png'), []);
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+  }, []);
 
   // Stage size — drives placard width + title measurement.
   const stageRef = useRef(null);
@@ -77,10 +88,33 @@ function ArtMode({
     return () => ro.disconnect();
   }, []);
 
+  const clearCurtainTimers = useCallback(() => {
+    if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null; }
+    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
+  }, []);
+
+  const openCurtain = useCallback(() => {
+    clearCurtainTimers();
+    if (mountedRef.current) setRevealed(true);
+  }, [clearCurtainTimers]);
+
+  // Part the curtain once the art is ready, but never before the minimum dwell —
+  // and always via a timer, so a warm-cache instant load can't skip the closed
+  // paint (which would cancel the parting animation entirely).
+  const scheduleReveal = useCallback(() => {
+    if (revealTimerRef.current) return;                 // already scheduled
+    const remaining = Math.max(0, curtainMinMs - (nowMs() - dropAtRef.current));
+    revealTimerRef.current = setTimeout(openCurtain, remaining);
+  }, [curtainMinMs, openCurtain]);
+
   const load = useCallback(() => {
-    // Drop the curtain immediately (covers the swap), then fetch + reveal on load.
+    // Drop the curtain (covers the swap); it parts after the MIN dwell once the
+    // art loads, or by MAX at the latest (a rail so it can never stick down).
     loadedRef.current = 0;
+    clearCurtainTimers();
     setRevealed(false);
+    dropAtRef.current = nowMs();
+    maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
     DaylightAPI('api/v1/art/featured')
       .then((data) => {
         if (!mountedRef.current) return;
@@ -93,10 +127,11 @@ function ArtMode({
         setFailed(true);
         logger.error('artmode.load-failed', { error: err.message });
       });
-  }, [logger]);
+  }, [logger, clearCurtainTimers, openCurtain, curtainMaxMs]);
 
-  // If the fetch fails there are no images to wait on — part the curtain anyway.
-  useEffect(() => { if (failed) setRevealed(true); }, [failed]);
+  // If the fetch fails there are no images to wait on — part the curtain (still
+  // honoring the minimum dwell so the effect never flashes by).
+  useEffect(() => { if (failed) scheduleReveal(); }, [failed, scheduleReveal]);
   useEffect(() => { logger.info('artmode.mount', { placard }); load(); }, [logger, load, placard]);
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
@@ -174,7 +209,7 @@ function ArtMode({
 
   const onLoaded = () => {
     loadedRef.current += 1;
-    if (loadedRef.current >= panels.length) setRevealed(true);
+    if (loadedRef.current >= panels.length) scheduleReveal();
   };
 
   return (
