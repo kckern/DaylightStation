@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, act } from '@testing-library/react';
 import { DaylightAPI } from '../../lib/api.mjs';
 import ArtMode from './ArtMode.jsx';
+
+const press = (key) =>
+  act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
 
 vi.mock('../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
@@ -50,5 +53,55 @@ describe('ArtMode', () => {
     // let the rejected promise + state update flush
     await waitFor(() => expect(getByTestId('artmode-frame')).toBeTruthy());
     expect(queryByTestId('artmode-image')).toBeNull();
+  });
+
+  it('shuffles to a new random painting on left/right arrows', async () => {
+    DaylightAPI.mockResolvedValue({ image: '/x.jpg', meta: { title: 'T', artist: 'A', date: '1' } });
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(DaylightAPI).toHaveBeenCalledTimes(1);
+
+    press('ArrowRight');
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
+    press('ArrowLeft');
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(3));
+  });
+
+  it('dims on ArrowDown and brightens on ArrowUp', async () => {
+    DaylightAPI.mockResolvedValue({ image: '/x.jpg', meta: { title: 'T', artist: 'A', date: '1' } });
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0');
+    press('ArrowDown');
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.1');
+    press('ArrowDown');
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.2');
+    press('ArrowUp');
+    expect(getByTestId('artmode-dim').style.opacity).toBe('0.1');
+  });
+
+  it('calls onExit on Enter, Space, and Escape', async () => {
+    DaylightAPI.mockResolvedValue({ image: '/x.jpg', meta: { title: 'T', artist: 'A', date: '1' } });
+    const onExit = vi.fn();
+    const { getByTestId } = render(<ArtMode onExit={onExit} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+
+    press('Enter');
+    press(' ');
+    press('Escape');
+    expect(onExit).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not exit on arrow keys', async () => {
+    DaylightAPI.mockResolvedValue({ image: '/x.jpg', meta: { title: 'T', artist: 'A', date: '1' } });
+    const onExit = vi.fn();
+    const { getByTestId } = render(<ArtMode onExit={onExit} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+
+    press('ArrowLeft');
+    press('ArrowUp');
+    press('ArrowDown');
+    expect(onExit).not.toHaveBeenCalled();
   });
 });

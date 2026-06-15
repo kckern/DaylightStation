@@ -107,6 +107,16 @@
   pointer-events: none;
 }
 
+/* ---- Master brightness: a black overlay whose opacity dims the whole piece ---- */
+.artmode__dim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;                 /* above frame + nameplate — dims everything */
+  background: #000;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
 /* ---- Engraved brass nameplate, screwed onto the frame's bottom rail ---- */
 .artmode__placard {
   position: absolute;

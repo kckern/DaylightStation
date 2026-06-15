@@ -63,6 +63,29 @@ describe('ScreenScreensaver', () => {
     expect(queryByTestId('dummy-art')).toBeTruthy();
   });
 
+  it('interactive: ignores input and closes only via the widget onExit', () => {
+    let captured;
+    function DummyInteractive({ onExit }) {
+      captured = onExit;
+      return <button data-testid="dummy-exit" onClick={onExit}>x</button>;
+    }
+    getWidgetRegistry().register('art', DummyInteractive);
+
+    const { queryByTestId, getByTestId } = renderWithProviders({
+      widget: 'art', idle: 99, showOnLoad: true, interactive: true,
+    });
+    expect(queryByTestId('dummy-exit')).toBeTruthy();
+
+    // A keypress must NOT dismiss an interactive screensaver.
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true })); });
+    expect(queryByTestId('dummy-exit')).toBeTruthy();
+    expect(typeof captured).toBe('function');
+
+    // The widget's onExit closes it.
+    act(() => { getByTestId('dummy-exit').click(); });
+    expect(queryByTestId('dummy-exit')).toBeNull();
+  });
+
   it('dismisses a shown screensaver when the config changes mid-cycle', () => {
     function DummyArt2() { return <div data-testid="dummy-art-2">art2</div>; }
     getWidgetRegistry().register('art2', DummyArt2);
