@@ -86,6 +86,18 @@ describe('ArtAdapter', () => {
     expect(pool.map((e) => e.folder)).toEqual(['Good']);
   });
 
+  it('ignores macOS AppleDouble (._) sidecar files when choosing the image', async () => {
+    const dir = path.join(imgBasePath, 'art', 'classic', 'Land - 1900 - Wide');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '._Wide.jpg'), 'apple-resource-fork'); // sorts first
+    fs.writeFileSync(path.join(dir, 'Wide.jpg'), 'real-image-bytes');
+    fs.writeFileSync(path.join(dir, 'metadata.yaml'), metaYaml(1500, 1000));
+
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
+    const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
+    expect(result.image).toBe('/media/img/art/classic/Land%20-%201900%20-%20Wide/Wide.jpg');
+  });
+
   it('throws when the art directory does not exist', async () => {
     const adapter = createArtAdapter({ imgBasePath });
     await expect(adapter.selectFeatured({ pick: (arr) => arr[0] })).rejects.toThrow('No artwork available');

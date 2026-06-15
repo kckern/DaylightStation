@@ -77,7 +77,11 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
       logger.warn?.('art.folder.unreadable', { folder: chosen.folder, error: err.message });
       throw new Error(`No artwork available: ${err.message}`);
     }
-    const imageFile = files.find((f) => IMAGE_EXTS.includes(path.extname(f).toLowerCase()));
+    // Skip dotfiles — notably macOS AppleDouble sidecars (._Name.jpg), which sort
+    // before the real file and are resource forks, not valid images.
+    const imageFile = files.find(
+      (f) => !f.startsWith('.') && IMAGE_EXTS.includes(path.extname(f).toLowerCase())
+    );
     if (!imageFile) {
       logger.warn?.('art.image.missing', { folder: chosen.folder });
       throw new Error(`No image file in art folder: ${chosen.folder}`);
