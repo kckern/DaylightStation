@@ -29,6 +29,7 @@ import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js'
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
 import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
+import useMenuMusic from '../modules/Fitness/nav/useMenuMusic.js';
 
 registerBuiltinWidgets();
 
@@ -53,6 +54,8 @@ const FitnessApp = () => {
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
+  const [menuMusicTracks, setMenuMusicTracks] = useState([]);
+  const [menuMusicVolume, setMenuMusicVolume] = useState(0.15);
 
   // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
   useEffect(() => {
@@ -1023,6 +1026,12 @@ const FitnessApp = () => {
 
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
+        // Fetch menu music track list (non-blocking — silent on failure)
+        DaylightAPI('/api/v1/fitness/menu-music').then(music => {
+          if (!music || !Array.isArray(music.tracks)) return;
+          setMenuMusicTracks(music.tracks.map(t => DaylightMediaPath(t)));
+          if (typeof music.volume === 'number') setMenuMusicVolume(music.volume);
+        }).catch(() => {});
         logger.info('fitness-config-loaded', {
           navItems: (response?.fitness?.content?.nav_items || response?.fitness?.plex?.nav_items || []).length || 0,
           users: (response?.fitness?.users?.primary || []).length || 0,
@@ -1234,6 +1243,25 @@ const FitnessApp = () => {
   useEffect(() => {
     logger.debug('fitness-view-state', { view: currentView, queueSize });
   }, [currentView, queueSize, logger]);
+
+  // Menu music: active while browsing (not playing a video, not in a module)
+  const menuMusicActive = (
+    (currentView === 'menu' || currentView === 'show' || currentView === 'screen') &&
+    fitnessPlayQueue.length === 0 &&
+    activeModule == null &&
+    !loading &&
+    menuMusicTracks.length > 0
+  );
+
+  // Track changes on collection nav; stays stable when entering FitnessShow so music plays through
+  const menuMusicTrackKey = activeCollection;
+
+  useMenuMusic({
+    isActive: menuMusicActive,
+    trackChangeKey: menuMusicTrackKey,
+    volume: menuMusicVolume,
+    trackUrls: menuMusicTracks,
+  });
 
   // render diagnostics removed
   
