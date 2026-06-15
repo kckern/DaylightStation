@@ -122,13 +122,13 @@
   text-align: center;
   border-radius: 2px;
   border: 1px solid #5d4514;
-  /* Polished brass: dark base, bright top sheen, warm body. */
-  background: linear-gradient(180deg,
-    #7a5c1d 0%,
-    #e7c266 16%,
-    #f6e3a0 36%,
-    #d8ad4d 62%,
-    #9a772b 100%);
+  /* Real brushed-brass photo; CSS gradient stays as a fallback layer behind it. */
+  background-color: #c79a3e;
+  background-image:
+    url('/api/v1/static/img/ui/plaque/brass.jpg'),
+    linear-gradient(180deg, #7a5c1d 0%, #e7c266 16%, #f6e3a0 36%, #d8ad4d 62%, #9a772b 100%);
+  background-size: cover, cover;
+  background-position: center, center;
   box-shadow:
     0 0.4vh 0.8vh rgba(0, 0, 0, 0.6),                 /* drop shadow on the wood */
     inset 0 1px 0 rgba(255, 248, 214, 0.85),          /* top edge sheen */
@@ -141,24 +141,29 @@
   content: "";
   position: absolute;
   top: 50%;
-  width: 0.7em;
-  height: 0.7em;
+  width: 0.85em;
+  height: 0.85em;
   transform: translateY(-50%);
   border-radius: 50%;
-  background: radial-gradient(circle at 36% 30%, #fdeeb8, #8a6a23 68%, #5a4412);
-  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 245, 210, 0.4);
+  /* Real brass screw photo; CSS radial-gradient stays as a fallback behind it. */
+  background:
+    url('/api/v1/static/img/ui/plaque/rivet.png') center / contain no-repeat,
+    radial-gradient(circle at 36% 30%, #fdeeb8, #8a6a23 68%, #5a4412);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
 }
 .artmode__placard::before { left: 0.55em; }
 .artmode__placard::after { right: 0.55em; }
 
-/* Intaglio text: dark groove with a light lower edge so it reads as carved. */
+/* Etched into the brass: multiply blend lets the metal grain show through the
+   letters; the light lower edge reads as a carved groove. */
 .artmode__placard-title,
 .artmode__placard-artist {
   font-family: "Cormorant Garamond", "Hoefler Text", "EB Garamond",
     Georgia, "Times New Roman", serif;
-  color: #43300a;
-  text-shadow: 0 1px 0 rgba(255, 246, 214, 0.55);
-  line-height: 1.2;
+  color: #2a1d07;
+  mix-blend-mode: multiply;
+  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
+  line-height: 1.15;
 }
 
 .artmode__placard-title {
