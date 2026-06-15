@@ -95,3 +95,5 @@ data/agents/*.db-shm
 
 # Scratch files staged for manual deletion (rm/mv are permission-blocked)
 _deleteme/
+.firecrawl/
+tests/_scratch/
