@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
 
 /**
  * Create Screens API router
@@ -82,6 +83,25 @@ export function createScreensRouter(config = {}) {
             error: 'Invalid screen config',
             message: 'Missing required "screen" field'
           });
+        }
+
+        // Expand an ArtMode screensaver preset reference into resolved props.
+        if (config.screensaver?.preset) {
+          let presets = {};
+          try {
+            const raw = await fs.readFile(
+              path.join(dataPath, 'household', 'config', 'artmode.yml'), 'utf-8');
+            presets = (yaml.load(raw) || {}).presets || {};
+          } catch (err) {
+            if (err.code !== 'ENOENT') {
+              logger.warn?.('screens.presets.read_failed', { screenId, error: err.message });
+            }
+          }
+          const presetKey = config.screensaver.preset;
+          if (!Object.prototype.hasOwnProperty.call(presets, presetKey)) {
+            logger.warn?.('screens.preset.unknown', { screenId, preset: presetKey });
+          }
+          config.screensaver.props = resolvePreset(presets, presetKey, config.screensaver.props || {});
         }
 
         logger.debug?.('screens.get.success', { screenId });
