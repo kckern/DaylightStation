@@ -100,4 +100,23 @@ describe('ArtAdapter.selectFeatured', () => {
     expect(r.matte).toBeNull();
     expect(r.panels[0].image).toBe('/media/img/land.jpg');
   });
+
+  it('immich-sourced collection uses the immich source', async () => {
+    const immichSource = {
+      resolveCandidates: async () => [{
+        id: 'immich:x', kind: 'landscape', image: '/p/x?size=preview',
+        width: 1600, height: 1000, meta: { title: 'Lisbon', artist: 'August 2019' },
+        loadImage: async () => new Jimp({ width: 4, height: 4, color: 0x112233ff }),
+      }],
+    };
+    const adapter = createArtAdapter({
+      collections: { all: {}, fam: { source: 'immich', album: 'Family' } },
+      artSource: { resolveCandidates: async () => [] },     // art empty
+      immichSource,
+    });
+    const r = await adapter.selectFeatured({ collection: 'fam', pick: (a) => a[0] });
+    expect(r.mode).toBe('single');
+    expect(r.panels[0].image).toBe('/p/x?size=preview');
+    expect(r.panels[0].meta.title).toBe('Lisbon');
+  });
 });

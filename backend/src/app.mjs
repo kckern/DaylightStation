@@ -1209,13 +1209,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'static-api' })
   });
 
-  // Art router — selects a classic artwork (image + metadata) for ArtMode
-  // Art collections (data/household/config/art.yml → households[hid].apps.art)
+  // Art collections + optional Immich source for ArtMode.
   const artConfig = configService.getHouseholdAppConfig(null, 'art') || {};
+  let artImmichSource = null;
+  if (immichConfig) {
+    const { ImmichClient } = await import('#adapters/content/gallery/immich/ImmichClient.mjs');
+    const { createImmichSource } = await import('./1_adapters/content/art/sources/immichSource.mjs');
+    const artImmichClient = new ImmichClient(immichConfig, { httpClient: axios });
+    const fetchImageBytes = async (assetId) => {
+      const r = await axios.get(
+        `${immichConfig.host.replace(/\/$/, '')}/api/assets/${assetId}/thumbnail?size=preview`,
+        { headers: { 'x-api-key': immichConfig.apiKey }, responseType: 'arraybuffer' }
+      );
+      return Buffer.from(r.data);
+    };
+    artImmichSource = createImmichSource({
+      client: artImmichClient,
+      fetchImageBytes,
+      proxyPath: '/api/v1/proxy/immich',
+      logger: rootLogger.child({ module: 'art-immich' }),
+    });
+  }
   v1Routers.art = createArtRouter({
     artAdapter: createArtAdapter({
       imgBasePath,
       collections: artConfig.collections || {},
+      immichSource: artImmichSource,
       logger: rootLogger.child({ module: 'art-adapter' })
     }),
     logger: rootLogger.child({ module: 'art-api' })
