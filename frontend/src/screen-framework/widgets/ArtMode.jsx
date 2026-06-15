@@ -4,6 +4,8 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
+import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
+import { luxToDim } from './luxToDim.js';
 import './ArtMode.css';
 
 const DIM_STEP = 0.1;
@@ -31,11 +33,14 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  */
 function ArtMode({
   placard = true, onExit, dismiss,
-  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8,
+  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
-  const [dim, setDim] = useState(0);
+  const ambientCurve = ambient?.curve ?? null;
+  const [autoDim, setAutoDim] = useState(() => (ambientCurve ? luxToDim(ambient?.defaultLux ?? 0, ambientCurve) : 0));
+  const [manualBias, setManualBias] = useState(0);
+  const dim = round2(Math.max(0, Math.min(DIM_MAX, autoDim + manualBias)));
   const [revealed, setRevealed] = useState(false);   // curtain open?
   const loadedRef = useRef(0);                        // how many panel images have loaded
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
@@ -75,12 +80,17 @@ function ArtMode({
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
       else if (NEXT_KEYS.has(k)) { logger.info('artmode.shuffle', { key: k }); load(); }
-      else if (BRIGHTER_KEYS.has(k)) setDim((d) => round2(Math.max(0, d - DIM_STEP)));
-      else setDim((d) => round2(Math.min(DIM_MAX, d + DIM_STEP)));
+      else if (BRIGHTER_KEYS.has(k)) setManualBias((b) => round2(b - DIM_STEP));
+      else setManualBias((b) => round2(b + DIM_STEP));
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [exit, load, logger]);
+
+  useWebSocketSubscription(['ambient'], (msg) => {
+    if (!ambientCurve || !msg) return;
+    setAutoDim(luxToDim(Number(msg.lux), ambientCurve));
+  }, [ambientCurve]);
 
   const matteVars = useMemo(() => {
     const m = art?.matte;
