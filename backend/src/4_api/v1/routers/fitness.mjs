@@ -31,6 +31,7 @@
  */
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { spawn } from 'child_process';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
@@ -1207,6 +1208,33 @@ export function createFitnessRouter(config) {
     logger.warn?.('fitness.provider.webhook.unknown', { bodyKeys: Object.keys(req.body || {}) });
     return res.status(200).json({ ok: true, skipped: true, reason: 'unknown-provider' });
   });
+
+  /**
+   * GET /api/fitness/menu-music
+   * Returns list of menu music track paths + configured volume.
+   * Track paths are relative to the media root (media/apps/fitness/ux/menus/).
+   * Frontend passes them through DaylightMediaPath() to get full URLs.
+   */
+  router.get('/menu-music', asyncHandler(async (req, res) => {
+    const mediaDir = configService.getMediaDir();
+    const musicDir = path.join(mediaDir, 'apps', 'fitness', 'ux', 'menus');
+
+    let filenames = [];
+    try {
+      filenames = fs.readdirSync(musicDir)
+        .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
+        .sort();
+    } catch (_) {
+      // Directory missing or unreadable — return empty list gracefully
+    }
+
+    const tracks = filenames.map(f => `media/apps/fitness/ux/menus/${f}`);
+
+    const fitnessConfig = await configService.get('fitness') || {};
+    const volume = fitnessConfig?.menu_music?.volume ?? 0.15;
+
+    res.json({ tracks, volume });
+  }));
 
   return router;
 }
