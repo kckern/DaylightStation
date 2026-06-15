@@ -42,4 +42,14 @@ describe('deriveMatte', () => {
     expect(sum(hexToRgb(m.bevelBottom))).toBeGreaterThan(sum(hexToRgb(m.base)));
     expect(sum(hexToRgb(m.base))).toBeGreaterThan(sum(hexToRgb(m.bevelTop)));
   });
+
+  it('pure black and pure white never produce NaN — all slots valid hex', () => {
+    for (const input of [[0, 0, 0], [255, 255, 255]]) {
+      const m = deriveMatte(input);
+      for (const hex of Object.values(m).filter((x) => typeof x === 'string' && x.startsWith('#'))) {
+        expect(hex).toMatch(/^#[0-9a-f]{6}$/);
+        expect(hexToRgb(hex).some(Number.isNaN)).toBe(false);
+      }
+    }
+  });
 });

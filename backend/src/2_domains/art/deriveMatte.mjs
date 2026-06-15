@@ -70,24 +70,30 @@ function adjustLightness([r, g, b], factor) {
   return [(rr + m) * 255, (gg + m) * 255, (bb + m) * 255];
 }
 
+// Paintings darker/lighter than these are treated as the dark/light extremes.
+const V_CLAMP_LO = 0.20;
+const V_CLAMP_HI = 0.85;
+
 // Track painting lightness `v` into a muted band [lo, hi].
 function mapValue(v, lo, hi) {
-  const vc = clamp(v, 0.20, 0.85);
-  return lo + ((vc - 0.20) / (0.85 - 0.20)) * (hi - lo);
+  const vc = clamp(v, V_CLAMP_LO, V_CLAMP_HI);
+  return lo + ((vc - V_CLAMP_LO) / (V_CLAMP_HI - V_CLAMP_LO)) * (hi - lo);
 }
 
-const SAT_CEIL = 0.18;
-const GREYSCALE = 0.10;
+const SAT_CEIL = 0.18;     // muted saturation ceiling
+const GREYSCALE = 0.10;    // below this avg saturation → warm-neutral branch
+const NEUTRAL_HUE = 30 / 360; // amber/brown
 
 export function deriveMatte(avgRGB) {
   const [h, s, v] = rgbToHsv(avgRGB);
   let H, S, V, branch;
   if (s < GREYSCALE) {
-    H = 30 / 360; S = 0.13; V = mapValue(v, 0.30, 0.60); branch = 'neutral';
+    H = NEUTRAL_HUE; S = 0.13; V = mapValue(v, 0.30, 0.60); branch = 'neutral';
   } else {
     H = h; S = Math.min(s, SAT_CEIL); V = mapValue(v, 0.30, 0.52); branch = 'match';
   }
   const baseRgb = hsvToRgb(H, S, V);
+  // Bevel factors model light from the top-left: lit faces (>1.0) bottom/right, shadowed (<1.0) top/left.
   return {
     branch,
     base: toHex(baseRgb),
