@@ -49,8 +49,8 @@ export function artLayout({ mode, ratios, frame, matMargin, crop }) {
       opening: { top: openTopPct, bottom: openBotPct, left: frame.left, right: frame.right },
       justify: 'space-evenly',
       panels: [
-        { boxAspect: b1, heightPct, centerXPct: (c1 / SW) * 100 },
-        { boxAspect: b2, heightPct, centerXPct: (c2 / SW) * 100 },
+        { boxAspect: b1, heightPct, centerXPct: (c1 / SW) * 100, widthPct: (w1 / SW) * 100 },
+        { boxAspect: b2, heightPct, centerXPct: (c2 / SW) * 100, widthPct: (w2 / SW) * 100 },
       ],
     };
   }
@@ -72,7 +72,7 @@ export function artLayout({ mode, ratios, frame, matMargin, crop }) {
     opening: { top: openTopPct, bottom: openBotPct, left: openLeftPct, right: openRightPct },
     justify: 'center',
     panels: [
-      { boxAspect: bAR, heightPct: (hpx / openHpx) * 100, centerXPct: (centerX / SW) * 100 },
+      { boxAspect: bAR, heightPct: (hpx / openHpx) * 100, centerXPct: (centerX / SW) * 100, widthPct: (wpx / SW) * 100 },
     ],
   };
 }
