@@ -44,17 +44,14 @@
   background-blend-mode: normal, multiply;
 }
 
-/* ---- Curtain: a deep-velvet drape over the opening, down by default; its two
-   panels draw apart once the artwork has loaded (theatre/museum reveal). Sits
-   above the art but below the gilded frame (the proscenium). ---- */
+/* ---- Curtain: a deep-velvet drape OVER EVERYTHING (frame included), down by
+   default; its two panels draw apart once the artwork has loaded. ---- */
 .artmode__curtain {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  z-index: 5;                 /* above frame, placard, and dim — covers all */
 }
 .artmode__curtain-panel {
   position: absolute;
@@ -74,20 +71,6 @@
 .artmode__curtain-panel--r { right: 0; }
 .artmode__curtain--open .artmode__curtain-panel--l { transform: translateX(-102%); }
 .artmode__curtain--open .artmode__curtain-panel--r { transform: translateX(102%); }
-
-/* Quiet brass throbber centered on the closed curtain. */
-.artmode__loader {
-  position: relative;
-  width: 5vh;
-  height: 5vh;
-  border-radius: 50%;
-  border: 0.25vh solid rgba(214, 180, 110, 0.18);   /* faint brass ring */
-  border-top-color: rgba(234, 206, 142, 0.75);      /* one lit arc */
-  animation: artmode-spin 1.8s linear infinite;
-  transition: opacity 0.5s ease;
-}
-.artmode__curtain--open .artmode__loader { opacity: 0; }
-@keyframes artmode-spin { to { transform: rotate(360deg); } }
 
 /* ---- Opening: where the painting(s) sit; insets + justify come from inline style ---- */
 .artmode__opening {

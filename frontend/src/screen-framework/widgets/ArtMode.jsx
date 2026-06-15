@@ -133,7 +133,6 @@ function ArtMode({
              data-testid="artmode-curtain" aria-hidden="true">
           <div className="artmode__curtain-panel artmode__curtain-panel--l" />
           <div className="artmode__curtain-panel artmode__curtain-panel--r" />
-          {!revealed && <span className="artmode__loader" />}
         </div>
         <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
         {placard && layout && panels.map((p, i) => {
