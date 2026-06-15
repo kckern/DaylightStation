@@ -267,7 +267,7 @@ function ArtMode({
           <audio ref={musicRef} className="artmode__audio" data-testid="artmode-music" />
         )}
 
-        {music && musicTrack && mode.frame && (
+        {music && musicTrack && (musicTrack.title || musicTrack.artist) && mode.frame && (
           <div className="artmode__placard artmode__music-plaque" data-testid="artmode-music-plaque">
             {musicTrack.title && (
               <span className="artmode__placard-title artmode__placard-line">{`♪ ${smartQuotes(musicTrack.title)}`}</span>
