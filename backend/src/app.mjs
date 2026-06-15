@@ -192,6 +192,7 @@ import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
+import { createAmbientLightService } from './3_applications/home-automation/AmbientLightService.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -1651,6 +1652,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     logger: rootLogger.child({ module: 'home-automation' })
   });
+
+  // Ambient brightness: HA illuminance sensors → eventbus 'ambient' → ArtMode dim.
+  const ambientConfig = configService.getAppConfig('ambient') || {};
+  if (ambientConfig?.illuminance?.entities?.length && homeAutomationAdapters.haGateway?.getConnection) {
+    const ambientLight = createAmbientLightService({
+      haGateway: homeAutomationAdapters.haGateway,
+      eventBus,
+      config: {
+        entities: ambientConfig.illuminance.entities,
+        topic: ambientConfig.illuminance.topic || 'ambient',
+      },
+      logger: rootLogger.child({ module: 'ambient-light' }),
+    });
+    ambientLight.start();
+  }
 
   // Import FileIO functions for state persistence (replaces legacy io.mjs)
   const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_system/utils/FileIO.mjs');
