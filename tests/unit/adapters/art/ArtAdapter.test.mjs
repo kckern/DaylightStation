@@ -1,7 +1,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createArtAdapter } from '../../../backend/src/1_adapters/content/art/ArtAdapter.mjs';
+import { createArtAdapter } from '../../../../backend/src/1_adapters/content/art/ArtAdapter.mjs';
+
+const noopLogger = { warn: () => {}, error: () => {}, debug: () => {}, info: () => {} };
 
 let tmp;
 let imgBasePath;
@@ -43,7 +45,7 @@ describe('ArtAdapter', () => {
 
   it('returns null metadata fields when metadata.yaml is missing', async () => {
     writeArt('Unknown - 0000 - Untitled', 'art.png', null);
-    const adapter = createArtAdapter({ imgBasePath });
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
     expect(result.image).toBe('/media/img/art/classic/Unknown%20-%200000%20-%20Untitled/art.png');
     expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null });
@@ -53,5 +55,13 @@ describe('ArtAdapter', () => {
     fs.mkdirSync(path.join(imgBasePath, 'art', 'classic'), { recursive: true });
     const adapter = createArtAdapter({ imgBasePath });
     await expect(adapter.selectFeatured({ pick: (arr) => arr[0] })).rejects.toThrow('No artwork available');
+  });
+
+  it('falls back to null metadata fields when metadata.yaml is unparseable', async () => {
+    writeArt('Bad - 0000 - Corrupt', 'art.jpg', ':\n  - unbalanced: [oops');
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
+    const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
+    expect(result.image).toBe('/media/img/art/classic/Bad%20-%200000%20-%20Corrupt/art.jpg');
+    expect(result.meta).toEqual({ title: null, artist: null, date: null, origin: null, medium: null });
   });
 });
