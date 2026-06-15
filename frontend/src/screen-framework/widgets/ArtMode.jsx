@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
+import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
 import './ArtMode.css';
 
@@ -14,12 +15,8 @@ const DIMMER_KEYS = new Set(['ArrowDown']);
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 
-// Typographic quotes/apostrophes so the plaque doesn't show straight ASCII marks.
-const smartQuotes = (s) =>
-  s == null ? s : String(s)
-    .replace(/(\p{L})'(\p{L})/gu, '$1’$2') // internal apostrophe (d'Amont)
-    .replace(/'/g, '’')                      // any remaining single quotes
-    .replace(/"([^"]*)"/g, '“$1”');     // straight double quotes → curly
+// Typographic quotes/apostrophes via the smartquotes library (no hand-rolled regex).
+const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
 
 /**
  * ArtMode — single landscape or portrait diptych, matted + framed, with engraved

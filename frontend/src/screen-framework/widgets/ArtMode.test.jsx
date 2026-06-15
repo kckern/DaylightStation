@@ -81,4 +81,14 @@ describe('ArtMode', () => {
     press('Enter'); press(' '); press('Escape');
     expect(onExit).toHaveBeenCalledTimes(3);
   });
+
+  it('smart-quotes the title (curly apostrophe via library)', async () => {
+    DaylightAPI.mockResolvedValue(single({
+      panels: [{ image: '/a.jpg', meta: { title: "Falaise d'Amont", artist: 'Monet', date: '1885', width: 1600, height: 1000 } }],
+    }));
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
+    expect(getByTestId('artmode-placard').textContent).toContain('d’Amont');
+    expect(getByTestId('artmode-placard').textContent).not.toContain("d'Amont");
+  });
 });
