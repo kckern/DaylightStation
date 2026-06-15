@@ -259,4 +259,36 @@ describe('ArtMode', () => {
     await waitFor(() => expect(getByTestId('artmode-placard')).toBeTruthy());
     expect(container.querySelectorAll('.artmode__placard-title').length).toBe(2);
   });
+
+  it('renders a background-audio element only when music config is present', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId, queryByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(queryByTestId('artmode-music')).toBeNull();
+  });
+
+  it('shows the music plaque with the current track in framed modes', async () => {
+    DaylightAPI.mockImplementation((path) =>
+      path.startsWith('api/v1/queue/')
+        ? Promise.resolve({ items: [{ mediaUrl: 'a.mp3', title: 'Gymnopédie', artist: 'Satie' }] })
+        : Promise.resolve(single()));
+    const { getByTestId } = render(<ArtMode music={{ queue: 'ambient', volume: 0.2 }} />);
+    await waitFor(() => expect(getByTestId('artmode-music')).toBeTruthy());
+    await waitFor(() => expect(getByTestId('artmode-music-plaque')).toBeTruthy());
+    const txt = getByTestId('artmode-music-plaque').textContent;
+    expect(txt).toContain('Gymnopédie');
+    expect(txt).toContain('Satie');
+  });
+
+  it('hides the music plaque in bare modes but keeps the audio element', async () => {
+    DaylightAPI.mockImplementation((path) =>
+      path.startsWith('api/v1/queue/')
+        ? Promise.resolve({ items: [{ mediaUrl: 'a.mp3', title: 'A', artist: 'X' }] })
+        : Promise.resolve(single()));
+    const { getByTestId, queryByTestId } = render(<ArtMode music={{ queue: 'ambient' }} />);
+    await waitFor(() => expect(getByTestId('artmode-music-plaque')).toBeTruthy());
+    press('Tab'); press('Tab'); press('Tab'); press('Tab');  // bare-cover
+    expect(queryByTestId('artmode-music-plaque')).toBeNull();
+    expect(getByTestId('artmode-music')).toBeTruthy();        // audio still mounted
+  });
 });
