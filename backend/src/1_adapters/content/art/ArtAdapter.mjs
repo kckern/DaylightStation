@@ -126,10 +126,10 @@ export function createArtAdapter({ imgBasePath, logger = console }) {
       pool.filter((p) => a && c && p.meta.artist === a && p.meta.credit === c),
       pool.filter((p) => a && p.meta.artist === a),
       pool.filter((p) => c && p.meta.credit === c),
-      pool,
+      pool, // last tier is the full (non-empty) pool → the loop always returns
     ];
     for (const tier of tiers) if (tier.length) return pick(tier);
-    return pick(pool);
+    return null; // unreachable
   }
 
   function matteFromAvgs(avgs) {
