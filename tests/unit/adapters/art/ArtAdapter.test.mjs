@@ -43,7 +43,7 @@ describe('ArtAdapter', () => {
       'Merrymakers in an Inn.jpg',
       "title: Merrymakers in an Inn\nartist: Adriaen van Ostade\ndate: '1674'\norigin: Holland\nmedium: Oil on panel\nwidth: 3000\nheight: 2180\n"
     );
-    const adapter = createArtAdapter({ imgBasePath });
+    const adapter = createArtAdapter({ imgBasePath, logger: noopLogger });
     const result = await adapter.selectFeatured({ pick: (arr) => arr[0] });
 
     expect(result.image).toBe(
