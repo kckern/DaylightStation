@@ -23,6 +23,7 @@ import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js'
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 import { computeHistorySnapshotAction } from './historyMode.js';
 import { assignIdentityColors } from '@/modules/Fitness/lib/participantColors.js';
+import { niceTicks } from '@/modules/Fitness/lib/chartScale.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -1235,17 +1236,10 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		// Multi-user: gridlines span from lowest avatar to max (focus on relative positions)
 		const isSingleUser = allEntries.length === 1;
 		const start = isSingleUser ? 0 : Math.max(0, Math.min(paddedMaxValue, lowestAvatarValue));
-		// Use MIN_GRID_LINES to ensure consistent grid distribution
-		// For single user, we need MIN_GRID_LINES + 1 ticks total because the X-axis
-		// serves as the bottom reference (value=0), so we skip value=0 in yTicks
-		const tickCount = isSingleUser ? MIN_GRID_LINES + 1 : MIN_GRID_LINES;
-		const span = Math.max(1, paddedMaxValue - start);
-		const values = Array.from({ length: tickCount }, (_, idx) => {
-			const t = idx / Math.max(1, tickCount - 1);
-			return start + span * t;
-		});
-		// For single user, filter out value=0 since the X-axis line already provides this reference
-		const filteredValues = isSingleUser ? values.filter(v => v > 0) : values;
+		const top = paddedMaxValue;
+		const ticks = niceTicks(start, top, MIN_GRID_LINES + 1)
+			.filter((v) => v >= start - 0.5 && v <= top + 0.5);
+		const filteredValues = isSingleUser ? ticks.filter((v) => v > 0) : ticks;
 		return filteredValues.map((value) => ({
 			value,
 			label: value.toFixed(0),
