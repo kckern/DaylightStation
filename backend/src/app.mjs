@@ -188,6 +188,8 @@ import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
+import { createArtRouter } from './4_api/v1/routers/art.mjs';
+import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
 
@@ -1204,6 +1206,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     imgBasePath,
     dataBasePath,
     logger: rootLogger.child({ module: 'static-api' })
+  });
+
+  // Art router — selects a classic artwork (image + metadata) for ArtMode
+  v1Routers.art = createArtRouter({
+    artAdapter: createArtAdapter({
+      imgBasePath,
+      logger: rootLogger.child({ module: 'art-adapter' })
+    }),
+    logger: rootLogger.child({ module: 'art-api' })
   });
 
   // Config router - serves configuration to frontend
