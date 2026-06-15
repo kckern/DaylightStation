@@ -6,6 +6,9 @@ module.exports = {
   // Path aliases - use # prefix (matches package.json imports field)
   // This ensures Jest and Node resolve the same paths
   moduleNameMapper: {
+    // jimp ships ESM with dynamic imports that break under Jest's VM transform;
+    // point directly to its pre-built CJS dist so require() resolves cleanly.
+    '^jimp$': '<rootDir>/node_modules/jimp/dist/commonjs/index.js',
     '^#system/(.*)$': '<rootDir>/backend/src/0_system/$1',
     '^#domains/(.*)$': '<rootDir>/backend/src/2_domains/$1',
     '^#adapters/(.*)$': '<rootDir>/backend/src/1_adapters/$1',
