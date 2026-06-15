@@ -1,41 +1,91 @@
 // frontend/src/screen-framework/widgets/ArtMode.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import './ArtMode.css';
 
+const DIM_STEP = 0.1;
+const DIM_MAX = 0.85;        // never fully black
+const EXIT_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
+const NEXT_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
+const BRIGHTER_KEYS = new Set(['ArrowUp']);
+const DIMMER_KEYS = new Set(['ArrowDown']);
+const round2 = (n) => Math.round(n * 100) / 100;
+
 /**
- * ArtMode — screensaver widget showing a matted, framed classic painting.
+ * ArtMode — a painting recessed UNDER a cut mat, inside an ornate frame, with
+ * an engraved brass nameplate. Used as the home screensaver.
  *
- * Layers (bottom → top): rag-paper matte → recessed painting (whole image,
- * never cropped) with a beveled mat window + cast shadow → frame.png overlay →
- * engraved brass nameplate. Fetches a random artwork from /api/v1/art/featured.
+ * Interaction (keyboard / Shield D-pad):
+ *   Enter · Space · Escape   → exit (back to the menu)
+ *   Left · Right             → shuffle to a new random painting
+ *   Up · Down                → brighten / dim (black opacity overlay)
  *
- * Props (from screen YAML / screensaver config):
- *   placard: boolean   show the engraved title/artist/year nameplate (default true)
+ * Props:
+ *   placard: boolean   show the engraved nameplate (default true)
+ *   onExit / dismiss   called to close the screensaver (onExit preferred)
  */
-function ArtMode({ placard = true }) {
+function ArtMode({ placard = true, onExit, dismiss }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [dim, setDim] = useState(0);           // black overlay opacity (0 = full brightness)
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
   const frameSrc = useMemo(() => DaylightMediaPath('media/img/ui/frame.png'), []);
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    logger.info('artmode.mount', { placard });
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  const load = useCallback(() => {
     DaylightAPI('api/v1/art/featured')
       .then((data) => {
-        if (cancelled) return;
+        if (!mountedRef.current) return;
+        setFailed(false);
         setArt(data);
         logger.info('artmode.loaded', { title: data?.meta?.title ?? null, artist: data?.meta?.artist ?? null });
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (!mountedRef.current) return;
         setFailed(true);
         logger.error('artmode.load-failed', { error: err.message });
       });
-    return () => { cancelled = true; };
   }, [logger]);
+
+  useEffect(() => {
+    logger.info('artmode.mount', { placard });
+    load();
+  }, [logger, load, placard]);
+
+  const exit = useCallback(() => {
+    (onExit || dismiss)?.();
+  }, [onExit, dismiss]);
+
+  // Capture-phase key handling: adapters listen on the bubble phase, so swallowing
+  // here (stopPropagation + preventDefault) keeps handled keys out of the menu.
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = e.key;
+      const isHandled =
+        EXIT_KEYS.has(k) || NEXT_KEYS.has(k) || BRIGHTER_KEYS.has(k) || DIMMER_KEYS.has(k);
+      if (!isHandled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
+      if (EXIT_KEYS.has(k)) {
+        logger.info('artmode.exit', { key: k });
+        exit();
+      } else if (NEXT_KEYS.has(k)) {
+        logger.info('artmode.shuffle', { key: k });
+        load();
+      } else if (BRIGHTER_KEYS.has(k)) {
+        setDim((d) => round2(Math.max(0, d - DIM_STEP)));
+      } else if (DIMMER_KEYS.has(k)) {
+        setDim((d) => round2(Math.min(DIM_MAX, d + DIM_STEP)));
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [exit, load, logger]);
 
   const caption = useMemo(() => {
     if (!art?.meta) return null;
@@ -84,6 +134,12 @@ function ArtMode({ placard = true }) {
             )}
           </div>
         )}
+        <div
+          className="artmode__dim"
+          data-testid="artmode-dim"
+          aria-hidden="true"
+          style={{ opacity: dim }}
+        />
       </div>
     </div>
   );
