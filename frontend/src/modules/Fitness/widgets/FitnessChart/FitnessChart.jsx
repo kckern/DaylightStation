@@ -624,6 +624,16 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 					<text x="12" dy="4" textAnchor="start" fontSize={TICK_FONT_SIZE}>{tick.label}</text>
 				</g>
 			))}
+			<text
+				className="race-chart__axis-title"
+				x={-CHART_MARGIN.top}
+				y={14}
+				transform="rotate(-90)"
+				textAnchor="end"
+				fontSize={12}
+			>
+				COINS
+			</text>
 		</g>
 		<g className="race-chart__paths">
 			{(() => {
