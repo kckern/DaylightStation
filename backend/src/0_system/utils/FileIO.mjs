@@ -234,13 +234,29 @@ export function ensureDir(dirPath) {
  */
 export function listDirs(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
-  return fs.readdirSync(dirPath).filter(f => {
-    try {
-      return fs.statSync(path.join(dirPath, f)).isDirectory();
-    } catch {
-      return false;
+  // Use withFileTypes so the directory check comes from the single readdir call
+  // rather than a per-entry statSync. On large histories (e.g. history/fitness/
+  // with thousands of date-folders) this turns N+1 sync syscalls into one,
+  // which is the dominant cost of the fitness /sessions + /suggestions queries.
+  // Symlinks report isDirectory()=false from a dirent, so resolve only those few
+  // with statSync — preserving the prior behavior of including symlinked dirs.
+  try {
+    const out = [];
+    for (const d of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      if (d.isDirectory()) {
+        out.push(d.name);
+      } else if (d.isSymbolicLink()) {
+        try {
+          if (fs.statSync(path.join(dirPath, d.name)).isDirectory()) out.push(d.name);
+        } catch {
+          // dangling symlink — skip, matching the old statSync-in-try behavior
+        }
+      }
     }
-  });
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /**

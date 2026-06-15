@@ -1462,6 +1462,14 @@ const FitnessApp = () => {
                   nogovern={nogovern}
                   onSessionEndRedirect={(redirect) => {
                     if (!redirect) return;
+                    // Short browse-out from a show: the FitnessShow is still mounted
+                    // behind the player overlay (currentView stayed 'show'), so just
+                    // drop the player and reveal it with its preserved season/scroll
+                    // state instead of clearing selectedShow and bouncing to home.
+                    if (redirect.returnToShow && currentView === 'show' && selectedShow) {
+                      navigate(`/fitness/show/${selectedShow}`, { replace: true });
+                      return;
+                    }
                     if (redirect.clearActiveModule) setActiveModule(null);
                     if (redirect.clearActiveCollection) setActiveCollection(null);
                     if (redirect.clearSelectedShow) {

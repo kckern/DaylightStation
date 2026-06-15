@@ -46,4 +46,41 @@ describe('resolvePostEpisodeRedirect', () => {
     expect(resolvePostEpisodeRedirect({ hasActiveSession: 0 })).toBeNull();
     expect(resolvePostEpisodeRedirect({ hasActiveSession: '' })).toBeNull();
   });
+
+  it('flags returnToShow with a stringified showId on a short browse-out', () => {
+    const result = resolvePostEpisodeRedirect({
+      hasActiveSession: true,
+      sessionId: 'fs_123',
+      returnToShow: true,
+      showId: 662027,
+    });
+    expect(result.returnToShow).toBe(true);
+    expect(result.showId).toBe('662027');
+    // Home fields remain as the fallback when no show is mounted to return to
+    expect(result.view).toBe('screen');
+    expect(result.screenId).toBe('home');
+  });
+
+  it('does not flag returnToShow when no showId is available', () => {
+    const result = resolvePostEpisodeRedirect({
+      hasActiveSession: true,
+      sessionId: 'fs_123',
+      returnToShow: true,
+      showId: null,
+    });
+    expect(result.returnToShow).toBeUndefined();
+    expect(result.showId).toBeUndefined();
+    expect(result.view).toBe('screen');
+  });
+
+  it('does not flag returnToShow when the long-workout caller leaves it false', () => {
+    const result = resolvePostEpisodeRedirect({
+      hasActiveSession: true,
+      sessionId: 'fs_123',
+      returnToShow: false,
+      showId: 662027,
+    });
+    expect(result.returnToShow).toBeUndefined();
+    expect(result.showId).toBeUndefined();
+  });
 });

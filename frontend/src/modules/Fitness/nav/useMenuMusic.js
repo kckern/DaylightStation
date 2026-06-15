@@ -47,10 +47,10 @@ const startFade = (audio, fromVol, toVol, durationMs, handleRef, onDone) => {
  * @param {object} opts
  * @param {boolean}  opts.isActive       - True when menu music should play.
  * @param {*}        opts.trackChangeKey - Changing this triggers a crossfade to a new track.
- * @param {number}   opts.volume         - Target volume (0–1), default 0.15.
+ * @param {number}   opts.volume         - Target volume (0–1), default 0.075.
  * @param {string[]} opts.trackUrls      - Fully-qualified audio URLs to pick from.
  */
-const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.15, trackUrls = [] }) => {
+const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.075, trackUrls = [] }) => {
   const audioA = useRef(null);
   const audioB = useRef(null);
   const activeSlot = useRef('a');

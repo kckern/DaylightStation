@@ -303,6 +303,7 @@ export function createFitnessRouter(config) {
     // Mode 2: Date range query (since -> today)
     if (since) {
       try {
+        const t0 = Date.now();
         const endDate = new Date().toISOString().split('T')[0]; // Today
         // Parse relative date notation (e.g. "30d" = 30 days ago)
         let startDate = since;
@@ -313,11 +314,25 @@ export function createFitnessRouter(config) {
           startDate = d.toISOString().split('T')[0];
         }
         let sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
+        const tAfterList = Date.now();
         if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
+        const tAfterGroup = Date.now();
         sessions.sort((a, b) => b.startTime - a.startTime); // grouping returns ascending; list is desc
         const maxLimit = parseInt(limit) || 20;
         const limited = sessions.slice(0, maxLimit);
-        
+
+        logger.info?.('fitness.sessions.range.timing', {
+          since,
+          startDate,
+          endDate,
+          total: sessions.length,
+          returned: limited.length,
+          grouped: Boolean(doGroup),
+          listMs: tAfterList - t0,
+          groupMs: tAfterGroup - tAfterList,
+          totalMs: Date.now() - t0
+        });
+
         return res.json({
           sessions: limited,
           since,
@@ -440,9 +455,15 @@ export function createFitnessRouter(config) {
   router.get('/suggestions', async (req, res) => {
     const { gridSize, household } = req.query;
     try {
+      const t0 = Date.now();
       const result = await fitnessSuggestionService.getSuggestions({
         gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
         householdId: household,
+      });
+      logger.info?.('fitness.suggestions.timing', {
+        gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
+        returned: Array.isArray(result?.suggestions) ? result.suggestions.length : null,
+        totalMs: Date.now() - t0
       });
       return res.json(result);
     } catch (err) {

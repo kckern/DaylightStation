@@ -15,11 +15,26 @@ import {
   listYamlFiles,
   listDirsMatching,
   deleteYaml,
-  deleteDir
+  deleteDir,
+  readFile,
+  writeFile,
+  getStats
 } from '#system/utils/FileIO.mjs';
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
+
+// ── Session list index (derived read cache) ──────────────────────────────
+// The /sessions?since=Nd and /suggestions endpoints build per-session summaries
+// by reading+parsing every session YAML in the window. That cost grows linearly
+// with history. The index caches each day's computed summaries in a per-month
+// JSON shard so a range query reads ~one shard per month instead of hundreds of
+// YAML files. It lives in a sibling `_index/` dir (NOT inside the day folders) so
+// writing it never disturbs the day-folder mtimes the staleness check relies on.
+const INDEX_DIR_NAME = '_index';
+// Bump when the cached summary shape changes — a mismatch is treated as empty
+// (rebuilt on demand), so old shards never serve stale-shaped data.
+const INDEX_VERSION = 1;
 
 /**
  * Derive session date from sessionId
@@ -127,6 +142,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     ensureDir(paths.sessionsDir);
     ensureDir(paths.screenshotsDir);
     saveYaml(paths.sessionFilePath, data);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
   }
 
   /**
@@ -178,6 +194,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     });
 
     saveYaml(paths.sessionFilePath, data);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
     return canonicalMemo;
   }
 
@@ -487,14 +504,122 @@ export class YamlSessionDatastore extends ISessionDatastore {
     const dates = await this.listDates(householdId);
     const filtered = dates.filter(d => d >= startDate && d <= endDate);
 
+    // Per-month shards are read/written once each, even though we iterate per day.
+    const shardCache = new Map(); // 'YYYY-MM' -> shard object (fresh per call)
+    const dirtyMonths = new Set();
+    const getShard = (yyyymm) => {
+      if (!shardCache.has(yyyymm)) shardCache.set(yyyymm, this.#loadIndexShard(householdId, yyyymm));
+      return shardCache.get(yyyymm);
+    };
+
     const sessions = [];
     for (const date of filtered) {
-      const dateSessions = await this.findByDate(date, householdId);
-      // Add date field to each session for proper grouping by date
-      sessions.push(...dateSessions.map(s => ({ ...s, date })));
+      const yyyymm = date.slice(0, 7);
+      const shard = getShard(yyyymm);
+      const mtimeMs = this.#dayDirMtimeMs(householdId, date);
+      const entry = shard.days?.[date];
+
+      let daySessions;
+      if (entry && entry.mtimeMs === mtimeMs && Array.isArray(entry.sessions)) {
+        daySessions = entry.sessions; // HIT — folder unchanged since indexed
+      } else {
+        // MISS (new/changed day, unindexed day, or external Dropbox sync): rebuild
+        // this one day from the YAML files and refresh its shard entry.
+        daySessions = await this.findByDate(date, householdId);
+        shard.days = shard.days || {};
+        shard.days[date] = { mtimeMs, sessions: daySessions };
+        dirtyMonths.add(yyyymm);
+      }
+      // findByDate already stamps `date`; ensure it for safety on cached entries.
+      for (const s of daySessions) sessions.push(s.date ? s : { ...s, date });
+    }
+
+    for (const yyyymm of dirtyMonths) {
+      this.#saveIndexShard(householdId, yyyymm, shardCache.get(yyyymm));
     }
 
     return sessions.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+  }
+
+  // ── Index internals ─────────────────────────────────────────────────────
+
+  /**
+   * Path to a month's index shard: history/fitness/_index/{YYYY-MM}.json
+   * @param {string} householdId
+   * @param {string} yyyymm - 'YYYY-MM'
+   * @returns {string}
+   */
+  #indexShardPath(householdId, yyyymm) {
+    return path.join(
+      this.configService.getHouseholdPath('history/fitness', householdId),
+      INDEX_DIR_NAME,
+      `${yyyymm}.json`
+    );
+  }
+
+  /**
+   * Load a month shard, or an empty shard if missing/corrupt/version-mismatched.
+   * The index is a disposable cache — any problem reading it just means a rebuild.
+   * @returns {{ version: number, days: Record<string, { mtimeMs: number|null, sessions: Object[] }> }}
+   */
+  #loadIndexShard(householdId, yyyymm) {
+    const empty = { version: INDEX_VERSION, days: {} };
+    const raw = readFile(this.#indexShardPath(householdId, yyyymm));
+    if (!raw) return empty;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== INDEX_VERSION || typeof parsed.days !== 'object' || parsed.days === null) {
+        return empty;
+      }
+      return parsed;
+    } catch {
+      return empty;
+    }
+  }
+
+  /**
+   * Persist a month shard. Failures are swallowed: the index is derived data, so
+   * a read-only mount or transient write error must never break the read path
+   * (the next read simply rebuilds the affected days).
+   */
+  #saveIndexShard(householdId, yyyymm, shard) {
+    try {
+      writeFile(this.#indexShardPath(householdId, yyyymm), JSON.stringify(shard));
+    } catch {
+      // intentionally ignored — see doc comment
+    }
+  }
+
+  /**
+   * mtime of a day's session folder. Changes whenever a session file is added or
+   * removed in that day, which is the staleness signal the cache checks against.
+   * @returns {number|null} mtimeMs, or null if the folder doesn't exist
+   */
+  #dayDirMtimeMs(householdId, date) {
+    const dir = path.join(
+      this.configService.getHouseholdPath('history/fitness', householdId),
+      date
+    );
+    const stats = getStats(dir);
+    return stats ? stats.mtimeMs : null;
+  }
+
+  /**
+   * Drop a day from its month shard so the next read rebuilds it. Called after
+   * every local mutation (save/appendVoiceMemo/delete) so in-place edits — which
+   * don't change the day-folder mtime — are still reflected. No-op if the shard
+   * or day entry is absent.
+   * @param {string|null} date - 'YYYY-MM-DD'
+   * @param {string} householdId
+   */
+  #invalidateIndexDay(date, householdId) {
+    if (!date) return;
+    const yyyymm = date.slice(0, 7);
+    const shard = this.#loadIndexShard(householdId, yyyymm);
+    if (shard.days && Object.prototype.hasOwnProperty.call(shard.days, date)) {
+      delete shard.days[date];
+      this.#saveIndexShard(householdId, yyyymm, shard);
+    }
   }
 
   /**
@@ -535,6 +660,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // Also remove the screenshots directory (one level up to get the session dir)
     const sessionMediaDir = path.dirname(paths.screenshotsDir);
     deleteDir(sessionMediaDir);
+    this.#invalidateIndexDay(paths.sessionDate, householdId);
   }
 }
 
