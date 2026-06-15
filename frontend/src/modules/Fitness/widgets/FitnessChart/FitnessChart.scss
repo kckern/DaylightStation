@@ -51,7 +51,8 @@
   .race-chart__scale-toggle {
     position: absolute;
     top: 1.5rem;
-    left: 2.5rem;
+    right: 0.75rem;
+    left: auto;
     z-index: 5;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -77,12 +78,22 @@
 
   .race-chart__focus-filter {
     position: absolute;
-    top: 3.5rem;
-    left: 2.5rem;
+    bottom: 3rem;
+    right: 0.5rem;
+    top: auto;
+    left: auto;
     z-index: 5;
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
     gap: 2px;
+  }
+
+  .race-chart__axis-title {
+    fill: rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
   }
 
   .race-chart__focus-filter-item {
