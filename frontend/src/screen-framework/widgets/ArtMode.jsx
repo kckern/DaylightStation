@@ -21,6 +21,10 @@ const EXIT_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
 const NEXT_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
 const BRIGHTER_KEYS = new Set(['ArrowUp']);
 const DIMMER_KEYS = new Set(['ArrowDown']);
+// Keys that cycle the view mode (ratio/frame). Tab is the universal fallback;
+// screens add device-specific keys via screensaver `props.cycleKeys` (e.g. the
+// living-room Shield remote's Rewind arrives as raw `MediaRewind`, keyCode 227).
+const DEFAULT_CYCLE_KEYS = ['Tab'];
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
@@ -57,7 +61,7 @@ function ArtMode({
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
-  advance = 'hold', rawKeys = true,
+  advance = 'hold', rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -253,6 +257,11 @@ function ArtMode({
   }, [goNext, goPrev]));
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
+  // View-mode cycle keys: configured per-screen, always including the Tab fallback.
+  const cycleKeySet = useMemo(
+    () => new Set([...(Array.isArray(cycleKeys) ? cycleKeys : DEFAULT_CYCLE_KEYS), 'Tab']),
+    [cycleKeys],
+  );
   // Raw-key control for keyboard / remotes whose buttons arrive as standard keys.
   // Disabled (rawKeys:false) on presets shown on macro-keypad screens, where those
   // keypads emit semantic ActionBus actions AND spurious companion nav keys — letting
@@ -261,14 +270,14 @@ function ArtMode({
     if (!rawKeys) return undefined;
     const onKey = (e) => {
       const k = e.key;
-      const isTab = k === 'Tab';
-      if (!(EXIT_KEYS.has(k) || NEXT_KEYS.has(k) || BRIGHTER_KEYS.has(k) || DIMMER_KEYS.has(k) || isTab)) return;
+      const isCycle = cycleKeySet.has(k);
+      if (!(EXIT_KEYS.has(k) || NEXT_KEYS.has(k) || BRIGHTER_KEYS.has(k) || DIMMER_KEYS.has(k) || isCycle)) return;
       e.preventDefault();
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-      if (isTab) {
+      if (isCycle) {
         setModeIdx((i) => (e.shiftKey ? prevMode(i) : nextMode(i)));
-        logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next' });
+        logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next', key: k });
       } else if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
       else if (NEXT_KEYS.has(k)) { logger.info('artmode.shuffle', { key: k }); (k === 'ArrowLeft' ? goPrev : goNext)(); }
       else if (BRIGHTER_KEYS.has(k)) setManualBias((b) => round2(b - DIM_STEP));
@@ -276,7 +285,7 @@ function ArtMode({
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [exit, goNext, goPrev, logger, rawKeys]);
+  }, [exit, goNext, goPrev, logger, rawKeys, cycleKeySet]);
 
   useWebSocketSubscription([ambientTopic], (msg) => {
     if (!ambientCurve || !msg) return;

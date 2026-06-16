@@ -44,11 +44,15 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
       return enriched.map(({ item, exif }) => {
         const localId = item.localId || item.id?.replace?.('immich:', '') || item.id;
         const created = exif?.capturedAt || item.metadata?.capturedAt || null;
+        // Display label uses wall-clock (`localDateTime`) so a 10am photo prints
+        // as 10am regardless of server timezone; `created` (a true UTC instant) is
+        // kept for timestamps/sibling-date math. See photoLabels.mjs TIMEZONE CONTRACT.
+        const wallClock = exif?.localDateTime || item.metadata?.localDateTime || created;
         const location = exif?.location || item.metadata?.location || null;
         const people = exif?.people || [];
         const peopleNames = people.map(p => typeof p === 'string' ? p : p.name);
-        const title = buildPhotoTitle(peopleNames, location, created);
-        const subtitle = formatPhotoDate(created);
+        const title = buildPhotoTitle(peopleNames, location, wallClock);
+        const subtitle = formatPhotoDate(wallClock);
         return {
           id: `immich:${localId}`,
           tier: query.tier || 'scrapbook',
@@ -177,6 +181,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
           item,
           exif: viewable?.metadata ? {
             capturedAt: viewable.metadata.capturedAt,
+            localDateTime: viewable.metadata.localDateTime,
             location: viewable.metadata.exif?.city || null,
             imageWidth: viewable.width || null,
             imageHeight: viewable.height || null,

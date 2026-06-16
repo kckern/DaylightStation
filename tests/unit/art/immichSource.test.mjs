@@ -58,11 +58,39 @@ describe('createImmichSource.resolveCandidates', () => {
     expect(c[0].meta.artist).toMatch(/15 Aug, 2019/);
   });
 
+  it('uses orientation-corrected dims: an orientation-6 portrait is kind=portrait', async () => {
+    const client = makeClient();
+    // Raw exif reads landscape (3264×1836) but Immich's corrected top-level dims
+    // are portrait (1836×3264) — the displayed/preview orientation. The candidate
+    // must follow the corrected dims, else portraits hang in landscape frames.
+    client.getAlbum = vi.fn(async () => ({ assets: [
+      asset({ id: 'rot', width: 1836, height: 3264, exifInfo: { exifImageWidth: 3264, exifImageHeight: 1836, orientation: '6', city: 'Lisbon' } }),
+    ] }));
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
+    const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
+    expect(c[0].width).toBe(1836);
+    expect(c[0].height).toBe(3264);
+    expect(c[0].kind).toBe('portrait');
+  });
+
+  it('prefers localDateTime (wall-clock) over dateTimeOriginal for the placard date', async () => {
+    const client = makeClient();
+    // dateTimeOriginal is a UTC instant; localDateTime is wall-clock. The placard
+    // must render the wall-clock verbatim (Aug 15, not the shifted instant).
+    client.getAlbum = vi.fn(async () => ({ assets: [
+      asset({ id: 'wc', localDateTime: '2019-08-15T08:00:00Z', exifInfo: { exifImageWidth: 1600, exifImageHeight: 1000, dateTimeOriginal: '2019-08-15T15:00:00Z', city: 'Lisbon' } }),
+    ] }));
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
+    const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
+    expect(c[0].meta.artist).toBe('Thu 15 Aug, 2019 8:00am');  // wall-clock 08:00, not 15:00
+    expect(c[0].meta.title).toBe('Morning in Lisbon');         // 8h → Morning
+  });
+
   it('person selector resolves a name to id and fetches assets', async () => {
     const client = makeClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', person: 'Felix' });
-    expect(client.getPersonAssets).toHaveBeenCalledWith('per1');
+    expect(client.getPersonAssets).toHaveBeenCalledWith('per1', 100, { withExif: true, withPeople: true });
     expect(c[0].id).toBe('immich:a2');
   });
 
@@ -70,8 +98,23 @@ describe('createImmichSource.resolveCandidates', () => {
     const client = makeClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', search: 'sunset' });
-    expect(client.smartSearch).toHaveBeenCalledWith('sunset');
+    expect(client.smartSearch).toHaveBeenCalledWith('sunset', 50, { withExif: true, withPeople: true });
     expect(c[0].id).toBe('immich:a3');
+  });
+
+  it('favorites selector pages through isFavorite search, requesting exif+people', async () => {
+    const client = makeClient();
+    const page1 = [asset({ id: 'f1' }), asset({ id: 'f2' })];
+    const page2 = [asset({ id: 'f3' })];
+    client.searchMetadata = vi.fn(async ({ page }) => (
+      page === 1 ? { items: page1, nextPage: 2 } : { items: page2, nextPage: null }
+    ));
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
+    const c = await src.resolveCandidates({ source: 'immich', isFavorite: true });
+    expect(client.searchMetadata).toHaveBeenCalledTimes(2);
+    expect(client.searchMetadata.mock.calls[0][0]).toMatchObject({ isFavorite: true, withExif: true, withPeople: true, page: 1 });
+    expect(client.searchMetadata.mock.calls[1][0]).toMatchObject({ page: 2 });
+    expect(c.map((x) => x.id).sort()).toEqual(['immich:f1', 'immich:f2', 'immich:f3']);
   });
 
   it('drops assets without dimensions', async () => {
@@ -126,6 +169,8 @@ describe('createImmichSource people selector', () => {
     const c = await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo', 'Alan', 'Soren'], minPeople: 2 });
     expect(client.searchMetadata).toHaveBeenCalledTimes(6);
     expect(client.searchMetadata.mock.calls[0][0].personIds).toHaveLength(2);
+    // exif (city/date) + people must be requested so the placard isn't just a day-period.
+    expect(client.searchMetadata.mock.calls[0][0]).toMatchObject({ withExif: true, withPeople: true });
     const ids = c.map((x) => x.id).sort();
     expect(ids).toEqual(['immich:a1', 'immich:a2']);
     expect(c[0].width).toBe(1600);
