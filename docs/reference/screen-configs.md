@@ -124,3 +124,55 @@ weather:
 | health | /api/v1/health | Health metrics |
 | menu | (configured) | Navigation menu |
 | player | (actions) | Media player |
+| art | /api/v1/art/featured | ArtMode framed-artwork screensaver/scene |
+
+## Screensaver
+
+A screen may declare a `screensaver:` block. The screensaver shows a widget as a
+lowest-priority fullscreen overlay on boot (`showOnLoad`) and after inactivity
+(`idle`), behind the menu — the splash / lock / ambient surface.
+
+```yaml
+screensaver:
+  widget: art            # widget registry key (ArtMode is `art`)
+  idle: 180              # seconds of inactivity before showing (0 = never)
+  showOnLoad: true       # show immediately at boot
+  interactive: true      # widget owns its own input + calls onExit (ArtMode does)
+  preset: gallery-silent # ArtMode preset (resolved from artmode.yml)
+```
+
+For ArtMode, the screensaver references a **preset** by key instead of inlining
+props. Presets live in `data/household/config/artmode.yml`; each bundles a
+collection, optional music, and display options. The screens API expands
+`screensaver.preset` into `screensaver.props` when it serves the config; an inline
+`screensaver.props` block (if present) shallow-overrides the preset. The passive
+screensaver is silent by convention (e.g. `gallery-silent` has `music: null`).
+
+A screen with no `screensaver:` block has no passive screensaver — ad-hoc scenes
+(below) still work.
+
+## Triggering an ArtMode scene (any screen, any target)
+
+ArtMode can be shown ad hoc — with music — by dispatching a **display** content
+intent through the device load API:
+
+```
+GET /api/v1/device/<deviceId>/load?display=art:<preset>
+```
+
+This works on **any** screen (a `screensaver:` block is not required) and **any**
+target, because delivery is transport-agnostic:
+
+- **FullyKiosk** targets receive it as a `?display=art:<preset>` URL parameter
+  (consumed by the screen's autoplay parser).
+- **WebSocket** targets receive it as a structured `display` command on their topic
+  (routed by the screen's command handler).
+
+Both converge on a `display:content` action handled centrally by the screen's action
+handler, which resolves the preset (`GET /api/v1/art/preset/<preset>`) and shows
+ArtMode as a one-shot fullscreen scene. On exit it returns to the screen's normal
+content; where a passive screensaver is configured, its idle timer resumes the
+default afterward.
+
+This is distinct from the passive `screensaver.preset` (idle/boot, silent): the
+trigger is an explicit, on-demand presentation.
