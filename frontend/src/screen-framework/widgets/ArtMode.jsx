@@ -8,6 +8,8 @@ import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows } fro
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
+import { useScreenAmbient } from '../ambient/ScreenAmbientContext.jsx';
+import { resolveAmbient } from './resolveAmbient.js';
 import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import './ArtMode.css';
 
@@ -51,8 +53,11 @@ function ArtMode({
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
-  const ambientCurve = ambient?.curve ?? null;
-  const [autoDim, setAutoDim] = useState(() => (ambientCurve ? luxToDim(ambient?.defaultLux ?? 0, ambientCurve) : 0));
+  const screenAmbient = useScreenAmbient();
+  const resolvedAmbient = useMemo(() => resolveAmbient(screenAmbient, ambient), [screenAmbient, ambient]);
+  const ambientCurve = resolvedAmbient?.curve ?? null;
+  const ambientTopic = resolvedAmbient?.topic ?? 'ambient';
+  const [autoDim, setAutoDim] = useState(() => (ambientCurve ? luxToDim(resolvedAmbient?.defaultLux ?? 0, ambientCurve) : 0));
   const [manualBias, setManualBias] = useState(0);
   const dim = round2(Math.max(0, Math.min(DIM_MAX, autoDim + manualBias)));
   const [revealed, setRevealed] = useState(false);   // curtain open?
@@ -162,10 +167,10 @@ function ArtMode({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [exit, load, logger]);
 
-  useWebSocketSubscription(['ambient'], (msg) => {
+  useWebSocketSubscription([ambientTopic], (msg) => {
     if (!ambientCurve || !msg) return;
     setAutoDim(luxToDim(Number(msg.lux), ambientCurve));
-  }, [ambientCurve]);
+  }, [ambientCurve, ambientTopic]);
 
   const matteVars = useMemo(() => {
     const m = art?.matte;

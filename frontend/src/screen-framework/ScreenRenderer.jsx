@@ -18,6 +18,7 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
+import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
@@ -361,6 +362,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             fixed={config.volume?.fixed}
           >
             <MasterVolumeToast />
+            <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>
               <ScreenOverlayProvider>
                 <PipManager config={config.pip}>
@@ -376,6 +378,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                 </PipManager>
               </ScreenOverlayProvider>
             </MenuNavigationProvider>
+            </ScreenAmbientProvider>
           </ScreenVolumeProvider>
         </div>
       )}
