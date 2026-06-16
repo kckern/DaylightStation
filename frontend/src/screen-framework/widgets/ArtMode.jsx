@@ -42,6 +42,8 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  *   matMargin       mat band % of height (default 4)
  *   cropMaxPerSide  max cover-crop per side, % (default 8)
  *   ambient         { defaultLux, curve } for auto-dim (optional)
+ *   advance         image-rotation mode: 'hold' (static, default) or 'track' (new
+ *                   artwork each time the background music advances to a new song)
  *   defaultViewMode initial view mode name (default 'gallery')
  *   measureText     optional (s)=>px text measurer (test seam; canvas in browser)
  */
@@ -50,6 +52,7 @@ function ArtMode({
   frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, music = null, collection = null,
+  advance = 'hold',
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -145,6 +148,17 @@ function ArtMode({
   // honoring the minimum dwell so the effect never flashes by).
   useEffect(() => { if (failed) scheduleReveal(); }, [failed, scheduleReveal]);
   useEffect(() => { logger.info('artmode.mount', { placard }); load(); }, [logger, load, placard]);
+
+  // Image-advance mode. `advance: 'hold'` (default) keeps one artwork up until
+  // remount/refresh. `advance: 'track'` picks a fresh artwork each time the background
+  // music moves to a new song — the first track keeps the mount's artwork.
+  const firstTrackRef = useRef(true);
+  useEffect(() => {
+    if (advance !== 'track' || !musicTrack) return;
+    if (firstTrackRef.current) { firstTrackRef.current = false; return; }
+    logger.info('artmode.advance', { trigger: 'track', title: musicTrack.title });
+    load();
+  }, [musicTrack, advance, load, logger]);
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
   useEffect(() => {
