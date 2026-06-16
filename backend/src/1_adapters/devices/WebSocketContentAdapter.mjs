@@ -54,6 +54,31 @@ export class WebSocketContentAdapter {
     const startTime = Date.now();
     this.#metrics.loads++;
 
+    // Display/scene delivery: `display=<contentId>` carries no media contentId;
+    // broadcast a `display` command the screen routes to display:content.
+    if (typeof query.display === 'string' && query.display.length > 0) {
+      try {
+        const commandId = randomUUID();
+        const envelope = buildCommandEnvelope({
+          targetDevice: this.#deviceId,
+          command: 'display',
+          commandId,
+          params: { contentId: query.display },
+        });
+        await this.#wsBus.broadcast(this.#topic, envelope);
+        this.#logger.info?.('websocket.load.display', {
+          topic: this.#topic, deviceId: this.#deviceId, commandId, contentId: query.display,
+        });
+        return { ok: true, topic: this.#topic, commandId, loadTimeMs: Date.now() - startTime };
+      } catch (error) {
+        this.#metrics.errors++;
+        this.#logger.error?.('websocket.load.error', {
+          topic: this.#topic, deviceId: this.#deviceId, error: error.message,
+        });
+        return { ok: false, topic: this.#topic, error: error.message };
+      }
+    }
+
     const resolved = resolveContentId(query);
 
     if (!resolved) {
