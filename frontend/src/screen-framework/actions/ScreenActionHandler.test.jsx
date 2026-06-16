@@ -38,7 +38,9 @@ vi.mock('../../modules/Player/Player.jsx', () => ({
 // Stub the 'art' widget so the scene overlay renders without ArtMode's deps.
 vi.mock('../widgets/registry.js', () => ({
   getWidgetRegistry: () => ({
-    get: () => (props) => <div data-testid="art-scene" data-collection={props.collection || ''} />,
+    get: () => (props) => (
+      <button data-testid="art-scene" data-collection={props.collection || ''} onClick={props.onExit}>art</button>
+    ),
   }),
 }));
 
@@ -605,7 +607,7 @@ describe('ScreenActionHandler', () => {
   });
 
   it('engages the art scene on a display:content art: id', async () => {
-    vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all', music: { queue: 'plex:622894' } });
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all', music: { queue: 'plex:622894' } });
     const { findByTestId, queryByTestId } = render(
       <ScreenOverlayProvider>
         <ScreenActionHandler />
@@ -615,12 +617,12 @@ describe('ScreenActionHandler', () => {
     await act(async () => { getActionBus().emit('display:content', { id: 'art:classical-evening' }); });
     const el = await findByTestId('art-scene');
     expect(el.dataset.collection).toBe('all');
-    expect(apiModule.DaylightAPI).toHaveBeenCalledWith('api/v1/art/preset/classical-evening');
+    expect(spy).toHaveBeenCalledWith('api/v1/art/preset/classical-evening');
+    spy.mockRestore();
   });
 
   it('ignores non-art display:content ids', async () => {
     const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({});
-    spy.mockClear();   // shared spy — drop any call history from prior tests
     render(
       <ScreenOverlayProvider>
         <ScreenActionHandler />
@@ -629,6 +631,49 @@ describe('ScreenActionHandler', () => {
     act(() => { getActionBus().emit('display:content', { id: 'immich:abc' }); });
     await Promise.resolve();
     expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('does not engage when the preset fetch fails (404)', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockRejectedValue(new Error('HTTP 404'));
+    const { queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:nope' }); });
+    await Promise.resolve();
+    expect(queryByTestId('art-scene')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('onExit dismisses the scene', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+    const el = await findByTestId('art-scene');
+    act(() => { el.click(); });   // stub's onClick = the injected onExit
+    expect(queryByTestId('art-scene')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('the scene replaces an existing fullscreen overlay (priority high)', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => { getActionBus().emit('menu:open', { menuId: 'music' }); });
+    expect(queryByTestId('menu-stack')).toBeTruthy();
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+    await findByTestId('art-scene');
+    expect(queryByTestId('menu-stack')).toBeNull();   // replaced → priority:'high' worked
+    spy.mockRestore();
   });
 
   it('media:queue-op op=play-next with no active player mounts a fresh Player', () => {
