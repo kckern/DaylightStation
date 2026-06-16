@@ -161,6 +161,13 @@ function validateCommandParams(command, params, errors) {
     return;
   }
 
+  if (command === 'display') {
+    if (!isStr(p.contentId)) {
+      errors.push('params.contentId: required non-empty string');
+    }
+    return;
+  }
+
   if (command === 'system') {
     if (!isSystemAction(p.action)) {
       errors.push('params.action: required system action');
