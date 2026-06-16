@@ -8,6 +8,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { buildPhotoTitle, formatPhotoDate } from '../../content/gallery/immich/photoLabels.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
   #contentQueryPort;
@@ -46,8 +47,8 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
         const location = exif?.location || item.metadata?.location || null;
         const people = exif?.people || [];
         const peopleNames = people.map(p => typeof p === 'string' ? p : p.name);
-        const title = this.#buildPhotoTitle(peopleNames, location, created);
-        const subtitle = created ? this.#formatDate(created) : null;
+        const title = buildPhotoTitle(peopleNames, location, created);
+        const subtitle = formatPhotoDate(created);
         return {
           id: `immich:${localId}`,
           tier: query.tier || 'scrapbook',
@@ -188,61 +189,4 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
     }));
   }
 
-  #buildPhotoTitle(people, location, created) {
-    const names = people.filter(n => n && n.trim());
-    if (names.length > 0) {
-      const parts = [this.#formatPeopleList(names)];
-      if (location) parts.push(location);
-      return parts.join(' \u2022 ');
-    }
-    if (location && created) {
-      const period = this.#getTimeOfDayLabel(created);
-      return period ? `${period} in ${location}` : location;
-    }
-    if (location) return location;
-    return created ? this.#formatDayPeriod(created) : 'Memory';
-  }
-
-  #formatPeopleList(names) {
-    if (names.length === 1) return names[0];
-    if (names.length === 2) return `${names[0]} and ${names[1]}`;
-    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
-  }
-
-  #getTimeOfDayLabel(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return null;
-    const h = d.getHours();
-    if (h < 6) return 'Late Night';
-    if (h < 9) return 'Morning';
-    if (h < 11) return 'Mid-Morning';
-    if (h < 13) return 'Lunchtime';
-    if (h < 17) return 'Afternoon';
-    if (h < 21) return 'Evening';
-    return 'Night';
-  }
-
-  #formatDayPeriod(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return 'Memory';
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const label = this.#getTimeOfDayLabel(iso);
-    return `${days[d.getDay()]} ${label}`;
-  }
-
-  #formatDate(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return 'Memory';
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = days[d.getDay()];
-    const date = d.getDate();
-    const month = months[d.getMonth()];
-    const year = d.getFullYear();
-    let hours = d.getHours();
-    const mins = String(d.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12 || 12;
-    return `${day} ${date} ${month}, ${year} ${hours}:${mins}${ampm}`;
-  }
 }

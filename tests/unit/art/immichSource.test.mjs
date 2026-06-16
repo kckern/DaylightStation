@@ -31,8 +31,9 @@ describe('createImmichSource.resolveCandidates', () => {
     expect(c[0].height).toBe(1000);
     expect(c[0].kind).toBe('landscape');
     expect(c[0].image).toBe('/api/v1/proxy/immich/assets/a1/thumbnail?size=preview');
-    expect(c[0].meta.title).toBe('Lisbon');          // city (no people → location only)
-    expect(c[0].meta.artist).toContain('2019');      // formatted date
+    // No people → time-of-day in the place up top (TZ-dependent period, fixed format).
+    expect(c[0].meta.title).toMatch(/ in Lisbon$/);
+    expect(c[0].meta.artist).toMatch(/^\w{3} 15 Aug, 2019 /); // full Feed-style date
   });
 
   it('labels people + location on the title line and the date alone beneath (no dup date)', async () => {
@@ -43,17 +44,18 @@ describe('createImmichSource.resolveCandidates', () => {
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
     expect(c[0].meta.title).toBe('Felix and Milo • Lisbon'); // people + location
-    expect(c[0].meta.artist).toBe('August 2019');            // date only — no people, no city
+    expect(c[0].meta.artist).toMatch(/15 Aug, 2019/);        // date only — no people, no city
+    expect(c[0].meta.artist).not.toMatch(/Lisbon|Felix/);    // place/people not duplicated below
     expect(c[0].meta.date).toBeNull();                       // folded into artist; not repeated
   });
 
-  it('falls back to location only when no people are tagged', async () => {
+  it('uses time-of-day in the place when no people are tagged', async () => {
     const client = makeClient();
     client.getAlbum = vi.fn(async () => ({ assets: [asset({ id: 'np' })] }));
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
-    expect(c[0].meta.title).toBe('Lisbon');
-    expect(c[0].meta.artist).toBe('August 2019');
+    expect(c[0].meta.title).toMatch(/^(Late Night|Morning|Mid-Morning|Lunchtime|Afternoon|Evening|Night) in Lisbon$/);
+    expect(c[0].meta.artist).toMatch(/15 Aug, 2019/);
   });
 
   it('person selector resolves a name to id and fetches assets', async () => {
