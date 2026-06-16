@@ -361,7 +361,12 @@ export function ScreenActionHandler({ actions = {} }) {
         if (!Component) { logger().warn('action.scene.widget-not-found'); return; }
         showOverlay(
           Component,
-          { ...props, onExit: () => dismissOverlay('fullscreen') },
+          // Triggered scenes run on adapter-driven screens (numpad/remote → ActionBus),
+          // so disable raw-key handling by default — the macro-keypads' companion nav
+          // keys would otherwise double-trigger view-mode/shuffle. A preset may opt back
+          // in with rawKeys:true. (The idle screensaver mounts ArtMode separately and
+          // keeps rawKeys:true.)
+          { rawKeys: false, ...props, onExit: () => dismissOverlay('fullscreen') },
           { mode: 'fullscreen', priority: 'high' },
         );
         logger().info('action.scene.show', { preset });

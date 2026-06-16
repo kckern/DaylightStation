@@ -251,10 +251,15 @@
 /* ---- Background audio element (no UI) ---- */
 .artmode__audio { display: none; }
 
-/* ---- Music plaque: a brass nameplate on the TOP frame rail (static) ---- */
+/* ---- Music plaque: a nameplate on the TOP frame rail (static) ----
+   Desaturated so it reads as cool steel/silver, distinct from the gold/brass art
+   nameplate below. saturate(0) strips the brass warmth from the metal photo,
+   gradient, screws, and warm sheen in one pass; a touch of brightness/contrast
+   keeps it reading as polished silver rather than flat pewter. */
 .artmode__music-plaque {
   top: 2.4%;
   bottom: auto;
   left: 50%;
   max-width: 56%;
+  filter: saturate(0) brightness(1.12) contrast(1.03);
 }
