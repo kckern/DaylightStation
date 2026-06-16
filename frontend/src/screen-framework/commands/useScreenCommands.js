@@ -106,6 +106,12 @@ export function useScreenCommands(wsConfig, actionBus, screenId) {
       return;
     }
 
+    if (command === 'display') {
+      logger().info('commands.display', { commandId, params });
+      bus.emit('display:content', { id: params.contentId, commandId });
+      return;
+    }
+
     if (command === 'config') {
       const { setting, value } = params;
       logger().info('commands.config', { commandId, params });
