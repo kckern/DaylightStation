@@ -10,16 +10,21 @@
  *
  * Returns { mode: 'single'|'diptych', matte, panels: [{ image, meta, color }] }.
  */
+import path from 'path';
+import { promises as fs } from 'fs';
+import yaml from 'js-yaml';
 import { deriveMatte, rgbToHsv } from '../../../2_domains/art/deriveMatte.mjs';
 
 const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const meanRGB = (a, b) => [0, 1, 2].map((i) => Math.round((a[i] + b[i]) / 2));
 
-export function createArtAdapter({ imgBasePath, logger = console, collections = {}, artSource, immichSource = null } = {}) {
+export function createArtAdapter({ imgBasePath, dataPath = null, logger = console, collections = {}, artSource, immichSource = null } = {}) {
   // Lazily build the default art source from imgBasePath when one isn't injected
   // (tests inject a fake; production injects the real source — see app.mjs).
   let _artSource = artSource || null;
   const colorCache = new Map();   // candidate id → { avg, color }
+  const thumbCache = new Map();   // collection name → representative image path (or null)
+  let _presets = null;            // lazily-loaded artmode.yml presets map
 
   async function getArtSource() {
     if (_artSource) return _artSource;
@@ -133,7 +138,44 @@ export function createArtAdapter({ imgBasePath, logger = console, collections = 
     };
   }
 
-  return { selectFeatured };
+  // Presets live in artmode.yml (`presets.<name>.collection`). Loaded once; a
+  // missing file is non-fatal (thumbnails just fall back to the raw key).
+  async function loadPresets() {
+    if (_presets) return _presets;
+    if (!dataPath) { _presets = {}; return _presets; }
+    try {
+      const raw = await fs.readFile(path.join(dataPath, 'household', 'config', 'artmode.yml'), 'utf-8');
+      _presets = (yaml.load(raw) || {}).presets || {};
+    } catch (err) {
+      if (err.code !== 'ENOENT') logger.warn?.('art.presets.read_failed', { error: err.message });
+      _presets = {};
+    }
+    return _presets;
+  }
+
+  // Representative thumbnail for a menu card: maps a preset → its collection,
+  // then picks a DETERMINISTIC candidate (first by sorted id — stable across
+  // loads, no color analysis). Returns a `/media/img/...` path or null. Cached
+  // per collection. Used by the /display/art:<preset> route.
+  async function getThumbnailUrl(preset) {
+    const presets = await loadPresets();
+    const collection = presets[preset]?.collection ?? preset;   // also accept a raw collection key
+    if (thumbCache.has(collection)) return thumbCache.get(collection);
+    let image = null;
+    try {
+      const cands = await candidatesFor(collection);
+      if (cands.length) {
+        const chosen = [...cands].sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+        image = chosen.image;
+      }
+    } catch (err) {
+      logger.warn?.('art.thumbnail.failed', { preset, collection, error: err.message });
+    }
+    thumbCache.set(collection, image);
+    return image;
+  }
+
+  return { source: 'art', selectFeatured, getThumbnailUrl };
 }
 
 export default createArtAdapter;

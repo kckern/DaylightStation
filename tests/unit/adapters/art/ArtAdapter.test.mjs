@@ -39,7 +39,7 @@ describe('ArtAdapter', () => {
     expect(r.matte.branch).toBe('match');
   });
 
-  it('panoramic is excluded; portrait/square are eligible', async () => {
+  it('panoramic is excluded; only taller-than-wide works are portraits', async () => {
     await writeArt('Pano', [10, 10, 10], metaYaml(3000, 1000));
     await writeArt('Land', [10, 10, 10], metaYaml(1600, 1000));
     await writeArt('Square', [10, 10, 10], metaYaml(1000, 1000));
@@ -48,8 +48,10 @@ describe('ArtAdapter', () => {
     let pool;
     await adapter.selectFeatured({ pick: (a) => { pool = a; return a.find((e) => e.kind === 'landscape'); } });
     expect(pool.map((e) => e.id).sort()).toEqual(['Land', 'Square', 'Tall']);
-    expect(pool.find((e) => e.id === 'Square').kind).toBe('portrait');
+    // PORTRAIT_RATIO = 1: a square hangs single (landscape); only Tall pairs.
+    expect(pool.find((e) => e.id === 'Square').kind).toBe('landscape');
     expect(pool.find((e) => e.id === 'Land').kind).toBe('landscape');
+    expect(pool.find((e) => e.id === 'Tall').kind).toBe('portrait');
   });
 
   it('portrait primary → diptych with a companion + shared matte', async () => {

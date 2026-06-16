@@ -172,6 +172,7 @@ export class SendMorningDebrief {
           await this.#debriefRepository.appendDebrief({
             date: debrief.date,
             timestamp: nowTs24(),
+            headline: debrief.headline || null,
             summary: debrief.summary,
             categories: debrief.categories,
             sources: debrief.lifelog?._meta?.sources || [],

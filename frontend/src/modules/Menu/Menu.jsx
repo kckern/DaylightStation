@@ -966,7 +966,7 @@ function MenuItems({
   // the memo for all 34 items on every progressive load increment, defeating React.memo.
   // Instead, imageReady is passed as a separate prop to MenuItem.
   const itemData = useMemo(() => items.map((item, index) => {
-    const actionObj = item?.play || item?.queue || item?.list || item?.open || {};
+    const actionObj = item?.play || item?.queue || item?.list || item?.open || item?.display || {};
     const itemContentId = actionObj?.contentId;
     const plex = actionObj?.plex;
     const itemKey = findKeyForItem(item) || `${index}-${item.label}`;

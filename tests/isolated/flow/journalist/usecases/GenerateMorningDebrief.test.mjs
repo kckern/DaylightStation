@@ -54,6 +54,40 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
     expect(result.summary).toBe(raw);
   });
 
+  describe('existing-debrief re-send path', () => {
+    const buildWithExisting = (existing) =>
+      new GenerateMorningDebrief({
+        lifelogAggregator: mockLifelogAggregator,
+        aiGateway: mockAiGateway,
+        debriefRepository: { getDebriefByDate: vi.fn().mockResolvedValue(existing) },
+        logger: mockLogger,
+      });
+
+    it('returns the persisted headline so re-sends keep the teaser, without an AI call', async () => {
+      const result = await buildWithExisting({
+        date: '2026-05-31',
+        summary: '🌅 Morning\n• 6:30a Bishopric meeting, 1h',
+        headline: 'Was the Korean ever going to stick?',
+        summaries: [],
+      }).execute({ username: 'kckern', date: '2026-05-31' });
+
+      expect(result.success).toBe(true);
+      expect(result.headline).toBe('Was the Korean ever going to stick?');
+      expect(mockAiGateway.chat).not.toHaveBeenCalled();
+    });
+
+    it('returns a null headline for legacy persisted debriefs that lack one', async () => {
+      const result = await buildWithExisting({
+        date: '2026-05-31',
+        summary: '🌅 Morning\n• 6:30a Bishopric meeting, 1h',
+        summaries: [],
+      }).execute({ username: 'kckern', date: '2026-05-31' });
+
+      expect(result.success).toBe(true);
+      expect(result.headline).toBeNull();
+    });
+  });
+
   describe('hedge guard', () => {
     it('detects banned hedge words (containsHedge)', () => {
       expect(GenerateMorningDebrief.containsHedge('Looks like a big day')).toBe(true);

@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
 import { Jimp } from 'jimp';
 import { createArtAdapter } from '../../../backend/src/1_adapters/content/art/ArtAdapter.mjs';
 
@@ -118,5 +121,65 @@ describe('ArtAdapter.selectFeatured', () => {
     expect(r.mode).toBe('single');
     expect(r.panels[0].image).toBe('/p/x?size=preview');
     expect(r.panels[0].meta.title).toBe('Lisbon');
+  });
+});
+
+describe('ArtAdapter.getThumbnailUrl', () => {
+  it('exposes source = "art" for content-registry registration', () => {
+    const adapter = createArtAdapter({ collections: {}, artSource: fakeSource(() => []) });
+    expect(adapter.source).toBe('art');
+  });
+
+  it('picks a deterministic representative (first by sorted id), no color analysis', async () => {
+    let loads = 0;
+    const c = (id) => ({ ...cand(id, 'landscape'), loadImage: async () => { loads += 1; return solid(4, 4, 0); } });
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      artSource: fakeSource(() => [c('zeta'), c('alpha'), c('mid')]),
+    });
+    expect(await adapter.getThumbnailUrl('all')).toBe('/media/img/alpha.jpg');
+    expect(loads).toBe(0);                                    // representative ≠ color-analyzed
+  });
+
+  it('caches per collection (source resolved once across calls)', async () => {
+    let calls = 0;
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      artSource: fakeSource(() => { calls += 1; return [cand('only', 'landscape')]; }),
+    });
+    await adapter.getThumbnailUrl('all');
+    await adapter.getThumbnailUrl('all');
+    expect(calls).toBe(1);
+  });
+
+  it('returns null for an empty unfiltered collection', async () => {
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      artSource: fakeSource(() => []),
+    });
+    expect(await adapter.getThumbnailUrl('all')).toBeNull();
+  });
+
+  describe('with artmode.yml presets on disk', () => {
+    let dpath;
+    beforeAll(async () => {
+      dpath = await fs.mkdtemp(path.join(os.tmpdir(), 'artthumb-'));
+      const cfg = path.join(dpath, 'household', 'config');
+      await fs.mkdir(cfg, { recursive: true });
+      await fs.writeFile(path.join(cfg, 'artmode.yml'),
+        'presets:\n  july-4th:\n    collection: americana\n');
+    });
+    afterAll(async () => { await fs.rm(dpath, { recursive: true, force: true }); });
+
+    it('maps a preset name to its collection', async () => {
+      const seen = [];
+      const adapter = createArtAdapter({
+        dataPath: dpath,
+        collections: { americana: { folder: 'americana' } },
+        artSource: fakeSource((def) => { seen.push(def); return [cand('flag', 'landscape')]; }),
+      });
+      expect(await adapter.getThumbnailUrl('july-4th')).toBe('/media/img/flag.jpg');
+      expect(seen[0]).toEqual({ folder: 'americana' });      // resolved via preset→collection
+    });
   });
 });

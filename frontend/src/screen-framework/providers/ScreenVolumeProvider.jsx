@@ -3,6 +3,7 @@ import {
   ScreenVolumeContext,
   _publishMasterState,
 } from '../../lib/volume/ScreenVolumeContext.js';
+import { volumeCurve } from './volumeCurve.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 const clamp = (n) => {
@@ -40,6 +41,7 @@ export function ScreenVolumeProvider({
   stepSize = 0.1,
   outputCeiling = 1,
   curveExponent = 1,
+  curve = null,
   fixed = false,
 }) {
   // Fixed mode (e.g. living-room TV where hardware controls volume):
@@ -58,12 +60,17 @@ export function ScreenVolumeProvider({
     if (master > 0) preMuteRef.current = master;
   }, [master]);
 
-  // (master ** curveExponent) gives a perceptual curve — curveExponent=2 makes
-  // the bottom half of the master range cover more of the audible amplitude
-  // change humans perceive. curveExponent=1 is the pre-curve linear behavior.
-  // Then × outputCeiling caps the maximum output amplitude. master remains the
-  // user-facing [0,1] level (drives the HUD, persistence, mute logic).
-  const effectiveMaster = Math.pow(master, curveExponent) * clamp(outputCeiling);
+  // Map the user-facing master [0,1] to the output amplitude. A `curve` (list of
+  // {in,out} control points) reshapes the dial piecewise-linearly — e.g. a knee
+  // at {in:0.5,out:0.1} gives the bottom half fine control over the quiet 0–10%
+  // range and the top half the audible 10–100% range. Without a curve we fall
+  // back to (master ** curveExponent): curveExponent=2 is a perceptual curve,
+  // curveExponent=1 is plain linear. Either way × outputCeiling caps the max
+  // amplitude. master remains the user-facing level (HUD, persistence, mute).
+  const shaped = curve
+    ? volumeCurve(master, curve)
+    : Math.pow(master, curveExponent);
+  const effectiveMaster = shaped * clamp(outputCeiling);
 
   // Mirror state into module scope for non-React consumers (sound effects, etc).
   useEffect(() => {

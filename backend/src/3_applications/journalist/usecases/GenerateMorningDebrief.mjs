@@ -76,6 +76,7 @@ export class GenerateMorningDebrief {
             success: true,
             date: existingDebrief.date,
             summary: existingDebrief.summary,
+            headline: existingDebrief.headline || null,
             lifelog: {
               _meta: {
                 date: existingDebrief.date,

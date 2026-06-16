@@ -22,6 +22,11 @@ beforeAll(async () => {
   await write('art/classic/Wide - 1900 - Pano/pano.jpg', 'x');
   await write('art/classic/Wide - 1900 - Pano/metadata.yaml',
     'title: Pano\ndate: 1900\nwidth: 4000\nheight: 1000\n');
+  // Near-square but wider than tall (ratio ~1.27) — must hang single (landscape),
+  // not pair into a diptych. Regression for "landscapes appearing side by side".
+  await write('art/classic/Bingham - 1846 - Flatboat/flatboat.jpg', 'x');
+  await write('art/classic/Bingham - 1846 - Flatboat/metadata.yaml',
+    'title: Jolly Flatboatmen\nartist: George Caleb Bingham\ndate: 1846\nwidth: 1270\nheight: 1000\n');
   await write('art/themed/americana/Flag - 1950 - Stars/flag.jpg', 'x');
   await write('art/themed/americana/Flag - 1950 - Stars/metadata.yaml',
     'title: Stars\ndate: 1950\nwidth: 1600\nheight: 1000\n');
@@ -34,9 +39,11 @@ describe('createArtSource.resolveCandidates', () => {
   it('all → whole classic pool, excludes panoramic, classifies kind', async () => {
     const c = await src().resolveCandidates({});
     const ids = c.map((x) => x.id).sort();
-    expect(ids).toEqual(['Monet - 1900 - Lilies', 'Rembrandt - 1640 - Portrait']);
+    expect(ids).toEqual(['Bingham - 1846 - Flatboat', 'Monet - 1900 - Lilies', 'Rembrandt - 1640 - Portrait']);
     expect(c.find((x) => x.id.startsWith('Monet')).kind).toBe('landscape');
     expect(c.find((x) => x.id.startsWith('Rembrandt')).kind).toBe('portrait');
+    // Wider-than-tall near-square hangs single, not as a portrait pair.
+    expect(c.find((x) => x.id.startsWith('Bingham')).kind).toBe('landscape');
   });
 
   it('builds a media image URL', async () => {
@@ -59,5 +66,44 @@ describe('createArtSource.resolveCandidates', () => {
   it('exposes loadImage as a function on each candidate', async () => {
     const c = await src().resolveCandidates({});
     expect(typeof c[0].loadImage).toBe('function');
+  });
+});
+
+describe('createArtSource scope cache', () => {
+  let cbase;
+  const cwrite = async (rel, content) => {
+    const p = path.join(cbase, rel);
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, content);
+  };
+
+  beforeAll(async () => {
+    cbase = await fs.mkdtemp(path.join(os.tmpdir(), 'artcache-'));
+    await cwrite('art/classic/A - 1900 - One/a.jpg', 'x');
+    await cwrite('art/classic/A - 1900 - One/metadata.yaml',
+      'title: One\nartist: Anon\nwidth: 1600\nheight: 1000\n');
+  });
+  afterAll(async () => { await fs.rm(cbase, { recursive: true, force: true }); });
+
+  it('serves edits to an existing work from cache (scope mtime unchanged)', async () => {
+    const src = createArtSource({ imgBasePath: cbase });
+    const first = await src.resolveCandidates({});
+    expect(first.map((x) => x.meta.title)).toEqual(['One']);
+    // Editing a file *inside* an existing work dir does not bump the scope dir's
+    // mtime, so the cached scan is reused — the old title survives.
+    await cwrite('art/classic/A - 1900 - One/metadata.yaml',
+      'title: Edited\nartist: Anon\nwidth: 1600\nheight: 1000\n');
+    const second = await src.resolveCandidates({});
+    expect(second.map((x) => x.meta.title)).toEqual(['One']);
+  });
+
+  it('self-heals when a work folder is added (scope mtime bumps)', async () => {
+    const src = createArtSource({ imgBasePath: cbase });
+    await src.resolveCandidates({});                          // prime cache
+    await cwrite('art/classic/B - 1910 - Two/b.jpg', 'x');
+    await cwrite('art/classic/B - 1910 - Two/metadata.yaml',
+      'title: Two\nartist: Anon\nwidth: 1600\nheight: 1000\n');
+    const after = await src.resolveCandidates({});
+    expect(after.map((x) => x.id).sort()).toEqual(['A - 1900 - One', 'B - 1910 - Two']);
   });
 });
