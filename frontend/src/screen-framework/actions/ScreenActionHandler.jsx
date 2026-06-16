@@ -347,6 +347,28 @@ export function ScreenActionHandler({ actions = {} }) {
     showOverlay(Component, {}, { mode: 'fullscreen' });
   }, [showOverlay]);
 
+  // Ad-hoc ArtMode scene: a display:content art:<preset> id (from a FKB URL param
+  // or a WS display command) fetches the preset props and shows ArtMode fullscreen.
+  // Works on any screen, independent of the screensaver config.
+  const handleDisplayContent = useCallback((payload) => {
+    const id = payload?.id;
+    if (!id || !String(id).startsWith('art:')) return;
+    const preset = String(id).slice('art:'.length);
+    DaylightAPI(`api/v1/art/preset/${encodeURIComponent(preset)}`)
+      .then((props) => {
+        if (!props) return;
+        const Component = getWidgetRegistry().get('art');
+        if (!Component) { logger().warn('action.scene.widget-not-found'); return; }
+        showOverlay(
+          Component,
+          { ...props, onExit: () => dismissOverlay('fullscreen') },
+          { mode: 'fullscreen', priority: 'high' },
+        );
+        logger().info('action.scene.show', { preset });
+      })
+      .catch((err) => logger().warn('artmode.scene.unknown', { preset, error: err?.message }));
+  }, [showOverlay, dismissOverlay]);
+
   // --- PIP doorbell (simulate doorbell event via webhook) ---
   const handlePipDoorbell = useCallback(() => {
     logger().info('pip.action.doorbell');
@@ -370,6 +392,7 @@ export function ScreenActionHandler({ actions = {} }) {
   }, [pip]);
 
   useScreenAction('display:overlay', handleDisplayOverlay);
+  useScreenAction('display:content', handleDisplayContent);
   useScreenAction('pip:doorbell', handlePipDoorbell);
   useScreenAction('pip:promote', handlePipPromote);
   useScreenAction('pip:dismiss', handlePipDismiss);

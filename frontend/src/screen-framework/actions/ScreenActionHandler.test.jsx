@@ -35,6 +35,13 @@ vi.mock('../../modules/Player/Player.jsx', () => ({
   )),
 }));
 
+// Stub the 'art' widget so the scene overlay renders without ArtMode's deps.
+vi.mock('../widgets/registry.js', () => ({
+  getWidgetRegistry: () => ({
+    get: () => (props) => <div data-testid="art-scene" data-collection={props.collection || ''} />,
+  }),
+}));
+
 describe('ScreenActionHandler', () => {
   beforeEach(() => {
     resetActionBus();
@@ -595,6 +602,33 @@ describe('ScreenActionHandler', () => {
       dispatchSpy.mockRestore();
       document.body.removeChild(video);
     });
+  });
+
+  it('engages the art scene on a display:content art: id', async () => {
+    vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all', music: { queue: 'plex:622894' } });
+    const { findByTestId, queryByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    expect(queryByTestId('art-scene')).toBeNull();
+    await act(async () => { getActionBus().emit('display:content', { id: 'art:classical-evening' }); });
+    const el = await findByTestId('art-scene');
+    expect(el.dataset.collection).toBe('all');
+    expect(apiModule.DaylightAPI).toHaveBeenCalledWith('api/v1/art/preset/classical-evening');
+  });
+
+  it('ignores non-art display:content ids', async () => {
+    const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({});
+    spy.mockClear();   // shared spy — drop any call history from prior tests
+    render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+    act(() => { getActionBus().emit('display:content', { id: 'immich:abc' }); });
+    await Promise.resolve();
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('media:queue-op op=play-next with no active player mounts a fresh Player', () => {
