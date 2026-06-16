@@ -221,6 +221,8 @@ A single item can have multiple capabilities. A TV show is `listable` (browse se
 
 **`displayable` vs `image` format**: `displayable` is a capability — it means the item can produce a thumbnail. The `image` format is a content format — it means the item IS an image, rendered full-screen by the Displayer. A Plex movie is `displayable` (has poster art) but its format is `video`. A photo from Immich is `displayable` AND has format `image`. The legacy `canvas:` prefix is just an alias to a filesystem image source instance accessed via the `display` action — no separate driver needed.
 
+**Transport-agnostic display delivery**: a `display` content intent reaches a screen as a `display:content` action regardless of how the target is controlled. FullyKiosk targets receive it as a `?display=<contentId>` URL parameter; WebSocket targets receive it as a structured `display` command (a kind in the §6.2 command envelope, carrying `params.contentId`). Both converge on the same `display:content` action, handled centrally on every screen. The ArtMode scene is dispatched this way — `display=art:<preset>` shows the framed-art surface on any screen/target, independent of whether that screen configures a screensaver. See `docs/reference/screen-configs.md`.
+
 Capabilities map to API routes:
 
 | Capability | API Route |
