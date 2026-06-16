@@ -55,7 +55,7 @@ export function ScreenScreensaver({ config }) {
   const onSceneContent = useCallback((payload) => {
     const id = payload?.id;
     if (!id || !String(id).startsWith('art:')) return;
-    const preset = String(id).slice(4);
+    const preset = String(id).slice('art:'.length);
     DaylightAPI(`api/v1/art/preset/${encodeURIComponent(preset)}`)
       .then((props) => { if (props && sceneRef.current) sceneRef.current(props); })
       .catch((err) => logger().warn('artmode.scene.unknown', { preset, error: err?.message }));
@@ -113,9 +113,11 @@ export function ScreenScreensaver({ config }) {
 
     // Engage immediately with override props (a dispatched scene). priority:'high'
     // replaces any current fullscreen overlay; onExit + idle resume the default.
+    // overrideProps fully replace the config widgetProps for this showing.
     const showScene = (overrideProps) => {
       const Component = getWidgetRegistry().get(widgetKey);
       if (!Component) { logger().warn('screensaver.widget-not-found', { widget: widgetKey }); return; }
+      if (timer) clearTimeout(timer);   // cancel any pending idle show so it can't stack
       reset?.();
       shown = true;
       showOverlay(Component, { ...overrideProps, onExit }, { mode: 'fullscreen', priority: 'high' });
