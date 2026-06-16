@@ -2,34 +2,11 @@
 // Selectors: album (name|id), person (name|id), search (smart). IMAGE assets only.
 // Dimensions from exifInfo (fallback asset.width/height); matte from preview bytes.
 import { Jimp } from 'jimp';
+import { buildPhotoTitle, formatPhotoDate } from '../../gallery/immich/photoLabels.mjs';
 
 const MAX_RATIO = 16 / 9;
 // Wider-than-tall hangs single; only true portraits (taller than wide) pair.
 const PORTRAIT_RATIO = 1;
-
-const fmtDate = (iso) => {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-};
-
-// Names → "A", "A and B", "A, B, and C" (mirrors how the Feed labels photos).
-const formatPeopleList = (names) => {
-  if (names.length === 1) return names[0];
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
-};
-
-// Top placard line: who's pictured, then where (either may be absent). The date
-// goes on the second line (see toCandidate), so it is deliberately omitted here —
-// folding it in too is what made the placard print the date twice.
-const photoLabel = (people, place) => {
-  const parts = [];
-  if (people.length) parts.push(formatPeopleList(people));
-  if (place) parts.push(place);
-  return parts.join(' • ') || null;
-};
 
 // All k-sized combinations of arr (order-independent). [] if k<=0 or k>arr.length.
 export function combinations(arr, k) {
@@ -108,17 +85,16 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
     const date = ex.dateTimeOriginal || asset.localDateTime || asset.fileCreatedAt || null;
     const people = (asset.people || []).map((p) => p.name).filter(Boolean);
     const place = ex.city || ex.country || null;
-    const formattedDate = fmtDate(date);
     return {
       id: `immich:${asset.id}`,
       image: `${proxyPath}/assets/${asset.id}/thumbnail?size=preview`,
       width, height, kind,
-      // Two-line brass placard, modelled on the Feed's photo labels: people +
-      // location up top (meta.title), the date beneath. The date lives in `artist`
-      // (and `date` is left null) so the placard always renders even when a photo
-      // has no people/location, and the date is never printed twice.
+      // Two-line brass placard, modelled on the Feed (ImmichFeedAdapter): people +
+      // location (or time-of-day in a place / day-period) up top, the full human
+      // date beneath. The date lives in `artist` (and `date` is left null) so the
+      // placard always renders and the date is never printed twice.
       // width/height feed the frontend artLayout aspect-ratio math.
-      meta: { title: photoLabel(people, place), artist: formattedDate, date: null, width, height },
+      meta: { title: buildPhotoTitle(people, place, date), artist: formatPhotoDate(date), date: null, width, height },
       loadImage: async () => Jimp.read(await fetchImageBytes(asset.id)),
     };
   }
