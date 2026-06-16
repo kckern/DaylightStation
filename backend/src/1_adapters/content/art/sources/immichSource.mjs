@@ -13,6 +13,21 @@ const fmtDate = (iso) => {
   return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 };
 
+// All k-sized combinations of arr (order-independent). [] if k<=0 or k>arr.length.
+export function combinations(arr, k) {
+  if (k <= 0 || k > arr.length) return [];
+  if (k === arr.length) return [arr.slice()];
+  const result = [];
+  const rec = (start, combo) => {
+    if (combo.length === k) { result.push(combo.slice()); return; }
+    for (let i = start; i < arr.length; i++) { combo.push(arr[i]); rec(i + 1, combo); combo.pop(); }
+  };
+  rec(0, []);
+  return result;
+}
+
+const PEOPLE_SEARCH_SIZE = 250;  // cap per combination search (bounded pool fetch)
+
 export function createImmichSource({ client, fetchImageBytes, proxyPath, logger = console }) {
   async function resolveAssets(def) {
     if (def.album) {
@@ -29,6 +44,32 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
       const match = (people || []).find((p) => p.id === def.person || p.name === def.person);
       if (match) personId = match.id;
       return (await client.getPersonAssets(personId)) || [];
+    }
+    if (Array.isArray(def.people) && def.people.length > 0) {
+      const minPeople = (Number.isInteger(def.minPeople) && def.minPeople > 0) ? def.minPeople : 2;
+      const people = await client.getPeople({ withStatistics: false });
+      const ids = def.people.map((name) => {
+        const m = (people || []).find((p) => p.id === name || p.name === name);
+        if (!m) logger.warn?.('art.immich.person-unresolved', { name });
+        return m?.id || null;
+      }).filter(Boolean);
+      if (ids.length < minPeople) {
+        logger.warn?.('art.immich.too-few-people', { resolved: ids.length, minPeople });
+        return [];
+      }
+      const seen = new Map();
+      for (const combo of combinations(ids, minPeople)) {
+        let items = [];
+        try {
+          items = (await client.searchMetadata({ personIds: combo, size: PEOPLE_SEARCH_SIZE })).items || [];
+        } catch (err) {
+          logger.warn?.('art.immich.people-search-failed', { error: err.message });
+          continue;
+        }
+        for (const a of items) if (a && a.id && !seen.has(a.id)) seen.set(a.id, a);
+      }
+      logger.info?.('art.immich.people-resolved', { requested: def.people.length, resolved: ids.length, minPeople, assets: seen.size });
+      return [...seen.values()];
     }
     if (def.search) {
       return (await client.smartSearch(def.search)) || [];

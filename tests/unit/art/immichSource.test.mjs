@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createImmichSource } from '../../../backend/src/1_adapters/content/art/sources/immichSource.mjs';
+import { createImmichSource, combinations } from '../../../backend/src/1_adapters/content/art/sources/immichSource.mjs';
 
 const asset = (over = {}) => ({
   id: over.id || 'a1',
@@ -57,5 +57,73 @@ describe('createImmichSource.resolveCandidates', () => {
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', album: 'alb1' });
     expect(c).toHaveLength(0);
+  });
+});
+
+describe('combinations', () => {
+  it('returns all k-sized combinations (C(4,2) = 6 pairs)', () => {
+    const c = combinations(['a', 'b', 'c', 'd'], 2);
+    expect(c).toHaveLength(6);
+    expect(c).toContainEqual(['a', 'b']);
+    expect(c).toContainEqual(['c', 'd']);
+  });
+  it('k === length returns the whole set once', () => {
+    expect(combinations(['a', 'b'], 2)).toEqual([['a', 'b']]);
+  });
+  it('k === 1 returns singletons', () => {
+    expect(combinations(['a', 'b', 'c'], 1)).toEqual([['a'], ['b'], ['c']]);
+  });
+  it('k > length or k <= 0 returns []', () => {
+    expect(combinations(['a'], 2)).toEqual([]);
+    expect(combinations(['a', 'b'], 0)).toEqual([]);
+  });
+});
+
+describe('createImmichSource people selector', () => {
+  const img = (id) => ({ id, type: 'IMAGE', width: 1600, height: 1000, localDateTime: '2020-01-01T00:00:00Z' });
+  const vid = (id) => ({ id, type: 'VIDEO', width: 1600, height: 1000 });
+
+  const makePeopleClient = (over = {}) => ({
+    getPeople: vi.fn(async () => ([
+      { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' },
+      { id: 'user_4-id', name: 'User_4' }, { id: 'user_5-id', name: 'User_5' },
+    ])),
+    searchMetadata: vi.fn(async ({ personIds }) => {
+      if (personIds.includes('user_2-id') && personIds.includes('user_3-id')) {
+        return { items: [img('a1'), vid('v1')] };
+      }
+      return { items: [img('a1'), img('a2')] };
+    }),
+    ...over,
+  });
+
+  it('runs one search per pair, unions/dedupes, drops video, maps dims', async () => {
+    const client = makePeopleClient();
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
+    expect(client.searchMetadata).toHaveBeenCalledTimes(6);
+    expect(client.searchMetadata.mock.calls[0][0].personIds).toHaveLength(2);
+    const ids = c.map((x) => x.id).sort();
+    expect(ids).toEqual(['immich:a1', 'immich:a2']);
+    expect(c[0].width).toBe(1600);
+  });
+
+  it('skips names that do not resolve and combines the rest', async () => {
+    const client = makePeopleClient({
+      getPeople: vi.fn(async () => ([
+        { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' }, { id: 'user_4-id', name: 'User_4' },
+      ])),
+    });
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
+    await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
+    expect(client.searchMetadata).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns [] when fewer than minPeople resolve', async () => {
+    const client = makePeopleClient({ getPeople: vi.fn(async () => ([{ id: 'user_2-id', name: 'User_2' }])) });
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3'], minPeople: 2 });
+    expect(c).toEqual([]);
+    expect(client.searchMetadata).not.toHaveBeenCalled();
   });
 });
