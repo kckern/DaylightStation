@@ -169,14 +169,19 @@ export class ImmichClient {
    * @param {number} [take=100] - Max number of assets to fetch
    * @returns {Promise<Array>}
    */
-  async getPersonAssets(personId, take = 100) {
-    // Use search metadata with personIds filter - the recommended approach
+  async getPersonAssets(personId, take = 100, opts = {}) {
+    // Use search metadata with personIds filter - the recommended approach.
+    // withExif/withPeople are opt-in: the metadata search omits exifInfo and the
+    // people array unless explicitly requested (default off keeps other callers'
+    // payloads lean; the art placard requests both for its labels).
     const response = await this.#httpClient.post(
       `${this.#host}/api/search/metadata`,
       {
         personIds: [personId],
         take,
-        order: 'desc'
+        order: 'desc',
+        ...(opts.withExif ? { withExif: true } : {}),
+        ...(opts.withPeople ? { withPeople: true } : {}),
       },
       { headers: this.#getHeaders() }
     );
@@ -262,10 +267,15 @@ export class ImmichClient {
    * @param {number} [take=50] - Max results
    * @returns {Promise<Array>}
    */
-  async smartSearch(query, take = 50) {
+  async smartSearch(query, take = 50, opts = {}) {
     const response = await this.#httpClient.post(
       `${this.#host}/api/search/smart`,
-      { query, take },
+      {
+        query,
+        take,
+        ...(opts.withExif ? { withExif: true } : {}),
+        ...(opts.withPeople ? { withPeople: true } : {}),
+      },
       {
         headers: {
           ...this.#getHeaders(),

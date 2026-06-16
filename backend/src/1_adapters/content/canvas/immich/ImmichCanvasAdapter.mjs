@@ -1,6 +1,7 @@
 // backend/src/1_adapters/content/canvas/immich/ImmichCanvasAdapter.mjs
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { immichDimensions } from '#adapters/content/gallery/immich/immichDimensions.mjs';
 
 export class ImmichCanvasAdapter {
   #client;
@@ -70,6 +71,7 @@ export class ImmichCanvasAdapter {
 
   #assetToItem(asset, category) {
     const exif = asset.exifInfo || {};
+    const { width, height } = immichDimensions(asset);
 
     return new DisplayableItem({
       id: `canvas-immich:${asset.id}`,
@@ -85,8 +87,8 @@ export class ImmichCanvasAdapter {
       year: this.#parseYear(exif.DateTimeOriginal),
       tags: [],
       frameStyle: 'classic',
-      width: asset.width,
-      height: asset.height,
+      width,
+      height,
     });
   }
 

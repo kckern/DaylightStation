@@ -5,6 +5,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { ImmichClient } from './ImmichClient.mjs';
+import { immichDimensions } from './immichDimensions.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -325,14 +326,15 @@ export class ImmichAdapter {
       const asset = await this.#client.getAsset(localId);
       if (!asset) return null;
 
+      const { width, height } = immichDimensions(asset);
       return new DisplayableItem({
         id: `immich:${asset.id}`,
         source: 'immich',
         title: asset.originalFileName,
         imageUrl: this.#displayImageUrl(asset.id),
         thumbnail: this.#thumbnailUrl(asset.id),
-        width: asset.width,
-        height: asset.height,
+        width,
+        height,
         mimeType: asset.originalMimeType,
         metadata: {
           exif: asset.exifInfo,
@@ -346,6 +348,10 @@ export class ImmichAdapter {
             })) || [],
           })) || [],
           capturedAt: asset.exifInfo?.dateTimeOriginal,
+          // Wall-clock at the place (serialized with a misleading `Z`); the display
+          // label is built from this, not capturedAt (a true UTC instant). See the
+          // TIMEZONE CONTRACT in photoLabels.mjs.
+          localDateTime: asset.localDateTime,
           favorite: asset.isFavorite
         }
       });
@@ -813,6 +819,7 @@ export class ImmichAdapter {
    * @returns {ListableItem}
    */
   #toListableItem(asset, context = {}) {
+    const { width, height } = immichDimensions(asset);
     return new ListableItem({
       id: `immich:${asset.id}`,
       source: 'immich',
@@ -829,8 +836,8 @@ export class ImmichAdapter {
         parentTitle: context.parentTitle || null,
         parentId: context.parentId || null,
         // Asset details
-        width: asset.width,
-        height: asset.height,
+        width,
+        height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
         location: asset.exifInfo?.city,
         exif: this.#curateExif(asset.exifInfo),
@@ -862,6 +869,7 @@ export class ImmichAdapter {
     const duration = isVideo
       ? this.#client.parseDuration(asset.duration)
       : (forSlideshow ? this.slideDuration : null);
+    const { width, height } = immichDimensions(asset);
 
     return new PlayableItem({
       id: `immich:${asset.id}`,
@@ -880,8 +888,8 @@ export class ImmichAdapter {
         parentTitle: context.parentTitle || null,
         parentId: context.parentId || null,
         // Asset details
-        width: asset.width,
-        height: asset.height,
+        width,
+        height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
         location: asset.exifInfo?.city,
         exif: this.#curateExif(asset.exifInfo),

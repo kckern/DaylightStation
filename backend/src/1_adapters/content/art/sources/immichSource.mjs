@@ -1,8 +1,10 @@
 // immichSource.mjs — resolves an `immich` collection def into normalized candidates.
 // Selectors: album (name|id), person (name|id), search (smart). IMAGE assets only.
-// Dimensions from exifInfo (fallback asset.width/height); matte from preview bytes.
+// Dimensions via the shared immichDimensions helper (orientation-corrected);
+// matte from preview bytes.
 import { Jimp } from 'jimp';
 import { buildPhotoTitle, formatPhotoDate } from '../../gallery/immich/photoLabels.mjs';
+import { immichDimensions } from '../../gallery/immich/immichDimensions.mjs';
 
 const MAX_RATIO = 16 / 9;
 // Wider-than-tall hangs single; only true portraits (taller than wide) pair.
@@ -25,6 +27,27 @@ const PEOPLE_SEARCH_SIZE = 250;  // cap per combination search (bounded pool fet
 
 export function createImmichSource({ client, fetchImageBytes, proxyPath, logger = console }) {
   async function resolveAssets(def) {
+    if (def.favorites || def.isFavorite) {
+      // Everything the family has starred in Immich. Paged because the pool can
+      // exceed one search page; withExif/withPeople so placards get who/where/when.
+      const all = [];
+      let page = 1;
+      for (;;) {
+        let res;
+        try {
+          res = await client.searchMetadata({ isFavorite: true, withExif: true, withPeople: true, size: 250, page });
+        } catch (err) {
+          logger.warn?.('art.immich.favorites-search-failed', { error: err.message, page });
+          break;
+        }
+        const items = res.items || [];
+        all.push(...items);
+        if (!res.nextPage || items.length === 0) break;
+        page = Number(res.nextPage) || (page + 1);
+      }
+      logger.info?.('art.immich.favorites-resolved', { assets: all.length });
+      return all;
+    }
     if (def.album) {
       let albumId = def.album;
       const albums = await client.getAlbums();
@@ -38,7 +61,8 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
       const people = await client.getPeople({ withStatistics: false });
       const match = (people || []).find((p) => p.id === def.person || p.name === def.person);
       if (match) personId = match.id;
-      return (await client.getPersonAssets(personId)) || [];
+      // withExif/withPeople so the placard can name who's pictured and where.
+      return (await client.getPersonAssets(personId, 100, { withExif: true, withPeople: true })) || [];
     }
     if (Array.isArray(def.people) && def.people.length > 0) {
       const minPeople = (Number.isInteger(def.minPeople) && def.minPeople > 0) ? def.minPeople : 2;
@@ -56,7 +80,11 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
       for (const combo of combinations(ids, minPeople)) {
         let items = [];
         try {
-          items = (await client.searchMetadata({ personIds: combo, size: PEOPLE_SEARCH_SIZE })).items || [];
+          // withExif/withPeople: the metadata search omits exifInfo (city/date) and
+          // the people array by default, which left the placard with only a day-period.
+          items = (await client.searchMetadata({
+            personIds: combo, size: PEOPLE_SEARCH_SIZE, withExif: true, withPeople: true,
+          })).items || [];
         } catch (err) {
           logger.warn?.('art.immich.people-search-failed', { error: err.message });
           continue;
@@ -67,7 +95,7 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
       return [...seen.values()];
     }
     if (def.search) {
-      return (await client.smartSearch(def.search)) || [];
+      return (await client.smartSearch(def.search, 50, { withExif: true, withPeople: true })) || [];
     }
     logger.warn?.('art.immich.no-selector', { def });
     return [];
@@ -76,13 +104,18 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
   function toCandidate(asset) {
     if (asset.type === 'VIDEO') return null;
     const ex = asset.exifInfo || {};
-    const width = ex.exifImageWidth || asset.width || null;
-    const height = ex.exifImageHeight || asset.height || null;
+    // Orientation-corrected display dims: raw exif W/H read landscape for a
+    // portrait shot tagged orientation 6/8. See immichDimensions.mjs.
+    const { width, height } = immichDimensions(asset);
     if (!width || !height) return null;
     const ratio = width / height;
     if (ratio > MAX_RATIO) return null;                 // panoramic excluded
     const kind = ratio >= PORTRAIT_RATIO ? 'landscape' : 'portrait';
-    const date = ex.dateTimeOriginal || asset.localDateTime || asset.fileCreatedAt || null;
+    // Prefer `localDateTime` (wall-clock at the place, rendered verbatim by the
+    // photoLabels helpers) over `dateTimeOriginal`/`fileCreatedAt`, which are true
+    // UTC instants and would print shifted by the server offset. See the TIMEZONE
+    // CONTRACT in photoLabels.mjs.
+    const date = asset.localDateTime || ex.dateTimeOriginal || asset.fileCreatedAt || null;
     const people = (asset.people || []).map((p) => p.name).filter(Boolean);
     const place = ex.city || ex.country || null;
     return {

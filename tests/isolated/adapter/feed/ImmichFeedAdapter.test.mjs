@@ -133,6 +133,44 @@ describe('ImmichFeedAdapter', () => {
       expect(items[0].meta.people).toEqual(['Bob', 'Bill', 'Biff']);
     });
 
+    test('subtitle uses localDateTime (wall-clock) over capturedAt, timestamp keeps the instant', async () => {
+      const mockContentQueryService = {
+        search: vi.fn().mockResolvedValue({
+          items: [{ id: 'immich:wc', localId: 'wc', metadata: {} }],
+        }),
+      };
+      const mockImmichContent = {
+        // capturedAt is a true UTC instant; localDateTime is wall-clock at the place.
+        // The placard must render the wall-clock (8:00am), not the shifted instant.
+        getViewable: vi.fn().mockResolvedValue({
+          metadata: {
+            capturedAt: '2025-06-15T15:00:00.000Z',
+            localDateTime: '2025-06-15T08:00:00.000Z',
+            exif: { city: 'New York City' },
+            people: [],
+          },
+        }),
+        search: vi.fn(),
+        getRandomMemories: vi.fn(),
+      };
+      const contentRegistry = new Map();
+      contentRegistry.set('immich', mockImmichContent);
+      const adapter = new ImmichFeedAdapter({
+        contentQueryPort: mockContentQueryService,
+        contentRegistry,
+        logger,
+      });
+
+      const items = await adapter.fetchItems(
+        { type: 'immich', tier: 'scrapbook', limit: 1 },
+        'testuser',
+      );
+
+      expect(items[0].subtitle).toBe('Sun 15 Jun, 2025 8:00am');   // wall-clock, not 3pm
+      expect(items[0].timestamp).toBe('2025-06-15T15:00:00.000Z');  // instant preserved
+      expect(items[0].meta.originalDate).toBe('2025-06-15T15:00:00.000Z');
+    });
+
     test('title shows only people when no location', async () => {
       const mockContentQueryService = {
         search: vi.fn().mockResolvedValue({
