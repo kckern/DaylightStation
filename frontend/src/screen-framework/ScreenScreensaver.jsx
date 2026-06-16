@@ -1,8 +1,10 @@
 // frontend/src/screen-framework/ScreenScreensaver.jsx
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
+import { useScreenAction } from './input/useScreenAction.js';
+import { DaylightAPI } from '../lib/api.mjs';
 import getLogger from '../lib/logging/Logger.js';
 
 let _logger;
@@ -46,6 +48,19 @@ export function ScreenScreensaver({ config }) {
   // Read latest hasOverlay without re-running the effect.
   const hasOverlayRef = useRef(hasOverlay);
   hasOverlayRef.current = hasOverlay;
+
+  // Imperative scene engagement: a `display:content` art:<preset> dispatch fetches
+  // the preset props and shows the ArtMode scene over the default (one-shot).
+  const sceneRef = useRef(null);
+  const onSceneContent = useCallback((payload) => {
+    const id = payload?.id;
+    if (!id || !String(id).startsWith('art:')) return;
+    const preset = String(id).slice(4);
+    DaylightAPI(`api/v1/art/preset/${encodeURIComponent(preset)}`)
+      .then((props) => { if (props && sceneRef.current) sceneRef.current(props); })
+      .catch((err) => logger().warn('artmode.scene.unknown', { preset, error: err?.message }));
+  }, []);
+  useScreenAction('display:content', onSceneContent);
 
   useEffect(() => {
     if (!widgetKey) return undefined;
@@ -96,12 +111,26 @@ export function ScreenScreensaver({ config }) {
       }
     }
 
+    // Engage immediately with override props (a dispatched scene). priority:'high'
+    // replaces any current fullscreen overlay; onExit + idle resume the default.
+    const showScene = (overrideProps) => {
+      const Component = getWidgetRegistry().get(widgetKey);
+      if (!Component) { logger().warn('screensaver.widget-not-found', { widget: widgetKey }); return; }
+      reset?.();
+      shown = true;
+      showOverlay(Component, { ...overrideProps, onExit }, { mode: 'fullscreen', priority: 'high' });
+      logger().info('screensaver.scene', { widget: widgetKey });
+      if (!interactive) ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, wake, true));
+    };
+    sceneRef.current = showScene;
+
     const onActivity = () => { if (!shown) schedule(); };
     ACTIVITY_EVENTS.forEach((evt) => window.addEventListener(evt, onActivity));
 
     if (showOnLoad) show(); else schedule();
 
     return () => {
+      sceneRef.current = null;
       if (timer) clearTimeout(timer);
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, wake, true));
