@@ -5,6 +5,8 @@ import { TVMenu } from './Menu';
 import { PlayerOverlayLoading } from '../Player/Player';
 import { PlexMenuRouter } from './PlexMenuRouter';
 import { getLogger } from '../../lib/logging/Logger.js';
+import { getActionBus } from '../../screen-framework/input/ActionBus.js';
+import { artSceneIdFromDisplay } from './displaySelection.js';
 
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
@@ -123,9 +125,15 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       });
       push({ type: 'player', props: selection });
     } else if (selection.display) {
-      // Map contentId to id for the Displayer component
-      const display = { ...selection.display, id: selection.display.contentId || selection.display.id };
-      push({ type: 'display', props: { ...selection, display } });
+      const sceneId = artSceneIdFromDisplay(selection.display);
+      if (sceneId) {
+        // ArtMode scene — hand off to the central display:content handler.
+        getActionBus().emit('display:content', { id: sceneId });
+      } else {
+        // Generic content — map contentId to id for the Displayer component.
+        const display = { ...selection.display, id: selection.display.contentId || selection.display.id };
+        push({ type: 'display', props: { ...selection, display } });
+      }
     } else if (selection.open) {
       push({ type: 'app', props: selection });
     } else if (selection.launch) {
