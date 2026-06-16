@@ -5,6 +5,18 @@
  * transcode of an already-h264 source that fell behind realtime. These caps
  * keep the encoder ahead of realtime. The codec advertisement (h264,hevc) and
  * directPlay=0 default from the May 18 mitigation are preserved by the caller.
+ *
+ * directStream vs directPlay distinction (June 13):
+ * - directPlay=1: serve the original file as-is (no processing at all)
+ * - directStream=1: copy streams that match the client profile, transcode those that don't
+ * - directStream=0: re-encode everything, even streams that already match
+ *
+ * The May 18 fix forced directStream=0 to prevent AV1/VP9 sources from being
+ * direct-streamed as AV1/VP9 (which MSE cannot append). But the codec
+ * advertisement (h264,hevc only) already prevents that: Plex won't
+ * direct-stream a codec the client doesn't advertise. So directStream=1 is safe
+ * for h264/hevc sources — Plex copies the video track and only transcodes audio,
+ * which is far cheaper than re-encoding a matching h264 source.
  */
 
 export const DEFAULT_MAX_VIDEO_BITRATE = 8000; // kbps — was uncapped (~20000 from source)
@@ -64,4 +76,19 @@ export function canDirectPlayH264(metadata) {
     && norm(media.audioCodec) === 'aac'
     && norm(media.container) === 'mp4'
     && norm(part?.container || media.container) === 'mp4';
+}
+
+/**
+ * Video-only direct-stream gate. True when the video codec is h264 or hevc —
+ * meaning Plex can copy the video track without re-encoding. Audio and
+ * container mismatches are handled separately (audio is transcoded, container
+ * is remuxed). The codec advertisement (h264,hevc only) already prevents
+ * AV1/VP9 sources from being direct-streamed regardless of this flag.
+ * @param {{Media?: Array}} metadata - the Plex item metadata
+ */
+export function canDirectStreamVideo(metadata) {
+  const media = metadata?.Media?.[0];
+  if (!media) return false;
+  const codec = String(media.videoCodec ?? '').toLowerCase();
+  return codec === 'h264' || codec === 'hevc';
 }

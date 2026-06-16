@@ -84,4 +84,22 @@ describe('SendMorningDebrief — adaptive headline assembly', () => {
 
     expect(sent.text).toContain('💬 <b>Felix &amp; the &lt;locked&gt; door?</b>');
   });
+
+  it('persists the headline with the debrief so re-sends keep the teaser', async () => {
+    const debriefRepository = { appendDebrief: vi.fn().mockResolvedValue(undefined) };
+    const persistingUseCase = new SendMorningDebrief({ logger: mockLogger, debriefRepository });
+
+    await persistingUseCase.execute({
+      conversationId: 'c1',
+      responseContext,
+      debrief: baseDebrief({ headline: 'Church leadership ate your whole morning' }),
+    });
+
+    expect(debriefRepository.appendDebrief).toHaveBeenCalledWith(
+      expect.objectContaining({
+        date: '2026-05-31',
+        headline: 'Church leadership ate your whole morning',
+      }),
+    );
+  });
 });

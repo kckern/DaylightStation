@@ -1,5 +1,6 @@
 // backend/src/3_applications/agents/framework/Scheduler.mjs
 
+import { existsSync } from 'fs';
 import { CronExpressionParser } from 'cron-parser';
 
 /**
@@ -14,11 +15,26 @@ export class Scheduler {
   #intervalId = null;
   #intervalMs;
   #running = false;
+  #enabled;
   #recentRuns = new Map(); // key: jobKey:dateHour → timestamp
 
-  constructor({ logger = console, intervalMs = 30_000 }) {
+  constructor({ logger = console, intervalMs = 30_000, enabled } = {}) {
     this.#logger = logger;
     this.#intervalMs = intervalMs;
+    this.#enabled = enabled ?? Scheduler.#enabledFromEnv();
+  }
+
+  /**
+   * Scheduled jobs send outbound messages (Telegram debriefs, coaching briefs).
+   * Every backend instance registers the same crons, so a dev server running
+   * alongside prod would double-send. Same rule as the system scheduler
+   * (0_system/scheduling): only the Docker container ticks, unless a dev
+   * instance explicitly opts in via ENABLE_CRON=true.
+   */
+  static #enabledFromEnv() {
+    if (process.env.NODE_ENV === 'production') return true;
+    if (existsSync('/.dockerenv')) return true;
+    return process.env.ENABLE_CRON === 'true';
   }
 
   /**
@@ -53,7 +69,7 @@ export class Scheduler {
       this.#logger.info?.('scheduler.registered', { jobKey, cronExpr });
     }
 
-    this.#ensureRunning();
+    this.#ensureRunning(agent.constructor.id);
   }
 
   /**
@@ -77,14 +93,23 @@ export class Scheduler {
     });
 
     this.#logger.info?.('scheduler.registered', { jobKey: taskKey, cronExpr });
-    this.#ensureRunning();
+    this.#ensureRunning(taskKey);
   }
 
   /**
    * Start the interval loop if jobs exist and it isn't already running.
+   * Outside production the loop never starts — jobs stay registered (so list()
+   * and manual trigger() still work) but nothing fires on the clock.
    */
-  #ensureRunning() {
+  #ensureRunning(jobKey) {
     if (this.#intervalId || this.#jobs.size === 0) return;
+    if (!this.#enabled) {
+      this.#logger.warn?.('scheduler.disabled_non_production', {
+        jobKey,
+        hint: 'set ENABLE_CRON=true to run scheduled jobs in dev',
+      });
+      return;
+    }
     this.#intervalId = setInterval(() => this.#tick(), this.#intervalMs);
   }
 

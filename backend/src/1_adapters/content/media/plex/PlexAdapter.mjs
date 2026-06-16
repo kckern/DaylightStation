@@ -4,7 +4,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264 } from './transcodeProfile.mjs';
+import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo } from './transcodeProfile.mjs';
 
 /**
  * Plex content source adapter.
@@ -1331,7 +1331,8 @@ export class PlexAdapter {
       maxResolution = null,
       session = null,
       startOffset = 0,
-      allowDirectPlay = false
+      allowDirectPlay = false,
+      allowDirectStream = allowDirectPlay
     } = opts;
 
     const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session);
@@ -1361,7 +1362,7 @@ export class PlexAdapter {
     // t=0 stall). Forcing transcode routes them through the advertised
     // h264/hevc targets.
     params.append('directPlay', allowDirectPlay ? '1' : '0');
-    params.append('directStream', allowDirectPlay ? '1' : '0');
+    params.append('directStream', allowDirectStream ? '1' : '0');
     params.append('subtitleSize', '100');
     params.append('audioBoost', '100');
     params.append('fastSeek', '1');
@@ -1551,13 +1552,19 @@ export class PlexAdapter {
       }
 
       const allowDirectPlay = canDirectPlayH264(playableItem.metadata);
+      // Allow directStream when the video codec is already h264/hevc — Plex can
+      // copy the video track even if audio or container don't qualify for full
+      // directPlay. The codec advertisement (h264,hevc only) prevents AV1/VP9
+      // from being direct-streamed regardless of this flag.
+      const allowDirectStream = allowDirectPlay || canDirectStreamVideo(playableItem.metadata);
       // Video: use decision API to authorize session
       const decisionResult = await this.requestTranscodeDecision(ratingKey, {
         maxVideoBitrate,
         maxResolution: resolvedMaxResolution,
         session,
         startOffset,
-        allowDirectPlay
+        allowDirectPlay,
+        allowDirectStream
       });
 
       if (!decisionResult.success) {

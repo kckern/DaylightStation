@@ -359,6 +359,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             stepSize={config.volume?.stepSize}
             outputCeiling={config.volume?.outputCeiling}
             curveExponent={config.volume?.curveExponent}
+            curve={config.volume?.curve}
             fixed={config.volume?.fixed}
           >
             <MasterVolumeToast />

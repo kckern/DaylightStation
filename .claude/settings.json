@@ -1,8 +1,18 @@
 {
-  "enabledPlugins": {
-    "superpowers@superpowers-marketplace": true
-  },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "B=$(git branch --show-current 2>/dev/null || echo '?'); M=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' '); C=$(sudo docker inspect --format='{{.State.Status}}' daylight-station 2>/dev/null || echo 'unknown'); BP=$(ss -tlnp 2>/dev/null | grep -q ':3112' && echo 'UP' || echo 'DOWN'); AP=$(ss -tlnp 2>/dev/null | grep -q ':3111' && echo 'UP' || echo 'DOWN'); jq -n --arg msg \"Branch: $B | $M files changed | Container: $C | :3112 $BP :3111 $AP\" '{\"systemMessage\": $msg}'",
+            "timeout": 10,
+            "statusMessage": "Loading session context..."
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",

@@ -163,7 +163,12 @@ export function ScreenActionHandler({ actions = {} }) {
     const media = document.querySelector('audio:not([data-role="ambient"]), video, dash-video');
     const isActive = media && !media.paused;
 
-    if (!isActive && idleMode === 'secondary' && payload.secondary) {
+    // While an ArtMode scene is mounted it owns the transport (next/prev/fwd/rew/
+    // pause), so the idle secondary fallback must not hijack the buttons — even when
+    // its music is paused (which would otherwise read as "not active").
+    const artScene = document.querySelector('audio[data-role="artmode-music"]');
+
+    if (!isActive && !artScene && idleMode === 'secondary' && payload.secondary) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
@@ -194,8 +199,10 @@ export function ScreenActionHandler({ actions = {} }) {
   }, [actions, showOverlay, dismissOverlay]);
 
   // --- Playback rate ---
+  // ArtMode's background music is excluded: rate is meaningless for it, and the
+  // office screen repurposes the rate button to cycle ArtMode's view mode instead.
   const handleMediaRate = useCallback(() => {
-    const media = document.querySelector('audio:not([data-role="ambient"]), video, dash-video');
+    const media = document.querySelector('audio:not([data-role="ambient"]):not([data-role="artmode-music"]), video, dash-video');
     if (!media) return;
     const rates = [1.0, 1.5, 2.0];
     const idx = rates.indexOf(media.playbackRate);

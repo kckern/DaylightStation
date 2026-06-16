@@ -1231,13 +1231,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'art-immich' }),
     });
   }
+  const artAdapter = createArtAdapter({
+    imgBasePath,
+    dataPath: dataBasePath,
+    collections: artConfig.collections || {},
+    immichSource: artImmichSource,
+    logger: rootLogger.child({ module: 'art-adapter' })
+  });
+  // Register a thin `art` content source so /display/art:<preset> resolves to a
+  // representative thumbnail (menu cards for art presets). The screensaver
+  // adapter itself isn't a full IContentSource — the wrapper delegates the
+  // thumbnail path and stubs the unused list/playable interface.
+  if (contentRegistry?.register) {
+    const { createArtContentSource } = await import('./1_adapters/content/art/ArtContentSource.mjs');
+    contentRegistry.register(
+      createArtContentSource({ artAdapter, logger: rootLogger.child({ module: 'art-content' }) }),
+      { category: 'art' }
+    );
+  }
   v1Routers.art = createArtRouter({
-    artAdapter: createArtAdapter({
-      imgBasePath,
-      collections: artConfig.collections || {},
-      immichSource: artImmichSource,
-      logger: rootLogger.child({ module: 'art-adapter' })
-    }),
+    artAdapter,
     dataPath: dataBasePath,
     logger: rootLogger.child({ module: 'art-api' })
   });

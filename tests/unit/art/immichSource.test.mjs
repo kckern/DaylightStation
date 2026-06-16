@@ -31,8 +31,29 @@ describe('createImmichSource.resolveCandidates', () => {
     expect(c[0].height).toBe(1000);
     expect(c[0].kind).toBe('landscape');
     expect(c[0].image).toBe('/api/v1/proxy/immich/assets/a1/thumbnail?size=preview');
-    expect(c[0].meta.title).toBe('Lisbon');          // city
+    expect(c[0].meta.title).toBe('Lisbon');          // city (no people → location only)
     expect(c[0].meta.artist).toContain('2019');      // formatted date
+  });
+
+  it('labels people + location on the title line and the date alone beneath (no dup date)', async () => {
+    const client = makeClient();
+    client.getAlbum = vi.fn(async () => ({ assets: [
+      asset({ id: 'p1', people: [{ name: 'Felix' }, { name: 'Milo' }] }),
+    ] }));
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
+    const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
+    expect(c[0].meta.title).toBe('Felix and Milo • Lisbon'); // people + location
+    expect(c[0].meta.artist).toBe('August 2019');            // date only — no people, no city
+    expect(c[0].meta.date).toBeNull();                       // folded into artist; not repeated
+  });
+
+  it('falls back to location only when no people are tagged', async () => {
+    const client = makeClient();
+    client.getAlbum = vi.fn(async () => ({ assets: [asset({ id: 'np' })] }));
+    const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
+    const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
+    expect(c[0].meta.title).toBe('Lisbon');
+    expect(c[0].meta.artist).toBe('August 2019');
   });
 
   it('person selector resolves a name to id and fetches assets', async () => {

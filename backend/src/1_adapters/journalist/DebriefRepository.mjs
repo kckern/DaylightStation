@@ -59,10 +59,12 @@ export class DebriefRepository {
         debriefs.debriefs = [];
       }
 
-      // Build debrief entry
+      // Build debrief entry. The headline rides along so re-send paths can
+      // rebuild the teaser header instead of falling back to the date header.
       const entry = {
         date: debrief.date,
         timestamp: debrief.timestamp || nowTs24(),
+        ...(debrief.headline ? { headline: debrief.headline } : {}),
         summary: debrief.summary,
         summaries: debrief.summaries || [],
       };

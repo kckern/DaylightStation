@@ -252,14 +252,60 @@
 .artmode__audio { display: none; }
 
 /* ---- Music plaque: a nameplate on the TOP frame rail (static) ----
-   Desaturated so it reads as cool steel/silver, distinct from the gold/brass art
-   nameplate below. saturate(0) strips the brass warmth from the metal photo,
-   gradient, screws, and warm sheen in one pass; a touch of brightness/contrast
-   keeps it reading as polished silver rather than flat pewter. */
+   Dark obsidian/stone, deliberately recessive so the brass art nameplate below
+   reads as the primary label. The darkness comes from a near-black layer
+   multiplied over the brass texture (NOT a container brightness filter, which
+   would also crush the text); saturate(0) neutralizes any residual brass warmth
+   into cool stone and is a no-op on the grey text above it. */
 .artmode__music-plaque {
   top: 2.4%;
   bottom: auto;
   left: 50%;
   max-width: 56%;
-  filter: saturate(0) brightness(1.12) contrast(1.03);
+  /* The plate width is JS-driven (measured FLIP) so a song change can grow/shrink
+     it to the new text; clip the text while it resizes so nothing spills the edge. */
+  overflow: hidden;
+  filter: saturate(0);
+  border-color: #2c2c30;
+  background-color: #18181a;
+  background-image:
+    linear-gradient(rgba(20, 20, 23, 0.88), rgba(20, 20, 23, 0.88)),
+    url('/api/v1/static/img/ui/plaque/brass.jpg'),
+    linear-gradient(180deg, #2c2c31 0%, #3a3a40 36%, #1d1d20 100%);
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
+  box-shadow:
+    0 0.4vh 0.8vh rgba(0, 0, 0, 0.6),                 /* drop shadow on the wood */
+    inset 0 1px 0 rgba(180, 184, 196, 0.28),          /* top edge sheen */
+    inset 0 -1px 0 rgba(0, 0, 0, 0.7);                /* bottom edge */
+}
+
+/* Light stony-grey engraved text on the dark plate — visible but subdued. Drop
+   the brass `multiply` blend (which would darken light text into the stone) for
+   a normal blend with a dark carved-groove shadow. */
+.artmode__music-plaque .artmode__placard-title,
+.artmode__music-plaque .artmode__placard-artist {
+  color: #999;
+  mix-blend-mode: normal;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+}
+
+/* Text layer inside the plate — its own fade so the steel plate stays visible
+   while the title/artist cross-fades on a song change (HOLD mode). The fade
+   duration is set inline (single source of truth with the JS choreography). */
+.artmode__plaque-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05em;
+}
+.artmode__plaque-text--hidden { opacity: 0; }
+
+/* Darken the two screws to match the stone (they default to bright brass). */
+.artmode__music-plaque::before,
+.artmode__music-plaque::after {
+  background:
+    url('/api/v1/static/img/ui/plaque/rivet.png') center / contain no-repeat,
+    radial-gradient(circle at 36% 30%, #6a6a70, #2a2a2e 68%, #141416);
+  filter: saturate(0) brightness(0.5) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
 }
