@@ -1,8 +1,8 @@
 // useBackgroundMusic.js — config-driven ambient audio for ArtMode. Resolves a
 // queue/playlist via the existing /api/v1/queue endpoint, drives a hidden <audio>
 // element (autoplay → advance on ended → loop, skip on error), and exposes the
-// current track for the on-frame music plaque.
-import { useEffect, useState } from 'react';
+// current track for the on-frame music plaque plus next()/prev() skip controls.
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { getChildLogger } from '../logging/singleton.js';
 import { toTracks, advanceIndex, shuffleOrder } from './playlist.js';
@@ -11,11 +11,12 @@ let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'artmode-music' }));
 
 const clampVol = (v) => Math.max(0, Math.min(1, typeof v === 'number' ? v : 0.25));
+const NOOP = () => {};
 
 /**
  * @param {{current: HTMLAudioElement|null}} audioRef  element ArtMode renders
  * @param {{queue:string, shuffle?:boolean, volume?:number}|null} music  config
- * @returns {{ track: {title:string, artist:string}|null }}
+ * @returns {{ track: {title:string, artist:string}|null, next: ()=>void, prev: ()=>void }}
  */
 export function useBackgroundMusic(audioRef, music) {
   const [track, setTrack] = useState(null);
@@ -23,8 +24,14 @@ export function useBackgroundMusic(audioRef, music) {
   const shuffle = !!music?.shuffle;
   const volume = music?.volume;
 
+  // Skip controls are stable wrappers over the live effect-scoped implementation,
+  // so callers (ArtMode key/action handlers) keep a stable reference.
+  const controlsRef = useRef({ next: NOOP, prev: NOOP });
+  const next = useCallback(() => controlsRef.current.next(), []);
+  const prev = useCallback(() => controlsRef.current.prev(), []);
+
   useEffect(() => {
-    if (!queue) { setTrack(null); return undefined; }
+    if (!queue) { setTrack(null); controlsRef.current = { next: NOOP, prev: NOOP }; return undefined; }
 
     let cancelled = false;
     let tracks = [];
@@ -66,13 +73,23 @@ export function useBackgroundMusic(audioRef, music) {
       safePlay(e);
     };
 
-    const step = () => {
-      pos = advanceIndex(pos, tracks.length);
-      if (pos === 0 && shuffle) order = shuffleOrder(tracks.length);
+    // Move `delta` tracks (forward on +1 / track-ended; backward on -1 for prev).
+    // Re-shuffle on a forward wrap so the next loop differs (matches prior behavior).
+    const stepBy = (delta) => {
+      if (!tracks.length) return;
+      if (delta >= 0) {
+        pos = advanceIndex(pos, tracks.length);
+        if (pos === 0 && shuffle) order = shuffleOrder(tracks.length);
+      } else {
+        pos = (pos - 1 + tracks.length) % tracks.length;
+      }
       playAt(pos);
     };
+    const step = () => stepBy(1);
     const onEnded = () => step();
     const onError = () => { logger().warn?.('artmode.music.error'); step(); };
+
+    controlsRef.current = { next: () => stepBy(1), prev: () => stepBy(-1) };
 
     (async () => {
       let resp;
@@ -99,6 +116,7 @@ export function useBackgroundMusic(audioRef, music) {
 
     return () => {
       cancelled = true;
+      controlsRef.current = { next: NOOP, prev: NOOP };
       if (gestureHandler) window.removeEventListener('keydown', gestureHandler);
       const e = el();
       if (e) {
@@ -111,7 +129,7 @@ export function useBackgroundMusic(audioRef, music) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queue, shuffle, volume]);
 
-  return { track };
+  return { track, next, prev };
 }
 
 export default useBackgroundMusic;

@@ -10,6 +10,7 @@ import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
 import { useScreenAmbient } from '../ambient/ScreenAmbientContext.jsx';
 import { resolveAmbient } from './resolveAmbient.js';
+import { useScreenAction } from '../input/useScreenAction.js';
 import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import './ArtMode.css';
 
@@ -52,7 +53,7 @@ function ArtMode({
   frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, music = null, collection = null,
-  advance = 'hold',
+  advance = 'hold', rawKeys = true,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -117,7 +118,7 @@ function ArtMode({
   }, [curtainMinMs, openCurtain]);
 
   const musicRef = useRef(null);
-  const { track: musicTrack } = useBackgroundMusic(musicRef, music);
+  const { track: musicTrack, next: musicNext, prev: musicPrev } = useBackgroundMusic(musicRef, music);
 
   const load = useCallback(() => {
     // Drop the curtain (covers the swap); it parts after the MIN dwell once the
@@ -160,8 +161,34 @@ function ArtMode({
     load();
   }, [musicTrack, advance, load, logger]);
 
+  // Advance both song and art. With advance:'track', skipping the song re-picks the
+  // artwork via the effect above (so no double-load); otherwise reload the art directly.
+  const goNext = useCallback(() => { musicNext(); if (advance !== 'track') load(); }, [musicNext, advance, load]);
+  const goPrev = useCallback(() => { musicPrev(); if (advance !== 'track') load(); }, [musicPrev, advance, load]);
+
+  // Screen-native control surface: numpad/remote → ActionBus. The next/prev playback
+  // buttons advance the song (and the art, per goNext/goPrev). Volume + escape are
+  // handled by the screen (system volume / overlay dismissal), so they aren't here.
+  useScreenAction('media:playback', useCallback((p) => {
+    const c = p?.command;
+    if (c === 'next' || c === 'fwd') goNext();
+    else if (c === 'prev' || c === 'rew') goPrev();
+  }, [goNext, goPrev]));
+
+  // D-pad navigation (remote screens, rawKeys:false). On raw-key screens the capture
+  // handler swallows the arrows first, so this never double-fires there.
+  useScreenAction('navigate', useCallback((p) => {
+    if (p?.direction === 'right') goNext();
+    else if (p?.direction === 'left') goPrev();
+  }, [goNext, goPrev]));
+
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
+  // Raw-key control for keyboard / remotes whose buttons arrive as standard keys.
+  // Disabled (rawKeys:false) on presets shown on macro-keypad screens, where those
+  // keypads emit semantic ActionBus actions AND spurious companion nav keys — letting
+  // the raw handler run there would double-trigger view-mode/shuffle/brightness.
   useEffect(() => {
+    if (!rawKeys) return undefined;
     const onKey = (e) => {
       const k = e.key;
       const isTab = k === 'Tab';
@@ -173,13 +200,13 @@ function ArtMode({
         setModeIdx((i) => (e.shiftKey ? prevMode(i) : nextMode(i)));
         logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next' });
       } else if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
-      else if (NEXT_KEYS.has(k)) { logger.info('artmode.shuffle', { key: k }); load(); }
+      else if (NEXT_KEYS.has(k)) { logger.info('artmode.shuffle', { key: k }); (k === 'ArrowLeft' ? goPrev : goNext)(); }
       else if (BRIGHTER_KEYS.has(k)) setManualBias((b) => round2(b - DIM_STEP));
       else setManualBias((b) => round2(b + DIM_STEP));
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [exit, load, logger]);
+  }, [exit, goNext, goPrev, logger, rawKeys]);
 
   useWebSocketSubscription([ambientTopic], (msg) => {
     if (!ambientCurve || !msg) return;
