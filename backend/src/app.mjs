@@ -1237,6 +1237,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       immichSource: artImmichSource,
       logger: rootLogger.child({ module: 'art-adapter' })
     }),
+    dataPath: dataBasePath,
     logger: rootLogger.child({ module: 'art-api' })
   });
 
