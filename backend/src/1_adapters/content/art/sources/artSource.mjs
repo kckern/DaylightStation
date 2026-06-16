@@ -25,6 +25,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
         date: p.date != null ? String(p.date) : null,
         origin: p.origin ?? null, medium: p.medium ?? null,
         department: p.department ?? null, credit: p.credit ?? null,
+        category: p.category ?? null, display: p.display ?? null,
         width: toInt(p.width), height: toInt(p.height),
       };
     } catch (err) {

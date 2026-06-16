@@ -36,6 +36,12 @@ describe('buildArtPredicate', () => {
     expect(buildArtPredicate({ artist: 'monet' })(entry())).toBe(true);
     expect(buildArtPredicate({ medium: 'sculpture' })(entry())).toBe(false);
   });
+  it('filters by category and display tier', () => {
+    expect(buildArtPredicate({ display: 'high' })(entry({ display: 'high' }))).toBe(true);
+    expect(buildArtPredicate({ display: 'high' })(entry({ display: 'low' }))).toBe(false);
+    expect(buildArtPredicate({ category: 'painting' })(entry({ category: 'painting' }))).toBe(true);
+    expect(buildArtPredicate({ category: 'painting' })(entry({ category: 'print' }))).toBe(false);
+  });
   it('works restricts by exact folder name', () => {
     const p = buildArtPredicate({ works: ['Claude Monet - 1900 - Water Lilies', 'Other'] });
     expect(p(entry())).toBe(true);

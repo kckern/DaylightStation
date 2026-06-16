@@ -16,7 +16,7 @@ const includesCI = (hay, needle) =>
 // Date filters exclude entries with an unparseable year. Field filters are
 // case-insensitive substring matches. `works` restricts to exact folder names.
 export function buildArtPredicate(def = {}) {
-  const FIELDS = ['origin', 'medium', 'artist', 'department'];
+  const FIELDS = ['origin', 'medium', 'artist', 'department', 'category', 'display'];
   return (entry) => {
     const meta = entry?.meta || {};
     if (def.dateMin != null || def.dateMax != null) {
