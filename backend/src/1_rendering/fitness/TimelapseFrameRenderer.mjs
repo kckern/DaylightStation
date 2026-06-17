@@ -62,22 +62,34 @@ export function createTimelapseFrameRenderer(config = {}) {
     const contentBottom = H - footerH - marginY;
     const contentH = contentBottom - contentTop;
 
-    // Right rail (PiP -> poster -> coin counter), reserved on the right side.
+    // Right rail width (PiP -> poster). Reserved on the right side.
     const railW = pip.enabled ? pip.size[0] : Math.round(W * 0.25);
-    const railX = W - marginX - railW;
     const railGap = Math.round(W * 0.02);
+    const minGap = marginX;
 
-    // Camera: native aspect ratio preserved (contain, NOT cropped), left-aligned,
-    // vertically centered. It only spans the space left of the rail.
-    const camRegionX = marginX;
-    const camRegionW = railX - railGap - marginX;
-    if (cameraBuffer && camRegionW > 0 && contentH > 0) {
+    // Compute the camera's drawn size (native aspect, fills the content height),
+    // then distribute the leftover width as THREE EQUAL gaps: left margin,
+    // center gap, right margin — so the camera and rail are evenly spaced.
+    let hMargin = marginX;
+    let camDraw = null;
+    if (cameraBuffer && contentH > 0) {
       const img = await loadImage(cameraBuffer);
-      const { x, y, w, h } = containRect(img.width, img.height, camRegionX, contentTop, camRegionW, contentH, 'left');
-      ctx.drawImage(img, x, y, w, h);
+      let camH = contentH;
+      let camW = Math.round((img.width / img.height) * camH);
+      const maxCamW = W - railW - 3 * minGap;
+      if (camW > maxCamW) { camW = maxCamW; camH = Math.round((img.height / img.width) * camW); }
+      const gap = Math.max(minGap, Math.round((W - camW - railW) / 3));
+      hMargin = gap;
+      camDraw = { img, camX: gap, camY: contentTop + Math.round((contentH - camH) / 2), camW, camH };
+    }
+    const railX = W - hMargin - railW;
+
+    // Camera (native aspect, NOT cropped), left of the rail, vertically centered.
+    if (camDraw) {
+      ctx.drawImage(camDraw.img, camDraw.camX, camDraw.camY, camDraw.camW, camDraw.camH);
       ctx.strokeStyle = BORDER;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.strokeRect(camDraw.camX + 1, camDraw.camY + 1, camDraw.camW - 2, camDraw.camH - 2);
     }
 
     let railY = contentTop;
@@ -118,10 +130,10 @@ export function createTimelapseFrameRenderer(config = {}) {
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       ctx.font = `600 ${fpx}px "${FONT_FAMILY}"`;
-      ctx.fillText(buildTitle(descriptor), marginX, cy, W * 0.42);
+      ctx.fillText(buildTitle(descriptor), hMargin, cy, W * 0.42);
       ctx.textAlign = 'right';
       ctx.font = `normal ${fpx}px "${FONT_FAMILY}"`;
-      ctx.fillText(formatElapsed(descriptor.elapsedRealMs), W - marginX, cy);
+      ctx.fillText(formatElapsed(descriptor.elapsedRealMs), W - hMargin, cy);
 
       // Coins centered between title and time
       if (descriptor.coins != null) {
@@ -169,7 +181,7 @@ export function createTimelapseFrameRenderer(config = {}) {
       ctx.font = `600 ${fpx}px "${FONT_FAMILY}"`;
 
       ctx.textBaseline = 'middle';
-      let x = marginX;
+      let x = hMargin;
       for (const p of participants) {
         const avatar = avatarBuffers[p.id];
         if (avatar) {
@@ -200,11 +212,11 @@ export function createTimelapseFrameRenderer(config = {}) {
       const rpmFieldW = Math.round(W * 0.11);
       if (descriptor.zone) {
         ctx.textAlign = 'left';
-        ctx.fillText(String(descriptor.zone).toUpperCase(), W - marginX - rpmFieldW - Math.round(W * 0.1), cy);
+        ctx.fillText(String(descriptor.zone).toUpperCase(), W - hMargin - rpmFieldW - Math.round(W * 0.1), cy);
       }
       if (descriptor.rpm != null) {
         ctx.textAlign = 'right';
-        ctx.fillText(`${descriptor.rpm} rpm`, W - marginX, cy);
+        ctx.fillText(`${descriptor.rpm} rpm`, W - hMargin, cy);
       }
       ctx.textAlign = 'left';
     }
