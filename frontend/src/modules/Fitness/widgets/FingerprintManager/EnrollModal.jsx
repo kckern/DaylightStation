@@ -35,7 +35,7 @@ export function EnrollModal({ username, clientToken, onEnroll, onDone, onCancel 
   };
 
   return (
-    <div className="fp-enroll-modal" role="dialog" aria-label={`Enroll fingerprint for ${username}`}>
+    <div className="fp-enroll-modal" role="dialog" aria-modal="true" aria-label={`Enroll fingerprint for ${username}`}>
       {phase === 'pick' && (
         <>
           <label htmlFor="fp-finger">Finger</label>
@@ -49,7 +49,7 @@ export function EnrollModal({ username, clientToken, onEnroll, onDone, onCancel 
       {(phase === 'scanning' || phase === 'done') && (
         <div className="fp-enroll-progress">
           {phase === 'scanning' && <p>Place your finger on the reader…</p>}
-          {progress && <p>{`Stage ${progress.stage} of ${progress.stagesTotal} — lift and place again`}</p>}
+          {phase === 'scanning' && progress && <p>{`Stage ${progress.stage} of ${progress.stagesTotal} — lift and place again`}</p>}
           {phase === 'done' && <p>Done.</p>}
         </div>
       )}
