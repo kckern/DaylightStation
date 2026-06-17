@@ -13,8 +13,8 @@ export class FrameDescriptor {
     wallClockMs,
     elapsedRealMs,
     cameraTimestamp = null,
+    playerTimestamp = null,
     playerContentId = null,
-    playerOffsetMs = null,
     title = null,
     showTitle = null,
     participants = [],
@@ -29,8 +29,8 @@ export class FrameDescriptor {
     this.wallClockMs = wallClockMs;
     this.elapsedRealMs = elapsedRealMs;
     this.cameraTimestamp = cameraTimestamp;
+    this.playerTimestamp = playerTimestamp;
     this.playerContentId = playerContentId;
-    this.playerOffsetMs = playerOffsetMs;
     this.title = title;
     this.showTitle = showTitle;
     this.participants = Object.freeze(participants.map(p => Object.freeze({ ...p })));

@@ -1,11 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { IVideoFrameExtractor } from './IVideoFrameExtractor.mjs';
 import { IVideoEncoder } from './IVideoEncoder.mjs';
 import { IRecapSnapshotStore } from './IRecapSnapshotStore.mjs';
 
 test('ports throw when not implemented', async () => {
-  await assert.rejects(() => new IVideoFrameExtractor().extractFrame({}), /must be implemented/);
   await assert.rejects(() => new IVideoEncoder().encodeSequence({}), /must be implemented/);
   await assert.rejects(() => new IRecapSnapshotStore().listCaptures('x'), /must be implemented/);
   await assert.rejects(() => new IRecapSnapshotStore().readCapture('p'), /must be implemented/);
