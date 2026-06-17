@@ -151,6 +151,29 @@ describe('FitnessShow — governed-show unlock affordance', () => {
     expect(resetUnlock).toHaveBeenCalled();
   });
 
+  it('resets the bypass when navigating to a different show (no cross-show leak)', async () => {
+    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    const utils = await renderShow(GOVERNED_SHOW, GOVERNANCE_CTX({ governance_bypass: ['test-user'] }));
+
+    // Grant the bypass on show A → unlocked glyph appears.
+    await act(async () => { fireEvent.pointerDown(screen.getByLabelText('Unlock governed content')); });
+    await waitFor(() => expect(screen.getByLabelText('Governance unlocked')).toBeTruthy());
+
+    // Navigate to a DIFFERENT governed show on the same (keyless) instance.
+    const SHOW_B = { ...GOVERNED_SHOW, info: { ...GOVERNED_SHOW.info, title: 'Other Governed Show' } };
+    DaylightAPI.mockResolvedValue(SHOW_B);
+    await act(async () => {
+      utils.rerender(
+        <FitnessShow showId="plex:9001" setFitnessPlayQueue={setFitnessPlayQueue} onPlay={onPlay} onBack={() => {}} />
+      );
+    });
+    await screen.findByText('Other Governed Show', {}, { timeout: 4000 });
+
+    // Bypass must NOT leak: the unlocked glyph is gone; the locked affordance is back.
+    expect(screen.queryByLabelText('Governance unlocked')).toBeNull();
+    expect(screen.getByLabelText('Unlock governed content')).toBeTruthy();
+  });
+
   it('keeps a purely-informational lock (no button) when governance_bypass is absent', async () => {
     await renderShow(GOVERNED_SHOW, GOVERNANCE_CTX({}));
 

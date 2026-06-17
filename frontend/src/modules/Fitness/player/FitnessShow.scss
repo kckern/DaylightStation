@@ -453,6 +453,12 @@
         color: rgba(255, 255, 255, 0.85);
 
         &.governed-lock-icon--button {
+          // Reset native button defaults so it matches the adjacent informational
+          // <span> glyph (font/metrics/appearance) rather than UA button styling.
+          appearance: none;
+          font: inherit;
+          line-height: inherit;
+          color: inherit;
           background: rgba(255, 255, 255, 0.12);
           border: 1px solid rgba(255, 255, 255, 0.35);
           border-radius: 999px;
@@ -994,6 +1000,11 @@
             letter-spacing: 0.02em;
 
             &.episode-pill-locked--button {
+              // Reset native button defaults for visual parity with the inert pill span.
+              appearance: none;
+              font: inherit;
+              line-height: inherit;
+              color: inherit;
               display: inline-flex;
               align-items: center;
               justify-content: center;
