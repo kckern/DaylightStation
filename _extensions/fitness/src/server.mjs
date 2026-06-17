@@ -2,9 +2,16 @@ import express from 'express';
 import WebSocket from 'ws';
 import { ANTPlusManager } from './ant.mjs';
 import { BLEManager } from './ble.mjs';
+import { selectSimCandidate } from './unlockSim.mjs';
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
+// Hardware-free fingerprint unlock simulation mode. Unset (or any unrecognized
+// value) keeps the real-identify stub so the on-box helper can slot in later.
+//   auto-match   → immediately reply matched:true (sim candidate / first)
+//   auto-deny    → immediately reply matched:false, reason:'sim-deny'
+//   interactive  → hold the request; a CLI resolves it via /fingerprint/* HTTP
+const FINGERPRINT_SIM = process.env.FINGERPRINT_SIM || '';
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SERIAL_DEVICE = process.env.SERIAL_DEVICE || '/dev/ttyUSB0';
@@ -16,6 +23,25 @@ const app = express();
 // Global state
 let websocketClient = null;
 let reconnectInterval = null;
+
+// Pending interactive unlock requests, keyed by requestId. Only populated when
+// FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
+// via POST /fingerprint/simulate. Insertion order is preserved, so the "most
+// recent" pending request is the last entry.
+const pendingUnlockRequests = new Map();
+
+// Send a fitness.unlock.result over the WS, matching the Task 2.3 shape exactly.
+// Deliberately NO `source: 'fitness'` key — that would make the backend
+// rebroadcast the message as fitness sensor data; the backend routes the result
+// purely on `topic`.
+function sendUnlockResult(result) {
+  if (websocketClient && websocketClient.readyState === WebSocket.OPEN) {
+    websocketClient.send(JSON.stringify({ topic: 'fitness.unlock.result', ...result }));
+    return true;
+  }
+  console.error(`❌ Cannot send unlock result for requestId=${result.requestId}: WebSocket not open`);
+  return false;
+}
 
 // Broadcast function for fitness data
 function broadcastFitnessData(message) {
@@ -80,27 +106,47 @@ async function connectWebSocket() {
 
       // Fingerprint unlock request: the backend wants this box to identify a
       // finger against the candidate uuids. The actual on-box identify call is
-      // a later hardware task; for now reply with a not-implemented stub so the
-      // request/result round-trip is exercisable end to end without hardware.
+      // a later hardware task. The FINGERPRINT_SIM env selects a hardware-free
+      // simulation path so the request/result round-trip is exercisable end to
+      // end without the physical reader.
       if (message.topic === 'fitness.unlock.request') {
         const { requestId, lockName, candidateUuids } = message;
-        console.log(`🔐 Unlock request received (lock=${lockName}, candidates=${Array.isArray(candidateUuids) ? candidateUuids.length : 0}, requestId=${requestId})`);
+        const candidateCount = Array.isArray(candidateUuids) ? candidateUuids.length : 0;
+        console.log(`🔐 Unlock request received (lock=${lockName}, candidates=${candidateCount}, requestId=${requestId}, sim=${FINGERPRINT_SIM || 'off'})`);
 
-        // TODO(Task 1.x): call host identify helper against candidateUuids and
-        // reply with { matched: true, userId } on a match.
-        // Note: deliberately NO `source: 'fitness'` here — that key makes the
-        // backend rebroadcast the message as fitness sensor data. The backend
-        // routes the result purely on `topic`.
-        const result = {
-          topic: 'fitness.unlock.result',
-          requestId,
-          matched: false,
-          reason: 'not-implemented'
-        };
-        if (websocketClient && websocketClient.readyState === WebSocket.OPEN) {
-          websocketClient.send(JSON.stringify(result));
-          console.log(`🔐 Unlock result sent (stub, matched=false) for requestId=${requestId}`);
+        if (FINGERPRINT_SIM === 'auto-match') {
+          const chosen = selectSimCandidate(candidateUuids);
+          if (chosen) {
+            sendUnlockResult({ requestId, matched: true, userId: chosen.username, uuid: chosen.uuid });
+            console.log(`🔐 Unlock result sent (sim auto-match, user=${chosen.username}, uuid=${chosen.uuid}) for requestId=${requestId}`);
+          } else {
+            sendUnlockResult({ requestId, matched: false, reason: 'sim-deny' });
+            console.log(`🔐 Unlock result sent (sim auto-match had no candidates → deny) for requestId=${requestId}`);
+          }
+          return;
         }
+
+        if (FINGERPRINT_SIM === 'auto-deny') {
+          sendUnlockResult({ requestId, matched: false, reason: 'sim-deny' });
+          console.log(`🔐 Unlock result sent (sim auto-deny) for requestId=${requestId}`);
+          return;
+        }
+
+        if (FINGERPRINT_SIM === 'interactive') {
+          pendingUnlockRequests.set(requestId, {
+            requestId,
+            candidateUuids: Array.isArray(candidateUuids) ? candidateUuids : [],
+            receivedAt: new Date().toISOString()
+          });
+          console.log(`🔐 Unlock request held for interactive resolution (requestId=${requestId}, pending=${pendingUnlockRequests.size})`);
+          return;
+        }
+
+        // TODO(Task 1.4): call host identify helper against candidateUuids and
+        // reply with { matched: true, userId } on a match. Until then, the
+        // default (unset FINGERPRINT_SIM) is the not-implemented stub.
+        sendUnlockResult({ requestId, matched: false, reason: 'not-implemented' });
+        console.log(`🔐 Unlock result sent (stub, matched=false) for requestId=${requestId}`);
         return;
       }
     });
@@ -217,6 +263,52 @@ app.get('/ble/hr/stop', async (req, res) => {
   console.log('📱 Stopping BLE HR scan');
   const result = await bleManager.stopHRScan();
   res.json({ success: result });
+});
+
+// Fingerprint simulation endpoints (FINGERPRINT_SIM=interactive). A CLI calls
+// these to resolve a held unlock request without the physical reader.
+
+// Resolve the MOST RECENT pending request and send its fitness.unlock.result.
+//   body { match: true, uuid?: <uuid> } → matched with selected candidate
+//   body { match: false }               → matched:false, reason:'sim-deny'
+app.post('/fingerprint/simulate', (req, res) => {
+  if (pendingUnlockRequests.size === 0) {
+    return res.status(409).json({ error: 'no-pending-request' });
+  }
+
+  // Map preserves insertion order; the last key is the most recent request.
+  const requestId = Array.from(pendingUnlockRequests.keys()).pop();
+  const pending = pendingUnlockRequests.get(requestId);
+  pendingUnlockRequests.delete(requestId);
+
+  const { match, uuid } = req.body || {};
+
+  if (match === true) {
+    const chosen = selectSimCandidate(pending.candidateUuids, uuid);
+    if (chosen) {
+      sendUnlockResult({ requestId, matched: true, userId: chosen.username, uuid: chosen.uuid });
+      console.log(`🔐 Interactive simulate → MATCH (user=${chosen.username}, uuid=${chosen.uuid}) for requestId=${requestId}`);
+      return res.json({ resolved: requestId, matched: true, userId: chosen.username, uuid: chosen.uuid });
+    }
+    // match:true requested but the held request carried no candidates.
+    sendUnlockResult({ requestId, matched: false, reason: 'sim-deny' });
+    console.log(`🔐 Interactive simulate → MATCH requested but no candidates → deny for requestId=${requestId}`);
+    return res.json({ resolved: requestId, matched: false, reason: 'sim-deny' });
+  }
+
+  sendUnlockResult({ requestId, matched: false, reason: 'sim-deny' });
+  console.log(`🔐 Interactive simulate → DENY for requestId=${requestId}`);
+  return res.json({ resolved: requestId, matched: false, reason: 'sim-deny' });
+});
+
+// Debug visibility into held interactive requests.
+app.get('/fingerprint/pending', (req, res) => {
+  const pending = Array.from(pendingUnlockRequests.values()).map((p) => ({
+    requestId: p.requestId,
+    candidateCount: p.candidateUuids.length,
+    receivedAt: p.receivedAt
+  }));
+  res.json({ pending });
 });
 
 // Health check endpoint
