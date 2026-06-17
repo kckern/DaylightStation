@@ -36,6 +36,8 @@ SWEEP_INTERVAL=3600
 STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
 ORPHAN_SINK_TICKS=2            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis)
 ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
+HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
+RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
 
 # Central cache manager — sourced for both direct-exec and source (tests).
 # Defined here, before refresh_config_cache, and NOT inside the dispatch guard.
@@ -511,6 +513,26 @@ selfcheck_loop() {
     done
 }
 
+# Clear the per-slot reconnect-outage state and, if an outage was actually in
+# progress (misses > 0), emit a single bt.reconnect_recovered carrying how long
+# the headset was unreachable. Pairs with the throttled bt.reconnect_fail so the
+# ledger tells a clean outage→recovery story instead of thousands of per-tick
+# fails. Idempotent: a no-op clear (no prior misses) emits nothing. The
+# outage-start epoch is stamped on the 1→ transition in the miss path below.
+#   args: tag dir
+note_reconnect_recovered() {
+    local tag="$1" dir="$2"
+    local mf="$dir/.connect-misses" sf="$dir/.connect-outage-start"
+    local m=0; [[ -f "$mf" ]] && m=$(cat "$mf" 2>/dev/null || echo 0)
+    [[ "$m" =~ ^[0-9]+$ ]] || m=0
+    if (( m > 0 )); then
+        local st now; st=$(cat "$sf" 2>/dev/null || echo 0); now=$(date +%s)
+        [[ "$st" =~ ^[0-9]+$ ]] || st=$now
+        logev "$tag" bt.reconnect_recovered misses="$m" outage_sec=$(( now - st ))
+    fi
+    rm -f "$mf" "$sf" "$dir/.connect-alerted" 2>/dev/null || true
+}
+
 # connectivity_loop — proactive Bluetooth self-heal for private headsets.
 #
 # The gdbus monitor only reacts to a headset connecting *itself*. If a bonded
@@ -553,13 +575,17 @@ connectivity_loop() {
             # Only the hub's "should be playing now" windows drive proactive
             # reconnects. Outside any window: clear state and leave it alone.
             if ! active_schedule_json "$device_json" >/dev/null 2>&1; then
-                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                # Window closed — clear silently (not a "recovery"; the headset
+                # may still be off, we just stop chasing it).
+                rm -f "$miss_file" "$alert_file" "$dir/.connect-outage-start" 2>/dev/null || true
                 continue
             fi
 
-            # Already linked → healthy; clear counters and move on.
+            # Already linked → healthy; close out any outage (recovery event) and
+            # move on. Covers the common case where the gdbus monitor reconnected
+            # the headset and we just notice the live link here.
             if bt_connected "$mac"; then
-                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                note_reconnect_recovered "$tag" "$dir"
                 continue
             fi
 
@@ -578,7 +604,7 @@ connectivity_loop() {
             if bt_connected "$mac"; then
                 log "$tag" "reconnect succeeded"
                 logev "$tag" bt.reconnect_ok mac="$mac"
-                rm -f "$miss_file" "$alert_file" 2>/dev/null || true
+                note_reconnect_recovered "$tag" "$dir"
                 continue
             fi
 
@@ -588,7 +614,16 @@ connectivity_loop() {
             [[ "$misses" =~ ^[0-9]+$ ]] || misses=0
             misses=$((misses + 1))
             echo "$misses" > "$miss_file"
-            logev "$tag" bt.reconnect_fail mac="$mac" misses="$misses"
+            # Stamp the outage-start epoch on the first miss so the matching
+            # bt.reconnect_recovered can report total outage duration.
+            (( misses == 1 )) && date +%s > "$dir/.connect-outage-start"
+            # Throttle: the per-tick emit was ~95% of the ledger. Keep the onset,
+            # every escalation tick (3,6,9,12 — same cadence as the adapter
+            # reset), and a coarse every-Nth heartbeat past the cap so a long
+            # outage still leaves a periodic trail without flooding.
+            if (( misses == 1 )) || should_escalate_reset "$misses" || (( misses % RECONNECT_LOG_EVERY == 0 )); then
+                logev "$tag" bt.reconnect_fail mac="$mac" misses="$misses"
+            fi
             # Escalation: heal_adapter_pscan above is a no-op when PSCAN is
             # present, so a controller that's wedged-but-PSCAN-healthy would
             # otherwise retry the same gentle Connect forever. After enough
@@ -2192,6 +2227,37 @@ mpv_check_orphan_sink() {
     return 1
 }
 
+# Positive playback-liveness heartbeat. Called from the watchdog's ALIVE branch
+# every tick, but self-throttled to one emit per HEARTBEAT_INTERVAL per slot so
+# the ledger gets a periodic "audio is (or isn't) flowing" sample without spam.
+# This is the ONLY event that captures steady-state playback: track.start fires
+# only on a track CHANGE and is suppressed on resume-to-same-track, so without
+# this a connected-but-paused / connected-but-silent slot leaves no trace at all
+# (the exact gap that made connected-but-paused RED invisible in events.jsonl).
+# State: $dir/.last_heartbeat (epoch). Cleared implicitly when mpv dies (the
+# next live mpv just re-throttles from its own first tick). Best-effort: any IPC
+# miss yields empty fields, never aborts the watchdog (|| true at call site).
+#   args: slot tag socket
+emit_heartbeat() {
+    local slot="$1" tag="$2" socket="$3" dir; dir="$(slot_dir "$slot")"
+    [[ -S "$socket" ]] || return 0
+    local last now; last="$(cat "$dir/.last_heartbeat" 2>/dev/null || echo 0)"
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    now=$(date +%s)
+    (( now - last < HEARTBEAT_INTERVAL )) && return 0
+    printf '%s' "$now" > "$dir/.last_heartbeat"
+    local pos paused id sink present
+    pos="$(mpv_get_prop "$socket" time-pos)"
+    # mpv_get_prop pipes through `jq '.data // empty'`, and jq's // treats the
+    # boolean FALSE as empty — so a playing (pause=false) slot would emit an empty
+    # paused field. Normalize the empty case to an explicit false so the heartbeat
+    # always carries a real true/false.
+    paused="$(mpv_get_prop "$socket" pause)"; paused="${paused:-false}"
+    id="$(mpv_current_plexid "$socket")"
+    IFS=$'\t' read -r sink present < <(mpv_output_sink "$socket") || true
+    logev "$tag" playback.heartbeat plex_id="$id" pos="$pos" paused="$paused" sink_live="$present"
+}
+
 # Tight liveness watchdog. Every WATCHDOG_INTERVAL seconds, for each
 # device that is BT-connected, verify mpv is alive. If mpv died (crash,
 # OOM, audio sink error) the gdbus monitor loop won't notice — it only
@@ -2249,6 +2315,11 @@ mpv_watchdog() {
                 # another headset. Poll-based backstop: reap any survivor.
                 if [[ -f "$dir/mpv.pid" ]] && kill -0 "$(cat "$dir/mpv.pid" 2>/dev/null)" 2>/dev/null; then
                     log "$tag" "watchdog: device disconnected but mpv alive — reaping (missed gdbus disconnect?)"
+                    # Ledger integrity: the gdbus monitor missed the disconnect
+                    # edge, so it never logged bt.disconnect — the prior session
+                    # would otherwise hang open forever. Emit the close here (the
+                    # only place that observed the drop) so sessions stay paired.
+                    logev "$tag" bt.disconnect mac="$mac" reason=watchdog_reap
                     stop_playback "$slot" "$tag" fast
                 fi
                 continue
@@ -2273,6 +2344,8 @@ mpv_watchdog() {
                     # cooldown-guarded so it can't thrash. `|| true` keeps the
                     # watchdog loop unbreakable even under set -e.
                     mpv_check_stall "$slot" "$tag" "$dir/mpv-socket" || true
+                    # Positive liveness sample (self-throttled to HEARTBEAT_INTERVAL).
+                    emit_heartbeat "$slot" "$tag" "$dir/mpv-socket" || true
                     continue
                 fi
                 rm -f "$dir/mpv.pid" "$dir/mpv-socket"
@@ -2437,6 +2510,15 @@ monitor() {
                         if ! bt_link_stable "$_cmac"; then
                             log "$name" "link unstable during settle — deferring playback to next stable connect"
                             logev "$name" bt.connect_unstable mac="$_cmac"
+                            # Ledger integrity: we logged bt.connect above but the
+                            # link did not hold, so connected_state stays false and
+                            # a later BlueZ drop emits NO bt.disconnect (guarded on
+                            # connected_state==true). Without a closing event a
+                            # naive connect→disconnect pairing reads this as a
+                            # multi-hour "session" (it fooled the 2026-06-16 log
+                            # review). Emit an explicit close so the connect is
+                            # self-balancing in events.jsonl.
+                            logev "$name" bt.connect_aborted mac="$_cmac"
                             continue
                         fi
                         connected_state[$dbus_id]=true
