@@ -50,62 +50,98 @@ export function createTimelapseFrameRenderer(config = {}) {
   const marginX = Math.round(W * 0.03);
   const marginY = Math.round(H * 0.04);
 
-  async function renderFrame({ cameraBuffer, playerBuffer, avatarBuffers = {}, descriptor }) {
+  async function renderFrame({ cameraBuffer, playerBuffer, posterBuffer = null, avatarBuffers = {}, descriptor }) {
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext('2d');
 
-    // Solid background fills the whole canvas (the camera will be inset on top)
+    // Solid background fills the whole canvas (content is inset on top)
     ctx.fillStyle = BG;
     ctx.fillRect(0, 0, W, H);
 
-    // Camera content area (between the bands), with margin so it does not fill the canvas
-    const areaTop = titleH;
-    const areaBottom = H - footerH;
-    const camX = marginX;
-    const camY = areaTop + marginY;
-    const camW = W - marginX * 2;
-    const camH = (areaBottom - areaTop) - marginY * 2;
-    if (cameraBuffer && camW > 0 && camH > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(camX, camY, camW, camH);
-      ctx.clip();
-      drawCover(ctx, await loadImage(cameraBuffer), camX, camY, camW, camH);
-      ctx.restore();
+    const contentTop = titleH + marginY;
+    const contentBottom = H - footerH - marginY;
+    const contentH = contentBottom - contentTop;
+
+    // Right rail (PiP -> poster -> coin counter), reserved on the right side.
+    const railW = pip.enabled ? pip.size[0] : Math.round(W * 0.25);
+    const railX = W - marginX - railW;
+    const railGap = Math.round(W * 0.02);
+
+    // Camera: native aspect ratio preserved (contain, NOT cropped), left-aligned,
+    // vertically centered. It only spans the space left of the rail.
+    const camRegionX = marginX;
+    const camRegionW = railX - railGap - marginX;
+    if (cameraBuffer && camRegionW > 0 && contentH > 0) {
+      const img = await loadImage(cameraBuffer);
+      const { x, y, w, h } = containRect(img.width, img.height, camRegionX, contentTop, camRegionW, contentH, 'left');
+      ctx.drawImage(img, x, y, w, h);
       ctx.strokeStyle = BORDER;
       ctx.lineWidth = 2;
-      ctx.strokeRect(camX + 1, camY + 1, camW - 2, camH - 2);
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
     }
 
-    // Player PiP — top-right, inside the camera area
+    let railY = contentTop;
+    // Player PiP at the top of the rail
     if (pip.enabled && playerBuffer) {
-      const [pw, ph] = pip.size;
-      const pad = Math.round(W * 0.012);
-      const px = camX + camW - pw - pad;
-      const py = camY + pad;
+      const pw = railW;
+      const ph = Math.round(pw * 9 / 16);
       ctx.fillStyle = '#000';
-      ctx.fillRect(px - 4, py - 4, pw + 8, ph + 8);
-      drawCover(ctx, await loadImage(playerBuffer), px, py, pw, ph);
+      ctx.fillRect(railX - 4, railY - 4, pw + 8, ph + 8);
+      drawCover(ctx, await loadImage(playerBuffer), railX, railY, pw, ph);
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 3;
-      ctx.strokeRect(px, py, pw, ph);
+      ctx.strokeRect(railX, railY, pw, ph);
+      railY += ph + railGap;
     }
 
-    // Title band (solid border band, not an overlay)
+    // Poster fills the remaining rail height below the PiP.
+    const posterAreaH = contentBottom - railY;
+    if (posterBuffer && posterAreaH > Math.round(H * 0.08)) {
+      const img = await loadImage(posterBuffer);
+      const { x, y, w, h } = containRect(img.width, img.height, railX, railY, railW, posterAreaH, 'center');
+      ctx.drawImage(img, x, y, w, h);
+      ctx.strokeStyle = BORDER;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
+
+    // Title band (solid border band, not an overlay):
+    // left = show — episode, center = animated coin counter, right = elapsed.
     if (titleH > 0) {
       ctx.fillStyle = BAND;
       ctx.fillRect(0, 0, W, titleH);
       ctx.fillStyle = BORDER;
       ctx.fillRect(0, titleH - 2, W, 2);
       const fpx = Math.round(titleH * 0.5);
+      const cy = titleH / 2;
       ctx.fillStyle = '#fff';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       ctx.font = `600 ${fpx}px "${FONT_FAMILY}"`;
-      ctx.fillText(descriptor.title || 'Workout', marginX, titleH / 2);
+      ctx.fillText(buildTitle(descriptor), marginX, cy, W * 0.42);
       ctx.textAlign = 'right';
       ctx.font = `normal ${fpx}px "${FONT_FAMILY}"`;
-      ctx.fillText(formatElapsed(descriptor.elapsedRealMs), W - marginX, titleH / 2);
+      ctx.fillText(formatElapsed(descriptor.elapsedRealMs), W - marginX, cy);
+
+      // Coins centered between title and time
+      if (descriptor.coins != null) {
+        const labelPx = Math.round(fpx * 0.6);
+        const valPx = fpx;
+        const label = 'COINS ';
+        const val = formatCoins(descriptor.coins);
+        ctx.font = `600 ${labelPx}px "${FONT_FAMILY}"`;
+        const lw = ctx.measureText(label).width;
+        ctx.font = `600 ${valPx}px "${FONT_FAMILY}"`;
+        const vw = ctx.measureText(val).width;
+        const startX = Math.round(W / 2 - (lw + vw) / 2);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = `600 ${labelPx}px "${FONT_FAMILY}"`;
+        ctx.fillText(label, startX, cy + 1);
+        ctx.fillStyle = '#ffd54a';
+        ctx.font = `600 ${valPx}px "${FONT_FAMILY}"`;
+        ctx.fillText(val, startX + lw, cy);
+      }
       ctx.textAlign = 'left';
     }
 
@@ -177,6 +213,27 @@ export function createTimelapseFrameRenderer(config = {}) {
   }
 
   return { renderFrame };
+}
+
+// Contain-fit: preserve aspect ratio, no cropping. align = 'left' | 'center'.
+function containRect(iw, ih, rx, ry, rw, rh, align = 'center') {
+  const scale = Math.min(rw / iw, rh / ih);
+  const w = Math.round(iw * scale);
+  const h = Math.round(ih * scale);
+  const x = align === 'left' ? rx : rx + Math.round((rw - w) / 2);
+  const y = ry + Math.round((rh - h) / 2);
+  return { x, y, w, h };
+}
+
+function buildTitle(descriptor) {
+  const show = descriptor.showTitle;
+  const ep = descriptor.title;
+  if (show && ep && show !== ep) return `${show} — ${ep}`;
+  return ep || show || 'Workout';
+}
+
+function formatCoins(n) {
+  return Number(n).toLocaleString('en-US');
 }
 
 function drawCover(ctx, img, dx, dy, dw, dh) {
