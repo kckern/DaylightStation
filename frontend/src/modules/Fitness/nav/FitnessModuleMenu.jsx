@@ -49,9 +49,9 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
     [locks]
   );
 
-  // A single unlock instance owned by the menu. `pendingLaunchRef` holds the
+  // A single unlock instance owned by the menu. `pendingLaunch` holds the
   // launch we must perform once a fingerprint matches.
-  const { requestUnlock, state: unlockState, activeLock, reset } = useUnlock();
+  const { requestUnlock, state: unlockState, reset } = useUnlock();
   const [pendingLaunch, setPendingLaunch] = useState(null); // { id, manifest, label }
 
   const performLaunch = useCallback((id, manifest) => {
@@ -63,6 +63,10 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
       performLaunch(mod.id, mod.manifest);
       return;
     }
+    // Ignore taps (on this or any other locked card) while a prompt is already
+    // open, so a second card can't repoint the prompt's label over an in-flight
+    // or just-resolved scan. The open prompt must be dismissed first.
+    if (pendingLaunch) return;
     const label = mod.name || mod.manifest?.name || mod.id;
     logger().info('module.locked_tap', { module: mod.id });
     setPendingLaunch({ id: mod.id, manifest: mod.manifest, label });
@@ -73,7 +77,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
       // matched:false / denied — leave the prompt up showing the denied state;
       // the user dismisses via cancel/close which calls closeUnlock().
     });
-  }, [isLocked, performLaunch, requestUnlock]);
+  }, [isLocked, performLaunch, requestUnlock, pendingLaunch]);
 
   const closeUnlock = useCallback(() => {
     setPendingLaunch(null);
@@ -170,7 +174,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
       <UnlockPrompt
         open={!!pendingLaunch}
         state={unlockState}
-        lockLabel={pendingLaunch?.label || (activeLock ? activeLock : undefined)}
+        lockLabel={pendingLaunch?.label}
         onCancel={closeUnlock}
       />
     </div>
