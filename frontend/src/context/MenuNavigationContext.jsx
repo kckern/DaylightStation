@@ -45,6 +45,21 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
   const clearPopGuard = useCallback(() => {
     popGuardRef.current = null;
   }, []);
+
+  // Back consumer: gets first dibs on the hardware/browser Back button (popstate)
+  // BEFORE the menu pops. Returns true if it consumed the back (e.g. dismissed a
+  // fullscreen overlay sitting above the menu, such as a triggered ArtMode scene),
+  // in which case the menu is left untouched. Separate from popGuard, which is an
+  // in-menu confirmation gate; this is an above-the-menu overlay escape hatch.
+  const backConsumerRef = useRef(null);
+
+  const registerBackConsumer = useCallback((fn) => {
+    backConsumerRef.current = fn;
+  }, []);
+
+  const unregisterBackConsumer = useCallback(() => {
+    backConsumerRef.current = null;
+  }, []);
   
   /**
    * Push new content onto the stack
@@ -134,7 +149,14 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     const handlePopState = (event) => {
       event.preventDefault();
       navLogger().info('nav.popstate', { historyLength: window.history.length });
-      pop();
+      // Give an overlay back-consumer first dibs: a fullscreen scene above the
+      // menu (e.g. a triggered ArtMode slideshow) should be dismissed by Back
+      // instead of silently popping the hidden menu stack beneath it.
+      if (backConsumerRef.current && backConsumerRef.current()) {
+        navLogger().info('nav.popstate-consumed', {});
+      } else {
+        pop();
+      }
       // Push a new state to keep the trap active
       window.history.pushState(null, '', window.location.href);
       return false;
@@ -167,6 +189,8 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     replace,
     setPopGuard,
     clearPopGuard,
+    registerBackConsumer,
+    unregisterBackConsumer,
 
     // Bug 04 fix: Refetch counter for data invalidation
     refetchCounter,

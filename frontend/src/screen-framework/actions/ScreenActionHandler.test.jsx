@@ -9,6 +9,7 @@ import {
   _resetForTests as resetVolumeModuleState,
 } from '../../lib/volume/ScreenVolumeContext.js';
 import { ScreenActionHandler } from './ScreenActionHandler.jsx';
+import { MenuNavigationProvider } from '../../context/MenuNavigationContext.jsx';
 import * as apiModule from '../../lib/api.mjs';
 
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
@@ -740,6 +741,57 @@ describe('ScreenActionHandler', () => {
 
     window.removeEventListener('player:queue-op', handler);
     dummy.remove();
+  });
+
+  describe('hardware Back (popstate) consumer', () => {
+    it('dismisses a fullscreen art scene on Back (popstate)', async () => {
+      const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+      const { findByTestId, queryByTestId } = render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+      await findByTestId('art-scene');
+
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      expect(queryByTestId('art-scene')).toBeNull();   // Back left the scene
+      spy.mockRestore();
+    });
+
+    it('defers to menu nav (scene stays) when an overlay owns its back via an escape interceptor', async () => {
+      const spy = vi.spyOn(apiModule, 'DaylightAPI').mockResolvedValue({ collection: 'all' });
+      const { findByTestId, getByTestId } = render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <InterceptorRegistrar handled={true} />
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      await act(async () => { getActionBus().emit('display:content', { id: 'art:x' }); });
+      await findByTestId('art-scene');
+
+      // An interceptor is registered → the consumer defers (menu pop owns Back),
+      // so the fullscreen overlay is NOT dismissed by the consumer.
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      expect(getByTestId('art-scene')).toBeTruthy();
+      spy.mockRestore();
+    });
+
+    it('does not crash on Back when nothing is open', () => {
+      render(
+        <MenuNavigationProvider>
+          <ScreenOverlayProvider>
+            <ScreenActionHandler />
+          </ScreenOverlayProvider>
+        </MenuNavigationProvider>
+      );
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+      // no throw, nothing to assert beyond a clean run
+    });
   });
 
   describe('display:volume (software master)', () => {
