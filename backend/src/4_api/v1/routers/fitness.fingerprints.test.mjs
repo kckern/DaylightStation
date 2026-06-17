@@ -159,4 +159,18 @@ describe('DELETE /fingerprints', () => {
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: 'unknown-fingerprint' });
   });
+
+  it('enrolled user with a denied scan → 403 auth-denied, no delete', async () => {
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: false });
+    const requestDelete = vi.fn();
+    const { app, fingerprintProfileWriter } = appWith({
+      profiles: { 'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } } },
+      unlockService: { requestUnlock }, manageService: { requestDelete },
+    });
+    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'right-index' });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'auth-denied' });
+    expect(requestDelete).not.toHaveBeenCalled();
+    expect(fingerprintProfileWriter.removeFingerprint).not.toHaveBeenCalled();
+  });
 });

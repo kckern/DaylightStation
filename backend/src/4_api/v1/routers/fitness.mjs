@@ -1383,7 +1383,7 @@ export function createFitnessRouter(config) {
    * admin flag and enrolled fingers (finger + date only). Never returns uuids;
    * never lists family/friends.
    */
-  router.get('/fingerprints', (req, res) => {
+  router.get('/fingerprints', asyncHandler(async (req, res) => {
     const out = [];
     for (const username of primaryUsernames(req)) {
       const profile = userService?.getProfile?.(username);
@@ -1397,7 +1397,7 @@ export function createFitnessRouter(config) {
       });
     }
     res.json(out);
-  });
+  }));
 
   /**
    * Run the self/admin identify gate for managing `username`. Returns
