@@ -34,6 +34,47 @@ export function formatPeopleList(names) {
   return `${names.slice(0, MAX_NAMES).join(', ')}, and ${others} other${others === 1 ? '' : 's'}`;
 }
 
+// EXIF orientation → how to project a RAW face-box center onto a horizontal sort
+// key in DISPLAY space. Immich face boxes are in raw sensor pixels (face.imageWidth/
+// Height), so for a quarter-turn orientation raw-X runs vertically on screen and we
+// must use raw-Y instead. Only relative order matters, so signs count but offsets
+// don't. Orientation values: 1 normal, 2 mirror-H, 3 180°, 4 mirror-V, 5 transpose,
+// 6 90°CW, 7 transverse, 8 90°CCW.
+function faceSortKey(face, orientation) {
+  const cx = (Number(face.boundingBoxX1) + Number(face.boundingBoxX2)) / 2;
+  const cy = (Number(face.boundingBoxY1) + Number(face.boundingBoxY2)) / 2;
+  const w = Number(face.imageWidth) || 0;
+  const h = Number(face.imageHeight) || 0;
+  switch (Number(orientation)) {
+    case 2: case 3: return w - cx;   // horizontal flip / 180° → x reads right-to-left
+    case 5: case 8: return cy;       // transpose / 90° CCW → raw-Y becomes display-X
+    case 6: case 7: return h - cy;   // 90° CW / transverse → inverted raw-Y is display-X
+    default:        return cx;       // 1, 4, or missing → raw-X is display-X
+  }
+}
+
+// People ordered left-to-right by the horizontal center of their (leftmost) face,
+// projected into display space via the photo's EXIF orientation — so a placard's
+// names read in the same order the faces appear in the picture. People with no face
+// box sort last, keeping Immich's original order among themselves. Returns the
+// people objects reordered (the caller maps to names).
+export function orderPeopleByFace(people, orientation) {
+  const keyFor = (p) => {
+    const faces = Array.isArray(p?.faces) ? p.faces : [];
+    if (!faces.length) return null;
+    return Math.min(...faces.map((f) => faceSortKey(f, orientation)));
+  };
+  return [...(people || [])]
+    .map((p, i) => ({ p, i, k: keyFor(p) }))
+    .sort((a, b) => {
+      if (a.k == null && b.k == null) return a.i - b.i;
+      if (a.k == null) return 1;
+      if (b.k == null) return -1;
+      return a.k - b.k || a.i - b.i;
+    })
+    .map((e) => e.p);
+}
+
 // Coarse part-of-day for an ISO timestamp; null if the date is unparseable.
 export function getTimeOfDayLabel(iso) {
   const d = new Date(iso);
