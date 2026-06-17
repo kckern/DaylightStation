@@ -55,7 +55,10 @@ identities:
 4. The container runs libfprint **identify** against the candidate gallery (or the
    `FINGERPRINT_SIM` path pre-hardware) and replies `fitness.unlock.result`.
 5. Backend returns `{ matched, userId }`; the frontend launches the gated action on a match.
-   **Per-action** — no persisted "unlocked" state.
+   **Per-action** — no persisted "unlocked" state. On every match `useUnlock` plays a success
+   chime (`apps/fitness/ux/unlock.mp3`) via `useGovernanceAudioDuck.playCueOnce` on the shared
+   cue-audio element; the element is primed from the unlock tap gesture (so it also plays in
+   the menu, where no `FitnessPlayer` is mounted to install the gesture-unlock listener).
 
 ## UI gates
 
