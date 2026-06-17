@@ -1350,14 +1350,16 @@ export class PlexAdapter {
     // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
     // MSE demuxer cannot append; see _buildTranscodeUrl comment).
     //
-    // The frame-rate upper-bound only rides on forced-transcode decisions: a
-    // profile limitation also disqualifies direct play/stream, so sending it
-    // with directPlay=1 made every 60fps h264 source software-transcode and
-    // stall mid-flight when the encoder fell behind (2026-06-10 Daytona
-    // incident). The transcode path (_buildTranscodeUrl) keeps the cap.
+    // The frame-rate upper-bound must ride ONLY on full forced-transcode
+    // decisions. A profile limitation disqualifies video stream-COPY too, not
+    // just direct play — so gating it on allowDirectPlay (false whenever audio
+    // is opus/ac3) sent the 30fps cap on h264 sources we meant to direct-STREAM,
+    // forcing a 60→30 video transcode that routes through Plex's universal
+    // transcoder and stalls on its delivery throttle (2026-06-16 garage 60fps
+    // incident). Gate on allowDirectStream so h264/hevc video copies untouched.
     params.append(
       'X-Plex-Client-Profile-Extra',
-      buildClientProfileExtra({ maxFrameRate: allowDirectPlay ? null : caps.maxFrameRate })
+      buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate })
     );
     params.append('autoAdjustQuality', '1');
     // directPlay/directStream default to 0 (forced transcode). Only an already
@@ -1377,8 +1379,9 @@ export class PlexAdapter {
     params.append('X-Plex-Token', this.token);
 
     // Bitrate/resolution caps also gate stream-copy eligibility (same trap as
-    // the frame-rate limitation above) — only send them when forcing transcode.
-    if (!allowDirectPlay) {
+    // the frame-rate limitation above) — only send them when the video will be
+    // re-encoded (i.e. NOT direct-streaming the h264/hevc track).
+    if (!allowDirectStream) {
       params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
       params.append('maxVideoResolution', String(caps.maxResolution));
     }
@@ -1455,7 +1458,7 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectPlay = false) {
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
     // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
@@ -1483,13 +1486,13 @@ export class PlexAdapter {
       // stalls every client at the same timestamp (2026-06-10 Daytona
       // incident — the source was 60fps, the 30fps limitation forced libx264).
       // A remux has no encoder, so the caps protect nothing on that path.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectPlay ? null : caps.maxFrameRate }))}`
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate }))}`
     ];
 
     if (startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
-    if (!allowDirectPlay) {
+    if (!allowDirectStream) {
       baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
       baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
     }
@@ -1599,7 +1602,7 @@ export class PlexAdapter {
             maxVideoBitrate,
             resolvedMaxResolution,
             startOffset,
-            allowDirectPlay
+            allowDirectStream
           )
         };
       }
@@ -1622,7 +1625,7 @@ export class PlexAdapter {
           maxVideoBitrate,
           resolvedMaxResolution,
           startOffset,
-          allowDirectPlay
+          allowDirectStream
         )
       };
     } catch (error) {
