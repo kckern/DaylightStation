@@ -43,6 +43,12 @@ services:
       - /run/dbus:/run/dbus:rw  # DBus for Bluetooth (needs write access)
       - /var/run/dbus:/var/run/dbus:rw
       - ./config:/usr/src/app/config:ro  # Mount BLE device config
+      # Fingerprint enrollment templates (libfprint .tpl per uuid). Host-side
+      # passthrough store so enrolled prints survive image rebuilds. The reader
+      # itself comes in via the existing /dev passthrough above; the container
+      # (root + privileged) is the sole libfprint claimant — host `fprintd` must
+      # be masked. This bind dir is the ONLY new host artifact.
+      - /var/lib/daylight-unlock:/var/lib/daylight-unlock:rw
     
     # Network configuration
     # Use host network for full Bluetooth access
