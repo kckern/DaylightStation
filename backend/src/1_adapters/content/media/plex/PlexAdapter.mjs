@@ -727,8 +727,14 @@ export class PlexAdapter {
 
     // Add music-specific fields
     if (item.type === 'track') {
-      metadata.artist = item.grandparentTitle || item.originalTitle;
-      metadata.albumArtist = item.originalTitle;
+      // Plex track hierarchy: grandparentTitle = the parent artist entity (the album
+      // artist), originalTitle = the per-track performer override (set on compilations
+      // where each track's performer differs from the album artist). The displayed
+      // "artist" should therefore prefer the track-level performer, falling back to the
+      // album artist; albumArtist is the grandparent. (Prior code had these inverted,
+      // so compilation tracks showed the label/album-artist instead of the performer.)
+      metadata.artist = item.originalTitle || item.grandparentTitle;
+      metadata.albumArtist = item.grandparentTitle;
       metadata.album = item.parentTitle;
       if (item.parentRatingKey) {
         metadata.albumId = item.parentRatingKey;
