@@ -42,6 +42,75 @@ identities:
 > newly enrolled fingerprint is not visible until a config reload/restart (same rule as
 > `devices.yml`).
 
+## Enrollment
+
+Enrollment captures a finger into an on-box libfprint template and registers its uuid
+against the user. It runs **entirely in the `daylight-fitness` container** (libfprint +
+`gir1.2-fprint-2.0` + `python3-gi` baked into the image). The host carries **no** fingerprint
+stack — it only passes the USB reader through (`/dev`) and bind-mounts the template store.
+Host `fprintd` is **masked** so the container is the sole libfprint claimant (the reader
+allows one claimant at a time).
+
+### Storage
+- **Template:** `/var/lib/daylight-unlock/<uuid>.tpl` — the libfprint-serialized `FpPrint`,
+  written on the garage box (host bind mount → survives image rebuilds). The uuid is baked
+  into the template's `username` field, so an identify match resolves straight back to the
+  uuid (and thus the user) with no side lookup.
+- **Registry:** `data/users/<username>/profile.yml → identities.fingerprints[]` (see Data
+  model). The template never leaves the box; only the uuid is registered.
+
+### On-box helper — `_extensions/fitness/src/fingerprint_helper.py`
+A single JSON-on-stdout CLI (human progress goes to stderr so stdout stays parseable):
+
+| Command | Effect |
+|---|---|
+| `enroll --uuid <uuid> --finger <name>` | 5 presses (U.are.U 4500), writes `<uuid>.tpl`, prints `{enrolled, uuid, finger, path, bytes}` |
+| `identify --uuids a,b,c [--timeout S]` | one press, prints `{matched:true, uuid}` or `{matched:false}`; ~10s default timeout |
+| `list` | device info (name, enroll stages, scan type) + stored template uuids |
+
+> **Implementation gotcha:** keep the `FPrint.Context` referenced for the device's entire
+> lifetime. If it is garbage-collected while the device is open, libfprint **segfaults**
+> (SIGSEGV) on the next device call. `open_device()` returns `(ctx, dev)` for this reason.
+
+### Manual enrollment sequence (what the WS API automates)
+```bash
+# One-time per box (done on garage): free the reader + create the template store.
+ssh garage 'systemctl stop fprintd && systemctl mask fprintd && mkdir -p /var/lib/daylight-unlock'
+
+# 1. Allocate a uuid, capture the finger (user presses 5×), write <uuid>.tpl.
+ssh garage 'UUID=$(cat /proc/sys/kernel/random/uuid); echo "uuid=$UUID";
+  docker exec daylight-fitness python3 src/fingerprint_helper.py enroll --uuid "$UUID" --finger right-index'
+
+# 2. Verify the round-trip (user presses once).
+ssh garage 'docker exec daylight-fitness python3 src/fingerprint_helper.py identify --uuids <uuid>'
+
+# 3. Register the uuid under the user (pure helper: profileStore.addFingerprintEntry):
+#    append { id:<uuid>, finger, enrolled } to data/users/<username>/profile.yml
+#    → identities.fingerprints, then reload config so the backend offers it as a candidate.
+```
+
+**Currently enrolled — `kckern`:** `right-index`, `left-index`, `right-thumb` (3 real
+templates on the box; the `sim-kckern-0001` entry remains for hardware-free testing).
+
+### WebSocket enrollment API (to build)
+Mirror the unlock request/result topics (`unlockBroker`/`unlockService`) so the kiosk can
+enroll without SSH. The **backend allocates the uuid** (keeps the uuid namespace and the
+`profile.yml` write server-side) and registers it on success; the container only captures.
+
+- **`fitness.enroll.request`** — backend → container: `{ requestId, username, finger, uuid }`
+  (backend-allocated `uuid`). Handler spawns `fingerprint_helper.py enroll --uuid --finger`.
+- **`fitness.enroll.progress`** — container → backend, streamed per capture:
+  `{ requestId, stage, totalStages }` (parsed from the helper's `capture N/5` stderr) → relay
+  to the UI as "3 of 5".
+- **`fitness.enroll.result`** — container → backend: `{ requestId, enrolled:true, uuid, finger,
+  bytes }` or `{ requestId, enrolled:false, reason }`. On success the backend appends the entry
+  to `profile.yml` (`addFingerprintEntry`) and triggers the config reload.
+- **`fitness.enroll.cancel`** — backend → container: `{ requestId }` (mirrors the unlock
+  timeout/abort). Enrollment should carry its own ~60s timeout (5 presses).
+
+The container's `fitness.enroll.request` handler is the symmetric twin of the existing
+`fitness.unlock.request` handler in `_extensions/fitness/src/server.mjs`.
+
 ## Flow
 
 1. Frontend `useUnlock()` POSTs `{ lock }` to **`POST /api/v1/fitness/unlock`** (same-origin
@@ -75,5 +144,5 @@ container and drive scans from `_extensions/fitness/simulate.mjs` over SSH.
 ## Code map
 - Backend: `backend/src/3_applications/fitness/{unlockPolicy,unlockBroker,unlockService}.mjs`; endpoint in `backend/src/4_api/v1/routers/fitness.mjs`.
 - Frontend: `frontend/src/modules/Fitness/hooks/useUnlock.js`, `.../player/overlays/UnlockPrompt.jsx`, `.../player/governanceBypass.js`.
-- On-box: `_extensions/fitness/` (container WS handler + `unlockSim.mjs` + `simulate.mjs`); `_extensions/fingerprint/` (host enroll/identify helper).
+- On-box (all in the `daylight-fitness` container — host keeps no fingerprint stack): `_extensions/fitness/src/server.mjs` (WS unlock handler), `fingerprint_helper.py` (libfprint enroll/identify), `profileStore.mjs` (uuid/profile helpers), `unlockSim.mjs` + `simulate.mjs` (hardware-free sim). Dockerfile carries `libfprint-2-2` + `gir1.2-fprint-2.0` + `python3-gi`; compose bind-mounts `/var/lib/daylight-unlock`.
 - Design/plan: `docs/_wip/plans/2026-06-17-fingerprint-unlock-{design,plan}.md`.

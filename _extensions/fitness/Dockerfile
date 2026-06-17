@@ -1,6 +1,15 @@
 FROM node:18-slim
 
-# Install system dependencies for ANT+, serial communication, and Bluetooth
+# Install system dependencies for ANT+, serial communication, and Bluetooth.
+# Fingerprint unlock (U.are.U 4500) runs ENTIRELY in-container via libfprint:
+#   - libfprint-2-2     : fingerprint library (uru4000 driver for the 4500)
+#   - gir1.2-fprint-2.0 : GObject-introspection typelib for the FPrint-2.0 namespace
+#   - python3-gi / gir1.2-glib-2.0 : PyGObject runtime so the Python enroll/identify
+#                         helper can `import gi; gi.require_version('FPrint','2.0')`
+# The host carries NO fingerprint stack — it only passes the USB device through and
+# mounts the template store. Host `fprintd` must be masked so it never claims the
+# reader (libfprint permits a single claimant of the device).
+# Verified to resolve + import on node:18-slim (Debian bookworm) before adding.
 RUN apt-get update && apt-get install -y \
     usbutils \
     libusb-1.0-0-dev \
@@ -8,6 +17,10 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
+    python3-gi \
+    gir1.2-glib-2.0 \
+    gir1.2-fprint-2.0 \
+    libfprint-2-2 \
     bluez \
     bluetooth \
     libbluetooth-dev \
