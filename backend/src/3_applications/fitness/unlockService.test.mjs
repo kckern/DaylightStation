@@ -122,3 +122,11 @@ test('initUnlockService throws without a usable eventBus', async (t) => {
   t.after(_resetUnlockServiceForTests);
   assert.throws(() => initUnlockService({ eventBus: null }), /eventBus/);
 });
+
+test('initUnlockService throws when eventBus lacks onClientMessage', async (t) => {
+  // Both broadcast() and onClientMessage() are mandatory: validating only the
+  // former would let init succeed while every reply silently vanished.
+  t.after(_resetUnlockServiceForTests);
+  const broadcastOnlyBus = { broadcast() {} };
+  assert.throws(() => initUnlockService({ eventBus: broadcastOnlyBus }), /onClientMessage/);
+});
