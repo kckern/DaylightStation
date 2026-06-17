@@ -451,6 +451,25 @@
         align-items: center;
         justify-content: center;
         color: rgba(255, 255, 255, 0.85);
+
+        &.governed-lock-icon--button {
+          background: rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.35);
+          border-radius: 999px;
+          padding: 0.25rem 0.55rem;
+          cursor: pointer;
+          transition: background 0.2s, border-color 0.2s;
+
+          &:hover,
+          &:focus-visible {
+            background: rgba(255, 255, 255, 0.22);
+            border-color: rgba(255, 255, 255, 0.6);
+          }
+        }
+
+        &.governed-lock-icon--unlocked {
+          color: rgba(120, 220, 150, 0.95);
+        }
       }
 
       .show-voice-memo-btn {
@@ -973,6 +992,20 @@
             border-radius: 999px;
             padding: 0.1rem 0.5rem;
             letter-spacing: 0.02em;
+
+            &.episode-pill-locked--button {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              transition: background 0.2s, border-color 0.2s;
+
+              &:hover,
+              &:focus-visible {
+                background: rgba(255, 255, 255, 0.22);
+                border-color: rgba(255, 255, 255, 0.65);
+              }
+            }
           }
         }
       }
