@@ -60,6 +60,7 @@ function makeStore(seed) {
         treasureBox: session.treasureBox,
         strava: session.strava,
         strava_notes: session.strava_notes,
+        summary: session.summary,
       });
     },
     async delete(id) { db.delete(String(id)); },
@@ -138,4 +139,62 @@ test('participants are unioned into the target', async () => {
     Object.keys(saved.participants).sort(),
     ['u_20260616182610', 'u_20260616185313']
   );
+});
+
+test('fills source-only participant sub-fields when both sides share a participant id (preserves strava link)', async () => {
+  // Regression: a shallow "skip if key exists" participant union dropped
+  // source-only sub-blocks (e.g. the participant's `strava` link with activityId)
+  // whenever the SAME participant existed on both sides — silently severing the
+  // merged session's Strava linkage.
+  const store = makeStore([
+    mkSession('20260617131853', '2026-06-17 13:18:53', '2026-06-17 13:44:43'), // source: has participant strava
+    mkSession('20260617134452', '2026-06-17 13:44:52', '2026-06-17 14:05:29'), // target: same participant, NO strava
+  ]);
+  store._db.get('20260617131853').participants = {
+    kckern: { display_name: 'KC Kern', hr_device: '40475', strava: { activityId: 18963555842, type: 'WeightTraining' } },
+  };
+  store._db.get('20260617134452').participants = {
+    kckern: { display_name: 'KC Kern', hr_device: '40475' }, // same id, no strava sub-block
+  };
+
+  const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });
+  await svc.mergeSessions('20260617131853', '20260617134452', 'test');
+
+  const saved = store._db.get('20260617134452');
+  assert.equal(saved.participants.kckern.strava?.activityId, 18963555842, 'source-only participant strava preserved');
+  assert.equal(saved.participants.kckern.display_name, 'KC Kern', 'target sub-field retained');
+});
+
+test('joins voice memos from both sessions, chronologically, deduped by timestamp', async () => {
+  // Regression: mergeSessions never merged summary.voiceMemos, so every memo
+  // recorded in the source fragment was silently lost on merge.
+  const store = makeStore([
+    mkSession('20260617131853', '2026-06-17 13:18:53', '2026-06-17 13:44:43'), // earlier
+    mkSession('20260617134452', '2026-06-17 13:44:52', '2026-06-17 14:05:29'), // later (target)
+  ]);
+  store._db.get('20260617131853').summary = {
+    voiceMemos: [{ transcript: 'block 1', durationSeconds: 83, timestamp: 1781728448876 }],
+  };
+  store._db.get('20260617134452').summary = {
+    voiceMemos: [{ transcript: 'block 2', durationSeconds: 135, timestamp: 1781729166305 }],
+  };
+
+  const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });
+  await svc.mergeSessions('20260617131853', '20260617134452', 'test');
+
+  const memos = store._db.get('20260617134452').summary.voiceMemos;
+  assert.equal(memos.length, 2, 'both memos present');
+  assert.deepEqual(memos.map((m) => m.transcript), ['block 1', 'block 2'], 'sorted by timestamp ascending');
+
+  // Re-merging the same source content must not duplicate (idempotent on timestamp).
+  const store2 = makeStore([
+    mkSession('20260617131853', '2026-06-17 13:18:53', '2026-06-17 13:44:43'),
+    mkSession('20260617134452', '2026-06-17 13:44:52', '2026-06-17 14:05:29'),
+  ]);
+  const shared = { transcript: 'dup', durationSeconds: 10, timestamp: 1781728448876 };
+  store2._db.get('20260617131853').summary = { voiceMemos: [shared] };
+  store2._db.get('20260617134452').summary = { voiceMemos: [{ ...shared }] };
+  const svc2 = new SessionService({ sessionStore: store2, defaultHouseholdId: 'test' });
+  await svc2.mergeSessions('20260617131853', '20260617134452', 'test');
+  assert.equal(store2._db.get('20260617134452').summary.voiceMemos.length, 1, 'same-timestamp memo not duplicated');
 });

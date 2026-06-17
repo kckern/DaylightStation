@@ -476,11 +476,21 @@ export class SessionService {
     // (participants/strava/events) entirely. Timeline ordering still uses
     // earlier/later above; these non-temporal aggregates just union source→target.
 
-    // Merge participants (union, target wins on conflict)
+    // Merge participants (union; target wins on conflicting sub-fields, but fill
+    // in any source-only sub-fields rather than discarding the source participant
+    // wholesale). A shallow "skip if key exists" loses source-only blocks like the
+    // participant's `strava` link (activityId etc.) when both sides have the same
+    // participant id — which silently breaks the merged session's Strava linkage.
     if (source.participants && typeof source.participants === 'object') {
+      if (!target.participants || typeof target.participants !== 'object') target.participants = {};
       for (const [key, val] of Object.entries(source.participants)) {
-        if (!target.participants[key]) {
+        const existing = target.participants[key];
+        if (!existing) {
           target.participants[key] = val;
+        } else if (val && typeof val === 'object' && existing && typeof existing === 'object') {
+          for (const [subKey, subVal] of Object.entries(val)) {
+            if (existing[subKey] === undefined) existing[subKey] = subVal;
+          }
         }
       }
     }
@@ -515,6 +525,23 @@ export class SessionService {
     // Merge strava (target wins; fold in the source's when target has none)
     if (!target.strava && source.strava) target.strava = source.strava;
     if (!target.strava_notes && source.strava_notes) target.strava_notes = source.strava_notes;
+
+    // Join voice memos (union by timestamp, chronological). Voice memos live under
+    // `summary.voiceMemos` (the read path's primary source — see YamlSessionDatastore).
+    // Without this, merging silently DROPS every recording made in the source fragment.
+    const srcMemos = Array.isArray(source.summary?.voiceMemos) ? source.summary.voiceMemos : [];
+    if (srcMemos.length > 0) {
+      if (!target.summary || typeof target.summary !== 'object') target.summary = {};
+      const tgtMemos = Array.isArray(target.summary.voiceMemos) ? target.summary.voiceMemos : [];
+      const memoKey = (m) => m?.timestamp ?? m?.createdAt ?? m?.memoId ?? JSON.stringify(m);
+      const seen = new Set(tgtMemos.map(memoKey));
+      target.summary.voiceMemos = [...tgtMemos, ...srcMemos.filter((m) => !seen.has(memoKey(m)))]
+        .sort((a, b) => {
+          const at = a?.timestamp ?? Date.parse(a?.createdAt ?? '') ?? 0;
+          const bt = b?.timestamp ?? Date.parse(b?.createdAt ?? '') ?? 0;
+          return (at || 0) - (bt || 0);
+        });
+    }
 
     // Save merged target, delete source
     await this.sessionStore.save(target, hid);
