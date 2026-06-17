@@ -13,6 +13,9 @@ import { resolveAmbient } from './resolveAmbient.js';
 import { useScreenAction } from '../input/useScreenAction.js';
 import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import MusicPlaque from './MusicPlaque.jsx';
+import ArtLayer from './ArtLayer.jsx';
+import ArtPlacards from './ArtPlacards.jsx';
+import { resolveAdvance } from './resolveAdvance.js';
 import './ArtMode.css';
 
 const DIM_STEP = 0.1;
@@ -30,6 +33,7 @@ const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
 const CURTAIN_MAX_MS = 8000;  // safety rail: always part by this, even if assets stall
 const CURTAIN_CLOSE_MS = 1400; // matches the .artmode__curtain-panel transition (ArtMode.css)
+const CROSSFADE_MS = 1200;     // default cross-dissolve duration for transition:'crossfade'
 const SEEK_STEP_SEC = 15;      // fwd/rew scrub grain within the current song
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -50,8 +54,15 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  *   matMargin       mat band % of height (default 4)
  *   cropMaxPerSide  max cover-crop per side, % (default 8)
  *   ambient         { defaultLux, curve } for auto-dim (optional)
- *   advance         image-rotation mode: 'hold' (static, default) or 'track' (new
- *                   artwork each time the background music advances to a new song)
+ *   advance         what triggers the next artwork (see resolveAdvance.js):
+ *                     'hold'  (default) static until remount / manual skip
+ *                     'track' new artwork each time the music advances a song
+ *                     'timer' new artwork every intervalSec seconds
+ *                     'auto'  music → track, else interval → timer, else hold
+ *   transition      how the artwork changes: 'curtains' (default, velvet drape)
+ *                   or 'crossfade' (cross-dissolve — the slideshow look)
+ *   intervalSec     timer period in seconds (advance 'timer'/'auto')
+ *   crossfadeMs     cross-dissolve duration ms (transition 'crossfade')
  *   defaultViewMode initial view mode name (default 'gallery')
  *   measureText     optional (s)=>px text measurer (test seam; canvas in browser)
  */
@@ -61,10 +72,28 @@ function ArtMode({
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
-  advance = 'hold', rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS,
+  advance = 'hold', transition = 'curtains', intervalSec = null, crossfadeMs = CROSSFADE_MS,
+  rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
+
+  // Concrete advance trigger + transition style. `effectiveAdvance` collapses the
+  // (advance, music, interval) config — including the 'auto' fallback chain — into
+  // one of 'hold' | 'track' | 'timer' (resolveAdvance.js). `isCrossfade` swaps the
+  // velvet curtain for a stacked cross-dissolve (ArtLayer planes).
+  const intervalMs = Number(intervalSec) > 0 ? Number(intervalSec) * 1000 : 0;
+  const effectiveAdvance = resolveAdvance({ advance, hasMusic: !!music, intervalMs });
+  const isCrossfade = transition === 'crossfade';
+
+  // Crossfade planes: each is a fully self-contained matted picture (ArtLayer) that
+  // dissolves in over the one beneath. A plane is revealed (opacity → 1) only once
+  // all its panel images have painted, then older planes are pruned a crossfade later.
+  const [layers, setLayers] = useState([]);          // [{ key, art }] oldest → newest
+  const [visibleKeys, setVisibleKeys] = useState(() => new Set());
+  const layerSeqRef = useRef(0);
+  const crossfadeTimersRef = useRef([]);
+
   const screenAmbient = useScreenAmbient();
   const resolvedAmbient = useMemo(() => resolveAmbient(screenAmbient, ambient), [screenAmbient, ambient]);
   const ambientCurve = resolvedAmbient?.curve ?? null;
@@ -92,6 +121,8 @@ function ArtMode({
     if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
     if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    crossfadeTimersRef.current.forEach(clearTimeout);
+    crossfadeTimersRef.current = [];
   }, []);
 
   // Stage size — drives placard width + title measurement.
@@ -164,7 +195,38 @@ function ArtMode({
     logger.info('artmode.loaded', { mode: data?.mode ?? null, count: data?.panels?.length ?? 0 });
   }, [logger]);
 
-  const load = useCallback(() => {
+  const featuredUrl = collection
+    ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
+    : 'api/v1/art/featured';
+
+  // Reveal a freshly-painted plane, then prune everything beneath it a crossfade
+  // later (by which point the dissolve has fully covered them).
+  const onLayerReady = useCallback((key) => {
+    if (!mountedRef.current) return;
+    setVisibleKeys((prev) => { const n = new Set(prev); n.add(key); return n; });
+    const t = setTimeout(() => {
+      if (!mountedRef.current) return;
+      setLayers((prev) => prev.filter((l) => l.key >= key));
+      setVisibleKeys((prev) => { const n = new Set([...prev].filter((k) => k >= key)); return n; });
+    }, crossfadeMs);
+    crossfadeTimersRef.current.push(t);
+  }, [crossfadeMs]);
+
+  // Crossfade path: fetch the next artwork and stack it as a new plane. It mounts
+  // hidden (opacity 0) and dissolves in once its images paint (onLayerReady). No
+  // curtain is involved — the planes themselves are the transition.
+  const loadCrossfade = useCallback(() => {
+    DaylightAPI(featuredUrl)
+      .then((data) => {
+        if (!mountedRef.current || !data?.panels?.length) return;
+        const key = (layerSeqRef.current += 1);
+        setLayers((prev) => [...prev, { key, art: data }]);
+        logger.info('artmode.crossfade.load', { key, count: data.panels.length });
+      })
+      .catch((err) => logger.error('artmode.load-failed', { error: err.message }));
+  }, [featuredUrl, logger]);
+
+  const loadCurtain = useCallback(() => {
     // Drop the curtain (covers the swap); it parts after the MIN dwell once the
     // art loads, or by MAX at the latest (a rail so it can never stick down).
     loadedRef.current = 0;
@@ -183,9 +245,6 @@ function ArtMode({
       ? now + curtainCloseMs
       : Math.max(closeCompleteAtRef.current, now);
     maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
-    const featuredUrl = collection
-      ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
-      : 'api/v1/art/featured';
     DaylightAPI(featuredUrl)
       .then((data) => {
         if (!mountedRef.current) return;
@@ -199,7 +258,14 @@ function ArtMode({
         setFailed(true);
         logger.error('artmode.load-failed', { error: err.message });
       });
-  }, [logger, clearCurtainTimers, openCurtain, setCurtain, commitPending, curtainMaxMs, curtainCloseMs, collection]);
+  }, [logger, clearCurtainTimers, openCurtain, setCurtain, commitPending, curtainMaxMs, curtainCloseMs, featuredUrl]);
+
+  // Single entry point both the mount load and every advance go through; it picks
+  // the active transition (cross-dissolve planes vs. the velvet curtain swap).
+  const load = useCallback(
+    () => (isCrossfade ? loadCrossfade() : loadCurtain()),
+    [isCrossfade, loadCrossfade, loadCurtain],
+  );
 
   // If the fetch fails there are no images to wait on — part the curtain (still
   // honoring the minimum dwell so the effect never flashes by).
@@ -215,17 +281,29 @@ function ArtMode({
   const firstTrackRef = useRef(true);
   useEffect(() => {
     if (!musicTrack) return;
-    if (advance !== 'track') { setDisplayTrack(musicTrack); return; }
+    if (effectiveAdvance !== 'track') { setDisplayTrack(musicTrack); return; }
     if (firstTrackRef.current) { firstTrackRef.current = false; setDisplayTrack(musicTrack); return; }
-    plaqueGateRef.current = true;
+    // Curtain swaps pin the plaque so it changes WITH the art behind the drape; a
+    // crossfade has no closed cover, so the plaque just follows the song live.
+    if (isCrossfade) setDisplayTrack(musicTrack);
+    else plaqueGateRef.current = true;
     logger.info('artmode.advance', { trigger: 'track', title: musicTrack.title });
     load();
-  }, [musicTrack, advance, load, logger]);
+  }, [musicTrack, effectiveAdvance, isCrossfade, load, logger]);
+
+  // Timer advance: step the artwork every intervalMs (advance 'timer', or 'auto'
+  // with no music). Music-independent; works with either transition.
+  useEffect(() => {
+    if (effectiveAdvance !== 'timer' || intervalMs <= 0) return undefined;
+    const id = setInterval(() => load(), intervalMs);
+    logger.info('artmode.timer.start', { intervalMs });
+    return () => clearInterval(id);
+  }, [effectiveAdvance, intervalMs, load, logger]);
 
   // Advance both song and art. With advance:'track', skipping the song re-picks the
   // artwork via the effect above (so no double-load); otherwise reload the art directly.
-  const goNext = useCallback(() => { musicNext(); if (advance !== 'track') load(); }, [musicNext, advance, load]);
-  const goPrev = useCallback(() => { musicPrev(); if (advance !== 'track') load(); }, [musicPrev, advance, load]);
+  const goNext = useCallback(() => { musicNext(); if (effectiveAdvance !== 'track') load(); }, [musicNext, effectiveAdvance, load]);
+  const goPrev = useCallback(() => { musicPrev(); if (effectiveAdvance !== 'track') load(); }, [musicPrev, effectiveAdvance, load]);
 
   // Screen-native control surface: numpad/remote → ActionBus.
   //   next/prev → advance the song (and art, per goNext/goPrev)
@@ -344,53 +422,129 @@ function ArtMode({
     if (loadedRef.current >= panels.length) scheduleReveal();
   };
 
+  // Crossfade placards live in a shared overlay (ArtPlacards) so they choreograph
+  // their own label change instead of dissolving with the layer. Drive them off the
+  // newest *visible* plane so the nameplate transitions in step with the picture it
+  // describes (and never leads it, while the next plane is still painting in).
+  const topArt = useMemo(() => {
+    const visible = layers.filter((l) => visibleKeys.has(l.key));
+    const top = visible.length ? visible[visible.length - 1] : layers[layers.length - 1];
+    return top?.art ?? null;
+  }, [layers, visibleKeys]);
+
   return (
     <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars}>
       <div className="artmode__stage" ref={stageRef}>
-        <div className="artmode__matte" aria-hidden="true" />
 
-        {isGallery && layout && (
-          <div className="artmode__opening" style={{
-            top: `${layout.opening.top}%`, bottom: `${layout.opening.bottom}%`,
-            left: `${layout.opening.left}%`, right: `${layout.opening.right}%`,
-            justifyContent: layout.justify,
-          }}>
-            {panels.map((p, i) => (
-              <div key={p.image} className="artmode__window" data-testid={testid('artmode-window', i)}
-                   style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
-                <img className="artmode__image" data-testid={testid('artmode-image', i)}
-                     src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
-                     onLoad={onLoaded} onError={onLoaded} />
-                <span className="artmode__cut" aria-hidden="true" />
+        {/* Crossfade (slideshow): each artwork is a self-contained plane that
+            dissolves in over the one beneath; the planes ARE the transition. */}
+        {isCrossfade && layers.map((layer) => (
+          <ArtLayer
+            key={layer.key}
+            art={layer.art}
+            mode={mode}
+            frame={frame}
+            matMargin={matMargin}
+            cropMaxPerSide={cropMaxPerSide}
+            placard={false}
+            stage={stage}
+            fontPx={fontPx}
+            measure={measure}
+            frameSrc={frameSrc}
+            visible={visibleKeys.has(layer.key)}
+            transitionMs={crossfadeMs}
+            onImageLoad={() => onLayerReady(layer.key)}
+          />
+        ))}
+
+        {/* Crossfade nameplates: a persistent overlay above the dissolving planes so
+            each placard fades its engraving out, resizes the plate (width/centre
+            FLIP) to the new title, then fades back in — instead of cross-dissolving
+            with the picture. Driven by the newest visible plane (topArt). */}
+        {isCrossfade && placard && topArt && (
+          <ArtPlacards
+            art={topArt}
+            mode={mode}
+            frame={frame}
+            matMargin={matMargin}
+            cropMaxPerSide={cropMaxPerSide}
+            stage={stage}
+            fontPx={fontPx}
+            measure={measure}
+            animate
+          />
+        )}
+
+        {/* Curtain transition (default): one matted picture under a velvet drape
+            that closes over each swap and parts once the new art has loaded. */}
+        {!isCrossfade && (
+          <>
+            <div className="artmode__matte" aria-hidden="true" />
+
+            {isGallery && layout && (
+              <div className="artmode__opening" style={{
+                top: `${layout.opening.top}%`, bottom: `${layout.opening.bottom}%`,
+                left: `${layout.opening.left}%`, right: `${layout.opening.right}%`,
+                justifyContent: layout.justify,
+              }}>
+                {panels.map((p, i) => (
+                  <div key={p.image} className="artmode__window" data-testid={testid('artmode-window', i)}
+                       style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
+                    <img className="artmode__image" data-testid={testid('artmode-image', i)}
+                         src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                         onLoad={onLoaded} onError={onLoaded} />
+                    <span className="artmode__cut" aria-hidden="true" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {!isGallery && panels.map((p, i) => {
-          const win = fitWindows[i];
-          return (
-            <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
-                 style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>
-              <img className={`artmode__fitimage artmode__fitimage--${mode.fit}`}
-                   data-testid={testid('artmode-image', i)}
-                   src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
-                   onLoad={onLoaded} onError={onLoaded} />
+            {!isGallery && panels.map((p, i) => {
+              const win = fitWindows[i];
+              return (
+                <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
+                     style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>
+                  <img className={`artmode__fitimage artmode__fitimage--${mode.fit}`}
+                       data-testid={testid('artmode-image', i)}
+                       src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                       onLoad={onLoaded} onError={onLoaded} />
+                </div>
+              );
+            })}
+
+            {/* Curtain: down by default, parts once the artwork has loaded. */}
+            <div className={`artmode__curtain${revealed ? ' artmode__curtain--open' : ''}`}
+                 data-testid="artmode-curtain" aria-hidden="true">
+              <div className="artmode__curtain-panel artmode__curtain-panel--l" />
+              <div className="artmode__curtain-panel artmode__curtain-panel--r" />
             </div>
-          );
-        })}
 
-        {/* Curtain: down by default, parts once the artwork has loaded. */}
-        <div className={`artmode__curtain${revealed ? ' artmode__curtain--open' : ''}`}
-             data-testid="artmode-curtain" aria-hidden="true">
-          <div className="artmode__curtain-panel artmode__curtain-panel--l" />
-          <div className="artmode__curtain-panel artmode__curtain-panel--r" />
-        </div>
+            {mode.frame && (
+              <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
+            )}
 
-        {mode.frame && (
-          <img className="artmode__frame" data-testid="artmode-frame" src={frameSrc} alt="" />
+            {placard && mode.placard && placardGeom.map((g, i) => {
+              const p = panels[i];
+              if (!p || !(p.meta && (p.meta.title || p.meta.artist))) return null;
+              const lines = placardLines[i] ?? [];
+              return (
+                <div key={panels[i]?.image ?? i} className="artmode__placard" data-testid={testid('artmode-placard', i)}
+                     style={{ left: `${g.centerXPct}%`, maxWidth: `${g.widthPct}%` }}>
+                  {lines.map((ln, j) => (
+                    <span key={j} className="artmode__placard-title artmode__placard-line">{ln}</span>
+                  ))}
+                  {(p.meta.artist || p.meta.date) && (
+                    <span className="artmode__placard-artist artmode__placard-line">
+                      {smartQuotes([p.meta.artist, p.meta.date].filter(Boolean).join(' · '))}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </>
         )}
 
+        {/* Shared overlays (both transitions). */}
         {music && (
           <audio ref={musicRef} className="artmode__audio" data-role="artmode-music" data-testid="artmode-music" />
         )}
@@ -399,27 +553,8 @@ function ArtMode({
             (fade out → resize → fade in); in track mode it swaps behind the
             curtain (animate=false). Hidden in bare modes (no frame). */}
         {music && mode.frame && (
-          <MusicPlaque track={displayTrack} animate={advance !== 'track'} />
+          <MusicPlaque track={displayTrack} animate={effectiveAdvance !== 'track'} />
         )}
-
-        {placard && mode.placard && placardGeom.map((g, i) => {
-          const p = panels[i];
-          if (!p || !(p.meta && (p.meta.title || p.meta.artist))) return null;
-          const lines = placardLines[i] ?? [];
-          return (
-            <div key={panels[i]?.image ?? i} className="artmode__placard" data-testid={testid('artmode-placard', i)}
-                 style={{ left: `${g.centerXPct}%`, maxWidth: `${g.widthPct}%` }}>
-              {lines.map((ln, j) => (
-                <span key={j} className="artmode__placard-title artmode__placard-line">{ln}</span>
-              ))}
-              {(p.meta.artist || p.meta.date) && (
-                <span className="artmode__placard-artist artmode__placard-line">
-                  {smartQuotes([p.meta.artist, p.meta.date].filter(Boolean).join(' · '))}
-                </span>
-              )}
-            </div>
-          );
-        })}
 
         <div className="artmode__dim" data-testid="artmode-dim" aria-hidden="true" style={{ opacity: dim }} />
       </div>

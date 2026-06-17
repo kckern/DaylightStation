@@ -77,6 +77,20 @@
 .artmode__curtain--open .artmode__curtain-panel--l { transform: translateX(-102%); }
 .artmode__curtain--open .artmode__curtain-panel--r { transform: translateX(102%); }
 
+/* ---- Crossfade plane (transition:'crossfade' / slideshow) ----
+   A full matted picture (matte + art + frame + nameplate) stacked over the stage.
+   New planes mount at opacity 0 and dissolve in (opacity → 1) once their art has
+   painted; the one beneath is pruned a crossfade later. Opacity makes each plane
+   its own stacking context, so its nameplate (z-index:3) stays contained — the
+   shared dim (z-index:4) still sits above every plane. Transition duration is set
+   inline (single source of truth with the crossfadeMs prop). */
+.artmode__layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.artmode__layer--visible { opacity: 1; }
+
 /* ---- Opening: where the painting(s) sit; insets + justify come from inline style ---- */
 .artmode__opening {
   position: absolute;
@@ -223,6 +237,12 @@
   font-feature-settings: "smcp" 1;
   letter-spacing: 0.06em;
 }
+
+/* Animated brass nameplate (crossfade slideshow). The plate width + centre are
+   JS-driven (a measured FLIP) so each advance grows/shrinks and slides it to the
+   new title; clip the engraving while it resizes so nothing spills the edge. The
+   inner .artmode__plaque-text carries its own opacity fade for the label swap. */
+.artmode__placard--animated { overflow: hidden; }
 
 /* ---- Object-fit windows (view modes 2-5) ----
    Absolute window keyed off inline inset %; matte shows through any contain-box. */
