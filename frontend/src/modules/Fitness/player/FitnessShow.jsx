@@ -670,12 +670,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         watchSeconds: resolvedSeconds || undefined,
         watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined,
         // After a matched governance_bypass unlock, mark the queue item so the player
-        // skips governance for this launch. FitnessPlayer currently reads `nogovern`
-        // as a component prop (sticky from the ?nogovern URL param), NOT per-item, so
-        // this flag is a forward-looking seam:
-        // TODO(T4.3 wiring): apply governance bypass to the launched episode — have
-        // FitnessApp/FitnessPlayer honor queueItem.nogovern (per-item) the way it
-        // honors the nogovern prop today.
+        // skips governance for this launch. FitnessPlayer honors this per-item flag via
+        // `currentItem.nogovern` → shouldBypassGovernance (alongside the sticky ?nogovern
+        // prop and the in-player runtime bypass). Wired in T4.3.
         nogovern: governanceBypassed || undefined
       };
 
