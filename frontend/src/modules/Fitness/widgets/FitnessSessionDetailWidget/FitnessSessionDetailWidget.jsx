@@ -229,7 +229,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
     const act = !pm ? primaryActivity(sessionData?.activities) : null;
     const actDisplay = act ? getActivityDisplay(act.type) : null;
-    const title = pm?.title || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
+    // Prefer the show/video over the generic Strava activity name when the
+    // episode title is absent.
+    const title = pm?.title || pm?.showTitle || pm?.grandparentTitle || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
 
     return {
       title,
