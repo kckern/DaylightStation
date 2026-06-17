@@ -104,6 +104,43 @@ describe('FitnessModuleMenu — Dance Party unlock gate', () => {
     );
   });
 
+  it('dismissing the prompt resets the hook and closes the dialog (no launch)', async () => {
+    mockCtx = LOCKED_CTX;
+    await renderMenu();
+
+    const card = screen.getByText('Dance Party').closest('button');
+    await act(async () => { fireEvent.pointerDown(card); });
+    const dialog = screen.getByRole('dialog', { name: /fingerprint unlock/i });
+
+    // Find and activate the cancel/close control inside the prompt.
+    const cancelBtn = dialog.querySelector('button');
+    await act(async () => { fireEvent.pointerDown(cancelBtn); fireEvent.click(cancelBtn); });
+
+    expect(reset).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /fingerprint unlock/i })).toBeNull()
+    );
+    expect(onModuleSelect).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second locked-card tap while a prompt is already open', async () => {
+    mockCtx = LOCKED_CTX;
+    // First request stays in-flight so the prompt remains open.
+    let resolveFirst;
+    requestUnlock.mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }));
+    await renderMenu();
+
+    const card = screen.getByText('Dance Party').closest('button');
+    await act(async () => { fireEvent.pointerDown(card); });
+    expect(requestUnlock).toHaveBeenCalledTimes(1);
+
+    // Tapping again (prompt open) must NOT fire a second request.
+    await act(async () => { fireEvent.pointerDown(card); });
+    expect(requestUnlock).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveFirst({ matched: false, reason: 'denied' }); });
+  });
+
   it('launches directly with no prompt when no lock is configured', async () => {
     mockCtx = UNLOCKED_CTX;
     await renderMenu();
