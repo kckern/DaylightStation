@@ -37,7 +37,10 @@ let singleton = null;
 /**
  * Construct the unlock service against a live eventbus and register the inbound
  * result handler. Idempotent: returns the existing instance on repeat calls
- * (ignoring new args), so app bootstrap and the HTTP router can both call it.
+ * AND ignores the new args (eventBus/timeoutMs/logger) — the first init wins.
+ * App bootstrap performs the one real init; downstream consumers (e.g. Task 2.4's
+ * HTTP router) should use {@link getUnlockService} rather than calling init with
+ * their own deps, to avoid silently relying on discarded config.
  *
  * @param {object} deps
  * @param {object} deps.eventBus - WebSocketEventBus (needs `broadcast` + `onClientMessage`)
@@ -47,8 +50,11 @@ let singleton = null;
  */
 export function initUnlockService({ eventBus, timeoutMs = DEFAULT_TIMEOUT_MS, logger } = {}) {
   if (singleton) return singleton;
-  if (!eventBus || typeof eventBus.broadcast !== 'function') {
-    throw new Error('initUnlockService: eventBus with a broadcast() method is required');
+  // Both methods are mandatory: broadcast carries the request out, onClientMessage
+  // carries the result back. Validating only one would let init "succeed" while every
+  // reply silently vanished and every request timed out after timeoutMs with no signal.
+  if (!eventBus || typeof eventBus.broadcast !== 'function' || typeof eventBus.onClientMessage !== 'function') {
+    throw new Error('initUnlockService: eventBus with broadcast() and onClientMessage() methods is required');
   }
 
   const log = logger || console;
@@ -69,24 +75,22 @@ export function initUnlockService({ eventBus, timeoutMs = DEFAULT_TIMEOUT_MS, lo
   // Inbound: route `fitness.unlock.result` messages from the garage box back to
   // the broker. onClientMessage fires for every client message that isn't a
   // built-in bus_command/identify; we narrow to our result topic.
-  if (typeof eventBus.onClientMessage === 'function') {
-    eventBus.onClientMessage((_clientId, message) => {
-      if (!message || message.topic !== UNLOCK_RESULT_TOPIC) return;
-      if (typeof message.requestId !== 'string') {
-        log.warn?.('fitness.unlock.result.invalid', { reason: 'missing-requestId' });
-        return;
-      }
-      log.debug?.('fitness.unlock.result.received', {
-        requestId: message.requestId,
-        matched: !!message.matched,
-      });
-      broker.resolveResult({
-        requestId: message.requestId,
-        matched: !!message.matched,
-        userId: message.userId,
-      });
+  eventBus.onClientMessage((_clientId, message) => {
+    if (!message || message.topic !== UNLOCK_RESULT_TOPIC) return;
+    if (typeof message.requestId !== 'string') {
+      log.warn?.('fitness.unlock.result.invalid', { reason: 'missing-requestId' });
+      return;
+    }
+    log.debug?.('fitness.unlock.result.received', {
+      requestId: message.requestId,
+      matched: !!message.matched,
     });
-  }
+    broker.resolveResult({
+      requestId: message.requestId,
+      matched: !!message.matched,
+      userId: message.userId,
+    });
+  });
 
   singleton = {
     /**
@@ -98,8 +102,6 @@ export function initUnlockService({ eventBus, timeoutMs = DEFAULT_TIMEOUT_MS, lo
     requestUnlock(lockName, candidateUuids) {
       return broker.requestUnlock({ lockName, candidateUuids });
     },
-    // Exposed for tests/diagnostics; not part of the stable surface.
-    _broker: broker,
   };
   return singleton;
 }
