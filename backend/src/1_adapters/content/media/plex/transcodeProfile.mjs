@@ -29,15 +29,18 @@ export const DEFAULT_MAX_FRAME_RATE = 30;      // was 60 from source — halves 
  * @param {{maxVideoBitrate?:number, maxResolution?:string, maxFrameRate?:number}} opts
  */
 export function resolveTranscodeCaps(opts = {}) {
+  // Callers pass null for "no preference" and Number(null) === 0, which would
+  // send maxVideoBitrate=0 to Plex (= uncapped → CRF16/20Mbit encodes). Only a
+  // positive finite value can lower the ceiling.
   const reqBitrate = Number(opts.maxVideoBitrate);
-  const maxVideoBitrate = Number.isFinite(reqBitrate)
+  const maxVideoBitrate = Number.isFinite(reqBitrate) && reqBitrate > 0
     ? Math.min(reqBitrate, DEFAULT_MAX_VIDEO_BITRATE)
     : DEFAULT_MAX_VIDEO_BITRATE;
 
   const maxResolution = opts.maxResolution ? String(opts.maxResolution) : DEFAULT_MAX_RESOLUTION;
 
   const reqFps = Number(opts.maxFrameRate);
-  const maxFrameRate = Number.isFinite(reqFps)
+  const maxFrameRate = Number.isFinite(reqFps) && reqFps > 0
     ? Math.min(reqFps, DEFAULT_MAX_FRAME_RATE)
     : DEFAULT_MAX_FRAME_RATE;
 
