@@ -8,6 +8,7 @@
 import { Session } from '#domains/fitness/entities/Session.mjs';
 import { prepareTimelineForApi, prepareTimelineForStorage, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 
 /**
  * Parse a timestamp string into Unix milliseconds.
@@ -459,9 +460,14 @@ export class SessionService {
     // Merge timelines (both already decoded from getSession with decodeTimeline: true)
     const merged = mergeTimelines(earlier.timeline, later.timeline, gapTicks);
 
-    // Update target with merged data
-    target.startTime = earlier.startTime;
-    target.durationMs = (target.endTime || Date.now()) - earlier.startTime;
+    // Update target with merged data. Span the full merged window: earliest start
+    // to the latest end of either side (target is not guaranteed to be the
+    // later-ending session).
+    const mergedStart = earlier.startTime;
+    const mergedEnd = Math.max(earlier.endTime || 0, later.endTime || 0) || (target.endTime || Date.now());
+    target.startTime = mergedStart;
+    target.endTime = mergedEnd;
+    target.durationMs = mergedEnd - mergedStart;
     target.replaceTimeline(prepareTimelineForStorage(merged));
 
     // Merge participants (union, target wins on conflict)
@@ -488,8 +494,15 @@ export class SessionService {
       target.treasureBox = earlier.treasureBox;
     }
 
-    // Update session block timestamps
+    // Update the human-readable session block to match the merged span. CRITICAL:
+    // startTime/endTime are re-derived from session.start/end on the next load
+    // (parseTimestamp(session.start) wins over root startTime), so failing to
+    // rewrite these strings silently reverts the merge on reload and corrupts
+    // chained merges (each later fragment re-reads the stale original start).
     if (target.session) {
+      const tz = target.timezone || target.session.timezone || 'America/Los_Angeles';
+      target.session.start = formatLocalTimestamp(new Date(mergedStart), tz);
+      target.session.end = formatLocalTimestamp(new Date(mergedEnd), tz);
       target.session.duration_seconds = Math.round(target.durationMs / 1000);
     }
 
