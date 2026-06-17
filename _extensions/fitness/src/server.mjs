@@ -54,14 +54,54 @@ async function connectWebSocket() {
       clearInterval(reconnectInterval);
       reconnectInterval = null;
       reconnectAttempts = 0;
-    });
-    
-    websocketClient.on('message', (data) => {
+
+      // Subscribe to fingerprint unlock requests. The backend bus topic-filters
+      // by subscription, so without this we'd never receive the request.
       try {
-        const message = JSON.parse(data);
-      //  console.log('📥 Received from DaylightStation:', message.type || 'unknown');
+        websocketClient.send(JSON.stringify({
+          type: 'bus_command',
+          action: 'subscribe',
+          topic: 'fitness.unlock.request'
+        }));
+        console.log('🔐 Subscribed to fitness.unlock.request');
+      } catch (error) {
+        console.error('❌ Failed to subscribe to unlock requests:', error.message);
+      }
+    });
+
+    websocketClient.on('message', (data) => {
+      let message;
+      try {
+        message = JSON.parse(data);
       } catch (error) {
         console.log('📥 Received raw message:', data.toString());
+        return;
+      }
+
+      // Fingerprint unlock request: the backend wants this box to identify a
+      // finger against the candidate uuids. The actual on-box identify call is
+      // a later hardware task; for now reply with a not-implemented stub so the
+      // request/result round-trip is exercisable end to end without hardware.
+      if (message.topic === 'fitness.unlock.request') {
+        const { requestId, lockName, candidateUuids } = message;
+        console.log(`🔐 Unlock request received (lock=${lockName}, candidates=${Array.isArray(candidateUuids) ? candidateUuids.length : 0}, requestId=${requestId})`);
+
+        // TODO(Task 1.x): call host identify helper against candidateUuids and
+        // reply with { matched: true, userId } on a match.
+        // Note: deliberately NO `source: 'fitness'` here — that key makes the
+        // backend rebroadcast the message as fitness sensor data. The backend
+        // routes the result purely on `topic`.
+        const result = {
+          topic: 'fitness.unlock.result',
+          requestId,
+          matched: false,
+          reason: 'not-implemented'
+        };
+        if (websocketClient && websocketClient.readyState === WebSocket.OPEN) {
+          websocketClient.send(JSON.stringify(result));
+          console.log(`🔐 Unlock result sent (stub, matched=false) for requestId=${requestId}`);
+        }
+        return;
       }
     });
     
