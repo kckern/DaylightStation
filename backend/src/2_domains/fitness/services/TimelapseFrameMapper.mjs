@@ -36,7 +36,12 @@ export class TimelapseFrameMapper {
       .sort((a, b) => toMs(a.timestamp) - toMs(b.timestamp));
     const roster = session?.roster || [];
 
-    const sortedCaptures = [...captures].sort((a, b) => toMs(a.timestamp) - toMs(b.timestamp));
+    // Camera and player frames are both captured client-side (realtime UI grab),
+    // tagged by role. Untagged captures are treated as camera for backward compat.
+    const byTs = (a, b) => toMs(a.timestamp) - toMs(b.timestamp);
+    const cameraCaptures = captures.filter(c => (c.role || 'camera') === 'camera').sort(byTs);
+    const playerCaptures = captures.filter(c => c.role === 'player').sort(byTs);
+    if (!cameraCaptures.length) return [];
 
     // Animated coin total: treasureBox holds only the final totalCoins, so we
     // reconstruct a plausible accrual curve by weighting each tick by active
@@ -50,7 +55,8 @@ export class TimelapseFrameMapper {
       const wallClockMs = startMs + elapsedRealMs;
       const tickIndex = Math.floor((elapsedRealMs / 1000) / intervalSec);
 
-      const camera = nearestByTimestamp(sortedCaptures, wallClockMs);
+      const camera = nearestByTimestamp(cameraCaptures, wallClockMs);
+      const player = nearestByTimestamp(playerCaptures, wallClockMs);
       const media = activeMedia(mediaEvents, wallClockMs);
 
       const participants = roster.map(p => ({
@@ -70,8 +76,8 @@ export class TimelapseFrameMapper {
         wallClockMs,
         elapsedRealMs,
         cameraTimestamp: camera ? toMs(camera.timestamp) : null,
+        playerTimestamp: player ? toMs(player.timestamp) : null,
         playerContentId: media?.data?.contentId || null,
-        playerOffsetMs: media ? Math.max(0, wallClockMs - toMs(media.timestamp)) : null,
         title: media?.data?.title || null,
         showTitle: media?.data?.grandparentTitle || media?.data?.showTitle || null,
         participants,

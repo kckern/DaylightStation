@@ -6,11 +6,11 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
- * ffmpeg-backed implementation of IVideoFrameExtractor + IVideoEncoder.
- * Mirrors the existing spawn pattern (stderr capture, close/error, timeout).
- * Assumes `ffmpeg` is on $PATH.
+ * ffmpeg-backed implementation of IVideoEncoder. Stitches a frame sequence into
+ * a silent MP4. (Player frames are captured client-side in realtime, so no
+ * source-frame extraction is needed here.) Assumes `ffmpeg` is on $PATH.
  */
-export class FfmpegVideoAdapter extends IVideoEncoder { // also fulfils IVideoFrameExtractor (duck-typed)
+export class FfmpegVideoAdapter extends IVideoEncoder {
   #logger;
   #timeoutMs;
 
@@ -18,17 +18,6 @@ export class FfmpegVideoAdapter extends IVideoEncoder { // also fulfils IVideoFr
     super();
     this.#logger = logger;
     this.#timeoutMs = timeoutMs;
-  }
-
-  /** @param {{source:string, offsetMs:number}} params @returns {Promise<Buffer>} JPEG */
-  async extractFrame({ source, offsetMs } = {}) {
-    if (!source) throw new InfrastructureError('extractFrame requires source', { code: 'MISSING_SOURCE' });
-    const ss = (Math.max(0, offsetMs || 0) / 1000).toFixed(3);
-    // -ss before -i = fast input seek; emit a single mjpeg frame to stdout
-    return this.#run([
-      '-ss', ss, '-i', source,
-      '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'
-    ], { capture: true });
   }
 
   /** @param {{framesDir:string, pattern:string, fps:number, outputPath:string, crf?:number}} params */

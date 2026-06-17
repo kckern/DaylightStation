@@ -23,8 +23,9 @@ function fakeSession() {
       ]
     },
     snapshots: { captures: [
-      { index: 0, timestamp: 1000_000, path: 'a/0.jpg', filename: '0.jpg' },
-      { index: 1, timestamp: 1000_000 + 40_000, path: 'a/1.jpg', filename: '1.jpg' }
+      { index: 0, timestamp: 1000_000, path: 'a/0.jpg', filename: '0.jpg', role: 'camera' },
+      { index: 1, timestamp: 1000_000 + 40_000, path: 'a/1.jpg', filename: '1.jpg', role: 'camera' },
+      { index: 0, timestamp: 1000_000 + 48_000, path: 'p/0.jpg', filename: 'p0.jpg', role: 'player' }
     ] },
     roster: [{ id: 'kckern', displayName: 'KC', color: '#f00' }]
   };
@@ -45,11 +46,12 @@ test('maps elapsed real time, nearest camera capture, and media offset', () => {
   const f = frames[50];
   assert.equal(f.elapsedRealMs, 50_000);
   assert.equal(f.wallClockMs, 1000_000 + 50_000);
-  // nearest capture to 1,050,000 is capture index 1 (at +40s) vs index 0 (at 0s)
+  // nearest camera capture to 1,050,000 is index 1 (at +40s) vs index 0 (at 0s)
   assert.equal(f.cameraTimestamp, 1000_000 + 40_000);
-  // media started at session start -> offset = 50s
+  // nearest player capture (role:player at +48s) is chosen for the PiP frame
+  assert.equal(f.playerTimestamp, 1000_000 + 48_000);
+  // contentId still carried (used for the show poster), title from the media event
   assert.equal(f.playerContentId, 'plex:674287');
-  assert.equal(f.playerOffsetMs, 50_000);
   assert.equal(f.title, 'Daytona USA');
 });
 

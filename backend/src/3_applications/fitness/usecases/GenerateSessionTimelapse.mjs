@@ -16,8 +16,8 @@ export class GenerateSessionTimelapse {
 
   async execute({ sessionId, householdId }) {
     const {
-      sessionDatastore, snapshotStore, frameMapper, frameExtractor, frameRenderer,
-      videoEncoder, contentSourceResolver, posterProvider, avatarProvider, resolveName,
+      sessionDatastore, snapshotStore, frameMapper, frameRenderer,
+      videoEncoder, posterProvider, avatarProvider, resolveName,
       mediaDir, config, fileIO, logger
     } = this.#d;
 
@@ -45,17 +45,24 @@ export class GenerateSessionTimelapse {
     const tmpDir = fileIO.mkdtempSync(path.join(os.tmpdir(), `tl-${sessionId}-`));
     try {
       const captures = await snapshotStore.listCaptures(sessionId, householdId);
-      const sortedCaps = [...captures].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+      const cameraCaps = captures.filter(c => (c.role || 'camera') === 'camera').sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+      const playerByTs = new Map(captures.filter(c => c.role === 'player').map(c => [c.timestamp, c]));
       const avatarBuffers = avatarProvider ? (await avatarProvider(uniqueParticipantIds(descriptors)) || {}) : {};
-      const playerCache = new Map();
       const posterCache = new Map();
+      const bufCache = new Map(); // absolutePath -> Buffer (many output frames reuse one capture)
 
       let written = 0;
       for (const d of descriptors) {
-        const cap = pickCapture(sortedCaps, d.cameraTimestamp);
-        if (!cap) continue;
-        const cameraBuffer = await snapshotStore.readCapture(cap.absolutePath, householdId);
-        const playerBuffer = await resolvePlayer(d, playerCache, contentSourceResolver, frameExtractor, logger);
+        const cam = pickCapture(cameraCaps, d.cameraTimestamp);
+        if (!cam) continue;
+        const cameraBuffer = await readCached(bufCache, snapshotStore, cam.absolutePath, householdId);
+        // Player frame: a realtime UI capture stored just like the camera (role:player).
+        let playerBuffer = null;
+        const pcap = d.playerTimestamp != null ? playerByTs.get(d.playerTimestamp) : null;
+        if (pcap) {
+          try { playerBuffer = await readCached(bufCache, snapshotStore, pcap.absolutePath, householdId); }
+          catch (err) { logger.warn?.('fitness.timelapse.player_frame_read_failed', { error: err.message }); }
+        }
         const posterBuffer = await resolvePoster(d, posterCache, posterProvider, logger);
         const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, descriptor: d });
         const name = `frame_${String(written).padStart(5, '0')}.jpg`;
@@ -90,17 +97,9 @@ export class GenerateSessionTimelapse {
   }
 }
 
-async function resolvePlayer(d, cache, resolver, extractor, logger) {
-  if (!d.playerContentId || !resolver) return null;
-  try {
-    if (!cache.has(d.playerContentId)) cache.set(d.playerContentId, await resolver(d.playerContentId));
-    const source = cache.get(d.playerContentId);
-    if (!source) return null;
-    return await extractor.extractFrame({ source, offsetMs: d.playerOffsetMs || 0 });
-  } catch (err) {
-    logger.warn?.('fitness.timelapse.player_frame_failed', { contentId: d.playerContentId, error: err.message });
-    return null;
-  }
+async function readCached(cache, store, absolutePath, householdId) {
+  if (!cache.has(absolutePath)) cache.set(absolutePath, await store.readCapture(absolutePath, householdId));
+  return cache.get(absolutePath);
 }
 
 async function resolvePoster(d, cache, provider, logger) {

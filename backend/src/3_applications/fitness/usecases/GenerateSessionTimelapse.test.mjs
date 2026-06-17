@@ -12,7 +12,10 @@ function baseSession() {
       interval_seconds: 5, tick_count: 12, series: {},
       events: [{ timestamp: 0, type: 'media', data: { contentId: 'plex:1', title: 'X', grandparentTitle: 'Show' } }]
     },
-    snapshots: { captures: [{ index: 0, timestamp: 0, path: 'a/0.jpg', filename: '0.jpg' }] },
+    snapshots: { captures: [
+      { index: 0, timestamp: 0, path: 'a/0.jpg', filename: '0.jpg', role: 'camera' },
+      { index: 0, timestamp: 100, path: 'p/0.jpg', filename: 'p0.jpg', role: 'player' }
+    ] },
     roster: [{ id: 'kc', display_name: 'KC' }],
     treasureBox: { totalCoins: 50 }
   };
@@ -34,16 +37,14 @@ function fakes(overrides = {}) {
       cleanup: async (...a) => { calls.cleaned = a; }
     },
     frameMapper: {
-      buildFrames: (s) => (s.snapshots.captures.length ? [{
-        frameIndex: 0, cameraTimestamp: 0, playerContentId: 'plex:1', playerOffsetMs: 0,
+      buildFrames: (s) => (s.snapshots.captures.some(c => (c.role || 'camera') === 'camera') ? [{
+        frameIndex: 0, cameraTimestamp: 0, playerTimestamp: 100, playerContentId: 'plex:1',
         title: 'X', showTitle: 'Show', participants: [{ id: 'kc', displayName: 'KC', hr: 120 }],
         elapsedRealMs: 0, wallClockMs: 0, zone: 'hot', rpm: 80, coins: 25
       }] : [])
     },
-    frameExtractor: { extractFrame: async () => Buffer.from([0xff, 0xd8]) },
     frameRenderer: { renderFrame: async (args) => { calls.rendered.push(args); return Buffer.from([0xff, 0xd8, 1, 2, 3]); } },
     videoEncoder: { encodeSequence: async ({ outputPath }) => ({ outputPath }) },
-    contentSourceResolver: async () => '/media/plex/x.mp4',
     posterProvider: async (contentId) => { calls.posters.push(contentId); return Buffer.from([0xff, 0xd8, 9]); },
     avatarProvider: async () => { calls.avatars++; return { kc: Buffer.from([0xff, 0xd8, 7]) }; },
     resolveName: (slug) => slug.toUpperCase(),
@@ -67,6 +68,8 @@ test('happy path: processing -> render with poster+avatars -> encode -> ready ->
   assert.equal(f.calls.avatars, 1);
   assert.ok(f.calls.rendered[0].posterBuffer);
   assert.ok(f.calls.rendered[0].avatarBuffers.kc);
+  // player frame came from the stored role:player capture
+  assert.ok(f.calls.rendered[0].playerBuffer);
   // raw frames cleaned up on success
   assert.ok(f.calls.cleaned);
 });
@@ -81,8 +84,10 @@ test('no captures -> skipped, no encode', async () => {
   assert.equal(encoded, false);
 });
 
-test('player resolve failure still encodes (PiP skipped)', async () => {
-  const f = fakes(); f.contentSourceResolver = async () => null;
+test('no player capture -> playerBuffer null, still encodes (PiP skipped)', async () => {
+  const sessionData = baseSession();
+  sessionData.snapshots.captures = [{ index: 0, timestamp: 0, filename: '0.jpg', role: 'camera' }];
+  const f = fakes({ sessionData });
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'ready');

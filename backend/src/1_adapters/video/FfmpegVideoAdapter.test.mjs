@@ -9,18 +9,6 @@ import { FfmpegVideoAdapter } from './FfmpegVideoAdapter.mjs';
 const ffmpegOk = spawnSync('ffmpeg', ['-version']).status === 0;
 const silent = { debug() {}, warn() {}, info() {} };
 
-test('extractFrame returns a JPEG buffer from a source video', { skip: !ffmpegOk && 'ffmpeg not installed' }, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-'));
-  const src = path.join(dir, 'src.mp4');
-  spawnSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'testsrc=duration=2:size=320x240:rate=10', src]);
-  const adapter = new FfmpegVideoAdapter({ logger: silent });
-  const buf = await adapter.extractFrame({ source: src, offsetMs: 1000 });
-  assert.ok(Buffer.isBuffer(buf) && buf.length > 500);
-  assert.equal(buf[0], 0xff);
-  assert.equal(buf[1], 0xd8); // JPEG SOI
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
 test('encodeSequence stitches frames into an mp4', { skip: !ffmpegOk && 'ffmpeg not installed' }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-'));
   for (let i = 0; i < 5; i++) {
@@ -34,7 +22,7 @@ test('encodeSequence stitches frames into an mp4', { skip: !ffmpegOk && 'ffmpeg 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('extractFrame rejects when source is missing', async () => {
+test('encodeSequence rejects when args are missing', async () => {
   const adapter = new FfmpegVideoAdapter({ logger: silent });
-  await assert.rejects(() => adapter.extractFrame({ offsetMs: 0 }), /source/);
+  await assert.rejects(() => adapter.encodeSequence({ framesDir: '/x' }), /missing/i);
 });
