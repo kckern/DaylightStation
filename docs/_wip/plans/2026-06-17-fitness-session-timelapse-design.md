@@ -2,6 +2,18 @@
 
 > Validated design from a brainstorming session on 2026-06-17. Companion to the
 > implementation plan: `2026-06-17-fitness-session-timelapse-plan.md`.
+>
+> **Implementation note (2026-06-17): player capture pivoted to realtime UI grab.**
+> The original design had the backend ffmpeg-extract player frames from the Plex
+> source. During build this was changed (per request) to capture the player
+> `<video>` client-side in realtime — same as the webcam — and upload as
+> `role: 'player'` screenshots. This is truer to "what was on screen," needs no
+> Plex source-path resolution, and drops the `IVideoFrameExtractor` /
+> `contentSourceResolver`. ffmpeg is now used only for the final encode. The
+> renderer also gained: Roboto Condensed (bundled), 4:3 contain camera with even
+> L/center/R spacing, a right rail (player PiP → show poster), a header coin
+> counter (animated from `treasureBox.totalCoins`), avatars beside names, and
+> fixed-width HR readouts. Operational details: `docs/runbooks/fitness-session-timelapse.md`.
 
 ## Goal
 
