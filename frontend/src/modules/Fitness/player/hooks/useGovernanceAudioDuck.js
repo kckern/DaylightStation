@@ -10,6 +10,39 @@ function logger() {
 }
 
 /**
+ * Play a one-shot cue SFX on the shared cue audio element — no ducking, no
+ * session. Used for fire-and-forget chimes (e.g. the fingerprint-unlock success
+ * sound) from anywhere in the fitness UI, routed through the same element +
+ * autoplay-unlock plumbing the governance duck uses. The caller should have
+ * primed the element via a user gesture (see audioCuePlayer.primeCueAudio /
+ * installCueAudioUnlock) or the play may be autoplay-rejected (logged, not thrown).
+ *
+ * @param {{ sound: string, volume?: number }} cue - `sound` is a media-relative path
+ * @returns {boolean} true if play was attempted
+ */
+export function playCueOnce({ sound, volume } = {}) {
+  if (!sound) return false;
+  const audio = getCueAudioElement();
+  if (!audio) { logger().warn('fitness.cue.no_element', { sound }); return false; }
+  try {
+    audio.src = DaylightMediaPath(`/media/${sound}`);
+    const v = Number(volume);
+    audio.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+    audio.currentTime = 0;
+    audio.muted = false;
+    logger().info('fitness.cue.play', { sound, unlocked: isCueAudioUnlocked() });
+    const p = audio.play();
+    if (p && typeof p.catch === 'function') p.catch((err) => {
+      logger().warn('fitness.cue.play_rejected', { sound, name: err?.name ?? null, message: err?.message ?? null });
+    });
+    return true;
+  } catch (err) {
+    logger().warn('fitness.cue.play_threw', { sound, message: err?.message ?? null });
+    return false;
+  }
+}
+
+/**
  * Start a duck+SFX session: lower the video via the volume system's setDuck()
  * (the single authority for the ducked level), play the cue's SFX on its own
  * independent audio element, and lift the duck when the SFX ends.

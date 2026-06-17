@@ -6,6 +6,8 @@ import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
+import { useUnlock } from '@/modules/Fitness/hooks/useUnlock.js';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 const formatWatchedDate = (dateString) => {
@@ -248,6 +250,48 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
       : [];
     return new Set(normalized);
   }, [nomusicLabels]);
+
+  // Config-driven locks map (e.g. { governance_bypass: ['kckern'], skip_content: [...] }).
+  // A lock is ACTIVE iff its value is a non-empty array of authorized usernames.
+  // Surfaced via the unified fitness config (root + nested fitness block) — mirrors
+  // FitnessModuleMenu (Task 4.1). Absent/empty lock ⇒ today's behavior unchanged.
+  const locks = useMemo(() => {
+    const cfg = fitnessContext.fitnessConfiguration || {};
+    return cfg.locks || cfg.fitness?.locks || {};
+  }, [fitnessContext.fitnessConfiguration]);
+  const isLockActive = useCallback(
+    (lockName) => Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
+    [locks]
+  );
+
+  // One unlock instance owned by FitnessShow. `pendingUnlock` describes the action
+  // to perform when a fingerprint matches; null means no prompt is open. Mirrors the
+  // hook+prompt+pendingLaunch wiring from FitnessModuleMenu (Task 4.1).
+  const { requestUnlock, state: unlockState, reset: resetUnlock } = useUnlock();
+  const [pendingUnlock, setPendingUnlock] = useState(null); // { lock, label, episode? }
+
+  // Once a governance_bypass fingerprint matches, episodes launched from this show
+  // are marked to skip governance. (See handlePlayEpisode + the T4.3 seam below.)
+  const [governanceBypassed, setGovernanceBypassed] = useState(false);
+
+  const closeUnlock = useCallback(() => {
+    setPendingUnlock(null);
+    resetUnlock();
+  }, [resetUnlock]);
+
+  // FitnessShow is rendered WITHOUT a key (FitnessApp), so navigating between
+  // shows reuses this same instance instead of remounting. Reset all unlock state
+  // when the show changes, otherwise a governance bypass granted on show A (or an
+  // open prompt) would leak into show B — a real authorization bypass once the
+  // per-item nogovern seam is wired (T4.3). `showIdRef` lets in-flight scans that
+  // resolve after a show change bail out instead of acting on the wrong show.
+  const showIdRef = useRef(showId);
+  useEffect(() => {
+    showIdRef.current = showId;
+    setGovernanceBypassed(false);
+    setPendingUnlock(null);
+    resetUnlock();
+  }, [showId, resetUnlock]);
 
   const fetchShowData = useCallback(async () => {
     if (!showId) {
@@ -624,7 +668,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         showId,
         seconds: resolvedSeconds,
         watchSeconds: resolvedSeconds || undefined,
-        watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
+        watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined,
+        // After a matched governance_bypass unlock, mark the queue item so the player
+        // skips governance for this launch. FitnessPlayer honors this per-item flag via
+        // `currentItem.nogovern` → shouldBypassGovernance (alongside the sticky ?nogovern
+        // prop and the in-player runtime bypass). Wired in T4.3.
+        nogovern: governanceBypassed || undefined
       };
 
   // created queue item (debug removed)
@@ -669,6 +718,48 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     } catch (error) {
       console.error('🎬 Error adding episode to play queue:', error);
     }
+  };
+
+  // Governed-show "Unlock" affordance: request a governance_bypass fingerprint.
+  // On match, flip the local `governanceBypassed` flag so subsequent plays mark
+  // their queue item to skip governance (see handlePlayEpisode seam). Denied/cancel/
+  // timeout leaves the prompt up (or closes via closeUnlock) and does NOT bypass.
+  const handleGovernanceUnlockTap = () => {
+    if (pendingUnlock) return; // ignore taps while a prompt is open
+    const reqShowId = showId; // guard: ignore a scan that resolves after a show change
+    const logger = getLogger().child({ component: 'FitnessShow' });
+    logger.info('fitness.show.unlock_tap', { lock: 'governance_bypass', show: info?.title });
+    setPendingUnlock({ lock: 'governance_bypass', label: info?.title || 'Governed content' });
+    requestUnlock('governance_bypass').then((result) => {
+      if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
+      if (result?.matched) {
+        logger.info('fitness.show.governance_bypassed', { show: info?.title, userId: result.userId });
+        setGovernanceBypassed(true);
+        closeUnlock();
+      }
+      // matched:false / denied — leave the prompt showing the denied state; the user
+      // dismisses via cancel/close which calls closeUnlock().
+    });
+  };
+
+  // Sequential locked-episode affordance: request a skip_content fingerprint.
+  // On match, play that episode via the normal launch path. Denied/cancel/timeout
+  // does NOT play.
+  const handleLockedEpisodeUnlockTap = (episode) => {
+    if (pendingUnlock) return; // ignore taps while a prompt is open
+    const reqShowId = showId; // guard: ignore a scan that resolves after a show change
+    const logger = getLogger().child({ component: 'FitnessShow' });
+    logger.info('fitness.show.unlock_tap', { lock: 'skip_content', episode: episode?.plex || episode?.id });
+    setPendingUnlock({ lock: 'skip_content', label: episode?.label || 'Locked episode', episode });
+    requestUnlock('skip_content').then((result) => {
+      if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
+      if (result?.matched) {
+        logger.info('fitness.show.skip_content_granted', { episode: episode?.plex || episode?.id, userId: result.userId });
+        closeUnlock();
+        handlePlayEpisode(episode);
+      }
+      // matched:false / denied — leave the prompt up; user dismisses via closeUnlock().
+    });
   };
 
   const { info, items = [], parents: parentsMap = null } = showData || {};
@@ -1149,14 +1240,41 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                 <div className="show-title-row">
                   <h1 className="show-title">{info.title}</h1>
                   {isGovernedShow && (
-                    <span
-                      className="governed-lock-icon"
-                      title="Governed content"
-                      aria-label="Governed content"
-                      role="img"
-                    >
-                      🔒
-                    </span>
+                    governanceBypassed ? (
+                      <span
+                        className="governed-lock-icon governed-lock-icon--unlocked"
+                        title="Governance unlocked"
+                        aria-label="Governance unlocked"
+                        role="img"
+                      >
+                        🔓
+                      </span>
+                    ) : isLockActive('governance_bypass') ? (
+                      <button
+                        type="button"
+                        className="governed-lock-icon governed-lock-icon--button"
+                        title="Unlock governed content"
+                        aria-label="Unlock governed content"
+                        onPointerDown={handleGovernanceUnlockTap}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleGovernanceUnlockTap();
+                          }
+                        }}
+                      >
+                        🔒
+                      </button>
+                    ) : (
+                      <span
+                        className="governed-lock-icon"
+                        title="Governed content"
+                        aria-label="Governed content"
+                        role="img"
+                      >
+                        🔒
+                      </span>
+                    )
                   )}
                   {fitnessSessionInstance?.isActive && (
                     <button
@@ -1280,9 +1398,30 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                             >
                               <div className="episode-title-flex">
                                 {isLocked ? (
-                                  <span className="episode-pill episode-pill-locked" aria-hidden="true">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1V7c0-2.76-2.24-5-5-5S7 4.24 7 7v3H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2ZM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm3-7H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v3Z"/></svg>
-                                  </span>
+                                  isLockActive('skip_content') ? (
+                                    <button
+                                      type="button"
+                                      className="episode-pill episode-pill-locked episode-pill-locked--button"
+                                      aria-label="Unlock episode"
+                                      title="Unlock episode"
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        handleLockedEpisodeUnlockTap(episode);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault();
+                                          handleLockedEpisodeUnlockTap(episode);
+                                        }
+                                      }}
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1V7c0-2.76-2.24-5-5-5S7 4.24 7 7v3H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2ZM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm3-7H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v3Z"/></svg>
+                                    </button>
+                                  ) : (
+                                    <span className="episode-pill episode-pill-locked" aria-hidden="true">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1V7c0-2.76-2.24-5-5-5S7 4.24 7 7v3H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2ZM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm3-7H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v3Z"/></svg>
+                                    </span>
+                                  )
                                 ) : typeof episodeNumber === 'number' ? (
                                   <span className="episode-pill" aria-hidden="true">
                                     {episodeNumber}
@@ -1369,6 +1508,13 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
           )}
         </div>
       </div>
+
+      <UnlockPrompt
+        open={!!pendingUnlock}
+        state={unlockState}
+        lockLabel={pendingUnlock?.label}
+        onCancel={closeUnlock}
+      />
     </div>
   );
 };
