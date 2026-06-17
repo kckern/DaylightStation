@@ -1300,7 +1300,7 @@ export function createFitnessRouter(config) {
     const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
 
     // Validate the lock name against the configured locks map. Don't scan unknown locks.
-    const authorized = fitnessConfig?.locks?.[lock];
+    const authorized = typeof lock === 'string' ? fitnessConfig?.locks?.[lock] : undefined;
     if (!lock || !Array.isArray(authorized)) {
       logger.warn?.('fitness.unlock.unknown_lock', { lock });
       return res.status(400).json({ error: 'unknown-lock' });
@@ -1326,7 +1326,16 @@ export function createFitnessRouter(config) {
     }
 
     logger.info?.('fitness.unlock.request', { lock, candidates: candidates.length });
-    const result = await unlockService.requestUnlock(lock, candidates);
+    let result;
+    try {
+      result = await unlockService.requestUnlock(lock, candidates);
+    } catch (err) {
+      // Parity with neighboring handlers: tag the domain error so an unlock
+      // round-trip failure (bus down, garage offline) is debuggable, and fail
+      // closed with a generic 500 rather than leaking internals.
+      logger.error?.('fitness.unlock.error', { lock, error: err?.message });
+      return res.status(500).json({ error: 'unlock-failed' });
+    }
 
     const response = { matched: !!result?.matched, userId: result?.userId };
     if (result?.reason) response.reason = result.reason;

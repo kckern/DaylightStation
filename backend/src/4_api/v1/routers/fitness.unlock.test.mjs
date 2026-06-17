@@ -47,7 +47,7 @@ describe('fitness router — POST /unlock', () => {
     const { app } = appWith({
       fitnessConfig: { locks: { dance_party: ['test-user'] } },
       profiles: {
-        'test-user': { identities: { fingerprints: [{ id: 'uuid-1', finger: 'index', enrolled: true }] } },
+        'test-user': { identities: { fingerprints: [{ id: 'uuid-1', finger: 'right-index', enrolled: '2026-06-17' }] } },
       },
       unlockService: { requestUnlock },
     });
@@ -120,6 +120,21 @@ describe('fitness router — POST /unlock', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ matched: false, reason: 'no-enrolled-users' });
     expect(requestUnlock).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 (fail-closed) when the unlock service rejects', async () => {
+    const requestUnlock = vi.fn().mockRejectedValue(new Error('bus-down'));
+    const { app } = appWith({
+      fitnessConfig: { locks: { dance_party: ['test-user'] } },
+      profiles: { 'test-user': { identities: { fingerprints: [{ id: 'uuid-1' }] } } },
+      unlockService: { requestUnlock },
+    });
+
+    const res = await request(app).post('/unlock').send({ lock: 'dance_party' });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: 'unlock-failed' });
+    expect(requestUnlock).toHaveBeenCalledTimes(1);
   });
 
   it('returns 503 when the unlock service is unavailable', async () => {
