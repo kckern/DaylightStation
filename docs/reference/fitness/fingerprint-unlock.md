@@ -137,12 +137,63 @@ The container's `fitness.enroll.request` handler is the symmetric twin of the ex
 | Governed show + sequential episode (`FitnessShow.jsx`) | `governance_bypass`, `skip_content` | Interactive unlock button / locked-episode affordance; resets on show change |
 | In-player governance lock overlay (`GovernanceStateOverlay.jsx` + `FitnessPlayer.jsx`) | `governance_bypass` | "Skip / Unlock" button; on match releases the lock for the current item (`shouldBypassGovernance`) |
 
+## Fingerprint Manager
+
+A fitness widget (`fitness:fingerprint-manager`) for enrolling and removing fingerprints
+in-app, so a household no longer edits `profile.yml` by hand to set up the reader.
+
+### Eligibility — fitness-scoped
+Only **primary** fitness users (`data/household/config/fitness.yml` → `users.primary`) can
+hold fingerprints. These are the profiled users with a `data/users/<username>/profile.yml`.
+Inline `family` and `friends` users are **not eligible**: they are never listed by the
+manager, and an enroll/delete request naming one is refused with `403 not-eligible`.
+
+### Access model
+The widget is open to anyone, but acting on a user's prints requires authority over that
+user:
+
+- **Trust on first use** — a primary user with **zero** enrolled prints may enroll their
+  first finger with no scan. This bootstraps the very first authorized user.
+- **Self or admin after** — once a user has any print, enrolling or deleting one requires a
+  live scan that resolves to that same user *or* to an admin. Authority reuses the unlock
+  scan path (`fitness.unlock.*`).
+
+Admin status is the `identities.admin: true` flag in a user's own `profile.yml`. It is
+**config-only**: the manager reads it to decide who may act for others and to show an admin
+badge, but never writes it. There is no in-app path to grant or revoke admin.
+
+### Endpoints — `/api/v1/fitness/fingerprints`
+- **`GET /fingerprints`** — lists eligible (primary) users with `{username, displayName,
+  admin, fingerprints:[{finger, enrolled}]}`. Template uuids stay server-side; only finger
+  names reach the browser.
+- **`POST /fingerprints/enroll`** — `{username, finger}`. Rejects an unknown user (`400`),
+  a non-eligible user (`403 not-eligible`), a missing finger (`400`), and a finger already
+  enrolled for that user (`409 finger-taken`). After the access gate and a successful
+  capture it appends the new uuid to the profile.
+- **`DELETE /fingerprints`** — `{username, finger}`. Delete is **keyed by finger name**: it
+  resolves the finger to its uuid server-side, refusing an unknown finger (`400`) or an
+  ambiguous one (`409`). The uuid is removed from the profile and the on-box template is
+  deleted.
+
+### WebSocket contract
+Enroll and delete are correlated requests relayed to the garage `daylight-fitness`
+container over the existing socket:
+
+- `fitness.enroll.request` → `fitness.enroll.progress` (rebroadcast per stage) →
+  `fitness.enroll.result`
+- `fitness.fingerprint.delete.request` → `fitness.fingerprint.delete.result`
+
+Enroll progress mirrors the hardware capture from the enroll doc — **five presses plus a
+confirm** — so the modal shows the same stage-by-stage prompts the reader expects.
+
 ## Hardware-free testing
 See `docs/runbooks/fingerprint-unlock-simulation.md` — set `FINGERPRINT_SIM` on the garage
 container and drive scans from `_extensions/fitness/simulate.mjs` over SSH.
 
 ## Code map
-- Backend: `backend/src/3_applications/fitness/{unlockPolicy,unlockBroker,unlockService}.mjs`; endpoint in `backend/src/4_api/v1/routers/fitness.mjs`.
-- Frontend: `frontend/src/modules/Fitness/hooks/useUnlock.js`, `.../player/overlays/UnlockPrompt.jsx`, `.../player/governanceBypass.js`.
+- Backend (unlock): `backend/src/3_applications/fitness/{unlockPolicy,unlockBroker,unlockService}.mjs`; endpoint in `backend/src/4_api/v1/routers/fitness.mjs`.
+- Backend (manager): persistence in `backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs`; eligibility/access, profile-write orchestration, and the enroll/delete relay in `backend/src/3_applications/fitness/{manageAccessPolicy,fingerprintProfileWriter,manageBroker,manageService}.mjs`; `/fingerprints*` routes in `backend/src/4_api/v1/routers/fitness.mjs`.
+- Frontend (unlock): `frontend/src/modules/Fitness/hooks/useUnlock.js`, `.../player/overlays/UnlockPrompt.jsx`, `.../player/governanceBypass.js`.
+- Frontend (manager): `frontend/src/modules/Fitness/widgets/FingerprintManager/` (container + `EnrollModal.jsx` + `useFingerprintManager.js`).
 - On-box (all in the `daylight-fitness` container — host keeps no fingerprint stack): `_extensions/fitness/src/server.mjs` (WS unlock handler), `fingerprint_helper.py` (libfprint enroll/identify), `profileStore.mjs` (uuid/profile helpers), `unlockSim.mjs` + `simulate.mjs` (hardware-free sim). Dockerfile carries `libfprint-2-2` + `gir1.2-fprint-2.0` + `python3-gi`; compose bind-mounts `/var/lib/daylight-unlock`.
-- Design/plan: `docs/_wip/plans/2026-06-17-fingerprint-unlock-{design,plan}.md`.
+- Design/plan: `docs/_wip/plans/2026-06-17-fingerprint-unlock-{design,plan}.md`, `docs/_wip/plans/2026-06-17-fingerprint-manager-{design,plan}.md`.
