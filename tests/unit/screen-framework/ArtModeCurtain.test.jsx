@@ -139,4 +139,43 @@ describe('ArtMode curtain gating', () => {
     expect(imgSrc(container)).toBe('/C.jpg');
     expect(isOpen(container)).toBe(true);
   });
+
+  it('safety rail: late art never swaps in over an open curtain — it re-closes first', async () => {
+    // curtainMaxMs parts the drape if art stalls; a slow fetch resolving AFTER that
+    // must NOT pop the new art in plain view (the user-reported "reload while open").
+    const p = { ...props, curtainMaxMs: 3000 };
+    const { container, rerender } = render(<ArtMode {...p} />);
+    await mountAndOpen(container);
+    expect(imgSrc(container)).toBe('/A.jpg');
+
+    currentTrack = { title: 'Song A' }; rerender(<ArtMode {...p} />);   // first song: no swap
+    currentTrack = { title: 'Song B' }; rerender(<ArtMode {...p} />);   // swap → curtain drops
+    expect(isOpen(container)).toBe(false);
+    expect(resolvers).toHaveLength(2);                                  // fetch in flight (unresolved)
+
+    // Fetch stalls past the rail → the curtain parts over the OLD art A.
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(isOpen(container)).toBe(true);
+    expect(imgSrc(container)).toBe('/A.jpg');
+
+    // The slow art finally arrives and the commit timer fires. It must re-close
+    // rather than swap in the open: still showing A, curtain shutting.
+    await act(async () => { resolvers[1](artFor('B.jpg')); });
+    await act(async () => { vi.advanceTimersByTime(0); });
+    expect(imgSrc(container)).toBe('/A.jpg');
+    expect(isOpen(container)).toBe(false);
+
+    // After the re-close completes, B commits behind the shut curtain.
+    await act(async () => { vi.advanceTimersByTime(1400); });
+    expect(imgSrc(container)).toBe('/B.jpg');
+    expect(isOpen(container)).toBe(false);
+
+    // Then the new image loads + dwell elapses → it parts to reveal B.
+    await act(async () => {
+      fireEvent.load(container.querySelector('[data-testid="artmode-image"]'));
+      vi.advanceTimersByTime(1000);
+    });
+    expect(isOpen(container)).toBe(true);
+    expect(imgSrc(container)).toBe('/B.jpg');
+  });
 });

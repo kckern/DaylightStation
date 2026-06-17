@@ -58,7 +58,7 @@ function MenuBackConsumerBridge({ consumer }) {
   return null;
 }
 
-export function ScreenActionHandler({ actions = {} }) {
+export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
   const hasMenuNav = useHasMenuNavigationContext();
@@ -417,20 +417,23 @@ export function ScreenActionHandler({ actions = {} }) {
         if (!props) return;
         const Component = getWidgetRegistry().get('art');
         if (!Component) { logger().warn('action.scene.widget-not-found'); return; }
+        // Raw-key handling default depends on the screen's input device. Macro-keypad
+        // (numpad) screens emit semantic ActionBus actions PLUS spurious companion nav
+        // keys, so raw keys would double-trigger view-mode/shuffle there → default off.
+        // Plain remotes (e.g. the living-room Shield) have no companion-key hazard and
+        // an empty/partial keymap, so raw keys give the full interactive surface
+        // (brightness, view-cycle, OK-exit) exactly like the idle screensaver → default
+        // on. A preset may override either way with an explicit rawKeys.
+        const rawKeysDefault = inputType === 'remote';
         showOverlay(
           Component,
-          // Triggered scenes run on adapter-driven screens (numpad/remote → ActionBus),
-          // so disable raw-key handling by default — the macro-keypads' companion nav
-          // keys would otherwise double-trigger view-mode/shuffle. A preset may opt back
-          // in with rawKeys:true. (The idle screensaver mounts ArtMode separately and
-          // keeps rawKeys:true.)
-          { rawKeys: false, ...props, onExit: () => dismissOverlay('fullscreen') },
+          { rawKeys: rawKeysDefault, ...props, onExit: () => dismissOverlay('fullscreen') },
           { mode: 'fullscreen', priority: 'high' },
         );
-        logger().info('action.scene.show', { preset });
+        logger().info('action.scene.show', { preset, rawKeys: props?.rawKeys ?? rawKeysDefault });
       })
       .catch((err) => logger().warn('artmode.scene.unknown', { preset, error: err?.message }));
-  }, [showOverlay, dismissOverlay]);
+  }, [showOverlay, dismissOverlay, inputType]);
 
   // --- PIP doorbell (simulate doorbell event via webhook) ---
   const handlePipDoorbell = useCallback(() => {

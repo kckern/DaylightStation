@@ -368,7 +368,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
               <ScreenOverlayProvider>
                 <PipManager config={config.pip}>
                   <ScreenAutoplay routes={config.routes} />
-                  <ScreenActionHandler actions={config.actions} />
+                  <ScreenActionHandler actions={config.actions} inputType={config.input?.type} />
                   <ScreenCommandHandler wsConfig={config.websocket} screenId={screenId} />
                   <ScreenSessionPublishers wsConfig={config.websocket} />
                   <ScreenSubscriptionHandler subscriptions={config.subscriptions} />

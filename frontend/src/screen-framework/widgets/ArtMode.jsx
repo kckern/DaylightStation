@@ -24,10 +24,11 @@ const EXIT_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
 const NEXT_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
 const BRIGHTER_KEYS = new Set(['ArrowUp']);
 const DIMMER_KEYS = new Set(['ArrowDown']);
-// Keys that cycle the view mode (ratio/frame). Tab is the universal fallback;
-// screens add device-specific keys via screensaver `props.cycleKeys` (e.g. the
-// living-room Shield remote's Rewind arrives as raw `MediaRewind`, keyCode 227).
-const DEFAULT_CYCLE_KEYS = ['Tab'];
+// Keys that cycle the view mode (ratio/frame). Tab is the universal fallback and
+// the Shield remote's Rewind (raw `MediaRewind`, keyCode 227) cycles by default,
+// so it works the same in the idle screensaver and in triggered scenes; screens
+// may add more device-specific keys via `props.cycleKeys`.
+const DEFAULT_CYCLE_KEYS = ['Tab', 'MediaRewind'];
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
@@ -185,6 +186,19 @@ function ArtMode({
     if (!mountedRef.current) return;
     const data = pendingArtRef.current;
     if (data == null) return;
+    // Invariant: art is only ever swapped behind a CLOSED curtain. If the safety
+    // rail (curtainMaxMs) parted the drape before a slow fetch resolved, the
+    // curtain is now open over the OLD art — re-close it and defer the swap until
+    // the drape has fallen again, rather than popping the new art in plain view.
+    if (revealedRef.current) {
+      setCurtain(false);
+      loadedRef.current = 0;
+      closeCompleteAtRef.current = nowMs() + curtainCloseMs;
+      if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
+      commitTimerRef.current = setTimeout(commitPending, curtainCloseMs);
+      return;
+    }
     pendingArtRef.current = null;
     setFailed(false);
     setArt(data);
@@ -193,7 +207,7 @@ function ArtMode({
       plaqueGateRef.current = false;
     }
     logger.info('artmode.loaded', { mode: data?.mode ?? null, count: data?.panels?.length ?? 0 });
-  }, [logger]);
+  }, [logger, setCurtain, openCurtain, curtainCloseMs, curtainMaxMs]);
 
   const featuredUrl = collection
     ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
@@ -327,14 +341,26 @@ function ArtMode({
     logger.info('artmode.viewmode', { dir: 'next', via: 'rate' });
   }, [logger]));
 
-  // D-pad navigation (remote screens, rawKeys:false). On raw-key screens the capture
-  // handler swallows the arrows first, so this never double-fires there.
+  // D-pad navigation (remote screens, rawKeys:false): left/right shuffle the art,
+  // up/down brighten/dim — the full interactive surface without raw keys. On raw-key
+  // screens the capture handler swallows the arrows first (stopImmediatePropagation),
+  // so this never double-fires there. ArrowUp brightens (less dim), matching the raw
+  // BRIGHTER_KEYS path.
   useScreenAction('navigate', useCallback((p) => {
-    if (p?.direction === 'right') goNext();
-    else if (p?.direction === 'left') goPrev();
+    const d = p?.direction;
+    if (d === 'right') goNext();
+    else if (d === 'left') goPrev();
+    else if (d === 'up') setManualBias((b) => round2(b - DIM_STEP));
+    else if (d === 'down') setManualBias((b) => round2(b + DIM_STEP));
   }, [goNext, goPrev]));
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
+
+  // OK/Enter (remote screens, rawKeys:false) arrives as the `select` action — exit the
+  // scene cleanly instead of leaking the keypress to the menu beneath the overlay. On
+  // raw-key screens Enter is swallowed by the capture handler (EXIT_KEYS), so this
+  // never double-fires there; numpad screens don't emit `select` at all.
+  useScreenAction('select', useCallback(() => { logger.info('artmode.exit', { via: 'select' }); exit(); }, [exit, logger]));
   // View-mode cycle keys: configured per-screen, always including the Tab fallback.
   const cycleKeySet = useMemo(
     () => new Set([...(Array.isArray(cycleKeys) ? cycleKeys : DEFAULT_CYCLE_KEYS), 'Tab']),
