@@ -9,6 +9,12 @@ export function boxAspect(cellAR, artAR, crop) {
   return clamp(cellAR, artAR * (1 - 2 * crop), artAR / (1 - 2 * crop));
 }
 
+// Per-side cover-crop fraction needed to fill a `winAR` window with `artAR` art.
+// The smaller axis fills; the larger overflows and is trimmed equally both sides.
+export function coverCropPerSide(winAR, artAR) {
+  return artAR <= winAR ? (1 - artAR / winAR) / 2 : (1 - winAR / artAR) / 2;
+}
+
 /**
  * @param {object} o
  * @param {'single'|'diptych'} o.mode
