@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useScreenAction } from '../input/useScreenAction.js';
 import { useScreenOverlay } from '../overlays/ScreenOverlayProvider.jsx';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
 import { usePip } from '../pip/PipManager.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
@@ -37,9 +38,30 @@ function logger() {
  *
  * This is a renderless component (returns null).
  */
+/**
+ * Bridges the hardware/browser Back button (popstate) to the overlay system.
+ * MenuNavigationContext gives a registered back-consumer first dibs before it
+ * pops the menu, so a fullscreen scene above the menu (e.g. a triggered ArtMode
+ * slideshow) is dismissed by Back instead of silently popping the hidden stack.
+ *
+ * Rendered only when a MenuNavigationProvider is present (tests may mount
+ * ScreenActionHandler standalone). The consumer is stable; it reads live state
+ * from refs at back-press time, so no re-registration churn.
+ */
+function MenuBackConsumerBridge({ consumer }) {
+  const { registerBackConsumer, unregisterBackConsumer } = useMenuNavigationContext();
+  useEffect(() => {
+    if (!registerBackConsumer) return undefined;
+    registerBackConsumer(consumer);
+    return () => unregisterBackConsumer?.();
+  }, [registerBackConsumer, unregisterBackConsumer, consumer]);
+  return null;
+}
+
 export function ScreenActionHandler({ actions = {} }) {
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
+  const hasMenuNav = useHasMenuNavigationContext();
   const { step: stepVolume, toggleMute: toggleVolumeMute, stepSize: volumeStepSize } = useScreenVolume();
   const shaderRef = useRef(null);
   const prevShaderOpacity = useRef(null);
@@ -341,6 +363,35 @@ export function ScreenActionHandler({ actions = {} }) {
     dismissOverlay();
   }, [dismissOverlay, hasOverlay, actions, pip]);
 
+  // --- Hardware Back (popstate) consumer ---
+  // Mirror live overlay/pip state into refs so the consumer (invoked at
+  // back-press time) reads fresh values without re-registering each render.
+  const hasOverlayRef = useRef(hasOverlay);
+  hasOverlayRef.current = hasOverlay;
+  const pipRef = useRef(pip);
+  pipRef.current = pip;
+
+  const consumeBack = useCallback(() => {
+    // An overlay that manages its own back navigation (MenuStack popping levels,
+    // Piano blocking escapes) registers an escape interceptor — defer to the
+    // normal menu pop for those. Otherwise a "dumb" fullscreen scene (e.g. a
+    // triggered ArtMode slideshow) is on top: dismiss it and report consumed so
+    // the hidden menu stack beneath isn't popped instead.
+    if (escapeInterceptorRef?.current) return false;
+    if (pipRef.current?.hasPip) {
+      logger().debug('back.pip-dismiss', {});
+      pipRef.current.dismiss();
+      return true;
+    }
+    if (hasOverlayRef.current) {
+      logger().debug('back.overlay-dismiss', {});
+      currentMenuRef.current = null;
+      dismissOverlay();
+      return true;
+    }
+    return false;
+  }, [dismissOverlay, escapeInterceptorRef]);
+
   // --- Overlay: show a registered widget by name ---
   const handleDisplayOverlay = useCallback((payload) => {
     const { overlayId } = payload || {};
@@ -419,5 +470,6 @@ export function ScreenActionHandler({ actions = {} }) {
   useScreenAction('display:sleep', handleSleep);
   useScreenAction('escape', handleEscape);
 
-  return null; // Renderless component
+  // Renderless, except for the Back-button bridge when a menu nav context exists.
+  return hasMenuNav ? <MenuBackConsumerBridge consumer={consumeBack} /> : null;
 }
