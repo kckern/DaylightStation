@@ -109,6 +109,63 @@ describe('PlexAdapter.loadMediaUrl — entity contract', () => {
   });
 });
 
+function makeH264OpusPlayable({ ratingKey = '675677' } = {}) {
+  // h264 video + opus audio in mp4: NOT direct-play eligible (audio must
+  // transcode to aac) but the video track IS stream-copyable. The 30fps cap
+  // must not ride on this decision or Plex re-encodes the 60fps video and
+  // stalls (2026-06-16 Game Cycling incident).
+  return new PlayableItem({
+    id: `plex:${ratingKey}`,
+    source: 'plex',
+    localId: ratingKey,
+    title: 'Mario Kart Arcade GP',
+    mediaType: 'dash_video',
+    mediaUrl: `/api/v1/proxy/plex/stream/${ratingKey}`,
+    duration: 5478,
+    resumable: true,
+    metadata: {
+      type: 'episode',
+      Media: [{
+        videoCodec: 'h264', audioCodec: 'opus', container: 'mp4',
+        Part: [{ key: '/parts/1.mp4', container: 'mp4' }],
+      }],
+    },
+  });
+}
+
+describe('PlexAdapter — direct-stream caps gating (h264+opus must keep native 60fps)', () => {
+  let adapter;
+  beforeEach(() => { adapter = makeAdapter(); });
+
+  it('passes allowDirectStream=true (not directPlay) for an h264+opus source', async () => {
+    const spy = vi.spyOn(adapter, 'requestTranscodeDecision').mockResolvedValue({
+      success: true, sessionIdentifier: 's', clientIdentifier: 'c',
+      decision: { canDirectPlay: false, directStreamPath: null },
+    });
+    vi.spyOn(adapter, '_buildTranscodeUrl').mockReturnValue('https://plex/copy');
+
+    await adapter.loadMediaUrl(makeH264OpusPlayable());
+
+    const opts = spy.mock.calls[0][1];
+    expect(opts.allowDirectPlay).toBe(false); // opus audio fails directPlay
+    expect(opts.allowDirectStream).toBe(true); // h264 video is copyable
+  });
+
+  it('_buildTranscodeUrl OMITS the frame-rate limitation and bitrate/res caps when allowDirectStream', () => {
+    const url = adapter._buildTranscodeUrl('675677', 'c', 's', null, null, 0, true);
+    expect(url).not.toContain('video.frameRate');
+    expect(url).not.toContain('maxVideoBitrate');
+    expect(url).not.toContain('maxVideoResolution');
+  });
+
+  it('_buildTranscodeUrl KEEPS the caps when not direct-streamable (re-encode path)', () => {
+    const url = adapter._buildTranscodeUrl('1', 'c', 's', null, null, 0, false);
+    expect(url).toContain('video.frameRate');
+    expect(url).toContain('maxVideoBitrate');
+    expect(url).toContain('maxVideoResolution');
+  });
+});
+
 describe('PlexAdapter.getMediaUrl — id-only convenience', () => {
   let adapter;
 
