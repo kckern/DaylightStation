@@ -470,9 +470,15 @@ export class SessionService {
     target.durationMs = mergedEnd - mergedStart;
     target.replaceTimeline(prepareTimelineForStorage(merged));
 
+    // Fold the SOURCE's aggregates into the (surviving) target. NOTE: use `source`,
+    // not `earlier` — `target` may be the earlier-starting session, in which case
+    // `earlier === target` and unioning `earlier` would drop the source's data
+    // (participants/strava/events) entirely. Timeline ordering still uses
+    // earlier/later above; these non-temporal aggregates just union source→target.
+
     // Merge participants (union, target wins on conflict)
-    if (earlier.participants && typeof earlier.participants === 'object') {
-      for (const [key, val] of Object.entries(earlier.participants)) {
+    if (source.participants && typeof source.participants === 'object') {
+      for (const [key, val] of Object.entries(source.participants)) {
         if (!target.participants[key]) {
           target.participants[key] = val;
         }
@@ -480,18 +486,18 @@ export class SessionService {
     }
 
     // Merge v3 events at root level
-    if (Array.isArray(earlier.events) && earlier.events.length > 0) {
-      target.events = [...earlier.events, ...(target.events || [])].sort(
+    if (Array.isArray(source.events) && source.events.length > 0) {
+      target.events = [...source.events, ...(target.events || [])].sort(
         (a, b) => (a?.timestamp || 0) - (b?.timestamp || 0)
       );
     }
 
     // Merge treasureBox coins
-    if (earlier.treasureBox && target.treasureBox) {
+    if (source.treasureBox && target.treasureBox) {
       target.treasureBox.totalCoins = (target.treasureBox.totalCoins || 0)
-        + (earlier.treasureBox.totalCoins || 0);
-    } else if (earlier.treasureBox && !target.treasureBox) {
-      target.treasureBox = earlier.treasureBox;
+        + (source.treasureBox.totalCoins || 0);
+    } else if (source.treasureBox && !target.treasureBox) {
+      target.treasureBox = source.treasureBox;
     }
 
     // Update the human-readable session block to match the merged span. CRITICAL:
@@ -506,9 +512,9 @@ export class SessionService {
       target.session.duration_seconds = Math.round(target.durationMs / 1000);
     }
 
-    // Merge strava (target wins)
-    if (!target.strava && earlier.strava) target.strava = earlier.strava;
-    if (!target.strava_notes && earlier.strava_notes) target.strava_notes = earlier.strava_notes;
+    // Merge strava (target wins; fold in the source's when target has none)
+    if (!target.strava && source.strava) target.strava = source.strava;
+    if (!target.strava_notes && source.strava_notes) target.strava_notes = source.strava_notes;
 
     // Save merged target, delete source
     await this.sessionStore.save(target, hid);

@@ -56,6 +56,10 @@ function makeStore(seed) {
         session: { ...session.session },
         timeline: session.timeline,
         participants: session.participants,
+        events: session.events,
+        treasureBox: session.treasureBox,
+        strava: session.strava,
+        strava_notes: session.strava_notes,
       });
     },
     async delete(id) { db.delete(String(id)); },
@@ -98,6 +102,28 @@ test('chained merges (3 fragments) span earliest start to latest end', async () 
   assert.equal(saved.session.end, '2026-06-16 19:15:56', 'end stays latest');
   assert.equal(saved.session.duration_seconds, 2986);
   assert.equal(store._db.size, 1, 'both sources deleted, one merged session remains');
+});
+
+test('folds the SOURCE\'s participants + strava in even when the source starts LATER than the target', async () => {
+  // Regression: the union previously used `earlier` not `source`. When the target
+  // is the earlier-starting session, earlier===target and the (later) source's
+  // participants/strava were dropped.
+  const store = makeStore([
+    mkSession('20260616182610', '2026-06-16 18:26:10', '2026-06-16 19:15:56'), // target, earliest start, latest end
+    mkSession('20260616184005', '2026-06-16 18:46:49', '2026-06-16 18:53:24'), // source, starts later
+  ]);
+  // Give the later source a unique participant + strava payload.
+  store._db.get('20260616184005').participants.alan = { display_name: 'Alan' };
+  store._db.get('20260616184005').strava = { name: 'Evening Ride', type: 'Ride' };
+
+  const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });
+  await svc.mergeSessions('20260616184005', '20260616182610', 'test'); // source starts later than target
+
+  const saved = store._db.get('20260616182610');
+  assert.ok(saved.participants.alan, 'later source participant (alan) preserved');
+  assert.equal(saved.strava?.name, 'Evening Ride', 'later source strava preserved');
+  assert.equal(saved.session.start, '2026-06-16 18:26:10');
+  assert.equal(saved.session.end, '2026-06-16 19:15:56');
 });
 
 test('participants are unioned into the target', async () => {
