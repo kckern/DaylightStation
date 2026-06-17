@@ -12,6 +12,7 @@ import * as FitnessSessionApp from './widgets/FitnessSessionApp/index.jsx';
 import * as CycleChallengeDemo from './widgets/CycleChallengeDemo/index.jsx';
 import * as CycleGame from './widgets/CycleGame/index.jsx';
 import * as DancePartyWidget from './widgets/DancePartyWidget/index.jsx';
+import * as FingerprintManager from './widgets/FingerprintManager/index.jsx';
 
 // Maps new fitness: registry keys to module definitions
 const REGISTRY_KEYS = {
@@ -26,6 +27,7 @@ const REGISTRY_KEYS = {
   'fitness:cycle-challenge-demo': CycleChallengeDemo,
   'fitness:cycle-game': CycleGame,
   'fitness:dance-party': DancePartyWidget,
+  'fitness:fingerprint-manager': FingerprintManager,
 };
 
 // Maps old manifest IDs to new registry keys
@@ -41,6 +43,7 @@ const LEGACY_ID_MAP = {
   'cycle_challenge_demo': 'fitness:cycle-challenge-demo',
   'cycle_game': 'fitness:cycle-game',
   'dance_party': 'fitness:dance-party',
+  'fingerprint_manager': 'fitness:fingerprint-manager',
 };
 
 // Register all modules into the unified widget registry
