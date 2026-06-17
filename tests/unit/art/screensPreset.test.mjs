@@ -74,4 +74,21 @@ describe('screens router preset expansion', () => {
     const r = await call('room');
     expect(r.body.screensaver.props).toEqual({ matMargin: 5 });
   });
+
+  it('merges defaults + named frame; a bare collection name resolves via fallback', async () => {
+    await writeArtmode([
+      'frames:',
+      '  gold: { insets: { top: 11, right: 6, bottom: 11, left: 7 }, matMargin: 4, cropMaxPerSide: 8 }',
+      'defaults: { frame: gold, placard: true }',
+      'presets: { gallery-silent: { collection: paintings } }',
+    ].join('\n') + '\n');
+    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+      'collections:\n  baroque: { dateMin: 1600 }\n');
+    await writeScreen('room', 'screen: room\nscreensaver:\n  widget: art\n  preset: baroque\n');
+    const r = await call('room');
+    expect(r.body.screensaver.props).toEqual({
+      collection: 'baroque', placard: true, matMargin: 4, cropMaxPerSide: 8,
+      frame: { top: 11, right: 6, bottom: 11, left: 7 },
+    });
+  });
 });

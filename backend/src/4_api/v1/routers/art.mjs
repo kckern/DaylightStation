@@ -5,11 +5,9 @@
  * @module api/v1/routers/art
  */
 import express from 'express';
-import { promises as fs } from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Art API router
@@ -43,25 +41,24 @@ export function createArtRouter(config = {}) {
 
   /**
    * GET /preset/:key
-   * Resolves a named ArtMode preset (artmode.yml) into props. 404 if unknown.
+   * Resolves a named ArtMode preset (artmode.yml) into props, with `defaults` +
+   * the named-frame catalog merged in. A bare collection name (art.yml) resolves
+   * via collection-fallback, so menu ids like `art:baroque` need no passthrough
+   * preset. 404 only when the key is neither a preset nor a collection.
    */
   router.get(
     '/preset/:key',
     asyncHandler(async (req, res) => {
       const { key } = req.params;
-      let presets = {};
-      try {
-        const raw = await fs.readFile(
-          path.join(dataPath, 'household', 'config', 'artmode.yml'), 'utf-8');
-        presets = (yaml.load(raw) || {}).presets || {};
-      } catch (err) {
-        if (err.code !== 'ENOENT') logger.warn?.('art.presets.read_failed', { error: err.message });
-      }
-      if (!Object.prototype.hasOwnProperty.call(presets, key)) {
+      const { presets, defaults, frames } = await loadArtmodeConfig(dataPath, logger);
+      const collections = await loadArtCollections(dataPath, logger);
+      const known = Object.prototype.hasOwnProperty.call(presets, key)
+        || Object.prototype.hasOwnProperty.call(collections, key);
+      if (!known) {
         logger.debug?.('art.preset.unknown', { key });
         return res.status(404).json({ error: 'Unknown preset', key });
       }
-      res.json(resolvePreset(presets, key));
+      res.json(resolvePreset(presets, key, {}, { defaults, frames, collections }));
     })
   );
 
