@@ -52,7 +52,7 @@ export const buildChallengeEventPayload = (challenge, statusOverride = null) => 
   };
 };
 
-const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
+const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnlock = null }) => {
   useRenderProfiler('FitnessPlayerOverlay');
   const fitnessCtx = useFitnessContext();
   const location = useLocation();
@@ -230,6 +230,7 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
     <GovernanceStateOverlay
       voiceMemoOpen={voiceMemoOverlayOpen}
       display={governanceDisplay}
+      onUnlock={onGovernanceUnlock}
     />
   ) : null;
 
@@ -338,7 +339,8 @@ FitnessPlayerOverlay.propTypes = {
   playerRef: PropTypes.shape({
     current: PropTypes.any
   }),
-  showFullscreenVitals: PropTypes.bool
+  showFullscreenVitals: PropTypes.bool,
+  onGovernanceUnlock: PropTypes.func
 };
 
 export default FitnessPlayerOverlay;
