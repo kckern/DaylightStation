@@ -1,11 +1,16 @@
 import { useCallback, useRef, useState } from 'react';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
+import { playCueOnce } from '@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js';
+import { primeCueAudio } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 
 let _logger;
 const logger = () => (_logger ??= getLogger().child({ component: 'unlock' }));
 
 const UNLOCK_PATH = 'api/v1/fitness/unlock';
+// Success chime played on every matched scan, via the shared cue-audio element
+// (same plumbing as the governance duck). See useGovernanceAudioDuck.playCueOnce.
+const UNLOCK_SOUND = 'apps/fitness/ux/unlock.mp3';
 
 /**
  * Drives a fingerprint-unlock request against POST /api/v1/fitness/unlock.
@@ -38,6 +43,11 @@ export function useUnlock() {
     }
 
     logger().info('unlock.requested', { lock: lockName });
+    // requestUnlock is invoked from the unlock control's pointerdown handler, so
+    // this runs inside a user gesture — prime the shared cue element now so the
+    // success chime can play later (the async match resolves outside any gesture,
+    // and the menu has no FitnessPlayer to install the gesture-unlock listener).
+    primeCueAudio('unlock-request');
     setState('scanning');
     setActiveLock(lockName);
     logger().debug('unlock.scanning', { lock: lockName });
@@ -47,6 +57,7 @@ export function useUnlock() {
         const res = await DaylightAPI(UNLOCK_PATH, { lock: lockName });
         if (res && res.matched) {
           logger().info('unlock.granted', { lock: lockName, userId: res.userId });
+          playCueOnce({ sound: UNLOCK_SOUND, volume: 1 }); // success chime on every match
           setState('granted');
           return { matched: true, userId: res.userId };
         }
