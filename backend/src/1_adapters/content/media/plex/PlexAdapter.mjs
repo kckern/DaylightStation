@@ -1348,11 +1348,16 @@ export class PlexAdapter {
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     // Mirror the codec advertisement used by _buildTranscodeUrl so Plex makes
     // a consistent decision (H.264/HEVC only — never AV1/VP9, which Chromium's
-    // MSE demuxer cannot append; see _buildTranscodeUrl comment). Plus a
-    // frame-rate upper-bound to keep the encoder ahead of realtime.
+    // MSE demuxer cannot append; see _buildTranscodeUrl comment).
+    //
+    // The frame-rate upper-bound only rides on forced-transcode decisions: a
+    // profile limitation also disqualifies direct play/stream, so sending it
+    // with directPlay=1 made every 60fps h264 source software-transcode and
+    // stall mid-flight when the encoder fell behind (2026-06-10 Daytona
+    // incident). The transcode path (_buildTranscodeUrl) keeps the cap.
     params.append(
       'X-Plex-Client-Profile-Extra',
-      buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate })
+      buildClientProfileExtra({ maxFrameRate: allowDirectPlay ? null : caps.maxFrameRate })
     );
     params.append('autoAdjustQuality', '1');
     // directPlay/directStream default to 0 (forced transcode). Only an already
@@ -1371,8 +1376,12 @@ export class PlexAdapter {
     }
     params.append('X-Plex-Token', this.token);
 
-    params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
-    params.append('maxVideoResolution', String(caps.maxResolution));
+    // Bitrate/resolution caps also gate stream-copy eligibility (same trap as
+    // the frame-rate limitation above) — only send them when forcing transcode.
+    if (!allowDirectPlay) {
+      params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
+      params.append('maxVideoResolution', String(caps.maxResolution));
+    }
 
     const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
 
@@ -1446,7 +1455,7 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0) {
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectPlay = false) {
     const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
     // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
@@ -1465,16 +1474,25 @@ export class PlexAdapter {
       // demuxer rejects AV1/VP9 fMP4 segments with
       // "CHUNK_DEMUXER_ERROR_APPEND_FAILED: Video stream codec vp9 doesn't
       // match SourceBuffer codecs." Advertising them makes Plex emit segments
-      // the SourceBuffer can't append, stalling playback at t=0 forever. Plus a
-      // frame-rate upper-bound to keep the encoder ahead of realtime.
-      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: caps.maxFrameRate }))}`
+      // the SourceBuffer can't append, stalling playback at t=0 forever.
+      //
+      // Encoder caps (30fps limitation, 8 Mbit bitrate, 1080p) only ride on
+      // forced-transcode sources. Plex evaluates them for stream-COPY
+      // eligibility too, so sending them for an h264/aac/mp4 source turns a
+      // free remux into a software re-encode that falls behind realtime and
+      // stalls every client at the same timestamp (2026-06-10 Daytona
+      // incident — the source was 60fps, the 30fps limitation forced libx264).
+      // A remux has no encoder, so the caps protect nothing on that path.
+      `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectPlay ? null : caps.maxFrameRate }))}`
     ];
 
     if (startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
-    baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
-    baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
+    if (!allowDirectPlay) {
+      baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
+      baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
+    }
 
     return `${this.proxyPath}/video/:/transcode/universal/start.mpd?${baseParams.join('&')}`;
   }
@@ -1580,7 +1598,8 @@ export class PlexAdapter {
             sessionIdentifier,
             maxVideoBitrate,
             resolvedMaxResolution,
-            startOffset
+            startOffset,
+            allowDirectPlay
           )
         };
       }
@@ -1602,7 +1621,8 @@ export class PlexAdapter {
           sessionIdentifier,
           maxVideoBitrate,
           resolvedMaxResolution,
-          startOffset
+          startOffset,
+          allowDirectPlay
         )
       };
     } catch (error) {
