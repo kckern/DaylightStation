@@ -99,6 +99,27 @@
     }
   }
 
+  &__unlock {
+    flex: 0 0 auto;
+    align-self: center;
+    padding: clamp(6px, 0.8vw, 10px) clamp(12px, 1.4vw, 18px);
+    border-radius: clamp(6px, 0.6vw, 10px);
+    border: 1px solid rgba(248, 250, 252, 0.45);
+    background: rgba(56, 189, 248, 0.18);
+    color: #f8fafc;
+    font: inherit;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(56, 189, 248, 0.32);
+      border-color: rgba(248, 250, 252, 0.7);
+    }
+  }
+
   &__count-blocks {
     display: flex;
     align-items: center;

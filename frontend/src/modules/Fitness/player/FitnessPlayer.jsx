@@ -23,6 +23,9 @@ import { useVolumeSync } from '@/modules/Fitness/hooks/useVolumeSync.js';
 import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js';
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
+import { useUnlock } from '@/modules/Fitness/hooks/useUnlock.js';
+import { shouldBypassGovernance } from './governanceBypass.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
@@ -182,7 +185,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     registerVideoPlayer,
     setCurrentMedia,
     trackRecentlyPlayed,
-    emitAppEvent
+    emitAppEvent,
+    fitnessConfiguration
   } = useFitness() || {};
   const refetchScreenData = useScreenDataRefetch();
   const playerRef = useRef(null); // imperative Player API
@@ -246,11 +250,78 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
-  // GovernanceEngine is the sole authority for lock decisions (SSoT)
-  // nogovern prop bypasses governance for testing/debugging (sticky from ?nogovern URL param)
-  const effectiveGovernanceState = nogovern
+  // Config-driven locks map (e.g. { governance_bypass: ['kckern'], skip_content: [...] }).
+  // A lock is ACTIVE iff its value is a non-empty array of authorized usernames.
+  // Mirrors FitnessShow (Task 4.2). Absent/empty lock ⇒ no in-player Skip/Unlock
+  // button, so today's behavior is unchanged.
+  const locks = useMemo(() => {
+    const cfg = fitnessConfiguration || {};
+    return cfg.locks || cfg.fitness?.locks || {};
+  }, [fitnessConfiguration]);
+  const isLockActive = useCallback(
+    (lockName) => Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
+    [locks]
+  );
+
+  // Runtime governance bypass granted by an in-player fingerprint unlock. Unlike
+  // the session-sticky `nogovern` prop, this releases only the CURRENTLY-PLAYING
+  // lock — it is cleared when the next item starts (see effect below), so one
+  // unlock cannot silently disable governance for the rest of the session.
+  const [bypassActive, setBypassActive] = useState(false);
+  const { requestUnlock, state: unlockState, reset: resetUnlock } = useUnlock();
+  const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
+
+  // GovernanceEngine is the sole authority for lock decisions (SSoT). Governance
+  // is bypassed when the sticky `nogovern` prop is set, a runtime fingerprint
+  // bypass is active, OR the current queue item was tagged `nogovern` by
+  // FitnessShow after a granted governance_bypass unlock (completes the T4.2 seam).
+  const governanceBypassed = shouldBypassGovernance({
+    nogovernProp: nogovern,
+    bypassActive,
+    itemNogovern: Boolean(currentItem?.nogovern)
+  });
+  const effectiveGovernanceState = governanceBypassed
     ? { ...governanceState, videoLocked: false, isGoverned: false, status: 'unlocked' }
     : governanceState;
+
+  // Clear a runtime bypass when the playing item changes so it never leaks past
+  // the lock it was granted for. (The per-item `currentItem.nogovern` flag is
+  // naturally scoped; the sticky `nogovern` prop intentionally persists.)
+  const currentItemId = currentItem ? currentItem.id : null;
+  useEffect(() => {
+    setBypassActive(false);
+  }, [currentItemId]);
+
+  // In-player Skip/Unlock: request a governance_bypass fingerprint. On match,
+  // release the current lock by flipping the runtime bypass. Denied/cancel/
+  // timeout leaves governance locked. Guarded so a tap is ignored while a prompt
+  // is already open.
+  const openGovernanceUnlock = useCallback(() => {
+    if (unlockPromptOpen) return;
+    logger.info('governance.unlock_tap', { lock: 'governance_bypass', contentId: currentItem?.id || null });
+    setUnlockPromptOpen(true);
+    requestUnlock('governance_bypass').then((result) => {
+      if (result?.matched) {
+        logger.info('governance.bypass_granted', { userId: result.userId, contentId: currentItem?.id || null });
+        setBypassActive(true);
+        setUnlockPromptOpen(false);
+        resetUnlock();
+      } else {
+        logger.info('governance.bypass_denied', { reason: result?.reason || null });
+      }
+      // matched:false — leave the prompt showing the denied state; the user
+      // dismisses via cancel/close (closeGovernanceUnlock).
+    });
+  }, [unlockPromptOpen, requestUnlock, resetUnlock, currentItem, logger]);
+
+  const closeGovernanceUnlock = useCallback(() => {
+    setUnlockPromptOpen(false);
+    resetUnlock();
+  }, [resetUnlock]);
+
+  // Gate the overlay button on a configured, active governance_bypass lock. When
+  // the lock is absent/empty we pass no handler ⇒ no button ⇒ today's behavior.
+  const governanceUnlockHandler = isLockActive('governance_bypass') ? openGovernanceUnlock : null;
 
   const [showChart, setShowChart] = useState(true);
 
@@ -1700,6 +1771,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       <FitnessPlayerOverlay
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
+        onGovernanceUnlock={governanceUnlockHandler}
       />
       {hasActiveItem ? (
         <Player
@@ -1831,6 +1903,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       >
         {mainContent}
       </FitnessPlayerFrame>
+      <UnlockPrompt
+        open={unlockPromptOpen}
+        state={unlockState}
+        lockLabel={currentItem?.title || currentItem?.label || 'Governed content'}
+        onCancel={closeGovernanceUnlock}
+      />
       {/* HRSimTrigger moved to FitnessApp top level so it's visible across
           the whole fitness app, not just when a video is playing. */}
     </>
