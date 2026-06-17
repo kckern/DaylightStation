@@ -16,9 +16,11 @@ export class FrameDescriptor {
     playerContentId = null,
     playerOffsetMs = null,
     title = null,
+    showTitle = null,
     participants = [],
     zone = null,
-    rpm = null
+    rpm = null,
+    coins = null
   }) {
     if (!Number.isFinite(frameIndex) || frameIndex < 0) {
       throw new ValidationError('frameIndex must be a non-negative number', { code: 'INVALID_FRAME_INDEX', field: 'frameIndex', value: frameIndex });
@@ -30,9 +32,11 @@ export class FrameDescriptor {
     this.playerContentId = playerContentId;
     this.playerOffsetMs = playerOffsetMs;
     this.title = title;
+    this.showTitle = showTitle;
     this.participants = Object.freeze(participants.map(p => Object.freeze({ ...p })));
     this.zone = zone;
     this.rpm = rpm;
+    this.coins = coins;
     Object.freeze(this);
   }
 }

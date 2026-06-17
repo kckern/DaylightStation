@@ -13,10 +13,10 @@ import { FrameDescriptor } from '#domains/fitness/value-objects/FrameDescriptor.
 export class TimelapseFrameMapper {
   /**
    * @param {object} session - plain session data (as from datastore.findById)
-   * @param {{speedup:number, outputFps:number}} spec
+   * @param {{speedup:number, outputFps:number, resolveName?:(slug:string)=>string}} spec
    * @returns {FrameDescriptor[]}
    */
-  buildFrames(session, { speedup, outputFps }) {
+  buildFrames(session, { speedup, outputFps, resolveName = null }) {
     const captures = session?.snapshots?.captures || [];
     if (!captures.length) return [];
 
@@ -38,6 +38,12 @@ export class TimelapseFrameMapper {
 
     const sortedCaptures = [...captures].sort((a, b) => toMs(a.timestamp) - toMs(b.timestamp));
 
+    // Animated coin total: treasureBox holds only the final totalCoins, so we
+    // reconstruct a plausible accrual curve by weighting each tick by active
+    // participation and normalizing the cumulative curve to end at totalCoins.
+    const totalCoins = Number.isFinite(session?.treasureBox?.totalCoins) ? session.treasureBox.totalCoins : 0;
+    const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
+
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
       const elapsedRealMs = (i / outputFps) * speedup * 1000;
@@ -49,9 +55,12 @@ export class TimelapseFrameMapper {
 
       const participants = roster.map(p => ({
         id: p.id,
-        displayName: p.displayName || p.display_name || p.id,
+        // Honor the persisted resolver output first (display_name), then the
+        // injected backend resolver (userService), then the slug — mirrors
+        // FitnessReceiptRenderer's name chain.
+        displayName: p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id,
         color: p.color || null,
-        avatarRef: p.avatarRef || p.avatar || null,
+        avatarRef: p.avatarRef || p.avatar || p.id,
         hr: valueAtTick(decoded, hrKeyFor(decoded, p.id), tickIndex),
         zone: valueAtTick(decoded, `${p.id}:zone`, tickIndex)
       }));
@@ -64,13 +73,44 @@ export class TimelapseFrameMapper {
         playerContentId: media?.data?.contentId || null,
         playerOffsetMs: media ? Math.max(0, wallClockMs - toMs(media.timestamp)) : null,
         title: media?.data?.title || null,
+        showTitle: media?.data?.grandparentTitle || media?.data?.showTitle || null,
         participants,
         zone: zoneAtTick(decoded, roster, tickIndex),
-        rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null
+        rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
+        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount)
       }));
     }
     return frames;
   }
+}
+
+// Per-tick earning weight by zone, accumulated and normalized to totalCoins.
+const ZONE_WEIGHT = { cool: 0.3, active: 1, warm: 1, hot: 1.2, max: 1.5 };
+function buildCoinCurve(decoded, roster, totalCoins) {
+  if (!(totalCoins > 0)) return null;
+  const zoneArrays = roster.map(p => decoded[`${p.id}:zone`]).filter(Array.isArray);
+  const len = zoneArrays.reduce((m, a) => Math.max(m, a.length), 0);
+  if (!len) return null;
+  const cum = new Array(len);
+  let running = 0;
+  for (let t = 0; t < len; t++) {
+    for (const arr of zoneArrays) {
+      const z = arr[t];
+      if (z == null) continue;
+      running += ZONE_WEIGHT[String(z).toLowerCase()] ?? 1;
+    }
+    cum[t] = running;
+  }
+  return { cum, total: running || 1 };
+}
+function coinsAt(curve, tick, totalCoins, frameIndex, frameCount) {
+  if (!(totalCoins > 0)) return null;
+  if (!curve) {
+    // Linear fallback when no zone data is available.
+    return Math.round(totalCoins * (frameCount > 1 ? frameIndex / (frameCount - 1) : 1));
+  }
+  const idx = Math.min(curve.cum.length - 1, Math.max(0, tick));
+  return Math.round(totalCoins * (curve.cum[idx] / curve.total));
 }
 
 function toMs(t) {
