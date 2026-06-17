@@ -183,3 +183,65 @@ describe('ArtAdapter.getThumbnailUrl', () => {
     });
   });
 });
+
+describe('ArtAdapter recency tempering', () => {
+  // A fake media_memory store: `seed` marks ids recently-shown; `recorded`
+  // captures what selectFeatured stamps after a pick.
+  const fakeStore = (seed = {}) => {
+    const recorded = [];
+    return {
+      recorded,
+      load: async () => new Map(Object.entries(seed)),
+      record: async (ids) => { recorded.push(...ids); },
+    };
+  };
+
+  it('benches the most-recently-shown works from the pick pool (~55% window)', async () => {
+    let pool = null;
+    const store = fakeStore({
+      a: '2026-06-17T13:00:00Z',                    // two most-recent → benched
+      b: '2026-06-17T14:00:00Z',
+    });
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      recencyStore: store,
+      artSource: fakeSource(() => ['a', 'b', 'c', 'd'].map((id) => cand(id, 'landscape'))),
+    });
+    await adapter.selectFeatured({ pick: (a) => { pool = a; return a[0]; } });
+    expect(pool.map((c) => c.id).sort()).toEqual(['c', 'd']);   // a,b held back
+  });
+
+  it('records the shown work so it is benched next time', async () => {
+    const store = fakeStore();
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      recencyStore: store,
+      artSource: fakeSource(() => [cand('land', 'landscape'), cand('x', 'landscape')]),
+    });
+    await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(store.recorded).toEqual(['land']);
+  });
+
+  it('records both panels of a diptych', async () => {
+    const store = fakeStore();
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      recencyStore: store,
+      artSource: fakeSource(() => [cand('p1', 'portrait'), cand('p2', 'portrait')]),
+    });
+    const r = await adapter.selectFeatured({ pick: (a) => a[0] });
+    expect(r.mode).toBe('diptych');
+    expect(store.recorded.sort()).toEqual(['p1', 'p2']);
+  });
+
+  it('is disabled when recencyStore is null (no tempering, no recording)', async () => {
+    let pool = null;
+    const adapter = createArtAdapter({
+      collections: { all: {} },
+      recencyStore: null,
+      artSource: fakeSource(() => ['a', 'b', 'c'].map((id) => cand(id, 'landscape'))),
+    });
+    await adapter.selectFeatured({ pick: (a) => { pool = a; return a[0]; } });
+    expect(pool.map((c) => c.id)).toEqual(['a', 'b', 'c']);     // full pool
+  });
+});
