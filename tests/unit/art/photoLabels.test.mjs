@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatPeopleList, getTimeOfDayLabel, formatDayPeriod, buildPhotoTitle, formatPhotoDate,
+  orderPeopleByFace,
 } from '../../../backend/src/1_adapters/content/gallery/immich/photoLabels.mjs';
 
 // Shared Immich label helpers (used by ImmichFeedAdapter + art/immichSource).
@@ -72,5 +73,52 @@ describe('getTimeOfDayLabel / formatDayPeriod', () => {
     expect(formatDayPeriod('nope')).toBe('Memory');
     // 2025-06-15T17:30Z → Sunday, 17h UTC → Evening (deterministic, TZ-independent).
     expect(formatDayPeriod(ISO)).toBe('Sunday Evening');
+  });
+});
+
+describe('orderPeopleByFace', () => {
+  // A person with one face box, in raw 2000×1000 sensor space.
+  const person = (name, x1, x2, over = {}) => ({
+    name,
+    faces: [{ boundingBoxX1: x1, boundingBoxX2: x2, boundingBoxY1: over.y1 ?? 0,
+      boundingBoxY2: over.y2 ?? 100, imageWidth: 2000, imageHeight: 1000 }],
+  });
+  const names = (arr) => arr.map((p) => p.name);
+
+  it('orders names left-to-right by face center X (normal orientation)', () => {
+    const right = person('Right', 1600, 1800);
+    const left = person('Left', 100, 300);
+    const mid = person('Mid', 900, 1100);
+    expect(names(orderPeopleByFace([right, mid, left], 1))).toEqual(['Left', 'Mid', 'Right']);
+  });
+
+  it('sorts people with no face box last, preserving their original order', () => {
+    const a = person('A', 1500, 1700);
+    const noFaceX = { name: 'NoFaceX', faces: [] };
+    const noFaceY = { name: 'NoFaceY' };
+    const b = person('B', 200, 400);
+    const out = names(orderPeopleByFace([a, noFaceX, noFaceY, b], 1));
+    expect(out).toEqual(['B', 'A', 'NoFaceX', 'NoFaceY']);
+  });
+
+  it('projects through a 90° CW orientation (raw-Y drives display-X)', () => {
+    // Orientation 6: display-X = imageHeight - centerY. Lower raw-Y ⇒ further right.
+    const top = person('Top', 0, 100, { y1: 100, y2: 200 });      // small Y → right
+    const bottom = person('Bottom', 0, 100, { y1: 800, y2: 900 }); // large Y → left
+    expect(names(orderPeopleByFace([top, bottom], 6))).toEqual(['Bottom', 'Top']);
+  });
+
+  it('uses the leftmost face when a person has several', () => {
+    const multi = { name: 'Multi', faces: [
+      { boundingBoxX1: 1800, boundingBoxX2: 1900, boundingBoxY1: 0, boundingBoxY2: 100, imageWidth: 2000, imageHeight: 1000 },
+      { boundingBoxX1: 50, boundingBoxX2: 150, boundingBoxY1: 0, boundingBoxY2: 100, imageWidth: 2000, imageHeight: 1000 },
+    ] };
+    const other = person('Other', 800, 900);
+    expect(names(orderPeopleByFace([other, multi], 1))).toEqual(['Multi', 'Other']);
+  });
+
+  it('returns [] / passthrough for empty or missing input', () => {
+    expect(orderPeopleByFace([], 1)).toEqual([]);
+    expect(orderPeopleByFace(null, 1)).toEqual([]);
   });
 });
