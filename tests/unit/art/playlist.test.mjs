@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toTracks, advanceIndex, shuffleOrder }
+import { toTracks, advanceIndex, shuffleOrder, shuffleOrderAvoiding }
   from '../../../frontend/src/lib/Player/playlist.js';
 
 describe('toTracks', () => {
@@ -46,5 +46,21 @@ describe('shuffleOrder', () => {
   it('returns [] for non-positive length', () => {
     expect(shuffleOrder(0)).toEqual([]);
     expect(shuffleOrder(-2)).toEqual([]);
+  });
+});
+
+describe('shuffleOrderAvoiding', () => {
+  it('is still a full permutation', () => {
+    const order = shuffleOrderAvoiding(6, 2);
+    expect([...order].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+  it('never opens with the avoided track, across many shuffles', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(shuffleOrderAvoiding(5, 3)[0]).not.toBe(3);
+    }
+  });
+  it('degrades to a plain shuffle when there is nothing to avoid (len<2)', () => {
+    expect(shuffleOrderAvoiding(1, 0)).toEqual([0]);
+    expect(shuffleOrderAvoiding(0, 0)).toEqual([]);
   });
 });
