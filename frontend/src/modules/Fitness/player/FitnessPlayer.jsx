@@ -280,8 +280,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     bypassActive,
     itemNogovern: Boolean(currentItem?.nogovern)
   });
+  // Override the snapshot to a fully-unlocked state when bypassed. Null the
+  // lock-driven side-channels too (audioDuck / challenge / deadline) so nothing
+  // downstream (audio duck, cycle dim, warning scrim) keeps acting on the lock
+  // we just released — otherwise the override would be only half-applied.
   const effectiveGovernanceState = governanceBypassed
-    ? { ...governanceState, videoLocked: false, isGoverned: false, status: 'unlocked' }
+    ? {
+        ...governanceState,
+        videoLocked: false,
+        isGoverned: false,
+        status: 'unlocked',
+        audioDuck: null,
+        challenge: null,
+        deadline: null
+      }
     : governanceState;
 
   // Clear a runtime bypass when the playing item changes so it never leaks past
@@ -291,6 +303,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   useEffect(() => {
     setBypassActive(false);
   }, [currentItemId]);
+  // Track the current item id so an in-flight unlock that resolves after the
+  // item changed can bail instead of granting a bypass to the wrong item.
+  const currentItemIdRef = useRef(currentItemId);
+  useEffect(() => {
+    currentItemIdRef.current = currentItemId;
+  }, [currentItemId]);
 
   // In-player Skip/Unlock: request a governance_bypass fingerprint. On match,
   // release the current lock by flipping the runtime bypass. Denied/cancel/
@@ -298,9 +316,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // is already open.
   const openGovernanceUnlock = useCallback(() => {
     if (unlockPromptOpen) return;
+    const reqItemId = currentItemIdRef.current; // guard against a post-item-change resolve
     logger.info('governance.unlock_tap', { lock: 'governance_bypass', contentId: currentItem?.id || null });
     setUnlockPromptOpen(true);
     requestUnlock('governance_bypass').then((result) => {
+      // The item changed while scanning — don't grant a bypass to the new item.
+      if (currentItemIdRef.current !== reqItemId) {
+        setUnlockPromptOpen(false);
+        resetUnlock();
+        return;
+      }
       if (result?.matched) {
         logger.info('governance.bypass_granted', { userId: result.userId, contentId: currentItem?.id || null });
         setBypassActive(true);
@@ -334,7 +359,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
   renderCountRef.current += 1;
 
-  const govStatus = typeof effectiveGovernanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
+  const govStatus = typeof effectiveGovernanceState?.status === 'string' ? effectiveGovernanceState.status.toLowerCase() : '';
 
   const playerContentClassName = useMemo(() => {
     const classes = ['fitness-player-content'];
