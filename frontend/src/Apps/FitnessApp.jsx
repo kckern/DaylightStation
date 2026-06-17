@@ -29,7 +29,7 @@ import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js'
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
 import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
-import useMenuMusic from '../modules/Fitness/nav/useMenuMusic.js';
+import MenuMusicController from '../modules/Fitness/nav/MenuMusicController.jsx';
 
 registerBuiltinWidgets();
 
@@ -1258,12 +1258,8 @@ const FitnessApp = () => {
   // same-contents-new-reference key that triggers a spurious crossfade.
   const menuMusicTrackKey = Array.isArray(activeCollection) ? activeCollection.join(',') : activeCollection;
 
-  useMenuMusic({
-    isActive: menuMusicActive,
-    trackChangeKey: menuMusicTrackKey,
-    volume: menuMusicVolume,
-    trackUrls: menuMusicTracks,
-  });
+  // Menu music is driven by <MenuMusicController> (rendered inside FitnessProvider)
+  // so it can read the voice-memo overlay state and duck while a memo is up.
 
   // render diagnostics removed
   
@@ -1277,6 +1273,12 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <GlobalOverlays />
+          <MenuMusicController
+            isActive={menuMusicActive}
+            trackChangeKey={menuMusicTrackKey}
+            volume={menuMusicVolume}
+            trackUrls={menuMusicTracks}
+          />
           {/* HR simulation panel trigger — available across the entire fitness
               app (history, suggestions, chart, menu, player). Self-gated to
               localhost or Chrome UA; hidden everywhere else. */}
