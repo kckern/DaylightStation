@@ -16,6 +16,7 @@
  * - POST /api/fitness/save_screenshot - Save session screenshot
  * - POST /api/fitness/voice_memo - Transcribe voice memo
  * - POST /api/fitness/debug/voice-memo - Debug: save raw audio to data/_debug/
+ * - POST /api/fitness/unlock - Request a fingerprint unlock for a named lock
  * - POST /api/fitness/zone_led - Sync ambient LED state
  * - GET  /api/fitness/zone_led/status - Get LED controller status
  * - GET  /api/fitness/zone_led/metrics - Get LED controller metrics
@@ -38,6 +39,8 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+import { resolveCandidateUuids } from '#apps/fitness/unlockPolicy.mjs';
+import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 
 // Module-level session lock (shared across all router instances)
 const sessionLockService = new SessionLockService();
@@ -94,6 +97,9 @@ export function createFitnessRouter(config) {
     fitnessSuggestionService = null,
     cycleRaceService = null,
     sessionGroupingService = null,
+    // Test seam: defaults to the process-level unlock service singleton.
+    // Tests inject a fake so the endpoint can be exercised without a live eventbus.
+    resolveUnlockService = getUnlockService,
     logger = console
   } = config;
 
@@ -1268,6 +1274,70 @@ export function createFitnessRouter(config) {
     const volume = fitnessConfig?.menu_music?.volume ?? 0.15;
 
     res.json({ tracks, volume });
+  }));
+
+  // =============================================================================
+  // Fingerprint Unlock
+  // =============================================================================
+
+  /**
+   * POST /api/fitness/unlock - Request a fingerprint unlock for a named lock.
+   *
+   * Body: { lock: string }  (a key of the fitness config's `locks` map)
+   *
+   * Flow: validate the lock name → resolve the authorized users' enrolled
+   * fingerprint UUIDs → ask the on-box unlock service to identify against them.
+   *
+   * Responses:
+   * - 400 { error: 'unknown-lock' }                — missing/unknown lock (no scan)
+   * - 200 { matched:false, reason:'no-enrolled-users' } — no candidate fingerprints
+   * - 200 { matched, userId?, reason? }            — the unlock service's verdict
+   * - 503 { error: 'unlock-service-unavailable' }  — service not wired
+   */
+  router.post('/unlock', asyncHandler(async (req, res) => {
+    const { lock } = req.body || {};
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
+
+    // Validate the lock name against the configured locks map. Don't scan unknown locks.
+    const authorized = fitnessConfig?.locks?.[lock];
+    if (!lock || !Array.isArray(authorized)) {
+      logger.warn?.('fitness.unlock.unknown_lock', { lock });
+      return res.status(400).json({ error: 'unknown-lock' });
+    }
+
+    // Build username -> profile map for exactly the authorized users.
+    const profilesByUser = {};
+    for (const username of authorized) {
+      const profile = userService?.getProfile?.(username);
+      if (profile) profilesByUser[username] = profile;
+    }
+
+    const candidates = resolveCandidateUuids(fitnessConfig, profilesByUser, lock);
+    if (candidates.length === 0) {
+      logger.info?.('fitness.unlock.no_enrolled_users', { lock });
+      return res.json({ matched: false, reason: 'no-enrolled-users' });
+    }
+
+    const unlockService = resolveUnlockService?.();
+    if (!unlockService) {
+      logger.warn?.('fitness.unlock.service_unavailable', { lock });
+      return res.status(503).json({ error: 'unlock-service-unavailable' });
+    }
+
+    logger.info?.('fitness.unlock.request', { lock, candidates: candidates.length });
+    const result = await unlockService.requestUnlock(lock, candidates);
+
+    const response = { matched: !!result?.matched, userId: result?.userId };
+    if (result?.reason) response.reason = result.reason;
+
+    logger.info?.('fitness.unlock.result', {
+      lock,
+      matched: response.matched,
+      userId: response.userId,
+      reason: response.reason,
+    });
+    return res.json(response);
   }));
 
   return router;
