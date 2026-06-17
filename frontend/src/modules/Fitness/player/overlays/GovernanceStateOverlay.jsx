@@ -129,7 +129,7 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
   return null;
 }
 
-const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [] }) {
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [], onUnlock = null }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
   const title = overlay?.title || 'Video Locked';
@@ -424,6 +424,22 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
             <p className="governance-lock__summary-main">{summaryMain}</p>
             {summarySub ? <p className="governance-lock__summary-sub">{summarySub}</p> : null}
           </div>
+          {onUnlock ? (
+            <button
+              type="button"
+              className="governance-lock__unlock"
+              onPointerDown={onUnlock}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onUnlock(event);
+                }
+              }}
+              aria-label="Skip or unlock governed playback with fingerprint"
+            >
+              Skip / Unlock
+            </button>
+          ) : null}
         </div>
 
           {panelTitle ? <div className="governance-lock__title">{panelTitle}</div> : null}
@@ -518,7 +534,8 @@ GovernancePanelOverlay.propTypes = {
     descriptions: PropTypes.arrayOf(PropTypes.string),
     requirements: PropTypes.array
   }),
-  lockRows: PropTypes.array
+  lockRows: PropTypes.array,
+  onUnlock: PropTypes.func
 };
 
 const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
@@ -552,7 +569,8 @@ const GovernanceStateOverlay = ({
   overlay = null,
   lockRows = [],
   warningOffenders = [],
-  voiceMemoOpen = false
+  voiceMemoOpen = false,
+  onUnlock = null
 }) => {
   // New path: display prop from useGovernanceDisplay
   // Legacy path: overlay + lockRows + warningOffenders
@@ -611,7 +629,7 @@ const GovernanceStateOverlay = ({
     return (
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
-        <GovernancePanelOverlay display={display} />
+        <GovernancePanelOverlay display={display} onUnlock={onUnlock} />
       </>
     );
   }
@@ -638,6 +656,7 @@ const GovernanceStateOverlay = ({
         <GovernancePanelOverlay
           overlay={overlay}
           lockRows={lockRows}
+          onUnlock={onUnlock}
         />
       </>
     );
@@ -675,7 +694,8 @@ GovernanceStateOverlay.propTypes = {
   }),
   lockRows: PropTypes.array,
   warningOffenders: PropTypes.array,
-  voiceMemoOpen: PropTypes.bool
+  voiceMemoOpen: PropTypes.bool,
+  onUnlock: PropTypes.func
 };
 
 export default GovernanceStateOverlay;

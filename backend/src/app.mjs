@@ -134,6 +134,7 @@ import { createPoseLogHandler } from '#apps/fitness/services/PoseLogService.mjs'
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
+import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -429,6 +430,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
       return;
     }
+  });
+
+  // Fingerprint unlock service — binds the unlock broker to the live bus so
+  // `fitness.unlock.request` broadcasts reach the garage client and inbound
+  // `fitness.unlock.result` replies settle the pending request (Task 2.3).
+  // Task 2.4's HTTP endpoint imports requestUnlock from this module.
+  initUnlockService({
+    eventBus,
+    logger: rootLogger.child({ module: 'fitness-unlock' })
   });
 
   // EventBus admin router (requires eventBus to be created first)
