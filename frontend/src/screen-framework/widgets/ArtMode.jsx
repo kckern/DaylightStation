@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, defaultModeIndex } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -54,6 +54,13 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  *   frame           frame PNG window insets {top,right,bottom,left} % (default DEFAULT_FRAME)
  *   matMargin       mat band % of height (default 4)
  *   cropMaxPerSide  max cover-crop per side, % (default 8)
+ *   fillSingles     matless-fill budget, % crop per side (default 0 = off). A
+ *                   SINGLE that cover-fills the bare frame window with ≤ this crop
+ *                   per side STARTS in the mat-less 'framed-cover' view mode
+ *                   (frame on, picture bleeds to fill); diptychs and tighter
+ *                   singles start matted in 'gallery'. Tab still cycles all five
+ *                   modes — this only sets each untouched image's starting mode.
+ *                   (12.5 admits ~16:9 … 2.67:1 against the ~2:1 opening.)
  *   ambient         { defaultLux, curve } for auto-dim (optional)
  *   advance         what triggers the next artwork (see resolveAdvance.js):
  *                     'hold'  (default) static until remount / manual skip
@@ -69,7 +76,7 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  */
 function ArtMode({
   placard = true, onExit, dismiss,
-  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
+  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, fillSingles = 0, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
@@ -112,6 +119,10 @@ function ArtMode({
   const commitTimerRef = useRef(null);               // pending behind-curtain content swap
   const pendingArtRef = useRef(null);                 // fetched art awaiting a closed curtain
   const [modeIdx, setModeIdx] = useState(() => modeIndexByName(defaultViewMode));
+  // Once the viewer cycles the view mode by hand (Tab / rate), their choice sticks
+  // across shuffles; until then each new artwork starts in its own per-image
+  // default (see the defaultModeIndex effect below).
+  const userCycledRef = useRef(false);
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
@@ -337,6 +348,7 @@ function ArtMode({
   // repurposes it to cycle ArtMode's view mode (the Tab behavior) — the only way to
   // reach view-mode cycling on adapter-driven screens where rawKeys is off.
   useScreenAction('media:rate', useCallback(() => {
+    userCycledRef.current = true;
     setModeIdx((i) => nextMode(i));
     logger.info('artmode.viewmode', { dir: 'next', via: 'rate' });
   }, [logger]));
@@ -380,6 +392,7 @@ function ArtMode({
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       if (isCycle) {
+        userCycledRef.current = true;
         setModeIdx((i) => (e.shiftKey ? prevMode(i) : nextMode(i)));
         logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next', key: k });
       } else if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
@@ -457,6 +470,23 @@ function ArtMode({
     const top = visible.length ? visible[visible.length - 1] : layers[layers.length - 1];
     return top?.art ?? null;
   }, [layers, visibleKeys]);
+
+  // Per-image default view mode: until the viewer takes manual control (Tab/rate),
+  // each new artwork starts in its own default — a qualifying single bleeds to the
+  // frame (framed-cover, mat-less), everything else stays matted (gallery). With
+  // fillSingles=0 the default is always `defaultViewMode`, so this is a no-op and
+  // the prior persist-across-shuffles behavior is unchanged.
+  const activeArt = isCrossfade ? topArt : art;
+  useEffect(() => {
+    if (userCycledRef.current) return;
+    const ps = activeArt?.panels;
+    if (!ps?.length) return;
+    const ratios = ps.map((p) =>
+      (p.meta?.width > 0 && p.meta?.height > 0) ? p.meta.width / p.meta.height : 1);
+    setModeIdx(defaultModeIndex({
+      mode: activeArt.mode, ratios, frame, fillCrop: fillSingles / 100, fallback: defaultViewMode,
+    }));
+  }, [activeArt, frame, fillSingles, defaultViewMode]);
 
   return (
     <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars}>
