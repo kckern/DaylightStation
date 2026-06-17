@@ -10,6 +10,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Screens API router
@@ -86,22 +87,19 @@ export function createScreensRouter(config = {}) {
         }
 
         // Expand an ArtMode screensaver preset reference into resolved props.
+        // `defaults` + the named-frame catalog merge beneath the preset; a bare
+        // collection name (no preset) resolves via collection-fallback.
         if (config.screensaver?.preset) {
-          let presets = {};
-          try {
-            const raw = await fs.readFile(
-              path.join(dataPath, 'household', 'config', 'artmode.yml'), 'utf-8');
-            presets = (yaml.load(raw) || {}).presets || {};
-          } catch (err) {
-            if (err.code !== 'ENOENT') {
-              logger.warn?.('screens.presets.read_failed', { screenId, error: err.message });
-            }
-          }
+          const { presets, defaults, frames } = await loadArtmodeConfig(dataPath, logger);
+          const collections = await loadArtCollections(dataPath, logger);
           const presetKey = config.screensaver.preset;
-          if (!Object.prototype.hasOwnProperty.call(presets, presetKey)) {
+          const known = Object.prototype.hasOwnProperty.call(presets, presetKey)
+            || Object.prototype.hasOwnProperty.call(collections, presetKey);
+          if (!known) {
             logger.warn?.('screens.preset.unknown', { screenId, preset: presetKey });
           }
-          config.screensaver.props = resolvePreset(presets, presetKey, config.screensaver.props || {});
+          config.screensaver.props = resolvePreset(
+            presets, presetKey, config.screensaver.props || {}, { defaults, frames, collections });
         }
 
         logger.debug?.('screens.get.success', { screenId });

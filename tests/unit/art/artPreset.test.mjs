@@ -47,4 +47,28 @@ describe('art router /preset/:key', () => {
     const r = await call('classical-evening');
     expect(r.statusCode).toBe(404);
   });
+
+  it('resolves a bare collection via fallback, with defaults + expanded frame', async () => {
+    await fs.writeFile(path.join(dataPath, 'household', 'config', 'artmode.yml'), [
+      'frames:',
+      '  gold: { insets: { top: 11, right: 6, bottom: 11, left: 7 }, matMargin: 4, cropMaxPerSide: 8 }',
+      'defaults: { frame: gold, placard: true }',
+      'presets: { gallery-silent: { collection: paintings } }',
+    ].join('\n') + '\n');
+    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+      'collections:\n  baroque: { dateMin: 1600 }\n');
+    const r = await call('baroque');
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toEqual({
+      collection: 'baroque', placard: true, matMargin: 4, cropMaxPerSide: 8,
+      frame: { top: 11, right: 6, bottom: 11, left: 7 },
+    });
+  });
+
+  it('404 for a key that is neither a preset nor a collection', async () => {
+    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+      'collections:\n  baroque: { dateMin: 1600 }\n');
+    const r = await call('totally-unknown');
+    expect(r.statusCode).toBe(404);
+  });
 });
