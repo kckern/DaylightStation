@@ -69,7 +69,8 @@ export class FitnessConfigService {
         ? governance.governed_types
         : plex.governed_types || ['show', 'movie'],
       progressClassification: raw.progressClassification || {},
-      users: raw.users || {}
+      users: raw.users || {},
+      timelapse: normalizeTimelapse(raw.timelapse)
     };
   }
 
@@ -124,4 +125,28 @@ export class FitnessConfigService {
 
     return [...new Set(members)];
   }
+}
+
+export const TIMELAPSE_DEFAULTS = {
+  enabled: true,
+  speedup: 10,            // 30 min -> 3 min
+  output_fps: 10,
+  capture_interval_ms: 1000,
+  resolution: [1920, 1080],
+  crf: 20,
+  pip: { enabled: true, size: [480, 270] },
+  title_bar: true,
+  stat_strip: true,
+  archive_frames: false
+};
+
+// Merge raw timelapse config over defaults (one level deep for `pip`).
+function normalizeTimelapse(raw = {}) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    ...TIMELAPSE_DEFAULTS,
+    ...r,
+    resolution: r.resolution || TIMELAPSE_DEFAULTS.resolution,
+    pip: { ...TIMELAPSE_DEFAULTS.pip, ...(r.pip || {}) }
+  };
 }
