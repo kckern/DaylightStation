@@ -100,6 +100,7 @@ export function createFitnessRouter(config) {
     // Test seam: defaults to the process-level unlock service singleton.
     // Tests inject a fake so the endpoint can be exercised without a live eventbus.
     resolveUnlockService = getUnlockService,
+    generateSessionTimelapse = null,
     logger = console
   } = config;
 
@@ -510,6 +511,12 @@ export function createFitnessRouter(config) {
         endTime,
         durationMs: session.durationMs
       });
+      // Fire-and-forget the time-lapse recap render (background; never blocks the end response).
+      if (generateSessionTimelapse) {
+        Promise.resolve(generateSessionTimelapse.execute({ sessionId: session.sessionId?.toString() || sessionId, householdId: household }))
+          .then((r) => logger.info?.('fitness.timelapse.trigger_done', { sessionId, status: r?.status }))
+          .catch((err) => logger.error?.('fitness.timelapse.trigger_failed', { sessionId, error: err?.message }));
+      }
       return res.json({
         finalized: true,
         sessionId: session.sessionId?.toString(),
@@ -521,6 +528,22 @@ export function createFitnessRouter(config) {
       logger.error?.('fitness.sessions.end.error', { sessionId, error: err?.message });
       return res.status(code).json({ error: err?.message || 'Failed to end session' });
     }
+  }));
+
+  /**
+   * POST /api/fitness/sessions/:sessionId/timelapse - Manually (re)generate the
+   * session time-lapse recap. Runs in the background; returns 202 immediately.
+   */
+  router.post('/sessions/:sessionId/timelapse', asyncHandler(async (req, res) => {
+    const { sessionId } = req.params;
+    const householdId = req.body?.household;
+    if (!generateSessionTimelapse) {
+      return res.status(501).json({ ok: false, error: 'timelapse not configured' });
+    }
+    Promise.resolve(generateSessionTimelapse.execute({ sessionId, householdId }))
+      .then((r) => logger.info?.('fitness.timelapse.manual_done', { sessionId, status: r?.status }))
+      .catch((err) => logger.error?.('fitness.timelapse.manual_failed', { sessionId, error: err?.message }));
+    return res.status(202).json({ ok: true, status: 'processing', sessionId });
   }));
 
   /**
@@ -730,7 +753,7 @@ export function createFitnessRouter(config) {
    */
   router.post('/save_screenshot', async (req, res) => {
     try {
-      const { sessionId, imageBase64, mimeType, index, timestamp, household } = req.body || {};
+      const { sessionId, imageBase64, mimeType, index, timestamp, household, role } = req.body || {};
       if (!sessionId || !imageBase64) {
         return res.status(400).json({ ok: false, error: 'sessionId and imageBase64 are required' });
       }
@@ -741,7 +764,8 @@ export function createFitnessRouter(config) {
         mimeType,
         index,
         timestamp,
-        householdId: household
+        householdId: household,
+        role
       });
 
       return res.json({ ok: true, ...result });
