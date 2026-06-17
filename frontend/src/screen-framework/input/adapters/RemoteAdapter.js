@@ -46,14 +46,14 @@ export class RemoteAdapter {
         if (entry) {
           const result = translateAction(entry.function, entry.params);
           if (result) {
-            logger().info('remote.key', { key: event.key, action: result.action, source: 'keymap' });
+            logger().debug('remote.key', { key: event.key, action: result.action, source: 'keymap' });
             this.actionBus.emit(result.action, result.payload);
             return;
           }
           if (entry.secondary) {
             const fallback = translateSecondary(entry.secondary);
             if (fallback) {
-              logger().info('remote.key', { key: event.key, action: fallback.action, source: 'secondary' });
+              logger().debug('remote.key', { key: event.key, action: fallback.action, source: 'secondary' });
               this.actionBus.emit(fallback.action, fallback.payload);
               return;
             }
@@ -64,7 +64,7 @@ export class RemoteAdapter {
       // Fall through to built-in navigation keys
       const nav = NAV_KEYS[event.key];
       if (nav) {
-        logger().info('remote.key', { key: event.key, action: nav.action, source: 'nav' });
+        logger().debug('remote.key', { key: event.key, action: nav.action, source: 'nav' });
         this.actionBus.emit(nav.action, nav.payload);
       }
     };
