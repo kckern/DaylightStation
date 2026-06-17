@@ -41,6 +41,8 @@ import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotServ
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
 import { resolveCandidateUuids } from '#apps/fitness/unlockPolicy.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
+import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
+import { getManageService } from '#apps/fitness/manageService.mjs';
 
 // Module-level session lock (shared across all router instances)
 const sessionLockService = new SessionLockService();
@@ -100,6 +102,8 @@ export function createFitnessRouter(config) {
     // Test seam: defaults to the process-level unlock service singleton.
     // Tests inject a fake so the endpoint can be exercised without a live eventbus.
     resolveUnlockService = getUnlockService,
+    fingerprintProfileWriter = null,
+    resolveManageService = getManageService,
     logger = console
   } = config;
 
@@ -1347,6 +1351,167 @@ export function createFitnessRouter(config) {
       reason: response.reason,
     });
     return res.json(response);
+  }));
+
+  /**
+   * The enrollment universe is fitness-scoped: only `fitness.yml → users.primary`
+   * users (the only ones with a profile.yml) may hold fingerprints. Family/friends
+   * are inline in fitness.yml with no profile files and are never eligible.
+   */
+  function primaryUsernames(req) {
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
+    return fitnessConfig?.users?.primary || [];
+  }
+
+  /**
+   * Build the username->profile map (primary users only) for the access decision.
+   * Admins are a subset of primary (only profiled users can carry identities.admin),
+   * so the self/admin gallery is fully represented here. Reuses the live cache.
+   */
+  function primaryProfilesObject(req) {
+    const map = {};
+    for (const username of primaryUsernames(req)) {
+      const profile = userService?.getProfile?.(username);
+      if (profile) map[username] = profile;
+    }
+    return map;
+  }
+
+  /**
+   * GET /api/fitness/fingerprints — list every ELIGIBLE (primary) user with their
+   * admin flag and enrolled fingers (finger + date only). Never returns uuids;
+   * never lists family/friends.
+   */
+  router.get('/fingerprints', (req, res) => {
+    const out = [];
+    for (const username of primaryUsernames(req)) {
+      const profile = userService?.getProfile?.(username);
+      if (!profile) continue;
+      const ids = profile.identities || {};
+      out.push({
+        username,
+        displayName: profile.display_name || username,
+        admin: ids.admin === true,
+        fingerprints: (ids.fingerprints || []).map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
+      });
+    }
+    res.json(out);
+  });
+
+  /**
+   * Run the self/admin identify gate for managing `username`. Returns
+   * { ok: true } when allowed (TOFU or matched scan), else { ok:false, status, body }.
+   */
+  async function gateManageAccess(req, username, logger) {
+    const profiles = primaryProfilesObject(req);
+    const { requiresAuth, gallery } = resolveManageAccess(profiles, username);
+    if (!requiresAuth) {
+      logger.info?.('fitness.fingerprint.access.tofu', { username });
+      return { ok: true };
+    }
+    const unlockService = resolveUnlockService?.();
+    if (!unlockService) return { ok: false, status: 503, body: { error: 'unlock-service-unavailable' } };
+    logger.info?.('fitness.fingerprint.access.requires-auth', { username, candidates: gallery.length });
+    let verdict;
+    try {
+      verdict = await unlockService.requestUnlock(`manage:${username}`, gallery);
+    } catch (err) {
+      logger.error?.('fitness.fingerprint.access.error', { username, error: err?.message });
+      return { ok: false, status: 500, body: { error: 'auth-failed' } };
+    }
+    if (!verdict?.matched) {
+      logger.info?.('fitness.fingerprint.access.denied', { username });
+      return { ok: false, status: 403, body: { error: 'auth-denied' } };
+    }
+    logger.info?.('fitness.fingerprint.access.granted', { username, by: verdict.userId });
+    return { ok: true };
+  }
+
+  /**
+   * POST /api/fitness/fingerprints/enroll { username, finger, clientToken }
+   * Eligibility (primary) is enforced first, then a duplicate-finger guard, then
+   * TOFU for an unenrolled user (otherwise a self/admin scan). On success the
+   * garage box returns a uuid which we persist to the user's profile.yml.
+   */
+  router.post('/fingerprints/enroll', asyncHandler(async (req, res) => {
+    const { username, finger, clientToken } = req.body || {};
+    const profile = username ? userService?.getProfile?.(username) : null;
+    if (!profile) return res.status(400).json({ error: 'unknown-user' });
+    if (!primaryUsernames(req).includes(username)) {
+      logger.info?.('fitness.fingerprint.enroll.not-eligible', { username });
+      return res.status(403).json({ error: 'not-eligible' });
+    }
+    if (!finger || typeof finger !== 'string') {
+      return res.status(400).json({ error: 'missing-finger' });
+    }
+    const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger);
+    if (taken) {
+      logger.info?.('fitness.fingerprint.enroll.finger-taken', { username, finger });
+      return res.status(409).json({ error: 'finger-taken' });
+    }
+
+    const gate = await gateManageAccess(req, username, logger);
+    if (!gate.ok) return res.status(gate.status).json(gate.body);
+
+    const manageService = resolveManageService?.();
+    if (!manageService) return res.status(503).json({ error: 'manage-service-unavailable' });
+
+    let result;
+    try {
+      result = await manageService.requestEnroll({ finger, username, clientToken });
+    } catch (err) {
+      logger.error?.('fitness.fingerprint.enroll.error', { username, error: err?.message });
+      return res.status(500).json({ error: 'enroll-failed' });
+    }
+    if (!result?.success || !result.uuid) {
+      logger.warn?.('fitness.fingerprint.enroll.unsuccessful', { username, reason: result?.error });
+      return res.status(500).json({ error: 'enroll-failed', reason: result?.error });
+    }
+
+    const enrolled = new Date().toISOString().slice(0, 10);
+    await fingerprintProfileWriter?.addFingerprint(username, { id: result.uuid, finger, enrolled });
+    logger.info?.('fitness.fingerprint.enroll.saved', { username, finger });
+    return res.json({ success: true, finger });
+  }));
+
+  /**
+   * DELETE /api/fitness/fingerprints { username, finger }
+   * Keyed by finger name (uuids never reach the browser); the server resolves the
+   * finger to the uuid the user owns. Requires a self/admin scan, deletes the
+   * on-box template, then removes the profile.yml entry (only after the box
+   * confirms, to avoid a dangling entry).
+   */
+  router.delete('/fingerprints', asyncHandler(async (req, res) => {
+    const { username, finger } = req.body || {};
+    const profile = username ? userService?.getProfile?.(username) : null;
+    if (!profile) return res.status(400).json({ error: 'unknown-user' });
+    if (!primaryUsernames(req).includes(username)) {
+      return res.status(403).json({ error: 'not-eligible' });
+    }
+    const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger);
+    if (!finger || matches.length === 0) return res.status(400).json({ error: 'unknown-fingerprint' });
+    if (matches.length > 1) return res.status(409).json({ error: 'ambiguous-finger' });
+    const uuid = matches[0].id;
+
+    const gate = await gateManageAccess(req, username, logger);
+    if (!gate.ok) return res.status(gate.status).json(gate.body);
+
+    const manageService = resolveManageService?.();
+    if (!manageService) return res.status(503).json({ error: 'manage-service-unavailable' });
+
+    let result;
+    try {
+      result = await manageService.requestDelete({ uuid });
+    } catch (err) {
+      logger.error?.('fitness.fingerprint.delete.error', { username, error: err?.message });
+      return res.status(500).json({ error: 'delete-failed' });
+    }
+    if (!result?.success) return res.status(500).json({ error: 'delete-failed', reason: result?.error });
+
+    await fingerprintProfileWriter?.removeFingerprint(username, uuid);
+    logger.info?.('fitness.fingerprint.delete.saved', { username, finger });
+    return res.json({ success: true });
   }));
 
   return router;
