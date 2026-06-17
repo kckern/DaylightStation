@@ -209,6 +209,66 @@ The identify helper runs on the HOST; the request arrives at the `daylight-fitne
 
 ---
 
+## Phase 1.5 — Hardware-free fingerprint SIMULATION (buildable NOW; unblocks full E2E before the reader arrives)
+
+Goal: exercise the ENTIRE chain — kiosk tap → `POST /api/v1/fitness/unlock` → backend
+policy resolve → eventbus broadcast → garage container → result → unlock — with NO physical
+reader, by simulating only the on-box identify step. Fire it from `ssh garage`.
+
+Design: the garage container's `fitness.unlock.request` handler (the stub added in Task 2.3)
+gains a simulation path, selected by env `FINGERPRINT_SIM`:
+- **`FINGERPRINT_SIM=auto-match`** — immediately reply `matched:true` for the first candidate
+  whose uuid looks simulated (prefer a `sim-` prefixed uuid, else the first candidate), using
+  that candidate's `username`. For quick/automated wiring tests.
+- **`FINGERPRINT_SIM=auto-deny`** — immediately reply `matched:false, reason:'sim-deny'`.
+- **`FINGERPRINT_SIM=interactive`** (the realistic mode) — do NOT auto-reply. Store the
+  pending request `{requestId, candidateUuids}` (candidateUuids carry `{uuid, username}`
+  pairs from `resolveCandidateUuids`). A CLI fired from `ssh garage` then resolves it,
+  simulating "present a finger now" within the ~15s window.
+- **unset** — fall through to the real on-box identify (Task 1.4) once hardware exists.
+
+The container already runs Express (`/status` etc., host-network on :3000). Add:
+- `POST /fingerprint/simulate` body `{ match: true, uuid?: <uuid> }` or `{ match: false }` →
+  resolve the most-recent pending unlock request by sending a `fitness.unlock.result`
+  (matched → pick the candidate matching `uuid`, else the `sim-` candidate, else the first;
+  return its `username`). 404/no-op if no request is pending.
+- `GET /fingerprint/pending` → list pending requestIds (debug).
+
+Test fingerprint seed (DONE during planning): `data/users/kckern/profile.yml` now has
+`identities.fingerprints[0] = { id: sim-kckern-0001, finger: right-index, simulated: true }`,
+so `kckern` (authorized for all three locks) yields a non-empty candidate list and the sim
+path has a uuid to match.
+
+### Task 1.5a: Container simulation path + endpoint
+**Files:** Modify `_extensions/fitness/src/server.mjs` (extend the Task 2.3 unlock handler;
+add the Express routes). Add `_extensions/fitness/test/unlockSim.test.mjs` for the pure
+selection logic (pick-candidate-by-uuid / sim-prefix / first), runnable with `node --test`
+(no WS needed — extract the candidate-selection into a tiny pure function and unit-test it).
+**Behavior:** as above. Match the file's console/emoji logging style. Keep the real-identify
+path as the `unset` default with the existing `// TODO(Task 1.4)` marker.
+**Commit:** `feat(fingerprint): hardware-free unlock simulation in garage container`.
+
+### Task 1.5b: simulate CLI (fire from garage SSH) — DONE as `simulate.mjs`
+**File:** `_extensions/fitness/simulate.mjs` (NOT `.sh` — `*.sh` is gitignored repo-wide;
+the extension already requires Node 18+ so `fetch` is built in).
+Usage: `node simulate.mjs match [uuid]` / `node simulate.mjs deny` / `node simulate.mjs pending`
+→ POSTs to `http://127.0.0.1:3000/fingerprint/simulate`. Run on the garage box or
+`ssh garage 'node /opt/fitness-controller/simulate.mjs match'`.
+**Commit:** `feat(fingerprint): simulate.mjs CLI for SSH-driven scan simulation`.
+
+### Task 1.5c: Simulation runbook
+**Files:** `docs/runbooks/fingerprint-unlock-simulation.md` — how to set `FINGERPRINT_SIM`
+on the garage container, the end-to-end test recipe (tap Dance Party → `ssh garage
+.../simulate.sh match` → expect launch), and how to flip back to real hardware (unset env).
+**Commit:** `docs: fingerprint unlock simulation runbook`.
+
+> Deploy note: enabling sim requires setting `FINGERPRINT_SIM` on the `daylight-fitness`
+> container and a redeploy/restart, plus a config reload so the new `sim-kckern-0001`
+> fingerprint is loaded into `config.users` (per the startup-load caveat in Phase 2). KC runs
+> these (do not auto-deploy).
+
+---
+
 ## Phase 2 — Backend unlock endpoint + WS relay (buildable NOW, mock the garage)
 
 ### Task 2.1: Lock-policy resolution (pure, unit-test first)
