@@ -21,6 +21,9 @@
 - **Don't commit automatically beyond what each task says** — this plan uses per-task commits (the agreed exception for this work).
 - **Don't deploy** — KC deploys.
 - **Data tree (NOT in repo):** `data/users/<username>/profile.yml`. The app writes only `identities.fingerprints[]`; it never writes `identities.admin`.
+- **Eligibility (fitness-scoped):** only **primary** fitness users are eligible for fingerprint enrollment. The universe is `fitness.yml → users.primary` (these are the only users with a `data/users/<id>/profile.yml`). Family and friends (inline in `fitness.yml`, no profile files) are **not eligible** — the API rejects them with `403 not-eligible` and the manager UI never lists them.
+- **DDD layering** (per `docs/reference/core/layers-of-abstraction/ddd-reference.md`): persistence lives in `1_adapters` (`YamlUserProfileDatastore`); pure business logic + orchestration live in `3_applications` (`manageAccessPolicy`, `fingerprintProfileWriter`, broker/service); HTTP lives in `4_api`. Dependencies point inward only — the application writer depends on the datastore via `#adapters/...` injection (the same pattern `NotificationContainer.mjs` uses), never the reverse.
+- **Delete keying:** the browser never sees uuids, so DELETE is keyed by **finger name**; the backend resolves finger → owned uuid server-side before deleting the template and the profile entry. Each finger name is unique per user (enroll rejects a duplicate with `409 finger-taken`).
 - **Test commands:**
   - Pure backend module: `node --test backend/src/3_applications/fitness/<x>.test.mjs`
   - Backend router (vitest): `npx vitest run backend/src/4_api/v1/routers/fitness.fingerprints.test.mjs`
@@ -33,7 +36,9 @@
 **Backend (create):**
 - `backend/src/3_applications/fitness/manageAccessPolicy.mjs` — pure: target → `{requiresAuth, gallery}`
 - `backend/src/3_applications/fitness/manageAccessPolicy.test.mjs`
-- `backend/src/3_applications/fitness/fingerprintProfileWriter.mjs` — pure mutators + file writer/reload
+- `backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs` — persistence: read/write one user's `profile.yml`
+- `backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs`
+- `backend/src/3_applications/fitness/fingerprintProfileWriter.mjs` — pure mutators + orchestration over the profile datastore + cache reload
 - `backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs`
 - `backend/src/3_applications/fitness/manageBroker.mjs` — transport-agnostic enroll/delete correlator
 - `backend/src/3_applications/fitness/manageBroker.test.mjs`
@@ -226,13 +231,121 @@ git add backend/src/0_system/config/ConfigService.mjs
 git commit -m "feat(config): reloadUserProfile(username) to refresh one cached profile"
 ```
 
-### Task 3: `fingerprintProfileWriter.mjs`
+### Task 3: `YamlUserProfileDatastore` (persistence) + `fingerprintProfileWriter` (orchestration)
+
+This task delivers the DDD-correct profile write path: a **persistence adapter** in `1_adapters` that owns `profile.yml` read/write, plus an **application-layer writer** in `3_applications` that injects the adapter, applies pure mutators, and refreshes the cache. The writer holds no filesystem code — dependencies point inward only.
 
 **Files:**
+- Create: `backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs`
+- Test: `backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs`
 - Create: `backend/src/3_applications/fitness/fingerprintProfileWriter.mjs`
 - Test: `backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs`
 
-- [ ] **Step 1: Write the failing test** (pure mutators are tested directly; the file writer is tested through an injected fs + configService double)
+- [ ] **Step 1: Write the failing datastore test**
+
+```javascript
+// backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { YamlUserProfileDatastore } from './YamlUserProfileDatastore.mjs';
+
+test('readProfile loads <userDir>/profile.yml via the injected loader', () => {
+  let loadedPath;
+  const store = new YamlUserProfileDatastore({
+    configService: { getUserDir: (u) => `/data/users/${u}` },
+    load: (p) => { loadedPath = p; return { username: 'test-user' }; },
+    save: () => {},
+  });
+  const profile = store.readProfile('test-user');
+  assert.equal(loadedPath, '/data/users/test-user/profile.yml');
+  assert.deepEqual(profile, { username: 'test-user' });
+});
+
+test('readProfile returns null when the file is missing', () => {
+  const store = new YamlUserProfileDatastore({
+    configService: { getUserDir: (u) => `/data/users/${u}` },
+    load: () => null,
+    save: () => {},
+  });
+  assert.equal(store.readProfile('ghost'), null);
+});
+
+test('writeProfile saves to <userDir>/profile.yml via the injected saver', () => {
+  let savedPath; let savedContent;
+  const store = new YamlUserProfileDatastore({
+    configService: { getUserDir: (u) => `/data/users/${u}` },
+    load: () => ({}),
+    save: (p, c) => { savedPath = p; savedContent = c; },
+  });
+  store.writeProfile('test-user', { identities: { fingerprints: [{ id: 'u1' }] } });
+  assert.equal(savedPath, '/data/users/test-user/profile.yml');
+  assert.deepEqual(savedContent, { identities: { fingerprints: [{ id: 'u1' }] } });
+});
+
+test('constructor rejects a configService without getUserDir', () => {
+  assert.throws(() => new YamlUserProfileDatastore({ configService: {} }), /getUserDir/);
+});
+```
+
+- [ ] **Step 2: Run the datastore test to verify it fails**
+
+Run: `node --test backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs`
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Write the datastore**
+
+```javascript
+// backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs
+import { loadYamlFromPath, saveYamlToPath } from '#system/utils/FileIO.mjs';
+
+/**
+ * YamlUserProfileDatastore
+ *
+ * YAML-backed persistence for a single user's profile.yml. Resolves the path via
+ * the configService user-dir SSOT; YAML (de)serialization is delegated to FileIO.
+ * `load`/`save` are injectable so the read/write surface is unit-testable without
+ * touching disk.
+ *
+ * Path: data/users/<username>/profile.yml
+ *
+ * @module adapters/persistence/yaml
+ */
+export class YamlUserProfileDatastore {
+  #configService;
+  #load;
+  #save;
+
+  constructor({ configService, load = loadYamlFromPath, save = saveYamlToPath }) {
+    if (!configService || typeof configService.getUserDir !== 'function') {
+      throw new Error('YamlUserProfileDatastore: configService with getUserDir() is required');
+    }
+    this.#configService = configService;
+    this.#load = load;
+    this.#save = save;
+  }
+
+  #pathFor(username) {
+    return `${this.#configService.getUserDir(username)}/profile.yml`;
+  }
+
+  /** @returns {object|null} parsed profile, or null when the file is absent */
+  readProfile(username) {
+    return this.#load(this.#pathFor(username)) ?? null;
+  }
+
+  /** Persist the full profile object back to disk. */
+  writeProfile(username, profile) {
+    this.#save(this.#pathFor(username), profile);
+  }
+}
+```
+
+- [ ] **Step 4: Run the datastore test to verify it passes**
+
+Run: `node --test backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs`
+Expected: PASS (4 tests).
+
+- [ ] **Step 5: Write the failing writer test** (pure mutators tested directly; the writer is tested through an injected datastore + configService double)
 
 ```javascript
 // backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs
@@ -259,48 +372,44 @@ test('removeFingerprintEntry drops the matching uuid only', () => {
   assert.deepEqual(profile.identities.fingerprints, [{ id: 'u1' }, { id: 'u2' }]); // input untouched
 });
 
-test('writer.addFingerprint loads → mutates → saves → reloads cache', async () => {
-  let savedPath; let savedContent; let reloaded;
-  const deps = {
-    configService: {
-      getUserDir: (u) => `/data/users/${u}`,
-      reloadUserProfile: (u) => { reloaded = u; },
-    },
-    load: (p) => ({ identities: { fingerprints: [] } }),
-    save: (p, c) => { savedPath = p; savedContent = c; },
+test('writer.addFingerprint reads → mutates → writes → reloads cache', async () => {
+  let written; let reloaded;
+  const datastore = {
+    readProfile: () => ({ identities: { fingerprints: [] } }),
+    writeProfile: (u, c) => { written = { u, c }; },
   };
-  const writer = createFingerprintProfileWriter(deps);
+  const configService = { reloadUserProfile: (u) => { reloaded = u; } };
+  const writer = createFingerprintProfileWriter({ datastore, configService });
   await writer.addFingerprint('test-user', { id: 'u9', finger: 'left-thumb', enrolled: '2026-06-17' });
 
-  assert.equal(savedPath, '/data/users/test-user/profile.yml');
-  assert.deepEqual(savedContent.identities.fingerprints, [{ id: 'u9', finger: 'left-thumb', enrolled: '2026-06-17' }]);
+  assert.equal(written.u, 'test-user');
+  assert.deepEqual(written.c.identities.fingerprints, [{ id: 'u9', finger: 'left-thumb', enrolled: '2026-06-17' }]);
   assert.equal(reloaded, 'test-user');
 });
 
-test('writer.removeFingerprint loads → removes → saves → reloads cache', async () => {
-  let savedContent; let reloaded;
-  const deps = {
-    configService: { getUserDir: (u) => `/data/users/${u}`, reloadUserProfile: (u) => { reloaded = u; } },
-    load: () => ({ identities: { fingerprints: [{ id: 'u1' }, { id: 'u2' }] } }),
-    save: (_p, c) => { savedContent = c; },
+test('writer.removeFingerprint reads → removes → writes → reloads cache', async () => {
+  let written; let reloaded;
+  const datastore = {
+    readProfile: () => ({ identities: { fingerprints: [{ id: 'u1' }, { id: 'u2' }] } }),
+    writeProfile: (_u, c) => { written = c; },
   };
-  const writer = createFingerprintProfileWriter(deps);
+  const configService = { reloadUserProfile: (u) => { reloaded = u; } };
+  const writer = createFingerprintProfileWriter({ datastore, configService });
   await writer.removeFingerprint('test-user', 'u1');
-  assert.deepEqual(savedContent.identities.fingerprints, [{ id: 'u2' }]);
+  assert.deepEqual(written.identities.fingerprints, [{ id: 'u2' }]);
   assert.equal(reloaded, 'test-user');
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 6: Run the writer test to verify it fails**
 
 Run: `node --test backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs`
 Expected: FAIL — module/exports missing.
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 7: Write the writer**
 
 ```javascript
 // backend/src/3_applications/fitness/fingerprintProfileWriter.mjs
-import { loadYamlFromPath, saveYamlToPath } from '#system/utils/FileIO.mjs';
 
 /**
  * Append a fingerprint under identities.fingerprints, preserving other
@@ -331,27 +440,27 @@ export function removeFingerprintEntry(profile, uuid) {
 }
 
 /**
- * Live writer: read data/users/<user>/profile.yml, mutate identities.fingerprints,
- * write it back, and refresh the cached profile. `load`/`save` are injectable so
- * the mutate→persist→reload sequence is unit-testable without the filesystem.
+ * Application-layer writer: read the user's profile via the injected persistence
+ * datastore, mutate identities.fingerprints with the pure helpers above, write it
+ * back, then refresh the cached profile so the change is visible without an app
+ * restart. The datastore (a `1_adapters` persistence port) and configService are
+ * injected — this orchestrator holds no filesystem code, keeping dependencies
+ * pointing inward per the DDD layering reference.
  *
  * @param {object} deps
- * @param {{getUserDir:(u:string)=>string, reloadUserProfile:(u:string)=>any}} deps.configService
- * @param {(path:string)=>object} [deps.load]  - defaults to loadYamlFromPath
- * @param {(path:string, content:object)=>void} [deps.save] - defaults to saveYamlToPath
+ * @param {{readProfile:(u:string)=>object|null, writeProfile:(u:string, p:object)=>void}} deps.datastore
+ * @param {{reloadUserProfile:(u:string)=>any}} deps.configService
  */
-export function createFingerprintProfileWriter({ configService, load = loadYamlFromPath, save = saveYamlToPath }) {
-  const pathFor = (username) => `${configService.getUserDir(username)}/profile.yml`;
-
+export function createFingerprintProfileWriter({ datastore, configService }) {
   async function addFingerprint(username, entry) {
-    const profile = load(pathFor(username)) || {};
-    save(pathFor(username), addFingerprintEntry(profile, entry));
+    const profile = datastore.readProfile(username) || {};
+    datastore.writeProfile(username, addFingerprintEntry(profile, entry));
     configService.reloadUserProfile(username);
   }
 
   async function removeFingerprint(username, uuid) {
-    const profile = load(pathFor(username)) || {};
-    save(pathFor(username), removeFingerprintEntry(profile, uuid));
+    const profile = datastore.readProfile(username) || {};
+    datastore.writeProfile(username, removeFingerprintEntry(profile, uuid));
     configService.reloadUserProfile(username);
   }
 
@@ -359,16 +468,16 @@ export function createFingerprintProfileWriter({ configService, load = loadYamlF
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 8: Run the writer test to verify it passes**
 
 Run: `node --test backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs`
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add backend/src/3_applications/fitness/fingerprintProfileWriter.mjs backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs
-git commit -m "feat(fingerprint): profile writer (append/remove + cache reload)"
+git add backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs backend/src/1_adapters/persistence/yaml/YamlUserProfileDatastore.test.mjs backend/src/3_applications/fitness/fingerprintProfileWriter.mjs backend/src/3_applications/fitness/fingerprintProfileWriter.test.mjs
+git commit -m "feat(fingerprint): user-profile datastore + profile writer (DDD persistence split)"
 ```
 
 ---
@@ -716,13 +825,17 @@ import { createFitnessRouter } from './fitness.mjs';
 
 const silent = { info(){}, warn(){}, error(){}, debug(){} };
 
-function appWith({ profiles = {}, unlockService, manageService } = {}) {
-  const all = new Map(Object.entries(profiles));
+// `primary` defaults to every profiled user (all eligible). Pass an explicit
+// `primary` array to exercise the not-eligible path (a profile that isn't primary).
+function appWith({ profiles = {}, primary, unlockService, manageService } = {}) {
   const userService = {
     getProfile: (u) => profiles[u] ?? null,
-    getAllProfiles: () => all,
+    getAllProfiles: () => new Map(Object.entries(profiles)),
   };
   const configService = { getDefaultHouseholdId: () => 'default' };
+  const fitnessConfigService = {
+    loadRawConfig: () => ({ users: { primary: primary ?? Object.keys(profiles) } }),
+  };
   const writes = [];
   const fingerprintProfileWriter = {
     addFingerprint: vi.fn(async (u, e) => { writes.push(['add', u, e]); }),
@@ -731,7 +844,7 @@ function appWith({ profiles = {}, unlockService, manageService } = {}) {
   const app = express();
   app.use(express.json());
   app.use('/', createFitnessRouter({
-    userService, configService, fingerprintProfileWriter,
+    userService, configService, fitnessConfigService, fingerprintProfileWriter,
     resolveUnlockService: () => unlockService ?? null,
     resolveManageService: () => manageService ?? null,
     logger: silent,
@@ -742,13 +855,19 @@ function appWith({ profiles = {}, unlockService, manageService } = {}) {
 const fp = (id, finger = 'right-index') => ({ id, finger, enrolled: '2026-06-17' });
 
 describe('GET /fingerprints', () => {
-  it('lists users with admin flag and fingers but never uuids', async () => {
-    const { app } = appWith({ profiles: {
-      'admin-user': { display_name: 'Admin', identities: { admin: true, fingerprints: [fp('a1','left-thumb')] } },
-      'test-user': { identities: { fingerprints: [] } },
-    }});
+  it('lists only eligible (primary) users with admin flag and fingers but never uuids', async () => {
+    const { app } = appWith({
+      profiles: {
+        'admin-user': { display_name: 'Admin', identities: { admin: true, fingerprints: [fp('a1','left-thumb')] } },
+        'test-user': { identities: { fingerprints: [] } },
+        'family-user': { display_name: 'Fam', identities: { fingerprints: [fp('f1')] } },
+      },
+      primary: ['admin-user', 'test-user'], // family-user excluded → not listed
+    });
     const res = await request(app).get('/fingerprints');
     expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.find((u) => u.username === 'family-user')).toBeUndefined();
     const admin = res.body.find((u) => u.username === 'admin-user');
     expect(admin).toMatchObject({ displayName: 'Admin', admin: true, fingerprints: [{ finger: 'left-thumb', enrolled: '2026-06-17' }] });
     expect(JSON.stringify(res.body)).not.toContain('a1'); // no uuid leak
@@ -799,6 +918,32 @@ describe('POST /fingerprints/enroll', () => {
     expect(requestEnroll).not.toHaveBeenCalled();
   });
 
+  it('non-eligible (non-primary) user → 403 not-eligible, no enroll', async () => {
+    const requestEnroll = vi.fn();
+    const { app } = appWith({
+      profiles: { 'family-user': { identities: { fingerprints: [] } } },
+      primary: [], // family-user has a profile but is not primary
+      manageService: { requestEnroll },
+    });
+    const res = await request(app).post('/fingerprints/enroll').send({ username: 'family-user', finger: 'right-index' });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'not-eligible' });
+    expect(requestEnroll).not.toHaveBeenCalled();
+  });
+
+  it('duplicate finger on the same user → 409 finger-taken, no enroll', async () => {
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'test-user' });
+    const requestEnroll = vi.fn();
+    const { app } = appWith({
+      profiles: { 'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } } },
+      unlockService: { requestUnlock }, manageService: { requestEnroll },
+    });
+    const res = await request(app).post('/fingerprints/enroll').send({ username: 'test-user', finger: 'right-index' });
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: 'finger-taken' });
+    expect(requestEnroll).not.toHaveBeenCalled();
+  });
+
   it('unknown user → 400', async () => {
     const { app } = appWith({ profiles: {}, manageService: { requestEnroll: vi.fn() } });
     const res = await request(app).post('/fingerprints/enroll').send({ username: 'ghost', finger: 'right-index' });
@@ -808,29 +953,29 @@ describe('POST /fingerprints/enroll', () => {
 });
 
 describe('DELETE /fingerprints', () => {
-  it('requires auth, deletes the template, then removes the profile entry', async () => {
+  it('requires auth, resolves finger→uuid, deletes the template, then removes the profile entry', async () => {
     const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'admin-user' });
     const requestDelete = vi.fn().mockResolvedValue({ success: true });
     const { app, fingerprintProfileWriter } = appWith({
       profiles: {
-        'test-user': { identities: { fingerprints: [fp('own-1')] } },
+        'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } },
         'admin-user': { identities: { admin: true, fingerprints: [fp('adm-1')] } },
       },
       unlockService: { requestUnlock }, manageService: { requestDelete },
     });
-    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', uuid: 'own-1' });
+    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'right-index' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
-    expect(requestDelete).toHaveBeenCalledWith({ uuid: 'own-1' });
+    expect(requestDelete).toHaveBeenCalledWith({ uuid: 'own-1' }); // server resolved finger→uuid
     expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('test-user', 'own-1');
   });
 
-  it('rejects deleting a uuid the user does not own → 400', async () => {
+  it('rejects deleting a finger the user does not have → 400 unknown-fingerprint', async () => {
     const { app } = appWith({
-      profiles: { 'test-user': { identities: { fingerprints: [fp('own-1')] } } },
+      profiles: { 'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } } },
       unlockService: { requestUnlock: vi.fn() }, manageService: { requestDelete: vi.fn() },
     });
-    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', uuid: 'not-mine' });
+    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'left-thumb' });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: 'unknown-fingerprint' });
   });
@@ -858,23 +1003,52 @@ In the `createFitnessRouter` config destructure (the block ending ~line 104, alo
     resolveManageService = getManageService,
 ```
 
+`configService` and `fitnessConfigService` are **already** destructured in this block (the `/unlock` handler uses them) — do not re-add them; the new handlers reuse the same two deps for the household id and the `users.primary` eligibility list.
+
 - [ ] **Step 4: Add the three routes**
 
 Insert immediately AFTER the existing `router.post('/unlock', ...)` handler (after its closing `}));`, ~line 1345):
 
 ```javascript
   /**
-   * GET /api/fitness/fingerprints — list every profiled user with their admin
-   * flag and enrolled fingers (finger + date only). Never returns uuids.
+   * The enrollment universe is fitness-scoped: only `fitness.yml → users.primary`
+   * users (the only ones with a profile.yml) may hold fingerprints. Family/friends
+   * are inline in fitness.yml with no profile files and are never eligible.
+   */
+  function primaryUsernames(req) {
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
+    return fitnessConfig?.users?.primary || [];
+  }
+
+  /**
+   * Build the username->profile map (primary users only) for the access decision.
+   * Admins are a subset of primary (only profiled users can carry identities.admin),
+   * so the self/admin gallery is fully represented here. Reuses the live cache.
+   */
+  function primaryProfilesObject(req) {
+    const map = {};
+    for (const username of primaryUsernames(req)) {
+      const profile = userService?.getProfile?.(username);
+      if (profile) map[username] = profile;
+    }
+    return map;
+  }
+
+  /**
+   * GET /api/fitness/fingerprints — list every ELIGIBLE (primary) user with their
+   * admin flag and enrolled fingers (finger + date only). Never returns uuids;
+   * never lists family/friends.
    */
   router.get('/fingerprints', (req, res) => {
-    const profiles = userService?.getAllProfiles?.() || new Map();
     const out = [];
-    for (const [username, profile] of profiles.entries()) {
-      const ids = profile?.identities || {};
+    for (const username of primaryUsernames(req)) {
+      const profile = userService?.getProfile?.(username);
+      if (!profile) continue;
+      const ids = profile.identities || {};
       out.push({
         username,
-        displayName: profile?.display_name || username,
+        displayName: profile.display_name || username,
         admin: ids.admin === true,
         fingerprints: (ids.fingerprints || []).map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
       });
@@ -883,20 +1057,11 @@ Insert immediately AFTER the existing `router.post('/unlock', ...)` handler (aft
   });
 
   /**
-   * Build the username->profile map for the access decision (target + all users,
-   * since admins may be anyone). Reuses the live profile cache.
-   */
-  function allProfilesObject() {
-    const map = userService?.getAllProfiles?.() || new Map();
-    return Object.fromEntries(map.entries());
-  }
-
-  /**
    * Run the self/admin identify gate for managing `username`. Returns
    * { ok: true } when allowed (TOFU or matched scan), else { ok:false, status, body }.
    */
-  async function gateManageAccess(username, logger) {
-    const profiles = allProfilesObject();
+  async function gateManageAccess(req, username, logger) {
+    const profiles = primaryProfilesObject(req);
     const { requiresAuth, gallery } = resolveManageAccess(profiles, username);
     if (!requiresAuth) {
       logger.info?.('fitness.fingerprint.access.tofu', { username });
@@ -922,19 +1087,28 @@ Insert immediately AFTER the existing `router.post('/unlock', ...)` handler (aft
 
   /**
    * POST /api/fitness/fingerprints/enroll { username, finger, clientToken }
-   * TOFU for an unenrolled user; otherwise requires a self/admin scan. On success
-   * the garage box returns a uuid which we persist to the user's profile.yml.
+   * Eligibility (primary) is enforced first, then a duplicate-finger guard, then
+   * TOFU for an unenrolled user (otherwise a self/admin scan). On success the
+   * garage box returns a uuid which we persist to the user's profile.yml.
    */
   router.post('/fingerprints/enroll', asyncHandler(async (req, res) => {
     const { username, finger, clientToken } = req.body || {};
-    if (!username || !userService?.getProfile?.(username)) {
-      return res.status(400).json({ error: 'unknown-user' });
+    const profile = username ? userService?.getProfile?.(username) : null;
+    if (!profile) return res.status(400).json({ error: 'unknown-user' });
+    if (!primaryUsernames(req).includes(username)) {
+      logger.info?.('fitness.fingerprint.enroll.not-eligible', { username });
+      return res.status(403).json({ error: 'not-eligible' });
     }
     if (!finger || typeof finger !== 'string') {
       return res.status(400).json({ error: 'missing-finger' });
     }
+    const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger);
+    if (taken) {
+      logger.info?.('fitness.fingerprint.enroll.finger-taken', { username, finger });
+      return res.status(409).json({ error: 'finger-taken' });
+    }
 
-    const gate = await gateManageAccess(username, logger);
+    const gate = await gateManageAccess(req, username, logger);
     if (!gate.ok) return res.status(gate.status).json(gate.body);
 
     const manageService = resolveManageService?.();
@@ -959,18 +1133,25 @@ Insert immediately AFTER the existing `router.post('/unlock', ...)` handler (aft
   }));
 
   /**
-   * DELETE /api/fitness/fingerprints { username, uuid }
-   * Requires a self/admin scan, deletes the on-box template, then removes the
-   * profile.yml entry (only after the box confirms, to avoid a dangling entry).
+   * DELETE /api/fitness/fingerprints { username, finger }
+   * Keyed by finger name (uuids never reach the browser); the server resolves the
+   * finger to the uuid the user owns. Requires a self/admin scan, deletes the
+   * on-box template, then removes the profile.yml entry (only after the box
+   * confirms, to avoid a dangling entry).
    */
   router.delete('/fingerprints', asyncHandler(async (req, res) => {
-    const { username, uuid } = req.body || {};
+    const { username, finger } = req.body || {};
     const profile = username ? userService?.getProfile?.(username) : null;
     if (!profile) return res.status(400).json({ error: 'unknown-user' });
-    const owns = (profile.identities?.fingerprints || []).some((f) => f.id === uuid);
-    if (!uuid || !owns) return res.status(400).json({ error: 'unknown-fingerprint' });
+    if (!primaryUsernames(req).includes(username)) {
+      return res.status(403).json({ error: 'not-eligible' });
+    }
+    const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger);
+    if (!finger || matches.length === 0) return res.status(400).json({ error: 'unknown-fingerprint' });
+    if (matches.length > 1) return res.status(409).json({ error: 'ambiguous-finger' });
+    const uuid = matches[0].id;
 
-    const gate = await gateManageAccess(username, logger);
+    const gate = await gateManageAccess(req, username, logger);
     if (!gate.ok) return res.status(gate.status).json(gate.body);
 
     const manageService = resolveManageService?.();
@@ -986,7 +1167,7 @@ Insert immediately AFTER the existing `router.post('/unlock', ...)` handler (aft
     if (!result?.success) return res.status(500).json({ error: 'delete-failed', reason: result?.error });
 
     await fingerprintProfileWriter?.removeFingerprint(username, uuid);
-    logger.info?.('fitness.fingerprint.delete.saved', { username });
+    logger.info?.('fitness.fingerprint.delete.saved', { username, finger });
     return res.json({ success: true });
   }));
 ```
@@ -1015,6 +1196,7 @@ Next to `import { initUnlockService } from '#apps/fitness/unlockService.mjs';` (
 ```javascript
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
+import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 ```
 
 - [ ] **Step 2: Init the service after `initUnlockService(...)` (~line 442)**
@@ -1026,7 +1208,10 @@ import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfile
     eventBus,
     logger: rootLogger.child({ module: 'fitness-fingerprint-manage' })
   });
-  const fingerprintProfileWriter = createFingerprintProfileWriter({ configService });
+  // Persistence adapter (1_adapters) → application writer (3_applications): the
+  // writer never touches the filesystem itself, satisfying the DDD layering.
+  const userProfileDatastore = new YamlUserProfileDatastore({ configService });
+  const fingerprintProfileWriter = createFingerprintProfileWriter({ datastore: userProfileDatastore, configService });
 ```
 
 - [ ] **Step 3: Pass the writer into the fitness router**
@@ -1179,11 +1364,11 @@ describe('useFingerprintManager', () => {
     expect(DaylightAPI).toHaveBeenCalledWith('api/v1/fitness/fingerprints/enroll', { username: 'test-user', finger: 'right-index', clientToken: 'tok' }, 'POST');
   });
 
-  it('remove issues a DELETE with username/uuid', async () => {
+  it('remove issues a DELETE keyed by finger name', async () => {
     DaylightAPI.mockResolvedValueOnce({ success: true });
     const { result } = renderHook(() => useFingerprintManager());
-    await act(async () => { await result.current.remove({ username: 'test-user', uuid: 'u1' }); });
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/fitness/fingerprints', { username: 'test-user', uuid: 'u1' }, 'DELETE');
+    await act(async () => { await result.current.remove({ username: 'test-user', finger: 'right-index' }); });
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/fitness/fingerprints', { username: 'test-user', finger: 'right-index' }, 'DELETE');
   });
 });
 ```
@@ -1242,10 +1427,10 @@ export function useFingerprintManager() {
     }
   }, []);
 
-  const remove = useCallback(async ({ username, uuid }) => {
-    logger().info('manager.delete.start', { username });
+  const remove = useCallback(async ({ username, finger }) => {
+    logger().info('manager.delete.start', { username, finger });
     try {
-      const res = await DaylightAPI(LIST_PATH, { username, uuid }, 'DELETE');
+      const res = await DaylightAPI(LIST_PATH, { username, finger }, 'DELETE');
       logger().info('manager.delete.done', { username, success: !!res?.success });
       return res || { success: false };
     } catch (err) {
@@ -1490,12 +1675,11 @@ export default function FingerprintManagerContainer() {
     await refresh();
   };
 
-  const handleDelete = async (username, uuidLabel) => {
-    // NOTE: the list never exposes uuids; deletion is keyed by the backend which
-    // re-resolves the finger. The delete affordance passes the finger name and the
-    // backend matches it. (If multiple prints share a finger name, the backend
-    // rejects ambiguous deletes; see design.) For v1 each finger name is unique.
-    const result = await remove({ username, uuid: uuidLabel });
+  const handleDelete = async (username, finger) => {
+    // The list never exposes uuids — deletion is keyed by finger name and the
+    // backend re-resolves it to the uuid the user owns. Each finger name is unique
+    // per user (enroll rejects a duplicate with 409 finger-taken).
+    const result = await remove({ username, finger });
     if (result?.success) await refresh();
   };
 
@@ -1538,13 +1722,11 @@ export default function FingerprintManagerContainer() {
 }
 ```
 
-> **Note on delete keying:** the design keeps uuids out of the browser. For v1 the
-> delete affordance passes the **finger name** and the backend resolves it to the uuid it
-> owns. The Task 6 DELETE handler currently expects `uuid`; add a small lookup there if
-> finger-name keying is preferred, or expose an opaque per-row handle from GET. **Confirm
-> this with the reviewer during Task 11** — the simplest correct choice is to have GET
-> return an opaque `handle` (index or hash) per print and DELETE accept `{username, handle}`,
-> keeping uuids server-side. Adjust Task 6's DELETE + its test accordingly if so.
+> **Delete keying (resolved):** uuids never reach the browser, so the delete affordance
+> passes the **finger name**. The Task 6 DELETE handler accepts `{ username, finger }`,
+> resolves the finger to the owned uuid server-side, and returns `409 ambiguous-finger`
+> if (defensively) more than one print shares a finger name. Enroll enforces uniqueness
+> up front (`409 finger-taken`), so each finger name maps to exactly one uuid.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1573,7 +1755,14 @@ git commit -m "feat(fingerprint): manager container (list, add, delete, enroll m
 
 - [ ] **Step 1: Add a "Fingerprint Manager" section**
 
-Append a section documenting: the manager widget (`fitness:fingerprint-manager`), the access model (TOFU for first print; self/admin scan after), the `identities.admin` flag (config-only, app never writes it), the three endpoints (`GET/POST/DELETE /api/v1/fitness/fingerprints*`), and the new WS topics (`fitness.enroll.request|progress|result`, `fitness.fingerprint.delete.request|result`) plus the note that authentication reuses `fitness.unlock.*`. Update the "Code map" with the new backend modules and the frontend widget path. Keep it endstate/present-tense per the docs-style memory.
+Append a section documenting:
+- the manager widget (`fitness:fingerprint-manager`);
+- **fitness-scoped eligibility** — only `fitness.yml → users.primary` users may enroll; family/friends are not eligible (`403 not-eligible`) and never appear in the manager;
+- the access model (TOFU for a user's first print; self/admin scan after) and the `identities.admin` flag (config-only — the app never writes it);
+- the three endpoints (`GET/POST/DELETE /api/v1/fitness/fingerprints*`), noting **delete is keyed by finger name** (uuids stay server-side) and enroll rejects a duplicate finger (`409 finger-taken`);
+- the new WS topics (`fitness.enroll.request|progress|result`, `fitness.fingerprint.delete.request|result`), that authentication reuses `fitness.unlock.*`, and that enroll progress mirrors the **5-stage + confirm hardware capture** already documented in this file's enroll section.
+
+Update the "Code map" with the new backend modules — `YamlUserProfileDatastore` (1_adapters persistence), `manageAccessPolicy` / `fingerprintProfileWriter` / `manageBroker` / `manageService` (3_applications), the `/fingerprints*` routes (4_api) — and the frontend widget path. Keep it endstate/present-tense per the docs-style memory.
 
 - [ ] **Step 2: Commit**
 
@@ -1586,7 +1775,9 @@ git commit -m "docs(fingerprint): document the in-app fingerprint manager"
 
 ## Self-Review (completed during planning)
 
-- **Spec coverage:** access model → Task 1 + Task 6; profile write/reload → Tasks 2–3; WS contract (enroll/delete) → Tasks 4–5; auth-reuse-unlock → Task 6 `gateManageAccess`; API → Task 6; widget/UI/progress → Tasks 8–11; docs → Task 12. No uncovered spec section.
-- **Type consistency:** `resolveManageAccess(profilesByUser, target) → {requiresAuth, gallery}`; broker `requestEnroll/resolveEnrollResult/handleEnrollProgress/requestDelete/resolveDeleteResult`; service `requestEnroll({finger,username,clientToken})` / `requestDelete({uuid})`; writer `addFingerprint/removeFingerprint`. Used identically across tasks.
-- **Open item flagged for the reviewer:** delete keying (finger-name vs opaque handle vs uuid) — Task 11 note. Resolve in Task 11; if changing to a handle, update Task 6 DELETE + its test in the same task.
+- **Spec coverage:** access model → Task 1 + Task 6; persistence/write/reload → Tasks 2–3 (`YamlUserProfileDatastore` + writer); WS contract (enroll/delete) → Tasks 4–5; auth-reuse-unlock → Task 6 `gateManageAccess`; fitness-scoped eligibility → Task 6 (`primaryUsernames`); API → Task 6; widget/UI/progress → Tasks 8–11; docs → Task 12. No uncovered spec section.
+- **Type consistency:** `resolveManageAccess(profilesByUser, target) → {requiresAuth, gallery}`; datastore `readProfile(u)/writeProfile(u,p)`; writer `createFingerprintProfileWriter({datastore, configService})` → `addFingerprint/removeFingerprint`; broker `requestEnroll/resolveEnrollResult/handleEnrollProgress/requestDelete/resolveDeleteResult`; service `requestEnroll({finger,username,clientToken})` / `requestDelete({uuid})`; HTTP DELETE body `{username, finger}`, hook `remove({username, finger})`, container `handleDelete(username, finger)`. Used identically across tasks.
+- **DDD layering:** persistence isolated in `1_adapters/persistence/yaml/YamlUserProfileDatastore.mjs`; pure logic + orchestration in `3_applications/fitness/*`; HTTP in `4_api`. The writer imports the datastore via `#adapters/...` (inward-pointing, mirroring `NotificationContainer.mjs`); no `4_api` import from a lower layer.
+- **Fitness scoping:** enrollment universe is `users.primary` only; family/friends rejected with `403 not-eligible` and never listed.
+- **Resolved (was open):** delete keying — finger-name keyed end-to-end, uuid resolved server-side; enroll guards duplicate finger (`409 finger-taken`), DELETE defends with `409 ambiguous-finger`.
 - **No placeholders** in code steps; every step has runnable commands + expected output.
