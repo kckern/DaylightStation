@@ -279,6 +279,20 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     resetUnlock();
   }, [resetUnlock]);
 
+  // FitnessShow is rendered WITHOUT a key (FitnessApp), so navigating between
+  // shows reuses this same instance instead of remounting. Reset all unlock state
+  // when the show changes, otherwise a governance bypass granted on show A (or an
+  // open prompt) would leak into show B — a real authorization bypass once the
+  // per-item nogovern seam is wired (T4.3). `showIdRef` lets in-flight scans that
+  // resolve after a show change bail out instead of acting on the wrong show.
+  const showIdRef = useRef(showId);
+  useEffect(() => {
+    showIdRef.current = showId;
+    setGovernanceBypassed(false);
+    setPendingUnlock(null);
+    resetUnlock();
+  }, [showId, resetUnlock]);
+
   const fetchShowData = useCallback(async () => {
     if (!showId) {
       setLoading(false);
@@ -715,10 +729,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   // timeout leaves the prompt up (or closes via closeUnlock) and does NOT bypass.
   const handleGovernanceUnlockTap = () => {
     if (pendingUnlock) return; // ignore taps while a prompt is open
+    const reqShowId = showId; // guard: ignore a scan that resolves after a show change
     const logger = getLogger().child({ component: 'FitnessShow' });
     logger.info('fitness.show.unlock_tap', { lock: 'governance_bypass', show: info?.title });
     setPendingUnlock({ lock: 'governance_bypass', label: info?.title || 'Governed content' });
     requestUnlock('governance_bypass').then((result) => {
+      if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
       if (result?.matched) {
         logger.info('fitness.show.governance_bypassed', { show: info?.title, userId: result.userId });
         setGovernanceBypassed(true);
@@ -734,10 +750,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   // does NOT play.
   const handleLockedEpisodeUnlockTap = (episode) => {
     if (pendingUnlock) return; // ignore taps while a prompt is open
+    const reqShowId = showId; // guard: ignore a scan that resolves after a show change
     const logger = getLogger().child({ component: 'FitnessShow' });
     logger.info('fitness.show.unlock_tap', { lock: 'skip_content', episode: episode?.plex || episode?.id });
     setPendingUnlock({ lock: 'skip_content', label: episode?.label || 'Locked episode', episode });
     requestUnlock('skip_content').then((result) => {
+      if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
       if (result?.matched) {
         logger.info('fitness.show.skip_content_granted', { episode: episode?.plex || episode?.id, userId: result.userId });
         closeUnlock();
