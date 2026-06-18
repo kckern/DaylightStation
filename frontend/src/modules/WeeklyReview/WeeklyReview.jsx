@@ -10,6 +10,7 @@ import RecordingBar from './components/RecordingBar.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
+import { withTimeout, TIMEOUT } from './hooks/withTimeout.js';
 import { modalReducer, initialModalState } from './state/modalReducer.js';
 import { viewReducer, initialViewState } from './state/viewReducer.js';
 import { resolveKey } from './state/keymap.js';
@@ -134,10 +135,13 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     try {
       uploaderFlushNow();
       if (sessionIdRef.current && data?.week) {
-        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
           sessionId: sessionIdRef.current, week: data.week, duration: recordingDuration,
-        }, 'POST');
-        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        }, 'POST'), 8000);
+        // Only drop the local draft if the server actually confirmed. On timeout
+        // keep it so mount-time recovery can finalize later.
+        if (res !== TIMEOUT) await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        else logger.warn('save-and-exit.finalize-timeout');
       }
     } catch (err) {
       logger.error('save-and-exit.finalize-failed', { error: err.message });
@@ -265,10 +269,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
       try {
         uploaderFlushNow();
-        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
           sessionId: sessionIdRef.current, week: data?.week, duration: recordingDuration,
-        }, 'POST');
-        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        }, 'POST'), 8000);
+        if (res !== TIMEOUT) await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        else logger.warn('disconnect.finalize-timeout');
         dispatchModal({ type: 'CLOSE' });
         onExitWidget();
       } catch (err) {
