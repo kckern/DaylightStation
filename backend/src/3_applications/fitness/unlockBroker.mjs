@@ -44,8 +44,9 @@ export function createUnlockBroker({
 
   function requestUnlock({ lockName, candidateUuids, timeoutMs: perCallTimeoutMs }) {
     const requestId = idFn();
-    // A per-call timeout (used by the always-armed emergency detector for a short
-    // re-arm window) overrides the broker default; omit it for normal unlocks.
+    // A per-call timeout (used by the always-armed emergency detector, whose arm
+    // window must cover the garage's full 15s capture) overrides the broker
+    // default; omit it for normal unlocks.
     const effectiveTimeoutMs = Number.isFinite(perCallTimeoutMs) ? perCallTimeoutMs : timeoutMs;
     return new Promise((resolve) => {
       const timer = setTimeoutFn(() => {

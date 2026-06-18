@@ -1699,6 +1699,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const emergencyArming = emergencyConfig.arming || {};
   const interArmIdleMs = Number.isFinite(Number(emergencyArming.inter_arm_idle_ms))
     ? Number(emergencyArming.inter_arm_idle_ms) : 1000;
+  // Per-arm scan window. Must exceed the garage reader's 15s capture window
+  // (+ WS round-trip) or a late finger-press returns after the broker timed out
+  // and is dropped. Undefined => the detector's 18s default. Set
+  // emergency.arming.arm_timeout_ms to override.
+  const emergencyArmTimeoutMs = Number.isFinite(Number(emergencyArming.arm_timeout_ms))
+    ? Number(emergencyArming.arm_timeout_ms) : undefined;
   const emergencyActiveHours = (emergencyArming.active_hours
     && Number.isFinite(Number(emergencyArming.active_hours.start))
     && Number.isFinite(Number(emergencyArming.active_hours.end)))
@@ -1711,6 +1717,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userService,
     isLocked: async () => !!(await getLockdownState.execute({ now: Math.floor(Date.now() / 1000) })),
     interArmIdleMs,
+    ...(emergencyArmTimeoutMs !== undefined ? { armTimeoutMs: emergencyArmTimeoutMs } : {}),
     activeHours: emergencyActiveHours,
     logger: emergencyLogger
   });
