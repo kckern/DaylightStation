@@ -37,6 +37,7 @@ export class FfmpegVideoAdapter extends IVideoEncoder {
 
   #run(args, { capture }) {
     return new Promise((resolve, reject) => {
+      this.#logger.debug?.('ffmpeg.spawn', { args: args.join(' ') });
       const proc = spawn('ffmpeg', args, { stdio: ['ignore', capture ? 'pipe' : 'ignore', 'pipe'] });
       const out = [];
       let stderr = '';
