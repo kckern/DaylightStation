@@ -1,5 +1,9 @@
 import express from 'express';
 import WebSocket from 'ws';
+import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
+import { unlink } from 'fs/promises';
+import { fileURLToPath } from 'url';
 import { ANTPlusManager } from './ant.mjs';
 import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
@@ -7,11 +11,60 @@ import { selectSimCandidate } from './unlockSim.mjs';
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
 // Hardware-free fingerprint unlock simulation mode. Unset (or any unrecognized
-// value) keeps the real-identify stub so the on-box helper can slot in later.
+// value) takes the REAL path: the on-box libfprint helper enrolls/identifies
+// against the physical reader.
 //   auto-match   → immediately reply matched:true (sim candidate / first)
 //   auto-deny    → immediately reply matched:false, reason:'sim-deny'
 //   interactive  → hold the request; a CLI resolves it via /fingerprint/* HTTP
 const FINGERPRINT_SIM = process.env.FINGERPRINT_SIM || '';
+const FINGERPRINT_SIM_ACTIVE = ['auto-match', 'auto-deny', 'interactive'].includes(FINGERPRINT_SIM);
+
+// On-box libfprint helper (sibling of this file) + its template store. The store
+// MUST be a persistent bind mount — otherwise enrolled .tpl templates vanish on
+// every container recreate. `--store` is a top-level helper arg (precedes the
+// subcommand). Both overridable via env for non-standard deployments.
+const FINGERPRINT_HELPER = process.env.FINGERPRINT_HELPER
+  || fileURLToPath(new URL('./fingerprint_helper.py', import.meta.url));
+const FINGERPRINT_STORE = process.env.FINGERPRINT_STORE || '/var/lib/daylight-unlock';
+
+// Spawn the python helper with a subcommand and resolve its single stdout JSON
+// object. Progress/prompts arrive on stderr; pass `onStderr` to stream them
+// (used to surface enroll capture stages). Rejects only when no JSON is parseable
+// (the helper prints `{error}` JSON + exits 1 on handled failures — that resolves).
+function runFingerprintHelper(args, { timeoutMs = 30000, onStderr } = {}) {
+  return new Promise((resolve, reject) => {
+    const fullArgs = [FINGERPRINT_HELPER, '--store', FINGERPRINT_STORE, ...args];
+    const child = spawn('python3', fullArgs);
+    let stdout = '';
+    let stderr = '';
+    let stderrLineBuf = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+
+    child.stdout.on('data', (d) => { stdout += d.toString(); });
+    child.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderr += text;
+      if (onStderr) {
+        stderrLineBuf += text;
+        const lines = stderrLineBuf.split('\n');
+        stderrLineBuf = lines.pop();
+        for (const line of lines) if (line.trim()) onStderr(line.trim());
+      }
+    });
+    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const out = stdout.trim();
+      let parsed = null;
+      if (out) {
+        const lastLine = out.split('\n').filter(Boolean).pop();
+        try { parsed = JSON.parse(lastLine); } catch { /* not JSON */ }
+      }
+      if (parsed) return resolve(parsed);
+      reject(new Error(`helper exited ${code}${stderr ? `: ${stderr.trim().split('\n').pop()}` : ''}`));
+    });
+  });
+}
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SERIAL_DEVICE = process.env.SERIAL_DEVICE || '/dev/ttyUSB0';
@@ -30,17 +83,22 @@ let reconnectInterval = null;
 // recent" pending request is the last entry.
 const pendingUnlockRequests = new Map();
 
-// Send a fitness.unlock.result over the WS, matching the Task 2.3 shape exactly.
+// Send a single bus message ({ topic, ...payload }) to the backend over the WS.
 // Deliberately NO `source: 'fitness'` key — that would make the backend
-// rebroadcast the message as fitness sensor data; the backend routes the result
-// purely on `topic`.
-function sendUnlockResult(result) {
+// rebroadcast the message as fitness sensor data; the backend routes purely on
+// `topic`. Used for unlock / enroll / delete results + enroll progress.
+function sendBus(topic, payload) {
   if (websocketClient && websocketClient.readyState === WebSocket.OPEN) {
-    websocketClient.send(JSON.stringify({ topic: 'fitness.unlock.result', ...result }));
+    websocketClient.send(JSON.stringify({ topic, ...payload }));
     return true;
   }
-  console.error(`❌ Cannot send unlock result for requestId=${result.requestId}: WebSocket not open`);
+  console.error(`❌ Cannot send ${topic} (requestId=${payload?.requestId}): WebSocket not open`);
   return false;
+}
+
+// fitness.unlock.result shape, matching Task 2.3 exactly.
+function sendUnlockResult(result) {
+  return sendBus('fitness.unlock.result', result);
 }
 
 // Broadcast function for fitness data
@@ -81,17 +139,15 @@ async function connectWebSocket() {
       reconnectInterval = null;
       reconnectAttempts = 0;
 
-      // Subscribe to fingerprint unlock requests. The backend bus topic-filters
-      // by subscription, so without this we'd never receive the request.
+      // Subscribe to the fingerprint request topics. The backend bus topic-filters
+      // by subscription, so without these we'd never receive the requests.
       try {
-        websocketClient.send(JSON.stringify({
-          type: 'bus_command',
-          action: 'subscribe',
-          topic: 'fitness.unlock.request'
-        }));
-        console.log('🔐 Subscribed to fitness.unlock.request');
+        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request']) {
+          websocketClient.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
+        }
+        console.log('🔐 Subscribed to unlock / enroll / delete request topics');
       } catch (error) {
-        console.error('❌ Failed to subscribe to unlock requests:', error.message);
+        console.error('❌ Failed to subscribe to fingerprint requests:', error.message);
       }
     });
 
@@ -105,10 +161,9 @@ async function connectWebSocket() {
       }
 
       // Fingerprint unlock request: the backend wants this box to identify a
-      // finger against the candidate uuids. The actual on-box identify call is
-      // a later hardware task. The FINGERPRINT_SIM env selects a hardware-free
-      // simulation path so the request/result round-trip is exercisable end to
-      // end without the physical reader.
+      // finger against the candidate uuids. The FINGERPRINT_SIM env selects a
+      // hardware-free simulation path; unset, the real on-box libfprint helper
+      // runs against the physical reader.
       if (message.topic === 'fitness.unlock.request') {
         const { requestId, lockName, candidateUuids } = message;
         const candidateCount = Array.isArray(candidateUuids) ? candidateUuids.length : 0;
@@ -142,11 +197,96 @@ async function connectWebSocket() {
           return;
         }
 
-        // TODO(Task 1.4): call host identify helper against candidateUuids and
-        // reply with { matched: true, userId } on a match. Until then, the
-        // default (unset FINGERPRINT_SIM) is the not-implemented stub.
-        sendUnlockResult({ requestId, matched: false, reason: 'not-implemented' });
-        console.log(`🔐 Unlock result sent (stub, matched=false) for requestId=${requestId}`);
+        // Real path: ask the on-box libfprint helper to identify a finger against
+        // the candidate templates. The matched template's username IS the uuid,
+        // which maps back to a user via candidateUuids.
+        const uuids = (Array.isArray(candidateUuids) ? candidateUuids : [])
+          .map((c) => c?.uuid)
+          .filter(Boolean);
+        if (uuids.length === 0) {
+          sendUnlockResult({ requestId, matched: false, reason: 'no-candidates' });
+          console.log(`🔐 Unlock result sent (no candidate uuids) for requestId=${requestId}`);
+          return;
+        }
+        console.log(`🔐 Identifying finger against ${uuids.length} template(s) for requestId=${requestId} …`);
+        runFingerprintHelper(['identify', '--uuids', uuids.join(','), '--timeout', '15'], { timeoutMs: 20000 })
+          .then((result) => {
+            if (result?.matched && result.uuid) {
+              const chosen = candidateUuids.find((c) => c?.uuid === result.uuid);
+              const userId = chosen?.username;
+              sendUnlockResult({ requestId, matched: true, userId, uuid: result.uuid });
+              console.log(`🔐 Unlock result sent (hardware match, user=${userId}, uuid=${result.uuid}) for requestId=${requestId}`);
+            } else {
+              const reason = result?.reason || 'no-match';
+              sendUnlockResult({ requestId, matched: false, reason });
+              console.log(`🔐 Unlock result sent (hardware, matched=false, reason=${reason}) for requestId=${requestId}`);
+            }
+          })
+          .catch((err) => {
+            sendUnlockResult({ requestId, matched: false, reason: 'identify-error' });
+            console.error(`❌ Unlock identify failed for requestId=${requestId}: ${err.message}`);
+          });
+        return;
+      }
+
+      // Enroll request: mint a fresh uuid, capture the finger (6 touches), persist
+      // a <uuid>.tpl, and reply with that uuid (the backend writes it to the user's
+      // profile.yml). Capture stages are streamed back as enroll progress.
+      if (message.topic === 'fitness.enroll.request') {
+        const { requestId, finger, username } = message;
+        const uuid = randomUUID();
+        console.log(`🔐 Enroll request (user=${username}, finger=${finger}, requestId=${requestId}, sim=${FINGERPRINT_SIM || 'off'})`);
+
+        if (FINGERPRINT_SIM_ACTIVE) {
+          // Hardware-free: skip the reader, return a fresh uuid as if enrolled.
+          sendBus('fitness.enroll.result', { requestId, success: true, uuid });
+          console.log(`🔐 Enroll result sent (sim, uuid=${uuid}) for requestId=${requestId}`);
+          return;
+        }
+
+        runFingerprintHelper(['enroll', '--uuid', uuid, '--finger', finger], {
+          timeoutMs: 120000,
+          onStderr: (line) => {
+            const m = line.match(/capture\s+(\d+)\/(\d+)/i);
+            if (m) sendBus('fitness.enroll.progress', { requestId, stage: Number(m[1]), stagesTotal: Number(m[2]) });
+          },
+        })
+          .then((result) => {
+            if (result?.enrolled) {
+              sendBus('fitness.enroll.result', { requestId, success: true, uuid });
+              console.log(`🔐 Enroll result sent (success, uuid=${uuid}) for requestId=${requestId}`);
+            } else {
+              sendBus('fitness.enroll.result', { requestId, success: false, error: result?.error || 'enroll-failed' });
+              console.log(`🔐 Enroll result sent (failed: ${result?.error || 'enroll-failed'}) for requestId=${requestId}`);
+            }
+          })
+          .catch((err) => {
+            sendBus('fitness.enroll.result', { requestId, success: false, error: err.message });
+            console.error(`❌ Enroll failed for requestId=${requestId}: ${err.message}`);
+          });
+        return;
+      }
+
+      // Delete request: remove the <uuid>.tpl template. Idempotent — a missing
+      // template still resolves success so the backend can prune the profile entry.
+      if (message.topic === 'fitness.fingerprint.delete.request') {
+        const { requestId, uuid } = message;
+        console.log(`🔐 Delete request (uuid=${uuid}, requestId=${requestId})`);
+        const path = `${FINGERPRINT_STORE}/${uuid}.tpl`;
+        unlink(path)
+          .then(() => {
+            sendBus('fitness.fingerprint.delete.result', { requestId, success: true });
+            console.log(`🔐 Delete result sent (removed, uuid=${uuid}) for requestId=${requestId}`);
+          })
+          .catch((err) => {
+            if (err.code === 'ENOENT') {
+              sendBus('fitness.fingerprint.delete.result', { requestId, success: true });
+              console.log(`🔐 Delete result sent (already absent, uuid=${uuid}) for requestId=${requestId}`);
+            } else {
+              sendBus('fitness.fingerprint.delete.result', { requestId, success: false, error: err.message });
+              console.error(`❌ Delete failed for uuid=${uuid}: ${err.message}`);
+            }
+          });
         return;
       }
     });

@@ -203,10 +203,32 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
     expect(queued[0].plex).toBe('202');
   });
 
-  it('keeps the locked episode inert (no affordance, no play) when skip_content is absent', async () => {
-    await renderShow(SEQUENTIAL_SHOW, SEQUENTIAL_CTX({}));
+  it('opens the unlock prompt when the locked episode body (thumbnail) is tapped, not just the lock icon', async () => {
+    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    const { container } = await renderShow(SEQUENTIAL_SHOW, SEQUENTIAL_CTX({ skip_content: ['test-user'] }));
+
+    // Tap the locked episode's thumbnail (Ep 2 = plex 202) — the whole grayed-out
+    // card is the unlock affordance now, not only the small lock glyph.
+    const lockedThumb = container.querySelector('[data-plex-id="202"]');
+    expect(lockedThumb).toBeTruthy();
+    await act(async () => { fireEvent.pointerDown(lockedThumb); });
+
+    expect(requestUnlock).toHaveBeenCalledWith('skip_content');
+    // Matched → that episode plays via the normal launch path.
+    await waitFor(() => expect(setFitnessPlayQueue).toHaveBeenCalled());
+    expect(setFitnessPlayQueue.mock.calls[0][0][0].plex).toBe('202');
+  });
+
+  it('keeps the locked episode inert (no affordance, tapping does nothing) when skip_content is absent', async () => {
+    const { container } = await renderShow(SEQUENTIAL_SHOW, SEQUENTIAL_CTX({}));
 
     expect(screen.queryByLabelText('Unlock episode')).toBeNull();
+
+    // Tapping the locked episode body must do nothing without an authorized lock.
+    const lockedThumb = container.querySelector('[data-plex-id="202"]');
+    expect(lockedThumb).toBeTruthy();
+    await act(async () => { fireEvent.pointerDown(lockedThumb); });
+
     expect(requestUnlock).not.toHaveBeenCalled();
     expect(setFitnessPlayQueue).not.toHaveBeenCalled();
   });

@@ -51,7 +51,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
 
   // A single unlock instance owned by the menu. `pendingLaunch` holds the
   // launch we must perform once a fingerprint matches.
-  const { requestUnlock, state: unlockState, reset } = useUnlock();
+  const { requestUnlock, state: unlockState, unlockedUser, reset } = useUnlock();
   const [pendingLaunch, setPendingLaunch] = useState(null); // { id, manifest, label }
 
   const performLaunch = useCallback((id, manifest) => {
@@ -175,6 +175,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
         open={!!pendingLaunch}
         state={unlockState}
         lockLabel={pendingLaunch?.label}
+        unlockedUser={unlockedUser}
         onCancel={closeUnlock}
       />
     </div>

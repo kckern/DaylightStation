@@ -47,11 +47,31 @@ describe('UnlockPrompt', () => {
     expect(screen.getByRole('button')).toHaveTextContent('Close');
   });
 
-  it('shows the granted state', () => {
-    render(
+  it('shows the granted state with the recognized user (avatar + name)', () => {
+    const { container } = render(
+      <UnlockPrompt
+        open
+        state="granted"
+        lockLabel="Dance Party"
+        unlockedUser={{ userId: 'kckern', name: 'KC Kern', avatarSrc: '/static/img/users/kckern' }}
+        onCancel={() => {}}
+      />
+    );
+    expect(screen.getByText('Access Granted')).toBeTruthy();
+    expect(screen.getByText('KC Kern')).toBeTruthy();
+    const avatar = container.querySelector('.unlock-prompt__avatar-img');
+    expect(avatar).toBeTruthy();
+    expect(avatar.getAttribute('src')).toBe('/static/img/users/kckern');
+  });
+
+  it('falls back to the generic avatar and omits the name when no user is resolved', () => {
+    const { container } = render(
       <UnlockPrompt open state="granted" lockLabel="Dance Party" onCancel={() => {}} />
     );
-    expect(screen.getByText('Unlocked')).toBeTruthy();
+    expect(screen.getByText('Access Granted')).toBeTruthy();
+    const avatar = container.querySelector('.unlock-prompt__avatar-img');
+    expect(avatar.getAttribute('src')).toBe('/media/static/img/users/user');
+    expect(container.querySelector('.unlock-prompt__user-name')).toBeNull();
   });
 
   describe('auto-dismiss timeout', () => {

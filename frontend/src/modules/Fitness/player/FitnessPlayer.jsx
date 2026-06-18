@@ -268,7 +268,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // lock — it is cleared when the next item starts (see effect below), so one
   // unlock cannot silently disable governance for the rest of the session.
   const [bypassActive, setBypassActive] = useState(false);
-  const { requestUnlock, state: unlockState, reset: resetUnlock } = useUnlock();
+  const { requestUnlock, state: unlockState, unlockedUser, reset: resetUnlock } = useUnlock();
   const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
 
   // GovernanceEngine is the sole authority for lock decisions (SSoT). Governance
@@ -1932,6 +1932,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         open={unlockPromptOpen}
         state={unlockState}
         lockLabel={currentItem?.title || currentItem?.label || 'Governed content'}
+        unlockedUser={unlockedUser}
         onCancel={closeGovernanceUnlock}
       />
       {/* HRSimTrigger moved to FitnessApp top level so it's visible across
