@@ -20,7 +20,14 @@
 
 import { resolveEmergencyCandidates } from './emergencyPolicy.mjs';
 
-const DEFAULT_ARM_TIMEOUT_MS = 8000;
+// Per-arm scan timeout. MUST exceed the garage reader's capture window
+// (`fingerprint_helper.py identify --timeout 15` = 15s) plus the WS round-trip,
+// or a real finger-press that lands late in that window returns *after* the
+// broker has already timed out and discarded the requestId — silently dropping
+// the match (the bug that made a pressed emergency finger do nothing). 18s gives
+// ~3s of slack over the 15s capture while staying under the garage helper's 20s
+// hard SIGTERM bound, so the reader still frees promptly for foreground unlocks.
+const DEFAULT_ARM_TIMEOUT_MS = 18000;
 const PENDING_TTL_MS = 30000;
 
 /**
@@ -31,7 +38,8 @@ const PENDING_TTL_MS = 30000;
  * @param {{ getProfile: Function }} deps.userService
  * @param {() => Promise<boolean>} deps.isLocked - true while a lockdown is committed
  * @param {() => number} [deps.clock] - injectable monotonic-ish clock (ms)
- * @param {number} [deps.armTimeoutMs] - per-arm scan timeout
+ * @param {number} [deps.armTimeoutMs] - per-arm scan timeout; must be >= the
+ *   garage capture window (15s) + round-trip or late presses are dropped
  * @param {number} [deps.idleDelayMs] - pause between checks while yielded/locked
  * @param {number} [deps.settleDelayMs] - pause after a detection to avoid re-capture
  * @param {number} [deps.pendingTtlMs] - how long a pending detection stays valid

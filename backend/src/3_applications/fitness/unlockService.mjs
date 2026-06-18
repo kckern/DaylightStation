@@ -104,7 +104,8 @@ export function initUnlockService({ eventBus, timeoutMs = DEFAULT_TIMEOUT_MS, lo
      * @param {string} lockName
      * @param {Array<{uuid: string, username: string}>|Array<string>} candidateUuids
      * @param {{ timeoutMs?: number }} [opts] - per-call timeout override (e.g. the
-     *   emergency detector's short re-arm window); omit for the default 15s.
+     *   emergency detector's arm window, which must cover the garage's 15s
+     *   capture); omit for the default 15s.
      * @returns {Promise<{matched: boolean, userId?: string, reason?: string}>}
      */
     requestUnlock(lockName, candidateUuids, opts = {}) {

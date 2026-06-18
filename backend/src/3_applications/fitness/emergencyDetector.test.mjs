@@ -244,6 +244,71 @@ test('interArmIdleMs inserts a gap between non-matched arms', async (t) => {
   assert.ok(armTimes[1] - armTimes[0] >= 30, `expected >=~40ms gap, got ${armTimes[1] - armTimes[0]}ms`);
 });
 
+test('default arm window covers the garage 15s capture (no per-call override)', async (t) => {
+  // Regression: an 8s arm window was shorter than the garage's `--timeout 15`
+  // capture, so a real press landing late returned after the broker had timed
+  // out → silently dropped. The default must exceed 15s (+ round-trip slack).
+  const seenTimeouts = [];
+  const unlockService = {
+    isForegroundActive: () => false,
+    requestUnlock: async (_lock, _candidates, opts) => {
+      seenTimeouts.push(opts?.timeoutMs);
+      await new Promise((r) => setTimeout(r, 5));
+      return { matched: false, reason: 'timeout' };
+    },
+  };
+  const detector = createEmergencyDetector({
+    unlockService,
+    eventBus: { broadcast: () => {} },
+    loadFitnessConfig: () => makeFitnessConfig(),
+    userService,
+    isLocked: async () => false,
+    idleDelayMs: 1,
+    settleDelayMs: 1,
+    // NOTE: armTimeoutMs intentionally NOT set — exercise the production default.
+  });
+  t.after(() => detector.stop());
+
+  detector.start();
+  await waitFor(() => seenTimeouts.length >= 1);
+  await detector.stop();
+
+  assert.ok(seenTimeouts.length >= 1, 'expected at least one arm');
+  assert.ok(
+    seenTimeouts[0] > 15000,
+    `default arm window must exceed the garage 15s capture, got ${seenTimeouts[0]}ms`,
+  );
+});
+
+test('respects an explicit armTimeoutMs override (config-driven)', async (t) => {
+  const seenTimeouts = [];
+  const unlockService = {
+    isForegroundActive: () => false,
+    requestUnlock: async (_lock, _candidates, opts) => {
+      seenTimeouts.push(opts?.timeoutMs);
+      await new Promise((r) => setTimeout(r, 5));
+      return { matched: false, reason: 'timeout' };
+    },
+  };
+  const detector = createEmergencyDetector({
+    unlockService,
+    eventBus: { broadcast: () => {} },
+    loadFitnessConfig: () => makeFitnessConfig(),
+    userService,
+    isLocked: async () => false,
+    idleDelayMs: 1,
+    settleDelayMs: 1,
+    armTimeoutMs: 21000,
+  });
+  t.after(() => detector.stop());
+
+  detector.start();
+  await waitFor(() => seenTimeouts.length >= 1);
+  await detector.stop();
+
+  assert.equal(seenTimeouts[0], 21000, 'explicit armTimeoutMs must be passed through to requestUnlock');
+});
+
 test('pending honors TTL: expired detection returns null', async (t) => {
   const broadcasts = [];
   const clock = makeClock();
