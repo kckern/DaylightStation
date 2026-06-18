@@ -145,13 +145,18 @@ describe('keymap — exit gate modal', () => {
     expect(resolveKey(gate(0, 'ArrowUp')).modal).toEqual([{ type: 'TOGGLE_FOCUS' }]);
   });
   it('Enter on "Keep going" closes; on "Save & end" closes + saveAndExit', () => {
-    expect(resolveKey(gate(0, 'Enter')).modal).toEqual([{ type: 'CLOSE' }]);
+    const keep = resolveKey(gate(0, 'Enter'));
+    expect(keep.modal).toEqual([{ type: 'CLOSE' }]);
+    expect(keep.intents).toEqual([]);
     const save = resolveKey(gate(1, 'Enter'));
     expect(save.modal).toEqual([{ type: 'CLOSE' }]);
     expect(save.intents).toEqual(['saveAndExit']);
   });
-  it('Back cancels (closes)', () => {
-    expect(resolveKey(gate(0, 'Escape')).modal).toEqual([{ type: 'CLOSE' }]);
+
+  it('Back on the gate confirms exit (mash-Back must escape)', () => {
+    const back = resolveKey(gate(0, 'Escape'));
+    expect(back.modal).toEqual([{ type: 'CLOSE' }]);
+    expect(back.intents).toEqual(['saveAndExit']);
   });
 });
 

@@ -27,7 +27,9 @@ export function resolveKey(input) {
       return out;
     }
     if (modalType === 'exitGate') {
-      if (isBack) { out.modal.push({ type: 'CLOSE' }); return out; }
+      // Second Back confirms exit — "mash Back to get out" must always work.
+      // saveAndExit stops the recorder, flushes, finalizes, and always exits.
+      if (isBack) { out.modal.push({ type: 'CLOSE' }); out.intents.push('saveAndExit'); return out; }
       if (isEnter) {
         out.modal.push({ type: 'CLOSE' });
         if (modalFocus === 1) out.intents.push('saveAndExit');
