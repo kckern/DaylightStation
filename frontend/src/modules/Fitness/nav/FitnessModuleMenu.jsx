@@ -3,7 +3,7 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import { listModules, getModuleManifest } from '../index';
 import useModuleStorage from '../player/useModuleStorage';
 import { useFitness } from '@/context/FitnessContext.jsx';
-import { useUnlock } from '../hooks/useUnlock.js';
+import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '../player/overlays/UnlockPrompt.jsx';
 import './FitnessModuleMenu.scss';
 import getLogger from '@/lib/logging/Logger.js';
@@ -51,7 +51,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
 
   // A single unlock instance owned by the menu. `pendingLaunch` holds the
   // launch we must perform once a fingerprint matches.
-  const { requestUnlock, state: unlockState, unlockedUser, reset } = useUnlock();
+  const { registerUnlock, unlockState, unlockedUser, clearUnlock } = useIdentity();
   const [pendingLaunch, setPendingLaunch] = useState(null); // { id, manifest, label }
 
   const performLaunch = useCallback((id, manifest) => {
@@ -70,19 +70,19 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
     const label = mod.name || mod.manifest?.name || mod.id;
     logger().info('module.locked_tap', { module: mod.id });
     setPendingLaunch({ id: mod.id, manifest: mod.manifest, label });
-    requestUnlock(mod.id).then((result) => {
+    registerUnlock(mod.id).then((result) => {
       if (result?.matched) {
         performLaunch(mod.id, mod.manifest);
       }
       // matched:false / denied — leave the prompt up showing the denied state;
       // the user dismisses via cancel/close which calls closeUnlock().
     });
-  }, [isLocked, performLaunch, requestUnlock, pendingLaunch]);
+  }, [isLocked, performLaunch, registerUnlock, pendingLaunch]);
 
   const closeUnlock = useCallback(() => {
     setPendingLaunch(null);
-    reset();
-  }, [reset]);
+    clearUnlock();
+  }, [clearUnlock]);
 
   useEffect(() => {
     const loadMenu = async () => {
