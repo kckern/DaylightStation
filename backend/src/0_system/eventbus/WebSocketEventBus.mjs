@@ -134,8 +134,17 @@ export class WebSocketEventBus {
       this.#logger.error?.('eventbus.server_error', { error: err.message });
     });
 
-    // Ping all clients every 30s to detect stale connections
+    // Keep connections alive on two channels every 30s:
+    //  - A protocol-level ping/pong for OUR stale detection (browser auto-pongs;
+    //    if no pong arrived since the last ping the connection is dead → terminate).
+    //  - An application-level `heartbeat` message so the CLIENT can detect liveness.
+    //    Browsers never surface protocol ping frames to JS, so the frontend's
+    //    `_lastMessageAt` watchdog (WebSocketService._startStaleCheck) only advances
+    //    on real onmessage events. Without this app-level beat, an idle client (no
+    //    broadcasts to consume) sees no traffic for >45s and force-closes a perfectly
+    //    healthy socket every ~60s. This heartbeat resets that watchdog.
     this.#pingInterval = setInterval(() => {
+      const beat = JSON.stringify({ type: 'heartbeat', ts: Date.now() });
       for (const [clientId, { ws }] of this.#clients) {
         if (ws._wsPongReceived === false) {
           // No pong since last ping — connection is stale
@@ -145,6 +154,7 @@ export class WebSocketEventBus {
         }
         ws._wsPongReceived = false;
         ws.ping();
+        if (ws.readyState === ws.OPEN) ws.send(beat);
       }
     }, 30000);
   }
