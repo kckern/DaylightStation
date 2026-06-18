@@ -9,10 +9,14 @@ export class TriggerEmergencyLockdown {
   }
   async execute({ lockedBy, durationSec, now }) {
     const state = LockdownState.create({ lockedBy, durationSec: durationSec ?? this.#defaultDurationSec, now });
-    await this.#repo.save(state);
+    // Fire HA FIRST, persist SECOND: the garage shutdown is the critical action.
+    // If the HA call throws (garage offline), we abort before persisting so we
+    // never end up "screen locked but garage still running" — the failure
+    // surfaces to the caller (500) and the kiosk falls back to normal.
     const entity = this.#scriptId.startsWith('script.') ? this.#scriptId : `script.${this.#scriptId}`;
     await this.#haGateway.callService('script', 'turn_on', { entity_id: entity });
     this.#logger.info?.('emergency.ha_fired', { entity });
+    await this.#repo.save(state);
     this.#eventBus.broadcast('fitness.emergency.locked', { lockedUntil: state.lockedUntil, lockedBy: state.lockedBy, lockedAt: state.lockedAt });
     this.#logger.info?.('emergency.locked', { lockedBy, until: state.lockedUntil });
     return state;
