@@ -21,6 +21,7 @@ stays parseable. Non-zero exit on hard errors (no device, capture failure).
 import argparse
 import json
 import os
+import signal
 import sys
 
 import gi
@@ -112,9 +113,22 @@ def cmd_identify(args):
         return
 
     ctx, dev = open_device()  # noqa: F841 — keep ctx referenced (GC guard)
-    cancellable = None
+
+    # One Cancellable drives BOTH the optional capture timeout AND preemption.
+    # A foreground unlock preempts an in-flight emergency scan by SIGTERM-killing
+    # this process; we integrate the signal into GLib's main loop (the global
+    # default context, which identify_sync iterates — the same context the
+    # capture timeout below already relies on) so the cancel interrupts the
+    # blocking scan and the `finally` closes the device cleanly. Without this, a
+    # bare kill skips close_sync and the reader stays claimed, so the next scan
+    # fails to open.
+    cancellable = Gio_new_cancellable()
     if args.timeout and args.timeout > 0:
-        cancellable = Gio_cancellable_with_timeout(args.timeout)
+        GLib.timeout_add_seconds(int(args.timeout), lambda: (cancellable.cancel(), False)[1])
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, sig,
+                             lambda *_: (cancellable.cancel(), False)[1])
+
     log('Place a finger on the reader …')
     try:
         matched, _scanned = dev.identify_sync(gallery, cancellable, None, None)
@@ -122,19 +136,17 @@ def cmd_identify(args):
         dev.close_sync()
 
     if matched is None:
-        print(json.dumps({'matched': False}))
+        print(json.dumps({'matched': False, 'reason': 'no-match'}))
         return
     # The uuid was stored as the print username at enroll time.
     print(json.dumps({'matched': True, 'uuid': matched.get_username()}))
 
 
-def Gio_cancellable_with_timeout(seconds):
-    # Lazy import so the common (no-timeout) path needs no Gio.
+def Gio_new_cancellable():
+    # Lazy import so paths that don't scan (enroll/list) need no Gio.
     gi.require_version('Gio', '2.0')
     from gi.repository import Gio
-    cancellable = Gio.Cancellable()
-    GLib.timeout_add_seconds(int(seconds), lambda: (cancellable.cancel(), False)[1])
-    return cancellable
+    return Gio.Cancellable()
 
 
 def cmd_list(args):
