@@ -1692,12 +1692,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }) : null;
   const releaseEmergencyLockdown = new ReleaseEmergencyLockdown({ repo: emergencyLockRepo, eventBus, logger: emergencyLogger });
   const getLockdownState = new GetLockdownState({ repo: emergencyLockRepo });
+  // Hardware hedge knobs (config-driven). Default: a small inter-arm idle gap so
+  // the reader isn't armed 100% of the time (and a normal unlock has a wider gap
+  // to claim it); active-hours gating is opt-in (null = armed 24/7 so a parent
+  // can trigger any time). Set emergency.arming.{inter_arm_idle_ms, active_hours}.
+  const emergencyArming = emergencyConfig.arming || {};
+  const interArmIdleMs = Number.isFinite(Number(emergencyArming.inter_arm_idle_ms))
+    ? Number(emergencyArming.inter_arm_idle_ms) : 1000;
+  const emergencyActiveHours = (emergencyArming.active_hours
+    && Number.isFinite(Number(emergencyArming.active_hours.start))
+    && Number.isFinite(Number(emergencyArming.active_hours.end)))
+    ? { start: Number(emergencyArming.active_hours.start), end: Number(emergencyArming.active_hours.end) }
+    : null;
   const emergencyDetector = createEmergencyDetector({
     unlockService: getUnlockService(),
     eventBus,
     loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
     userService,
     isLocked: async () => !!(await getLockdownState.execute({ now: Math.floor(Date.now() / 1000) })),
+    interArmIdleMs,
+    activeHours: emergencyActiveHours,
     logger: emergencyLogger
   });
   // The detector idle-loops harmlessly if no garage bridge is connected (every

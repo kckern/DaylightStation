@@ -163,6 +163,87 @@ test('no candidates: does not arm', async (t) => {
   await detector.stop();
 });
 
+test('activeHours gating: does not arm outside the configured window', async (t) => {
+  let calls = 0;
+  const unlockService = {
+    isForegroundActive: () => false,
+    requestUnlock: async () => { calls += 1; return { matched: false }; },
+  };
+  const detector = createEmergencyDetector({
+    unlockService,
+    eventBus: { broadcast: () => {} },
+    loadFitnessConfig: () => makeFitnessConfig(),
+    userService,
+    isLocked: async () => false,
+    idleDelayMs: 1,
+    settleDelayMs: 1,
+    armTimeoutMs: 5,
+    activeHours: { start: 6, end: 22 },
+    getHour: () => 3, // 3am → outside 6–22 window
+  });
+  t.after(() => detector.stop());
+
+  detector.start();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls, 0, 'must not arm outside active hours');
+  await detector.stop();
+});
+
+test('activeHours gating: arms inside the window (incl. overnight wrap)', async (t) => {
+  let calls = 0;
+  const unlockService = {
+    isForegroundActive: () => false,
+    requestUnlock: async () => { calls += 1; await new Promise((r) => setTimeout(r, 5)); return { matched: false }; },
+  };
+  // Overnight window 22:00–06:00; current hour 23 is inside.
+  const detector = createEmergencyDetector({
+    unlockService,
+    eventBus: { broadcast: () => {} },
+    loadFitnessConfig: () => makeFitnessConfig(),
+    userService,
+    isLocked: async () => false,
+    idleDelayMs: 1,
+    settleDelayMs: 1,
+    armTimeoutMs: 5,
+    activeHours: { start: 22, end: 6 },
+    getHour: () => 23,
+  });
+  t.after(() => detector.stop());
+
+  detector.start();
+  const armed = await waitFor(() => calls > 0);
+  assert.equal(armed, true, 'must arm inside the overnight window');
+  await detector.stop();
+});
+
+test('interArmIdleMs inserts a gap between non-matched arms', async (t) => {
+  const armTimes = [];
+  const unlockService = {
+    isForegroundActive: () => false,
+    requestUnlock: async () => { armTimes.push(Date.now()); await new Promise((r) => setTimeout(r, 2)); return { matched: false }; },
+  };
+  const detector = createEmergencyDetector({
+    unlockService,
+    eventBus: { broadcast: () => {} },
+    loadFitnessConfig: () => makeFitnessConfig(),
+    userService,
+    isLocked: async () => false,
+    idleDelayMs: 1,
+    settleDelayMs: 1,
+    armTimeoutMs: 5,
+    interArmIdleMs: 40,
+  });
+  t.after(() => detector.stop());
+
+  detector.start();
+  await waitFor(() => armTimes.length >= 2);
+  await detector.stop();
+  // With a 40ms inter-arm gap, consecutive arms are spaced clearly more than the
+  // ~2ms scan time — proves the gap is applied between re-arms.
+  assert.ok(armTimes.length >= 2, 'expected at least two arms');
+  assert.ok(armTimes[1] - armTimes[0] >= 30, `expected >=~40ms gap, got ${armTimes[1] - armTimes[0]}ms`);
+});
+
 test('pending honors TTL: expired detection returns null', async (t) => {
   const broadcasts = [];
   const clock = makeClock();
