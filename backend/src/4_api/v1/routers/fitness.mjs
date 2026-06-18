@@ -1400,10 +1400,16 @@ export function createFitnessRouter(config) {
     const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
     const candidates = resolveEmergencyCandidatesFn({ fitnessConfig, userService });
     const unlockService = resolveUnlockService?.();
-    if (!unlockService || candidates.length === 0) return { matched: false, reason: 'unavailable' };
+    if (!unlockService || candidates.length === 0) {
+      logger?.warn?.('emergency.scan_unavailable', { hasService: !!unlockService, candidates: candidates.length });
+      return { matched: false, reason: 'unavailable' };
+    }
+    logger?.info?.('emergency.scan_start', { candidates: candidates.length });
     unlockService.beginForeground?.();
     try {
-      return await unlockService.requestUnlock(EMERGENCY_LOCK, candidates);
+      const verdict = await unlockService.requestUnlock(EMERGENCY_LOCK, candidates);
+      logger?.info?.('emergency.scan_result', { matched: !!verdict?.matched, reason: verdict?.reason ?? null });
+      return verdict;
     } finally {
       unlockService.endForeground?.();
     }
@@ -1418,6 +1424,7 @@ export function createFitnessRouter(config) {
   router.get('/emergency', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const state = getLockdownState ? await getLockdownState.execute({ now }) : null;
+    logger?.debug?.('emergency.state_query', { locked: !!state, lockedUntil: state?.lockedUntil ?? null });
     res.json(state
       ? { locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy }
       : { locked: false });
@@ -1435,10 +1442,17 @@ export function createFitnessRouter(config) {
   router.post('/emergency/commit', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const pending = emergencyDetector?.consumePendingDetection?.(Date.now());
-    if (!pending) return res.status(409).json({ error: 'no-pending-detection' });
-    if (!triggerEmergencyLockdown) return res.status(503).json({ error: 'emergency-unavailable' });
+    if (!pending) {
+      logger?.warn?.('emergency.commit_rejected', { reason: 'no-pending-detection' });
+      return res.status(409).json({ error: 'no-pending-detection' });
+    }
+    if (!triggerEmergencyLockdown) {
+      logger?.warn?.('emergency.commit_rejected', { reason: 'unavailable', lockedBy: pending.userId });
+      return res.status(503).json({ error: 'emergency-unavailable' });
+    }
+    logger?.info?.('emergency.commit_accepted', { lockedBy: pending.userId });
     const state = await triggerEmergencyLockdown.execute({ lockedBy: pending.userId, now });
-    logger.info?.('emergency.committed', { lockedBy: pending.userId });
+    logger.info?.('emergency.committed', { lockedBy: pending.userId, lockedUntil: state.lockedUntil });
     res.json({ locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy });
   }));
 
@@ -1450,6 +1464,7 @@ export function createFitnessRouter(config) {
   router.post('/emergency/abort', asyncHandler(async (req, res) => {
     const verdict = await scanEmergency(req);
     if (verdict.matched) logger?.info?.('emergency.cancelled', { userId: verdict.userId });
+    else logger?.info?.('emergency.cancel_denied', { reason: verdict.reason ?? null });
     res.json({ confirmed: !!verdict.matched });
   }));
 
@@ -1462,7 +1477,10 @@ export function createFitnessRouter(config) {
   router.post('/emergency/release', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const verdict = await scanEmergency(req);
-    if (!verdict.matched) return res.json({ released: false });
+    if (!verdict.matched) {
+      logger?.info?.('emergency.release_denied', { reason: verdict.reason ?? null });
+      return res.json({ released: false });
+    }
     if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: verdict.userId, now });
     logger?.info?.('emergency.released', { userId: verdict.userId });
     res.json({ released: true });
