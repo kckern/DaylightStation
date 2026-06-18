@@ -19,6 +19,7 @@ Output: a single JSON object on stdout. Progress/prompts go to stderr so stdout
 stays parseable. Non-zero exit on hard errors (no device, capture failure).
 """
 import argparse
+import glob
 import json
 import os
 import signal
@@ -100,7 +101,15 @@ def cmd_enroll(args):
 
 
 def cmd_identify(args):
-    uuids = [u.strip() for u in (args.uuids or '').split(',') if u.strip()]
+    store = args.store
+    if args.uuids:
+        uuids = [u.strip() for u in args.uuids.split(',') if u.strip()]
+    else:
+        uuids = [os.path.splitext(os.path.basename(p))[0]
+                 for p in glob.glob(os.path.join(store, '*.tpl'))]
+    if not uuids:
+        print(json.dumps({'matched': False, 'reason': 'no-templates'}))
+        return 0
     gallery = []
     for u in uuids:
         path = os.path.join(args.store, u + '.tpl')
@@ -131,15 +140,23 @@ def cmd_identify(args):
 
     log('Place a finger on the reader …')
     try:
-        matched, _scanned = dev.identify_sync(gallery, cancellable, None, None)
+        try:
+            matched, _scanned = dev.identify_sync(gallery, cancellable, None, None)
+        except GLib.Error as e:
+            if cancellable.is_cancelled():
+                print(json.dumps({'matched': False, 'reason': 'cancelled'}))
+                return 0
+            print(json.dumps({'matched': False, 'reason': 'identify-error', 'error': str(e)}))
+            return 0
     finally:
         dev.close_sync()
 
     if matched is None:
         print(json.dumps({'matched': False, 'reason': 'no-match'}))
-        return
+        return 0
     # The uuid was stored as the print username at enroll time.
     print(json.dumps({'matched': True, 'uuid': matched.get_username()}))
+    return 0
 
 
 def Gio_new_cancellable():
@@ -174,7 +191,7 @@ def main():
     p_en.add_argument('--finger', required=True)
 
     p_id = sub.add_parser('identify')
-    p_id.add_argument('--uuids', required=True)
+    p_id.add_argument('--uuids', required=False, default=None)
     p_id.add_argument('--timeout', type=float, default=10.0)
 
     sub.add_parser('list')
