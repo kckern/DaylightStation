@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { ANTPlusManager } from './ant.mjs';
 import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
+import { createReaderArbiter } from './readerArbiter.mjs';
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
@@ -31,7 +32,7 @@ const FINGERPRINT_STORE = process.env.FINGERPRINT_STORE || '/var/lib/daylight-un
 // object. Progress/prompts arrive on stderr; pass `onStderr` to stream them
 // (used to surface enroll capture stages). Rejects only when no JSON is parseable
 // (the helper prints `{error}` JSON + exits 1 on handled failures — that resolves).
-function runFingerprintHelper(args, { timeoutMs = 30000, onStderr } = {}) {
+function runFingerprintHelper(args, { timeoutMs = 30000, onStderr, signal } = {}) {
   return new Promise((resolve, reject) => {
     const fullArgs = [FINGERPRINT_HELPER, '--store', FINGERPRINT_STORE, ...args];
     const child = spawn('python3', fullArgs);
@@ -39,6 +40,15 @@ function runFingerprintHelper(args, { timeoutMs = 30000, onStderr } = {}) {
     let stderr = '';
     let stderrLineBuf = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+
+    // Preemption: aborting kills the helper with SIGTERM. The helper catches it,
+    // cancels the libfprint scan, closes the reader cleanly, and exits — freeing
+    // the device for the preempting scan.
+    const onAbort = () => child.kill('SIGTERM');
+    if (signal) {
+      if (signal.aborted) child.kill('SIGTERM');
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => {
@@ -54,6 +64,7 @@ function runFingerprintHelper(args, { timeoutMs = 30000, onStderr } = {}) {
     child.on('error', (err) => { clearTimeout(timer); reject(err); });
     child.on('close', (code) => {
       clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
       const out = stdout.trim();
       let parsed = null;
       if (out) {
@@ -65,6 +76,27 @@ function runFingerprintHelper(args, { timeoutMs = 30000, onStderr } = {}) {
     });
   });
 }
+
+// Adapt the python identify helper to the arbiter's runScan contract. Resolves
+// to a uniform { matched, uuid?, reason? }; a preempt (aborted signal) maps to a
+// clean 'preempted' rather than a hard error.
+function runIdentifyScan(uuids, { signal }) {
+  return runFingerprintHelper(
+    ['identify', '--uuids', uuids.join(','), '--timeout', '15'],
+    { timeoutMs: 20000, signal },
+  )
+    .then((result) => (result?.matched && result.uuid
+      ? { matched: true, uuid: result.uuid }
+      : { matched: false, reason: result?.reason || 'no-match' }))
+    .catch((err) => (signal?.aborted
+      ? { matched: false, reason: 'preempted' }
+      : { matched: false, reason: 'identify-error', error: err.message }));
+}
+
+// The single owner of the physical reader. ALL real identify scans go through it
+// so an always-armed emergency scan and an on-demand foreground unlock never
+// fight over the device — a foreground request preempts an in-flight emergency.
+const readerArbiter = createReaderArbiter({ runScan: runIdentifyScan, logger: console });
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SERIAL_DEVICE = process.env.SERIAL_DEVICE || '/dev/ttyUSB0';
@@ -208,16 +240,20 @@ async function connectWebSocket() {
           console.log(`🔐 Unlock result sent (no candidate uuids) for requestId=${requestId}`);
           return;
         }
-        console.log(`🔐 Identifying finger against ${uuids.length} template(s) for requestId=${requestId} …`);
-        runFingerprintHelper(['identify', '--uuids', uuids.join(','), '--timeout', '15'], { timeoutMs: 20000 })
+        // A foreground unlock (any non-emergency lock) preempts an in-flight
+        // emergency scan; emergency / duplicate requests that arrive while the
+        // reader is busy come back as reader-busy and the backend re-arms.
+        const kind = lockName === 'emergency' ? 'emergency' : 'foreground';
+        console.log(`🔐 Submitting ${kind} identify against ${uuids.length} template(s) for requestId=${requestId} …`);
+        readerArbiter.submit({ kind, uuids })
           .then((result) => {
-            if (result?.matched && result.uuid) {
+            if (result.matched && result.uuid) {
               const chosen = candidateUuids.find((c) => c?.uuid === result.uuid);
               const userId = chosen?.username;
               sendUnlockResult({ requestId, matched: true, userId, uuid: result.uuid });
               console.log(`🔐 Unlock result sent (hardware match, user=${userId}, uuid=${result.uuid}) for requestId=${requestId}`);
             } else {
-              const reason = result?.reason || 'no-match';
+              const reason = result.reason || 'no-match';
               sendUnlockResult({ requestId, matched: false, reason });
               console.log(`🔐 Unlock result sent (hardware, matched=false, reason=${reason}) for requestId=${requestId}`);
             }
