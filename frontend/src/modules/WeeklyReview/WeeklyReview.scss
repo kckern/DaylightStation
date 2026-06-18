@@ -1222,3 +1222,28 @@
 }
 
 @keyframes wr-context-rise { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.weekly-review-legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2.6rem; // sits just above the recording bar
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0.4rem 1rem;
+  pointer-events: none;
+  font-size: 0.8rem;
+  color: #cfcfcf;
+  background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+
+  .legend-hint { display: inline-flex; align-items: center; gap: 0.4em; }
+  .legend-key {
+    background: rgba(255,255,255,0.15);
+    border-radius: 0.3em;
+    padding: 0.1em 0.5em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .legend-label { opacity: 0.85; }
+}

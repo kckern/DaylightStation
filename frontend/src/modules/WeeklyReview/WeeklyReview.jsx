@@ -7,6 +7,7 @@ import DayReel from './components/DayReel.jsx';
 import DayContextPanel from './components/DayContextPanel.jsx';
 import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
+import ControlLegend from './components/ControlLegend.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
@@ -581,6 +582,14 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         focusIndex={modal.focusIndex}
         onRetry={onPreflightRetry}
         onExit={onExitWidget}
+      />
+
+      <ControlLegend
+        level={view.level}
+        contextOpen={view.contextOpen}
+        mediaType={mediaCtx.currentType}
+        playing={view.playing}
+        modalType={modal.type}
       />
 
       <RecordingBar
