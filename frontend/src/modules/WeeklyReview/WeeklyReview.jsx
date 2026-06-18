@@ -8,6 +8,7 @@ import DayContextPanel from './components/DayContextPanel.jsx';
 import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
 import ControlLegend from './components/ControlLegend.jsx';
+import ConfirmOverlay from './components/ConfirmOverlay.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
@@ -483,18 +484,16 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     <div className="weekly-review">
       {/* Resume-draft overlay */}
       {modal.type === 'resumeDraft' && !isRecording && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-resume-label">
-            <div className="confirm-message" id="wr-resume-label">
-              A previous recording was not finalized.<br/>
-              <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
-              <button className="confirm-btn confirm-btn--continue" onClick={() => dispatchModal({ type: 'CLOSE' })}>Not now</button>
-            </div>
+        <ConfirmOverlay labelId="wr-resume-label">
+          <div className="confirm-message" id="wr-resume-label">
+            A previous recording was not finalized.<br/>
+            <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
           </div>
-        </div>
+          <div className="confirm-actions">
+            <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
+            <button className="confirm-btn confirm-btn--continue" onClick={() => dispatchModal({ type: 'CLOSE' })}>Not now</button>
+          </div>
+        </ConfirmOverlay>
       )}
 
       {/* Two-level surface: reel over grid */}
@@ -538,43 +537,37 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
       {/* Finalize-error dialog */}
       {modal.type === 'finalizeError' && !isRecording && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-error-label">
-            <div className="confirm-message" id="wr-error-label">
-              Save failed: {modal.payload}<br/>
-              <small>Your recording is safe — stored locally and on the server.</small>
-            </div>
-            <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Dismiss</button>
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onExitWidget}>Exit (save later)</button>
-            </div>
+        <ConfirmOverlay labelId="wr-error-label">
+          <div className="confirm-message" id="wr-error-label">
+            Save failed: {modal.payload}<br/>
+            <small>Your recording is safe — stored locally and on the server.</small>
           </div>
-        </div>
+          <div className="confirm-actions">
+            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Dismiss</button>
+            <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onExitWidget}>Exit (save later)</button>
+          </div>
+        </ConfirmOverlay>
       )}
 
       {/* Exit gate */}
       {modal.type === 'exitGate' && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-exit-label">
-            <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
-            <div className="confirm-actions">
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Keep going</button>
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>Save &amp; end</button>
-            </div>
+        <ConfirmOverlay labelId="wr-exit-label">
+          <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
+          <div className="confirm-actions">
+            <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Keep going</button>
+            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>Save &amp; end</button>
           </div>
-        </div>
+        </ConfirmOverlay>
       )}
 
       {/* Disconnect modal */}
       {modal.type === 'disconnect' && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-disc-label" aria-live="polite">
-            <div className="confirm-message" id="wr-disc-label">
-              {modal.payload?.phase === 'reconnecting' && (<>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>)}
-              {modal.payload?.phase === 'finalizing' && (<>Microphone disconnected.<br/><small>Saving your recording…</small></>)}
-            </div>
+        <ConfirmOverlay labelId="wr-disc-label" ariaLive="polite">
+          <div className="confirm-message" id="wr-disc-label">
+            {modal.payload?.phase === 'reconnecting' && (<>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>)}
+            {modal.payload?.phase === 'finalizing' && (<>Microphone disconnected.<br/><small>Saving your recording…</small></>)}
           </div>
-        </div>
+        </ConfirmOverlay>
       )}
 
       <PreFlightOverlay
