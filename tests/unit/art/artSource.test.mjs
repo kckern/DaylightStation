@@ -69,6 +69,77 @@ describe('createArtSource.resolveCandidates', () => {
   });
 });
 
+describe('createArtSource nested (sectioned) scopes', () => {
+  let nbase;
+  const nwrite = async (rel, content) => {
+    const p = path.join(nbase, rel);
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, content);
+  };
+
+  beforeAll(async () => {
+    nbase = await fs.mkdtemp(path.join(os.tmpdir(), 'artnest-'));
+    // A scope whose works live one level deeper, grouped into section folders
+    // (art/americana/<section>/<work>/), matching the curated Americana pool.
+    await nwrite('art/americana/military/Doolittle - 1775 - Lexington/a.jpg', 'x');
+    await nwrite('art/americana/military/Doolittle - 1775 - Lexington/metadata.yaml',
+      'title: Lexington\nartist: Amos Doolittle\ndate: 1775\nwidth: 1600\nheight: 1000\n');
+    await nwrite('art/americana/everyday/Homer - 1872 - Snap the Whip/b.jpg', 'x');
+    await nwrite('art/americana/everyday/Homer - 1872 - Snap the Whip/metadata.yaml',
+      'title: Snap the Whip\nartist: Winslow Homer\ndate: 1872\nwidth: 1600\nheight: 1000\n');
+    // A work sitting DIRECTLY under the scope (depth 1) must still be found
+    // alongside the nested ones — scopes may be mixed-depth.
+    await nwrite('art/americana/Stuart - 1796 - Washington/c.jpg', 'x');
+    await nwrite('art/americana/Stuart - 1796 - Washington/metadata.yaml',
+      'title: Washington\nartist: Gilbert Stuart\ndate: 1796\nwidth: 900\nheight: 1100\n');
+  });
+  afterAll(async () => { await fs.rm(nbase, { recursive: true, force: true }); });
+
+  const src = () => createArtSource({ imgBasePath: nbase });
+
+  it('discovers nested works one section level deep, plus depth-1 works', async () => {
+    const c = await src().resolveCandidates({ folder: 'americana' });
+    expect(c.map((x) => x.id).sort()).toEqual([
+      'Stuart - 1796 - Washington',
+      'everyday/Homer - 1872 - Snap the Whip',
+      'military/Doolittle - 1775 - Lexington',
+    ]);
+  });
+
+  it('builds a media URL that includes the section path', async () => {
+    const c = await src().resolveCandidates({ folder: 'americana' });
+    const lex = c.find((x) => x.id.endsWith('Lexington'));
+    expect(lex.image).toBe(
+      '/media/img/art/americana/military/Doolittle%20-%201775%20-%20Lexington/a.jpg');
+  });
+
+  it('exposes the section name on meta for collection filtering', async () => {
+    const c = await src().resolveCandidates({ folder: 'americana' });
+    const lex = c.find((x) => x.id.endsWith('Lexington'));
+    const wash = c.find((x) => x.id.endsWith('Washington'));
+    expect(lex.meta.section).toBe('military');
+    expect(wash.meta.section).toBe(null);  // depth-1 work has no section
+  });
+
+  it('scopes to a single section via the section predicate', async () => {
+    const c = await src().resolveCandidates({ folder: 'americana', section: 'military' });
+    expect(c.map((x) => x.id)).toEqual(['military/Doolittle - 1775 - Lexington']);
+  });
+
+  it('self-heals when a work is added inside an existing section', async () => {
+    const s = src();
+    await s.resolveCandidates({ folder: 'americana' });        // prime cache
+    await nwrite('art/americana/military/Trumbull - 1820 - Declaration/d.jpg', 'x');
+    await nwrite('art/americana/military/Trumbull - 1820 - Declaration/metadata.yaml',
+      'title: Declaration\nartist: John Trumbull\ndate: 1820\nwidth: 1600\nheight: 1000\n');
+    const after = await s.resolveCandidates({ folder: 'americana', section: 'military' });
+    expect(after.map((x) => x.id).sort()).toEqual([
+      'military/Doolittle - 1775 - Lexington',
+      'military/Trumbull - 1820 - Declaration',
+    ]);
+  });
+});
+
 describe('createArtSource scope cache', () => {
   let cbase;
   const cwrite = async (rel, content) => {

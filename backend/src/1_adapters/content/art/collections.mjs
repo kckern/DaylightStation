@@ -16,7 +16,9 @@ const includesCI = (hay, needle) =>
 // Date filters exclude entries with an unparseable year. Field filters are
 // case-insensitive substring matches. `works` restricts to exact folder names.
 export function buildArtPredicate(def = {}) {
-  const FIELDS = ['origin', 'medium', 'artist', 'department', 'category', 'display'];
+  // `section` = the thematic subdir under a sectioned scope (art/<scope>/<section>/<work>/),
+  // surfaced by artSource as meta.section; lets a collection scope to one section.
+  const FIELDS = ['origin', 'medium', 'artist', 'department', 'category', 'display', 'section'];
   return (entry) => {
     const meta = entry?.meta || {};
     if (def.dateMin != null || def.dateMax != null) {

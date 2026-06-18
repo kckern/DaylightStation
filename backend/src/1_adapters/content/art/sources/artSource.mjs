@@ -30,8 +30,17 @@ export function createArtSource({ imgBasePath, logger = console }) {
   const scanCache = new Map();   // scopeDir → { mtimeMs, entries }
 
   async function readMeta(dir) {
+    let raw;
     try {
-      const raw = await fs.readFile(path.join(dir, 'metadata.yaml'), 'utf-8');
+      raw = await fs.readFile(path.join(dir, 'metadata.yaml'), 'utf-8');
+    } catch (err) {
+      // No metadata.yaml here. With sectioned scopes (art/<scope>/<section>/<work>/)
+      // a missing file just means "this dir is a section, not a work" — that is
+      // normal, so stay quiet on ENOENT and let the caller recurse one level.
+      if (err.code !== 'ENOENT') logger.warn?.('art.metadata.unreadable', { dir, error: err.message });
+      return null;
+    }
+    try {
       const p = yaml.load(raw) || {};
       return {
         title: p.title ?? null, artist: p.artist ?? null,
@@ -42,7 +51,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
         width: toInt(p.width), height: toInt(p.height),
       };
     } catch (err) {
-      logger.warn?.('art.metadata.missing', { dir, error: err.message });
+      logger.warn?.('art.metadata.invalid', { dir, error: err.message });
       return null;
     }
   }
@@ -54,8 +63,49 @@ export function createArtSource({ imgBasePath, logger = console }) {
     ) || null;
   }
 
+  // Read one work folder (given relative to scope) into a raw entry, or null if
+  // it isn't a valid work — no metadata, missing dimensions, panoramic, or no
+  // image. `section` is the immediate parent folder under the scope (null for a
+  // depth-1 work) and is surfaced as meta.section so collections can scope to a
+  // thematic subdir without colliding with metadata.yaml's medium-derived
+  // `category` field.
+  async function readWork(scope, scopeDir, relFolder, section = null) {
+    const dir = path.join(scopeDir, relFolder);
+    const meta = await readMeta(dir);
+    if (!meta || !meta.width || !meta.height) return null;
+    const ratio = meta.width / meta.height;
+    if (ratio > MAX_RATIO) return null;                      // panoramic excluded
+    const imageFile = await findImageFile(dir);
+    if (!imageFile) { logger.warn?.('art.image.missing', { folder: relFolder }); return null; }
+    const kind = ratio >= PORTRAIT_RATIO ? 'landscape' : 'portrait';
+    return {
+      folder: relFolder,                                     // unique id; may include the section path
+      kind,
+      meta: { ...meta, section },                            // predicate reads category/display/section
+      image: `/media/img/${encodeSegments(`${scope}/${relFolder}/${imageFile}`)}`,
+      localPath: path.join(dir, imageFile),
+    };
+  }
+
+  // True when every cached section subdir still has its recorded mtime. A work
+  // added/removed inside a section bumps that section's mtime but NOT the parent
+  // scope's, so the scope-mtime check alone would miss it — re-verify the few
+  // section dirs (flat scopes have none, so this is a no-op there).
+  async function sectionsUnchanged(sections) {
+    for (const [dir, mtimeMs] of sections) {
+      try {
+        const s = await fs.stat(dir);
+        if (s.mtimeMs !== mtimeMs) return false;
+      } catch { return false; }                              // section vanished → rescan
+    }
+    return true;
+  }
+
   // Scan a scope directory into raw per-folder entries (meta + image + kind),
-  // before any collection predicate. Cached by scopeDir mtime.
+  // before any collection predicate. Scopes may be flat (art/<scope>/<work>/) or
+  // sectioned (art/<scope>/<section>/<work>/); a direct child is treated as a
+  // work when it carries metadata.yaml, otherwise as a section to recurse into
+  // one level. Cached by scopeDir mtime plus the mtimes of discovered sections.
   async function scanScope(scope, scopeDir) {
     let stat;
     try {
@@ -65,30 +115,31 @@ export function createArtSource({ imgBasePath, logger = console }) {
       return [];
     }
     const cached = scanCache.get(scopeDir);
-    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.entries;
+    if (cached && cached.mtimeMs === stat.mtimeMs && await sectionsUnchanged(cached.sections)) {
+      return cached.entries;
+    }
 
     const dirents = await fs.readdir(scopeDir, { withFileTypes: true });
-    const folders = dirents.filter((e) => e.isDirectory()).map((e) => e.name);
+    const childDirs = dirents.filter((e) => e.isDirectory()).map((e) => e.name);
     const entries = [];
-    for (const folder of folders) {
-      const dir = path.join(scopeDir, folder);
-      const meta = await readMeta(dir);
-      if (!meta || !meta.width || !meta.height) continue;
-      const ratio = meta.width / meta.height;
-      if (ratio > MAX_RATIO) continue;                       // panoramic excluded
-      const imageFile = await findImageFile(dir);
-      if (!imageFile) { logger.warn?.('art.image.missing', { folder }); continue; }
-      const kind = ratio >= PORTRAIT_RATIO ? 'landscape' : 'portrait';
-      entries.push({
-        folder,
-        meta,                                                 // full meta (predicate reads category/display)
-        kind,
-        image: `/media/img/${encodeSegments(`${scope}/${folder}/${imageFile}`)}`,
-        localPath: path.join(dir, imageFile),
-      });
+    const sections = new Map();                              // sectionDir → mtimeMs
+    for (const child of childDirs) {
+      const work = await readWork(scope, scopeDir, child);   // depth-1 work?
+      if (work) { entries.push(work); continue; }
+      // Not a work → treat as a section folder and scan its works one level down.
+      const childDir = path.join(scopeDir, child);
+      let subDirents;
+      try {
+        subDirents = await fs.readdir(childDir, { withFileTypes: true });
+      } catch { continue; }
+      try { sections.set(childDir, (await fs.stat(childDir)).mtimeMs); } catch { /* skip */ }
+      for (const sub of subDirents.filter((e) => e.isDirectory()).map((e) => e.name)) {
+        const nested = await readWork(scope, scopeDir, path.join(child, sub), child);
+        if (nested) entries.push(nested);
+      }
     }
-    scanCache.set(scopeDir, { mtimeMs: stat.mtimeMs, entries });
-    logger.info?.('art.source.scanned', { scope, count: entries.length });
+    scanCache.set(scopeDir, { mtimeMs: stat.mtimeMs, sections, entries });
+    logger.info?.('art.source.scanned', { scope, count: entries.length, sections: sections.size });
     return entries;
   }
 
@@ -110,6 +161,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
           title: meta.title, artist: meta.artist, date: meta.date,
           origin: meta.origin, medium: meta.medium,
           department: meta.department, credit: meta.credit,
+          section: meta.section ?? null,
           // width/height feed the frontend artLayout aspect-ratio math.
           width: meta.width, height: meta.height,
         },
