@@ -490,6 +490,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
             </div>
             <div className="confirm-actions">
               <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
+              <button className="confirm-btn confirm-btn--continue" onClick={() => dispatchModal({ type: 'CLOSE' })}>Not now</button>
             </div>
           </div>
         </div>
@@ -543,9 +544,8 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
               <small>Your recording is safe — stored locally and on the server.</small>
             </div>
             <div className="confirm-actions">
-              {/* Remote-driven: the keymap dispatches CLOSE / exitWidget; buttons are visual focus indicators. */}
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`}>Dismiss</button>
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`}>Exit (save later)</button>
+              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Dismiss</button>
+              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onExitWidget}>Exit (save later)</button>
             </div>
           </div>
         </div>
@@ -557,9 +557,8 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-exit-label">
             <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
             <div className="confirm-actions">
-              {/* Remote-driven: the keymap dispatches CLOSE / saveAndExit; buttons are visual focus indicators. */}
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}>Keep going</button>
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}>Save &amp; end</button>
+              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Keep going</button>
+              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>Save &amp; end</button>
             </div>
           </div>
         </div>
