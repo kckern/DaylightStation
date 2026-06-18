@@ -109,7 +109,7 @@ function runContinuousIdentify({ signal }) {
 // The single owner of the physical reader. ALL real identify scans go through it
 // so an always-armed emergency scan and an on-demand foreground unlock never
 // fight over the device — a foreground request preempts an in-flight emergency.
-const readerArbiter = createReaderArbiter({ runScan: runIdentifyScan, logger: console });
+const readerArbiter = createReaderArbiter({ logger: console });
 
 // Continuous biometric scanner: the default owner of the reader. Loops a blocking
 // full-store identify through the arbiter and broadcasts one biometric.scan per
@@ -207,7 +207,7 @@ async function connectWebSocket() {
       }
     });
 
-    websocketClient.on('message', (data) => {
+    websocketClient.on('message', async (data) => {
       let message;
       try {
         message = JSON.parse(data);
@@ -264,28 +264,33 @@ async function connectWebSocket() {
           console.log(`🔐 Unlock result sent (no candidate uuids) for requestId=${requestId}`);
           return;
         }
-        // A foreground unlock (any non-emergency lock) preempts an in-flight
-        // emergency scan; emergency / duplicate requests that arrive while the
-        // reader is busy come back as reader-busy and the backend re-arms.
-        const kind = lockName === 'emergency' ? 'emergency' : 'foreground';
-        console.log(`🔐 Submitting ${kind} identify against ${uuids.length} template(s) for requestId=${requestId} …`);
-        readerArbiter.submit({ kind, uuids })
-          .then((result) => {
-            if (result.matched && result.uuid) {
-              const chosen = candidateUuids.find((c) => c?.uuid === result.uuid);
-              const userId = chosen?.username;
-              sendUnlockResult({ requestId, matched: true, userId, uuid: result.uuid });
-              console.log(`🔐 Unlock result sent (hardware match, user=${userId}, uuid=${result.uuid}) for requestId=${requestId}`);
-            } else {
-              const reason = result.reason || 'no-match';
-              sendUnlockResult({ requestId, matched: false, reason });
-              console.log(`🔐 Unlock result sent (hardware, matched=false, reason=${reason}) for requestId=${requestId}`);
-            }
-          })
-          .catch((err) => {
-            sendUnlockResult({ requestId, matched: false, reason: 'identify-error' });
-            console.error(`❌ Unlock identify failed for requestId=${requestId}: ${err.message}`);
-          });
+        // Real reader path — only manage-auth uses fitness.unlock.request now.
+        // It runs as arbiter kind 'manage', preempting the continuous scan loop;
+        // if the reader is busy with a higher-priority op it comes back reader-busy
+        // and the backend re-arms. (dance_party/governance/emergency unlocks now
+        // ride the continuous loop's biometric.scan, not this request topic.)
+        console.log(`🔐 Submitting manage identify against ${uuids.length} template(s) for requestId=${requestId} …`);
+        const arb = await readerArbiter.run({
+          kind: 'manage',
+          preempts: ['scan'],
+          exec: ({ signal }) => runIdentifyScan(uuids, { signal }),
+        });
+        if (!arb.ok) {
+          sendUnlockResult({ requestId, matched: false, reason: 'reader-busy' });
+          console.log(`🔐 Unlock result sent (reader-busy) for requestId=${requestId}`);
+          return;
+        }
+        const result = arb.value;
+        if (result.matched && result.uuid) {
+          const chosen = candidateUuids.find((c) => c?.uuid === result.uuid);
+          const userId = chosen?.username;
+          sendUnlockResult({ requestId, matched: true, userId, uuid: result.uuid });
+          console.log(`🔐 Unlock result sent (hardware match, user=${userId}, uuid=${result.uuid}) for requestId=${requestId}`);
+        } else {
+          const reason = result.reason || 'no-match';
+          sendUnlockResult({ requestId, matched: false, reason });
+          console.log(`🔐 Unlock result sent (hardware, matched=false, reason=${reason}) for requestId=${requestId}`);
+        }
         return;
       }
 
@@ -304,26 +309,36 @@ async function connectWebSocket() {
           return;
         }
 
-        runFingerprintHelper(['enroll', '--uuid', uuid, '--finger', finger], {
-          timeoutMs: 120000,
-          onStderr: (line) => {
-            const m = line.match(/capture\s+(\d+)\/(\d+)/i);
-            if (m) sendBus('fitness.enroll.progress', { requestId, stage: Number(m[1]), stagesTotal: Number(m[2]) });
-          },
-        })
-          .then((result) => {
-            if (result?.enrolled) {
-              sendBus('fitness.enroll.result', { requestId, success: true, uuid });
-              console.log(`🔐 Enroll result sent (success, uuid=${uuid}) for requestId=${requestId}`);
-            } else {
-              sendBus('fitness.enroll.result', { requestId, success: false, error: result?.error || 'enroll-failed' });
-              console.log(`🔐 Enroll result sent (failed: ${result?.error || 'enroll-failed'}) for requestId=${requestId}`);
-            }
-          })
-          .catch((err) => {
-            sendBus('fitness.enroll.result', { requestId, success: false, error: err.message });
-            console.error(`❌ Enroll failed for requestId=${requestId}: ${err.message}`);
-          });
+        // Enroll preempts the continuous scan loop (kind 'enroll', preempts ['scan']):
+        // it takes the reader from the loop, captures the finger, then the loop resumes.
+        const arb = await readerArbiter.run({
+          kind: 'enroll',
+          preempts: ['scan'],
+          exec: ({ signal }) => runFingerprintHelper(
+            ['enroll', '--uuid', uuid, '--finger', finger],
+            {
+              timeoutMs: 120000,
+              signal,
+              onStderr: (line) => {
+                const m = line.match(/capture\s+(\d+)\/(\d+)/i);
+                if (m) sendBus('fitness.enroll.progress', { requestId, stage: Number(m[1]), stagesTotal: Number(m[2]) });
+              },
+            },
+          ),
+        });
+        if (!arb.ok) {
+          sendBus('fitness.enroll.result', { requestId, success: false, error: 'reader-busy' });
+          console.log(`🔐 Enroll result sent (reader-busy) for requestId=${requestId}`);
+          return;
+        }
+        const result = arb.value;
+        if (result?.enrolled) {
+          sendBus('fitness.enroll.result', { requestId, success: true, uuid });
+          console.log(`🔐 Enroll result sent (success, uuid=${uuid}) for requestId=${requestId}`);
+        } else {
+          sendBus('fitness.enroll.result', { requestId, success: false, error: result?.error || 'enroll-failed' });
+          console.log(`🔐 Enroll result sent (failed: ${result?.error || 'enroll-failed'}) for requestId=${requestId}`);
+        }
         return;
       }
 
