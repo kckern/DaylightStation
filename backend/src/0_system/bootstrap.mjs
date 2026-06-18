@@ -1018,7 +1018,7 @@ export function createFitnessApiRouter(config) {
     triggerEmergencyLockdown = null,
     releaseEmergencyLockdown = null,
     getLockdownState = null,
-    emergencyDetector = null,
+    identityRelay = null,
     logger = console
   } = config;
 
@@ -1139,7 +1139,7 @@ export function createFitnessApiRouter(config) {
     triggerEmergencyLockdown,
     releaseEmergencyLockdown,
     getLockdownState,
-    emergencyDetector,
+    identityRelay,
     logger
   });
 }

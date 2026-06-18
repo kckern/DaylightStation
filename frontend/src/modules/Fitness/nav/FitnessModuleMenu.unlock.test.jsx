@@ -24,7 +24,11 @@ vi.mock('@/lib/api.mjs', () => ({
         ]
       }
     }
-  }))
+  })),
+  // UnlockPrompt (imported by the menu) resolves a denied-avatar via this helper.
+  DaylightMediaPath: (p) => p,
+  ContentDisplayUrl: (id) => `display:${id}`,
+  normalizeImageUrl: (u) => u || ''
 }));
 
 // Module registry: only resolve the dance_party manifest so the card renders.
@@ -40,12 +44,13 @@ vi.mock('../player/useModuleStorage', () => ({
   default: () => ({ clearAll: vi.fn() })
 }));
 
-// Control the unlock hook: tests drive state + requestUnlock resolution.
-const requestUnlock = vi.fn();
-const reset = vi.fn();
+// Control the unlock surface: tests drive state + registerUnlock resolution.
+const registerUnlock = vi.fn();
+const clearUnlock = vi.fn();
 let unlockState = 'idle';
-vi.mock('@/modules/Fitness/hooks/useUnlock.js', () => ({
-  useUnlock: () => ({ requestUnlock, reset, state: unlockState, activeLock: null })
+vi.mock('@/modules/Fitness/identity/IdentityProvider', () => ({
+  __esModule: true,
+  useIdentity: () => ({ registerUnlock, clearUnlock, unlockState, unlockedUser: null, activeLock: null }),
 }));
 
 import FitnessModuleMenu from './FitnessModuleMenu.jsx';
@@ -71,7 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   unlockState = 'idle';
   onModuleSelect = vi.fn();
-  requestUnlock.mockResolvedValue({ matched: false, reason: 'denied' });
+  registerUnlock.mockResolvedValue({ matched: false, reason: 'denied' });
 });
 
 describe('FitnessModuleMenu — Dance Party unlock gate', () => {
@@ -83,14 +88,14 @@ describe('FitnessModuleMenu — Dance Party unlock gate', () => {
     await act(async () => { fireEvent.pointerDown(card); });
 
     // Prompt is shown, launch is gated.
-    expect(requestUnlock).toHaveBeenCalledWith('dance_party');
+    expect(registerUnlock).toHaveBeenCalledWith('dance_party');
     expect(screen.getByRole('dialog', { name: /fingerprint unlock/i })).toBeTruthy();
     expect(onModuleSelect).not.toHaveBeenCalled();
   });
 
   it('performs the original launch when the fingerprint matches', async () => {
     mockCtx = LOCKED_CTX;
-    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    registerUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
     await renderMenu();
 
     const card = screen.getByText('Dance Party').closest('button');
@@ -116,7 +121,7 @@ describe('FitnessModuleMenu — Dance Party unlock gate', () => {
     const cancelBtn = dialog.querySelector('button');
     await act(async () => { fireEvent.pointerDown(cancelBtn); fireEvent.click(cancelBtn); });
 
-    expect(reset).toHaveBeenCalled();
+    expect(clearUnlock).toHaveBeenCalled();
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: /fingerprint unlock/i })).toBeNull()
     );
@@ -127,16 +132,16 @@ describe('FitnessModuleMenu — Dance Party unlock gate', () => {
     mockCtx = LOCKED_CTX;
     // First request stays in-flight so the prompt remains open.
     let resolveFirst;
-    requestUnlock.mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }));
+    registerUnlock.mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }));
     await renderMenu();
 
     const card = screen.getByText('Dance Party').closest('button');
     await act(async () => { fireEvent.pointerDown(card); });
-    expect(requestUnlock).toHaveBeenCalledTimes(1);
+    expect(registerUnlock).toHaveBeenCalledTimes(1);
 
     // Tapping again (prompt open) must NOT fire a second request.
     await act(async () => { fireEvent.pointerDown(card); });
-    expect(requestUnlock).toHaveBeenCalledTimes(1);
+    expect(registerUnlock).toHaveBeenCalledTimes(1);
 
     await act(async () => { resolveFirst({ matched: false, reason: 'denied' }); });
   });
@@ -152,7 +157,7 @@ describe('FitnessModuleMenu — Dance Party unlock gate', () => {
       'dance_party',
       expect.objectContaining({ id: 'dance_party' })
     );
-    expect(requestUnlock).not.toHaveBeenCalled();
+    expect(registerUnlock).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: /fingerprint unlock/i })).toBeNull();
   });
 });

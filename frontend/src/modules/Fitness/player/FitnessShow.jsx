@@ -6,7 +6,7 @@ import { useFitness } from '@/context/FitnessContext.jsx';
 import moment from 'moment';
 import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeasons.js';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
-import { useUnlock } from '@/modules/Fitness/hooks/useUnlock.js';
+import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -267,7 +267,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   // One unlock instance owned by FitnessShow. `pendingUnlock` describes the action
   // to perform when a fingerprint matches; null means no prompt is open. Mirrors the
   // hook+prompt+pendingLaunch wiring from FitnessModuleMenu (Task 4.1).
-  const { requestUnlock, state: unlockState, unlockedUser, reset: resetUnlock } = useUnlock();
+  const { registerUnlock, unlockState, unlockedUser, clearUnlock } = useIdentity();
   const [pendingUnlock, setPendingUnlock] = useState(null); // { lock, label, episode? }
 
   // Once a governance_bypass fingerprint matches, episodes launched from this show
@@ -276,8 +276,8 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
 
   const closeUnlock = useCallback(() => {
     setPendingUnlock(null);
-    resetUnlock();
-  }, [resetUnlock]);
+    clearUnlock();
+  }, [clearUnlock]);
 
   // FitnessShow is rendered WITHOUT a key (FitnessApp), so navigating between
   // shows reuses this same instance instead of remounting. Reset all unlock state
@@ -290,8 +290,8 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     showIdRef.current = showId;
     setGovernanceBypassed(false);
     setPendingUnlock(null);
-    resetUnlock();
-  }, [showId, resetUnlock]);
+    clearUnlock();
+  }, [showId, clearUnlock]);
 
   const fetchShowData = useCallback(async () => {
     if (!showId) {
@@ -738,7 +738,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     const logger = getLogger().child({ component: 'FitnessShow' });
     logger.info('fitness.show.unlock_tap', { lock: 'governance_bypass', show: info?.title });
     setPendingUnlock({ lock: 'governance_bypass', label: info?.title || 'Governed content' });
-    requestUnlock('governance_bypass').then((result) => {
+    registerUnlock('governance_bypass').then((result) => {
       if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
       if (result?.matched) {
         logger.info('fitness.show.governance_bypassed', { show: info?.title, userId: result.userId });
@@ -759,7 +759,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     const logger = getLogger().child({ component: 'FitnessShow' });
     logger.info('fitness.show.unlock_tap', { lock: 'skip_content', episode: episode?.plex || episode?.id });
     setPendingUnlock({ lock: 'skip_content', label: episode?.label || 'Locked episode', episode });
-    requestUnlock('skip_content').then((result) => {
+    registerUnlock('skip_content').then((result) => {
       if (showIdRef.current !== reqShowId) return; // show changed mid-scan — abort
       if (result?.matched) {
         logger.info('fitness.show.skip_content_granted', { episode: episode?.plex || episode?.id, userId: result.userId });

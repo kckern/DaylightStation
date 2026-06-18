@@ -39,8 +39,6 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
-import { resolveCandidateUuids } from '#apps/fitness/unlockPolicy.mjs';
-import { resolveEmergencyCandidates, EMERGENCY_LOCK } from '#apps/fitness/emergencyPolicy.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
@@ -106,8 +104,7 @@ export function createFitnessRouter(config) {
     triggerEmergencyLockdown = null,
     releaseEmergencyLockdown = null,
     getLockdownState = null,
-    emergencyDetector = null,
-    resolveEmergencyCandidates: resolveEmergencyCandidatesFn = resolveEmergencyCandidates,
+    identityRelay = null,
     generateSessionTimelapse = null,
     fingerprintProfileWriter = null,
     resolveManageService = getManageService,
@@ -1311,116 +1308,8 @@ export function createFitnessRouter(config) {
   }));
 
   // =============================================================================
-  // Fingerprint Unlock
-  // =============================================================================
-
-  /**
-   * POST /api/fitness/unlock - Request a fingerprint unlock for a named lock.
-   *
-   * Body: { lock: string }  (a key of the fitness config's `locks` map)
-   *
-   * Flow: validate the lock name → resolve the authorized users' enrolled
-   * fingerprint UUIDs → ask the on-box unlock service to identify against them.
-   *
-   * Responses:
-   * - 400 { error: 'unknown-lock' }                — missing/unknown lock (no scan)
-   * - 200 { matched:false, reason:'no-enrolled-users' } — no candidate fingerprints
-   * - 200 { matched, userId?, reason? }            — the unlock service's verdict
-   * - 503 { error: 'unlock-service-unavailable' }  — service not wired
-   */
-  router.post('/unlock', asyncHandler(async (req, res) => {
-    const { lock } = req.body || {};
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-
-    // Validate the lock name against the configured locks map. Don't scan unknown locks.
-    const authorized = typeof lock === 'string' ? fitnessConfig?.locks?.[lock] : undefined;
-    if (!lock || !Array.isArray(authorized)) {
-      logger.warn?.('fitness.unlock.unknown_lock', { lock });
-      return res.status(400).json({ error: 'unknown-lock' });
-    }
-
-    // Build username -> profile map for exactly the authorized users.
-    const profilesByUser = {};
-    for (const username of authorized) {
-      const profile = userService?.getProfile?.(username);
-      if (profile) profilesByUser[username] = profile;
-    }
-
-    const candidates = resolveCandidateUuids(fitnessConfig, profilesByUser, lock);
-    if (candidates.length === 0) {
-      logger.info?.('fitness.unlock.no_enrolled_users', { lock });
-      return res.json({ matched: false, reason: 'no-enrolled-users' });
-    }
-
-    const unlockService = resolveUnlockService?.();
-    if (!unlockService) {
-      logger.warn?.('fitness.unlock.service_unavailable', { lock });
-      return res.status(503).json({ error: 'unlock-service-unavailable' });
-    }
-
-    logger.info?.('fitness.unlock.request', { lock, candidates: candidates.length });
-    let result;
-    // Bracket the scan so the always-armed emergency detector stands down for
-    // its duration (it checks isForegroundActive before re-arming). The garage
-    // box preempts any in-flight emergency scan; this stops the NEXT re-arm from
-    // racing this foreground unlock for the single reader.
-    unlockService.beginForeground?.();
-    try {
-      result = await unlockService.requestUnlock(lock, candidates);
-    } catch (err) {
-      // Parity with neighboring handlers: tag the domain error so an unlock
-      // round-trip failure (bus down, garage offline) is debuggable, and fail
-      // closed with a generic 500 rather than leaking internals.
-      logger.error?.('fitness.unlock.error', { lock, error: err?.message });
-      return res.status(500).json({ error: 'unlock-failed' });
-    } finally {
-      unlockService.endForeground?.();
-    }
-
-    const response = { matched: !!result?.matched, userId: result?.userId };
-    if (result?.reason) response.reason = result.reason;
-
-    logger.info?.('fitness.unlock.result', {
-      lock,
-      matched: response.matched,
-      userId: response.userId,
-      reason: response.reason,
-    });
-    return res.json(response);
-  }));
-
-  // =============================================================================
   // Emergency Lockdown
   // =============================================================================
-
-  /**
-   * Server-side admin scan for the emergency lock. Resolves the authorized
-   * admins' fingerprint UUIDs and asks the on-box unlock service to identify
-   * against them. Uses the foreground arbiter so the background emergency
-   * detector yields the fingerprint reader for the duration of the scan.
-   *
-   * @returns {Promise<{ matched: boolean, userId?: string, reason?: string }>}
-   */
-  async function scanEmergency(req) {
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    const candidates = resolveEmergencyCandidatesFn({ fitnessConfig, userService });
-    const unlockService = resolveUnlockService?.();
-    if (!unlockService || candidates.length === 0) {
-      logger?.warn?.('emergency.scan_unavailable', { hasService: !!unlockService, candidates: candidates.length });
-      return { matched: false, reason: 'unavailable' };
-    }
-    logger?.info?.('emergency.scan_start', { candidates: candidates.length });
-    unlockService.beginForeground?.();
-    try {
-      const verdict = await unlockService.requestUnlock(EMERGENCY_LOCK, candidates);
-      logger?.info?.('emergency.scan_result', { matched: !!verdict?.matched, reason: verdict?.reason ?? null });
-      return verdict;
-    } finally {
-      unlockService.endForeground?.();
-    }
-  }
 
   /**
    * GET /api/fitness/emergency — current lockdown state (self-clears when expired).
@@ -1448,7 +1337,7 @@ export function createFitnessRouter(config) {
    */
   router.post('/emergency/commit', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
-    const pending = emergencyDetector?.consumePendingDetection?.(Date.now());
+    const pending = identityRelay?.consumePendingDetection?.(Date.now());
     if (!pending) {
       logger?.warn?.('emergency.commit_rejected', { reason: 'no-pending-detection' });
       return res.status(409).json({ error: 'no-pending-detection' });
@@ -1469,10 +1358,10 @@ export function createFitnessRouter(config) {
    * - 200 { confirmed:boolean }
    */
   router.post('/emergency/abort', asyncHandler(async (req, res) => {
-    const verdict = await scanEmergency(req);
-    if (verdict.matched) logger?.info?.('emergency.cancelled', { userId: verdict.userId });
-    else logger?.info?.('emergency.cancel_denied', { reason: verdict.reason ?? null });
-    res.json({ confirmed: !!verdict.matched });
+    const pending = identityRelay?.consumePendingDetection?.(Date.now());
+    if (pending) logger?.info?.('emergency.cancelled', { userId: pending.userId });
+    else logger?.info?.('emergency.cancel_denied', { reason: 'no-pending-detection' });
+    res.json({ confirmed: !!pending });
   }));
 
   /**
@@ -1483,13 +1372,13 @@ export function createFitnessRouter(config) {
    */
   router.post('/emergency/release', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
-    const verdict = await scanEmergency(req);
-    if (!verdict.matched) {
-      logger?.info?.('emergency.release_denied', { reason: verdict.reason ?? null });
+    const pending = identityRelay?.consumePendingDetection?.(Date.now());
+    if (!pending) {
+      logger?.info?.('emergency.release_denied', { reason: 'no-pending-detection' });
       return res.json({ released: false });
     }
-    if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: verdict.userId, now });
-    logger?.info?.('emergency.released', { userId: verdict.userId });
+    if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: pending.userId, now });
+    logger?.info?.('emergency.released', { userId: pending.userId });
     res.json({ released: true });
   }));
 
