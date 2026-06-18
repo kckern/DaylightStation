@@ -8,6 +8,7 @@ import { ANTPlusManager } from './ant.mjs';
 import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
 import { createReaderArbiter } from './readerArbiter.mjs';
+import { createContinuousScanLoop } from './continuousScanLoop.mjs';
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
@@ -93,10 +94,33 @@ function runIdentifyScan(uuids, { signal }) {
       : { matched: false, reason: 'identify-error', error: err.message }));
 }
 
+// Blocking full-store identify for the continuous loop. No --uuids (full store),
+// no helper timeout (--timeout 0); the arbiter cancels it via signal when preempted.
+function runContinuousIdentify({ signal }) {
+  return runFingerprintHelper(['identify', '--timeout', '0'], { timeoutMs: 0, signal })
+    .then((r) => (r && r.matched && r.uuid)
+      ? { matched: true, uuid: r.uuid }
+      : { matched: false, reason: (r && r.reason) || 'no-match' })
+    .catch((err) => (signal && signal.aborted)
+      ? { matched: false, reason: 'cancelled' }
+      : { matched: false, reason: 'identify-error', error: err.message });
+}
+
 // The single owner of the physical reader. ALL real identify scans go through it
 // so an always-armed emergency scan and an on-demand foreground unlock never
 // fight over the device — a foreground request preempts an in-flight emergency.
 const readerArbiter = createReaderArbiter({ runScan: runIdentifyScan, logger: console });
+
+// Continuous biometric scanner: the default owner of the reader. Loops a blocking
+// full-store identify through the arbiter and broadcasts one biometric.scan per
+// real touch; enroll/manage preempt it via the arbiter.
+const continuousScan = createContinuousScanLoop({
+  runScan: () => readerArbiter.run({ kind: 'scan', preempts: [], exec: runContinuousIdentify }),
+  sendBus,
+  delay: (ms) => new Promise((r) => setTimeout(r, ms)),
+  logger: console,
+});
+
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
 const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
 const SERIAL_DEVICE = process.env.SERIAL_DEVICE || '/dev/ttyUSB0';
@@ -505,7 +529,10 @@ app.use((err, req, res, next) => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Received SIGINT, shutting down gracefully...');
-  
+
+  // Stop the continuous scan loop
+  continuousScan.stop();
+
   // Close WebSocket
   if (websocketClient) {
     websocketClient.close();
@@ -522,7 +549,10 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
   console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
-  
+
+  // Stop the continuous scan loop
+  continuousScan.stop();
+
   // Close WebSocket
   if (websocketClient) {
     websocketClient.close();
@@ -589,7 +619,15 @@ async function startServer() {
 
   // Connect to DaylightStation WebSocket
   await connectWebSocket();
-  
+
+  // Start the continuous biometric scan loop (skipped in sim mode — no reader).
+  if (process.env.FINGERPRINT_SIM) {
+    console.log('🔐 Continuous scan loop disabled (FINGERPRINT_SIM active)');
+  } else {
+    continuousScan.run().catch((err) => console.error(`❌ continuous scan loop exited: ${err.message}`));
+    console.log('🔐 Continuous biometric scan loop started (full-store identify)');
+  }
+
   // Start Express server
   const server = app.listen(PORT, () => {
     console.log(`✅ Fitness Controller Server running on port ${PORT}`);
