@@ -126,6 +126,43 @@ test('non-finalized session that ended within the merge window -> deferred, noth
   assert.equal(f.saved.length, 0);        // session status untouched, so a later trigger retries cleanly
 });
 
+test('already-ready session is skipped (idempotent) — no re-render that would fail on cleaned frames', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.timelapse = { status: 'ready', videoPath: 'media/video/fitness/x.mp4' };
+  const f = fakes({ sessionData });
+  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'already');
+  assert.equal(res.priorStatus, 'ready');
+  assert.equal(encoded, false);
+  assert.equal(f.calls.cleaned, undefined);
+  assert.equal(f.saved.length, 0); // status untouched
+});
+
+test('processing session is skipped unless forced', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.timelapse = { status: 'processing', startedAt: 1 };
+  const f = fakes({ sessionData });
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'already');
+  assert.equal(res.priorStatus, 'processing');
+});
+
+test('force:true overrides the idempotency guard and re-renders', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.timelapse = { status: 'ready', videoPath: 'media/video/fitness/x.mp4' };
+  const f = fakes({ sessionData });
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h', force: true });
+  assert.equal(res.status, 'ready');
+  assert.ok(f.calls.cleaned);
+});
+
 test('finalized session bypasses the merge window and renders immediately', async () => {
   const sessionData = baseSession();
   sessionData.finalized = true;

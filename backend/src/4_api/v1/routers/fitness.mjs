@@ -547,7 +547,7 @@ export function createFitnessRouter(config) {
     if (!generateSessionTimelapse) {
       return res.status(501).json({ ok: false, error: 'timelapse not configured' });
     }
-    Promise.resolve(generateSessionTimelapse.execute({ sessionId, householdId }))
+    Promise.resolve(generateSessionTimelapse.execute({ sessionId, householdId, force: true }))
       .then((r) => logger.info?.('fitness.timelapse.manual_done', { sessionId, status: r?.status }))
       .catch((err) => logger.error?.('fitness.timelapse.manual_failed', { sessionId, error: err?.message }));
     return res.status(202).json({ ok: true, status: 'processing', sessionId });

@@ -2158,6 +2158,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
   });
 
+  // Fitness recap sweep — safety net that recaps sessions ended via the common
+  // paths (inactivity, closed tab, crash) that never fire a per-event trigger,
+  // reclaiming their orphaned frames via the use case's cleanup-on-success.
+  // Runs on the agents Scheduler (Docker/prod-gated, so no dev-zombie double-fire).
+  if (agentsServices.scheduler && v1Routers.fitness?.recapSweep) {
+    agentsServices.scheduler.registerTask('fitness:recap-sweep', '*/10 * * * *', async () => {
+      await v1Routers.fitness.recapSweep.run();
+    });
+  }
+
   // Mount each registered agent's HTTP surface (run, run-stream, run-background) via mountAgentHttp
   for (const { id: agentId } of agentsServices.orchestrator.list()) {
     mountAgentHttp(app, {
