@@ -28,15 +28,27 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
     const screenshotsDir = paths?.screenshotsDir;
     const data = await this.#datastore.findById(sessionId, householdId);
     const captures = data?.snapshots?.captures || [];
-    return captures
+    const resolved = captures
       .map(c => ({
         index: c.index,
         filename: c.filename,
         timestamp: c.timestamp,
+        role: c.role || 'camera',
         absolutePath: this.#resolve(screenshotsDir, c)
       }))
       .filter(c => c.absolutePath)
       .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    const missing = captures.length - resolved.length;
+    this.#logger.debug?.('recap.snapshots.listed', {
+      sessionId, total: captures.length, resolved: resolved.length,
+      camera: resolved.filter(c => c.role === 'camera').length,
+      player: resolved.filter(c => c.role === 'player').length,
+      missingFiles: missing
+    });
+    if (missing > 0) {
+      this.#logger.warn?.('recap.snapshots.missing_files', { sessionId, missingFiles: missing, total: captures.length });
+    }
+    return resolved;
   }
 
   async readCapture(absolutePath) {

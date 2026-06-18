@@ -21,77 +21,121 @@ export class GenerateSessionTimelapse {
       mediaDir, config, fileIO, logger
     } = this.#d;
 
+    const startedAt = Date.now();
+    logger.info?.('fitness.timelapse.requested', { sessionId, householdId: householdId || null });
+
     const data = await sessionDatastore.findById(sessionId, householdId);
-    if (!data) return { status: 'not-found' };
-    if (config?.enabled === false) return { status: 'disabled' };
+    if (!data) {
+      logger.warn?.('fitness.timelapse.not_found', { sessionId, householdId: householdId || null });
+      return { status: 'not-found' };
+    }
+    if (config?.enabled === false) {
+      logger.info?.('fitness.timelapse.disabled', { sessionId });
+      return { status: 'disabled' };
+    }
 
     const session = Session.fromJSON(data);
+    const speedup = config.speedup ?? 10;
+    const fps = config.output_fps ?? 10;
+    const allCaptures = data?.snapshots?.captures || [];
+    const cameraCount = allCaptures.filter(c => (c.role || 'camera') === 'camera').length;
+    const playerCount = allCaptures.filter(c => c.role === 'player').length;
 
-    const descriptors = frameMapper.buildFrames(data, {
-      speedup: config.speedup ?? 10,
-      outputFps: config.output_fps ?? 10,
-      resolveName: resolveName || null
-    });
+    const descriptors = frameMapper.buildFrames(data, { speedup, outputFps: fps, resolveName: resolveName || null });
     if (!descriptors.length) {
       session.markTimelapseSkipped('no-captures');
       await sessionDatastore.save(session, householdId);
+      // The single most likely "why is there no recap?" cause — make it loud.
+      logger.warn?.('fitness.timelapse.skipped', {
+        sessionId, reason: 'no-captures', cameraCaptures: cameraCount, playerCaptures: playerCount
+      });
       return { status: 'skipped' };
     }
 
     session.markTimelapseProcessing();
     await sessionDatastore.save(session, householdId);
-    logger.info?.('fitness.timelapse.started', { sessionId, frames: descriptors.length });
+    logger.info?.('fitness.timelapse.started', {
+      sessionId, speedup, fps, frames: descriptors.length,
+      cameraCaptures: cameraCount, playerCaptures: playerCount,
+      durationMs: session.getDurationMs?.() ?? null
+    });
 
+    let stage = 'init';
     const tmpDir = fileIO.mkdtempSync(path.join(os.tmpdir(), `tl-${sessionId}-`));
     try {
+      stage = 'gather-captures';
       const captures = await snapshotStore.listCaptures(sessionId, householdId);
       const cameraCaps = captures.filter(c => (c.role || 'camera') === 'camera').sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
       const playerByTs = new Map(captures.filter(c => c.role === 'player').map(c => [c.timestamp, c]));
+
+      stage = 'avatars';
       const avatarBuffers = avatarProvider ? (await avatarProvider(uniqueParticipantIds(descriptors)) || {}) : {};
       const posterCache = new Map();
       const bufCache = new Map(); // absolutePath -> Buffer (many output frames reuse one capture)
 
+      stage = 'render';
       let written = 0;
+      let playerFramesUsed = 0;
+      let cameraMissing = 0;
+      let posterUsed = false;
       for (const d of descriptors) {
         const cam = pickCapture(cameraCaps, d.cameraTimestamp);
-        if (!cam) continue;
+        if (!cam) { cameraMissing++; continue; }
         const cameraBuffer = await readCached(bufCache, snapshotStore, cam.absolutePath, householdId);
         // Player frame: a realtime UI capture stored just like the camera (role:player).
         let playerBuffer = null;
         const pcap = d.playerTimestamp != null ? playerByTs.get(d.playerTimestamp) : null;
         if (pcap) {
-          try { playerBuffer = await readCached(bufCache, snapshotStore, pcap.absolutePath, householdId); }
-          catch (err) { logger.warn?.('fitness.timelapse.player_frame_read_failed', { error: err.message }); }
+          try { playerBuffer = await readCached(bufCache, snapshotStore, pcap.absolutePath, householdId); playerFramesUsed++; }
+          catch (err) { logger.warn?.('fitness.timelapse.player_frame_read_failed', { sessionId, error: err.message }); }
         }
         const posterBuffer = await resolvePoster(d, posterCache, posterProvider, logger);
+        if (posterBuffer) posterUsed = true;
         const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, descriptor: d });
         const name = `frame_${String(written).padStart(5, '0')}.jpg`;
         fileIO.writeFileSync(path.join(tmpDir, name), frameBuffer);
         written++;
       }
       if (!written) throw new Error('no-frames-rendered');
+      logger.info?.('fitness.timelapse.frames_rendered', {
+        sessionId, written, requested: descriptors.length, cameraMissing,
+        playerFramesUsed, playerCoveragePct: Math.round((playerFramesUsed / written) * 100),
+        avatars: Object.keys(avatarBuffers).length, posterUsed, renderMs: Date.now() - startedAt
+      });
 
-      const fps = config.output_fps ?? 10;
+      stage = 'encode';
       const slug = buildSlug(data);
       const outDir = path.join(mediaDir, 'video', 'fitness');
       fileIO.mkdirSync(outDir, { recursive: true });
       const outputPath = path.join(outDir, `${slug}.mp4`);
+      const encodeStart = Date.now();
       await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20 });
+      const encodeMs = Date.now() - encodeStart;
 
+      stage = 'persist';
       const durationSeconds = Math.round(written / fps);
       const relPath = path.relative(mediaDir, outputPath);
+      let sizeBytes = null;
+      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* best-effort */ }
       session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
       await sessionDatastore.save(session, householdId);
 
+      stage = 'cleanup';
       await snapshotStore.cleanup(sessionId, householdId, { archive: !!config.archive_frames });
       safeRm(fileIO, tmpDir);
-      logger.info?.('fitness.timelapse.ready', { sessionId, videoPath: session.timelapse.videoPath, frames: written });
+      logger.info?.('fitness.timelapse.ready', {
+        sessionId, videoPath: session.timelapse.videoPath, frames: written,
+        durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
+        archivedFrames: !!config.archive_frames
+      });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {
       safeRm(fileIO, tmpDir);
       session.markTimelapseFailed(err);
       await sessionDatastore.save(session, householdId);
-      logger.error?.('fitness.timelapse.failed', { sessionId, error: err.message });
+      logger.error?.('fitness.timelapse.failed', {
+        sessionId, stage, error: err.message, code: err.code || null, totalMs: Date.now() - startedAt
+      });
       return { status: 'failed', error: err.message };
     }
   }

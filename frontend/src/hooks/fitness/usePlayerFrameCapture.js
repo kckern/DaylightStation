@@ -32,7 +32,15 @@ export default function usePlayerFrameCapture({ sessionId, intervalMs = 1000, en
       if (inFlight.current) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       const video = typeof window !== 'undefined' ? window.__fitnessVideoElement : null;
-      if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2) return;
+      if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2) {
+        // Surface WHY no player frames are being captured (→ missing PiP in the recap),
+        // rate-limited so a long not-ready stretch doesn't flood the log.
+        logger().sampled('player_frame.skip_not_ready', {
+          hasVideo: !!video, readyState: video?.readyState ?? null,
+          w: video?.videoWidth ?? 0, h: video?.videoHeight ?? 0
+        }, { maxPerMinute: 4, aggregate: true });
+        return;
+      }
       try {
         inFlight.current = true;
         canvas.width = video.videoWidth;
