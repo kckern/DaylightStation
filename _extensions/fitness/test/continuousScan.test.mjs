@@ -51,3 +51,71 @@ test('no-templates backs off without broadcasting', async () => {
   await loop.run();
   assert.equal(sent.length, 0);
 });
+
+function makeCapturingLogger() {
+  const warns = [];
+  const errors = [];
+  const logs = [];
+  return {
+    warns, errors, logs,
+    log: (m) => logs.push(m),
+    warn: (m) => warns.push(m),
+    error: (m) => errors.push(m),
+  };
+}
+
+test('identify-error is surfaced with message + consecutive streak, no broadcast', async () => {
+  const sent = [];
+  const logger = makeCapturingLogger();
+  const loop = createContinuousScanLoop({
+    runScan: async () => ({ ok: true, value: { matched: false, reason: 'identify-error', error: 'uru4000 read failed' } }),
+    sendBus: (topic, payload) => sent.push({ topic, payload }),
+    delay: async () => {},
+    logger,
+    maxIterations: 3,
+  });
+  await loop.run();
+  // The driver-health signal must never be silent, and must never broadcast a scan.
+  assert.equal(sent.length, 0);
+  assert.equal(logger.warns.length, 3);
+  assert.match(logger.warns[0], /identify-error/);
+  assert.match(logger.warns[0], /uru4000 read failed/);
+  // Consecutive streak climbs so a degrading reader is obvious in the logs.
+  assert.match(logger.warns[0], /#1 consecutive/);
+  assert.match(logger.warns[2], /#3 consecutive/);
+});
+
+test('a successful match resets the identify-error streak', async () => {
+  const logger = makeCapturingLogger();
+  const seq = [
+    { ok: true, value: { matched: false, reason: 'identify-error', error: 'x' } },
+    { ok: true, value: { matched: true, uuid: 'uuid-1' } },
+    { ok: true, value: { matched: false, reason: 'identify-error', error: 'y' } },
+  ];
+  let i = 0;
+  const loop = createContinuousScanLoop({
+    runScan: async () => seq[i++],
+    sendBus: () => {},
+    delay: async () => {},
+    logger,
+    maxIterations: 3,
+  });
+  await loop.run();
+  // Both errors report "#1" because the match in between cleared the streak.
+  assert.match(logger.warns[0], /#1 consecutive/);
+  assert.match(logger.warns[1], /#1 consecutive/);
+});
+
+test('reader-busy logs once on transition, not every iteration', async () => {
+  const logger = makeCapturingLogger();
+  const loop = createContinuousScanLoop({
+    runScan: async () => ({ ok: false, reason: 'reader-busy' }),
+    sendBus: () => {},
+    delay: async () => {},
+    logger,
+    maxIterations: 5,
+  });
+  await loop.run();
+  const busyLines = logger.logs.filter((m) => /reader-busy/.test(m));
+  assert.equal(busyLines.length, 1);
+});
