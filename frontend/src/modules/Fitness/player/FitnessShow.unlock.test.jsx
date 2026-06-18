@@ -38,12 +38,13 @@ vi.mock('@/lib/api.mjs', () => ({
   normalizeImageUrl: (u) => u || ''
 }));
 
-// Control the unlock hook from each test.
-const requestUnlock = vi.fn();
-const resetUnlock = vi.fn();
+// Control the unlock surface from each test (via the identity provider).
+const registerUnlock = vi.fn();
+const clearUnlock = vi.fn();
 let unlockState = 'idle';
-vi.mock('@/modules/Fitness/hooks/useUnlock.js', () => ({
-  useUnlock: () => ({ requestUnlock, reset: resetUnlock, state: unlockState, activeLock: null })
+vi.mock('@/modules/Fitness/identity/IdentityProvider', () => ({
+  __esModule: true,
+  useIdentity: () => ({ registerUnlock, clearUnlock, unlockState, unlockedUser: null, activeLock: null }),
 }));
 
 import { DaylightAPI } from '@/lib/api.mjs';
@@ -118,7 +119,7 @@ beforeEach(() => {
   unlockState = 'idle';
   setFitnessPlayQueue = vi.fn();
   onPlay = vi.fn();
-  requestUnlock.mockResolvedValue({ matched: false, reason: 'denied' });
+  registerUnlock.mockResolvedValue({ matched: false, reason: 'denied' });
 });
 
 describe('FitnessShow — governed-show unlock affordance', () => {
@@ -130,7 +131,7 @@ describe('FitnessShow — governed-show unlock affordance', () => {
 
     await act(async () => { fireEvent.pointerDown(unlockBtn); });
 
-    expect(requestUnlock).toHaveBeenCalledWith('governance_bypass');
+    expect(registerUnlock).toHaveBeenCalledWith('governance_bypass');
     expect(screen.getByRole('dialog', { name: /fingerprint unlock/i })).toBeTruthy();
     // Denied (default mock) → bypass NOT applied: still shows the locked button, no unlocked glyph.
     await waitFor(() => expect(screen.getByLabelText('Unlock governed content')).toBeTruthy());
@@ -138,21 +139,21 @@ describe('FitnessShow — governed-show unlock affordance', () => {
   });
 
   it('applies the governance bypass when the fingerprint matches', async () => {
-    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    registerUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
     await renderShow(GOVERNED_SHOW, GOVERNANCE_CTX({ governance_bypass: ['test-user'] }));
 
     const unlockBtn = screen.getByLabelText('Unlock governed content');
     await act(async () => { fireEvent.pointerDown(unlockBtn); });
 
     // After a matched bypass, the affordance flips to the unlocked glyph and the
-    // prompt closes (resetUnlock called). The bypass flag is now seamed into the
+    // prompt closes (clearUnlock called). The bypass flag is now seamed into the
     // queue item (nogovern) for the next play.
     await waitFor(() => expect(screen.getByLabelText('Governance unlocked')).toBeTruthy());
-    expect(resetUnlock).toHaveBeenCalled();
+    expect(clearUnlock).toHaveBeenCalled();
   });
 
   it('resets the bypass when navigating to a different show (no cross-show leak)', async () => {
-    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    registerUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
     const utils = await renderShow(GOVERNED_SHOW, GOVERNANCE_CTX({ governance_bypass: ['test-user'] }));
 
     // Grant the bypass on show A → unlocked glyph appears.
@@ -180,13 +181,13 @@ describe('FitnessShow — governed-show unlock affordance', () => {
     expect(screen.queryByLabelText('Unlock governed content')).toBeNull();
     // The informational lock icon is still present.
     expect(screen.getByLabelText('Governed content')).toBeTruthy();
-    expect(requestUnlock).not.toHaveBeenCalled();
+    expect(registerUnlock).not.toHaveBeenCalled();
   });
 });
 
 describe('FitnessShow — sequential locked-episode unlock affordance', () => {
   it('exposes an unlock affordance on a locked episode and plays it on a match when skip_content is configured', async () => {
-    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    registerUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
     await renderShow(SEQUENTIAL_SHOW, SEQUENTIAL_CTX({ skip_content: ['test-user'] }));
 
     // The locked episode (Ep 2) exposes an "Unlock episode" control.
@@ -195,7 +196,7 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
 
     await act(async () => { fireEvent.pointerDown(unlockBtns[0]); });
 
-    expect(requestUnlock).toHaveBeenCalledWith('skip_content');
+    expect(registerUnlock).toHaveBeenCalledWith('skip_content');
     // Matched → the normal play path runs for that episode (queue gets the item).
     await waitFor(() => expect(setFitnessPlayQueue).toHaveBeenCalled());
     const queued = setFitnessPlayQueue.mock.calls[0][0];
@@ -204,7 +205,7 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
   });
 
   it('opens the unlock prompt when the locked episode body (thumbnail) is tapped, not just the lock icon', async () => {
-    requestUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
+    registerUnlock.mockResolvedValue({ matched: true, userId: 'test-user' });
     const { container } = await renderShow(SEQUENTIAL_SHOW, SEQUENTIAL_CTX({ skip_content: ['test-user'] }));
 
     // Tap the locked episode's thumbnail (Ep 2 = plex 202) — the whole grayed-out
@@ -213,7 +214,7 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
     expect(lockedThumb).toBeTruthy();
     await act(async () => { fireEvent.pointerDown(lockedThumb); });
 
-    expect(requestUnlock).toHaveBeenCalledWith('skip_content');
+    expect(registerUnlock).toHaveBeenCalledWith('skip_content');
     // Matched → that episode plays via the normal launch path.
     await waitFor(() => expect(setFitnessPlayQueue).toHaveBeenCalled());
     expect(setFitnessPlayQueue.mock.calls[0][0][0].plex).toBe('202');
@@ -229,7 +230,7 @@ describe('FitnessShow — sequential locked-episode unlock affordance', () => {
     expect(lockedThumb).toBeTruthy();
     await act(async () => { fireEvent.pointerDown(lockedThumb); });
 
-    expect(requestUnlock).not.toHaveBeenCalled();
+    expect(registerUnlock).not.toHaveBeenCalled();
     expect(setFitnessPlayQueue).not.toHaveBeenCalled();
   });
 });
