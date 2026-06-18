@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import useFitnessModule from '@/modules/Fitness/player/useFitnessModule';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { Webcam as FitnessWebcam } from '@/modules/Fitness/components/FitnessWebcam.jsx';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
@@ -41,11 +42,18 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
     registerScreenshotRef.current = registerSessionScreenshot;
   }, [registerSessionScreenshot]);
 
+  // Prefer the time-lapse capture cadence (≈1s) so the recap is smooth; fall
+  // back to the timeline tick interval when time-lapse is disabled/unset.
+  const fitnessCtx = useFitnessContext();
+  const timelapseCfg = (fitnessCtx?.fitnessConfiguration?.fitness || fitnessCtx?.fitnessConfiguration || {})?.timelapse || {};
   const captureIntervalMs = useMemo(() => {
+    if (timelapseCfg.enabled !== false && Number.isFinite(timelapseCfg.capture_interval_ms)) {
+      return Math.max(1000, timelapseCfg.capture_interval_ms);
+    }
     const candidate = Number.isFinite(timelineInterval) ? timelineInterval : summaryInterval;
     const resolved = Number.isFinite(candidate) && candidate > 0 ? candidate : DEFAULT_CAPTURE_INTERVAL_MS;
     return Math.max(1000, resolved);
-  }, [timelineInterval, summaryInterval]);
+  }, [timelineInterval, summaryInterval, timelapseCfg.enabled, timelapseCfg.capture_interval_ms]);
 
   useEffect(() => {
     if (!sessionId || typeof configureSessionScreenshotPlan !== 'function') return;
@@ -112,6 +120,7 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
         mimeType: 'image/jpeg',
         index: Number.isFinite(captureIndex) ? captureIndex : undefined,
         timestamp: baseTimestamp,
+        role: 'camera',
         meta: {
           ...meta,
           captureIntervalMs,
