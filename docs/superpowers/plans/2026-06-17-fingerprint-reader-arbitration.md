@@ -176,7 +176,10 @@ export function createReaderArbiter({ runScan, logger = console }) {
     }
 
     const controller = new AbortController();
-    const scan = Promise.resolve().then(() => runScan(uuids, { signal: controller.signal }));
+    // Invoke runScan synchronously (NOT via a deferred microtask) so the scan
+    // claims the reader and registers itself before submit() yields. The async
+    // IIFE still captures a synchronous throw as a rejected promise.
+    const scan = (async () => runScan(uuids, { signal: controller.signal }))();
     // `done` settles when the scan finishes (success/abort/error) so a later
     // preempt can await release; swallow rejection so it never escapes unhandled.
     const done = scan.then(() => {}, () => {});
