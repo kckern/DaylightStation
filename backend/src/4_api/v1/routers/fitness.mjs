@@ -1349,6 +1349,33 @@ export function createFitnessRouter(config) {
     logger?.info?.('emergency.commit_accepted', { lockedBy: pending.userId });
     const state = await triggerEmergencyLockdown.execute({ lockedBy: pending.userId, now });
     logger.info?.('emergency.committed', { lockedBy: pending.userId, lockedUntil: state.lockedUntil });
+
+    // An emergency lockdown is still a session end. The normal
+    // POST /sessions/:id/end path never runs during a lockdown (the kiosk is
+    // locked out), so without this an emergency-ended workout would capture
+    // camera + player frames yet never finalize the session or render its mp4.
+    // Finalize every active session and fire its recap — fire-and-forget so it
+    // never delays the lockdown response (screens must flip to LOCKED promptly).
+    if (sessionService) {
+      const householdId = req.query.household || configService.getDefaultHouseholdId();
+      Promise.resolve()
+        .then(async () => {
+          const active = await sessionService.getActiveSessions(householdId);
+          for (const session of active) {
+            const sid = session.sessionId?.toString();
+            if (!sid) continue;
+            await sessionService.endSession(sid, householdId, Date.now());
+            logger?.info?.('emergency.session_finalized', { sessionId: sid, lockedBy: pending.userId });
+            if (generateSessionTimelapse) {
+              Promise.resolve(generateSessionTimelapse.execute({ sessionId: sid, householdId }))
+                .then((r) => logger?.info?.('fitness.timelapse.trigger_done', { sessionId: sid, status: r?.status, via: 'emergency' }))
+                .catch((err) => logger?.error?.('fitness.timelapse.trigger_failed', { sessionId: sid, error: err?.message, via: 'emergency' }));
+            }
+          }
+        })
+        .catch((err) => logger?.error?.('emergency.session_finalize_failed', { error: err?.message, lockedBy: pending.userId }));
+    }
+
     res.json({ locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy });
   }));
 
