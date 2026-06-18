@@ -24,7 +24,7 @@ import { useGovernanceAudioDuck } from '@/modules/Fitness/player/hooks/useGovern
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
 import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/GovernanceWarningScrim.jsx';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
-import { useUnlock } from '@/modules/Fitness/hooks/useUnlock.js';
+import { useIdentity } from '../identity/IdentityProvider';
 import { shouldBypassGovernance } from './governanceBypass.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import usePlayerFrameCapture from '@/hooks/fitness/usePlayerFrameCapture.js';
@@ -278,7 +278,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // lock — it is cleared when the next item starts (see effect below), so one
   // unlock cannot silently disable governance for the rest of the session.
   const [bypassActive, setBypassActive] = useState(false);
-  const { requestUnlock, state: unlockState, unlockedUser, reset: resetUnlock } = useUnlock();
+  const { registerUnlock, unlockState, unlockedUser, clearUnlock } = useIdentity();
   const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
 
   // GovernanceEngine is the sole authority for lock decisions (SSoT). Governance
@@ -329,30 +329,30 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     const reqItemId = currentItemIdRef.current; // guard against a post-item-change resolve
     logger.info('governance.unlock_tap', { lock: 'governance_bypass', contentId: currentItem?.id || null });
     setUnlockPromptOpen(true);
-    requestUnlock('governance_bypass').then((result) => {
+    registerUnlock('governance_bypass').then((result) => {
       // The item changed while scanning — don't grant a bypass to the new item.
       if (currentItemIdRef.current !== reqItemId) {
         setUnlockPromptOpen(false);
-        resetUnlock();
+        clearUnlock();
         return;
       }
       if (result?.matched) {
         logger.info('governance.bypass_granted', { userId: result.userId, contentId: currentItem?.id || null });
         setBypassActive(true);
         setUnlockPromptOpen(false);
-        resetUnlock();
+        clearUnlock();
       } else {
         logger.info('governance.bypass_denied', { reason: result?.reason || null });
       }
       // matched:false — leave the prompt showing the denied state; the user
       // dismisses via cancel/close (closeGovernanceUnlock).
     });
-  }, [unlockPromptOpen, requestUnlock, resetUnlock, currentItem, logger]);
+  }, [unlockPromptOpen, registerUnlock, clearUnlock, currentItem, logger]);
 
   const closeGovernanceUnlock = useCallback(() => {
     setUnlockPromptOpen(false);
-    resetUnlock();
-  }, [resetUnlock]);
+    clearUnlock();
+  }, [clearUnlock]);
 
   // Gate the overlay button on a configured, active governance_bypass lock. When
   // the lock is absent/empty we pass no handler ⇒ no button ⇒ today's behavior.

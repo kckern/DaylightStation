@@ -454,7 +454,11 @@ export function useMediaResilience({
   const isRecovering = status === STATUS.recovering;
   const isStartup = status === STATUS.startup;
   const isUserPaused = userIntent === USER_INTENT.paused;
-  const isBuffering = playbackHealth.isWaiting || playbackHealth.isStalledEvent;
+  // If the media clock is genuinely advancing, any lingering waiting/buffering
+  // flag is stale (e.g. a `waiting` event whose matching `playing` was missed
+  // because the element was swapped out by a recovery). The spinner must never
+  // sit on top of visibly-playing video — advancement is the authority.
+  const isBuffering = (playbackHealth.isWaiting || playbackHealth.isStalledEvent) && !playbackHealth.isAdvancing;
 
   // Detect loop transition: video has loop=true, we've played before, and we're near the start
   // This check runs synchronously during render to prevent overlay flash on loop

@@ -8,7 +8,6 @@ const logger = () => (_logger ||= getLogger().child({ component: 'emergency' }))
 
 const EMERGENCY_PATH = 'api/v1/fitness/emergency';
 const TOPICS = [
-  'fitness.emergency.detected',
   'fitness.emergency.locked',
   'fitness.emergency.released'
 ];
@@ -47,7 +46,8 @@ function readUrlSeam() {
  *   lockedBy: string|null,
  *   commit: () => Promise<{locked:boolean}>,
  *   abort: () => Promise<{confirmed:boolean}>,
- *   release: () => Promise<{released:boolean}>
+ *   release: () => Promise<{released:boolean}>,
+ *   triggerCeremony: () => void
  * }}
  */
 export function useEmergencyLockdown() {
@@ -111,18 +111,6 @@ export function useEmergencyLockdown() {
     const unsub = wsService.subscribe(TOPICS, (msg) => {
       if (!msg || !msg.topic) return;
       switch (msg.topic) {
-        case 'fitness.emergency.detected':
-          // Begin the ceremony only from a clean state; ignore if already
-          // triggering or locked (idempotent against duplicate broadcasts).
-          if (phaseRef.current === PHASE_NORMAL) {
-            logger().info('emergency.detected', { userId: msg.userId ?? null, at: msg.at ?? null });
-            setPhase(PHASE_TRIGGERING);
-            logger().info('emergency.triggering', { userId: msg.userId ?? null });
-          } else {
-            // Duplicate / late broadcast while already triggering or locked.
-            logger().debug('emergency.detected_ignored', { phase: phaseRef.current, userId: msg.userId ?? null });
-          }
-          break;
         case 'fitness.emergency.locked':
           enterLocked(msg.lockedUntil ?? null, msg.lockedBy ?? null);
           break;
@@ -167,6 +155,19 @@ export function useEmergencyLockdown() {
   }, [phase, lockedUntil, enterNormal]);
 
   // --- Actions --------------------------------------------------------------
+  // Imperative entry point for the ceremony. The IdentityProvider calls this in
+  // response to an enriched identity event; begin only from a clean state so
+  // repeated calls are idempotent (functional setState avoids stale `phase`).
+  const triggerCeremony = useCallback(() => {
+    setPhase((prev) => {
+      if (prev === PHASE_NORMAL) {
+        logger().info('emergency.triggering', { source: 'triggerCeremony' });
+        return PHASE_TRIGGERING;
+      }
+      return prev;
+    });
+  }, []);
+
   const commit = useCallback(async () => {
     try {
       const res = await DaylightAPI(`${EMERGENCY_PATH}/commit`, {}, 'POST');
@@ -220,7 +221,7 @@ export function useEmergencyLockdown() {
     }
   }, [enterNormal]);
 
-  return { phase, lockedUntil, lockedBy, commit, abort, release };
+  return { phase, lockedUntil, lockedBy, commit, abort, release, triggerCeremony };
 }
 
 export default useEmergencyLockdown;

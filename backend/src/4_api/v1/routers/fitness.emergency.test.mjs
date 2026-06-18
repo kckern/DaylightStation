@@ -8,23 +8,21 @@ const silentLogger = { info(){}, warn(){}, error(){}, debug(){} };
 
 /**
  * Build an app exercising the emergency-lockdown endpoints with controllable
- * config/profile loading, lockdown use cases, the emergency detector, and a
- * controllable unlock service for the admin-scan routes.
+ * lockdown use cases and an injected fake identityRelay. The emergency
+ * endpoints consume a short-lived pending detection from identityRelay
+ * (via consumePendingDetection(Date.now())) rather than scanning themselves.
  */
 function appWith({
-  fitnessConfig = { locks: { emergency: ['alice'] } },
-  profiles = { alice: { identities: { fingerprints: [{ id: 'uuid-a' }] } } },
-  unlockService,
   triggerEmergencyLockdown,
   releaseEmergencyLockdown,
   getLockdownState,
-  emergencyDetector,
+  identityRelay,
 } = {}) {
   const fitnessConfigService = {
-    loadRawConfig: vi.fn(() => fitnessConfig),
+    loadRawConfig: vi.fn(() => ({ locks: { emergency: ['alice'] } })),
   };
   const userService = {
-    getProfile: vi.fn((username) => profiles[username] ?? null),
+    getProfile: vi.fn(() => null),
   };
   const configService = {
     getDefaultHouseholdId: () => 'default',
@@ -36,23 +34,19 @@ function appWith({
     fitnessConfigService,
     userService,
     configService,
-    resolveUnlockService: () => unlockService ?? null,
     triggerEmergencyLockdown: triggerEmergencyLockdown ?? null,
     releaseEmergencyLockdown: releaseEmergencyLockdown ?? null,
     getLockdownState: getLockdownState ?? null,
-    emergencyDetector: emergencyDetector ?? null,
+    identityRelay: identityRelay ?? null,
     logger: silentLogger,
   }));
   return { app, fitnessConfigService, userService };
 }
 
-// A unlock service whose scan matches the given verdict.
-function scanService(verdict) {
-  return {
-    requestUnlock: vi.fn().mockResolvedValue(verdict),
-    beginForeground: vi.fn(),
-    endForeground: vi.fn(),
-  };
+// A fake identityRelay whose consumePendingDetection yields the given pending
+// detection (or null for no-pending).
+function relayWith(pending) {
+  return { consumePendingDetection: vi.fn(() => pending) };
 }
 
 describe('fitness router — GET /emergency', () => {
@@ -91,23 +85,24 @@ describe('fitness router — GET /emergency', () => {
 
 describe('fitness router — POST /emergency/commit', () => {
   it('returns 409 no-pending-detection when no detection is pending', async () => {
-    const emergencyDetector = { consumePendingDetection: vi.fn(() => null) };
+    const identityRelay = relayWith(null);
     const triggerEmergencyLockdown = { execute: vi.fn() };
-    const { app } = appWith({ emergencyDetector, triggerEmergencyLockdown });
+    const { app } = appWith({ identityRelay, triggerEmergencyLockdown });
 
     const res = await request(app).post('/emergency/commit').send({});
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'no-pending-detection' });
+    expect(identityRelay.consumePendingDetection).toHaveBeenCalledTimes(1);
     expect(triggerEmergencyLockdown.execute).not.toHaveBeenCalled();
   });
 
   it('triggers lockdown for the pending detection userId', async () => {
-    const emergencyDetector = { consumePendingDetection: vi.fn(() => ({ userId: 'alice' })) };
+    const identityRelay = relayWith({ userId: 'alice', at: 123 });
     const triggerEmergencyLockdown = {
       execute: vi.fn().mockResolvedValue({ lockedUntil: 3600, lockedBy: 'alice' }),
     };
-    const { app } = appWith({ emergencyDetector, triggerEmergencyLockdown });
+    const { app } = appWith({ identityRelay, triggerEmergencyLockdown });
 
     const res = await request(app).post('/emergency/commit').send({});
 
@@ -120,8 +115,8 @@ describe('fitness router — POST /emergency/commit', () => {
   });
 
   it('returns 503 when triggerEmergencyLockdown is unwired despite a pending detection', async () => {
-    const emergencyDetector = { consumePendingDetection: vi.fn(() => ({ userId: 'alice' })) };
-    const { app } = appWith({ emergencyDetector, triggerEmergencyLockdown: null });
+    const identityRelay = relayWith({ userId: 'alice', at: 123 });
+    const { app } = appWith({ identityRelay, triggerEmergencyLockdown: null });
 
     const res = await request(app).post('/emergency/commit').send({});
 
@@ -130,24 +125,34 @@ describe('fitness router — POST /emergency/commit', () => {
   });
 });
 
-describe('fitness router — POST /emergency/release', () => {
-  it('returns { released:false } when the admin scan does not match', async () => {
-    const unlockService = scanService({ matched: false });
-    const releaseEmergencyLockdown = { execute: vi.fn() };
-    const { app } = appWith({ unlockService, releaseEmergencyLockdown });
+describe('fitness router — POST /emergency/abort', () => {
+  it('returns { confirmed:true } when a detection is pending', async () => {
+    const identityRelay = relayWith({ userId: 'alice', at: 123 });
+    const { app } = appWith({ identityRelay });
 
-    const res = await request(app).post('/emergency/release').send({});
+    const res = await request(app).post('/emergency/abort').send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ released: false });
-    expect(releaseEmergencyLockdown.execute).not.toHaveBeenCalled();
-    expect(unlockService.requestUnlock).toHaveBeenCalledTimes(1);
+    expect(res.body).toEqual({ confirmed: true });
+    expect(identityRelay.consumePendingDetection).toHaveBeenCalledTimes(1);
   });
 
-  it('releases the lockdown when the admin scan matches', async () => {
-    const unlockService = scanService({ matched: true, userId: 'alice' });
+  it('returns { confirmed:false } when no detection is pending', async () => {
+    const identityRelay = relayWith(null);
+    const { app } = appWith({ identityRelay });
+
+    const res = await request(app).post('/emergency/abort').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ confirmed: false });
+  });
+});
+
+describe('fitness router — POST /emergency/release', () => {
+  it('releases the lockdown when a detection is pending', async () => {
+    const identityRelay = relayWith({ userId: 'alice', at: 123 });
     const releaseEmergencyLockdown = { execute: vi.fn().mockResolvedValue(undefined) };
-    const { app } = appWith({ unlockService, releaseEmergencyLockdown });
+    const { app } = appWith({ identityRelay, releaseEmergencyLockdown });
 
     const res = await request(app).post('/emergency/release').send({});
 
@@ -157,31 +162,17 @@ describe('fitness router — POST /emergency/release', () => {
     expect(releaseEmergencyLockdown.execute).toHaveBeenCalledWith(
       expect.objectContaining({ by: 'alice' }),
     );
-    // Foreground arbiter is used around the scan.
-    expect(unlockService.beginForeground).toHaveBeenCalledTimes(1);
-    expect(unlockService.endForeground).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('fitness router — POST /emergency/abort', () => {
-  it('returns { confirmed:true } when the admin scan matches', async () => {
-    const unlockService = scanService({ matched: true, userId: 'alice' });
-    const { app } = appWith({ unlockService });
-
-    const res = await request(app).post('/emergency/abort').send({});
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ confirmed: true });
-    expect(unlockService.requestUnlock).toHaveBeenCalledTimes(1);
   });
 
-  it('returns { confirmed:false } when the admin scan does not match', async () => {
-    const unlockService = scanService({ matched: false });
-    const { app } = appWith({ unlockService });
+  it('returns { released:false } and does not release when no detection is pending', async () => {
+    const identityRelay = relayWith(null);
+    const releaseEmergencyLockdown = { execute: vi.fn() };
+    const { app } = appWith({ identityRelay, releaseEmergencyLockdown });
 
-    const res = await request(app).post('/emergency/abort').send({});
+    const res = await request(app).post('/emergency/release').send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ confirmed: false });
+    expect(res.body).toEqual({ released: false });
+    expect(releaseEmergencyLockdown.execute).not.toHaveBeenCalled();
   });
 });

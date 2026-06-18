@@ -3,7 +3,8 @@ import './EmergencyLockdownOverlay.scss';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import { getCueAudioElement, primeCueAudio } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
-import { useEmergencyLockdown } from '@/modules/Fitness/hooks/useEmergencyLockdown.js';
+import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 
 // Inline the power glyph so `currentColor` + CSS glow apply (a plain <img> can't
 // inherit color or take a drop-shadow on the glyph itself). Path copied from
@@ -27,64 +28,125 @@ function PowerGlyph({ className }) {
 
 const HOLD_MS = 3000;
 
+// The ceremony stays on screen for at least this long even when the powerdown
+// audio is shorter (or blocked) — a deliberate window to read "LOCKDOWN
+// INITIATED" and abort. Drives commit timing instead of the audio 'ended' event.
+const MIN_CEREMONY_MS = 10000;
+// Assumed powerdown length when the cue element's duration isn't known yet.
+const AUDIO_FALLBACK_MS = 8000;
+// Lock id presented to the unlock modal to abort an in-progress shutdown. Matches
+// the backend EMERGENCY_LOCK group, so an emergency-authorized finger grants it.
+const ABORT_LOCK = 'emergency';
+
 /**
  * Full-screen DEFCON emergency-lockdown overlay for the Fitness kiosk.
  *
  * Renders nothing in the 'normal' phase. In 'triggering' it runs a powerdown
- * ceremony (audio + cancel window) and commits to a lock when the audio ends
- * (or a fallback timer fires). In 'locked' it shows an inert lockdown screen
- * that releases via a 3s press-and-hold (server admin scan).
+ * ceremony (audio + a minimum-duration abort window) and commits to a lock when
+ * that window elapses — unless aborted via a fresh fingerprint in the unlock
+ * modal. In 'locked' it shows an inert lockdown screen that releases via a 3s
+ * press-and-hold (server admin scan).
  *
  * @param {{ audioPath?: string }} props
  */
 export default function EmergencyLockdownOverlay({ audioPath = 'apps/fitness/ux/powerdown.mp3' }) {
   const logger = useMemo(() => getLogger().child({ component: 'emergency' }), []);
-  const { phase, lockedUntil, commit, abort, release } = useEmergencyLockdown();
+  const {
+    phase, lockedUntil, commit, abort, release,
+    registerUnlock, clearUnlock, unlockState, unlockedUser,
+  } = useIdentity();
 
   if (phase === 'normal') return null;
   if (phase === 'triggering') {
-    return <TriggeringScreen audioPath={audioPath} commit={commit} abort={abort} logger={logger} />;
+    return (
+      <TriggeringScreen
+        audioPath={audioPath}
+        commit={commit}
+        abort={abort}
+        registerUnlock={registerUnlock}
+        clearUnlock={clearUnlock}
+        unlockState={unlockState}
+        unlockedUser={unlockedUser}
+        logger={logger}
+      />
+    );
   }
   return <LockedScreen lockedUntil={lockedUntil} release={release} logger={logger} />;
 }
 
-function TriggeringScreen({ audioPath, commit, abort, logger }) {
+function TriggeringScreen({ audioPath, commit, abort, registerUnlock, clearUnlock, unlockState, unlockedUser, logger }) {
   const [progress, setProgress] = useState(0); // 0..1
-  const [audioPlaying, setAudioPlaying] = useState(true); // cancel shown while audio plays
-  const [cancelArmed, setCancelArmed] = useState(false); // tapped Cancel → "scan to confirm"
-  const [scanning, setScanning] = useState(false);
+  const [cancelling, setCancelling] = useState(false); // unlock modal open to abort
 
-  const cancelledRef = useRef(false);   // user confirmed a cancel — suppress commit
-  const completedRef = useRef(false);   // ceremony already resolved (commit/cancel)
+  const cancelledRef = useRef(false);   // confirmed abort — suppress commit
+  const completedRef = useRef(false);   // ceremony already resolved (commit/abort)
+  const audioRef = useRef(null);
 
-  // Drive the powerdown ceremony: play audio, advance the progress bar, and
-  // commit when {audio 'ended', fallback timer} fires first — unless cancelled.
+  // Time-based ceremony clock (so the window holds even if audio is short/blocked).
+  const startRef = useRef(0);           // performance.now() at ceremony start
+  const pauseAccumRef = useRef(0);      // total paused ms (while the abort modal is open)
+  const pauseStartRef = useRef(null);   // performance.now() when the current pause began
+
+  const pauseCeremony = useCallback(() => {
+    if (pauseStartRef.current == null) {
+      pauseStartRef.current = performance.now();
+      try { audioRef.current?.pause(); } catch { /* noop */ }
+    }
+  }, []);
+
+  const resumeCeremony = useCallback(() => {
+    if (pauseStartRef.current != null) {
+      pauseAccumRef.current += performance.now() - pauseStartRef.current;
+      pauseStartRef.current = null;
+      const a = audioRef.current;
+      if (a && !cancelledRef.current && !completedRef.current) {
+        try { a.play?.()?.catch?.(() => {}); } catch { /* noop */ }
+      }
+    }
+  }, []);
+
+  // Drive the powerdown ceremony: play audio, advance a time-based progress bar,
+  // and commit once the (pause-adjusted) window elapses — unless aborted. The
+  // window is max(audio duration, MIN_CEREMONY_MS), so a short powerdown clip
+  // still leaves a deliberate ~10s window to read the screen and abort.
   useEffect(() => {
     let raf = null;
-    let fallbackTimer = null;
     const audio = getCueAudioElement();
+    audioRef.current = audio;
+    startRef.current = performance.now();
+    pauseAccumRef.current = 0;
+    pauseStartRef.current = null;
 
     const finish = (reason) => {
       if (completedRef.current) return;
       completedRef.current = true;
       if (raf) cancelAnimationFrame(raf);
-      if (fallbackTimer) clearTimeout(fallbackTimer);
       logger.info('emergency.ceremony_end', { reason, cancelled: cancelledRef.current });
       if (!cancelledRef.current) {
         commit().catch(() => {});
       }
     };
 
-    const onEnded = () => finish('audio-ended');
+    const windowMs = () => {
+      const durMs = (audio && isFinite(audio.duration) && audio.duration > 0)
+        ? audio.duration * 1000
+        : AUDIO_FALLBACK_MS;
+      return Math.max(durMs, MIN_CEREMONY_MS);
+    };
 
     const tick = () => {
-      if (audio && isFinite(audio.duration) && audio.duration > 0) {
-        setProgress(Math.min(1, audio.currentTime / audio.duration));
+      // Frozen while the abort modal is open — the countdown can't auto-commit
+      // out from under an in-progress cancel.
+      if (pauseStartRef.current == null) {
+        const elapsed = performance.now() - startRef.current - pauseAccumRef.current;
+        const w = windowMs();
+        setProgress(Math.min(1, elapsed / w));
+        if (elapsed >= w) { finish('window-elapsed'); return; }
       }
       raf = requestAnimationFrame(tick);
     };
 
-    logger.info('emergency.triggering', { audioPath });
+    logger.info('emergency.triggering', { audioPath, minMs: MIN_CEREMONY_MS });
 
     if (audio) {
       try {
@@ -93,64 +155,56 @@ function TriggeringScreen({ audioPath, commit, abort, logger }) {
         audio.currentTime = 0;
         audio.muted = false;
         audio.volume = 1;
-        audio.addEventListener('ended', onEnded);
         const p = audio.play();
         if (p && typeof p.then === 'function') {
           p.then(() => logger.info('emergency.audio_playing', { audioPath }))
             .catch((err) => {
-              // Autoplay gated on a gesture-less kiosk — the fallback timer still
-              // drives the ceremony to commit.
+              // Autoplay gated on a gesture-less kiosk — the time-based window
+              // still drives the ceremony to commit.
               logger.warn('emergency.audio_blocked', { name: err?.name ?? null });
-              setAudioPlaying(false);
             });
         }
       } catch (err) {
         logger.warn('emergency.audio_threw', { message: err?.message ?? null });
-        setAudioPlaying(false);
       }
-    } else {
-      setAudioPlaying(false);
     }
-
-    // Fallback: whichever fires first (ended vs. timer) completes the ceremony.
-    const durMs = (audio && isFinite(audio.duration) && audio.duration > 0)
-      ? audio.duration * 1000
-      : 8000;
-    fallbackTimer = setTimeout(() => finish('fallback-timer'), durMs + 400);
 
     raf = requestAnimationFrame(tick);
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
-      if (fallbackTimer) clearTimeout(fallbackTimer);
       if (audio) {
-        audio.removeEventListener('ended', onEnded);
         try { audio.pause(); } catch { /* noop */ }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioPath]);
 
+  // Cancel → require a FRESH fingerprint via the unlock modal. The original
+  // trigger scan's pending detection is NOT reused: abort() only fires after a
+  // new authorized scan grants the modal. The ceremony is paused while the modal
+  // is open so it can't commit mid-abort; a dismissed/denied modal resumes it.
   const handleCancel = useCallback(async () => {
-    if (scanning) return;
-    if (!cancelArmed) {
-      setCancelArmed(true);
-      logger.info('emergency.cancel_armed', {});
-      return;
-    }
-    setScanning(true);
-    logger.info('emergency.cancel_scan', {});
-    const { confirmed } = await abort();
-    if (confirmed) {
+    if (cancelling || completedRef.current || cancelledRef.current) return;
+    setCancelling(true);
+    pauseCeremony();
+    logger.info('emergency.cancel_scan_open', {});
+    const verdict = await registerUnlock(ABORT_LOCK);
+    if (verdict?.matched) {
       cancelledRef.current = true;
-      // enterNormal() inside the hook unmounts this screen; nothing more to do.
+      logger.info('emergency.cancel_confirmed', { userId: verdict.userId ?? null });
+      try { await abort(); } finally { clearUnlock(); }
+      // abort() → enterNormal() inside the hook unmounts this screen on success.
     } else {
-      // Not confirmed — let the ceremony proceed to commit.
-      logger.info('emergency.cancel_denied', {});
-      setScanning(false);
-      setCancelArmed(false);
+      logger.info('emergency.cancel_dismissed', { reason: verdict?.reason ?? null });
+      setCancelling(false);
+      resumeCeremony();
     }
-  }, [scanning, cancelArmed, abort, logger]);
+  }, [cancelling, registerUnlock, abort, clearUnlock, pauseCeremony, resumeCeremony, logger]);
+
+  // Modal Cancel/Close/Escape/timeout — resolves registerUnlock with a dismissal,
+  // which routes back through handleCancel's else-branch to resume the ceremony.
+  const dismissCancel = useCallback(() => { clearUnlock(); }, [clearUnlock]);
 
   return (
     <div className="emergency-overlay emergency-overlay--triggering" role="alertdialog" aria-label="System lockdown initiated">
@@ -162,18 +216,24 @@ function TriggeringScreen({ audioPath, commit, abort, logger }) {
           <div className="emergency-progress__fill" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       </div>
-      {audioPlaying && (
+      {!cancelling && (
         <div className="emergency-cancel-zone">
           <button
             type="button"
-            className={`emergency-cancel${cancelArmed ? ' emergency-cancel--armed' : ''}`}
+            className="emergency-cancel"
             onPointerDown={handleCancel}
-            disabled={scanning}
           >
-            {scanning ? 'SCANNING…' : cancelArmed ? 'SCAN TO CONFIRM CANCEL' : 'Cancel'}
+            Cancel
           </button>
         </div>
       )}
+      <UnlockPrompt
+        open={cancelling}
+        state={unlockState}
+        lockLabel="Abort shutdown"
+        onCancel={dismissCancel}
+        unlockedUser={unlockedUser}
+      />
     </div>
   );
 }
