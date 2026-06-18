@@ -94,6 +94,15 @@ export function usePlaybackHealth({
   const [frameInfo, setFrameInfo] = useState(NO_FRAME_INFO);
   const [progressSignal, setProgressSignal] = useState(DEFAULT_PROGRESS_STATE);
   const [bufferRunwayMs, setBufferRunwayMs] = useState(null);
+  // Bumped whenever the underlying <video>/<audio> element is swapped out from
+  // under us (softReinit bumps React's key → a brand-new element). The event
+  // listeners and frame poll below capture the element at setup time, so they
+  // MUST re-attach when this changes or they stay bound to the dead element —
+  // the exact failure where the spinner sticks after a mid-playback recovery.
+  const [elementGeneration, setElementGeneration] = useState(0);
+  // Live "the clock is actually moving" signal, sampled directly off the media
+  // element rather than the metrics bridge (which goes quiet during a stall).
+  const [advancing, setAdvancing] = useState(false);
 
   const getMediaElRef = useRef(getMediaEl);
   useEffect(() => {
@@ -194,6 +203,48 @@ export function usePlaybackHealth({
       recordProgress('clock', { seconds });
     }
   }, [seconds, deltaThreshold, recordProgress]);
+
+  // Element-swap watcher + real-time advancement poll. This is intentionally
+  // self-contained (reads getMediaEl() / currentTime directly) so it keeps
+  // working when the metrics bridge stops emitting — which is precisely what
+  // happens during a stall, the moment we most need to know the truth.
+  // - When the live element identity changes, bump `elementGeneration` so the
+  //   listener + frame-poll effects re-bind to the new element.
+  // - `advancing` reflects whether currentTime actually moved forward between
+  //   samples while not paused/ended; it is the authority for "is it really
+  //   playing", overriding stuck `waiting`/`buffering` flags downstream.
+  const attachedElRef = useRef(null);
+  const advanceSampleRef = useRef(null);
+  useEffect(() => {
+    attachedElRef.current = null;
+    advanceSampleRef.current = null;
+    const ADVANCE_POLL_MS = 400;
+    const ADVANCE_EPSILON = 0.05;
+    const poll = () => {
+      const el = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
+      if (el !== attachedElRef.current) {
+        attachedElRef.current = el;
+        advanceSampleRef.current = null;
+        setElementGeneration((gen) => gen + 1);
+      }
+      if (!el || !Number.isFinite(el.currentTime)) {
+        advanceSampleRef.current = null;
+        setAdvancing((cur) => (cur ? false : cur));
+        return;
+      }
+      const t = Number(el.currentTime);
+      const prev = advanceSampleRef.current;
+      let isAdv = false;
+      if (Number.isFinite(prev) && !el.paused && !el.ended) {
+        isAdv = (t - prev) > ADVANCE_EPSILON;
+      }
+      advanceSampleRef.current = t;
+      setAdvancing((cur) => (cur === isAdv ? cur : isAdv));
+    };
+    poll();
+    const intervalId = setInterval(poll, ADVANCE_POLL_MS);
+    return () => clearInterval(intervalId);
+  }, [waitKey]);
 
   useEffect(() => {
     const mediaEl = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
@@ -309,7 +360,7 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('ended', handleEnded);
       bufferEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, updateBufferRunway));
     };
-  }, [waitKey, recordProgress, updateElementSignals, logHealthEvent]);
+  }, [waitKey, elementGeneration, recordProgress, updateElementSignals, logHealthEvent]);
 
   useEffect(() => {
     if (mediaType !== 'video' && mediaType !== 'dash_video') {
@@ -366,7 +417,7 @@ export function usePlaybackHealth({
         clearInterval(intervalId);
       }
     };
-  }, [mediaType, playerFlavor, waitKey, recordProgress]);
+  }, [mediaType, playerFlavor, waitKey, elementGeneration, recordProgress]);
 
   return useMemo(() => ({
     progressToken: progressSignal.progressToken,
@@ -379,6 +430,10 @@ export function usePlaybackHealth({
     bufferRunwayMs,
     isWaiting: Boolean(elementSignals.waiting || elementSignals.buffering),
     isStalledEvent: Boolean(elementSignals.stalled),
-    isFrameAdvancing: frameInfo.supported ? frameInfo.advancing : null
-  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs]);
+    isFrameAdvancing: frameInfo.supported ? frameInfo.advancing : null,
+    // True when the media clock is genuinely moving forward right now. The
+    // authority for "it's playing" — downstream resilience uses it to suppress
+    // a spinner that lingers on stale waiting/buffering flags.
+    isAdvancing: advancing
+  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs, advancing]);
 }
