@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   initUnlockService,
   getUnlockService,
+  isUnlockForegroundActive,
   _resetUnlockServiceForTests,
   UNLOCK_REQUEST_TOPIC,
   UNLOCK_RESULT_TOPIC,
@@ -129,4 +130,38 @@ test('initUnlockService throws when eventBus lacks onClientMessage', async (t) =
   t.after(_resetUnlockServiceForTests);
   const broadcastOnlyBus = { broadcast() {} };
   assert.throws(() => initUnlockService({ eventBus: broadcastOnlyBus }), /onClientMessage/);
+});
+
+test('foreground arbiter tracks begin/end and never goes negative', async (t) => {
+  t.after(_resetUnlockServiceForTests);
+  const svc = initUnlockService({ eventBus: makeFakeBus(), timeoutMs: 1000 });
+  assert.equal(svc.isForegroundActive(), false);
+  assert.equal(isUnlockForegroundActive(), false);
+  svc.beginForeground();
+  assert.equal(svc.isForegroundActive(), true);
+  assert.equal(isUnlockForegroundActive(), true, 'module helper reflects singleton');
+  svc.beginForeground();
+  svc.endForeground();
+  assert.equal(svc.isForegroundActive(), true, 'still active while one remains');
+  svc.endForeground();
+  assert.equal(svc.isForegroundActive(), false);
+  svc.endForeground(); // extra end must not go negative
+  assert.equal(svc.isForegroundActive(), false);
+});
+
+test('isUnlockForegroundActive is false when service is not wired', async (t) => {
+  t.after(_resetUnlockServiceForTests);
+  _resetUnlockServiceForTests();
+  assert.equal(isUnlockForegroundActive(), false);
+});
+
+test('per-call timeoutMs overrides the broker default', async (t) => {
+  t.after(_resetUnlockServiceForTests);
+  const svc = initUnlockService({ eventBus: makeFakeBus(), timeoutMs: 10000 });
+  const start = Date.now();
+  // No reply ever arrives; a short per-call timeout should settle well before
+  // the 10s broker default.
+  const result = await svc.requestUnlock('emergency', [], { timeoutMs: 30 });
+  assert.deepEqual(result, { matched: false, reason: 'timeout' });
+  assert.ok(Date.now() - start < 5000, 'short per-call timeout was honored');
 });

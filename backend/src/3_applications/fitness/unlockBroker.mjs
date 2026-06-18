@@ -42,12 +42,15 @@ export function createUnlockBroker({
     entry.resolve(result);
   }
 
-  function requestUnlock({ lockName, candidateUuids }) {
+  function requestUnlock({ lockName, candidateUuids, timeoutMs: perCallTimeoutMs }) {
     const requestId = idFn();
+    // A per-call timeout (used by the always-armed emergency detector for a short
+    // re-arm window) overrides the broker default; omit it for normal unlocks.
+    const effectiveTimeoutMs = Number.isFinite(perCallTimeoutMs) ? perCallTimeoutMs : timeoutMs;
     return new Promise((resolve) => {
       const timer = setTimeoutFn(() => {
         settle(requestId, { matched: false, reason: 'timeout' });
-      }, timeoutMs);
+      }, effectiveTimeoutMs);
       pending.set(requestId, { resolve, timer });
       publish('fitness.unlock.request', { requestId, lockName, candidateUuids });
     });
