@@ -21,28 +21,49 @@ export const nextMode = (i) => (i + 1) % VIEW_MODES.length;
 export const prevMode = (i) => (i - 1 + VIEW_MODES.length) % VIEW_MODES.length;
 
 /**
- * Per-image default view-mode index. A SINGLE that cover-fills the bare frame
- * window with ≤ `fillCrop` (fraction) per side starts mat-less, in `framed-cover`
- * (frame on, image bleeds to fill); diptychs and tighter singles fall back to
- * `fallback` (the matted `gallery` by default). With `fillCrop` 0 the answer is
- * always `fallback`, so the feature is off and behavior is unchanged. Tab cycling
- * is unaffected — this only chooses where an untouched image *starts*.
+ * Per-image matless-fill decision (with reasoning, for logging). Cover-filling the
+ * bare frame opening crops exactly ONE axis: a SINGLE narrower than the opening
+ * fills the width and trims top/bottom (the vertical budget `cropV`); one wider
+ * fills the height and trims left/right (the horizontal budget `cropH`). If the
+ * needed per-side crop is within that axis's budget the image starts mat-less in
+ * `framed-cover` (frame on, image bleeds to fill); diptychs and over-budget singles
+ * fall back to `fallback` (the matted `gallery` by default). With both budgets 0
+ * the result is always `fallback` (feature off). Tab cycling is unaffected — this
+ * only chooses where an untouched image *starts*.
  *
  * @param {object} o
  * @param {'single'|'diptych'} o.mode  content mode of the artwork
  * @param {number[]} o.ratios  art aspect ratios (w/h)
  * @param {{top,right,bottom,left}} o.frame  frame window insets, %
- * @param {number} [o.fillCrop]  matless-fill budget, fraction (e.g. 0.125)
+ * @param {number} [o.cropV]  top/bottom crop budget, fraction (e.g. 0.14)
+ * @param {number} [o.cropH]  left/right crop budget, fraction (e.g. 0.25)
  * @param {string} [o.fallback]  mode name for non-qualifying art (default 'gallery')
- * @returns {number} index into VIEW_MODES
+ * @returns {{index:number, view:string, qualified:boolean, winAR:number|null,
+ *            axis:'top-bottom'|'left-right'|null, need:number|null, budget:number}}
  */
-export function defaultModeIndex({ mode, ratios, frame, fillCrop = 0, fallback = 'gallery' }) {
+export function fillDecision({ mode, ratios, frame, cropV = 0, cropH = 0, fallback = 'gallery' }) {
   const fb = modeIndexByName(fallback);
-  if (mode === 'diptych' || !(fillCrop > 0) || !ratios?.length) return fb;
+  if (mode === 'diptych' || !(cropV > 0 || cropH > 0) || !ratios?.length) {
+    return { index: fb, view: VIEW_MODES[fb].name, qualified: false, winAR: null, axis: null, need: null, budget: 0 };
+  }
   const winAR = (SW - ((frame.left + frame.right) / 100) * SW)
               / (SH - ((frame.top + frame.bottom) / 100) * SH);
+  const vertical = ratios[0] <= winAR;        // narrower art → fills width, crops top/bottom
+  const axis = vertical ? 'top-bottom' : 'left-right';
+  const budget = vertical ? cropV : cropH;
   const need = coverCropPerSide(winAR, ratios[0]);
-  return need <= fillCrop + 1e-9 ? modeIndexByName('framed-cover') : fb;
+  const qualified = budget > 0 && need <= budget + 1e-9;
+  const index = qualified ? modeIndexByName('framed-cover') : fb;
+  return { index, view: VIEW_MODES[index].name, qualified, winAR, axis, need, budget };
+}
+
+/**
+ * Per-image default view-mode index. Thin wrapper over {@link fillDecision} when
+ * only the index is needed (e.g. tests, simple callers).
+ * @returns {number} index into VIEW_MODES
+ */
+export function defaultModeIndex(o) {
+  return fillDecision(o).index;
 }
 
 // Per-panel window insets (% of stage) for the object-fit modes (2-5).
