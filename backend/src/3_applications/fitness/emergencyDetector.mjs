@@ -35,6 +35,12 @@ const PENDING_TTL_MS = 30000;
  * @param {number} [deps.idleDelayMs] - pause between checks while yielded/locked
  * @param {number} [deps.settleDelayMs] - pause after a detection to avoid re-capture
  * @param {number} [deps.pendingTtlMs] - how long a pending detection stays valid
+ * @param {number} [deps.interArmIdleMs] - hardware hedge: pause between re-arms so
+ *   the reader isn't armed 100% of the time (0 = continuous, the default)
+ * @param {{start:number,end:number}|null} [deps.activeHours] - hardware hedge: only
+ *   arm when the local hour is within [start, end) (supports overnight wrap, e.g.
+ *   {start:22,end:6}); null = always armed (the default)
+ * @param {() => number} [deps.getHour] - injectable local-hour provider for activeHours
  * @param {Function} [deps.setTimeoutFn] - injectable setTimeout for tests
  * @param {object} [deps.logger] - structured logger (console-compatible)
  */
@@ -49,6 +55,9 @@ export function createEmergencyDetector({
   idleDelayMs = 500,
   settleDelayMs = 1500,
   pendingTtlMs = PENDING_TTL_MS,
+  interArmIdleMs = 0,
+  activeHours = null,
+  getHour = () => new Date().getHours(),
   setTimeoutFn = setTimeout,
   logger = console,
 } = {}) {
@@ -60,12 +69,22 @@ export function createEmergencyDetector({
     return new Promise((r) => setTimeoutFn(r, ms));
   }
 
+  // Hardware hedge: only arm during configured hours. Supports an overnight
+  // window (start > end), e.g. {start:22,end:6} → armed 10pm–6am.
+  function withinActiveHours() {
+    if (!activeHours) return true;
+    const { start = 0, end = 24 } = activeHours;
+    if (start === end) return true; // degenerate / always
+    const h = getHour();
+    return start < end ? h >= start && h < end : h >= start || h < end;
+  }
+
   async function loop() {
     while (running) {
       try {
-        // Stand down while a foreground unlock owns the reader, or while a
-        // lockdown is already committed.
-        if (unlockService.isForegroundActive?.() || (await isLocked())) {
+        // Stand down while a foreground unlock owns the reader, while a lockdown
+        // is already committed, or outside the configured active-hours window.
+        if (unlockService.isForegroundActive?.() || (await isLocked()) || !withinActiveHours()) {
           await delay(idleDelayMs);
           continue;
         }
@@ -96,6 +115,10 @@ export function createEmergencyDetector({
           });
           // Pause so the same finger-press isn't re-captured immediately.
           await delay(settleDelayMs);
+        } else if (interArmIdleMs > 0) {
+          // Hardware hedge: rest between re-arms so the reader isn't armed 100%
+          // of the time (also widens the gap a normal unlock can claim it in).
+          await delay(interArmIdleMs);
         }
       } catch (err) {
         logger.warn?.('emergency.detector_error', { error: err?.message });

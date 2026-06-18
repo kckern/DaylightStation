@@ -49,7 +49,23 @@ emergency:
   duration_sec: 1800                 # lockdown length (default 30 min)
   ha_script: garage_deactivate       # HA script.<name> fired on commit
   audio: apps/fitness/ux/powerdown.mp3
+  arming:                            # hardware hedge for the always-armed reader
+    inter_arm_idle_ms: 1000          # rest between re-arms (0 = continuous)
+    # active_hours: { start: 6, end: 24 }   # optional: only arm 6am–midnight local
 ```
+
+### Arming hedge
+
+The reader is kept armed in the background. Two config knobs reduce its duty
+cycle without code changes:
+- **`inter_arm_idle_ms`** (default `1000`): a rest between re-arms so the reader
+  isn't armed 100% of the time, and a normal unlock gets a wider gap to claim it.
+  A press landing in the brief idle gap is caught on the next arm — hold a beat
+  longer. Set `0` for fully continuous arming.
+- **`active_hours`** (default unset = armed 24/7): `{ start, end }` local hours;
+  the detector only arms within `[start, end)`. Supports an overnight window
+  (e.g. `{ start: 22, end: 6 }`). Use this to spare the sensor overnight if
+  desired — at the cost of no emergency coverage outside the window.
 
 - The admins must have **enrolled fingerprints** in their user profiles for the
   trigger/release scans to match (same as the other `locks`).
@@ -109,5 +125,5 @@ fakes and don't exercise the live reader. Before relying on it in production,
 confirm: (a) the bridge tolerates continuous re-arming, and (b) a normal unlock
 still wins the reader (the foreground arbiter pauses the detector during a normal
 unlock — `unlockService.beginForeground/endForeground`). If continuous arming
-stresses the sensor LED, the detector supports an inter-arm idle gap / the
-arming can be gated to active hours (config-driven follow-up).
+stresses the sensor, use the **arming hedge** above (`inter_arm_idle_ms`,
+`active_hours`) — both are live config knobs (default: 1s inter-arm gap, 24/7).
