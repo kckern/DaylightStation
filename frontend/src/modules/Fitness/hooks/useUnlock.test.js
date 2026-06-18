@@ -1,18 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-// Mock the POST mechanism. useUnlock posts via DaylightAPI(path, body).
+// Mock the POST mechanism. useUnlock posts via DaylightAPI(path, body); it also
+// builds avatar URLs via DaylightMediaPath (identity here keeps the path simple).
 vi.mock('@/lib/api.mjs', () => ({
-  DaylightAPI: vi.fn()
+  DaylightAPI: vi.fn(),
+  DaylightMediaPath: (p) => p
 }));
 
 // Mock the cue-audio plumbing so the hook's success-chime side effect is observable
-// without a real <audio> element.
+// without a real <audio> element. On a match the hook awaits the chime via the
+// `onDone` callback before resolving — invoke it so the promise settles promptly.
 vi.mock('@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js', () => ({
-  playCueOnce: vi.fn()
+  playCueOnce: vi.fn(({ onDone } = {}) => { onDone?.('ended'); return true; })
 }));
 vi.mock('@/modules/Fitness/player/hooks/audioCuePlayer.js', () => ({
   primeCueAudio: vi.fn()
+}));
+
+// useUnlock reads the chime sound + volume from fitness config via useFitness(),
+// and resolves the matched userId → display name via userCollections.all.
+// A non-default sound path proves the value comes from config, not a hardcode.
+vi.mock('@/context/FitnessContext.jsx', () => ({
+  useFitness: () => ({
+    fitnessConfiguration: { unlock: { sound: 'apps/fitness/ux/custom-unlock.mp3', volume: 0.3 } },
+    userCollections: { all: [{ id: 'test-user', name: 'Test User' }] }
+  })
 }));
 
 import { DaylightAPI } from '@/lib/api.mjs';
@@ -56,7 +69,27 @@ describe('useUnlock', () => {
     expect(DaylightAPI).toHaveBeenCalledWith('api/v1/fitness/unlock', { lock: 'dance-party' });
     // Primes on the (gesture) request and plays the success chime on a match.
     expect(primeCueAudio).toHaveBeenCalled();
-    expect(playCueOnce).toHaveBeenCalledWith({ sound: 'apps/fitness/ux/unlock.mp3', volume: 1 });
+    expect(playCueOnce).toHaveBeenCalledWith(
+      expect.objectContaining({ sound: 'apps/fitness/ux/custom-unlock.mp3', volume: 0.3 })
+    );
+  });
+
+  it('exposes the recognized user (name + avatar) for the success screen on a match', async () => {
+    DaylightAPI.mockResolvedValue({ matched: true, userId: 'test-user' });
+
+    const { result } = renderHook(() => useUnlock());
+    await act(async () => { await result.current.requestUnlock('dance-party'); });
+
+    // Resolved from userCollections.all (name) + the /static/img/users/<id> convention.
+    expect(result.current.unlockedUser).toEqual({
+      userId: 'test-user',
+      name: 'Test User',
+      avatarSrc: '/static/img/users/test-user'
+    });
+
+    // reset() clears it back out.
+    act(() => { result.current.reset(); });
+    expect(result.current.unlockedUser).toBe(null);
   });
 
   it('does NOT play the success chime when the scan is not matched', async () => {

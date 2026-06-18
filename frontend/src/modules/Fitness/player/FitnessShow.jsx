@@ -267,7 +267,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   // One unlock instance owned by FitnessShow. `pendingUnlock` describes the action
   // to perform when a fingerprint matches; null means no prompt is open. Mirrors the
   // hook+prompt+pendingLaunch wiring from FitnessModuleMenu (Task 4.1).
-  const { requestUnlock, state: unlockState, reset: resetUnlock } = useUnlock();
+  const { requestUnlock, state: unlockState, unlockedUser, reset: resetUnlock } = useUnlock();
   const [pendingUnlock, setPendingUnlock] = useState(null); // { lock, label, episode? }
 
   // Once a governance_bypass fingerprint matches, episodes launched from this show
@@ -1348,7 +1348,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                                 className="episode-thumbnail"
                                 data-testid="episode-thumbnail"
                                 data-plex-id={episode.plex || episode.id}
-                                onPointerDown={isLocked ? undefined : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
+                                onPointerDown={isLocked
+                                  ? (isLockActive('skip_content') ? () => handleLockedEpisodeUnlockTap(episode) : undefined)
+                                  : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                                 onClick={isLocked ? undefined : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                               >
                                 <img
@@ -1387,7 +1389,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                             <div
                               className="episode-title"
                               aria-label={episode.label}
-                              onPointerDown={isLocked ? undefined : (e) => {
+                              onPointerDown={isLocked
+                                ? (isLockActive('skip_content') ? () => handleLockedEpisodeUnlockTap(episode) : undefined)
+                                : (e) => {
                                 const card = e.currentTarget.closest('.episode-card');
                                 const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
                                 if (didScroll) return; // require second tap when visible
@@ -1513,6 +1517,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         open={!!pendingUnlock}
         state={unlockState}
         lockLabel={pendingUnlock?.label}
+        unlockedUser={unlockedUser}
         onCancel={closeUnlock}
       />
     </div>

@@ -17,27 +17,51 @@ function logger() {
  * primed the element via a user gesture (see audioCuePlayer.primeCueAudio /
  * installCueAudioUnlock) or the play may be autoplay-rejected (logged, not thrown).
  *
- * @param {{ sound: string, volume?: number }} cue - `sound` is a media-relative path
+ * Pass `onDone` to be notified once the cue finishes — it fires on the audio
+ * 'ended'/'error' events, on an autoplay-reject, or if the element is missing,
+ * so a caller that holds UI open for the chime (e.g. the unlock success screen)
+ * never hangs on a silent device. Omit it for pure fire-and-forget.
+ *
+ * @param {{ sound: string, volume?: number, onDone?: (reason: string) => void }} cue - `sound` is a media-relative path
  * @returns {boolean} true if play was attempted
  */
-export function playCueOnce({ sound, volume } = {}) {
+export function playCueOnce({ sound, volume, onDone } = {}) {
   if (!sound) return false;
   const audio = getCueAudioElement();
-  if (!audio) { logger().warn('fitness.cue.no_element', { sound }); return false; }
+  if (!audio) { logger().warn('fitness.cue.no_element', { sound }); if (typeof onDone === 'function') onDone('no_element'); return false; }
+
+  // One-shot completion: fires onDone exactly once and detaches listeners.
+  let settled = false;
+  const onEnded = () => finish('ended');
+  const onError = () => finish('error');
+  const finish = (reason) => {
+    if (settled) return;
+    settled = true;
+    audio.removeEventListener('ended', onEnded);
+    audio.removeEventListener('error', onError);
+    if (typeof onDone === 'function') onDone(reason);
+  };
+
   try {
     audio.src = DaylightMediaPath(`/media/${sound}`);
     const v = Number(volume);
     audio.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
     audio.currentTime = 0;
     audio.muted = false;
+    if (typeof onDone === 'function') {
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
+    }
     logger().info('fitness.cue.play', { sound, unlocked: isCueAudioUnlocked() });
     const p = audio.play();
     if (p && typeof p.catch === 'function') p.catch((err) => {
       logger().warn('fitness.cue.play_rejected', { sound, name: err?.name ?? null, message: err?.message ?? null });
+      finish('rejected');
     });
     return true;
   } catch (err) {
     logger().warn('fitness.cue.play_threw', { sound, message: err?.message ?? null });
+    finish('threw');
     return false;
   }
 }
