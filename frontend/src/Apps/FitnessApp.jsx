@@ -17,6 +17,7 @@ import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/F
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
+import EmergencyLockdownOverlay from '../modules/Fitness/player/overlays/EmergencyLockdownOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
@@ -701,6 +702,12 @@ const FitnessApp = () => {
     return root?.content_source || 'plex';
   }, [fitnessConfiguration]);
 
+  // Powerdown audio for the emergency-lockdown ceremony (config-driven).
+  const emergencyAudioPath = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    return root?.emergency?.audio || 'apps/fitness/ux/powerdown.mp3';
+  }, [fitnessConfiguration]);
+
   // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
   // day-gated nav items re-evaluate live on a long-running kiosk session.
   const dayOfWeek = useDayOfWeek();
@@ -1277,6 +1284,7 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <GlobalOverlays />
+          <EmergencyLockdownOverlay audioPath={emergencyAudioPath} />
           <MenuMusicController
             isActive={menuMusicActive}
             trackChangeKey={menuMusicTrackKey}
