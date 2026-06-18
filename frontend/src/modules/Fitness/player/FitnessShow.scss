@@ -870,7 +870,12 @@
         &.locked {
           filter: grayscale(0.8) brightness(0.8);
           opacity: 0.5;
-          pointer-events: none;
+          // Stay tappable so a locked tile can open the skip_content unlock prompt.
+          // The tile's onPointerDown is gated in JSX on isLockActive('skip_content'),
+          // so when no unlock is configured the tap simply does nothing (no normal
+          // play — onClick is disabled for locked tiles).
+          pointer-events: auto;
+          cursor: pointer;
         }
 
         /* Hover removed */
