@@ -64,9 +64,21 @@ export function createEmergencyDetector({
   let running = false;
   let pending = null; // { userId, at }
   let loopPromise = null;
+  // Track the current "why aren't we arming" state so we log transitions once
+  // (entering/leaving a stand-down reason) instead of spamming every loop tick.
+  let standReason = 'starting';
 
   function delay(ms) {
     return new Promise((r) => setTimeoutFn(r, ms));
+  }
+
+  // Log a stand-down / resume transition exactly once when the reason changes.
+  // reason === 'arming' means actively armed; anything else is a stand-down.
+  function noteState(reason, extra = {}) {
+    if (reason === standReason) return;
+    standReason = reason;
+    if (reason === 'arming') logger.info?.('emergency.arming_resumed', extra);
+    else logger.info?.('emergency.standing_down', { reason, ...extra });
   }
 
   // Hardware hedge: only arm during configured hours. Supports an overnight
@@ -84,7 +96,20 @@ export function createEmergencyDetector({
       try {
         // Stand down while a foreground unlock owns the reader, while a lockdown
         // is already committed, or outside the configured active-hours window.
-        if (unlockService.isForegroundActive?.() || (await isLocked()) || !withinActiveHours()) {
+        // Each reason is logged once on transition (noteState) so logs show WHY
+        // the detector isn't arming without spamming every tick.
+        if (unlockService.isForegroundActive?.()) {
+          noteState('foreground-unlock');
+          await delay(idleDelayMs);
+          continue;
+        }
+        if (await isLocked()) {
+          noteState('lockdown-active');
+          await delay(idleDelayMs);
+          continue;
+        }
+        if (!withinActiveHours()) {
+          noteState('outside-active-hours', { activeHours });
           await delay(idleDelayMs);
           continue;
         }
@@ -93,10 +118,12 @@ export function createEmergencyDetector({
         const candidates = resolveEmergencyCandidates({ fitnessConfig, userService });
         if (candidates.length === 0) {
           // No admins configured; back off a bit longer before re-checking.
+          noteState('no-candidates');
           await delay(idleDelayMs * 4);
           continue;
         }
 
+        noteState('arming', { candidates: candidates.length });
         logger.debug?.('emergency.armed', { candidates: candidates.length });
         const result = await unlockService.requestUnlock('emergency', candidates, {
           timeoutMs: armTimeoutMs,
@@ -156,7 +183,13 @@ export function createEmergencyDetector({
       if (pending && now - pending.at <= pendingTtlMs) {
         const p = pending;
         pending = null;
+        logger.info?.('emergency.pending_consumed', { userId: p.userId, ageMs: now - p.at });
         return p;
+      }
+      if (pending) {
+        logger.warn?.('emergency.pending_expired', { userId: pending.userId, ageMs: now - pending.at, ttlMs: pendingTtlMs });
+      } else {
+        logger.debug?.('emergency.pending_absent', {});
       }
       pending = null;
       return null;

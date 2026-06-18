@@ -70,16 +70,21 @@ export function useEmergencyLockdown() {
     logger().info('emergency.locked', { lockedUntil: until, lockedBy: by });
   }, []);
 
-  const enterNormal = useCallback(() => {
+  const enterNormal = useCallback((reason = 'unspecified') => {
     setPhase(PHASE_NORMAL);
     setLockedUntil(null);
     setLockedBy(null);
+    logger().info('emergency.normal', { reason });
   }, []);
 
   // --- Mount: hydrate current lock state from the server ---------------------
   useEffect(() => {
     // If the URL seam forced a phase, don't let the GET stomp it (tests).
-    if (readUrlSeam()) return;
+    const seam = readUrlSeam();
+    if (seam) {
+      logger().info('emergency.seam_forced', { phase: seam });
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -90,6 +95,8 @@ export function useEmergencyLockdown() {
           setLockedUntil(res.lockedUntil ?? null);
           setLockedBy(res.lockedBy ?? null);
           logger().info('emergency.locked', { lockedUntil: res.lockedUntil, lockedBy: res.lockedBy, source: 'mount' });
+        } else {
+          logger().debug('emergency.status_clear', { source: 'mount' });
         }
       } catch (err) {
         // Stay normal on error — better to under-lock than to brick the app.
@@ -111,6 +118,9 @@ export function useEmergencyLockdown() {
             logger().info('emergency.detected', { userId: msg.userId ?? null, at: msg.at ?? null });
             setPhase(PHASE_TRIGGERING);
             logger().info('emergency.triggering', { userId: msg.userId ?? null });
+          } else {
+            // Duplicate / late broadcast while already triggering or locked.
+            logger().debug('emergency.detected_ignored', { phase: phaseRef.current, userId: msg.userId ?? null });
           }
           break;
         case 'fitness.emergency.locked':
@@ -118,7 +128,7 @@ export function useEmergencyLockdown() {
           break;
         case 'fitness.emergency.released':
           logger().info('emergency.released', { by: msg.by ?? null, at: msg.at ?? null });
-          enterNormal();
+          enterNormal('ws-released');
           break;
         default:
           break;
@@ -140,16 +150,17 @@ export function useEmergencyLockdown() {
         const res = await DaylightAPI(EMERGENCY_PATH);
         if (!res || !res.locked) {
           logger().info('emergency.expired', { lockedUntil });
-          enterNormal();
+          enterNormal('expiry');
         } else {
           // Server still locked (clock skew / extended) — adopt its window.
+          logger().info('emergency.lock_extended', { lockedUntil: res.lockedUntil ?? null });
           setLockedUntil(res.lockedUntil ?? null);
           setLockedBy(res.lockedBy ?? null);
         }
       } catch (err) {
         // On error, optimistically release so the kiosk isn't stuck forever.
         logger().warn('emergency.expiry_check_failed', { message: err?.message ?? null });
-        enterNormal();
+        enterNormal('expiry-check-failed');
       }
     }, ms);
     return () => clearTimeout(t);
@@ -169,7 +180,7 @@ export function useEmergencyLockdown() {
     } catch (err) {
       // 409 no-pending-detection (or any failure) → fall back to normal.
       logger().warn('emergency.commit_failed', { message: err?.message ?? null });
-      enterNormal();
+      enterNormal('commit-failed');
       return { locked: false };
     }
   }, [enterLocked, enterNormal]);
@@ -180,7 +191,9 @@ export function useEmergencyLockdown() {
       const confirmed = !!(res && res.confirmed);
       if (confirmed) {
         logger().info('emergency.cancelled', {});
-        enterNormal();
+        enterNormal('cancel-confirmed');
+      } else {
+        logger().info('emergency.cancel_denied', {});
       }
       return { confirmed };
     } catch (err) {
@@ -196,7 +209,9 @@ export function useEmergencyLockdown() {
       const released = !!(res && res.released);
       if (released) {
         logger().info('emergency.released', { by: 'local-scan' });
-        enterNormal();
+        enterNormal('release-confirmed');
+      } else {
+        logger().info('emergency.release_denied', {});
       }
       return { released };
     } catch (err) {

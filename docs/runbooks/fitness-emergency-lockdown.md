@@ -94,12 +94,32 @@ WebSocket broadcasts: `fitness.emergency.detected`, `fitness.emergency.locked`,
 
 ## Observability
 
-Structured log events (component `emergency` on the frontend; module
-`fitness-emergency` on the backend): `emergency.detector_started`,
-`emergency.armed`, `emergency.detected`, `emergency.triggering`,
-`emergency.ceremony_end`, `emergency.cancelled`/`cancel_*`, `emergency.committed`,
-`emergency.ha_fired`, `emergency.locked`, `emergency.release_hold`,
-`emergency.released`, `emergency.expired`.
+Structured log events at every state change / junction (component `emergency` on
+the frontend; module `fitness-emergency` on the backend).
+
+**Backend — detector:** `detector_started`/`detector_stopped`, `standing_down`
+(reason: `foreground-unlock` | `lockdown-active` | `outside-active-hours` |
+`no-candidates`) / `arming_resumed`, `armed`, `detected`, `pending_consumed` /
+`pending_expired` / `pending_absent`, `detector_error`.
+
+**Backend — routes/use cases:** `state_query`, `scan_start` / `scan_result` /
+`scan_unavailable`, `commit_accepted` / `commit_rejected` (reason) / `committed`,
+`cancelled` / `cancel_denied`, `released` / `release_denied`, `ha_fired`,
+`locked`.
+
+**Frontend — hook (`useEmergencyLockdown`):** `seam_forced`, `status_clear` /
+`status_failed`, `detected` / `detected_ignored`, `triggering`, `committed` /
+`commit_no_lock` / `commit_failed`, `cancelled` / `cancel_denied`, `released` /
+`release_denied` / `release_requested`, `locked` / `lock_extended`, `expired` /
+`expiry_check_failed`, `normal` (with `reason`).
+
+**Frontend — overlay:** `triggering`, `audio_playing` / `audio_blocked` /
+`audio_threw`, `ceremony_end` (reason), `cancel_armed` / `cancel_scan` /
+`cancel_denied`, `hold_start` / `hold_cancel` / `release_hold`.
+
+Every return-to-`normal` carries a `reason` (`ws-released`, `expiry`,
+`expiry-check-failed`, `commit-failed`, `cancel-confirmed`, `release-confirmed`),
+so a state transition can always be traced to its cause.
 
 ## Troubleshooting
 
