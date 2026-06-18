@@ -186,6 +186,25 @@ container over the existing socket:
 Enroll progress mirrors the hardware capture from the enroll doc — **five presses plus a
 confirm** — so the modal shows the same stage-by-stage prompts the reader expects.
 
+## Continuous scanner & reader health
+The garage box runs an always-on scan loop (`continuousScanLoop.mjs`) that blocks on a
+full-store identify and broadcasts `biometric.scan` on every real touch, so an enrolled
+finger arms the emergency flow without any foreground request. It is the **default owner**
+of the single reader; enroll and unlock/manage **preempt** it through the reader arbiter
+(they abort the in-flight identify via SIGTERM, which the helper catches to cancel the scan
+and release the device cleanly). Always-on arming therefore never blocks enrollment — a
+preempt simply frees the reader sooner for the enroller.
+
+The loop's only real risk is libfprint/uru4000 degrading over long uptime (each scan
+open/closes the device). A faulting reader is **not** re-probed at the fast re-arm rate:
+fault streaks (identify-error / throw) use an **escalating backoff** that doubles up to a
+30s ceiling, so a wedged reader gets one gentle probe per cycle instead of a USB
+claim/release churn storm that leaks handles and hard-wedges it to "Resource busy". The
+underlying device error is logged on every fault (never a blind `identify-error`), and once
+a streak crosses ~10 consecutive the loop emits a one-time "reader likely wedged — restart
+the container" alert. Recovery is a `daylight-fitness` container restart; any real reader
+progress (match / sensed / clean preempt) resets the streak and backoff.
+
 ## Hardware-free testing
 See `docs/runbooks/fingerprint-unlock-simulation.md` — set `FINGERPRINT_SIM` on the garage
 container and drive scans from `_extensions/fitness/simulate.mjs` over SSH.
