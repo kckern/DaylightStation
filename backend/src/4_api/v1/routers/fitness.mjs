@@ -1361,6 +1361,11 @@ export function createFitnessRouter(config) {
 
     logger.info?.('fitness.unlock.request', { lock, candidates: candidates.length });
     let result;
+    // Bracket the scan so the always-armed emergency detector stands down for
+    // its duration (it checks isForegroundActive before re-arming). The garage
+    // box preempts any in-flight emergency scan; this stops the NEXT re-arm from
+    // racing this foreground unlock for the single reader.
+    unlockService.beginForeground?.();
     try {
       result = await unlockService.requestUnlock(lock, candidates);
     } catch (err) {
@@ -1369,6 +1374,8 @@ export function createFitnessRouter(config) {
       // closed with a generic 500 rather than leaking internals.
       logger.error?.('fitness.unlock.error', { lock, error: err?.message });
       return res.status(500).json({ error: 'unlock-failed' });
+    } finally {
+      unlockService.endForeground?.();
     }
 
     const response = { matched: !!result?.matched, userId: result?.userId };
