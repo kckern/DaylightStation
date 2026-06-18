@@ -1,6 +1,7 @@
 // frontend/src/modules/WeeklyReview/components/DayReel.jsx
 import React, { useEffect, useRef } from 'react';
 import FullscreenImage from './FullscreenImage.jsx';
+import DayDataPoints from './DayDataPoints.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 // Lazy so the child snapshots context AFTER WeeklyReview sets app + sessionLog on
@@ -44,12 +45,14 @@ function ReelVideo({ item, muted, paused, onEnded }) {
   );
 }
 
-export default function DayReel({ item, index, total, dayLabel, playing, muted, paused, onEnded }) {
+export default function DayReel({ item, day, index, total, dayLabel, playing, muted, paused, onEnded }) {
   if (!item) {
     return (
       <div className="weekly-review-reel weekly-review-reel--empty">
-        <div className="reel-empty">No photos or videos this day</div>
         <div className="reel-day-label">{dayLabel}</div>
+        <div className="reel-empty-data">
+          <DayDataPoints day={day} />
+        </div>
       </div>
     );
   }

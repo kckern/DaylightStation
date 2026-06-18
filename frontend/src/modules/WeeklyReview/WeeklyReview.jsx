@@ -7,9 +7,12 @@ import DayReel from './components/DayReel.jsx';
 import DayContextPanel from './components/DayContextPanel.jsx';
 import PreFlightOverlay from './components/PreFlightOverlay.jsx';
 import RecordingBar from './components/RecordingBar.jsx';
+import ControlLegend from './components/ControlLegend.jsx';
+import ConfirmOverlay from './components/ConfirmOverlay.jsx';
 import { useAudioRecorder } from './hooks/useAudioRecorder.js';
 import { useChunkUploader } from './hooks/useChunkUploader.js';
 import { deleteSession as deleteLocalSession, listSessions as listLocalSessions, getChunksForSession } from './hooks/chunkDb.js';
+import { withTimeout, TIMEOUT } from './hooks/withTimeout.js';
 import { modalReducer, initialModalState } from './state/modalReducer.js';
 import { viewReducer, initialViewState } from './state/viewReducer.js';
 import { resolveKey } from './state/keymap.js';
@@ -134,10 +137,13 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     try {
       uploaderFlushNow();
       if (sessionIdRef.current && data?.week) {
-        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
           sessionId: sessionIdRef.current, week: data.week, duration: recordingDuration,
-        }, 'POST');
-        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        }, 'POST'), 8000);
+        // Only drop the local draft if the server actually confirmed. On timeout
+        // keep it so mount-time recovery can finalize later.
+        if (res !== TIMEOUT) await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        else logger.warn('save-and-exit.finalize-timeout');
       }
     } catch (err) {
       logger.error('save-and-exit.finalize-failed', { error: err.message });
@@ -146,6 +152,10 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       onExitWidget();
     }
   }, [stopRecording, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
+
+  // Ref so the pop-guard (registered once) always calls the current onSaveAndExit.
+  const onSaveAndExitRef = useRef(onSaveAndExit);
+  onSaveAndExitRef.current = onSaveAndExit;
 
   const onPreflightRetry = useCallback(() => {
     dispatchModal({ type: 'CLOSE' });
@@ -261,10 +271,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'finalizing' } });
       try {
         uploaderFlushNow();
-        await DaylightAPI('/api/v1/weekly-review/recording/finalize', {
+        const res = await withTimeout(DaylightAPI('/api/v1/weekly-review/recording/finalize', {
           sessionId: sessionIdRef.current, week: data?.week, duration: recordingDuration,
-        }, 'POST');
-        await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        }, 'POST'), 8000);
+        if (res !== TIMEOUT) await deleteLocalSession(sessionIdRef.current).catch(() => {});
+        else logger.warn('disconnect.finalize-timeout');
         dispatchModal({ type: 'CLOSE' });
         onExitWidget();
       } catch (err) {
@@ -441,7 +452,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
     menuNav.setPopGuard(() => {
       logger.info('nav.pop-guard', { isRecording: isRecordingRef.current, viewLevel: viewLevelRef.current, modalType: modalTypeRef.current });
-      if (modalTypeRef.current === 'exitGate') { dispatchModal({ type: 'CLOSE' }); return false; }
+      if (modalTypeRef.current === 'exitGate') { onSaveAndExitRef.current(); return false; }
       if (viewLevelRef.current === 'reel') { dispatchView({ type: 'CLIMB' }); return false; }
       dispatchModal({ type: 'OPEN', modal: 'exitGate' });
       return false;
@@ -473,17 +484,16 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     <div className="weekly-review">
       {/* Resume-draft overlay */}
       {modal.type === 'resumeDraft' && !isRecording && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-resume-label">
-            <div className="confirm-message" id="wr-resume-label">
-              A previous recording was not finalized.<br/>
-              <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
-            </div>
-            <div className="confirm-actions">
-              <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
-            </div>
+        <ConfirmOverlay labelId="wr-resume-label">
+          <div className="confirm-message" id="wr-resume-label">
+            A previous recording was not finalized.<br/>
+            <small>{modal.payload?.source === 'server' ? `Server draft · ${Math.round((modal.payload?.totalBytes || 0) / 1024)} KB` : `Local-only draft · ${modal.payload?.chunkCount || 0} chunks`}</small>
           </div>
-        </div>
+          <div className="confirm-actions">
+            <button className="confirm-btn confirm-btn--save focused" onClick={finalizePriorDraft}>Finalize Previous</button>
+            <button className="confirm-btn confirm-btn--continue" onClick={() => dispatchModal({ type: 'CLOSE' })}>Not now</button>
+          </div>
+        </ConfirmOverlay>
       )}
 
       {/* Two-level surface: reel over grid */}
@@ -497,6 +507,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           <>
             <DayReel
               item={items[safeIdx] || null}
+              day={day}
               index={safeIdx}
               total={items.length}
               dayLabel={dayLabel}
@@ -510,65 +521,53 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         );
       })() : (
         <div className="weekly-review-grid">
-          {data.days.slice(-8).map((day, i) => {
-            const offset = Math.max(0, data.days.length - 8);
-            const realIndex = offset + i;
-            return (
-              <DayColumn
-                key={day.date}
-                day={day}
-                isFocused={realIndex === view.dayIndex}
-                onClick={() => {
-                  dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
-                  dispatchView({ type: 'OPEN_DAY' });
-                }}
-              />
-            );
-          })}
+          {data.days.map((day, realIndex) => (
+            <DayColumn
+              key={day.date}
+              day={day}
+              isFocused={realIndex === view.dayIndex}
+              onClick={() => {
+                dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
+                dispatchView({ type: 'OPEN_DAY' });
+              }}
+            />
+          ))}
         </div>
       )}
 
       {/* Finalize-error dialog */}
       {modal.type === 'finalizeError' && !isRecording && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-error-label">
-            <div className="confirm-message" id="wr-error-label">
-              Save failed: {modal.payload}<br/>
-              <small>Your recording is safe — stored locally and on the server.</small>
-            </div>
-            <div className="confirm-actions">
-              {/* Remote-driven: the keymap dispatches CLOSE / exitWidget; buttons are visual focus indicators. */}
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`}>Dismiss</button>
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`}>Exit (save later)</button>
-            </div>
+        <ConfirmOverlay labelId="wr-error-label">
+          <div className="confirm-message" id="wr-error-label">
+            Save failed: {modal.payload}<br/>
+            <small>Your recording is safe — stored locally and on the server.</small>
           </div>
-        </div>
+          <div className="confirm-actions">
+            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Dismiss</button>
+            <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onExitWidget}>Exit (save later)</button>
+          </div>
+        </ConfirmOverlay>
       )}
 
       {/* Exit gate */}
       {modal.type === 'exitGate' && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-exit-label">
-            <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
-            <div className="confirm-actions">
-              {/* Remote-driven: the keymap dispatches CLOSE / saveAndExit; buttons are visual focus indicators. */}
-              <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`}>Keep going</button>
-              <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`}>Save &amp; end</button>
-            </div>
+        <ConfirmOverlay labelId="wr-exit-label">
+          <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
+          <div className="confirm-actions">
+            <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Keep going</button>
+            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>Save &amp; end</button>
           </div>
-        </div>
+        </ConfirmOverlay>
       )}
 
       {/* Disconnect modal */}
       {modal.type === 'disconnect' && (
-        <div className="weekly-review-confirm-overlay">
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wr-disc-label" aria-live="polite">
-            <div className="confirm-message" id="wr-disc-label">
-              {modal.payload?.phase === 'reconnecting' && (<>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>)}
-              {modal.payload?.phase === 'finalizing' && (<>Microphone disconnected.<br/><small>Saving your recording…</small></>)}
-            </div>
+        <ConfirmOverlay labelId="wr-disc-label" ariaLive="polite">
+          <div className="confirm-message" id="wr-disc-label">
+            {modal.payload?.phase === 'reconnecting' && (<>Microphone dropped — reconnecting…<br/><small>Please hold tight.</small></>)}
+            {modal.payload?.phase === 'finalizing' && (<>Microphone disconnected.<br/><small>Saving your recording…</small></>)}
           </div>
-        </div>
+        </ConfirmOverlay>
       )}
 
       <PreFlightOverlay
@@ -576,6 +575,14 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         focusIndex={modal.focusIndex}
         onRetry={onPreflightRetry}
         onExit={onExitWidget}
+      />
+
+      <ControlLegend
+        level={view.level}
+        contextOpen={view.contextOpen}
+        mediaType={mediaCtx.currentType}
+        playing={view.playing}
+        modalType={modal.type}
       />
 
       <RecordingBar
