@@ -85,11 +85,14 @@ export function createEmergencyDetector({
         if (!running) break;
 
         if (result?.matched) {
+          // pending.at stays in ms for the TTL math below; the broadcast `at` is
+          // emitted in epoch SECONDS to match the rest of the emergency channel
+          // (locked/released payloads + LockdownState are all seconds).
           pending = { userId: result.userId, at: clock() };
           logger.info?.('emergency.detected', { userId: result.userId });
           eventBus.broadcast('fitness.emergency.detected', {
             userId: result.userId,
-            at: pending.at,
+            at: Math.floor(pending.at / 1000),
           });
           // Pause so the same finger-press isn't re-captured immediately.
           await delay(settleDelayMs);

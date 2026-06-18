@@ -28,6 +28,16 @@ test('trigger persists state, fires HA script, broadcasts locked', async () => {
   assert.equal((await repo.load()).lockedBy, 'alice');
 });
 
+test('HA failure aborts before persisting (no "locked but garage running")', async () => {
+  const { repo, eventBus, broadcasts } = makeFakes();
+  const haGateway = { async callService() { throw new Error('garage offline'); } };
+  const uc = new TriggerEmergencyLockdown({ repo, haGateway, eventBus, scriptId: 'garage_deactivate', defaultDurationSec: 1800 });
+  await assert.rejects(() => uc.execute({ lockedBy: 'alice', now: 1000 }), /garage offline/);
+  // HA fired first and threw → nothing persisted, nothing broadcast.
+  assert.equal(await repo.load(), null, 'must not persist a lock when HA fails');
+  assert.equal(broadcasts.length, 0, 'must not broadcast locked when HA fails');
+});
+
 test('release clears state and broadcasts released', async () => {
   const { repo, haGateway, eventBus, broadcasts } = makeFakes();
   await new TriggerEmergencyLockdown({ repo, haGateway, eventBus, scriptId: 'garage_deactivate', defaultDurationSec: 1800 }).execute({ lockedBy: 'alice', now: 1000 });
