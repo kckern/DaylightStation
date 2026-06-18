@@ -15,7 +15,7 @@ export class GenerateSessionTimelapse {
   #d;
   constructor(deps) { this.#d = deps; }
 
-  async execute({ sessionId, householdId }) {
+  async execute({ sessionId, householdId, force = false }) {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
       videoEncoder, posterProvider, avatarProvider, resolveName,
@@ -36,6 +36,18 @@ export class GenerateSessionTimelapse {
     }
 
     const session = Session.fromJSON(data);
+
+    // Idempotency guard (critical for the recap-sweep + multi-instance safety).
+    // A `ready` recap has already deleted its raw frames (cleanup), so a re-run
+    // would render zero frames and flip a good recap to `failed`. A `processing`
+    // recap is in flight on another path. Skip both unless explicitly forced
+    // (the manual re-gen endpoint passes force:true). `failed`/`skipped` are NOT
+    // skipped — their frames survive, so an automatic retry is safe and wanted.
+    const priorStatus = session.timelapse?.status || null;
+    if (!force && (priorStatus === 'ready' || priorStatus === 'processing')) {
+      logger.info?.('fitness.timelapse.already', { sessionId, status: priorStatus });
+      return { status: 'already', priorStatus };
+    }
 
     // Don't jump the gun on an unsettled session. Rendering deletes the raw
     // captures (cleanup, below), so a recap generated while the session could

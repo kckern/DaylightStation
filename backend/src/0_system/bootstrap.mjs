@@ -82,6 +82,7 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
+import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
@@ -1114,7 +1115,17 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
-  return createFitnessRouter({
+  // Recap sweep: the safety net that recaps sessions which ended via the common
+  // paths (inactivity, closed tab, crash) that never fire a per-event trigger.
+  // Registered on the agents Scheduler in app.mjs (Docker/prod-gated cron).
+  const recapSweep = new RecapSweep({
+    sessionService: fitnessServices.sessionService,
+    generateSessionTimelapse,
+    configService,
+    logger
+  });
+
+  const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     cycleRaceService: fitnessServices.cycleRaceService,
     generateSessionTimelapse,
@@ -1142,6 +1153,10 @@ export function createFitnessApiRouter(config) {
     identityRelay,
     logger
   });
+
+  // Expose the sweep so app.mjs can register it on the agents Scheduler.
+  fitnessRouter.recapSweep = recapSweep;
+  return fitnessRouter;
 }
 
 // =============================================================================
