@@ -55,7 +55,11 @@ const FitnessApp = () => {
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [menuMusicTracks, setMenuMusicTracks] = useState([]);
-  const [menuMusicVolume, setMenuMusicVolume] = useState(0.15);
+  // Quiet pre-fetch default: the configured menu_music.volume arrives async from
+  // /menu-music. Defaulting low means a fetch failure/latency degrades quieter
+  // rather than blasting at the old 0.15. useMenuMusic re-applies the real value
+  // live once it arrives.
+  const [menuMusicVolume, setMenuMusicVolume] = useState(0.05);
 
   // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
   useEffect(() => {

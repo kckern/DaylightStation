@@ -1305,7 +1305,7 @@ export function createFitnessRouter(config) {
 
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    const volume = fitnessConfig?.menu_music?.volume ?? 0.15;
+    const volume = fitnessConfig?.menu_music?.volume ?? 0.05;
 
     res.json({ tracks, volume });
   }));
