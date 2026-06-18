@@ -99,4 +99,35 @@ describe('ArtMode controls', () => {
     expect(musicNext).toHaveBeenCalledTimes(1);
     expect(featuredCalls()).toBe(before + 1);
   });
+
+  // --- ActionBus control surface (rawKeys:false scenes, e.g. a triggered ArtMode on
+  // a remote screen): the full interactive surface must work without raw keys. ---
+  const dim = (c) => Number(c.querySelector('[data-testid="artmode-dim"]').style.opacity || 0);
+
+  it('navigate up/down adjust brightness via the dim overlay (rawKeys:false)', () => {
+    const { container } = render(
+      <ArtMode placard={false} collection="americana" music={{ queue: 'q' }} rawKeys={false} />);
+    expect(dim(container)).toBe(0);
+    act(() => getActionBus().emit('navigate', { direction: 'down' }));   // dimmer
+    expect(dim(container)).toBeCloseTo(0.1);
+    act(() => getActionBus().emit('navigate', { direction: 'down' }));
+    expect(dim(container)).toBeCloseTo(0.2);
+    act(() => getActionBus().emit('navigate', { direction: 'up' }));     // brighter
+    expect(dim(container)).toBeCloseTo(0.1);
+  });
+
+  it('select (OK button) exits the scene cleanly (rawKeys:false)', () => {
+    const onExit = vi.fn();
+    render(<ArtMode placard={false} collection="americana" music={{ queue: 'q' }} rawKeys={false} onExit={onExit} />);
+    act(() => getActionBus().emit('select', {}));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('navigate left/right still shuffle the art (rawKeys:false)', () => {
+    render(<ArtMode placard={false} collection="americana" music={{ queue: 'q' }} rawKeys={false} />);
+    act(() => getActionBus().emit('navigate', { direction: 'right' }));
+    expect(musicNext).toHaveBeenCalledTimes(1);
+    act(() => getActionBus().emit('navigate', { direction: 'left' }));
+    expect(musicPrev).toHaveBeenCalledTimes(1);
+  });
 });

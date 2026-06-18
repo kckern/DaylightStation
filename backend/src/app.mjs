@@ -135,6 +135,9 @@ import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
+import { initManageService } from '#apps/fitness/manageService.mjs';
+import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
+import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -440,6 +443,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     logger: rootLogger.child({ module: 'fitness-unlock' })
   });
+
+  // Fingerprint manager — enroll/delete relay over the same garage WS, plus the
+  // browser progress rebroadcast. Auth reuses the unlock service above.
+  initManageService({
+    eventBus,
+    logger: rootLogger.child({ module: 'fitness-fingerprint-manage' })
+  });
+  // Persistence adapter (1_adapters) → application writer (3_applications): the
+  // writer never touches the filesystem itself, satisfying the DDD layering.
+  const userProfileDatastore = new YamlUserProfileDatastore({ configService });
+  const fingerprintProfileWriter = createFingerprintProfileWriter({ datastore: userProfileDatastore, configService });
 
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
@@ -1670,6 +1684,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printerRegistry: hardwareAdapters.printerRegistry,
     providerWebhookAdapters,
     enrichmentService: stravaEnrichmentService,
+    fingerprintProfileWriter,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

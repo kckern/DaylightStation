@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows }
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, defaultModeIndex }
   from '../../../frontend/src/screen-framework/widgets/artModes.js';
 
 describe('VIEW_MODES', () => {
@@ -59,5 +59,39 @@ describe('objectFitWindows', () => {
     expect(b.right).toBe(0);
     expect(a.right).toBeCloseTo(50);
     expect(b.left).toBeCloseTo(50);
+  });
+});
+
+describe('defaultModeIndex', () => {
+  // gold-ornate opening ≈ 2.0:1; GALLERY=0, FRAMED-COVER=2.
+  const frame = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
+  const GALLERY = modeIndexByName('gallery');
+  const COVER = modeIndexByName('framed-cover');
+
+  it('off by default (fillCrop 0) → gallery even for a perfect 16:9 single', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [16 / 9], frame })).toBe(GALLERY);
+  });
+  it('diptychs always start matted in gallery, regardless of budget', () => {
+    expect(defaultModeIndex({ mode: 'diptych', ratios: [16 / 9, 1.8], frame, fillCrop: 0.125 })).toBe(GALLERY);
+  });
+  it('a 16:9 single qualifies at 12.5% (needs ~5.5%) → framed-cover', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [16 / 9], frame, fillCrop: 0.125 })).toBe(COVER);
+  });
+  it('a 3:2 single is at the 12.5% edge (~12.45%) → framed-cover', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [1.5], frame, fillCrop: 0.125 })).toBe(COVER);
+  });
+  it('a 4:3 single needs ~16.6% → stays matted (gallery)', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [4 / 3], frame, fillCrop: 0.125 })).toBe(GALLERY);
+  });
+  it('a wider-than-opening single (2.5:1) crops the sides and qualifies', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [2.5], frame, fillCrop: 0.125 })).toBe(COVER);
+  });
+  it('a tighter budget (8%) excludes 3:2 but keeps 16:9', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [1.5], frame, fillCrop: 0.08 })).toBe(GALLERY);
+    expect(defaultModeIndex({ mode: 'single', ratios: [16 / 9], frame, fillCrop: 0.08 })).toBe(COVER);
+  });
+  it('non-qualifying art falls back to the configured fallback mode', () => {
+    expect(defaultModeIndex({ mode: 'single', ratios: [4 / 3], frame, fillCrop: 0.125, fallback: 'framed-contain' }))
+      .toBe(modeIndexByName('framed-contain'));
   });
 });

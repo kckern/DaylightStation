@@ -3,7 +3,7 @@
 // Dimensions via the shared immichDimensions helper (orientation-corrected);
 // matte from preview bytes.
 import { Jimp } from 'jimp';
-import { buildPhotoTitle, formatPhotoDate } from '../../gallery/immich/photoLabels.mjs';
+import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '../../gallery/immich/photoLabels.mjs';
 import { immichDimensions } from '../../gallery/immich/immichDimensions.mjs';
 
 const MAX_RATIO = 16 / 9;
@@ -116,7 +116,10 @@ export function createImmichSource({ client, fetchImageBytes, proxyPath, logger 
     // UTC instants and would print shifted by the server offset. See the TIMEZONE
     // CONTRACT in photoLabels.mjs.
     const date = asset.localDateTime || ex.dateTimeOriginal || asset.fileCreatedAt || null;
-    const people = (asset.people || []).map((p) => p.name).filter(Boolean);
+    // Order names left-to-right by face position so the placard reads the way the
+    // faces appear in the photo (Immich returns people in detection/id order, not
+    // spatial order). Orientation projects raw face boxes into display space.
+    const people = orderPeopleByFace(asset.people, ex.orientation).map((p) => p.name).filter(Boolean);
     const place = ex.city || ex.country || null;
     return {
       id: `immich:${asset.id}`,

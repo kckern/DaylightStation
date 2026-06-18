@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, defaultModeIndex } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -24,10 +24,11 @@ const EXIT_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
 const NEXT_KEYS = new Set(['ArrowLeft', 'ArrowRight']);
 const BRIGHTER_KEYS = new Set(['ArrowUp']);
 const DIMMER_KEYS = new Set(['ArrowDown']);
-// Keys that cycle the view mode (ratio/frame). Tab is the universal fallback;
-// screens add device-specific keys via screensaver `props.cycleKeys` (e.g. the
-// living-room Shield remote's Rewind arrives as raw `MediaRewind`, keyCode 227).
-const DEFAULT_CYCLE_KEYS = ['Tab'];
+// Keys that cycle the view mode (ratio/frame). Tab is the universal fallback and
+// the Shield remote's Rewind (raw `MediaRewind`, keyCode 227) cycles by default,
+// so it works the same in the idle screensaver and in triggered scenes; screens
+// may add more device-specific keys via `props.cycleKeys`.
+const DEFAULT_CYCLE_KEYS = ['Tab', 'MediaRewind'];
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
@@ -53,6 +54,13 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  *   frame           frame PNG window insets {top,right,bottom,left} % (default DEFAULT_FRAME)
  *   matMargin       mat band % of height (default 4)
  *   cropMaxPerSide  max cover-crop per side, % (default 8)
+ *   fillSingles     matless-fill budget, % crop per side (default 0 = off). A
+ *                   SINGLE that cover-fills the bare frame window with ≤ this crop
+ *                   per side STARTS in the mat-less 'framed-cover' view mode
+ *                   (frame on, picture bleeds to fill); diptychs and tighter
+ *                   singles start matted in 'gallery'. Tab still cycles all five
+ *                   modes — this only sets each untouched image's starting mode.
+ *                   (12.5 admits ~16:9 … 2.67:1 against the ~2:1 opening.)
  *   ambient         { defaultLux, curve } for auto-dim (optional)
  *   advance         what triggers the next artwork (see resolveAdvance.js):
  *                     'hold'  (default) static until remount / manual skip
@@ -68,7 +76,7 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  */
 function ArtMode({
   placard = true, onExit, dismiss,
-  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, ambient = null,
+  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, fillSingles = 0, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
@@ -111,6 +119,10 @@ function ArtMode({
   const commitTimerRef = useRef(null);               // pending behind-curtain content swap
   const pendingArtRef = useRef(null);                 // fetched art awaiting a closed curtain
   const [modeIdx, setModeIdx] = useState(() => modeIndexByName(defaultViewMode));
+  // Once the viewer cycles the view mode by hand (Tab / rate), their choice sticks
+  // across shuffles; until then each new artwork starts in its own per-image
+  // default (see the defaultModeIndex effect below).
+  const userCycledRef = useRef(false);
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
@@ -185,6 +197,19 @@ function ArtMode({
     if (!mountedRef.current) return;
     const data = pendingArtRef.current;
     if (data == null) return;
+    // Invariant: art is only ever swapped behind a CLOSED curtain. If the safety
+    // rail (curtainMaxMs) parted the drape before a slow fetch resolved, the
+    // curtain is now open over the OLD art — re-close it and defer the swap until
+    // the drape has fallen again, rather than popping the new art in plain view.
+    if (revealedRef.current) {
+      setCurtain(false);
+      loadedRef.current = 0;
+      closeCompleteAtRef.current = nowMs() + curtainCloseMs;
+      if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = setTimeout(openCurtain, curtainMaxMs);
+      commitTimerRef.current = setTimeout(commitPending, curtainCloseMs);
+      return;
+    }
     pendingArtRef.current = null;
     setFailed(false);
     setArt(data);
@@ -193,7 +218,7 @@ function ArtMode({
       plaqueGateRef.current = false;
     }
     logger.info('artmode.loaded', { mode: data?.mode ?? null, count: data?.panels?.length ?? 0 });
-  }, [logger]);
+  }, [logger, setCurtain, openCurtain, curtainCloseMs, curtainMaxMs]);
 
   const featuredUrl = collection
     ? `api/v1/art/featured?collection=${encodeURIComponent(collection)}`
@@ -323,18 +348,31 @@ function ArtMode({
   // repurposes it to cycle ArtMode's view mode (the Tab behavior) — the only way to
   // reach view-mode cycling on adapter-driven screens where rawKeys is off.
   useScreenAction('media:rate', useCallback(() => {
+    userCycledRef.current = true;
     setModeIdx((i) => nextMode(i));
     logger.info('artmode.viewmode', { dir: 'next', via: 'rate' });
   }, [logger]));
 
-  // D-pad navigation (remote screens, rawKeys:false). On raw-key screens the capture
-  // handler swallows the arrows first, so this never double-fires there.
+  // D-pad navigation (remote screens, rawKeys:false): left/right shuffle the art,
+  // up/down brighten/dim — the full interactive surface without raw keys. On raw-key
+  // screens the capture handler swallows the arrows first (stopImmediatePropagation),
+  // so this never double-fires there. ArrowUp brightens (less dim), matching the raw
+  // BRIGHTER_KEYS path.
   useScreenAction('navigate', useCallback((p) => {
-    if (p?.direction === 'right') goNext();
-    else if (p?.direction === 'left') goPrev();
+    const d = p?.direction;
+    if (d === 'right') goNext();
+    else if (d === 'left') goPrev();
+    else if (d === 'up') setManualBias((b) => round2(b - DIM_STEP));
+    else if (d === 'down') setManualBias((b) => round2(b + DIM_STEP));
   }, [goNext, goPrev]));
 
   const exit = useCallback(() => { (onExit || dismiss)?.(); }, [onExit, dismiss]);
+
+  // OK/Enter (remote screens, rawKeys:false) arrives as the `select` action — exit the
+  // scene cleanly instead of leaking the keypress to the menu beneath the overlay. On
+  // raw-key screens Enter is swallowed by the capture handler (EXIT_KEYS), so this
+  // never double-fires there; numpad screens don't emit `select` at all.
+  useScreenAction('select', useCallback(() => { logger.info('artmode.exit', { via: 'select' }); exit(); }, [exit, logger]));
   // View-mode cycle keys: configured per-screen, always including the Tab fallback.
   const cycleKeySet = useMemo(
     () => new Set([...(Array.isArray(cycleKeys) ? cycleKeys : DEFAULT_CYCLE_KEYS), 'Tab']),
@@ -354,6 +392,7 @@ function ArtMode({
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       if (isCycle) {
+        userCycledRef.current = true;
         setModeIdx((i) => (e.shiftKey ? prevMode(i) : nextMode(i)));
         logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next', key: k });
       } else if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
@@ -431,6 +470,23 @@ function ArtMode({
     const top = visible.length ? visible[visible.length - 1] : layers[layers.length - 1];
     return top?.art ?? null;
   }, [layers, visibleKeys]);
+
+  // Per-image default view mode: until the viewer takes manual control (Tab/rate),
+  // each new artwork starts in its own default — a qualifying single bleeds to the
+  // frame (framed-cover, mat-less), everything else stays matted (gallery). With
+  // fillSingles=0 the default is always `defaultViewMode`, so this is a no-op and
+  // the prior persist-across-shuffles behavior is unchanged.
+  const activeArt = isCrossfade ? topArt : art;
+  useEffect(() => {
+    if (userCycledRef.current) return;
+    const ps = activeArt?.panels;
+    if (!ps?.length) return;
+    const ratios = ps.map((p) =>
+      (p.meta?.width > 0 && p.meta?.height > 0) ? p.meta.width / p.meta.height : 1);
+    setModeIdx(defaultModeIndex({
+      mode: activeArt.mode, ratios, frame, fillCrop: fillSingles / 100, fallback: defaultViewMode,
+    }));
+  }, [activeArt, frame, fillSingles, defaultViewMode]);
 
   return (
     <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars}>

@@ -1,5 +1,8 @@
 // artModes.js — pure view-mode model + object-fit geometry for ArtMode. No DOM.
 // Five modes cycle museum → immersive.
+import { coverCropPerSide } from './artLayout.js';
+
+const SW = 16, SH = 9;
 
 export const VIEW_MODES = [
   { name: 'gallery',        frame: true,  fullWindow: false, fit: 'gallery', placard: true  },
@@ -16,6 +19,31 @@ export function modeIndexByName(name) {
 
 export const nextMode = (i) => (i + 1) % VIEW_MODES.length;
 export const prevMode = (i) => (i - 1 + VIEW_MODES.length) % VIEW_MODES.length;
+
+/**
+ * Per-image default view-mode index. A SINGLE that cover-fills the bare frame
+ * window with ≤ `fillCrop` (fraction) per side starts mat-less, in `framed-cover`
+ * (frame on, image bleeds to fill); diptychs and tighter singles fall back to
+ * `fallback` (the matted `gallery` by default). With `fillCrop` 0 the answer is
+ * always `fallback`, so the feature is off and behavior is unchanged. Tab cycling
+ * is unaffected — this only chooses where an untouched image *starts*.
+ *
+ * @param {object} o
+ * @param {'single'|'diptych'} o.mode  content mode of the artwork
+ * @param {number[]} o.ratios  art aspect ratios (w/h)
+ * @param {{top,right,bottom,left}} o.frame  frame window insets, %
+ * @param {number} [o.fillCrop]  matless-fill budget, fraction (e.g. 0.125)
+ * @param {string} [o.fallback]  mode name for non-qualifying art (default 'gallery')
+ * @returns {number} index into VIEW_MODES
+ */
+export function defaultModeIndex({ mode, ratios, frame, fillCrop = 0, fallback = 'gallery' }) {
+  const fb = modeIndexByName(fallback);
+  if (mode === 'diptych' || !(fillCrop > 0) || !ratios?.length) return fb;
+  const winAR = (SW - ((frame.left + frame.right) / 100) * SW)
+              / (SH - ((frame.top + frame.bottom) / 100) * SH);
+  const need = coverCropPerSide(winAR, ratios[0]);
+  return need <= fillCrop + 1e-9 ? modeIndexByName('framed-cover') : fb;
+}
 
 // Per-panel window insets (% of stage) for the object-fit modes (2-5).
 // count: 1 single | 2 diptych. fullWindow: true → full stage, else frame insets.
