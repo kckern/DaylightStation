@@ -50,7 +50,8 @@ export class ScreenshotService {
    * @returns {Promise<Object>} Result with { filename, path, size, index, timestamp, sessionId, mimeType }
    * @throws {ScreenshotValidationError} If sessionId is invalid or image data can't be decoded
    */
-  async saveScreenshot({ sessionId, imageBase64, mimeType, index, timestamp, householdId }) {
+  async saveScreenshot({ sessionId, imageBase64, mimeType, index, timestamp, householdId, role = 'camera' }) {
+    const captureRole = role === 'player' ? 'player' : 'camera';
     // Resolve storage paths from session service
     const paths = this.#sessionService.getStoragePaths(sessionId, householdId);
     if (!paths) {
@@ -80,7 +81,10 @@ export class ScreenshotService {
     const indexFragment = indexValue != null
       ? String(indexValue).padStart(4, '0')
       : Date.now().toString(36);
-    const filename = `${paths.sessionDate}_${indexFragment}.${extension}`;
+    // Player frames get a distinct prefix so they never collide with camera frames
+    // (both live in the same screenshots dir, so session cleanup removes both).
+    const rolePrefix = captureRole === 'player' ? 'player_' : '';
+    const filename = `${paths.sessionDate}_${rolePrefix}${indexFragment}.${extension}`;
 
     // Ensure screenshot directory exists
     this.#fileIO.ensureDir(paths.screenshotsDir);
@@ -99,7 +103,8 @@ export class ScreenshotService {
       filename,
       path: relativePath,
       timestamp: captureTimestamp,
-      size: buffer.length
+      size: buffer.length,
+      role: captureRole
     };
 
     // Update session with snapshot record

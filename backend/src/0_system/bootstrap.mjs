@@ -81,6 +81,12 @@ import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTransc
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
+import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
+import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
+import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
+import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
+import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
+import nodeFs from 'node:fs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 import { FitnessSuggestionService } from '../3_applications/fitness/suggestions/FitnessSuggestionService.mjs';
 import { NextUpStrategy } from '../3_applications/fitness/suggestions/NextUpStrategy.mjs';
@@ -1009,6 +1015,10 @@ export function createFitnessApiRouter(config) {
     providerWebhookAdapters,
     enrichmentService,
     fingerprintProfileWriter = null,
+    triggerEmergencyLockdown = null,
+    releaseEmergencyLockdown = null,
+    getLockdownState = null,
+    emergencyDetector = null,
     logger = console
   } = config;
 
@@ -1057,9 +1067,57 @@ export function createFitnessApiRouter(config) {
     logger,
   });
 
+  // Session time-lapse recap generator (background render at session end).
+  const timelapseConfig = fitnessConfigService.getNormalizedConfig()?.timelapse;
+  const posterProvider = async (contentId) => {
+    try {
+      if (!fitnessContentAdapter?.getThumbnails) return null;
+      const localId = String(contentId).replace(/^[a-z]+:/i, '');
+      const thumbs = await fitnessContentAdapter.getThumbnails(localId); // [thumb, parentThumb, grandparentThumb]
+      const chosen = thumbs?.[2] || thumbs?.[0]; // prefer the show (grandparent) poster
+      if (!chosen) return null;
+      const rawPath = chosen.replace(fitnessContentAdapter.proxyPath || '', '');
+      const sep = rawPath.includes('?') ? '&' : '?';
+      const url = `${fitnessContentAdapter.host}${rawPath}${sep}X-Plex-Token=${fitnessContentAdapter.token}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      return Buffer.from(await resp.arrayBuffer());
+    } catch (err) {
+      logger.warn?.('fitness.timelapse.poster_provider_failed', { contentId, error: err.message });
+      return null;
+    }
+  };
+  const avatarProvider = async (slugs) => {
+    const out = {};
+    const usersDir = path.join(configService.getPath('img') || path.join(configService.getMediaDir(), 'img'), 'users');
+    const exts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+    for (const slug of slugs || []) {
+      for (const ext of exts) {
+        const p = path.join(usersDir, `${slug}.${ext}`);
+        if (nodeFs.existsSync(p)) { out[slug] = nodeFs.readFileSync(p); break; }
+      }
+    }
+    return out;
+  };
+  const generateSessionTimelapse = new GenerateSessionTimelapse({
+    sessionDatastore: fitnessServices.sessionStore,
+    snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, fileIO: nodeFs, logger }),
+    frameMapper: new TimelapseFrameMapper(),
+    frameRenderer: createTimelapseFrameRenderer(timelapseConfig || {}),
+    videoEncoder: new FfmpegVideoAdapter({ logger }),
+    posterProvider,
+    avatarProvider,
+    resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
+    mediaDir: configService.getMediaDir(),
+    config: timelapseConfig,
+    fileIO: nodeFs,
+    logger
+  });
+
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     cycleRaceService: fitnessServices.cycleRaceService,
+    generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     zoneLedController: fitnessServices.ambientLedController,
     danceLightingController: fitnessServices.danceLightingController,
@@ -1078,6 +1136,10 @@ export function createFitnessApiRouter(config) {
     providerWebhookAdapters,
     enrichmentService,
     fingerprintProfileWriter,
+    triggerEmergencyLockdown,
+    releaseEmergencyLockdown,
+    getLockdownState,
+    emergencyDetector,
     logger
   });
 }

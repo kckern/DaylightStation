@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import FingerprintIcon from '@/modules/Fitness/widgets/FingerprintManager/FingerprintIcon.jsx';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import './UnlockPrompt.scss';
+
+// "Access denied" avatar shown when a fingerprint isn't recognized — the Sonic
+// "no-no-no" finger wag. Served from the media folder (same as unlock.mp3),
+// rendered as a circular avatar in the denied state.
+const DENIED_AVATAR = DaylightMediaPath('apps/fitness/ux/accessdenied.gif');
 
 /**
  * Default auto-dismiss timeout. The garage reader round-trip is ~15s; this is a
@@ -111,7 +117,13 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
           </div>
         ) : (
           <div className={`unlock-prompt__glyph unlock-prompt__glyph--${state}`} aria-hidden="true">
-            <FingerprintIcon size="100%" />
+            {state === 'denied' ? (
+              // "Access denied": rejection gif filling the glyph box, inheriting the
+              // red drop-shadow glow from &--denied.
+              <img className="unlock-prompt__denied-avatar" src={DENIED_AVATAR} alt="" />
+            ) : (
+              <FingerprintIcon size="100%" />
+            )}
           </div>
         )}
 

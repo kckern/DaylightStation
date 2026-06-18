@@ -31,7 +31,8 @@ export class Session {
     summary = null,   // Session summary (computed by frontend, preserved through persistence)
     strava = null,     // Strava activity metadata (name, type, sportType, etc.)
     strava_notes = null, // Manually-entered Strava notes pulled back via reconciliation
-    finalized = false
+    finalized = false,
+    timelapse = null // Session time-lapse recap status/record
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -54,6 +55,30 @@ export class Session {
     this.strava = strava;
     this.strava_notes = strava_notes;
     this.finalized = !!finalized;
+    this.timelapse = timelapse;
+  }
+
+  /**
+   * Time-lapse recap lifecycle — the aggregate root owns its status transitions.
+   * status: processing | ready | skipped | failed
+   */
+  markTimelapseProcessing() {
+    this.timelapse = { status: 'processing', startedAt: Date.now() };
+  }
+
+  attachTimelapse({ videoPath, durationSeconds = null, fps = null, frameCount = null }) {
+    if (videoPath == null) {
+      throw new ValidationError('videoPath required', { code: 'MISSING_VIDEO_PATH', field: 'videoPath' });
+    }
+    this.timelapse = { status: 'ready', videoPath, durationSeconds, fps, frameCount, createdAt: Date.now() };
+  }
+
+  markTimelapseSkipped(reason = 'no-captures') {
+    this.timelapse = { status: 'skipped', reason, createdAt: Date.now() };
+  }
+
+  markTimelapseFailed(error) {
+    this.timelapse = { status: 'failed', error: error?.message || String(error), failedAt: Date.now() };
   }
 
   /**
@@ -302,6 +327,9 @@ export class Session {
 
     // Metadata — only include if non-empty
     if (this.metadata && Object.keys(this.metadata).length > 0) result.metadata = this.metadata;
+
+    // Time-lapse recap record
+    if (this.timelapse) result.timelapse = this.timelapse;
 
     return result;
   }
