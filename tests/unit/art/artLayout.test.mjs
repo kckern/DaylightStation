@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boxAspect, artLayout } from '../../../frontend/src/screen-framework/widgets/artLayout.js';
+import { boxAspect, artLayout, coverCropPerSide } from '../../../frontend/src/screen-framework/widgets/artLayout.js';
 
 const FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
 const CFG = { frame: FRAME, matMargin: 4, crop: 0.08 };
@@ -13,6 +13,20 @@ describe('boxAspect', () => {
   });
   it('clamps to the narrow cap (crop sides) for a wide art vs narrow cell', () => {
     expect(boxAspect(0.3, 1.6, 0.08)).toBeCloseTo(1.6 * 0.84, 5);
+  });
+});
+
+describe('coverCropPerSide', () => {
+  it('is zero when art already matches the window', () => {
+    expect(coverCropPerSide(2.0, 2.0)).toBeCloseTo(0, 6);
+  });
+  it('trims top/bottom when art is narrower than the window', () => {
+    // 16:9 (1.778) into a 2:1 window → (1 - 1.778/2)/2 ≈ 0.0556 per side.
+    expect(coverCropPerSide(2.0, 16 / 9)).toBeCloseTo((1 - (16 / 9) / 2) / 2, 6);
+  });
+  it('trims left/right when art is wider than the window', () => {
+    // 2.5:1 into a 2:1 window → (1 - 2/2.5)/2 = 0.10 per side.
+    expect(coverCropPerSide(2.0, 2.5)).toBeCloseTo(0.1, 6);
   });
 });
 

@@ -1014,6 +1014,7 @@ export function createFitnessApiRouter(config) {
     printerRegistry,
     providerWebhookAdapters,
     enrichmentService,
+    fingerprintProfileWriter = null,
     logger = console
   } = config;
 
@@ -1130,6 +1131,7 @@ export function createFitnessApiRouter(config) {
     printerRegistry,
     providerWebhookAdapters,
     enrichmentService,
+    fingerprintProfileWriter,
     logger
   });
 }

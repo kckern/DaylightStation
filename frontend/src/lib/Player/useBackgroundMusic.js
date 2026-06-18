@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { getChildLogger } from '../logging/singleton.js';
 import { useEffectiveVolume } from '../volume/ScreenVolumeContext.js';
-import { toTracks, advanceIndex, shuffleOrder } from './playlist.js';
+import { toTracks, advanceIndex, shuffleOrder, shuffleOrderAvoiding } from './playlist.js';
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'artmode-music' }));
@@ -94,8 +94,11 @@ export function useBackgroundMusic(audioRef, music) {
     const stepBy = (delta) => {
       if (!tracks.length) return;
       if (delta >= 0) {
+        const justPlayed = order[pos];
         pos = advanceIndex(pos, tracks.length);
-        if (pos === 0 && shuffle) order = shuffleOrder(tracks.length);
+        // Re-shuffle on the forward wrap, but don't let the song that just ended the
+        // previous cycle open the next one (no back-to-back repeat across the seam).
+        if (pos === 0 && shuffle) order = shuffleOrderAvoiding(tracks.length, justPlayed);
       } else {
         pos = (pos - 1 + tracks.length) % tracks.length;
       }

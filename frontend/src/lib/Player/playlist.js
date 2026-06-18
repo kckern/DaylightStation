@@ -29,3 +29,16 @@ export function shuffleOrder(len) {
   }
   return a;
 }
+
+// Like shuffleOrder, but guarantees the first track isn't `avoidFirst` — used when
+// re-shuffling at the cycle wrap so a song can't play twice back-to-back across the
+// boundary (the one quick-repeat a per-cycle permutation otherwise allows). With <2
+// tracks there's nothing to avoid, so it degrades to a plain shuffle.
+export function shuffleOrderAvoiding(len, avoidFirst) {
+  const order = shuffleOrder(len);
+  if (len > 1 && order[0] === avoidFirst) {
+    // Swap the head with the next slot (always a different track here).
+    [order[0], order[1]] = [order[1], order[0]];
+  }
+  return order;
+}

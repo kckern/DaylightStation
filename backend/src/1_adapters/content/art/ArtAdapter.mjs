@@ -14,17 +14,34 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { deriveMatte, rgbToHsv } from '../../../2_domains/art/deriveMatte.mjs';
+import { eligibleByRecency } from '../../../2_domains/art/recencyWindow.mjs';
+import { createArtRecencyStore } from './artRecencyStore.mjs';
 
 const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const meanRGB = (a, b) => [0, 1, 2].map((i) => Math.round((a[i] + b[i]) / 2));
 
-export function createArtAdapter({ imgBasePath, dataPath = null, logger = console, collections = {}, artSource, immichSource = null } = {}) {
+export function createArtAdapter({ imgBasePath, dataPath = null, logger = console, collections = {}, artSource, immichSource = null, recencyFraction = 0.55, recencyStore } = {}) {
   // Lazily build the default art source from imgBasePath when one isn't injected
   // (tests inject a fake; production injects the real source — see app.mjs).
   let _artSource = artSource || null;
   const colorCache = new Map();   // candidate id → { avg, color }
   const thumbCache = new Map();   // collection name → representative image path (or null)
   let _presets = null;            // lazily-loaded artmode.yml presets map
+
+  // Recency tempering: a persistent no-repeat window so shuffle stops favoring a
+  // few works. Tests may inject a store (or `null` to disable); otherwise build
+  // the default YAML store under media_memory when a data path is available.
+  let _recencyStore = recencyStore;   // undefined ⇒ build lazily; null ⇒ disabled
+  const resolveRecencyStore = () => {
+    if (_recencyStore !== undefined) return _recencyStore;
+    _recencyStore = dataPath
+      ? createArtRecencyStore({
+          filePath: path.join(dataPath, 'household', 'history', 'media_memory', 'art.yml'),
+          logger,
+        })
+      : null;
+    return _recencyStore;
+  };
 
   async function getArtSource() {
     if (_artSource) return _artSource;
@@ -119,23 +136,46 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
     const cands = await candidatesFor(collection);
     if (!cands.length) throw new Error('No artwork available');
 
-    const chosen = pick(cands);
+    // Bench the most-recently-shown works before picking the primary. The
+    // companion is still drawn from the full pool (its tiered artist/credit
+    // matching is the constraint that matters there), but both shown ids get
+    // recorded so neither recurs as a primary too soon.
+    const store = resolveRecencyStore();
+    let pool = cands;
+    if (store) {
+      const recency = await store.load();
+      pool = eligibleByRecency(cands, recency, recencyFraction);
+    }
+
+    const chosen = pick(pool);
     const a1 = await analyze(chosen);
 
+    let companion = null;
+    let result;
     if (chosen.kind === 'landscape') {
-      return { mode: 'single', matte: matteFromAvgs([a1.avg]), panels: [panelOut(chosen, a1)] };
+      result = { mode: 'single', matte: matteFromAvgs([a1.avg]), panels: [panelOut(chosen, a1)] };
+    } else {
+      const portraits = cands.filter((c) => c.kind === 'portrait');
+      companion = pickCompanion(chosen, portraits, pick);
+      if (!companion) {
+        result = { mode: 'single', matte: matteFromAvgs([a1.avg]), panels: [panelOut(chosen, a1)] };
+      } else {
+        const a2 = await analyze(companion);
+        result = {
+          mode: 'diptych',
+          matte: matteFromAvgs([a1.avg, a2.avg]),
+          panels: [panelOut(chosen, a1), panelOut(companion, a2)],
+        };
+      }
     }
-    const portraits = cands.filter((c) => c.kind === 'portrait');
-    const companion = pickCompanion(chosen, portraits, pick);
-    if (!companion) {
-      return { mode: 'single', matte: matteFromAvgs([a1.avg]), panels: [panelOut(chosen, a1)] };
+
+    if (store) {
+      const ids = companion ? [chosen.id, companion.id] : [chosen.id];
+      // Fire-and-forget: a write failure is logged in the store and must never
+      // block serving the artwork.
+      store.record(ids).catch(() => {});
     }
-    const a2 = await analyze(companion);
-    return {
-      mode: 'diptych',
-      matte: matteFromAvgs([a1.avg, a2.avg]),
-      panels: [panelOut(chosen, a1), panelOut(companion, a2)],
-    };
+    return result;
   }
 
   // Presets live in artmode.yml (`presets.<name>.collection`). Loaded once; a

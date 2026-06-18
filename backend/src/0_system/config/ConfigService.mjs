@@ -8,7 +8,7 @@
  * that can be changed at runtime (e.g. via admin UI).
  */
 
-import { loadYaml } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath } from '#system/utils/FileIO.mjs';
 
 export class ConfigService {
   #config;
@@ -110,6 +110,25 @@ export class ConfigService {
 
   getAllUserProfiles() {
     return new Map(Object.entries(this.#config.users ?? {}));
+  }
+
+  /**
+   * Re-read a single user's profile.yml from disk and refresh the in-memory
+   * cache so freshly-written fingerprints/identities are visible without a full
+   * app restart. Returns the reloaded profile (or null if the file is gone).
+   * @param {string} username
+   * @returns {object|null}
+   */
+  reloadUserProfile(username) {
+    if (!username) return null;
+    const profile = loadYamlFromPath(`${this.getUserDir(username)}/profile.yml`);
+    if (!this.#config.users) this.#config.users = {};
+    if (profile) {
+      this.#config.users[username] = profile;
+    } else {
+      delete this.#config.users[username];
+    }
+    return profile ?? null;
   }
 
   getIdentityMappings() {
