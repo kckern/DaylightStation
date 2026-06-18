@@ -520,21 +520,17 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
         );
       })() : (
         <div className="weekly-review-grid">
-          {data.days.slice(-8).map((day, i) => {
-            const offset = Math.max(0, data.days.length - 8);
-            const realIndex = offset + i;
-            return (
-              <DayColumn
-                key={day.date}
-                day={day}
-                isFocused={realIndex === view.dayIndex}
-                onClick={() => {
-                  dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
-                  dispatchView({ type: 'OPEN_DAY' });
-                }}
-              />
-            );
-          })}
+          {data.days.map((day, realIndex) => (
+            <DayColumn
+              key={day.date}
+              day={day}
+              isFocused={realIndex === view.dayIndex}
+              onClick={() => {
+                dispatchView({ type: 'SELECT_DAY', dayIndex: realIndex });
+                dispatchView({ type: 'OPEN_DAY' });
+              }}
+            />
+          ))}
         </div>
       )}
 

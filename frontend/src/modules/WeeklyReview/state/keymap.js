@@ -59,8 +59,7 @@ export function resolveKey(input) {
   // ---- Main hierarchy ----
   if (view.level === 'grid') {
     if (dir) {
-      const onTopRow = view.dayIndex < cols;
-      if (dir === 'up' && onTopRow) { out.modal.push({ type: 'OPEN', modal: 'exitGate' }); return out; }
+      // Up on the top row is a clamped no-op in the reducer — no accidental exit.
       out.view.push(gridMove(dir, cols, totalDays));
       return out;
     }
