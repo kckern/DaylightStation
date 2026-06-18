@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, defaultModeIndex } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -46,7 +46,8 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  * brass nameplate(s). Home screensaver.
  *
  * Tab / Shift+Tab cycle five view modes (Gallery → Framed·Contain → Framed·Cover
- * → Bare·Contain → Bare·Cover); the mode persists across shuffles, resets on remount.
+ * → Bare·Contain → Bare·Cover); a hand-picked mode sticks across shuffles (resets on
+ * remount), except a matless-qualifying single always overrides it to framed-cover.
  *
  * Props (from screen YAML screensaver.props):
  *   placard         show nameplate(s) (default true)
@@ -54,13 +55,22 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  *   frame           frame PNG window insets {top,right,bottom,left} % (default DEFAULT_FRAME)
  *   matMargin       mat band % of height (default 4)
  *   cropMaxPerSide  max cover-crop per side, % (default 8)
- *   fillSingles     matless-fill budget, % crop per side (default 0 = off). A
- *                   SINGLE that cover-fills the bare frame window with ≤ this crop
- *                   per side STARTS in the mat-less 'framed-cover' view mode
- *                   (frame on, picture bleeds to fill); diptychs and tighter
- *                   singles start matted in 'gallery'. Tab still cycles all five
- *                   modes — this only sets each untouched image's starting mode.
- *                   (12.5 admits ~16:9 … 2.67:1 against the ~2:1 opening.)
+ *   fillSingles     matless-fill master toggle (default true = ON app-wide). Set
+ *                   `false` in config to disable entirely. When on, a SINGLE that
+ *                   cover-fills the bare frame opening within the per-axis budgets
+ *                   STARTS mat-less in 'framed-cover' (frame on, picture bleeds to
+ *                   fill); diptychs and over-budget singles start matted in
+ *                   'gallery'. Cropping only ever touches ONE axis — narrower-than-
+ *                   opening art trims top/bottom, wider art trims left/right — so
+ *                   the budgets are split:
+ *   fillCropTopBottom  top/bottom crop budget, % per side (default 13). Admits ~1.48
+ *                   (3:2 and the ~1.5 history-painting cluster) and wider; keeps 4:3
+ *                   and squarer matted, so portrait-ish landscapes don't lose heads.
+ *                   (Symmetric — total height cropped is double this.)
+ *   fillCropSides   left/right crop budget, % (default 25). Admits panoramas up to
+ *                   ~4:1 against the ~2:1 opening.
+ *                   Tab still cycles all five modes — this only sets each untouched
+ *                   image's starting mode.
  *   ambient         { defaultLux, curve } for auto-dim (optional)
  *   advance         what triggers the next artwork (see resolveAdvance.js):
  *                     'hold'  (default) static until remount / manual skip
@@ -76,7 +86,8 @@ const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
  */
 function ArtMode({
   placard = true, onExit, dismiss,
-  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8, fillSingles = 0, ambient = null,
+  frame = DEFAULT_FRAME, matMargin = 4, cropMaxPerSide = 8,
+  fillSingles = true, fillCropTopBottom = 13, fillCropSides = 25, ambient = null,
   defaultViewMode = 'gallery', measureText = null,
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
@@ -119,10 +130,13 @@ function ArtMode({
   const commitTimerRef = useRef(null);               // pending behind-curtain content swap
   const pendingArtRef = useRef(null);                 // fetched art awaiting a closed curtain
   const [modeIdx, setModeIdx] = useState(() => modeIndexByName(defaultViewMode));
-  // Once the viewer cycles the view mode by hand (Tab / rate), their choice sticks
-  // across shuffles; until then each new artwork starts in its own per-image
-  // default (see the defaultModeIndex effect below).
+  // Manual view-mode control. Once the viewer cycles by hand (Tab / rate) their
+  // choice STICKS across shuffles (userCycledRef + the chosen index in
+  // manualModeRef) — except a matless-qualifying single always overrides it (see
+  // the fillDecision effect below). Until they cycle, each artwork starts in its
+  // own per-image default.
   const userCycledRef = useRef(false);
+  const manualModeRef = useRef(null);
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
@@ -349,7 +363,7 @@ function ArtMode({
   // reach view-mode cycling on adapter-driven screens where rawKeys is off.
   useScreenAction('media:rate', useCallback(() => {
     userCycledRef.current = true;
-    setModeIdx((i) => nextMode(i));
+    setModeIdx((i) => { const n = nextMode(i); manualModeRef.current = n; return n; });
     logger.info('artmode.viewmode', { dir: 'next', via: 'rate' });
   }, [logger]));
 
@@ -393,7 +407,7 @@ function ArtMode({
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       if (isCycle) {
         userCycledRef.current = true;
-        setModeIdx((i) => (e.shiftKey ? prevMode(i) : nextMode(i)));
+        setModeIdx((i) => { const n = e.shiftKey ? prevMode(i) : nextMode(i); manualModeRef.current = n; return n; });
         logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next', key: k });
       } else if (EXIT_KEYS.has(k)) { logger.info('artmode.exit', { key: k }); exit(); }
       else if (NEXT_KEYS.has(k)) { logger.info('artmode.shuffle', { key: k }); (k === 'ArrowLeft' ? goPrev : goNext)(); }
@@ -471,22 +485,45 @@ function ArtMode({
     return top?.art ?? null;
   }, [layers, visibleKeys]);
 
-  // Per-image default view mode: until the viewer takes manual control (Tab/rate),
-  // each new artwork starts in its own default — a qualifying single bleeds to the
-  // frame (framed-cover, mat-less), everything else stays matted (gallery). With
-  // fillSingles=0 the default is always `defaultViewMode`, so this is a no-op and
-  // the prior persist-across-shuffles behavior is unchanged.
+  // Per-image starting view mode, recomputed for each artwork. Matless is ON
+  // app-wide (`fillSingles: false` in config disables it → both budgets 0). The
+  // precedence for a fresh artwork is:
+  //   1. matless  — a qualifying single ALWAYS bleeds to the frame (framed-cover),
+  //                 overriding even a manual cycle (the viewer prioritized matless).
+  //   2. sticky   — otherwise, if the viewer has hand-cycled, keep their last choice.
+  //   3. default  — until they cycle, non-qualifying art starts at `defaultViewMode`.
+  // Tab/rate still freely restyle the CURRENT piece; this only governs where each
+  // newly-loaded artwork starts.
+  const fillOn = fillSingles !== false;
+  const cropV = fillOn ? (Number(fillCropTopBottom) || 0) / 100 : 0;
+  const cropH = fillOn ? (Number(fillCropSides) || 0) / 100 : 0;
   const activeArt = isCrossfade ? topArt : art;
   useEffect(() => {
-    if (userCycledRef.current) return;
     const ps = activeArt?.panels;
     if (!ps?.length) return;
     const ratios = ps.map((p) =>
       (p.meta?.width > 0 && p.meta?.height > 0) ? p.meta.width / p.meta.height : 1);
-    setModeIdx(defaultModeIndex({
-      mode: activeArt.mode, ratios, frame, fillCrop: fillSingles / 100, fallback: defaultViewMode,
-    }));
-  }, [activeArt, frame, fillSingles, defaultViewMode]);
+    const d = fillDecision({ mode: activeArt.mode, ratios, frame, cropV, cropH, fallback: defaultViewMode });
+    let target, reason;
+    if (d.qualified) { target = d.index; reason = 'matless'; }
+    else if (userCycledRef.current) { target = manualModeRef.current ?? d.index; reason = 'sticky'; }
+    else { target = d.index; reason = 'default'; }
+    setModeIdx(target);
+    // Why-it-matted: AR, which axis would crop, how much that needs vs. the budget,
+    // the verdict, and which rule won — so the decision is answerable from logs.
+    logger.info('artmode.viewmode.default', {
+      mode: activeArt.mode,
+      title: ps[0]?.meta?.title ?? null,
+      ratios: ratios.map(round2),
+      winAR: d.winAR != null ? round2(d.winAR) : null,
+      axis: d.axis,
+      needPerSidePct: d.need != null ? round2(d.need * 100) : null,
+      budgetPct: round2(d.budget * 100),
+      qualified: d.qualified,
+      reason,
+      view: VIEW_MODES[target].name,
+    });
+  }, [activeArt, frame, cropV, cropH, defaultViewMode, logger]);
 
   return (
     <div className="artmode" data-testid="artmode" data-mode={mode.name} style={matteVars}>
