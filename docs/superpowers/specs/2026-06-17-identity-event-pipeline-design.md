@@ -46,8 +46,14 @@ should, from its own context.**
   cancellation in `fingerprint_helper.py`. After enroll/delete completes, continuous scan
   resumes. (This repurposes the Task 1–2 arbiter work: its mandate shifts from
   emergency-vs-unlock to continuous-scan-vs-enroll.)
-- Remove the `fitness.unlock.request` subscription/handler entirely. Keep
-  `fitness.enroll.request` and `fitness.fingerprint.delete.request` (explicit operations).
+- Keep `fitness.enroll.request` and `fitness.fingerprint.delete.request` (explicit operations).
+- **Discovered during planning (deviation):** `fitness.unlock.request` cannot be removed
+  *entirely* — the FingerprintManager enroll/delete admin-auth gate
+  (`gateManageAccess` → `manage:<username>`) still relies on the request/response
+  identify path. It survives **narrowly for manage-auth only**, routed through the
+  (now generalized) `readerArbiter` as a preempting `manage` kind. The automatic /
+  contextual unlock uses of it (dance_party, governance_bypass, skip_content) are
+  removed and move to the continuous-broadcast + IdentityManager model.
 
 ### 2. Backend — relay + enricher + pending-detection guard
 
@@ -132,11 +138,15 @@ finger press
 
 ## Removed / repurposed / kept
 
-- **Removed**: `emergencyDetector` loop, backend `/unlock` scan path, `useUnlock`
-  request/response, `unlockService` foreground bracketing.
-- **Repurposed**: `readerArbiter` + SIGTERM cancellation → continuous-scan ↔ enroll
-  arbitration.
-- **Kept**: lockdown state machine, `commit → HA garage shutdown`, enroll/delete channels.
+- **Removed**: `emergencyDetector` loop, backend `/unlock` scan route + `scanEmergency`,
+  `useUnlock` request/response (all three contextual consumers migrate to IdentityManager),
+  `unlockService` foreground bracketing, dead policy modules (`unlockPolicy`,
+  `emergencyPolicy`'s `resolveEmergencyCandidates`).
+- **Repurposed**: `readerArbiter` + SIGTERM cancellation → generalized exec-based
+  arbitration (continuous-scan ↔ enroll ↔ manage-auth).
+- **Kept**: lockdown state machine, `commit → HA garage shutdown`, enroll/delete channels,
+  and `unlockService` + `fitness.unlock.request` **narrowly for the manage-auth gate**
+  (see Garage deviation note above).
 
 ## Scope
 
