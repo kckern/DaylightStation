@@ -64,20 +64,12 @@ describe('useEmergencyLockdown', () => {
     expect(result.current.lockedBy).toBe('test-user');
   });
 
-  it('detected ws → triggering (only from normal)', async () => {
-    DaylightAPI.mockResolvedValue({ locked: false });
+  it('triggerCeremony() moves normal → triggering and is idempotent', () => {
     const { result } = renderHook(() => useEmergencyLockdown());
-    await waitFor(() => expect(wsService.subscribe).toHaveBeenCalled());
-
-    act(() => {
-      emit({ topic: 'fitness.emergency.detected', userId: 'test-user', at: 123 });
-    });
+    expect(result.current.phase).toBe('normal');
+    act(() => result.current.triggerCeremony());
     expect(result.current.phase).toBe('triggering');
-
-    // A second detected broadcast is ignored (still triggering, not reset).
-    act(() => {
-      emit({ topic: 'fitness.emergency.detected', userId: 'test-user', at: 456 });
-    });
+    act(() => result.current.triggerCeremony());
     expect(result.current.phase).toBe('triggering');
   });
 
@@ -128,7 +120,7 @@ describe('useEmergencyLockdown', () => {
     const { result } = renderHook(() => useEmergencyLockdown());
     await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
 
-    act(() => { emit({ topic: 'fitness.emergency.detected' }); });
+    act(() => { result.current.triggerCeremony(); });
     expect(result.current.phase).toBe('triggering');
 
     let res;
@@ -143,7 +135,7 @@ describe('useEmergencyLockdown', () => {
     const { result } = renderHook(() => useEmergencyLockdown());
     await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
 
-    act(() => { emit({ topic: 'fitness.emergency.detected' }); });
+    act(() => { result.current.triggerCeremony(); });
     expect(result.current.phase).toBe('triggering');
 
     let res;
