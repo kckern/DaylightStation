@@ -40,6 +40,7 @@ import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
 import { resolveCandidateUuids } from '#apps/fitness/unlockPolicy.mjs';
+import { resolveEmergencyCandidates, EMERGENCY_LOCK } from '#apps/fitness/emergencyPolicy.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
@@ -102,6 +103,11 @@ export function createFitnessRouter(config) {
     // Test seam: defaults to the process-level unlock service singleton.
     // Tests inject a fake so the endpoint can be exercised without a live eventbus.
     resolveUnlockService = getUnlockService,
+    triggerEmergencyLockdown = null,
+    releaseEmergencyLockdown = null,
+    getLockdownState = null,
+    emergencyDetector = null,
+    resolveEmergencyCandidates: resolveEmergencyCandidatesFn = resolveEmergencyCandidates,
     generateSessionTimelapse = null,
     fingerprintProfileWriter = null,
     resolveManageService = getManageService,
@@ -1375,6 +1381,91 @@ export function createFitnessRouter(config) {
       reason: response.reason,
     });
     return res.json(response);
+  }));
+
+  // =============================================================================
+  // Emergency Lockdown
+  // =============================================================================
+
+  /**
+   * Server-side admin scan for the emergency lock. Resolves the authorized
+   * admins' fingerprint UUIDs and asks the on-box unlock service to identify
+   * against them. Uses the foreground arbiter so the background emergency
+   * detector yields the fingerprint reader for the duration of the scan.
+   *
+   * @returns {Promise<{ matched: boolean, userId?: string, reason?: string }>}
+   */
+  async function scanEmergency(req) {
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
+    const candidates = resolveEmergencyCandidatesFn({ fitnessConfig, userService });
+    const unlockService = resolveUnlockService?.();
+    if (!unlockService || candidates.length === 0) return { matched: false, reason: 'unavailable' };
+    unlockService.beginForeground?.();
+    try {
+      return await unlockService.requestUnlock(EMERGENCY_LOCK, candidates);
+    } finally {
+      unlockService.endForeground?.();
+    }
+  }
+
+  /**
+   * GET /api/fitness/emergency — current lockdown state (self-clears when expired).
+   *
+   * - 200 { locked:false }
+   * - 200 { locked:true, lockedUntil, lockedBy }
+   */
+  router.get('/emergency', asyncHandler(async (req, res) => {
+    const now = Math.floor(Date.now() / 1000);
+    const state = getLockdownState ? await getLockdownState.execute({ now }) : null;
+    res.json(state
+      ? { locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy }
+      : { locked: false });
+  }));
+
+  /**
+   * POST /api/fitness/emergency/commit — finalize a lockdown after the browser
+   * ceremony. Gated on a recent pending detection so arbitrary clients can't
+   * trigger a shutdown.
+   *
+   * - 409 { error:'no-pending-detection' }  — no recent detection to commit
+   * - 503 { error:'emergency-unavailable' } — lockdown use case not wired
+   * - 200 { locked:true, lockedUntil, lockedBy }
+   */
+  router.post('/emergency/commit', asyncHandler(async (req, res) => {
+    const now = Math.floor(Date.now() / 1000);
+    const pending = emergencyDetector?.consumePendingDetection?.(Date.now());
+    if (!pending) return res.status(409).json({ error: 'no-pending-detection' });
+    if (!triggerEmergencyLockdown) return res.status(503).json({ error: 'emergency-unavailable' });
+    const state = await triggerEmergencyLockdown.execute({ lockedBy: pending.userId, now });
+    logger.info?.('emergency.committed', { lockedBy: pending.userId });
+    res.json({ locked: true, lockedUntil: state.lockedUntil, lockedBy: state.lockedBy });
+  }));
+
+  /**
+   * POST /api/fitness/emergency/abort — confirm a cancel with an admin scan.
+   *
+   * - 200 { confirmed:boolean }
+   */
+  router.post('/emergency/abort', asyncHandler(async (req, res) => {
+    const verdict = await scanEmergency(req);
+    if (verdict.matched) logger?.info?.('emergency.cancelled', { userId: verdict.userId });
+    res.json({ confirmed: !!verdict.matched });
+  }));
+
+  /**
+   * POST /api/fitness/emergency/release — release an active lockdown with an
+   * admin scan.
+   *
+   * - 200 { released:boolean }
+   */
+  router.post('/emergency/release', asyncHandler(async (req, res) => {
+    const now = Math.floor(Date.now() / 1000);
+    const verdict = await scanEmergency(req);
+    if (!verdict.matched) return res.json({ released: false });
+    if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: verdict.userId, now });
+    logger?.info?.('emergency.released', { userId: verdict.userId });
+    res.json({ released: true });
   }));
 
   /**
