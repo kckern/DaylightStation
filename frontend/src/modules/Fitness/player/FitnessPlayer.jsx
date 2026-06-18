@@ -28,6 +28,7 @@ import { useIdentity } from '../identity/IdentityProvider';
 import { shouldBypassGovernance } from './governanceBypass.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import usePlayerFrameCapture from '@/hooks/fitness/usePlayerFrameCapture.js';
+import SessionCameraCapture from './SessionCameraCapture.jsx';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { computeCycleDimStyle } from './cycleDimStyle.js';
 import { useScreenDataRefetch } from '@/screen-framework/data/ScreenDataProvider.jsx';
@@ -1946,6 +1947,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       >
         {mainContent}
       </FitnessPlayerFrame>
+      {/* Always-on webcam capture for the session recap — the camera is the recap's
+          primary feed and must record regardless of which panel/widget is visible,
+          mirroring the always-on usePlayerFrameCapture above. */}
+      <SessionCameraCapture
+        sessionId={fitnessSessionInstance?.sessionId ?? null}
+        intervalMs={Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000}
+        enabled={timelapseCfg.enabled !== false}
+      />
       <UnlockPrompt
         open={unlockPromptOpen}
         state={unlockState}
