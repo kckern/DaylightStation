@@ -17,9 +17,10 @@ describe('keymap — week grid', () => {
   it('arrows move focus via GRID_MOVE', () => {
     expect(r({ ...onGrid(), key: 'ArrowRight' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'right', cols: 4, total: 8 }]);
   });
-  it('Up from the top row raises the exit gate', () => {
-    expect(r({ ...onGrid({ view: { level: 'grid', dayIndex: 1, itemIndex: 0, playing: false, muted: true, contextOpen: false } }), key: 'ArrowUp' }).modal)
-      .toEqual([{ type: 'OPEN', modal: 'exitGate' }]);
+  it('Up from the top row is a clamped no-op move (no accidental exit)', () => {
+    const res = r({ ...onGrid({ view: { level: 'grid', dayIndex: 1, itemIndex: 0, playing: false, muted: true, contextOpen: false } }), key: 'ArrowUp' });
+    expect(res.view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
+    expect(res.modal).toEqual([]);
   });
   it('Up from the bottom row just moves up a row', () => {
     expect(r({ ...onGrid(), key: 'ArrowUp' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
