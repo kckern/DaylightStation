@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createContinuousScanLoop } from '../src/continuousScanLoop.mjs';
+import { createContinuousScanLoop, faultBackoffMs } from '../src/continuousScanLoop.mjs';
 
 test('broadcasts matched scans then settles', async () => {
   const sent = [];
@@ -104,6 +104,66 @@ test('a successful match resets the identify-error streak', async () => {
   // Both errors report "#1" because the match in between cleared the streak.
   assert.match(logger.warns[0], /#1 consecutive/);
   assert.match(logger.warns[1], /#1 consecutive/);
+});
+
+test('faultBackoffMs escalates from the base re-arm and caps at 30s', () => {
+  // Doubling per consecutive fault: a wedged reader is probed ever more gently
+  // instead of hammered at 800ms (the churn that leaked claims and wedged the box).
+  assert.equal(faultBackoffMs(1), 800);
+  assert.equal(faultBackoffMs(2), 1600);
+  assert.equal(faultBackoffMs(3), 3200);
+  assert.equal(faultBackoffMs(6), 25600);
+  assert.equal(faultBackoffMs(7), 30000);   // capped
+  assert.equal(faultBackoffMs(50), 30000);  // stays capped, never unbounded
+});
+
+test('identify-error streak uses escalating backoff, not a flat re-arm', async () => {
+  const delays = [];
+  const loop = createContinuousScanLoop({
+    runScan: async () => ({ ok: true, value: { matched: false, reason: 'identify-error', error: 'busy' } }),
+    sendBus: () => {},
+    delay: async (ms) => { delays.push(ms); },
+    logger: { log() {}, warn() {}, error() {} },
+    maxIterations: 4,
+  });
+  await loop.run();
+  assert.deepEqual(delays, [800, 1600, 3200, 6400]);
+});
+
+test('a recovery resets the backoff escalation', async () => {
+  const delays = [];
+  const seq = [
+    { ok: true, value: { matched: false, reason: 'identify-error', error: 'x' } }, // streak 1 → 800
+    { ok: true, value: { matched: false, reason: 'identify-error', error: 'x' } }, // streak 2 → 1600
+    { ok: true, value: { matched: true, uuid: 'u' } },                              // recovery (settle, not a fault)
+    { ok: true, value: { matched: false, reason: 'identify-error', error: 'x' } }, // streak 1 again → 800
+  ];
+  let i = 0;
+  const loop = createContinuousScanLoop({
+    runScan: async () => seq[i++],
+    sendBus: () => {},
+    delay: async (ms) => { delays.push(ms); },
+    logger: { log() {}, warn() {}, error() {} },
+    maxIterations: 4,
+  });
+  await loop.run();
+  // 800, 1600 (fault streak), 1500 (match settle), 800 (streak reset after recovery)
+  assert.deepEqual(delays, [800, 1600, 1500, 800]);
+});
+
+test('a sustained fault streak raises the wedged-reader alert exactly once', async () => {
+  const logger = makeCapturingLogger();
+  const loop = createContinuousScanLoop({
+    runScan: async () => ({ ok: true, value: { matched: false, reason: 'identify-error', error: 'Resource busy' } }),
+    sendBus: () => {},
+    delay: async () => {},
+    logger,
+    maxIterations: 15,
+  });
+  await loop.run();
+  const alerts = logger.errors.filter((m) => /likely wedged/.test(m));
+  assert.equal(alerts.length, 1, 'alert fires once, not every iteration past threshold');
+  assert.match(alerts[0], /restart the daylight-fitness container/);
 });
 
 test('reader-busy logs once on transition, not every iteration', async () => {

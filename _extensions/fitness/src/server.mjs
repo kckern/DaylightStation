@@ -100,7 +100,9 @@ function runContinuousIdentify({ signal }) {
   return runFingerprintHelper(['identify', '--timeout', '0'], { timeoutMs: 0, signal })
     .then((r) => (r && r.matched && r.uuid)
       ? { matched: true, uuid: r.uuid }
-      : { matched: false, reason: (r && r.reason) || 'no-match' })
+      // Carry the helper's error through (e.g. the underlying GLib/USB message) so
+      // the scan loop logs WHY identify failed instead of a blind 'identify-error'.
+      : { matched: false, reason: (r && r.reason) || 'no-match', error: r && r.error })
     .catch((err) => (signal && signal.aborted)
       ? { matched: false, reason: 'cancelled' }
       : { matched: false, reason: 'identify-error', error: err.message });
