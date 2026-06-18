@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { Session } from '#domains/fitness/entities/Session.mjs';
+import { evaluateRecapReadiness, SESSION_RESUME_MERGE_WINDOW_MS } from '../sessionConsolidationPolicy.mjs';
 
 /**
  * Use case: render a session's silent time-lapse recap.
@@ -35,6 +36,22 @@ export class GenerateSessionTimelapse {
     }
 
     const session = Session.fromJSON(data);
+
+    // Don't jump the gun on an unsettled session. Rendering deletes the raw
+    // captures (cleanup, below), so a recap generated while the session could
+    // still be resumed/merged would destroy the frames the consolidated session
+    // needs. Defer using the SAME window findResumable/mergeSessions assume:
+    // render only once finalized (a clean split) or past the resume/merge window.
+    // A re-trigger after the session settles (or an explicit end) will succeed.
+    const readiness = evaluateRecapReadiness({ finalized: session.finalized, endTime: session.endTime });
+    if (!readiness.settled) {
+      logger.info?.('fitness.timelapse.deferred', {
+        sessionId, reason: readiness.reason, msSinceEnd: readiness.msSinceEnd,
+        windowMs: SESSION_RESUME_MERGE_WINDOW_MS
+      });
+      return { status: 'deferred', reason: readiness.reason };
+    }
+
     const speedup = config.speedup ?? 10;
     const fps = config.output_fps ?? 10;
     const allCaptures = data?.snapshots?.captures || [];

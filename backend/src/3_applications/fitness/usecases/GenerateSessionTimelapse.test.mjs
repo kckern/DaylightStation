@@ -109,3 +109,30 @@ test('disabled config -> no work', async () => {
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'disabled');
 });
+
+test('non-finalized session that ended within the merge window -> deferred, nothing rendered/cleaned/saved', async () => {
+  // The session could still be resumed/merged; rendering would delete its frames.
+  const sessionData = baseSession();
+  sessionData.finalized = false;
+  sessionData.endTime = Date.now() - 60_000; // ended a minute ago — well inside the 30-min window
+  const f = fakes({ sessionData });
+  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'deferred');
+  assert.equal(res.reason, 'within-merge-window');
+  assert.equal(encoded, false);          // never encoded
+  assert.equal(f.calls.cleaned, undefined); // CRITICAL: frames preserved for the eventual consolidated recap
+  assert.equal(f.saved.length, 0);        // session status untouched, so a later trigger retries cleanly
+});
+
+test('finalized session bypasses the merge window and renders immediately', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.endTime = Date.now(); // just ended, but a clean split — never mergeable
+  const f = fakes({ sessionData });
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'ready');
+  assert.ok(f.calls.cleaned);
+});

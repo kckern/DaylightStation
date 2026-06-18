@@ -9,6 +9,7 @@ import { Session } from '#domains/fitness/entities/Session.mjs';
 import { prepareTimelineForApi, prepareTimelineForStorage, mergeTimelines } from '#domains/fitness/services/TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
+import { SESSION_RESUME_MERGE_WINDOW_MS } from '../sessionConsolidationPolicy.mjs';
 
 /**
  * Parse a timestamp string into Unix milliseconds.
@@ -321,10 +322,11 @@ export class SessionService {
    * @param {string} contentId - Media content ID (e.g., "plex:674227")
    * @param {string} householdId - Household ID
    * @param {Object} [options]
-   * @param {number} [options.maxGapMs=1800000] - Max gap in ms (default 30 min)
+   * @param {number} [options.maxGapMs] - Max gap in ms (defaults to the shared
+   *   SESSION_RESUME_MERGE_WINDOW_MS — the same window the recap defers on)
    * @returns {Promise<{resumable: boolean, session?: Object, finalized?: boolean}>}
    */
-  async findResumable(contentId, householdId, { maxGapMs = 30 * 60 * 1000 } = {}) {
+  async findResumable(contentId, householdId, { maxGapMs = SESSION_RESUME_MERGE_WINDOW_MS } = {}) {
     if (!contentId) return { resumable: false };
 
     // Defensive normalization: callers (especially the frontend pre-2026-05-06)
