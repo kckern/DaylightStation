@@ -1,19 +1,6 @@
 import React from 'react';
 import PhotoWall from './PhotoWall.jsx';
-
-const WMO_ICONS = {
-  0: '☀️', 1: '🌤', 2: '⛅', 3: '☁️',
-  45: '🌫', 48: '🌫',
-  51: '🌦', 53: '🌦', 55: '🌧',
-  61: '🌧', 63: '🌧', 65: '🌧',
-  71: '🌨', 73: '🌨', 75: '❄️',
-  77: '❄️', 80: '🌦', 81: '🌧', 82: '🌧',
-  85: '🌨', 86: '❄️', 95: '⛈', 96: '⛈', 99: '⛈',
-};
-
-function cToF(c) {
-  return Math.round(c * 9 / 5 + 32);
-}
+import { WMO_ICONS, cToF } from './dayData.js';
 
 const MAX_CHIPS = 3;
 
@@ -22,7 +9,7 @@ export default function DayColumn({ day, isFocused, onClick }) {
   const dateNum = dt.getDate();
   const monthAbbr = dt.toLocaleDateString('en-US', { month: 'short' });
   const dayName = dt.toLocaleDateString('en-US', { weekday: 'long' });
-  const hasContent = day.photoCount > 0 || day.fitness?.length > 0;
+  const hasContent = day.photoCount > 0 || day.fitness?.length > 0 || day.calendar?.length > 0;
   const columnClass = [
     'day-column',
     isFocused && 'day-column--focused',
@@ -37,7 +24,13 @@ export default function DayColumn({ day, isFocused, onClick }) {
       style={{ flex: day.columnWeight ?? 1 }}
       role="button"
       tabIndex={0}
-      aria-label={`${day.label} ${dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}, ${day.photoCount || 0} photos`}
+      aria-label={[
+        `${day.label} ${dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`,
+        day.photoCount > 0 ? `${day.photoCount} photos` : null,
+        day.calendar?.length ? `${day.calendar.length} event${day.calendar.length === 1 ? '' : 's'}` : null,
+        day.fitness?.length ? `${day.fitness.length} workout${day.fitness.length === 1 ? '' : 's'}` : null,
+        weather ? `${cToF(weather.high)} degrees` : null,
+      ].filter(Boolean).join(', ')}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {

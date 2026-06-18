@@ -17,9 +17,10 @@ describe('keymap — week grid', () => {
   it('arrows move focus via GRID_MOVE', () => {
     expect(r({ ...onGrid(), key: 'ArrowRight' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'right', cols: 4, total: 8 }]);
   });
-  it('Up from the top row raises the exit gate', () => {
-    expect(r({ ...onGrid({ view: { level: 'grid', dayIndex: 1, itemIndex: 0, playing: false, muted: true, contextOpen: false } }), key: 'ArrowUp' }).modal)
-      .toEqual([{ type: 'OPEN', modal: 'exitGate' }]);
+  it('Up from the top row is a clamped no-op move (no accidental exit)', () => {
+    const res = r({ ...onGrid({ view: { level: 'grid', dayIndex: 1, itemIndex: 0, playing: false, muted: true, contextOpen: false } }), key: 'ArrowUp' });
+    expect(res.view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
+    expect(res.modal).toEqual([]);
   });
   it('Up from the bottom row just moves up a row', () => {
     expect(r({ ...onGrid(), key: 'ArrowUp' }).view).toEqual([{ type: 'GRID_MOVE', dir: 'up', cols: 4, total: 8 }]);
@@ -145,13 +146,18 @@ describe('keymap — exit gate modal', () => {
     expect(resolveKey(gate(0, 'ArrowUp')).modal).toEqual([{ type: 'TOGGLE_FOCUS' }]);
   });
   it('Enter on "Keep going" closes; on "Save & end" closes + saveAndExit', () => {
-    expect(resolveKey(gate(0, 'Enter')).modal).toEqual([{ type: 'CLOSE' }]);
+    const keep = resolveKey(gate(0, 'Enter'));
+    expect(keep.modal).toEqual([{ type: 'CLOSE' }]);
+    expect(keep.intents).toEqual([]);
     const save = resolveKey(gate(1, 'Enter'));
     expect(save.modal).toEqual([{ type: 'CLOSE' }]);
     expect(save.intents).toEqual(['saveAndExit']);
   });
-  it('Back cancels (closes)', () => {
-    expect(resolveKey(gate(0, 'Escape')).modal).toEqual([{ type: 'CLOSE' }]);
+
+  it('Back on the gate confirms exit (mash-Back must escape)', () => {
+    const back = resolveKey(gate(0, 'Escape'));
+    expect(back.modal).toEqual([{ type: 'CLOSE' }]);
+    expect(back.intents).toEqual(['saveAndExit']);
   });
 });
 

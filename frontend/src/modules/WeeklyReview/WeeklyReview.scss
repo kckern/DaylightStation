@@ -181,7 +181,7 @@
   }
 
   &--empty {
-    opacity: 0.5;
+    opacity: 0.7;
   }
 }
 
@@ -315,12 +315,12 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  opacity: 0.3;
+  opacity: 0.6;
 
   .day-empty-name {
     font-size: 1.4rem;
     font-weight: 300;
-    color: #888;
+    color: #bbb;
     letter-spacing: 0.05em;
   }
 
@@ -1186,7 +1186,23 @@
     .reel-index { opacity: 0.8; }
     .reel-mute-state { margin-left: auto; opacity: 0.85; }
   }
-  &--empty { flex-direction: column; gap: 1rem; color: #aaa; }
+  &--empty {
+    flex-direction: column;
+    gap: 1rem;
+    color: #ddd;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+
+    .reel-empty-data {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2rem;
+      justify-content: center;
+      max-width: 80%;
+    }
+    .day-data-quiet { opacity: 0.7; font-size: 1.2rem; }
+  }
 }
 
 .weekly-review-context-panel {
@@ -1206,3 +1222,35 @@
 }
 
 @keyframes wr-context-rise { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.weekly-review-legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2.6rem; // sits just above the recording bar
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0.4rem 1rem;
+  pointer-events: none;
+  font-size: 0.8rem;
+  color: #cfcfcf;
+  background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+
+  .legend-hint { display: inline-flex; align-items: center; gap: 0.4em; }
+  .legend-key {
+    background: rgba(255,255,255,0.15);
+    border-radius: 0.3em;
+    padding: 0.1em 0.5em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .legend-label { opacity: 0.85; }
+}
+
+.recording-bar .silence-message {
+  color: #ffd27a;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-left: 0.6rem;
+}
