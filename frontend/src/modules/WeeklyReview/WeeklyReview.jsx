@@ -147,6 +147,10 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     }
   }, [stopRecording, uploaderFlushNow, data?.week, recordingDuration, onExitWidget]);
 
+  // Ref so the pop-guard (registered once) always calls the current onSaveAndExit.
+  const onSaveAndExitRef = useRef(onSaveAndExit);
+  onSaveAndExitRef.current = onSaveAndExit;
+
   const onPreflightRetry = useCallback(() => {
     dispatchModal({ type: 'CLOSE' });
     autoStartRef.current = false;
@@ -441,7 +445,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
     menuNav.setPopGuard(() => {
       logger.info('nav.pop-guard', { isRecording: isRecordingRef.current, viewLevel: viewLevelRef.current, modalType: modalTypeRef.current });
-      if (modalTypeRef.current === 'exitGate') { dispatchModal({ type: 'CLOSE' }); return false; }
+      if (modalTypeRef.current === 'exitGate') { onSaveAndExitRef.current(); return false; }
       if (viewLevelRef.current === 'reel') { dispatchView({ type: 'CLIMB' }); return false; }
       dispatchModal({ type: 'OPEN', modal: 'exitGate' });
       return false;
