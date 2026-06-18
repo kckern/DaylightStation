@@ -149,4 +149,41 @@ describe('fitness router — POST /unlock', () => {
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ error: 'unlock-service-unavailable' });
   });
+
+  it('brackets the scan with beginForeground/endForeground so the detector yields', async () => {
+    const order = [];
+    const beginForeground = vi.fn(() => order.push('begin'));
+    const endForeground = vi.fn(() => order.push('end'));
+    const requestUnlock = vi.fn(() => { order.push('scan'); return Promise.resolve({ matched: true, userId: 'test-user' }); });
+    const { app } = appWith({
+      fitnessConfig: { locks: { dance_party: ['test-user'] } },
+      profiles: { 'test-user': { identities: { fingerprints: [{ id: 'uuid-1' }] } } },
+      unlockService: { requestUnlock, beginForeground, endForeground },
+    });
+
+    const res = await request(app).post('/unlock').send({ lock: 'dance_party' });
+
+    expect(res.status).toBe(200);
+    expect(beginForeground).toHaveBeenCalledTimes(1);
+    expect(endForeground).toHaveBeenCalledTimes(1);
+    // begin BEFORE the scan, end AFTER it.
+    expect(order).toEqual(['begin', 'scan', 'end']);
+  });
+
+  it('still calls endForeground when the scan throws', async () => {
+    const beginForeground = vi.fn();
+    const endForeground = vi.fn();
+    const requestUnlock = vi.fn().mockRejectedValue(new Error('bus-down'));
+    const { app } = appWith({
+      fitnessConfig: { locks: { dance_party: ['test-user'] } },
+      profiles: { 'test-user': { identities: { fingerprints: [{ id: 'uuid-1' }] } } },
+      unlockService: { requestUnlock, beginForeground, endForeground },
+    });
+
+    const res = await request(app).post('/unlock').send({ lock: 'dance_party' });
+
+    expect(res.status).toBe(500);
+    expect(beginForeground).toHaveBeenCalledTimes(1);
+    expect(endForeground).toHaveBeenCalledTimes(1);
+  });
 });
