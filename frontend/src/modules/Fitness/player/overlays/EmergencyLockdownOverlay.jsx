@@ -3,7 +3,7 @@ import './EmergencyLockdownOverlay.scss';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import { getCueAudioElement, primeCueAudio } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
-import { useEmergencyLockdown } from '@/modules/Fitness/hooks/useEmergencyLockdown.js';
+import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
 
 // Inline the power glyph so `currentColor` + CSS glow apply (a plain <img> can't
 // inherit color or take a drop-shadow on the glyph itself). Path copied from
@@ -39,7 +39,7 @@ const HOLD_MS = 3000;
  */
 export default function EmergencyLockdownOverlay({ audioPath = 'apps/fitness/ux/powerdown.mp3' }) {
   const logger = useMemo(() => getLogger().child({ component: 'emergency' }), []);
-  const { phase, lockedUntil, commit, abort, release } = useEmergencyLockdown();
+  const { phase, lockedUntil, commit, abort, release } = useIdentity();
 
   if (phase === 'normal') return null;
   if (phase === 'triggering') {

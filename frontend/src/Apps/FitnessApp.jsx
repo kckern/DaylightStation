@@ -18,6 +18,7 @@ import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
 import EmergencyLockdownOverlay from '../modules/Fitness/player/overlays/EmergencyLockdownOverlay.jsx';
+import { IdentityProvider } from '../modules/Fitness/identity/IdentityProvider';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
@@ -1283,6 +1284,7 @@ const FitnessApp = () => {
           setFitnessPlayQueue={setFitnessPlayQueue}
           kioskMode={kioskUI}
         >
+          <IdentityProvider>
           <GlobalOverlays />
           <EmergencyLockdownOverlay audioPath={emergencyAudioPath} />
           <MenuMusicController
@@ -1506,6 +1508,7 @@ const FitnessApp = () => {
             )}
           </div>
         </div>
+          </IdentityProvider>
       </FitnessProvider>
     </VolumeProvider>
     </MantineProvider>
