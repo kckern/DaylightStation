@@ -312,6 +312,30 @@ export class ParticipantRoster {
       }
     }
 
+    // DIAGNOSTIC (2026-06-17): pulse-path governance thrash. This canonical
+    // (pulse) read reports 0 active participants while the snapshot path sees a
+    // rider pedaling — flipping videoLocked true↔false ~1Hz (stutter + paused
+    // spinner). entry.heartRate and entry.hrInactive both derive from the same
+    // mappedUser.currentData, so a heartRate>0 with hrInactive===true would prove
+    // a stale/wrong-user currentData read; heartRate<=0 would prove a real HR
+    // dropout. Capture per-entry exclusion inputs whenever we'd report empty but
+    // the roster is non-empty, so the next garage reproduction pins the field.
+    if (participants.length === 0 && roster.length > 0) {
+      getLogger().sampled('participant.active_state.empty_with_roster', {
+        rosterCount: roster.length,
+        entries: roster.map((e) => ({
+          id: e.id || e.profileId || null,
+          name: e.name,
+          isActive: e.isActive,
+          isGuest: e.isGuest,
+          hrInactive: e.hrInactive,
+          heartRate: e.heartRate,
+          inactiveSince: e.inactiveSince || null,
+          zoneId: e.zoneId || null,
+        })),
+      }, { maxPerMinute: 6, aggregate: false });
+    }
+
     return { participants, zoneMap, totalCount: participants.length, hrInactiveUsers };
   }
 
