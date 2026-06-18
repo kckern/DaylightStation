@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import useMenuMusic from './useMenuMusic.js';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
+import { useIdentity } from '../identity/IdentityProvider';
 import getLogger from '../../../lib/logging/Logger.js';
 
 /**
@@ -22,19 +23,34 @@ const MenuMusicController = ({ isActive, trackChangeKey, volume, trackUrls }) =>
   const ctx = useFitnessContext();
   const voiceMemoOpen = !!ctx?.voiceMemoOverlayState?.open;
 
+  // Emergency phase: 'normal' | 'triggering' | 'locked'. Anything other than
+  // 'normal' means a shutdown ceremony / lockdown is on screen — the ambient
+  // bed must get out of the way of the powerdown audio and the lockdown screen.
+  const { phase: emergencyPhase } = useIdentity();
+  const emergencyActive = emergencyPhase && emergencyPhase !== 'normal';
+
   const logger = useMemo(
     () => getLogger().child({ component: 'menu-music-controller' }),
     []
   );
 
-  // Duck while a voice memo is being recorded or reviewed.
-  const effectiveActive = isActive && !voiceMemoOpen;
+  // Duck while a voice memo is being recorded/reviewed OR while an emergency
+  // shutdown ceremony/lockdown is active. Both reuse useMenuMusic's fade-to-0 +
+  // pause path; on return to 'normal' (e.g. an aborted shutdown) the SAME track
+  // resumes (the isActive effect only picks a new track when the slot is empty).
+  const effectiveActive = isActive && !voiceMemoOpen && !emergencyActive;
 
   useEffect(() => {
     if (isActive && voiceMemoOpen) {
       logger.debug('menu-music.ducked', { reason: 'voice-memo-overlay' });
     }
   }, [isActive, voiceMemoOpen, logger]);
+
+  useEffect(() => {
+    if (isActive && emergencyActive) {
+      logger.info('menu-music.ducked', { reason: 'emergency', phase: emergencyPhase });
+    }
+  }, [isActive, emergencyActive, emergencyPhase, logger]);
 
   useMenuMusic({
     isActive: effectiveActive,
