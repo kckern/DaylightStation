@@ -25,8 +25,17 @@ describe('DayReel', () => {
     expect(container.querySelector('video')).not.toBeNull();
   });
 
-  it('renders an empty state when there is no item', () => {
-    render(<DayReel item={null} index={0} total={0} dayLabel={dayLabel} playing={false} muted paused={false} />);
-    expect(screen.getByText(/No photos or videos/i)).toBeInTheDocument();
+  it('surfaces the day data points when there is no media', () => {
+    const day = { date: '2026-04-21', weather: { code: 0, high: 22, low: 12, precip: 0 }, calendar: [{ time: '8:30 AM', summary: 'Standup' }], fitness: [], photos: [], photoCount: 0 };
+    render(<DayReel item={null} day={day} index={0} total={0} dayLabel={dayLabel} playing={false} muted paused={false} />);
+    expect(screen.getByText('Standup')).toBeInTheDocument();
+    expect(screen.getByText(/72°/)).toBeInTheDocument();
+    expect(screen.getByText(dayLabel)).toBeInTheDocument();
+  });
+
+  it('shows a quiet-day fallback for a day with no data', () => {
+    const day = { date: '2026-04-22', weather: null, calendar: [], fitness: [], photos: [], photoCount: 0 };
+    render(<DayReel item={null} day={day} index={0} total={0} dayLabel={dayLabel} playing={false} muted paused={false} />);
+    expect(screen.getByText(/Quiet day/i)).toBeInTheDocument();
   });
 });

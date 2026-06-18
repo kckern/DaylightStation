@@ -1186,7 +1186,23 @@
     .reel-index { opacity: 0.8; }
     .reel-mute-state { margin-left: auto; opacity: 0.85; }
   }
-  &--empty { flex-direction: column; gap: 1rem; color: #aaa; }
+  &--empty {
+    flex-direction: column;
+    gap: 1rem;
+    color: #ddd;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+
+    .reel-empty-data {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2rem;
+      justify-content: center;
+      max-width: 80%;
+    }
+    .day-data-quiet { opacity: 0.7; font-size: 1.2rem; }
+  }
 }
 
 .weekly-review-context-panel {

@@ -506,6 +506,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
           <>
             <DayReel
               item={items[safeIdx] || null}
+              day={day}
               index={safeIdx}
               total={items.length}
               dayLabel={dayLabel}
