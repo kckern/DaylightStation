@@ -39,7 +39,7 @@ function runFingerprintHelper(args, { timeoutMs = 30000, onStderr, signal } = {}
     let stdout = '';
     let stderr = '';
     let stderrLineBuf = '';
-    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    const timer = timeoutMs > 0 ? setTimeout(() => child.kill('SIGTERM'), timeoutMs) : null;
 
     // Preemption: aborting kills the helper with SIGTERM. The helper catches it,
     // cancels the libfprint scan, closes the reader cleanly, and exits — freeing
@@ -61,9 +61,9 @@ function runFingerprintHelper(args, { timeoutMs = 30000, onStderr, signal } = {}
         for (const line of lines) if (line.trim()) onStderr(line.trim());
       }
     });
-    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+    child.on('error', (err) => { if (timer) clearTimeout(timer); reject(err); });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
       const out = stdout.trim();
       let parsed = null;
