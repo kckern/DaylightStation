@@ -5,6 +5,7 @@ import { getLogger } from '@/lib/logging/Logger.js';
 import { useDeadlineCountdown } from '@/modules/Fitness/shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import CompletionCountBlocks from './CompletionCountBlocks.jsx';
+import LockIcon from './LockIcon.jsx';
 import './GovernanceStateOverlay.scss';
 
 const TOTAL_NOTCHES = 56;
@@ -437,7 +438,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
               }}
               aria-label="Skip or unlock governed playback with fingerprint"
             >
-              Skip / Unlock
+              <LockIcon size="1.4em" />
             </button>
           ) : null}
         </div>

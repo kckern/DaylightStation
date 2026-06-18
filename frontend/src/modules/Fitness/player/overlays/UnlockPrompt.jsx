@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
+import FingerprintIcon from '@/modules/Fitness/widgets/FingerprintManager/FingerprintIcon.jsx';
 import './UnlockPrompt.scss';
 
 /**
@@ -110,14 +111,7 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
           </div>
         ) : (
           <div className={`unlock-prompt__glyph unlock-prompt__glyph--${state}`} aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 11c0 3.5-.4 5.6-1.2 7.4" />
-              <path d="M8.5 19.5c.9-1.9 1.3-3.9 1.3-6.2a2.2 2.2 0 0 1 4.4 0c0 1 0 1.9-.1 2.7" />
-              <path d="M5.5 16.5c.6-1.1.9-2.4.9-3.8a5.1 5.1 0 0 1 9.4-2.7" />
-              <path d="M4 12.5A8 8 0 0 1 16.5 6" />
-              <path d="M7 5.2A8 8 0 0 1 19.7 11" />
-              <path d="M16.2 13c.1 2.6-.2 4.8-.9 6.6" />
-            </svg>
+            <FingerprintIcon size="100%" />
           </div>
         )}
 

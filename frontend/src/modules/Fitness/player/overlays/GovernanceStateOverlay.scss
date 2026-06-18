@@ -100,18 +100,25 @@
   }
 
   &__unlock {
+    // The overlay + panel are pointer-events:none so taps pass through to the
+    // video (fullscreen toggle). This button MUST opt back in, otherwise the tap
+    // falls through and toggles fullscreen instead of opening the unlock prompt.
+    pointer-events: auto;
     flex: 0 0 auto;
     align-self: center;
-    padding: clamp(6px, 0.8vw, 10px) clamp(12px, 1.4vw, 18px);
-    border-radius: clamp(6px, 0.6vw, 10px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(8px, 0.9vw, 12px);
+    border-radius: 50%;
     border: 1px solid rgba(248, 250, 252, 0.45);
     background: rgba(56, 189, 248, 0.18);
-    color: #f8fafc;
-    font: inherit;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    color: #f8fafc; // LockIcon inherits this via currentColor → white glyph
+    line-height: 0;
     cursor: pointer;
     transition: background 120ms ease, border-color 120ms ease;
+
+    svg { display: block; }
 
     &:hover,
     &:focus-visible {

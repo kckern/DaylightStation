@@ -676,8 +676,16 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
         nogovern: governanceBypassed || undefined
       };
 
-  // created queue item (debug removed)
-      
+      // Ground-truth the governance-bypass seam: record whether this launch carries
+      // the per-item nogovern flag (set by a granted governance_bypass unlock). If a
+      // re-entry after "unlock the whole show" still shows governance, this tells us
+      // whether the flag was lost before the queue item was built.
+      getLogger().child({ component: 'FitnessShow' }).info('fitness.show.launch_episode', {
+        episode: candidateId,
+        governanceBypassed,
+        nogovern: Boolean(queueItem.nogovern)
+      });
+
       // Update the selected episode for the UI
       setSelectedEpisode(episode);
       

@@ -1494,6 +1494,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // Normalize first item (ensure mediaUrl exists)
       const first = { ...queue[0] };
       if (!first.mediaUrl && first.videoUrl) first.mediaUrl = first.videoUrl;
+      // Ground-truth the governance-bypass seam at the player side: did the queue
+      // item arrive carrying nogovern? Pairs with FitnessShow's launch_episode log
+      // to localize where the flag is lost when a bypassed re-entry stays governed.
+      logger.info('fitness.player.init_item', {
+        id: first.id ?? null,
+        itemNogovern: Boolean(first.nogovern),
+        nogovernProp: Boolean(nogovern)
+      });
       setCurrentItem(first);
     }
   }, [queue, currentItem]);

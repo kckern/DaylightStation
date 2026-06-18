@@ -15,7 +15,9 @@ const UNLOCK_PATH = 'api/v1/fitness/unlock';
 // these are only the fallbacks used when config omits them.
 const DEFAULT_UNLOCK_SOUND = 'apps/fitness/ux/unlock.mp3';
 // Chime volume when config omits `unlock.volume`. playCueOnce clamps to [0,1].
-const DEFAULT_UNLOCK_VOLUME = 0.3;
+// Kept low — the garage speakers are loud and the chime is a confirmation, not an
+// alert. The deployed fitness.yml sets unlock.volume explicitly; this is the floor.
+const DEFAULT_UNLOCK_VOLUME = 0.15;
 // Safety cap on the success-screen hold: the prompt shows the "Access Granted"
 // confirmation while the chime plays, then proceeds. If the chime never reports
 // completion (silent/autoplay-rejected device), proceed anyway after this.
