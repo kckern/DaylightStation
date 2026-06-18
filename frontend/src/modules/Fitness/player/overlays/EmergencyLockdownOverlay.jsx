@@ -95,13 +95,14 @@ function TriggeringScreen({ audioPath, commit, abort, logger }) {
         audio.volume = 1;
         audio.addEventListener('ended', onEnded);
         const p = audio.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch((err) => {
-            // Autoplay gated on a gesture-less kiosk — the fallback timer still
-            // drives the ceremony to commit.
-            logger.warn('emergency.audio_blocked', { name: err?.name ?? null });
-            setAudioPlaying(false);
-          });
+        if (p && typeof p.then === 'function') {
+          p.then(() => logger.info('emergency.audio_playing', { audioPath }))
+            .catch((err) => {
+              // Autoplay gated on a gesture-less kiosk — the fallback timer still
+              // drives the ceremony to commit.
+              logger.warn('emergency.audio_blocked', { name: err?.name ?? null });
+              setAudioPlaying(false);
+            });
         }
       } catch (err) {
         logger.warn('emergency.audio_threw', { message: err?.message ?? null });
@@ -194,11 +195,13 @@ function LockedScreen({ lockedUntil, release, logger }) {
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
+      logger.debug('emergency.hold_cancel', {}); // released before the 3s fired
     }
-  }, []);
+  }, [logger]);
 
   const startHold = useCallback(() => {
     if (scanning || holdTimerRef.current) return;
+    logger.debug('emergency.hold_start', { holdMs: HOLD_MS });
     holdTimerRef.current = setTimeout(async () => {
       holdTimerRef.current = null;
       setScanning(true);
