@@ -134,10 +134,15 @@ import { createPoseLogHandler } from '#apps/fitness/services/PoseLogService.mjs'
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
-import { initUnlockService } from '#apps/fitness/unlockService.mjs';
+import { initUnlockService, getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
+import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
+import { TriggerEmergencyLockdown } from '#apps/fitness/usecases/TriggerEmergencyLockdown.mjs';
+import { ReleaseEmergencyLockdown } from '#apps/fitness/usecases/ReleaseEmergencyLockdown.mjs';
+import { GetLockdownState } from '#apps/fitness/usecases/GetLockdownState.mjs';
+import { createEmergencyDetector } from '#apps/fitness/emergencyDetector.mjs';
 
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -1670,6 +1675,50 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Emergency lockdown: backend-driven detection keeps an `emergency` fingerprint
+  // scan armed; an admin match shuts down the garage (HA script) after the
+  // browser ceremony. State persists server-side so it survives reboot.
+  const emergencyLogger = rootLogger.child({ module: 'fitness-emergency' });
+  const emergencyHaGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+  const emergencyLockRepo = new YamlEmergencyLockDatastore({ configService });
+  const emergencyConfig = loadFitnessConfig(householdId)?.emergency || {};
+  const triggerEmergencyLockdown = emergencyHaGateway ? new TriggerEmergencyLockdown({
+    repo: emergencyLockRepo,
+    haGateway: emergencyHaGateway,
+    eventBus,
+    scriptId: emergencyConfig.ha_script || 'garage_deactivate',
+    defaultDurationSec: Number(emergencyConfig.duration_sec) || 1800,
+    logger: emergencyLogger
+  }) : null;
+  const releaseEmergencyLockdown = new ReleaseEmergencyLockdown({ repo: emergencyLockRepo, eventBus, logger: emergencyLogger });
+  const getLockdownState = new GetLockdownState({ repo: emergencyLockRepo });
+  // Hardware hedge knobs (config-driven). Default: a small inter-arm idle gap so
+  // the reader isn't armed 100% of the time (and a normal unlock has a wider gap
+  // to claim it); active-hours gating is opt-in (null = armed 24/7 so a parent
+  // can trigger any time). Set emergency.arming.{inter_arm_idle_ms, active_hours}.
+  const emergencyArming = emergencyConfig.arming || {};
+  const interArmIdleMs = Number.isFinite(Number(emergencyArming.inter_arm_idle_ms))
+    ? Number(emergencyArming.inter_arm_idle_ms) : 1000;
+  const emergencyActiveHours = (emergencyArming.active_hours
+    && Number.isFinite(Number(emergencyArming.active_hours.start))
+    && Number.isFinite(Number(emergencyArming.active_hours.end)))
+    ? { start: Number(emergencyArming.active_hours.start), end: Number(emergencyArming.active_hours.end) }
+    : null;
+  const emergencyDetector = createEmergencyDetector({
+    unlockService: getUnlockService(),
+    eventBus,
+    loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
+    userService,
+    isLocked: async () => !!(await getLockdownState.execute({ now: Math.floor(Date.now() / 1000) })),
+    interArmIdleMs,
+    activeHours: emergencyActiveHours,
+    logger: emergencyLogger
+  });
+  // The detector idle-loops harmlessly if no garage bridge is connected (every
+  // arm just times out and re-arms). HA gateway absent → trigger disabled (the
+  // router 503s commit), but detection/state still work for dev.
+  emergencyDetector.start();
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -1685,6 +1734,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     providerWebhookAdapters,
     enrichmentService: stravaEnrichmentService,
     fingerprintProfileWriter,
+    triggerEmergencyLockdown,
+    releaseEmergencyLockdown,
+    getLockdownState,
+    emergencyDetector,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

@@ -34,6 +34,12 @@ const DEFAULT_TIMEOUT_MS = 15000;
 
 let singleton = null;
 
+// Reader-contention arbiter. The background emergency detector keeps a scan
+// armed continuously; a normal ("foreground") unlock must win the single garage
+// reader. Foreground callers bracket their scan with begin/endForeground so the
+// detector can stand down (it checks isForegroundActive before re-arming).
+let foregroundActive = 0;
+
 /**
  * Construct the unlock service against a live eventbus and register the inbound
  * result handler. Idempotent: returns the existing instance on repeat calls
@@ -97,13 +103,31 @@ export function initUnlockService({ eventBus, timeoutMs = DEFAULT_TIMEOUT_MS, lo
      * Request a fingerprint unlock and await the garage box's verdict.
      * @param {string} lockName
      * @param {Array<{uuid: string, username: string}>|Array<string>} candidateUuids
+     * @param {{ timeoutMs?: number }} [opts] - per-call timeout override (e.g. the
+     *   emergency detector's short re-arm window); omit for the default 15s.
      * @returns {Promise<{matched: boolean, userId?: string, reason?: string}>}
      */
-    requestUnlock(lockName, candidateUuids) {
-      return broker.requestUnlock({ lockName, candidateUuids });
+    requestUnlock(lockName, candidateUuids, opts = {}) {
+      return broker.requestUnlock({ lockName, candidateUuids, timeoutMs: opts?.timeoutMs });
     },
+
+    /** Mark a foreground (normal) unlock as in progress so the detector yields. */
+    beginForeground() { foregroundActive++; },
+    /** Clear a foreground unlock; never drops below zero. */
+    endForeground() { foregroundActive = Math.max(0, foregroundActive - 1); },
+    /** @returns {boolean} true while any foreground unlock is in flight */
+    isForegroundActive() { return foregroundActive > 0; },
   };
   return singleton;
+}
+
+/**
+ * @returns {boolean} true while a foreground (normal) unlock is in flight.
+ * The emergency detector consults this before arming so a normal unlock wins
+ * the reader. Returns false if the service isn't wired yet.
+ */
+export function isUnlockForegroundActive() {
+  return getUnlockService()?.isForegroundActive?.() === true;
 }
 
 /**
@@ -116,4 +140,5 @@ export function getUnlockService() {
 /** Test seam: drop the singleton so each test wires a fresh fake bus. */
 export function _resetUnlockServiceForTests() {
   singleton = null;
+  foregroundActive = 0;
 }

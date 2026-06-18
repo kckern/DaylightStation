@@ -1015,6 +1015,10 @@ export function createFitnessApiRouter(config) {
     providerWebhookAdapters,
     enrichmentService,
     fingerprintProfileWriter = null,
+    triggerEmergencyLockdown = null,
+    releaseEmergencyLockdown = null,
+    getLockdownState = null,
+    emergencyDetector = null,
     logger = console
   } = config;
 
@@ -1132,6 +1136,10 @@ export function createFitnessApiRouter(config) {
     providerWebhookAdapters,
     enrichmentService,
     fingerprintProfileWriter,
+    triggerEmergencyLockdown,
+    releaseEmergencyLockdown,
+    getLockdownState,
+    emergencyDetector,
     logger
   });
 }

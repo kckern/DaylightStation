@@ -64,6 +64,20 @@ const useMenuMusic = ({ isActive, trackChangeKey, volume = 0.075, trackUrls = []
   const volumeRef = useRef(volume);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
 
+  // Live-apply volume changes to the currently-playing slot. Without this, the
+  // configured volume (which arrives asynchronously from /menu-music) is only
+  // honored on the NEXT fade (track change/end): if playback starts before the
+  // fetch resolves, it fades to the hardcoded default and stays there. This
+  // closes that race by re-fading the active slot whenever `volume` changes.
+  useEffect(() => {
+    if (!hasStarted.current || !isActiveRef.current) return;
+    const audio = getSlot(activeSlot.current);
+    if (audio && !audio.paused) {
+      startFade(audio, audio.volume, volume, FADE_MS, getFadeHandle(activeSlot.current), null);
+      logger().info('menu-music.volume-reapplied', { slot: activeSlot.current, volume });
+    }
+  }, [volume]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const trackUrlsRef = useRef(trackUrls);
   useEffect(() => { trackUrlsRef.current = trackUrls; }, [trackUrls]);
 

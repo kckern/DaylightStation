@@ -17,6 +17,7 @@ import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/F
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
+import EmergencyLockdownOverlay from '../modules/Fitness/player/overlays/EmergencyLockdownOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
@@ -55,7 +56,11 @@ const FitnessApp = () => {
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
   const [menuMusicTracks, setMenuMusicTracks] = useState([]);
-  const [menuMusicVolume, setMenuMusicVolume] = useState(0.15);
+  // Quiet pre-fetch default: the configured menu_music.volume arrives async from
+  // /menu-music. Defaulting low means a fetch failure/latency degrades quieter
+  // rather than blasting at the old 0.15. useMenuMusic re-applies the real value
+  // live once it arrives.
+  const [menuMusicVolume, setMenuMusicVolume] = useState(0.05);
 
   // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
   useEffect(() => {
@@ -697,6 +702,12 @@ const FitnessApp = () => {
     return root?.content_source || 'plex';
   }, [fitnessConfiguration]);
 
+  // Powerdown audio for the emergency-lockdown ceremony (config-driven).
+  const emergencyAudioPath = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    return root?.emergency?.audio || 'apps/fitness/ux/powerdown.mp3';
+  }, [fitnessConfiguration]);
+
   // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
   // day-gated nav items re-evaluate live on a long-running kiosk session.
   const dayOfWeek = useDayOfWeek();
@@ -986,7 +997,7 @@ const FitnessApp = () => {
         // NOTE: every top-level fitness.yml block consumed by the frontend MUST
         // be listed here, or FitnessContext (which roots at response.fitness)
         // will never see it — that's how dance_party silently went missing.
-        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks'];
+        const unifyKeys = ['ant_devices','equipment','users','coin_time_unit_ms','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','emergency'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
@@ -1273,6 +1284,7 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <GlobalOverlays />
+          <EmergencyLockdownOverlay audioPath={emergencyAudioPath} />
           <MenuMusicController
             isActive={menuMusicActive}
             trackChangeKey={menuMusicTrackKey}
