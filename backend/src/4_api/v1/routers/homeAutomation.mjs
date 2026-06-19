@@ -77,6 +77,7 @@ export function createHomeAutomationRouter(config) {
     configService,
     eventAggregationService,
     immichAdapter,
+    artAdapter,
     callHomeAssistantService,
     logger = console
   } = config;
@@ -426,29 +427,47 @@ export function createHomeAutomationRouter(config) {
    * `?hold_key=<panelId>` buckets the hold per device, so each panel cycles its
    * OWN favorite instead of every panel showing the one global pick. Omitting it
    * keeps the legacy global hold (one shared photo).
+   *
+   * `?collection=<name>` draws the candidate pool from a named ArtMode collection
+   * in art.yml (e.g. `kids` = Immich photos with ≥2 of the four kids) instead of
+   * the default favorites/all search. Only Immich-backed collections are
+   * supported; the chosen asset is still loaded via the same `getViewable` path,
+   * so the payload shape is unchanged. Absent → legacy favorites/all behavior.
    */
   router.get('/photo', asyncHandler(async (req, res) => {
     if (!immichAdapter) {
       return res.status(503).json({ error: 'Immich gallery not configured' });
     }
     const favorites = req.query.favorites === 'true' || req.query.favorites === '1';
+    const collection = typeof req.query.collection === 'string' ? req.query.collection : '';
     const holdHours = Number(req.query.holdHours) > 0 ? Number(req.query.holdHours) : 12;
     const holdMs = holdHours * 3600 * 1000;
     const holdKey = typeof req.query.hold_key === 'string' ? req.query.hold_key : '';
-    const key = JSON.stringify({ favorites, holdHours, holdKey });
+    const key = JSON.stringify({ favorites, collection, holdHours, holdKey });
     const now = Date.now();
 
     const cached = photoCache.get(key);
     if (cached && now - cached.pickedAt < holdMs) {
-      logger.info?.('home.photo.cached', { ageMs: now - cached.pickedAt, holdHours, holdKey });
+      logger.info?.('home.photo.cached', { ageMs: now - cached.pickedAt, holdHours, holdKey, collection });
       return res.json(cached.payload);
     }
 
-    const result = await immichAdapter.search({ favorites, mediaType: 'image', take: 1000 });
-    const ids = (result?.items || [])
-      .map((it) => it?.id)
-      .filter(Boolean)
-      .sort(); // stable order independent of Immich's internal sort
+    // A named collection resolves through the ArtMode Immich resolver (people +
+    // minPeople combination search, favorites, albums, …); otherwise fall back
+    // to the legacy direct favorites/all search.
+    let ids;
+    if (collection) {
+      if (!artAdapter?.collectionAssetIds) {
+        return res.status(503).json({ error: 'art collections not configured' });
+      }
+      ids = (await artAdapter.collectionAssetIds(collection)).slice().sort();
+    } else {
+      const result = await immichAdapter.search({ favorites, mediaType: 'image', take: 1000 });
+      ids = (result?.items || [])
+        .map((it) => it?.id)
+        .filter(Boolean)
+        .sort(); // stable order independent of Immich's internal sort
+    }
     if (!ids.length) {
       return res.status(404).json({ error: 'no photos found for query' });
     }
@@ -471,7 +490,7 @@ export function createHomeAutomationRouter(config) {
     };
 
     photoCache.set(key, { pickedAt: now, payload });
-    logger.info?.('home.photo.picked', { id: picked, count: ids.length, holdHours, holdKey });
+    logger.info?.('home.photo.picked', { id: picked, count: ids.length, holdHours, holdKey, collection });
     res.json(payload);
   }));
 

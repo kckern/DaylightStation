@@ -245,3 +245,51 @@ describe('ArtAdapter recency tempering', () => {
     expect(pool.map((c) => c.id)).toEqual(['a', 'b', 'c']);     // full pool
   });
 });
+
+describe('ArtAdapter.collectionAssetIds (e-ink photo pool)', () => {
+  it('resolves an immich collection to raw asset IDs (immich: prefix stripped)', async () => {
+    const seen = [];
+    const immichSource = {
+      resolveCandidates: async (def) => {
+        seen.push(def);
+        return [cand('immich:aaa', 'landscape'), cand('immich:bbb', 'portrait')];
+      },
+    };
+    const adapter = createArtAdapter({
+      collections: { all: {}, kids: { source: 'immich', people: ['Felix'], minPeople: 2 } },
+      artSource: fakeSource(() => []),
+      immichSource,
+    });
+    const ids = await adapter.collectionAssetIds('kids');
+    expect(ids).toEqual(['aaa', 'bbb']);
+    expect(seen[0]).toEqual({ source: 'immich', people: ['Felix'], minPeople: 2 });
+  });
+
+  it('returns [] for a non-immich (file-based art) collection', async () => {
+    const adapter = createArtAdapter({
+      collections: { all: {}, americana: { folder: 'americana' } },
+      artSource: fakeSource(() => [cand('flag', 'landscape')]),
+    });
+    expect(await adapter.collectionAssetIds('americana')).toEqual([]);
+  });
+
+  it('does NOT widen to the art pool when the immich collection is empty', async () => {
+    let artCalled = false;
+    const adapter = createArtAdapter({
+      collections: { all: {}, kids: { source: 'immich', people: ['Felix'] } },
+      artSource: fakeSource(() => { artCalled = true; return [cand('land', 'landscape')]; }),
+      immichSource: { resolveCandidates: async () => [] },
+    });
+    expect(await adapter.collectionAssetIds('kids')).toEqual([]);
+    expect(artCalled).toBe(false);
+  });
+
+  it('returns [] when the immich source is unavailable', async () => {
+    const adapter = createArtAdapter({
+      collections: { all: {}, kids: { source: 'immich', people: ['Felix'] } },
+      artSource: fakeSource(() => []),
+      immichSource: null,
+    });
+    expect(await adapter.collectionAssetIds('kids')).toEqual([]);
+  });
+});

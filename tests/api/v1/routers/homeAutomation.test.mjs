@@ -129,3 +129,77 @@ describe('POST /api/v1/home/ha/script/:scriptId (delegates to CallHomeAssistantS
     });
   });
 });
+
+describe('GET /api/v1/home/photo (collection param routes through ArtMode resolver)', () => {
+  const viewable = (id) => ({ id, imageUrl: `/img/${id}`, metadata: {} });
+
+  function buildPhotoApp({ immichAdapter, artAdapter } = {}) {
+    const app = express();
+    app.use('/api/v1/home', createHomeAutomationRouter({
+      haGateway: { callService: vi.fn() },
+      immichAdapter,
+      artAdapter,
+      logger: silentLogger,
+    }));
+    return app;
+  }
+
+  it('?collection=kids draws the pool from artAdapter, NOT immichAdapter.search', async () => {
+    const search = vi.fn();
+    const getViewable = vi.fn().mockResolvedValue(viewable('aaa'));
+    const collectionAssetIds = vi.fn().mockResolvedValue(['aaa']);
+    const app = buildPhotoApp({
+      immichAdapter: { search, getViewable },
+      artAdapter: { collectionAssetIds },
+    });
+
+    const res = await request(app).get('/api/v1/home/photo?collection=kids&holdHours=12');
+
+    expect(res.status).toBe(200);
+    expect(collectionAssetIds).toHaveBeenCalledWith('kids');
+    expect(search).not.toHaveBeenCalled();
+    expect(getViewable).toHaveBeenCalledWith('aaa');
+    expect(res.body.id).toBe('aaa');
+    expect(res.body.imageUrl).toBe('/img/aaa');
+  });
+
+  it('no collection → legacy immichAdapter.search path (artAdapter untouched)', async () => {
+    const search = vi.fn().mockResolvedValue({ items: [{ id: 'fav1' }] });
+    const getViewable = vi.fn().mockResolvedValue(viewable('fav1'));
+    const collectionAssetIds = vi.fn();
+    const app = buildPhotoApp({
+      immichAdapter: { search, getViewable },
+      artAdapter: { collectionAssetIds },
+    });
+
+    const res = await request(app).get('/api/v1/home/photo?favorites=true');
+
+    expect(res.status).toBe(200);
+    expect(search).toHaveBeenCalledWith({ favorites: true, mediaType: 'image', take: 1000 });
+    expect(collectionAssetIds).not.toHaveBeenCalled();
+  });
+
+  it('an empty collection yields 404 (no widening, no fallback to search)', async () => {
+    const search = vi.fn();
+    const app = buildPhotoApp({
+      immichAdapter: { search, getViewable: vi.fn() },
+      artAdapter: { collectionAssetIds: vi.fn().mockResolvedValue([]) },
+    });
+
+    const res = await request(app).get('/api/v1/home/photo?collection=kids');
+
+    expect(res.status).toBe(404);
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it('503 when a collection is requested but no artAdapter is wired', async () => {
+    const app = buildPhotoApp({
+      immichAdapter: { search: vi.fn(), getViewable: vi.fn() },
+      artAdapter: undefined,
+    });
+
+    const res = await request(app).get('/api/v1/home/photo?collection=kids');
+
+    expect(res.status).toBe(503);
+  });
+});

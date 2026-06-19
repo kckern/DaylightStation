@@ -1702,6 +1702,7 @@ export function createHomeAutomationApiRouter(config) {
     configService,
     eventAggregationService,
     immichAdapter,
+    artAdapter,
     logger = console
   } = config;
 
@@ -1726,6 +1727,7 @@ export function createHomeAutomationApiRouter(config) {
     configService,
     eventAggregationService,
     immichAdapter,
+    artAdapter,
     callHomeAssistantService,
     logger
   });
