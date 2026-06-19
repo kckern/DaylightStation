@@ -177,13 +177,17 @@ static void pack_4bpp_in_place(uint8_t* idx, int W, int H) {
 static int         g_batMv   = 0;        // battery millivolts (0 = unread)
 static const char* g_wakeStr = "boot";   // what woke us: green/right/left/timer/boot
 
-// Battery: GPIO1 ADC behind a /2 divider, gated by bsp_battery_enable on GPIO21
-// (per Seeed's reTerminal E-series I/O cookbook). Read once, early, before render.
+// Battery: ADC (GPIO1) behind a /2 divider, gated by bsp_battery_enable on GPIO21.
+// MUST be an ESP32-S3 ADC pin (GPIO1-20) — GPIO40 is NOT ADC-capable and crashes.
+// Verified ~4140mV on E1004. On E1003 GPIO1 reads 0 (its battery sense pin is TBD),
+// but it's valid so it won't crash; E1003 battery telemetry stays 0 until the pin
+// is confirmed.
+static constexpr int BAT_ADC_GPIO = 1;
 static int readBatteryMv() {
-  pinMode(21, OUTPUT); digitalWrite(21, HIGH);   // enable the battery divider rail
-  analogSetPinAttenuation(1, ADC_11db);          // full-scale (~3.3V)
-  delay(20);                                      // let the divider settle
-  return (int)(analogReadMilliVolts(1) * 2);     // x2 divider compensation
+  pinMode(21, OUTPUT); digitalWrite(21, HIGH);            // enable the battery divider rail
+  analogSetPinAttenuation(BAT_ADC_GPIO, ADC_11db);        // full-scale (~3.3V)
+  delay(20);                                              // let the divider settle
+  return (int)(analogReadMilliVolts(BAT_ADC_GPIO) * 2);  // x2 divider compensation
 }
 
 static String urlHost()   { return String("http://") + DS_HOST + ":" + DS_PORT; }
