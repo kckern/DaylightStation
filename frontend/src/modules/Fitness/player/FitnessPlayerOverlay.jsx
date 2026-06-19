@@ -52,7 +52,7 @@ export const buildChallengeEventPayload = (challenge, statusOverride = null) => 
   };
 };
 
-const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnlock = null }) => {
+const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnlock = null, governanceStateOverride = undefined }) => {
   useRenderProfiler('FitnessPlayerOverlay');
   const fitnessCtx = useFitnessContext();
   const location = useLocation();
@@ -63,7 +63,13 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals, onGovernanceUnl
 
   const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlayState;
   const voiceMemoOverlayOpen = Boolean(voiceMemoOverlayState?.open);
-  const governanceState = fitnessCtx?.governanceState || null;
+  // Prefer the caller's bypass-aware state when provided (FitnessPlayer passes its
+  // effectiveGovernanceState so fingerprint/?nogovern/per-item bypasses actually
+  // clear the lock panel). `undefined` means "no override" → fall back to the raw
+  // context SSoT. A deliberate `null` override is honored (treated as "no state").
+  const governanceState = governanceStateOverride !== undefined
+    ? governanceStateOverride
+    : (fitnessCtx?.governanceState || null);
   const sessionInstance = fitnessCtx?.fitnessSessionInstance || null;
   const participantDisplayMap = fitnessCtx?.participantDisplayMap;
   const ctxZoneMetadata = fitnessCtx?.zoneMetadata;
@@ -340,7 +346,10 @@ FitnessPlayerOverlay.propTypes = {
     current: PropTypes.any
   }),
   showFullscreenVitals: PropTypes.bool,
-  onGovernanceUnlock: PropTypes.func
+  onGovernanceUnlock: PropTypes.func,
+  // Bypass-aware governance snapshot from FitnessPlayer. When defined it is used in
+  // place of fitnessCtx.governanceState; when undefined the overlay reads context.
+  governanceStateOverride: PropTypes.object
 };
 
 export default FitnessPlayerOverlay;
