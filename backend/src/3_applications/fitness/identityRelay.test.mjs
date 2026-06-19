@@ -71,6 +71,31 @@ describe('createIdentityRelay', () => {
     expect(relay.consumePendingDetection(1000)).toBeNull();
   });
 
+  it('stamps an admin session on an admin scan (not a non-admin), and expires after the TTL', () => {
+    let t = 1000;
+    const d = {
+      eventBus: makeBus(),
+      userService: { getAllProfiles: () => profiles() },
+      loadFitnessConfig: () => ({ locks: {}, users: { admin: ['kc'] } }),
+      now: () => t,
+      adminSessionTtlMs: 5000,
+      logger: { debug() {}, info() {}, warn() {} },
+    };
+    const relay = createIdentityRelay(d);
+    // A non-admin scan does NOT open an admin session.
+    d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-guest' });
+    expect(relay.adminVerifiedWithin()).toBeNull();
+    // An admin scan opens it.
+    d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-kc' });
+    expect(relay.adminVerifiedWithin()).toMatchObject({ userId: 'kc' });
+    // Still valid within the window…
+    t = 1000 + 4000;
+    expect(relay.adminVerifiedWithin()).toMatchObject({ userId: 'kc' });
+    // …expired past it.
+    t = 1000 + 6000;
+    expect(relay.adminVerifiedWithin()).toBeNull();
+  });
+
   it('unknown uuid → matched:false null identity', () => {
     const d = deps(() => 1);
     createIdentityRelay(d);

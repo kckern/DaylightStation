@@ -47,15 +47,21 @@ describe('FingerprintManagerContainer', () => {
     await waitFor(() => expect(screen.getByTestId('enroll-modal')).toHaveTextContent('new-user'));
   });
 
-  it('tapping an empty fingertip opens enroll; tapping a lit one deletes', async () => {
-    hook.remove.mockResolvedValue({ success: true });
+  it('tapping an empty fingertip opens enroll for that user', async () => {
     render(<FingerprintManagerContainer />);
-    // Empty fingertip → enroll modal for that user.
     const emptyTip = (await screen.findAllByLabelText('Left thumb — not enrolled'))[0];
     fireEvent.pointerDown(emptyTip);
     await waitFor(() => expect(screen.getByTestId('enroll-modal')).toBeInTheDocument());
-    // Enrolled fingertip → delete by finger name.
-    fireEvent.pointerDown(screen.getByLabelText('Right index — enrolled'));
+  });
+
+  it('tapping a lit fingertip confirms first, then deletes only on Remove', async () => {
+    hook.remove.mockResolvedValue({ success: true });
+    render(<FingerprintManagerContainer />);
+    fireEvent.pointerDown(await screen.findByLabelText('Right index — enrolled'));
+    // Confirmation shown; nothing deleted yet (no instant-delete on tap).
+    expect(await screen.findByText('Remove fingerprint')).toBeInTheDocument();
+    expect(hook.remove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^remove$/i }));
     await waitFor(() => expect(hook.remove).toHaveBeenCalledWith({ username: 'admin-user', finger: 'right-index' }));
   });
 });

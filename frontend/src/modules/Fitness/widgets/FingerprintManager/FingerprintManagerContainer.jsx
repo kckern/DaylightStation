@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useFingerprintManager } from './useFingerprintManager.js';
 import { EnrollModal } from './EnrollModal.jsx';
-import FingerprintHands from './FingerprintHands.jsx';
+import FingerprintHands, { fingerLabel } from './FingerprintHands.jsx';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
@@ -30,6 +30,9 @@ export default function FingerprintManagerContainer({ onClose }) {
   const [unlocked, setUnlocked] = useState(false);
   const [gateOpen, setGateOpen] = useState(true);
   const [enrolling, setEnrolling] = useState(null); // { username, displayName, avatarSrc, enrolled, preselect, clientToken }
+  const [confirmDelete, setConfirmDelete] = useState(null); // { username, displayName, finger }
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   // Require an admin fingerprint before the manager renders.
   useEffect(() => {
@@ -73,17 +76,35 @@ export default function FingerprintManagerContainer({ onClose }) {
     await refresh();
   };
 
-  const handleDelete = async (username, finger) => {
-    // Deletion is keyed by finger name; the backend re-resolves it to the uuid the
-    // user owns (each finger name is unique per user — enroll rejects duplicates).
-    logger().info('manager.delete.tap', { username, finger });
+  // Confirmed delete. Keyed by finger name; the backend re-resolves it to the uuid
+  // the user owns and authorizes via the admin session (no second scan needed).
+  const performDelete = async () => {
+    if (!confirmDelete) return;
+    const { username, finger } = confirmDelete;
+    logger().info('manager.delete.confirm', { username, finger });
+    setDeleting(true);
+    setDeleteError(null);
     const result = await remove({ username, finger });
-    if (result?.success) await refresh();
+    setDeleting(false);
+    if (result?.success) {
+      logger().info('manager.delete.done', { username, finger });
+      setConfirmDelete(null);
+      await refresh();
+    } else {
+      logger().warn('manager.delete.failed', { username, finger, error: result?.error ?? null });
+      setDeleteError('Couldn’t remove that print. Try again.');
+    }
   };
 
+  const closeConfirm = () => { setConfirmDelete(null); setDeleteError(null); };
+
   const onFingerTap = (user) => (finger, isEnrolled) => {
-    if (isEnrolled) handleDelete(user.username, finger);
-    else openEnroll(user, finger);
+    if (isEnrolled) {
+      logger().debug('manager.delete.tap', { username: user.username, finger });
+      setConfirmDelete({ username: user.username, displayName: user.displayName, finger });
+    } else {
+      openEnroll(user, finger);
+    }
   };
 
   if (!unlocked) {
@@ -168,6 +189,25 @@ export default function FingerprintManagerContainer({ onClose }) {
           onDone={handleDone}
           onCancel={() => setEnrolling(null)}
         />
+      )}
+
+      {confirmDelete && (
+        <div className="fp-confirm" role="dialog" aria-modal="true" aria-label="Remove fingerprint">
+          <div className="fp-confirm__backdrop" aria-hidden="true" />
+          <div className="fp-confirm__card">
+            <p className="fp-confirm__title">Remove fingerprint</p>
+            <p className="fp-confirm__body">
+              Delete <strong>{fingerLabel(confirmDelete.finger)}</strong> from <strong>{confirmDelete.displayName}</strong>?
+            </p>
+            {deleteError && <p className="fp-confirm__error">{deleteError}</p>}
+            <div className="fp-enroll__actions">
+              <button type="button" className="fp-btn fp-btn--ghost" onClick={closeConfirm} disabled={deleting}>Cancel</button>
+              <button type="button" className="fp-btn fp-btn--danger" onClick={performDelete} disabled={deleting}>
+                {deleting ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

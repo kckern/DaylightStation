@@ -305,6 +305,43 @@
     color: #f8fafc;
   }
   &--ghost:hover { background: rgba(148, 163, 184, 0.26); }
+
+  &--danger { background: #ef4444; color: #2a0606; }
+  &--danger:hover { background: #f25555; }
+  &--danger:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// Delete confirmation — small centered dialog (slate glass, same family).
+.fp-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__backdrop { position: absolute; inset: 0; background: rgba(8, 11, 20, 0.72); backdrop-filter: blur(6px); }
+
+  &__card {
+    position: relative;
+    width: min(420px, 92vw);
+    padding: clamp(22px, 3vw, 30px) clamp(20px, 3vw, 32px);
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    color: #f8fafc;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: fp-enroll-pop 0.2s ease-out both;
+  }
+
+  &__title { margin: 0; font-size: 1.25rem; font-weight: 700; }
+  &__body { margin: 0; font-size: 1rem; color: rgba(248, 250, 252, 0.85); line-height: 1.4; strong { color: #fff; } }
+  &__error { margin: 0; font-size: 0.9rem; color: #fbbf24; }
+  .fp-enroll__actions { margin-top: 6px; }
 }
 
 @keyframes fp-enroll-pop {
