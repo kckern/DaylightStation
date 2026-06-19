@@ -36,9 +36,14 @@ export function buildAuthz(username, fitnessConfig) {
   }
   // Admins implicitly hold the ADMIN_LOCK (from fitness.yml users.admin).
   const admins = fitnessConfig?.users?.admin || [];
-  if (Array.isArray(admins) && admins.includes(username) && !locks.includes(ADMIN_LOCK)) {
+  const isAdmin = Array.isArray(admins) && admins.includes(username);
+  if (isAdmin && !locks.includes(ADMIN_LOCK)) {
     locks.push(ADMIN_LOCK);
   }
+  // Arming the emergency shutdown is recognized + ADMIN — never just recognized.
+  // The emergency lock list only scopes WHICH admins; a non-admin in that list
+  // (config drift) must never be able to arm it.
+  emergency = emergency && isAdmin;
   return { emergency, locks };
 }
 

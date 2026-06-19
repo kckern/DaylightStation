@@ -11,7 +11,8 @@ const profiles = () => new Map([
   ['kc', { identities: { fingerprints: [{ id: 'uuid-kc', finger: 'right-index' }] } }],
   ['guest', { identities: { fingerprints: [{ id: 'uuid-guest', finger: 'left-thumb' }] } }],
 ]);
-const fitnessConfig = () => ({ locks: { emergency: ['kc'], dance_party: ['kc', 'guest'] } });
+// kc is an admin (emergency arming requires recognized + admin); guest is not.
+const fitnessConfig = () => ({ locks: { emergency: ['kc'], dance_party: ['kc', 'guest'] }, users: { admin: ['kc'] } });
 
 function makeBus() {
   let handler = null;
@@ -33,8 +34,15 @@ describe('buildFingerprintIdentityIndex', () => {
 
 describe('buildAuthz', () => {
   it('collects all lock memberships and flags emergency', () => {
-    expect(buildAuthz('kc', fitnessConfig())).toEqual({ emergency: true, locks: ['emergency', 'dance_party'] });
+    expect(buildAuthz('kc', fitnessConfig())).toEqual({ emergency: true, locks: ['emergency', 'dance_party', 'admin'] });
     expect(buildAuthz('guest', fitnessConfig())).toEqual({ emergency: false, locks: ['dance_party'] });
+  });
+
+  it('emergency arming requires recognized + ADMIN — a non-admin in the emergency list cannot arm', () => {
+    // sitter is listed in locks.emergency but is NOT an admin → emergency must be false.
+    const cfg = { locks: { emergency: ['kc', 'sitter'] }, users: { admin: ['kc'] } };
+    expect(buildAuthz('kc', cfg)).toEqual({ emergency: true, locks: ['emergency', 'admin'] });
+    expect(buildAuthz('sitter', cfg)).toEqual({ emergency: false, locks: ['emergency'] });
   });
   it('EMERGENCY_LOCK is the canonical emergency lock id', () => {
     expect(EMERGENCY_LOCK).toBe('emergency');
