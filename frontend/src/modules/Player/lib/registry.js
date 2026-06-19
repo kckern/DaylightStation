@@ -35,7 +35,7 @@ const CONTENT_FORMAT_COMPONENTS = {
   titlecard: TitleCardRenderer,
 };
 
-const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio', 'image']);
+const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'hls_video', 'audio', 'image']);
 
 /**
  * Get the renderer component for a content format.

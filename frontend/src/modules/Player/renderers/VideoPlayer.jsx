@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -62,6 +62,11 @@ export function VideoPlayer({
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.mediaType);
+  // HLS streams (m3u8) play via hls.js (or native HLS on Safari). They use the
+  // native <video> branch but WITHOUT a static src — the attach effect below
+  // assigns the source.
+  const isHls = media?.mediaType === 'hls_video';
+  const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const [displayReady, setDisplayReady] = useState(false);
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
@@ -342,6 +347,36 @@ export function VideoPlayer({
   useEffect(() => {
     dashErrorRefreshAttemptsRef.current = 0;
   }, [mediaUrl]);
+
+  // HLS attach: load the m3u8 via hls.js (or native HLS where supported).
+  // Lazy dynamic import so the (large) hls.js bundle only loads when an HLS
+  // source is actually played, and never for dash/native video.
+  useEffect(() => {
+    if (media?.mediaType !== 'hls_video') return undefined;
+    const video = containerRef.current;
+    if (!video || !mediaUrl) return undefined;
+    // Safari & co. play HLS natively:
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = mediaUrl;
+      hlsLogger.info('video.hls.native', { mediaUrl });
+      return undefined;
+    }
+    let hls;
+    let cancelled = false;
+    import('hls.js').then(({ default: Hls }) => {
+      if (cancelled || !containerRef.current) return;
+      if (!Hls.isSupported()) {
+        hlsLogger.warn('video.hls.unsupported', { mediaUrl });
+        return;
+      }
+      hls = new Hls({ enableWorker: true });
+      hls.on(Hls.Events.ERROR, (_e, data) => hlsLogger.warn('video.hls.error', { fatal: data?.fatal, type: data?.type }));
+      hls.loadSource(mediaUrl);
+      hls.attachMedia(containerRef.current);
+      hlsLogger.info('video.hls.attached', { mediaUrl });
+    }).catch((e) => hlsLogger.error('video.hls.load_failed', { error: e?.message }));
+    return () => { cancelled = true; if (hls) hls.destroy(); };
+  }, [media?.mediaType, mediaUrl, hlsLogger]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {
@@ -654,7 +689,7 @@ export function VideoPlayer({
           autoPlay
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
-          src={mediaUrl}
+          src={isHls ? undefined : mediaUrl}
           style={effectStyles}
           onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
           onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}

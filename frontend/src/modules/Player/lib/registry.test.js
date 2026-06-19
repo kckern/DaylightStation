@@ -33,6 +33,10 @@ describe('playable format registry', () => {
       expect(isMediaFormat('dash_video')).toBe(true);
     });
 
+    it('should return true for hls_video', () => {
+      expect(isMediaFormat('hls_video')).toBe(true);
+    });
+
     it('should return true for audio', () => {
       expect(isMediaFormat('audio')).toBe(true);
     });

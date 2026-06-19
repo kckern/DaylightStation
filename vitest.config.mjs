@@ -35,6 +35,7 @@ export default {
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
       '@mantine/core': path.join(frontendNodeModules, '@mantine/core'),
       '@mantine/charts': path.join(frontendNodeModules, '@mantine/charts'),
+      'dash-video-element': path.join(frontendNodeModules, 'dash-video-element'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
     },
