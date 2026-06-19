@@ -8,6 +8,10 @@ describe('playable format registry', () => {
       expect(renderer).toBeTruthy();
     });
 
+    it('should return the webview renderer (stream fallback)', () => {
+      expect(getRenderer('webview')).toBeTruthy();
+    });
+
     it('should return null for unregistered formats', () => {
       expect(getRenderer('nonexistent')).toBe(null);
     });
@@ -62,7 +66,8 @@ describe('playable format registry', () => {
       expect(formats).toContain('readable_flow');
       expect(formats).toContain('slideshow');
       expect(formats).toContain('titlecard');
-      expect(formats.length).toBe(7);
+      expect(formats).toContain('webview');
+      expect(formats.length).toBe(8);
     });
   });
 });
