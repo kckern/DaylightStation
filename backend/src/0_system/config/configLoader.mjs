@@ -323,6 +323,9 @@ function buildIdentityMappings(users) {
     const identities = profile.identities ?? {};
 
     for (const [platform, data] of Object.entries(identities)) {
+      // An identity value can be null (e.g. an empty `fingerprints:` key) or a
+      // non-object (an array/string) — never assume it's a keyed object.
+      if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
       const platformId = data.user_id ?? data.id;
       if (platformId) {
         mappings[platform] ??= {};
