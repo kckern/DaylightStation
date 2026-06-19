@@ -1472,7 +1472,11 @@ export function createFitnessRouter(config) {
         username,
         displayName: profile.display_name || username,
         admin: adminSet.has(username) || ids.admin === true,
-        fingerprints: (ids.fingerprints || []).map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
+        // Simulated entries (sim-unlock test fixtures) are not real templates and
+        // are never surfaced for management — they'd show as phantom duplicates.
+        fingerprints: (ids.fingerprints || [])
+          .filter((f) => !f.simulated)
+          .map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
       });
     }
     res.json(out);
@@ -1524,7 +1528,7 @@ export function createFitnessRouter(config) {
     if (!finger || typeof finger !== 'string') {
       return res.status(400).json({ error: 'missing-finger' });
     }
-    const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger);
+    const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger && !f.simulated);
     if (taken) {
       logger.info?.('fitness.fingerprint.enroll.finger-taken', { username, finger });
       return res.status(409).json({ error: 'finger-taken' });
@@ -1568,7 +1572,9 @@ export function createFitnessRouter(config) {
     if (!eligibleUsernames(req).includes(username)) {
       return res.status(403).json({ error: 'not-eligible' });
     }
-    const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger);
+    // Simulated fixtures have no on-box template and never collide with a real
+    // finger of the same name, so they're excluded from delete matching.
+    const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger && !f.simulated);
     if (!finger || matches.length === 0) return res.status(400).json({ error: 'unknown-fingerprint' });
     if (matches.length > 1) return res.status(409).json({ error: 'ambiguous-finger' });
     const uuid = matches[0].id;
