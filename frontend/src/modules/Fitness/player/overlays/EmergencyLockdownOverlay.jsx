@@ -34,9 +34,10 @@ const HOLD_MS = 3000;
 const MIN_CEREMONY_MS = 10000;
 // Assumed powerdown length when the cue element's duration isn't known yet.
 const AUDIO_FALLBACK_MS = 8000;
-// Lock id presented to the unlock modal to abort an in-progress shutdown. Matches
-// the backend EMERGENCY_LOCK group, so an emergency-authorized finger grants it.
-const ABORT_LOCK = 'emergency';
+// Lock id presented to the unlock modal to abort an in-progress shutdown. The
+// emergency authority is admin, so the abort is granted by any admin finger
+// (admins implicitly hold the ADMIN_LOCK).
+const ABORT_LOCK = 'admin';
 
 /**
  * Full-screen DEFCON emergency-lockdown overlay for the Fitness kiosk.

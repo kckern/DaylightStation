@@ -2,9 +2,10 @@
 // identity + authorization facts, and rebroadcasts `fitness.identity.detected` for the
 // frontend IdentityManager. Also maintains the short-lived pending-detection that the
 // /emergency/{commit,abort,release} endpoints consume (the guard the old detector gave).
-export const EMERGENCY_LOCK = 'emergency';
 // Admins implicitly hold this lock — it gates admin-only surfaces (e.g. the
-// fingerprint manager). Kept in sync with fitness.yml `users.admin` rather than
+// fingerprint manager) AND is the sole authority for the emergency shutdown
+// (arm / abort / release). There is no separate "emergency" group: emergency
+// authority == admin. Kept in sync with fitness.yml `users.admin` rather than
 // hand-maintained in the `locks` map, so adding an admin can't desync the gate.
 export const ADMIN_LOCK = 'admin';
 
@@ -26,25 +27,22 @@ export function buildFingerprintIdentityIndex(profiles) {
 
 export function buildAuthz(username, fitnessConfig) {
   const locks = [];
-  let emergency = false;
   const locksMap = fitnessConfig?.locks || {};
   for (const [lockId, users] of Object.entries(locksMap)) {
     if (Array.isArray(users) && users.includes(username)) {
       locks.push(lockId);
-      if (lockId === EMERGENCY_LOCK) emergency = true;
     }
   }
-  // Admins implicitly hold the ADMIN_LOCK (from fitness.yml users.admin).
+  // Admins implicitly hold the ADMIN_LOCK (from fitness.yml users.admin) and ARE
+  // the emergency authority — arming/aborting/releasing the shutdown all require
+  // admin. `admin` is the single fact consumers gate on; there is no separate
+  // "emergency" flag or group.
   const admins = fitnessConfig?.users?.admin || [];
   const isAdmin = Array.isArray(admins) && admins.includes(username);
   if (isAdmin && !locks.includes(ADMIN_LOCK)) {
     locks.push(ADMIN_LOCK);
   }
-  // Arming the emergency shutdown is recognized + ADMIN — never just recognized.
-  // The emergency lock list only scopes WHICH admins; a non-admin in that list
-  // (config drift) must never be able to arm it.
-  emergency = emergency && isAdmin;
-  return { emergency, locks };
+  return { admin: isAdmin, locks };
 }
 
 // How long an admin scan authorizes manage operations (enroll-verify / delete)
@@ -71,7 +69,7 @@ export function createIdentityRelay({
   function emitUnrecognized(modality, at) {
     eventBus.broadcast(IDENTITY_TOPIC, {
       modality, matched: false, userId: null, finger: null,
-      authz: { emergency: false, locks: [] }, at,
+      authz: { admin: false, locks: [] }, at,
     });
   }
 
@@ -92,19 +90,20 @@ export function createIdentityRelay({
     }
     const fitnessConfig = loadFitnessConfig?.() || {};
     const authz = buildAuthz(entry.userId, fitnessConfig);
-    if (authz.emergency) {
+    // Admin IS the emergency authority: the same scan stamps both the short-lived
+    // pending detection (consumed by /emergency/{commit,abort,release}) and the
+    // longer admin session (manage operations).
+    if (authz.admin) {
       pending = { userId: entry.userId, at };
-      logger.info?.('identity.pending_stamped', { userId: entry.userId });
-    }
-    if (authz.locks.includes(ADMIN_LOCK)) {
       lastAdmin = { userId: entry.userId, at };
+      logger.info?.('identity.pending_stamped', { userId: entry.userId });
       logger.info?.('identity.admin_verified', { userId: entry.userId });
     }
     eventBus.broadcast(IDENTITY_TOPIC, {
       modality, matched: true, userId: entry.userId, finger: entry.finger, authz, at,
     });
     logger.info?.('identity.detected', {
-      userId: entry.userId, finger: entry.finger, emergency: authz.emergency, locks: authz.locks.length,
+      userId: entry.userId, finger: entry.finger, admin: authz.admin, locks: authz.locks.length,
     });
   }
 
