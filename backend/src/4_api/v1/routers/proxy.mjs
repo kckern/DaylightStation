@@ -40,6 +40,96 @@ export function isBlockedStreamHost(host) {
 }
 
 /**
+ * Validate a stream URL against the SSRF guard + http/https-only check.
+ * Returns the parsed URL if allowed, or throws a tagged error if blocked/invalid.
+ * @param {string} rawUrl - absolute URL string
+ * @param {string} [via] - context for logging ('redirect' for redirect hops)
+ * @returns {URL}
+ */
+function assertSafeStreamUrl(rawUrl, via) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    const err = new Error('Invalid src URL');
+    err.code = 'STREAM_INVALID_URL';
+    err.via = via;
+    throw err;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    const err = new Error('Only http/https URLs allowed');
+    err.code = 'STREAM_INVALID_URL';
+    err.host = u.hostname;
+    err.via = via;
+    throw err;
+  }
+  if (isBlockedStreamHost(u.hostname)) {
+    const err = new Error('Blocked host');
+    err.code = 'STREAM_BLOCKED_HOST';
+    err.host = u.hostname;
+    err.via = via;
+    throw err;
+  }
+  return u;
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_STREAM_REDIRECTS = 5;
+
+/**
+ * Fetch a stream URL while manually following redirects so the SSRF guard can be
+ * re-applied on every hop. `fetch`'s automatic redirect following bypasses the
+ * guard (an allowed public URL could 302 to e.g. http://169.254.169.254/), so we
+ * disable it and validate each Location before continuing.
+ *
+ * Throws a tagged error (code STREAM_BLOCKED_HOST / STREAM_INVALID_URL /
+ * STREAM_TOO_MANY_REDIRECTS) the route maps to a 400/502 response.
+ *
+ * @param {string} startUrl - already-validated initial absolute URL
+ * @param {Object} opts
+ * @param {Object} [opts.headers] - request headers (referer/user-agent/range)
+ * @param {AbortSignal} [opts.signal]
+ * @param {typeof fetch} [opts.fetchFn] - injectable fetch (for tests)
+ * @param {number} [opts.maxRedirects]
+ * @returns {Promise<Response>} the final (non-redirect) Response
+ */
+export async function safeStreamFetch(startUrl, opts = {}) {
+  const {
+    headers,
+    signal,
+    fetchFn = fetch,
+    maxRedirects = MAX_STREAM_REDIRECTS,
+  } = opts;
+
+  let currentUrl = startUrl;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const resp = await fetchFn(currentUrl, {
+      headers,
+      redirect: 'manual',
+      signal,
+    });
+
+    if (!REDIRECT_STATUSES.has(resp.status)) {
+      return resp;
+    }
+
+    const location = resp.headers.get('location');
+    if (!location) {
+      // Redirect status with no Location: treat as final response (let caller handle).
+      return resp;
+    }
+
+    // Resolve relative Location against the current URL, then re-run the guard.
+    const next = assertSafeStreamUrl(new URL(location, currentUrl).toString(), 'redirect');
+    currentUrl = next.toString();
+  }
+
+  const err = new Error('Too many redirects');
+  err.code = 'STREAM_TOO_MANY_REDIRECTS';
+  throw err;
+}
+
+/**
  * Rewrite an HLS (m3u8) playlist so that every segment / variant / key URI is
  * routed back through this stream proxy (carrying the same profile).
  * Pure + exported for unit testing.
@@ -546,16 +636,13 @@ export function createProxyRouter(config) {
 
     let target;
     try {
-      target = new URL(src);
-    } catch {
-      return res.status(400).json({ error: 'Invalid src URL' });
-    }
-    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-      return res.status(400).json({ error: 'Only http/https URLs allowed' });
-    }
-    if (isBlockedStreamHost(target.hostname)) {
-      logger.warn?.('proxy.stream.blocked', { host: target.hostname });
-      return res.status(400).json({ error: 'Blocked host' });
+      target = assertSafeStreamUrl(src);
+    } catch (err) {
+      if (err.code === 'STREAM_BLOCKED_HOST') {
+        logger.warn?.('proxy.stream.blocked', { host: err.host });
+        return res.status(400).json({ error: 'Blocked host' });
+      }
+      return res.status(400).json({ error: err.message || 'Invalid src URL' });
     }
 
     // Look up per-profile scrape headers (referer / user-agent).
@@ -573,12 +660,23 @@ export function createProxyRouter(config) {
 
     let upstream;
     try {
-      upstream = await fetch(target.toString(), {
+      upstream = await safeStreamFetch(target.toString(), {
         headers,
-        redirect: 'follow',
         signal: AbortSignal.timeout(30000),
       });
     } catch (err) {
+      if (err.code === 'STREAM_BLOCKED_HOST') {
+        logger.warn?.('proxy.stream.blocked', { host: err.host, via: 'redirect' });
+        return res.status(400).json({ error: 'Blocked host' });
+      }
+      if (err.code === 'STREAM_INVALID_URL') {
+        logger.warn?.('proxy.stream.blocked', { host: err.host, via: 'redirect' });
+        return res.status(400).json({ error: err.message || 'Invalid redirect URL' });
+      }
+      if (err.code === 'STREAM_TOO_MANY_REDIRECTS') {
+        logger.warn?.('proxy.stream.tooManyRedirects', { host: target.hostname });
+        return res.status(502).json({ error: 'Too many redirects' });
+      }
       logger.warn?.('proxy.stream.fetchFailed', { host: target.hostname, error: err.message });
       return res.status(502).json({ error: 'Upstream fetch failed' });
     }
