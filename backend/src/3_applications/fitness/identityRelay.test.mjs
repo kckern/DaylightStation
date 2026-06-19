@@ -4,6 +4,7 @@ import {
   buildFingerprintIdentityIndex,
   buildAuthz,
   EMERGENCY_LOCK,
+  ADMIN_LOCK,
 } from './identityRelay.mjs';
 
 const profiles = () => new Map([
@@ -37,6 +38,15 @@ describe('buildAuthz', () => {
   });
   it('EMERGENCY_LOCK is the canonical emergency lock id', () => {
     expect(EMERGENCY_LOCK).toBe('emergency');
+  });
+  it('grants the ADMIN_LOCK to fitness.yml admins (in sync, not hand-listed)', () => {
+    const cfg = { locks: { dance_party: ['kc'] }, users: { admin: ['kc', 'elizabeth'] } };
+    expect(ADMIN_LOCK).toBe('admin');
+    expect(buildAuthz('kc', cfg).locks).toEqual(['dance_party', 'admin']);
+    // elizabeth is admin-only (no lock-map membership) but still gets the admin lock.
+    expect(buildAuthz('elizabeth', cfg).locks).toEqual(['admin']);
+    // a non-admin gets no admin lock.
+    expect(buildAuthz('guest', cfg).locks).toEqual([]);
   });
 });
 

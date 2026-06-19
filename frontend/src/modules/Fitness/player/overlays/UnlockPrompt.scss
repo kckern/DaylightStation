@@ -125,6 +125,17 @@
 
   &--granted &__title { color: #4ade80; }
   &--denied &__title { color: #f87171; }
+  &--unauthorized &__title { color: #fbbf24; } // amber: recognized, not allowed
+
+  // Recognized-but-blocked avatar: amber ring + ✕ badge instead of the green check.
+  &__avatar--blocked &__avatar-img {
+    border-color: rgba(251, 191, 36, 0.9);
+    box-shadow: 0 0 18px rgba(251, 191, 36, 0.5);
+  }
+  &__avatar--blocked &__avatar-check {
+    background: #fbbf24;
+    color: #2a1a00;
+  }
 
   // Recognized person's name, shown under the "Access Granted" headline.
   &__user-name {

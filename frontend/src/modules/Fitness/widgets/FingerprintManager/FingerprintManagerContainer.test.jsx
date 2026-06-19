@@ -6,9 +6,21 @@ const hook = { users: [], loading: false, refresh: vi.fn(), enroll: vi.fn(), rem
 vi.mock('./useFingerprintManager.js', () => ({ useFingerprintManager: () => hook }));
 vi.mock('./EnrollModal.jsx', () => ({ EnrollModal: ({ username }) => <div data-testid="enroll-modal">{username}</div> }));
 
+// Admin gate: mock the identity hook so registerUnlock resolves as a matched
+// admin, opening the gate. Behavior of the gate itself is covered in
+// IdentityProvider.test.jsx; here we just need the manager to render.
+const identity = {
+  registerUnlock: vi.fn(() => Promise.resolve({ matched: true, userId: 'admin-user' })),
+  clearUnlock: vi.fn(),
+  unlockState: 'scanning',
+  unlockedUser: null,
+};
+vi.mock('@/modules/Fitness/identity/IdentityProvider', () => ({ useIdentity: () => identity }));
+
 import FingerprintManagerContainer from './FingerprintManagerContainer.jsx';
 
 beforeEach(() => {
+  identity.registerUnlock.mockClear(); identity.clearUnlock.mockClear();
   hook.users = [
     { username: 'admin-user', displayName: 'Admin', admin: true, fingerprints: [{ finger: 'right-index', enrolled: '2026-06-17' }] },
     { username: 'new-user', displayName: 'New', admin: false, fingerprints: [] },
@@ -17,9 +29,11 @@ beforeEach(() => {
 });
 
 describe('FingerprintManagerContainer', () => {
-  it('renders each user with enrolled state on the hands', () => {
+  it('requires an admin unlock before rendering the roster', async () => {
     render(<FingerprintManagerContainer />);
-    expect(screen.getByText('New')).toBeInTheDocument();
+    // Gate scans for the admin lock; roster only appears after a matched verdict.
+    expect(identity.registerUnlock).toHaveBeenCalledWith('admin');
+    expect(await screen.findByText('New')).toBeInTheDocument();
     expect(screen.getByText('No fingerprints yet')).toBeInTheDocument();
     expect(screen.getByText('1 print enrolled')).toBeInTheDocument();
     // The admin's enrolled finger is lit on the hands (accessible label).
@@ -28,7 +42,8 @@ describe('FingerprintManagerContainer', () => {
 
   it('Add on an UNENROLLED user opens the enroll modal directly', async () => {
     render(<FingerprintManagerContainer />);
-    fireEvent.click(screen.getByRole('button', { name: /add fingerprint for new/i }));
+    const addBtn = await screen.findByRole('button', { name: /add fingerprint for new/i });
+    fireEvent.click(addBtn);
     await waitFor(() => expect(screen.getByTestId('enroll-modal')).toHaveTextContent('new-user'));
   });
 
@@ -36,7 +51,8 @@ describe('FingerprintManagerContainer', () => {
     hook.remove.mockResolvedValue({ success: true });
     render(<FingerprintManagerContainer />);
     // Empty fingertip → enroll modal for that user.
-    fireEvent.pointerDown(screen.getAllByLabelText('Left thumb — not enrolled')[0]);
+    const emptyTip = (await screen.findAllByLabelText('Left thumb — not enrolled'))[0];
+    fireEvent.pointerDown(emptyTip);
     await waitFor(() => expect(screen.getByTestId('enroll-modal')).toBeInTheDocument());
     // Enrolled fingertip → delete by finger name.
     fireEvent.pointerDown(screen.getByLabelText('Right index — enrolled'));

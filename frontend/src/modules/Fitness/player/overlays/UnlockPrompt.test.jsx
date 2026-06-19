@@ -47,6 +47,23 @@ describe('UnlockPrompt', () => {
     expect(screen.getByRole('button')).toHaveTextContent('Close');
   });
 
+  it('shows the unauthorized state: recognized person (avatar + name) but "Not allowed"', () => {
+    const { container } = render(
+      <UnlockPrompt
+        open
+        state="unauthorized"
+        lockLabel="Fingerprint manager"
+        unlockedUser={{ userId: 'soren', name: 'Soren', avatarSrc: '/static/img/users/soren' }}
+        onCancel={() => {}}
+      />
+    );
+    expect(screen.getByText('Not allowed')).toBeTruthy();
+    expect(screen.getByText('Soren')).toBeTruthy();
+    // Recognized → shows their avatar (not the unknown-finger gif), blocked-styled.
+    expect(container.querySelector('.unlock-prompt__avatar--blocked')).toBeTruthy();
+    expect(container.querySelector('.unlock-prompt__avatar-img').getAttribute('src')).toBe('/static/img/users/soren');
+  });
+
   it('shows the granted state with the recognized user (avatar + name)', () => {
     const { container } = render(
       <UnlockPrompt
