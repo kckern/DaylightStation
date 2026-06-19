@@ -120,7 +120,7 @@ export default function FingerprintManagerContainer({ onClose }) {
                     name={u.displayName}
                     avatarSrc={avatarSrc}
                     fallbackSrc={FALLBACK_AVATAR}
-                    size={66}
+                    size={46}
                     showGauge={false}
                     showIndicator={false}
                   />

@@ -130,6 +130,20 @@ test('identify-error streak uses escalating backoff, not a flat re-arm', async (
   assert.deepEqual(delays, [800, 1600, 3200, 6400]);
 });
 
+test('an overheat fault rests a full 30s cooldown, not the 800ms base re-arm', async () => {
+  const delays = [];
+  const loop = createContinuousScanLoop({
+    runScan: async () => ({ ok: true, value: { matched: false, reason: 'identify-error', error: 'fp-device-error-quark: Device disabled to prevent overheating. (257)' } }),
+    sendBus: () => {},
+    delay: async (ms) => { delays.push(ms); },
+    logger: { log() {}, warn() {}, error() {} },
+    maxIterations: 3,
+  });
+  await loop.run();
+  // Each thermal trip rests the full cooldown so the LED can cool — never 800ms.
+  assert.deepEqual(delays, [30000, 30000, 30000]);
+});
+
 test('a recovery resets the backoff escalation', async () => {
   const delays = [];
   const seq = [

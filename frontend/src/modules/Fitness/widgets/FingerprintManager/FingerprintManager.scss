@@ -2,51 +2,56 @@
 // GovernanceStateOverlay): slate-blue glass surfaces, #f8fafc text, no explicit
 // font-family (inherits Roboto Condensed), emphasis via color / glow / motion.
 
+// Fills the viewport — all users fit with no scroll (rows share the height).
 .fp-manager {
   height: 100%;
-  overflow-y: auto;
-  padding: clamp(20px, 3vw, 36px) clamp(18px, 3vw, 40px) 48px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 22px 16px;
   color: #f8fafc;
 
-  &__header { max-width: 880px; margin: 0 auto clamp(18px, 2.4vw, 28px); }
-
-  &__title {
-    margin: 0;
-    font-size: clamp(1.5rem, 3vw, 2rem);
-    font-weight: 700;
-    letter-spacing: 0.01em;
+  // Compact one-line header: title + inline subtitle.
+  &__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-bottom: 10px;
   }
 
+  &__title { margin: 0; font-size: 1.4rem; font-weight: 700; letter-spacing: 0.01em; }
+
   &__subtitle {
-    margin: 6px 0 0;
-    font-size: clamp(0.9rem, 1.5vw, 1.02rem);
-    line-height: 1.4;
-    color: rgba(248, 250, 252, 0.62);
-    max-width: 56ch;
+    margin: 0;
+    font-size: 0.82rem;
+    color: rgba(248, 250, 252, 0.5);
   }
 }
 
 .fp-roster {
   list-style: none;
-  margin: 0 auto;
+  margin: 0;
   padding: 0;
-  max-width: 880px;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: clamp(12px, 1.6vw, 16px);
+  gap: 8px;
 }
 
 .fp-card {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px 24px;
-  padding: clamp(14px, 2vw, 20px) clamp(16px, 2.2vw, 24px);
-  border-radius: 18px;
+  gap: 18px;
+  padding: 0 18px;
+  border-radius: 14px;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
   transition: border-color 0.18s ease, background 0.18s ease;
 
   &:hover { border-color: rgba(255, 255, 255, 0.14); background: rgba(15, 23, 42, 0.7); }
@@ -54,7 +59,8 @@
   &__id {
     display: flex;
     align-items: center;
-    gap: clamp(12px, 1.6vw, 18px);
+    gap: 14px;
+    flex: 0 0 190px;
     min-width: 0;
   }
 
@@ -67,58 +73,63 @@
     transition: box-shadow 0.2s ease;
   }
   &--enrolled &__avatar {
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.75), 0 0 16px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.75), 0 0 14px rgba(34, 197, 94, 0.3);
   }
 
-  &__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  &__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
   &__name {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+    gap: 8px;
+    font-size: 1.05rem;
     font-weight: 700;
     letter-spacing: 0.01em;
   }
 
   &__badge {
-    font-size: 0.62rem;
+    font-size: 0.58rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     color: #4ade80;
     background: rgba(34, 197, 94, 0.16);
     border: 1px solid rgba(34, 197, 94, 0.3);
     border-radius: 999px;
-    padding: 2px 9px;
+    padding: 1px 7px;
   }
 
-  &__count {
-    font-size: clamp(0.82rem, 1.3vw, 0.95rem);
-    color: rgba(248, 250, 252, 0.55);
-  }
-
+  &__count { font-size: 0.8rem; color: rgba(248, 250, 252, 0.5); }
   &--enrolled &__count { color: rgba(74, 222, 128, 0.85); }
+
+  // The hands take the central horizontal space — the at-a-glance state and the
+  // primary control (tap a tip to add/remove). Sized to the row height (not a
+  // fixed px) so any user count / viewport fits with no scroll.
+  &__hands {
+    flex: 1 1 auto;
+    height: 100%;
+    padding: 7px 0;
+    align-items: center;
+    .fp-hand { width: auto; height: 100%; }
+  }
 
   // Quiet text-button; the real action surface is the hands.
   &__add {
-    align-self: flex-start;
-    margin-top: 5px;
-    padding: 0;
+    flex: 0 0 auto;
+    padding: 6px 10px;
     background: none;
     border: 0;
     color: #38bdf8;
     font: inherit;
-    font-size: clamp(0.82rem, 1.3vw, 0.92rem);
+    font-size: 0.86rem;
     font-weight: 600;
     cursor: pointer;
     transition: color 0.15s ease;
+    white-space: nowrap;
 
     &:hover { color: #7dd3fc; }
     &:focus-visible { outline: 2px solid rgba(56, 189, 248, 0.8); outline-offset: 3px; border-radius: 4px; }
   }
-
-  &__hands { flex: 0 0 auto; margin-left: auto; }
 }
 
 // --------------------------------------------------------------------------
@@ -219,6 +230,33 @@
   }
 
   &__scan-meta { margin: 0; font-size: clamp(0.85rem, 1.4vw, 0.95rem); color: rgba(248, 250, 252, 0.6); }
+
+  // --- error (stays open; operator retries) ---
+  &__error { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: clamp(8px, 2vw, 18px) 0; }
+
+  &__error-mark {
+    width: clamp(48px, 8vw, 60px);
+    height: clamp(48px, 8vw, 60px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(251, 191, 36, 0.16);
+    border: 2px solid rgba(251, 191, 36, 0.8);
+    color: #fbbf24;
+    font-size: clamp(1.6rem, 3vw, 2.1rem);
+    font-weight: 800;
+  }
+
+  &__error-msg {
+    margin: 0;
+    max-width: 36ch;
+    font-size: clamp(0.92rem, 1.5vw, 1.05rem);
+    line-height: 1.4;
+    color: rgba(248, 250, 252, 0.85);
+  }
+
+  &__error .fp-enroll__actions { margin-top: 4px; }
 
   // --- done ---
   &__done { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: clamp(8px, 2vw, 20px) 0; }
