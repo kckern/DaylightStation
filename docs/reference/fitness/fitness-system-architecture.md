@@ -994,6 +994,9 @@ Total                        25+          81              5
 
 - `governance-engine.md` — Governance API reference, configuration, testing patterns
 - `governance-system-architecture.md` — Governance event flow, SSoT boundaries, hysteresis details
+- `fingerprint-unlock.md` — Identity event pipeline, unlock flows, fingerprint enrollment and reader health
+- `emergency-lockdown.md` — Panic lockdown ceremony, screen lock, and equipment shutdown
+- `session-timelapse.md` — Camera capture, recap sweep, and timelapse generation
 - `voice-memo.md` — Voice memo recording/transcription system
 - `assign-guest.md` — Guest device reassignment feature
 - `display-name-resolver.md` — Display name resolution logic

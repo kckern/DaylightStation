@@ -133,24 +133,20 @@ useEffect([currentItem])
     │       └──▶ forceUpdate()
     │               Triggers: React re-render
     │
-    └──▶ [local governance check — FitnessPlayer.jsx:327-351]
-            Reads: currentItem.labels vs governedLabelSet
-            Reads: currentItem.type vs governedTypeSet
-            Reads: governanceState.status (from engine)
-            Sets: playIsGoverned = true/false
+    └──▶ [player reads governance state — sole lock authority]
+            Reads: effectiveGovernanceState.videoLocked (engine SSoT, bypass-aware)
+            Sets: pause decision from that lock flag only
                 │
                 ▼
             pauseDecision = resolvePause({ governance: { locked } })
                 │
                 ▼
-            Video paused + muted (if governed)
+            Video paused + muted (if locked)
 ```
 
-**Critical gap:** `setMedia()` does not trigger `evaluate()`. The GovernanceEngine re-evaluates on the next trigger: WebSocket snapshot update, zone change notification, or pulse timer. This creates a brief window (~0-2 seconds) where:
-- FitnessPlayer's **local** label check locks the video correctly
-- But GovernanceEngine's **state** (requirements, zone labels for lock screen) may be stale
+**Critical gap:** `setMedia()` does not trigger `evaluate()`. The GovernanceEngine re-evaluates on the next trigger: WebSocket snapshot update, zone change notification, or pulse timer. This creates a brief window (~0-2 seconds) after a new item loads where the engine state (requirements, zone labels for the lock screen) may lag the new media.
 
-The local label check in FitnessPlayer acts as a **fast path** that locks immediately, while the engine catches up asynchronously.
+The player no longer keeps a local label-matching fast path: `videoLocked` from the engine state is the sole lock authority (the local check was removed during SSoT consolidation). During the lag window the engine reports its prior decision until the next evaluation catches up.
 
 ---
 
@@ -294,13 +290,23 @@ FitnessPlayerOverlay renders
             [Avatar] [Name] [Current: Cool ●] ━━━━━━━▶ [Target: Active ●]
 ```
 
-Current lock overlay behavior (2026-04 redesign):
+Current lock overlay behavior:
 
 - The lock panel uses a wide, horizontal layout (16:9 target envelope) to prioritize per-participant row density.
 - Each participant renders in a single row: avatar/name, current pill, progress track, target pill.
 - The header includes challenge completion blocks (dark when incomplete, bright when complete) plus summary text (`actual/target` and participant pool size when available).
 - The `current` pill is frozen when lock/pending starts and remains static until the lock snapshot changes, preventing distracting mid-lock zone label jumps.
 - When the participant pool is empty, the overlay switches to an explicit waiting state (no `0 of 0` challenge summary and no "Meet these conditions" copy), with actionable guidance to connect/start participants.
+
+### Bypass-Aware Effective State
+
+The lock overlay reflects an **effective** governance state, not the raw engine state. The player derives an effective state that collapses to fully-unlocked whenever a bypass is in effect: a sticky session-wide `nogovern` flag, a runtime fingerprint unlock granted for the current item, or a per-item `nogovern` tag. When bypassed, the effective state sets `videoLocked: false`, `isGoverned: false`, and nulls the lock side-channels (`audioDuck`, `challenge`, `deadline`) so nothing downstream keeps acting on the released lock.
+
+The overlay host accepts this effective state as an override and prefers it over the raw context state when present. Because the overlay's display derivation returns nothing when `isGoverned` is false, a bypass cleanly suppresses the lock panel. This corrects an earlier defect where the lock panel persisted on screen after a fingerprint unlock because the overlay read the raw engine state directly.
+
+The bypass is a **downstream override, not engine SSoT**: the GovernanceEngine itself has no knowledge of these bypasses and continues to evaluate normally. A runtime fingerprint bypass is scoped to the currently-playing item and is cleared when the item changes, so a single unlock cannot disable governance for the rest of the session.
+
+**Residual sidebar seam:** the sidebar's governance panel still reads `isGoverned` from the raw context state, not the player's effective state. A bypass that suppresses the lock overlay therefore does not suppress the sidebar governance panel. Folding the bypass into a shared source (or into the engine) remains a deferred follow-up.
 
 ---
 
@@ -321,6 +327,8 @@ Each piece of data has exactly one authoritative source. All other components mu
 | Participant roster | FitnessSession.roster | GovernanceEngine, FitnessContext |
 | Zone config | fitnessConfiguration (from API) | ZoneProfileStore, GovernanceEngine |
 | Challenge state | **GovernanceEngine.challengeState** | FitnessContext → overlay |
+| Audio cue / duck descriptor | **GovernanceEngine** (composed state) | Audio duck hook (plays the SFX, ducks/restores video volume) |
+| Effective (bypass-aware) state | **FitnessPlayer** (derived from raw state + bypass) | PlayerOverlay (lock screen), player autoplay/pause gating |
 
 ### Dual-Write Antipattern
 
@@ -433,9 +441,9 @@ configure(config, policies, options) {
 
 **Root cause:** `GovernanceEngine.setMedia(media)` stores the media object but does not trigger `evaluate()`. The engine waits for the next external trigger (WebSocket snapshot, zone change, or pulse timer).
 
-FitnessPlayer has a **local governance check** (comparing `currentItem.labels` against `governedLabelSet`) that acts as a fast-path lock. But GovernanceEngine's state (requirements, zone labels for lock screen) remains stale until the next evaluation.
+The player relies on the engine's `videoLocked` flag as the sole lock authority (the earlier local label-matching fast path was removed during SSoT consolidation). Until the next evaluation, the engine reports its prior decision, so lock screen details (requirements, target zone labels, participant progress) can be stale for up to 2 seconds after a new item loads.
 
-**Current status:** The local check masks the issue for lock/unlock, but lock screen details (target zone labels, participant progress) may be stale for up to 2 seconds.
+**Current status:** Lock/unlock follows the engine state directly; only the lock screen detail rendering lags during the brief catch-up window.
 
 ### Pattern 4: Info API Missing Labels at Top Level
 
@@ -526,9 +534,11 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 | `frontend/src/hooks/fitness/DeviceManager.js` | Raw device tracking | Device readings |
 | `frontend/src/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
 | `frontend/src/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
-| `frontend/src/modules/Fitness/FitnessPlayer.jsx` | Video control, fast-path governance lock | Playback state |
-| `frontend/src/modules/Fitness/FitnessPlayerOverlay.jsx` | Lock screen UI, zone display | Display rendering |
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx` | Sidebar zone badges | Sidebar display |
+| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
+| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
+| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
+| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
+| `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Sidebar governance panel (reads raw context state) | Sidebar display |
 | `frontend/src/Apps/FitnessApp.jsx` | URL routing, config loading, queue management | Content source |
 | `backend/src/4_api/v1/routers/info.mjs` | Content metadata API | Media metadata |
 

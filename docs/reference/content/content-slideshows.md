@@ -291,3 +291,4 @@ Query YAML (flat or composite with items array)
 - `content-sources.md` — Immich driver and adapter contract
 - `content-playback.md` — Player rendering pipeline
 - `content-configuration.md` — Query YAML structure
+- `features/artmode.md` — ArtMode is the separate framed-artwork surface (single/diptych, matted + framed, museum view modes). It draws from named art collections rather than the slideshow query pipeline; a timed crossfade is its slideshow-style transition.

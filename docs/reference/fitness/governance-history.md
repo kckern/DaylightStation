@@ -23,6 +23,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
   - [Era 10: Warning Cooldown & Observability (Feb 17-18)](#era-10-warning-cooldown--observability-feb-17-18)
   - [Era 11: Zone Boundary Exit Margin (Feb 18)](#era-11-zone-boundary-exit-margin-feb-18)
   - [Era 12: Seek Thrashing, Display Zone & Chart Bleed (Mar 4)](#era-12-seek-thrashing-display-zone--chart-bleed-mar-4)
+  - [Era 13: Audio Cues, Cycle Suspension & Bypass-Aware State (Jun 5-18)](#era-13-audio-cues-cycle-suspension--bypass-aware-state-jun-5-18)
 - [Recurring Bug Patterns](#recurring-bug-patterns)
 - [Optimal Patterns vs Antipatterns](#optimal-patterns-vs-antipatterns)
 - [Mechanisms Added Then Removed](#mechanisms-added-then-removed)
@@ -48,6 +49,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
 | 10 | Feb 17-18 | Warning observability | Stale logging fixed; HR/threshold/delta enrichment |
 | 11 | Feb 18 | Zone boundary exit margin | Schmitt trigger in ZoneProfileStore; 19 warnings/33min → near-zero |
 | 12 | Mar 4 | Seek thrashing, display zone, chart bleed | Seeking guard in pauseArbiter; displayZoneId for UI; chart hidden during lock |
+| 13 | Jun 5-18 | Audio cues, cycle suspension, bypass-aware state | Audio duck cues; engine dormancy for cycle races; fingerprint/`nogovern` bypass via effective state; overlay-persistence-after-unlock fixed |
 
 ---
 
@@ -395,6 +397,36 @@ Three user-reported bugs from the Mar 4 session (audit: `docs/_wip/audits/2026-0
 
 ---
 
+### Era 13: Audio Cues, Cycle Suspension & Bypass-Aware State (Jun 5-18)
+
+This era layered audible feedback onto governance, made the engine yield to cycle races, and added a way for an authorized person to release a lock — culminating in a subtle overlay-persistence bug.
+
+#### Audio cues + duck
+
+Short SFX now mark challenge start, the "hurry" threshold, challenge completion, and grace-period warning. Each cue plays a sound and briefly ducks the workout video's volume (via the volume system's duck authority), then restores it the instant the SFX ends. The engine emits an `audioDuck` descriptor as part of its composed state; a player-side hook consumes it.
+
+**Key bug (token vs object):** the engine rebuilds the `audioDuck` descriptor object every evaluation tick. Keying the duck session on the object identity tore the session down each tick — cutting the SFX and bouncing the volume. The fix keys on a stable `token` field, so the session persists for the life of one cue. The warning scrim was also made to ramp with the grace countdown rather than appear all at once.
+
+**Lesson established:** **Key effect sessions on a stable token, not a per-tick object.** Anything the engine rebuilds every evaluation will thrash a `useEffect` that depends on it by reference.
+
+#### Cycle-game governance suspension
+
+When the cycle race owns the screen, base-requirement governance is wrong: the race has its own pass/fail logic. A `setSuspended()` dormancy switch lets a cycle race put the engine to sleep so it stops locking on base requirements, and a locked cycle can now recover from cadence even when base requirements are unmet (the cycle's own feasibility check replaces the HR-zone check).
+
+**Lesson established:** **An overlay sub-game needs an explicit "governance dormant" mode, not a workaround.** Suppressing locks by faking requirements is fragile; a first-class suspension switch is debuggable and reversible.
+
+#### Bypass-aware effective state (fingerprint unlock + `nogovern`)
+
+A Skip/Unlock affordance on the lock overlay requests a `governance_bypass` fingerprint. On a matched scan, the player flips a runtime bypass that releases only the currently-playing lock (cleared when the item changes, so one unlock can't disable governance for the rest of the session). This joins two existing bypasses — the session-sticky `?nogovern` flag and a per-item `nogovern` tag — under a single **effective governance state** the player derives: when any bypass is active it sets `videoLocked: false`, `isGoverned: false`, and nulls the lock side-channels (`audioDuck`, `challenge`, `deadline`).
+
+**Key bug (overlay persisted after unlock):** the lock overlay initially read the **raw** engine state from context, so a fingerprint unlock cleared playback but left the lock panel on screen. The fix passes the player's bypass-aware effective state to the overlay as an override; the overlay prefers it over raw context, and because its display derivation returns nothing when `isGoverned` is false, the panel disappears cleanly.
+
+**Residual sidebar seam (found in final review):** the sidebar governance panel still reads `isGoverned` from raw context, not the effective state — so a bypass that hides the lock overlay does not hide the sidebar panel. The engine remains bypass-agnostic by design; folding the bypass into a shared source (or the engine) is a deferred follow-up.
+
+**Lesson established:** **A bypass must reach every consumer of governance state, not just the lock screen.** The first fix corrected the overlay but missed the sidebar — any component reading raw governance state instead of the effective state will leak the released lock. The clean long-term fix is one shared bypass-aware source rather than per-consumer overrides.
+
+---
+
 ## Recurring Bug Patterns
 
 These patterns have caused repeated failures across multiple eras. Understanding them prevents regression.
@@ -467,6 +499,16 @@ These patterns have caused repeated failures across multiple eras. Understanding
 - Era 10: HR=0 device disconnect dropping user to "cool" zone
 
 **Prevention:** Ghost filter runs AFTER zone data population. HR=0 preserves last known zone.
+
+### 8. Bypass Reaches Some Consumers But Not Others
+
+**Pattern:** A bypass (fingerprint unlock, `nogovern`) is applied as a downstream override of the engine state. A component that still reads the raw engine state instead of the bypass-aware effective state keeps acting on the released lock.
+
+**Instances:**
+- Era 13: lock overlay persisted after fingerprint unlock (read raw context, not effective state)
+- Era 13: sidebar governance panel still shows during a bypass (residual seam — reads raw `isGoverned`)
+
+**Prevention:** Route every consumer through one bypass-aware effective state. Per-consumer overrides are easy to forget; a single shared source is the durable fix.
 
 ---
 
@@ -595,7 +637,7 @@ These mechanisms were introduced during debugging and later removed when the act
 
 ## Current Architecture Snapshot
 
-As of Mar 4, 2026:
+As of Jun 18, 2026:
 
 ```
 Sensor -> DeviceManager -> UserManager -> ZoneProfileStore (SSoT: zone)
@@ -632,6 +674,9 @@ satisfiedOnce && graceActive -> warning
 - `displayZoneId`: (ZoneProfileStore) raw HR-derived zone for UI display, bypasses exit margin
 - `PAUSE_REASON.SEEKING`: (pauseArbiter) highest-priority reason; suppresses all pause during active seeks
 - `PAUSE_DEBOUNCE_MS`: (FitnessPlayer) 150ms debounce on system-driven pause/play toggles
+- `audioDuck`: (engine composed state) cue descriptor with stable `token`; player hook plays the SFX and ducks/restores video volume
+- `isGoverned`: (engine composed state) whether current media is governed; the overlay's display derivation returns nothing when false
+- effective governance state: (FitnessPlayer, not engine) bypass-aware view; collapses to unlocked + `isGoverned:false` when a fingerprint/`nogovern` bypass is active. Suspended-engine dormancy (`setSuspended()`) lets a cycle race silence base-requirement governance.
 
 **Evaluation paths:**
 - **Snapshot path:** React re-render -> `updateSnapshot()` -> `evaluate()` with roster data
@@ -676,6 +721,9 @@ satisfiedOnce && graceActive -> warning
 
 ### Seek Thrashing, Display Zone & Chart Bleed
 `be6aef54` `feabf3e5` `cd77e287` `12004975` `2af03cb0` `e821ab06` `5f52808c` `08313c67`
+
+### Audio Cues, Cycle Suspension & Bypass-Aware State
+`7d4ea920` `96b81f6f` `88ecd1696` `65802e5a` `bac4cd31` `669386a9` `73abc83c` `2dd8849d` `1c4ca368` `49cbcfad`
 
 ---
 

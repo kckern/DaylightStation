@@ -104,6 +104,16 @@ remount and finally to an operator-facing retry surface.
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |
 
+**The loading/buffering spinner never sits over visibly-playing video.** The health
+layer samples the media clock directly and exposes an *advancing* signal — whether
+`currentTime` actually moved forward between samples while not paused or ended. That
+signal is the authority for "it's really playing": any lingering `waiting` /
+`buffering` flag (e.g. a `waiting` event whose matching `playing` was missed because
+a recovery swapped the element out) is treated as stale and suppressed while frames
+advance. The clock poll is self-contained, so it keeps reporting the truth even when
+the metrics bridge goes quiet during a stall — exactly when the spinner decision
+matters most.
+
 The escalation ladder is deliberate: refresh the URL in place → recovery seek →
 remount the renderer → full reload → operator retry. Each step is more disruptive
 than the last, so the machine only climbs when the cheaper fix fails.
