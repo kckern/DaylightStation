@@ -142,7 +142,13 @@ export function IdentityProvider({ children }) {
       logger().info('emergency-ceremony-abort', { userId: msg.userId ?? null });
       emergencyRef.current?.abort?.();
     } else if (phase === PHASE_LOCKED) {
-      // Release is press-and-hold UI driven — a scan does nothing here.
+      // An emergency-authorized (admin) scan releases the lockdown immediately —
+      // even ahead of the scheduled lockedUntil. We're already past the
+      // `msg.authz.emergency` guard above, and the relay just stamped a pending
+      // detection that /release consumes, so release() succeeds without a second
+      // scan. The press-and-hold path remains as a manual fallback.
+      logger().info('emergency-release-scan', { userId: msg.userId ?? null });
+      emergencyRef.current?.release?.();
     }
   }, [resolvePerson, resolveVerdict]);
 

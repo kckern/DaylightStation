@@ -32,6 +32,7 @@ import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js'
 import '../modules/Fitness/index.js';
 import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
 import MenuMusicController from '../modules/Fitness/nav/MenuMusicController.jsx';
+import EmergencyPlaybackController from '../modules/Fitness/player/EmergencyPlaybackController.jsx';
 
 registerBuiltinWidgets();
 
@@ -1293,6 +1294,7 @@ const FitnessApp = () => {
             volume={menuMusicVolume}
             trackUrls={menuMusicTracks}
           />
+          <EmergencyPlaybackController />
           {/* HR simulation panel trigger — available across the entire fitness
               app (history, suggestions, chart, menu, player). Self-gated to
               localhost or Chrome UA; hidden everywhere else. */}

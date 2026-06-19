@@ -98,10 +98,10 @@ function TriggeringScreen({ audioPath, commit, abort, registerUnlock, clearUnloc
     if (pauseStartRef.current != null) {
       pauseAccumRef.current += performance.now() - pauseStartRef.current;
       pauseStartRef.current = null;
-      const a = audioRef.current;
-      if (a && !cancelledRef.current && !completedRef.current) {
-        try { a.play?.()?.catch?.(() => {}); } catch { /* noop */ }
-      }
+      // Resume only the visual countdown — NOT the powerdown SFX. Once the operator
+      // has opened the abort modal and dismissed it (a canceled abort), re-blaring the
+      // powerdown audio is jarring and misleading. The audio stays silenced for the
+      // remainder of the ceremony; the cleanup still pauses it on unmount.
     }
   }, []);
 

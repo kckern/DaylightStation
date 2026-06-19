@@ -3,7 +3,8 @@ import { render, cleanup } from '@testing-library/react';
 
 vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: vi.fn().mockResolvedValue({ locked: false }),
-  DaylightMediaPath: (p) => p
+  DaylightMediaPath: (p) => p,
+  DaylightImagePath: (p) => p
 }));
 vi.mock('@/services/WebSocketService.js', () => ({
   wsService: { subscribe: vi.fn(() => () => {}) }
