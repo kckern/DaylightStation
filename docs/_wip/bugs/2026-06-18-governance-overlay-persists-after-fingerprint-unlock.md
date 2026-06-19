@@ -283,3 +283,15 @@ This closes all three bypass paths (fingerprint unlock, `?nogovern`, per-item
 
 Deferred follow-up (Option A): fold the bypass into `GovernanceEngine` so the
 engine state is the single source of truth and no downstream override is needed.
+
+### Known residual seam (cosmetic, not a playback gate)
+
+The final review of this fix found another consumer that still reads the raw
+`FitnessContext.governanceState`: the `FitnessGovernance` sidebar status panel
+(`FitnessSidebar.jsx` reads `governanceState?.isGoverned`). After a bypass it
+keeps showing the "governed/locked" striped status bar even though the video
+plays freely. It is **informational only** — it does not render
+`GovernanceStateOverlay` and cannot block playback — so it is out of scope for
+this fix. It is the same bug class as the overlay seam and would be resolved
+wholesale by Option A; until then it could be patched the same way (thread
+`effectiveGovernanceState` into `FitnessSidebar`).
