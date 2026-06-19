@@ -3,17 +3,18 @@
  * @module 1_rendering/eink/widgets/CalendarWidget
  *
  * Skeleton renderable: when a real data source is wired (data.calendar.events:
- * [{ time, title }]) it lists those; otherwise it draws sample rows so a panel
- * author can place the widget and see its shape before the feed exists.
+ * [{ day, time, title }]) it lists those — day on the left, title in the middle,
+ * time right-aligned; otherwise it draws sample rows so a panel author can place
+ * the widget and see its shape before the feed exists.
  */
 
 import { drawCard, drawRows } from './lib/card.mjs';
 
 const SAMPLE = [
-  { time: '9:00a', title: 'Morning standup' },
-  { time: '12:30p', title: 'Lunch with Dana' },
-  { time: '3:00p', title: 'Dentist appointment' },
-  { time: '6:30p', title: 'Soccer practice' },
+  { day: 'Today', time: '9a', title: 'Morning standup' },
+  { day: 'Today', time: '12:30p', title: 'Lunch with Dana' },
+  { day: 'Tmrw', time: '3p', title: 'Dentist appointment' },
+  { day: 'Sat', time: '6:30p', title: 'Soccer practice' },
 ];
 
 export function draw(ctx, box, data, theme) {
@@ -27,8 +28,9 @@ export function draw(ctx, box, data, theme) {
   });
 
   drawRows(ctx, content, theme, events.map((e) => ({
-    lead: e.time,
+    lead: e.day ?? e.time ?? '',
     text: e.title,
+    trail: e.day ? e.time : undefined,
     color: theme.blue,
-  })));
+  })), { leadW: 110 });
 }

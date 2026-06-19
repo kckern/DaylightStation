@@ -16,6 +16,7 @@ import { draw as drawDate } from './DateWidget.mjs';
 import { draw as drawCalendar } from './CalendarWidget.mjs';
 import { draw as drawSchedule } from './ScheduleWidget.mjs';
 import { draw as drawTodos } from './TodosWidget.mjs';
+import { draw as drawPhoto } from './PhotoWidget.mjs';
 
 export function registerBuiltins() {
   register('header', drawHeader);
@@ -25,4 +26,5 @@ export function registerBuiltins() {
   register('calendar', drawCalendar);
   register('schedule', drawSchedule);
   register('todos', drawTodos);
+  register('photo', drawPhoto);
 }

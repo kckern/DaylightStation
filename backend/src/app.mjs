@@ -1802,6 +1802,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     entropyService: entropyServices.entropyService,
     configService,
     eventAggregationService,
+    immichAdapter: contentRegistry?.get?.('immich') || null,  // gallery source for /home/photo (eink)
     logger: rootLogger.child({ module: 'home-automation-api' })
   });
 

@@ -51,6 +51,24 @@ describe('EinkPanelService.stateSnapshot', () => {
     expect(dash.imageHash).not.toBe(home.imageHash);
   });
 
+  it('changes the hash on a refresh action WITHOUT changing the view (force redraw)', async () => {
+    const svc = makeService();
+    const before = await svc.stateSnapshot('kitchen-eink');
+    const result = await svc.advance('kitchen-eink', 'refresh');
+    const after = await svc.stateSnapshot('kitchen-eink');
+    expect(result.refreshNonce).toBe(1);
+    expect(after.view).toBe(before.view);          // same view (no paging)
+    expect(after.imageHash).not.toBe(before.imageHash); // but a new hash -> panel redraws
+  });
+
+  it('a no-op select leaves the hash unchanged', async () => {
+    const svc = makeService();
+    const before = await svc.stateSnapshot('kitchen-eink');
+    await svc.advance('kitchen-eink', 'select');
+    const after = await svc.stateSnapshot('kitchen-eink');
+    expect(after.imageHash).toBe(before.imageHash);
+  });
+
   it('404s when the panel config is missing', async () => {
     const svc = new EinkPanelService({
       dataService: { household: { read: () => null } },
