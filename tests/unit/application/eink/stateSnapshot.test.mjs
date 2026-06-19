@@ -69,6 +69,40 @@ describe('EinkPanelService.stateSnapshot', () => {
     expect(after.imageHash).toBe(before.imageHash);
   });
 
+  it('folds the panel colour mode into the hash (mono vs Spectra-6)', async () => {
+    // Same content, differing only in hardware colour → different output format
+    // (grayscale PNG vs RGB), so the cached image_hash must differ.
+    const mono = { ...SCREEN, hardware: { display: { rotation: 270, color: 'grayscale-16' } } };
+    const color = { ...SCREEN, hardware: { display: { rotation: 270, color: 'spectra-6' } } };
+    const a = await makeService(mono).stateSnapshot('panel-x');
+    const b = await makeService(color).stateSnapshot('panel-x');
+    expect(a.imageHash).not.toBe(b.imageHash);
+  });
+
+  it('scopes data-source URLs per panel (hold_key) so server holds are per-device', async () => {
+    const calls = [];
+    const realFetch = global.fetch;
+    global.fetch = async (url) => { calls.push(String(url)); return { ok: true, json: async () => ({}) }; };
+    try {
+      const screen = {
+        ...SCREEN,
+        content: {
+          ...SCREEN.content,
+          views: [{
+            id: 'photo',
+            layout: { children: [{ widget: 'placeholder' }] },
+            data: { photo: { source: '/api/v1/home/photo?favorites=true', image: 'imageUrl' } },
+          }],
+        },
+      };
+      await makeService(screen).stateSnapshot('upstairs-eink');
+      const photoCall = calls.find((u) => u.includes('/home/photo'));
+      expect(photoCall).toContain('hold_key=upstairs-eink');
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
   it('404s when the panel config is missing', async () => {
     const svc = new EinkPanelService({
       dataService: { household: { read: () => null } },

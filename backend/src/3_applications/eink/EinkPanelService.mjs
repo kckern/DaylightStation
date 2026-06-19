@@ -93,10 +93,31 @@ export class EinkPanelService {
   #wrap(i, len) { return len ? (((i % len) + len) % len) : 0; }
 
   /**
+   * Scope a view's data-source URLs to one panel so server-side HOLDS (e.g. the
+   * held favorite photo, /home/photo) are per-device, not global. Appends
+   * `hold_key=<panelId>` to each source; feeds that don't hold (calendar/todos/
+   * weather) simply ignore the param. Without this every panel shares the one
+   * global pick — kitchen and upstairs would always show the same photo.
+   */
+  #scopeData(data, panelId) {
+    const out = {};
+    for (const [key, cfg] of Object.entries(data || {})) {
+      if (cfg && typeof cfg === 'object' && typeof cfg.source === 'string') {
+        const sep = cfg.source.includes('?') ? '&' : '?';
+        out[key] = { ...cfg, source: `${cfg.source}${sep}hold_key=${encodeURIComponent(panelId)}` };
+      } else {
+        out[key] = cfg;
+      }
+    }
+    return out;
+  }
+
+  /**
    * Resolve the panel's CURRENT view into the inputs a render consumes — the
-   * view index/id and the renderer `screenConfig` (width/height/theme/layout/
-   * data sources). Shared by renderResult (which renders it) and stateSnapshot
-   * (which fingerprints it without rendering).
+   * view index/id, the renderer `screenConfig` (width/height/theme/layout/data
+   * sources), and whether the panel is mono (grayscale output) or full colour.
+   * Shared by renderResult (which renders it) and stateSnapshot (which
+   * fingerprints it without rendering).
    */
   #currentView(screen, panelId) {
     const content = screen.content || {};
@@ -104,14 +125,19 @@ export class EinkPanelService {
     const views = this.#views(screen);
     const index = this.#wrap(this.#viewIndex.get(panelId) ?? 0, views.length);
     const view = views[index];
+    // Mono vs colour is a fixed hardware fact (SSOT hardware.display.color). Mono
+    // is the default: unset, or any 'gray'/'grey'/'mono' value (E1003 Gray16) →
+    // compact grayscale PNG. A declared colour mode (E1004 'spectra-6') → full RGB.
+    const colorMode = String(display.color || '').toLowerCase();
+    const grayscale = !colorMode || /gray|grey|mono/.test(colorMode);
     const screenConfig = {
       width: content.width || display.width || DEFAULT_WIDTH,
       height: content.height || display.height || DEFAULT_HEIGHT,
       theme: { ...(content.theme || {}), ...(view.theme || {}) },
       layout: view.layout,
-      data: view.data || content.data || {},
+      data: this.#scopeData(view.data || content.data || {}, panelId),
     };
-    return { index, view, screenConfig };
+    return { index, view, screenConfig, grayscale };
   }
 
   /**
@@ -125,11 +151,11 @@ export class EinkPanelService {
    */
   async renderResult(panelId) {
     const screen = this.#loadScreen(panelId);
-    const { index, view, screenConfig } = this.#currentView(screen, panelId);
+    const { index, view, screenConfig, grayscale } = this.#currentView(screen, panelId);
 
-    const png = await einkRender(screenConfig, { baseUrl: this.#baseUrl, fontDir: this.#fontDir });
+    const png = await einkRender(screenConfig, { baseUrl: this.#baseUrl, fontDir: this.#fontDir, grayscale });
     this.#logger.info?.('eink.panel.rendered', {
-      panelId, view: view.id, index, bytes: png.length,
+      panelId, view: view.id, index, bytes: png.length, grayscale,
       size: `${screenConfig.width}x${screenConfig.height}`,
     });
     return { png, view: view.id };
@@ -165,7 +191,7 @@ export class EinkPanelService {
   async stateSnapshot(panelId) {
     const screen = this.#loadScreen(panelId);
     const buttons = screen.buttons || {};
-    const { index, view, screenConfig } = this.#currentView(screen, panelId);
+    const { index, view, screenConfig, grayscale } = this.#currentView(screen, panelId);
 
     // Resolve the same data the renderer would — but stop there (no canvas).
     const data = await resolveData(screenConfig.data, this.#baseUrl);
@@ -185,6 +211,7 @@ export class EinkPanelService {
       theme: screenConfig.theme,
       layout: screenConfig.layout,
       data,
+      grayscale,
       refresh: this.#refreshNonce.get(panelId) ?? 0,
       renderer: RENDERER_VERSION,
     });
