@@ -8,6 +8,7 @@ import { buildVirtualSeasons } from '@/modules/Fitness/lib/playlistVirtualSeason
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
+import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 
 const formatWatchedDate = (dateString) => {
@@ -753,7 +754,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
   // Sequential locked-episode affordance: request a skip_content fingerprint.
   // On match, play that episode via the normal launch path. Denied/cancel/timeout
   // does NOT play.
-  const handleLockedEpisodeUnlockTap = (episode) => {
+  const handleLockedEpisodeUnlockTap = (episode, sourceEl = null) => {
+    // Scroll vs. Unlock mutual exclusion: in the scrollable episode list, scroll
+    // wins. If this tap would scroll the item into view (it was partially off-
+    // screen), suppress the unlock on THIS tap — only scroll. A second tap, now
+    // with the episode fully visible, opens the prompt. Mirrors handlePlayEpisode.
+    if (sourceEl) {
+      const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 8 });
+      if (didScroll) return;
+    }
     if (pendingUnlock) return; // ignore taps while a prompt is open
     const reqShowId = showId; // guard: ignore a scan that resolves after a show change
     const logger = getLogger().child({ component: 'FitnessShow' });
@@ -1271,7 +1280,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                           }
                         }}
                       >
-                        🔒
+                        <LockIcon />
                       </button>
                     ) : (
                       <span
@@ -1280,7 +1289,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                         aria-label="Governed content"
                         role="img"
                       >
-                        🔒
+                        <LockIcon />
                       </span>
                     )
                   )}
@@ -1357,7 +1366,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                                 data-testid="episode-thumbnail"
                                 data-plex-id={episode.plex || episode.id}
                                 onPointerDown={isLocked
-                                  ? (isLockActive('skip_content') ? () => handleLockedEpisodeUnlockTap(episode) : undefined)
+                                  ? (isLockActive('skip_content') ? (e) => handleLockedEpisodeUnlockTap(episode, e.currentTarget.closest('.episode-card')) : undefined)
                                   : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                                 onClick={isLocked ? undefined : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                               >
@@ -1398,7 +1407,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                               className="episode-title"
                               aria-label={episode.label}
                               onPointerDown={isLocked
-                                ? (isLockActive('skip_content') ? () => handleLockedEpisodeUnlockTap(episode) : undefined)
+                                ? (isLockActive('skip_content') ? (e) => handleLockedEpisodeUnlockTap(episode, e.currentTarget.closest('.episode-card')) : undefined)
                                 : (e) => {
                                 const card = e.currentTarget.closest('.episode-card');
                                 const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
@@ -1418,7 +1427,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
                                       title="Unlock episode"
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
-                                        handleLockedEpisodeUnlockTap(episode);
+                                        handleLockedEpisodeUnlockTap(episode, e.currentTarget.closest('.episode-card'));
                                       }}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {

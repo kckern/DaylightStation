@@ -119,6 +119,8 @@
       right: 12px;
       font-size: 18px;
       line-height: 1;
+      display: inline-flex;
+      color: var(--fitness-text-primary, #fff);
       opacity: 0.85;
       pointer-events: none;
     }
