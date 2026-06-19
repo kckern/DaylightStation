@@ -3,6 +3,10 @@
 // frontend IdentityManager. Also maintains the short-lived pending-detection that the
 // /emergency/{commit,abort,release} endpoints consume (the guard the old detector gave).
 export const EMERGENCY_LOCK = 'emergency';
+// Admins implicitly hold this lock — it gates admin-only surfaces (e.g. the
+// fingerprint manager). Kept in sync with fitness.yml `users.admin` rather than
+// hand-maintained in the `locks` map, so adding an admin can't desync the gate.
+export const ADMIN_LOCK = 'admin';
 
 const SCAN_TOPIC = 'biometric.scan';
 const IDENTITY_TOPIC = 'fitness.identity.detected';
@@ -29,6 +33,11 @@ export function buildAuthz(username, fitnessConfig) {
       locks.push(lockId);
       if (lockId === EMERGENCY_LOCK) emergency = true;
     }
+  }
+  // Admins implicitly hold the ADMIN_LOCK (from fitness.yml users.admin).
+  const admins = fitnessConfig?.users?.admin || [];
+  if (Array.isArray(admins) && admins.includes(username) && !locks.includes(ADMIN_LOCK)) {
+    locks.push(ADMIN_LOCK);
   }
   return { emergency, locks };
 }

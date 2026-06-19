@@ -39,7 +39,7 @@ export function IdentityProvider({ children }) {
 
   // Unlock state surface.
   const [activeLock, setActiveLock] = useState(null);
-  const [unlockState, setUnlockState] = useState('idle'); // 'idle'|'scanning'|'granted'|'denied'
+  const [unlockState, setUnlockState] = useState('idle'); // 'idle'|'scanning'|'granted'|'denied'|'unauthorized'
   const [unlockedUser, setUnlockedUser] = useState(null);
 
   // Refs read inside the (stable) WS handler to avoid stale closures.
@@ -89,14 +89,25 @@ export function IdentityProvider({ children }) {
 
     // (1) A modal is open: only the active lock's authorization matters.
     if (lock) {
-      const authorized = msg.matched === true
+      const recognized = msg.matched === true;
+      const authorized = recognized
         && Array.isArray(msg.authz?.locks)
         && msg.authz.locks.includes(lock);
 
       if (!authorized) {
-        setUnlockState('denied');
-        logger().info('unlock-denied', { lock, userId: msg.userId ?? null });
-        // Do NOT resolve — a wrong finger shouldn't close the modal.
+        if (recognized) {
+          // Recognized, but this person isn't permitted for this lock (e.g. a
+          // known non-admin at an admin-only surface). Show who it was so the
+          // prompt can say "recognized, but not allowed" rather than "unknown".
+          setUnlockedUser(resolvePerson(msg.userId));
+          setUnlockState('unauthorized');
+          logger().info('unlock-unauthorized', { lock, userId: msg.userId ?? null });
+        } else {
+          setUnlockState('denied');
+          logger().info('unlock-denied', { lock });
+        }
+        // Do NOT resolve — a wrong finger shouldn't close the modal; an admin
+        // can still scan and be granted.
         return;
       }
 

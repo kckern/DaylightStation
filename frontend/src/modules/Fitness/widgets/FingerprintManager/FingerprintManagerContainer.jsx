@@ -3,6 +3,8 @@ import { useFingerprintManager } from './useFingerprintManager.js';
 import { EnrollModal } from './EnrollModal.jsx';
 import FingerprintHands from './FingerprintHands.jsx';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
+import { useIdentity } from '@/modules/Fitness/identity/IdentityProvider';
+import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import './FingerprintManager.scss';
@@ -12,19 +14,44 @@ const logger = () => (_logger ??= getLogger().child({ component: 'fingerprint-ma
 
 const FALLBACK_AVATAR = DaylightMediaPath('static/img/users/user');
 
+// This surface edits everyone's biometrics, so it's gated behind an admin scan.
+// The garage stays dumb; the backend grants this lock only to fitness.yml admins,
+// so a recognized non-admin finger is shown "not allowed", not granted.
+const ADMIN_LOCK = 'admin';
+
 // A throwaway per-enroll token used to correlate the backend progress rebroadcast.
 function makeToken() {
   return `fp-${Math.floor(performance.now())}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-export default function FingerprintManagerContainer() {
+export default function FingerprintManagerContainer({ onClose }) {
   const { users, refresh, enroll, remove } = useFingerprintManager();
+  const { registerUnlock, clearUnlock, unlockState, unlockedUser } = useIdentity();
+  const [unlocked, setUnlocked] = useState(false);
+  const [gateOpen, setGateOpen] = useState(true);
   const [enrolling, setEnrolling] = useState(null); // { username, displayName, avatarSrc, enrolled, preselect, clientToken }
 
+  // Require an admin fingerprint before the manager renders.
   useEffect(() => {
+    if (unlocked) return undefined;
+    let cancelled = false;
+    logger().info('manager.gate.scan');
+    registerUnlock(ADMIN_LOCK).then((verdict) => {
+      if (cancelled) return;
+      if (verdict?.matched) { setUnlocked(true); clearUnlock(); }
+      else { setGateOpen(false); }
+    });
+    return () => { cancelled = true; };
+  }, [unlocked, registerUnlock, clearUnlock]);
+
+  // Fetch the roster only after the admin unlock — don't leak it pre-auth.
+  useEffect(() => {
+    if (!unlocked) return;
     logger().info('manager.opened');
     refresh();
-  }, [refresh]);
+  }, [unlocked, refresh]);
+
+  const closeGate = () => { clearUnlock(); onClose?.(); };
 
   const openEnroll = (user, preselect) => {
     // Unenrolled users enroll freely (TOFU). Enrolled users still open the modal;
@@ -58,6 +85,18 @@ export default function FingerprintManagerContainer() {
     if (isEnrolled) handleDelete(user.username, finger);
     else openEnroll(user, finger);
   };
+
+  if (!unlocked) {
+    return (
+      <UnlockPrompt
+        open={gateOpen}
+        state={unlockState}
+        lockLabel="Fingerprint manager · admins only"
+        unlockedUser={unlockedUser}
+        onCancel={closeGate}
+      />
+    );
+  }
 
   return (
     <div className="fp-manager" data-testid="fingerprint-manager">

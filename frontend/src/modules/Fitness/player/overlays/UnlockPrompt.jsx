@@ -26,6 +26,8 @@ const STATE_COPY = {
   scanning: { title: 'Place finger to unlock', cancelLabel: 'Cancel', waiting: true },
   granted: { title: 'Access Granted', cancelLabel: 'Close', waiting: false },
   denied: { title: 'Not recognized', cancelLabel: 'Close', waiting: false },
+  // Recognized fingerprint, but the person isn't permitted for this lock.
+  unauthorized: { title: 'Not allowed', cancelLabel: 'Close', waiting: false },
 };
 
 // Generic avatar shown if the recognized user has no per-user image on file.
@@ -98,22 +100,25 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
   };
 
   const isGranted = state === 'granted';
+  // Recognized fingerprint, but the person isn't permitted for this lock. Show
+  // who it was (avatar + name) so it reads as "we know you, you're just not
+  // allowed here" — distinct from an unrecognized finger.
+  const isUnauthorized = state === 'unauthorized';
+  const showAvatar = isGranted || (isUnauthorized && !!unlockedUser);
 
   return (
     <div className={`unlock-prompt unlock-prompt--${state}`} role="dialog" aria-modal="true" aria-label="Fingerprint unlock">
       <div className="unlock-prompt__backdrop" aria-hidden="true" />
       <div className="unlock-prompt__card">
-        {isGranted ? (
-          // Success confirmation: avatar + name + "Access Granted", shown while the
-          // unlock chime plays before the caller proceeds to the unlocked content.
-          <div className="unlock-prompt__avatar" aria-hidden="true">
+        {showAvatar ? (
+          <div className={`unlock-prompt__avatar${isUnauthorized ? ' unlock-prompt__avatar--blocked' : ''}`} aria-hidden="true">
             <img
               className="unlock-prompt__avatar-img"
               src={unlockedUser?.avatarSrc || FALLBACK_AVATAR}
               alt=""
               onError={(e) => { e.currentTarget.src = FALLBACK_AVATAR; }}
             />
-            <span className="unlock-prompt__avatar-check" aria-hidden="true">✓</span>
+            <span className="unlock-prompt__avatar-check" aria-hidden="true">{isGranted ? '✓' : '✕'}</span>
           </div>
         ) : (
           <div className={`unlock-prompt__glyph unlock-prompt__glyph--${state}`} aria-hidden="true">
@@ -128,7 +133,7 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
         )}
 
         <div className="unlock-prompt__title">{copy.title}</div>
-        {isGranted && unlockedUser?.name ? (
+        {(isGranted || isUnauthorized) && unlockedUser?.name ? (
           <div className="unlock-prompt__user-name">{unlockedUser.name}</div>
         ) : null}
         {waiting && lockLabel ? (
@@ -150,7 +155,7 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
 
 UnlockPrompt.propTypes = {
   open: PropTypes.bool,
-  state: PropTypes.oneOf(['idle', 'scanning', 'granted', 'denied']),
+  state: PropTypes.oneOf(['idle', 'scanning', 'granted', 'denied', 'unauthorized']),
   lockLabel: PropTypes.string,
   onCancel: PropTypes.func.isRequired,
   timeoutMs: PropTypes.number,

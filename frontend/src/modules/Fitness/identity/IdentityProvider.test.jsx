@@ -51,14 +51,22 @@ test('modal open + authorized for that lock → granted verdict resolves', async
   emit({ matched: true, userId: 'kc', authz: { emergency: false, locks: ['dance_party'] } });
   await waitFor(() => expect(verdict).toEqual({ matched: true, userId: 'kc' }));
 });
-test('modal open + NOT authorized → denied, no resolve until cancel', async () => {
+test('modal open + recognized but NOT authorized → unauthorized, no resolve until cancel', async () => {
   let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
   let verdict; act(() => { api.registerUnlock('dance_party').then((v) => { verdict = v; }); });
-  emit({ matched: true, userId: 'guest', authz: { emergency: false, locks: ['skip_content'] } });
-  await waitFor(() => expect(api.unlockState).toBe('denied'));
+  // A known person whose finger doesn't carry this lock → recognized, not allowed.
+  emit({ matched: true, userId: 'kc', authz: { emergency: false, locks: ['skip_content'] } });
+  await waitFor(() => expect(api.unlockState).toBe('unauthorized'));
+  expect(api.unlockedUser).toMatchObject({ userId: 'kc' });
   expect(verdict).toBeUndefined();
   act(() => { api.clearUnlock(); });
   await waitFor(() => expect(verdict).toEqual({ matched: false, reason: 'cancelled' }));
+});
+test('modal open + UNrecognized finger → denied (distinct from unauthorized)', async () => {
+  let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  act(() => { api.registerUnlock('dance_party'); });
+  emit({ matched: false, userId: null, authz: { emergency: false, locks: [] } });
+  await waitFor(() => expect(api.unlockState).toBe('denied'));
 });
 test('no modal + non-emergency scan → ignored', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
