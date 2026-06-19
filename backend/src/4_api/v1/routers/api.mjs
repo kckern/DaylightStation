@@ -98,6 +98,7 @@ export function createApiRouter(config) {
     '/printer': 'printer',
     '/tts': 'tts',
     '/screens': 'screens',
+    '/eink': 'eink',  // Hardware e-paper panels (Seeed reTerminal) — see _extensions/eink-panel
     // '/agents' mounted directly by app.mjs via mountAgentHttp() per agent +
     // createAgentMemoryRouter / createAgentMetaRouter (Phase 3 HTTP unification).
     '/dev': 'dev',
