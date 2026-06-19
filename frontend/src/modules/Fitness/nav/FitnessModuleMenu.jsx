@@ -5,6 +5,7 @@ import useModuleStorage from '../player/useModuleStorage';
 import { useFitness } from '@/context/FitnessContext.jsx';
 import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '../player/overlays/UnlockPrompt.jsx';
+import LockIcon from '../player/overlays/LockIcon.jsx';
 import './FitnessModuleMenu.scss';
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -102,23 +103,10 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
   }, [activeModuleMenuId]);
 
   const availableModules = useMemo(() => {
-    const items = [...(menuConfig?.items || [])];
-
-    // Ensure Pose Demo appears even if not yet in config
-    const poseDemoManifest = getModuleManifest('pose_demo');
-    const hasPoseDemo = items.some((item) => String(item.id) === 'pose_demo');
-    if (poseDemoManifest && !hasPoseDemo) {
-      items.push({ id: 'pose_demo', name: poseDemoManifest.name || 'Pose Demo' });
-    }
-
-    // Ensure Vibration Monitor appears even if not yet in config
-    const vibrationManifest = getModuleManifest('vibration_monitor');
-    const hasVibration = items.some((item) => String(item.id) === 'vibration_monitor');
-    if (vibrationManifest && !hasVibration) {
-      items.push({ id: 'vibration_monitor', name: vibrationManifest.name || 'Vibration Monitor' });
-    }
-
-    return items
+    // The menu is fully config-driven: items come from fitness.yml's
+    // `plex.app_menus[].items` (SSoT). Each id is resolved to its registered
+    // manifest; items without a manifest are dropped. Nothing is injected here.
+    return (menuConfig?.items || [])
       .map(item => ({ ...item, manifest: getModuleManifest(item.id) }))
       .filter(item => item.manifest);
   }, [menuConfig]);
@@ -161,7 +149,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
               }}
             >
               {locked && (
-                <div className="module-lock-badge" aria-label="Locked" title="Locked">🔒</div>
+                <div className="module-lock-badge" aria-label="Locked" title="Locked"><LockIcon /></div>
               )}
               <div className="module-icon">{mod.manifest.icon || '📱'}</div>
               <div className="module-name">{mod.name}</div>
