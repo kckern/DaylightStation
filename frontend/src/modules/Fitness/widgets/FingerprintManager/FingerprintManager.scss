@@ -1,300 +1,284 @@
-// Fingerprint manager — styled to match the fitness module design language
-// (card surfaces, green primary accent, red destructive affordance). Mirrors
-// the tokens used by FitnessModuleMenu.scss / FitnessModuleContainer.scss.
-
-$fp-accent: var(--fitness-accent, #51cf66);
-$fp-danger: var(--fitness-danger, #ff6b6b);
-$fp-text: var(--fitness-text-primary, #fff);
-$fp-text-dim: var(--fitness-text-secondary, #aaa);
-$fp-panel: var(--fitness-bg-secondary, #262626);
+// Fingerprint manager. Conventions match the fitness overlays (UnlockPrompt /
+// GovernanceStateOverlay): slate-blue glass surfaces, #f8fafc text, no explicit
+// font-family (inherits Roboto Condensed), emphasis via color / glow / motion.
 
 .fp-manager {
   height: 100%;
   overflow-y: auto;
-  padding: 28px 32px;
-  color: $fp-text;
-  font-family: inherit;
+  padding: clamp(20px, 3vw, 36px) clamp(18px, 3vw, 40px) 48px;
+  color: #f8fafc;
 
-  h2 {
-    margin: 0 0 24px;
-    font-size: 26px;
+  &__header { max-width: 880px; margin: 0 auto clamp(18px, 2.4vw, 28px); }
+
+  &__title {
+    margin: 0;
+    font-size: clamp(1.5rem, 3vw, 2rem);
     font-weight: 700;
     letter-spacing: 0.01em;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    .fp-title-icon {
-      width: 30px;
-      height: 30px;
-      color: $fp-accent;
-      flex: 0 0 auto;
-    }
   }
 
-  .fp-user-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-width: 920px;
-  }
-
-  .fp-user-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px 16px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 16px 20px;
-    transition: background 0.15s ease, border-color 0.15s ease;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(255, 255, 255, 0.12);
-    }
-  }
-
-  .fp-user-name {
-    flex: 0 0 180px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 17px;
-
-    .fp-display-name {
-      font-weight: 600;
-    }
-
-    .fp-admin-badge {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: $fp-accent;
-      background: rgba(81, 207, 102, 0.14);
-      border-radius: 999px;
-      padding: 2px 8px;
-    }
-  }
-
-  .fp-user-fingers {
-    flex: 1 1 240px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-
-    em {
-      color: $fp-text-dim;
-      font-style: italic;
-      opacity: 0.7;
-      font-size: 14px;
-    }
-  }
-
-  // Each chip is a destructive control (tap to delete). Neutral at rest,
-  // it reveals red intent on hover/focus so a stray tap isn't a surprise.
-  .fp-finger-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    font-family: inherit;
-    color: $fp-text;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 999px;
-    padding: 6px 12px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-
-    .fp-chip-icon {
-      width: 15px;
-      height: 15px;
-      flex: 0 0 auto;
-      color: $fp-accent;
-      transition: color 0.15s ease;
-    }
-
-    .fp-chip-x {
-      opacity: 0.5;
-      transition: opacity 0.15s ease;
-    }
-
-    &:hover,
-    &:focus-visible {
-      color: $fp-danger;
-      background: rgba(255, 107, 107, 0.16);
-      border-color: rgba(255, 107, 107, 0.5);
-      outline: none;
-
-      .fp-chip-icon { color: $fp-danger; }
-      .fp-chip-x { opacity: 1; }
-    }
-  }
-
-  .fp-add {
-    flex: 0 0 auto;
-    margin-left: auto;
-    font-size: 14px;
-    font-weight: 600;
-    font-family: inherit;
-    color: $fp-accent;
-    background: transparent;
-    border: 1px solid rgba(81, 207, 102, 0.5);
-    border-radius: 8px;
-    padding: 8px 14px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-
-    &:hover,
-    &:focus-visible {
-      background: rgba(81, 207, 102, 0.16);
-      border-color: $fp-accent;
-      outline: none;
-    }
+  &__subtitle {
+    margin: 6px 0 0;
+    font-size: clamp(0.9rem, 1.5vw, 1.02rem);
+    line-height: 1.4;
+    color: rgba(248, 250, 252, 0.62);
+    max-width: 56ch;
   }
 }
 
-// --- Enroll modal (rendered within the manager; fixed-position overlay) ---
+.fp-roster {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 880px;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.6vw, 16px);
+}
 
-.fp-enroll-modal {
+.fp-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: clamp(14px, 2vw, 20px) clamp(16px, 2.2vw, 24px);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  transition: border-color 0.18s ease, background 0.18s ease;
+
+  &:hover { border-color: rgba(255, 255, 255, 0.14); background: rgba(15, 23, 42, 0.7); }
+
+  &__id {
+    display: flex;
+    align-items: center;
+    gap: clamp(12px, 1.6vw, 18px);
+    min-width: 0;
+  }
+
+  // Avatar frame — a green ring once the person has at least one print.
+  &__avatar {
+    flex: 0 0 auto;
+    display: inline-flex;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.22);
+    transition: box-shadow 0.2s ease;
+  }
+  &--enrolled &__avatar {
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.75), 0 0 16px rgba(34, 197, 94, 0.3);
+  }
+
+  &__meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+  &__name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  &__badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #4ade80;
+    background: rgba(34, 197, 94, 0.16);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+
+  &__count {
+    font-size: clamp(0.82rem, 1.3vw, 0.95rem);
+    color: rgba(248, 250, 252, 0.55);
+  }
+
+  &--enrolled &__count { color: rgba(74, 222, 128, 0.85); }
+
+  // Quiet text-button; the real action surface is the hands.
+  &__add {
+    align-self: flex-start;
+    margin-top: 5px;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: #38bdf8;
+    font: inherit;
+    font-size: clamp(0.82rem, 1.3vw, 0.92rem);
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s ease;
+
+    &:hover { color: #7dd3fc; }
+    &:focus-visible { outline: 2px solid rgba(56, 189, 248, 0.8); outline-offset: 3px; border-radius: 4px; }
+  }
+
+  &__hands { flex: 0 0 auto; margin-left: auto; }
+}
+
+// --------------------------------------------------------------------------
+// Enroll modal — sibling of UnlockPrompt.
+// --------------------------------------------------------------------------
+
+.fp-enroll {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 2300;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(3px);
-  animation: fpModalFade 0.18s ease-out;
 
-  .fp-enroll-panel {
-    width: 360px;
-    max-width: calc(100vw - 48px);
-    background: $fp-panel;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 14px;
-    padding: 28px 32px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-    color: $fp-text;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    animation: fpModalPop 0.18s ease-out;
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 11, 20, 0.72);
+    backdrop-filter: blur(6px);
   }
 
-  .fp-enroll-title {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    text-align: center;
-  }
-
-  label {
-    font-size: 13px;
-    color: $fp-text-dim;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  select {
-    width: 100%;
-    padding: 11px 12px;
-    font-size: 15px;
-    font-family: inherit;
-    color: $fp-text;
-    background: var(--fitness-bg-primary, #1a1a1a);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
-    cursor: pointer;
-
-    &:focus-visible {
-      outline: none;
-      border-color: $fp-accent;
-    }
-  }
-
-  .fp-enroll-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 4px;
-  }
-
-  .fp-btn {
-    flex: 1;
-    padding: 11px 16px;
-    font-size: 15px;
-    font-weight: 600;
-    font-family: inherit;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: all 0.15s ease;
-
-    &:focus-visible { outline: none; }
-  }
-
-  .fp-btn-primary {
-    background: $fp-accent;
-    color: #08210f;
-
-    &:hover,
-    &:focus-visible { background: #62db77; }
-  }
-
-  .fp-btn-ghost {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.14);
-    color: $fp-text;
-
-    &:hover,
-    &:focus-visible { background: rgba(255, 255, 255, 0.12); }
-  }
-
-  .fp-enroll-progress {
-    text-align: center;
+  &__card {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-
-    p { margin: 0; font-size: 15px; }
-
-    .fp-scan-stage { color: $fp-text-dim; font-size: 14px; }
-    .fp-scan-done { color: $fp-accent; font-size: 18px; font-weight: 700; }
+    gap: clamp(14px, 2vw, 20px);
+    width: min(540px, 92vw);
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: clamp(24px, 3.5vw, 38px) clamp(22px, 3vw, 36px);
+    border-radius: 22px;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    color: #f8fafc;
+    text-align: center;
+    animation: fp-enroll-pop 0.24s ease-out both;
   }
 
-  .fp-scan-pulse {
-    line-height: 1;
-    color: $fp-accent;
-    animation: fpPulse 1.1s ease-in-out infinite;
+  &__person { display: flex; align-items: center; gap: 14px; }
 
-    svg {
-      width: 56px;
-      height: 56px;
-      display: block;
-    }
+  &__avatar {
+    width: clamp(52px, 8vw, 64px);
+    height: clamp(52px, 8vw, 64px);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    background: rgba(15, 23, 42, 0.9);
   }
+
+  &__person-text { display: flex; flex-direction: column; align-items: flex-start; }
+
+  &__eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(56, 189, 248, 0.9);
+  }
+
+  &__name { font-size: clamp(1.2rem, 2.2vw, 1.5rem); font-weight: 700; }
+
+  &__hint {
+    margin: 0;
+    font-size: clamp(0.9rem, 1.5vw, 1rem);
+    color: rgba(248, 250, 252, 0.7);
+    min-height: 1.2em;
+    strong { color: #7dd3fc; font-weight: 700; }
+  }
+
+  &__actions { display: flex; gap: 12px; width: 100%; max-width: 320px; }
+
+  // --- scanning ---
+  &__scan { display: flex; flex-direction: column; align-items: center; gap: clamp(12px, 1.8vw, 18px); }
+
+  &__glyph {
+    width: clamp(64px, 10vw, 88px);
+    height: clamp(64px, 10vw, 88px);
+    color: #38bdf8;
+    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.45));
+    animation: fp-enroll-pulse 1.4s ease-in-out infinite;
+    svg { width: 100%; height: 100%; display: block; }
+  }
+
+  &__scan-title { margin: 0; font-size: clamp(1rem, 1.8vw, 1.2rem); font-weight: 600; strong { color: #7dd3fc; } }
+
+  &__dots { display: flex; gap: 9px; }
+
+  &__dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.28);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+
+    &.is-filled { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.6); }
+  }
+
+  &__scan-meta { margin: 0; font-size: clamp(0.85rem, 1.4vw, 0.95rem); color: rgba(248, 250, 252, 0.6); }
+
+  // --- done ---
+  &__done { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: clamp(8px, 2vw, 20px) 0; }
+
+  &__check {
+    width: clamp(56px, 9vw, 72px);
+    height: clamp(56px, 9vw, 72px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #06210f;
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-weight: 800;
+    box-shadow: 0 0 22px rgba(34, 197, 94, 0.5);
+    animation: fp-enroll-pop 0.3s ease-out both;
+  }
+
+  &__done-title { margin: 0; font-size: clamp(1.1rem, 2vw, 1.35rem); font-weight: 700; color: #4ade80; }
 }
 
-@keyframes fpModalFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+// Shared modal buttons — large touch targets for the garage screen.
+.fp-btn {
+  flex: 1;
+  min-height: 52px;
+  padding: 0 clamp(18px, 2.5vw, 28px);
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: clamp(0.95rem, 1.6vw, 1.1rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
+
+  &:focus-visible { outline: 2px solid rgba(56, 189, 248, 0.85); outline-offset: 3px; }
+
+  &--primary { background: #22c55e; color: #06210f; }
+  &--primary:hover { background: #34d36f; }
+  &--primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  &--ghost {
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #f8fafc;
+  }
+  &--ghost:hover { background: rgba(148, 163, 184, 0.26); }
 }
 
-@keyframes fpModalPop {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes fp-enroll-pop {
+  0% { opacity: 0; transform: scale(0.94); }
+  100% { opacity: 1; transform: scale(1); }
 }
 
-@keyframes fpPulse {
-  0%, 100% { transform: scale(1); opacity: 0.65; }
-  50% { transform: scale(1.12); opacity: 1; }
+@keyframes fp-enroll-pulse {
+  0%, 100% { opacity: 0.72; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-enroll__card, .fp-enroll__glyph, .fp-enroll__check { animation: none; }
 }
