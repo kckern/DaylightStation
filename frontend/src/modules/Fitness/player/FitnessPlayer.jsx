@@ -1816,6 +1816,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
         onGovernanceUnlock={governanceUnlockHandler}
+        governanceStateOverride={effectiveGovernanceState}
       />
       {hasActiveItem ? (
         <Player
