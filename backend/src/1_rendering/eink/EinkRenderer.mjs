@@ -14,6 +14,8 @@ import * as registry from './widgets/registry.mjs';
 import { registerBuiltins } from './widgets/builtins.mjs';
 import { FONT_FACES } from './widgets/lib/fonts.mjs';
 import { draw as drawPlaceholder } from './widgets/PlaceholderWidget.mjs';
+import { canvasToGray8 } from './widgets/lib/greyscale.mjs';
+import { encodeGray8Png } from './widgets/lib/grayscalePng.mjs';
 
 // The target (Seeed reTerminal E1003) is a MONOCHROME, 16-level grayscale panel —
 // there is no color. The palette is therefore a grayscale ramp whose values snap
@@ -103,5 +105,12 @@ export async function render(screenConfig, options = {}) {
     }
   }
 
-  return canvas.toBuffer('image/png');
+  // Emit a compact 8-bit GRAYSCALE PNG, not canvas's 32-bit RGBA. The panel is
+  // monochrome, so three colour channels are wasted bytes over its Wi-Fi link (a
+  // battery cost) and the device luma-reduces them anyway. Shipping one smooth
+  // grey byte/pixel is ~3x smaller and the panel firmware dithers it unchanged
+  // (no reflash). We reduce the whole canvas at once here rather than per-widget so
+  // every tone — chrome and photos alike — lands in the panel's colour space.
+  const gray = canvasToGray8(ctx, width, height);
+  return encodeGray8Png(gray, width, height);
 }

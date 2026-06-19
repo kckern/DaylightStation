@@ -3,15 +3,18 @@
  * @module 1_rendering/eink/widgets/PhotoWidget
  *
  * Renders a single preloaded image (data.photo.imageEl, resolved by the
- * DataResolver from data.photo.imageUrl) cover-fit to its box, converts it to the
- * panel's 16 grey tones (see lib/greyscale), then overlays an ArtMode-style
- * placard: a headline (who/where) plus the capture date. The image is chosen and
- * held server-side (GET /api/v1/home/photo) so it only changes once per hold
- * window — keeping the e-ink refresh (and battery) cost low.
+ * DataResolver from data.photo.imageUrl) cover-fit to its box, then overlays an
+ * ArtMode-style placard: a headline (who/where) plus the capture date. The image
+ * is chosen and held server-side (GET /api/v1/home/photo) so it only changes once
+ * per hold window — keeping the e-ink refresh (and battery) cost low.
+ *
+ * Colour→grey is NOT done here: the whole canvas is luma-reduced once at the end
+ * of the render (EinkRenderer → greyscale.canvasToGray8) and shipped SMOOTH; the
+ * panel firmware dithers it to its 16 tones. Dithering server-side would only
+ * bloat the download (see lib/greyscale).
  */
 
 import { font } from './lib/fonts.mjs';
-import { ditherTo16Gray } from './lib/greyscale.mjs';
 
 const PLACARD_H = 100;
 const PAD_X = 32;
@@ -50,12 +53,9 @@ export function draw(ctx, box, data, theme) {
   ctx.drawImage(img, dx, dy, dw, dh);
   ctx.restore();
 
-  // Snap the photo to the panel's 16 hardware tones (Floyd-Steinberg), so the
-  // device's own dither is a clean pass-through rather than a re-dither.
-  ditherTo16Gray(ctx, box);
-
-  // Caption placard, drawn AFTER the dither so its solid bar + text stay crisp
-  // (pure black/white already sit on hardware tones — no dithering needed).
+  // Caption placard. The final canvas-wide luma reduction (EinkRenderer) turns the
+  // whole panel grey; the panel firmware dithers the photo region. Pure black/white
+  // chrome here lands on hardware tones, so it stays crisp through that dither.
   const title = photo.title;
   const date = photo.date;
   if (title || date) {
