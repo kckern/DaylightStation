@@ -8,7 +8,11 @@ import './UnlockPrompt.scss';
 // "Access denied" avatar shown when a fingerprint isn't recognized — the Sonic
 // "no-no-no" finger wag. Served from the media folder (same as unlock.mp3),
 // rendered as a circular avatar in the denied state.
-const DENIED_AVATAR = DaylightMediaPath('apps/fitness/ux/accessdenied.gif');
+// Must carry the `media/` prefix so DaylightMediaPath routes it to the served
+// proxy endpoint (/api/v1/proxy/media/...). Without it the URL resolves to an
+// unserved /apps/... path and the circle renders empty. (Same convention the
+// unlock chime uses: playCueOnce prepends `media/` before resolving.)
+const DENIED_AVATAR = DaylightMediaPath('media/apps/fitness/ux/accessdenied.gif');
 
 /**
  * Default auto-dismiss timeout. The garage reader round-trip is ~15s; this is a
