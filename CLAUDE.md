@@ -103,8 +103,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 
 ## Rules
 
-- **Do NOT commit automatically** - User must review changes
-- **Do NOT run deploy.sh automatically** - User must run manually
+- **Commit & deploy policy is set per-machine in `CLAUDE.local.md`** - Where a workspace's `CLAUDE.local.md` grants build/commit/deploy authority, follow it. Absent any local rule, default to: don't commit or deploy automatically — let the user review and run those steps.
 - **Keep docs in /docs folder** - In appropriate subfolder
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 - **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
