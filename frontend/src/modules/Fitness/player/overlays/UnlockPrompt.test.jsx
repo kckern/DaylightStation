@@ -45,11 +45,11 @@ describe('UnlockPrompt', () => {
     expect(screen.getByText('Not recognized')).toBeTruthy();
     // In the denied state the cancel button reads "Close"
     expect(screen.getByRole('button')).toHaveTextContent('Close');
-    // The access-denied gif must resolve to the SERVED proxy-media endpoint
-    // (carrying the media/ prefix), not an unserved /apps/... path.
+    // The access-denied gif must resolve to the static IMAGE route (correct
+    // image/* content-type), not the AV streamer (octet-stream + nosniff).
     const gif = container.querySelector('.unlock-prompt__denied-avatar');
     expect(gif).toBeTruthy();
-    expect(gif.getAttribute('src')).toContain('api/v1/proxy/media/apps/fitness/ux/accessdenied.gif');
+    expect(gif.getAttribute('src')).toContain('api/v1/static/img/fitness/accessdenied.gif');
   });
 
   it('shows the unauthorized state: recognized person (avatar + name) but "Not allowed"', () => {

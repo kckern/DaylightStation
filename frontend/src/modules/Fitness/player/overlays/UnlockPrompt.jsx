@@ -2,17 +2,15 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import FingerprintIcon from '@/modules/Fitness/widgets/FingerprintManager/FingerprintIcon.jsx';
-import { DaylightMediaPath } from '@/lib/api.mjs';
+import { DaylightImagePath } from '@/lib/api.mjs';
 import './UnlockPrompt.scss';
 
 // "Access denied" avatar shown when a fingerprint isn't recognized — the Sonic
-// "no-no-no" finger wag. Served from the media folder (same as unlock.mp3),
-// rendered as a circular avatar in the denied state.
-// Must carry the `media/` prefix so DaylightMediaPath routes it to the served
-// proxy endpoint (/api/v1/proxy/media/...). Without it the URL resolves to an
-// unserved /apps/... path and the circle renders empty. (Same convention the
-// unlock chime uses: playCueOnce prepends `media/` before resolving.)
-const DENIED_AVATAR = DaylightMediaPath('media/apps/fitness/ux/accessdenied.gif');
+// "no-no-no" finger wag, rendered as a circular avatar in the denied state. It's
+// an image, so it's served by the static image route (/api/v1/static/img/...),
+// which sets the correct image/* content-type — NOT the AV media streamer, which
+// serves octet-stream + nosniff and so won't render in an <img>.
+const DENIED_AVATAR = DaylightImagePath('fitness/accessdenied.gif');
 
 /**
  * Default auto-dismiss timeout. The garage reader round-trip is ~15s; this is a
