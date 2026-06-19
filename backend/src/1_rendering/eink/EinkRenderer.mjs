@@ -12,18 +12,35 @@ import { resolveLayout } from './PanelRenderer.mjs';
 import { resolveData } from './providers/DataResolver.mjs';
 import * as registry from './widgets/registry.mjs';
 import { registerBuiltins } from './widgets/builtins.mjs';
+import { FONT_FACES } from './widgets/lib/fonts.mjs';
 import { draw as drawPlaceholder } from './widgets/PlaceholderWidget.mjs';
 
+// The target (Seeed reTerminal E1003) is a MONOCHROME, 16-level grayscale panel —
+// there is no color. The palette is therefore a grayscale ramp whose values snap
+// near the 16 hardware levels (0x00..0xFF in ~0x11 steps) so each fill renders as
+// a clean tone, never a dithered color stipple. The color-named keys
+// (red/blue/green/yellow) are kept as TONAL ALIASES — dark-to-light grays — so the
+// widgets that reference them need no rewrite. Rendering note: IT8951 fast/partial
+// (A2) refresh is effectively 1-bit, so keep grays in STATIC chrome; any gray in a
+// frequently-changing region forces a full (flashing) refresh.
 const DEFAULT_THEME = {
-  bg: '#E8E8E8',
-  fg: '#191E21',
-  muted: '#888',
-  headerBg: '#191E21',
-  headerFg: '#E8E8E8',
-  red: '#B21318',
-  yellow: '#EFDE44',
-  blue: '#2157BA',
-  green: '#125F20',
+  bg: '#FFFFFF',          // white — e-ink reads crispest at the tonal extremes
+  fg: '#000000',          // black
+  muted: '#777777',       // mid gray — secondary text
+  headerBg: '#000000',
+  headerFg: '#FFFFFF',
+  // grayscale ramp (dark -> light) for tonal hierarchy
+  ink: '#000000',
+  g1: '#333333',
+  g2: '#555555',
+  g3: '#888888',
+  g4: '#BBBBBB',
+  g5: '#DDDDDD',
+  // tonal aliases — this mono panel has no color; severe/important -> darker tones
+  red: '#222222',
+  blue: '#444444',
+  green: '#666666',
+  yellow: '#999999',
 };
 
 /**
@@ -36,7 +53,7 @@ const DEFAULT_THEME = {
  */
 export async function render(screenConfig, options = {}) {
   const {
-    baseUrl = 'http://localhost:3112',
+    baseUrl,          // injected from household config by the caller; no host literal here
     fontDir = '/usr/share/fonts',
     dataOverride,
   } = options;
@@ -51,8 +68,12 @@ export async function render(screenConfig, options = {}) {
   // Resolve data
   const data = dataOverride || await resolveData(screenConfig.data, baseUrl);
 
-  // Create canvas
+  // Create canvas and register the base font (Roboto Condensed) so widgets can
+  // address it by name. Missing faces degrade gracefully (synthetic bold).
   const renderer = new CanvasRenderer({ fontDir });
+  for (const face of FONT_FACES) {
+    renderer.registerFont(face.path, face.family, { weight: face.weight });
+  }
   const { canvas, ctx } = renderer.createWithContext(width, height);
 
   // Fill background

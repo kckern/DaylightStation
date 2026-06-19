@@ -37,9 +37,10 @@ export class CanvasRenderer {
    * @param {string} family - Font family name
    * @returns {boolean} Whether registration succeeded
    */
-  registerFont(fontPath, family) {
+  registerFont(fontPath, family, options = {}) {
     const fullPath = path.join(this.#fontDir, fontPath);
-    const key = `${fullPath}:${family}`;
+    const { weight = '', style = '' } = options;
+    const key = `${fullPath}:${family}:${weight}:${style}`;
 
     if (this.#registeredFonts.has(key)) {
       return true;
@@ -51,9 +52,9 @@ export class CanvasRenderer {
     }
 
     try {
-      registerFont(fullPath, { family });
+      registerFont(fullPath, { family, ...options });
       this.#registeredFonts.add(key);
-      this.#logger.debug?.('canvas.font.registered', { family, path: fullPath });
+      this.#logger.debug?.('canvas.font.registered', { family, weight, style, path: fullPath });
       return true;
     } catch (error) {
       this.#logger.warn?.('canvas.font.failed', { family, error: error.message });

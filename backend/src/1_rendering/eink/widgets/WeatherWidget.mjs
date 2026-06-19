@@ -7,8 +7,11 @@
  *
  * Layout: top strip = current conditions, bottom = full-width hourly chart.
  *
- * IMPORTANT: Only uses the Spectra 6 palette (black, white, red, yellow, blue, green).
- * No grays — they will dither unpredictably on the e-ink panel.
+ * IMPORTANT: The target panel (Seeed E1003) is MONOCHROME 16-level grayscale — no
+ * color. The theme's color-named keys (red/blue/green/yellow) resolve to grayscale
+ * tones (see DEFAULT_THEME in EinkRenderer), so condition coloring below reads as a
+ * dark=severe / light=mild tonal scale rather than hue. True grays render cleanly on
+ * a 16-gray panel; never emit a non-theme color literal here.
  */
 
 const WMO_CODES = {
@@ -49,7 +52,7 @@ export function draw(ctx, box, data, theme) {
 
   if (!weather?.current) {
     ctx.fillStyle = theme.fg;
-    ctx.font = '28px DejaVu Sans';
+    ctx.font = '28px Roboto Condensed';
     ctx.textBaseline = 'top';
     ctx.fillText('No weather data', x + 20, y + 20);
     return;
@@ -70,18 +73,18 @@ export function draw(ctx, box, data, theme) {
 
   // ── Left: Big temperature + condition ──
   ctx.fillStyle = theme.fg;
-  ctx.font = 'bold 120px DejaVu Sans';
+  ctx.font = 'bold 120px Roboto Condensed';
   ctx.textBaseline = 'top';
   ctx.fillText(`${tempF}\u00B0`, x + pad, y + 20);
 
   // Condition with color accent
   const condColor = conditionColor(cur.code, theme);
   ctx.fillStyle = condColor;
-  ctx.font = 'bold 44px DejaVu Sans';
+  ctx.font = 'bold 44px Roboto Condensed';
   ctx.fillText(condition, x + pad, y + 160);
 
   // Feels-like (use blue for secondary temp)
-  ctx.font = '32px DejaVu Sans';
+  ctx.font = '32px Roboto Condensed';
   ctx.fillStyle = theme.blue;
   ctx.fillText(`Feels like ${feelsF}\u00B0F`, x + pad, y + 218);
 
@@ -103,7 +106,7 @@ export function draw(ctx, box, data, theme) {
 
   // Badge text — black on yellow, white on green/red
   ctx.fillStyle = (aqiInfo.color === 'yellow') ? theme.fg : theme.bg;
-  ctx.font = 'bold 28px DejaVu Sans';
+  ctx.font = 'bold 28px Roboto Condensed';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`AQI ${aqi}`, badgeX + badgeW / 2, badgeY + badgeH / 2);
@@ -111,13 +114,13 @@ export function draw(ctx, box, data, theme) {
 
   // AQI description (same color as badge)
   ctx.fillStyle = badgeColor;
-  ctx.font = 'bold 24px DejaVu Sans';
+  ctx.font = 'bold 24px Roboto Condensed';
   ctx.textBaseline = 'top';
   ctx.fillText(aqiInfo.text, badgeX + badgeW + 16, badgeY + 16);
 
   // Cloud cover
   ctx.fillStyle = theme.fg;
-  ctx.font = '30px DejaVu Sans';
+  ctx.font = '30px Roboto Condensed';
   ctx.textBaseline = 'top';
   ctx.fillText(`Cloud cover: ${cur.cloud}%`, statsX, y + 112);
 
@@ -133,7 +136,7 @@ export function draw(ctx, box, data, theme) {
   // PM2.5 (red if elevated, green if good)
   if (cur.pm2_5 != null) {
     ctx.fillStyle = cur.pm2_5 > 12 ? theme.red : theme.green;
-    ctx.font = '26px DejaVu Sans';
+    ctx.font = '26px Roboto Condensed';
     ctx.fillText(`PM2.5: ${cur.pm2_5.toFixed(1)} \u00B5g/m\u00B3`, statsX, y + 204);
   }
 
@@ -170,7 +173,7 @@ export function draw(ctx, box, data, theme) {
 
   // Section label
   ctx.fillStyle = theme.fg;
-  ctx.font = 'bold 30px DejaVu Sans';
+  ctx.font = 'bold 30px Roboto Condensed';
   ctx.textBaseline = 'top';
   ctx.fillText('Hourly Forecast', x + pad, divY + 20);
 
@@ -202,7 +205,7 @@ export function draw(ctx, box, data, theme) {
 
     // Y-axis label
     ctx.fillStyle = theme.fg;
-    ctx.font = '22px DejaVu Sans';
+    ctx.font = '22px Roboto Condensed';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${gTemp}\u00B0`, chartX - 12, gy);
@@ -259,7 +262,7 @@ export function draw(ctx, box, data, theme) {
     // Temp label — always above dot, but enforce minimum distance from chart edges
     // If dot is near the bottom, push label higher so it doesn't collide with hour labels
     ctx.fillStyle = theme.fg;
-    ctx.font = 'bold 24px DejaVu Sans';
+    ctx.font = 'bold 24px Roboto Condensed';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     const labelY = Math.min(dotY - 16, chartBottom - 50);
@@ -270,7 +273,7 @@ export function draw(ctx, box, data, theme) {
     const hLabel = hour.getHours() % 12 || 12;
     const ampm = hour.getHours() >= 12 ? 'p' : 'a';
     ctx.fillStyle = theme.fg;
-    ctx.font = '24px DejaVu Sans';
+    ctx.font = '24px Roboto Condensed';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText(`${hLabel}${ampm}`, cx, chartBottom + 12);
@@ -278,7 +281,7 @@ export function draw(ctx, box, data, theme) {
     // Precip amount (blue, below hour label)
     if (hr.precip >= 0.5) {
       ctx.fillStyle = theme.blue;
-      ctx.font = 'bold 20px DejaVu Sans';
+      ctx.font = 'bold 20px Roboto Condensed';
       ctx.fillText(`${hr.precip.toFixed(1)}`, cx, chartBottom + 42);
     }
   }

@@ -22,14 +22,14 @@ export function draw(ctx, box, data, theme) {
   // Title (left)
   ctx.save();
   ctx.fillStyle = theme.headerFg || theme.bg;
-  ctx.font = 'bold 56px DejaVu Sans';
+  ctx.font = 'bold 56px Roboto Condensed';
   ctx.textBaseline = 'middle';
   const titleY = y + h / 2;
   ctx.fillText(data?.title || 'DaylightStation', x + 40, titleY);
 
   // Date (right)
   const dateStr = `${day}, ${month} ${date}`;
-  ctx.font = '40px DejaVu Sans';
+  ctx.font = '40px Roboto Condensed';
   const dateW = ctx.measureText(dateStr).width;
   ctx.fillText(dateStr, x + w - dateW - 40, titleY);
   ctx.restore();
