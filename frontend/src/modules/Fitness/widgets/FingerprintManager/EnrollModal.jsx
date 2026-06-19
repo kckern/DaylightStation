@@ -1,6 +1,7 @@
 // frontend/src/modules/Fitness/widgets/FingerprintManager/EnrollModal.jsx
 import React, { useState } from 'react';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
+import FingerprintIcon from './FingerprintIcon.jsx';
 
 const FINGERS = [
   'right-thumb', 'right-index', 'right-middle', 'right-ring', 'right-little',
@@ -36,23 +37,29 @@ export function EnrollModal({ username, clientToken, onEnroll, onDone, onCancel 
 
   return (
     <div className="fp-enroll-modal" role="dialog" aria-modal="true" aria-label={`Enroll fingerprint for ${username}`}>
-      {phase === 'pick' && (
-        <>
-          <label htmlFor="fp-finger">Finger</label>
-          <select id="fp-finger" value={finger} onChange={(e) => setFinger(e.target.value)}>
-            {FINGERS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-          <button type="button" onClick={start}>Start</button>
-          <button type="button" onClick={onCancel}>Cancel</button>
-        </>
-      )}
-      {(phase === 'scanning' || phase === 'done') && (
-        <div className="fp-enroll-progress">
-          {phase === 'scanning' && <p>Place your finger on the reader…</p>}
-          {phase === 'scanning' && progress && <p>{`Stage ${progress.stage} of ${progress.stagesTotal} — lift and place again`}</p>}
-          {phase === 'done' && <p>Done.</p>}
-        </div>
-      )}
+      <div className="fp-enroll-panel">
+        <h3 className="fp-enroll-title">Enroll fingerprint</h3>
+        {phase === 'pick' && (
+          <>
+            <label htmlFor="fp-finger">Finger</label>
+            <select id="fp-finger" value={finger} onChange={(e) => setFinger(e.target.value)}>
+              {FINGERS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <div className="fp-enroll-actions">
+              <button type="button" className="fp-btn fp-btn-primary" onClick={start}>Start</button>
+              <button type="button" className="fp-btn fp-btn-ghost" onClick={onCancel}>Cancel</button>
+            </div>
+          </>
+        )}
+        {(phase === 'scanning' || phase === 'done') && (
+          <div className="fp-enroll-progress">
+            {phase === 'scanning' && <div className="fp-scan-pulse"><FingerprintIcon /></div>}
+            {phase === 'scanning' && <p>Place your finger on the reader…</p>}
+            {phase === 'scanning' && progress && <p className="fp-scan-stage">{`Stage ${progress.stage} of ${progress.stagesTotal} — lift and place again`}</p>}
+            {phase === 'done' && <p className="fp-scan-done">✓ Done.</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

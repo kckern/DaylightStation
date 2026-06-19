@@ -1409,25 +1409,47 @@ export function createFitnessRouter(config) {
     res.json({ released: true });
   }));
 
-  /**
-   * The enrollment universe is fitness-scoped: only `fitness.yml → users.primary`
-   * users (the only ones with a profile.yml) may hold fingerprints. Family/friends
-   * are inline in fitness.yml with no profile files and are never eligible.
-   */
-  function primaryUsernames(req) {
+  function fitnessUsersConfig(req) {
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    return fitnessConfig?.users?.primary || [];
+    return fitnessConfig?.users || {};
+  }
+
+  /** Config-declared admin usernames (`fitness.yml → users.admin`). */
+  function adminUsernames(req) {
+    return fitnessUsersConfig(req)?.admin || [];
+  }
+
+  /** Config-declared primary usernames (`fitness.yml → users.primary`). */
+  function primaryUsernames(req) {
+    return fitnessUsersConfig(req)?.primary || [];
   }
 
   /**
-   * Build the username->profile map (primary users only) for the access decision.
-   * Admins are a subset of primary (only profiled users can carry identities.admin),
-   * so the self/admin gallery is fully represented here. Reuses the live cache.
+   * The enrollment universe is admins + primary users, deduped with admins first.
+   * Both groups have a profile.yml and may hold fingerprints; an admin need not be
+   * primary (e.g. a spouse who manages but doesn't follow the program). Inline
+   * family/friends have no profile and are never eligible.
    */
-  function primaryProfilesObject(req) {
+  function eligibleUsernames(req) {
+    const seen = new Set();
+    const ordered = [];
+    for (const username of [...adminUsernames(req), ...primaryUsernames(req)]) {
+      if (!username || seen.has(username)) continue;
+      seen.add(username);
+      ordered.push(username);
+    }
+    return ordered;
+  }
+
+  /**
+   * Build the username->profile map (all eligible users) for the access decision,
+   * so an admin's prints are available to the self/admin gallery. Reuses the live
+   * cache.
+   */
+  function eligibleProfilesObject(req) {
     const map = {};
-    for (const username of primaryUsernames(req)) {
+    for (const username of eligibleUsernames(req)) {
       const profile = userService?.getProfile?.(username);
       if (profile) map[username] = profile;
     }
@@ -1435,20 +1457,21 @@ export function createFitnessRouter(config) {
   }
 
   /**
-   * GET /api/fitness/fingerprints — list every ELIGIBLE (primary) user with their
-   * admin flag and enrolled fingers (finger + date only). Never returns uuids;
-   * never lists family/friends.
+   * GET /api/fitness/fingerprints — list every ELIGIBLE user (admins first, then
+   * primary, deduped) with their admin flag and enrolled fingers (finger + date
+   * only). Never returns uuids; never lists inline family/friends.
    */
   router.get('/fingerprints', asyncHandler(async (req, res) => {
+    const adminSet = new Set(adminUsernames(req));
     const out = [];
-    for (const username of primaryUsernames(req)) {
+    for (const username of eligibleUsernames(req)) {
       const profile = userService?.getProfile?.(username);
       if (!profile) continue;
       const ids = profile.identities || {};
       out.push({
         username,
         displayName: profile.display_name || username,
-        admin: ids.admin === true,
+        admin: adminSet.has(username) || ids.admin === true,
         fingerprints: (ids.fingerprints || []).map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
       });
     }
@@ -1460,7 +1483,7 @@ export function createFitnessRouter(config) {
    * { ok: true } when allowed (TOFU or matched scan), else { ok:false, status, body }.
    */
   async function gateManageAccess(req, username, logger) {
-    const profiles = primaryProfilesObject(req);
+    const profiles = eligibleProfilesObject(req);
     const { requiresAuth, gallery } = resolveManageAccess(profiles, username);
     if (!requiresAuth) {
       logger.info?.('fitness.fingerprint.access.tofu', { username });
@@ -1494,7 +1517,7 @@ export function createFitnessRouter(config) {
     const { username, finger, clientToken } = req.body || {};
     const profile = username ? userService?.getProfile?.(username) : null;
     if (!profile) return res.status(400).json({ error: 'unknown-user' });
-    if (!primaryUsernames(req).includes(username)) {
+    if (!eligibleUsernames(req).includes(username)) {
       logger.info?.('fitness.fingerprint.enroll.not-eligible', { username });
       return res.status(403).json({ error: 'not-eligible' });
     }
@@ -1542,7 +1565,7 @@ export function createFitnessRouter(config) {
     const { username, finger } = req.body || {};
     const profile = username ? userService?.getProfile?.(username) : null;
     if (!profile) return res.status(400).json({ error: 'unknown-user' });
-    if (!primaryUsernames(req).includes(username)) {
+    if (!eligibleUsernames(req).includes(username)) {
       return res.status(403).json({ error: 'not-eligible' });
     }
     const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger);

@@ -2,7 +2,9 @@
 import React, { useEffect, useState } from 'react';
 import { useFingerprintManager } from './useFingerprintManager.js';
 import { EnrollModal } from './EnrollModal.jsx';
+import FingerprintIcon from './FingerprintIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
+import './FingerprintManager.scss';
 
 let _logger;
 const logger = () => (_logger ??= getLogger().child({ component: 'fingerprint-manager' }));
@@ -48,7 +50,7 @@ export default function FingerprintManagerContainer() {
 
   return (
     <div className="fp-manager" data-testid="fingerprint-manager">
-      <h2>Fingerprints</h2>
+      <h2><FingerprintIcon className="fp-title-icon" /> Fingerprints</h2>
       <ul className="fp-user-list">
         {users.map((u) => (
           <li key={u.username} className="fp-user-row">
@@ -63,7 +65,7 @@ export default function FingerprintManagerContainer() {
                       className="fp-finger-chip"
                       onClick={() => handleDelete(u.username, f.finger)}
                       title={`Delete ${f.finger} (enrolled ${f.enrolled})`}
-                    >👍 {f.finger} ✕</button>
+                    ><FingerprintIcon className="fp-chip-icon" /> {f.finger} <span className="fp-chip-x">✕</span></button>
                   ))}
             </span>
             <button type="button" className="fp-add" onClick={() => startAdd(u)}>+ Add to {u.displayName}</button>
