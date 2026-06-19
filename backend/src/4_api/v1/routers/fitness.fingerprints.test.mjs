@@ -7,14 +7,14 @@ import { createFitnessRouter } from './fitness.mjs';
 
 const silent = { info(){}, warn(){}, error(){}, debug(){} };
 
-function appWith({ profiles = {}, primary, unlockService, manageService } = {}) {
+function appWith({ profiles = {}, primary, admin, unlockService, manageService } = {}) {
   const userService = {
     getProfile: (u) => profiles[u] ?? null,
     getAllProfiles: () => new Map(Object.entries(profiles)),
   };
   const configService = { getDefaultHouseholdId: () => 'default' };
   const fitnessConfigService = {
-    loadRawConfig: () => ({ users: { primary: primary ?? Object.keys(profiles) } }),
+    loadRawConfig: () => ({ users: { primary: primary ?? Object.keys(profiles), admin: admin ?? [] } }),
   };
   const writes = [];
   const fingerprintProfileWriter = {
@@ -52,6 +52,42 @@ describe('GET /fingerprints', () => {
     expect(admin).toMatchObject({ displayName: 'Admin', admin: true, fingerprints: [{ finger: 'left-thumb', enrolled: '2026-06-17' }] });
     expect(JSON.stringify(res.body)).not.toContain('a1');
     expect(res.body.find((u) => u.username === 'test-user')).toMatchObject({ admin: false, fingerprints: [] });
+  });
+
+  it('merges config admins with primary, admins first, deduped, and flags them admin', async () => {
+    const { app } = appWith({
+      profiles: {
+        kckern: { display_name: 'KC', identities: { fingerprints: [fp('k1')] } },
+        user_9: { display_name: 'User_9', identities: { fingerprints: [] } },
+        user_2: { display_name: 'User_2', identities: { fingerprints: [] } },
+      },
+      primary: ['kckern', 'user_2'],
+      admin: ['kckern', 'user_9'], // user_9 is admin-only (not primary); kckern is in both
+    });
+    const res = await request(app).get('/fingerprints');
+    expect(res.status).toBe(200);
+    // admins first (kckern, user_9), then remaining primary (user_2); kckern not duplicated
+    expect(res.body.map((u) => u.username)).toEqual(['kckern', 'user_9', 'user_2']);
+    expect(res.body.find((u) => u.username === 'user_9')).toMatchObject({ displayName: 'User_9', admin: true });
+    expect(res.body.find((u) => u.username === 'kckern')).toMatchObject({ admin: true });
+    expect(res.body.find((u) => u.username === 'user_2')).toMatchObject({ admin: false });
+  });
+});
+
+describe('admin eligibility (config admin, not primary)', () => {
+  it('a config admin who is not primary can still enroll (TOFU)', async () => {
+    const requestEnroll = vi.fn().mockResolvedValue({ success: true, uuid: 'e-uuid' });
+    const { app, fingerprintProfileWriter } = appWith({
+      profiles: { user_9: { display_name: 'User_9', identities: { fingerprints: [] } } },
+      primary: [],
+      admin: ['user_9'],
+      unlockService: { requestUnlock: vi.fn() },
+      manageService: { requestEnroll },
+    });
+    const res = await request(app).post('/fingerprints/enroll').send({ username: 'user_9', finger: 'right-index' });
+    expect(res.status).toBe(200);
+    expect(requestEnroll).toHaveBeenCalled();
+    expect(fingerprintProfileWriter.addFingerprint).toHaveBeenCalledWith('user_9', expect.objectContaining({ id: 'e-uuid', finger: 'right-index' }));
   });
 });
 
