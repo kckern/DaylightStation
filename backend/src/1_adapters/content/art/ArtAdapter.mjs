@@ -178,6 +178,31 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
     return result;
   }
 
+  // Resolve a collection to a flat list of underlying Immich asset IDs (no
+  // color analysis, no diptych pairing, no recency tempering). The e-ink photo
+  // endpoint reuses an art collection (e.g. `kids`: immich people + minPeople)
+  // purely as its candidate pool, then loads the chosen asset itself. Only
+  // Immich-backed collections are supported — the IDs returned are raw Immich
+  // asset IDs (the `immich:` prefix stripped); file-based art collections return
+  // []. Deliberately does NOT widen to the art pool on empty (unlike
+  // candidatesFor): the caller wants Immich IDs, so an empty result must surface
+  // rather than silently swapping in random classic art.
+  async function collectionAssetIds(collection) {
+    const { resolveCollection } = await import('./collections.mjs');
+    const { def } = resolveCollection(collections, collection);
+    if (def.source !== 'immich') {
+      logger.warn?.('art.collectionAssetIds.not_immich', { collection, source: def.source ?? 'art' });
+      return [];
+    }
+    const src = await sourceFor(def);
+    if (!src) return [];
+    const cands = await src.resolveCandidates(def);
+    return (cands || [])
+      .map((c) => String(c.id))
+      .filter((id) => id.startsWith('immich:'))
+      .map((id) => id.slice('immich:'.length));
+  }
+
   // Presets live in artmode.yml (`presets.<name>.collection`). Loaded once; a
   // missing file is non-fatal (thumbnails just fall back to the raw key).
   async function loadPresets() {
@@ -215,7 +240,7 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
     return image;
   }
 
-  return { source: 'art', selectFeatured, getThumbnailUrl };
+  return { source: 'art', selectFeatured, getThumbnailUrl, collectionAssetIds };
 }
 
 export default createArtAdapter;
