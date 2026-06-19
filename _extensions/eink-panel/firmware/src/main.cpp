@@ -32,7 +32,25 @@
 #include "config.h"        // generated, gitignored
 
 #ifndef EPAPER_ENABLE
-#error "Panel setup not loaded — check platformio.ini build_flags -DBOARD_SCREEN_COMBO=522"
+#error "Panel setup not loaded — check platformio.ini build_flags -DBOARD_SCREEN_COMBO=..."
+#endif
+
+// ---- render profile (multi-device) ------------------------------------------
+// Exactly one EINK_* profile is set per panel by platformio.ini build_flags. It
+// selects the decode buffer + dither + display path below; everything else (wifi,
+// /config, change-detection, sleep) is shared. Add a profile only for a genuinely
+// new colour technology — most new panels just reuse GRAY16 or COLOR_E6.
+//   EINK_GRAY16   — mono 16-level grey (IT8951; e.g. E1003). Memory-light: 1 byte/
+//                   px luma + custom dither (Seeed's RGB888 path won't fit at 1872x1404).
+//   EINK_COLOR_E6 — Spectra-6 colour (e.g. E1004). RGB888 + Seeed's PAL_E6 dither
+//                   (fits at 1200x1600); freed before the framebuffer is allocated.
+#if defined(EINK_COLOR_E6)
+  // Uses the in-file memory-light 6-colour dither (Seeed's dither_image needs a
+  // ~11.5MB full-image error buffer at 1200x1600 — won't fit).
+#elif defined(EINK_GRAY16)
+  // (uses the in-file grayscale dither)
+#else
+  #error "No render profile — set -DEINK_GRAY16 or -DEINK_COLOR_E6 in platformio.ini"
 #endif
 
 static EPaper epaper;
@@ -43,9 +61,16 @@ static constexpr int PIN_DBG_RX = 44;
 static constexpr int PIN_DBG_TX = 43;
 
 // ---- decode target (filled by the pngle callback) --------------------------
-// We store ONE luma byte per pixel (W*H), not RGB888 (W*H*3): the full-res RGB
-// buffer (~7.9MB) does not fit alongside the 1.32MB Gray16 sprite in 8MB PSRAM.
-static uint8_t* g_gray = nullptr;
+// GRAY16: 1 byte/px luma — the 1872x1404 RGB888 buffer (~7.9MB) won't fit beside
+//         the 1.32MB Gray16 sprite in 8MB PSRAM.
+// COLOR_E6: 3 byte/px RGB888 — 1200x1600 fits, and is freed before the color
+//         framebuffer is allocated (see renderToPanel).
+#if defined(EINK_COLOR_E6)
+  static constexpr int SRC_BPP = 3;
+#else
+  static constexpr int SRC_BPP = 1;
+#endif
+static uint8_t* g_buf = nullptr;   // SRC_BPP bytes per pixel, in PSRAM
 static int      g_w = 0, g_h = 0;
 
 // Content fingerprint of the image currently drawn on the panel. /config returns
@@ -83,23 +108,27 @@ RTC_DATA_ATTR static char     g_actLeft[16]  = "prev";
 RTC_DATA_ATTR static uint32_t g_nextWakeSec = 0;
 
 static void on_draw(pngle_t* p, uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint8_t rgba[4]) {
-  if (!g_gray) {
+  if (!g_buf) {
     g_w = (int)pngle_get_width(p);
     g_h = (int)pngle_get_height(p);
-    g_gray = (uint8_t*)ps_malloc((size_t)g_w * g_h);   // ~2.6MB for 1872x1404
-    if (!g_gray) { LOG.println("[eink] OOM gray"); return; }
+    g_buf = (uint8_t*)ps_malloc((size_t)g_w * g_h * SRC_BPP);
+    if (!g_buf) { LOG.println("[eink] OOM decode buf"); return; }
   }
-  // Rec.601 luma; alpha ignored (server renders opaque).
-  const uint8_t luma = (uint8_t)((rgba[0] * 77 + rgba[1] * 150 + rgba[2] * 29) >> 8);
   for (uint32_t dy = 0; dy < h; ++dy) {
     for (uint32_t dx = 0; dx < w; ++dx) {
       const int px = (int)(x + dx), py = (int)(y + dy);
       if (px < 0 || py < 0 || px >= g_w || py >= g_h) continue;
-      g_gray[(size_t)py * g_w + px] = luma;
+      const size_t i = (size_t)py * g_w + px;
+#if defined(EINK_COLOR_E6)
+      uint8_t* d = g_buf + i * 3; d[0] = rgba[0]; d[1] = rgba[1]; d[2] = rgba[2];  // alpha ignored
+#else
+      g_buf[i] = (uint8_t)((rgba[0] * 77 + rgba[1] * 150 + rgba[2] * 29) >> 8);     // Rec.601 luma
+#endif
     }
   }
 }
 
+#if defined(EINK_GRAY16)
 // Floyd-Steinberg dither luma (0..255) -> 16 gray levels (index 0=black..15=white),
 // in place: g[i] becomes the 4-bit index. Error diffuses only to not-yet-quantized
 // neighbors (j > i), so the buffer safely holds a mix of luma and indices.
@@ -125,6 +154,7 @@ static void ditherGray16InPlace(uint8_t* g, int W, int H) {
     }
   }
 }
+#endif // EINK_GRAY16
 
 // Seeed's 4bpp packer (verbatim from reTerminal_E1003_SDcard_Gray16.ino).
 static void pack_4bpp_in_place(uint8_t* idx, int W, int H) {
@@ -242,15 +272,81 @@ static bool fetchAndDecode() {
   pngle_destroy(p);
   http.end();
 
-  return ok && g_gray && g_w > 0 && g_h > 0;
+  return ok && g_buf && g_w > 0 && g_h > 0;
 }
 
+#if defined(EINK_COLOR_E6)
+// Spectra-6 palette (RGB) and the 4-bit codes the IT-class panel expects, copied
+// from Seeed's dither.cpp so on-panel colours match.
+static const uint8_t E6_RGB[6][3] = {
+  {255,255,255}, {29,185,84}, {229,57,53}, {255,216,0}, {0,76,255}, {0,0,0},
+};
+static const uint8_t E6_CODE[6] = { 0x0, 0x2, 0x6, 0xB, 0xD, 0xF };
+
+static inline int nearestE6(int r, int g, int b) {
+  int best = 0, bd = 1 << 30;
+  for (int i = 0; i < 6; ++i) {
+    const int dr = r - E6_RGB[i][0], dg = g - E6_RGB[i][1], db = b - E6_RGB[i][2];
+    const int d = dr * dr + dg * dg + db * db;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+// Floyd-Steinberg to the 6 Spectra colours. Memory-light: only TWO int16x3 error
+// rows (~14KB at W=1200), vs Seeed's full-image 6-bytes/px buffer (~11.5MB). The
+// 4-bit E6 code is written into g[i] IN PLACE — safe because the index cursor (byte
+// i) always trails the RGB read cursor (byte i*3 >= i), so RGB is read before it's
+// overwritten. Errors live in the side rows, never in g.
+static bool ditherE6InPlace(uint8_t* g, int W, int H) {
+  const size_t rowN = (size_t)W * 3;
+  int16_t* cur = (int16_t*)calloc(rowN, sizeof(int16_t));
+  int16_t* nxt = (int16_t*)calloc(rowN, sizeof(int16_t));
+  if (!cur || !nxt) { free(cur); free(nxt); return false; }
+  auto clamp8 = [](int v) { return v < 0 ? 0 : v > 255 ? 255 : v; };
+  for (int y = 0; y < H; ++y) {
+    for (int x = 0; x < W; ++x) {
+      const size_t pi = (size_t)y * W + x;
+      const int r = clamp8(g[pi * 3]     + cur[x * 3]     / 16);
+      const int gg= clamp8(g[pi * 3 + 1] + cur[x * 3 + 1] / 16);
+      const int b = clamp8(g[pi * 3 + 2] + cur[x * 3 + 2] / 16);
+      const int q = nearestE6(r, gg, b);
+      g[pi] = E6_CODE[q];                                  // in-place index write
+      const int er = r - E6_RGB[q][0], eg = gg - E6_RGB[q][1], eb = b - E6_RGB[q][2];
+      auto add = [&](int16_t* row, int xx, int w) {
+        if (xx < 0 || xx >= W) return;
+        row[xx*3] += (int16_t)(er*w); row[xx*3+1] += (int16_t)(eg*w); row[xx*3+2] += (int16_t)(eb*w);
+      };
+      add(cur, x + 1, 7); add(nxt, x - 1, 3); add(nxt, x, 5); add(nxt, x + 1, 1);
+    }
+    int16_t* t = cur; cur = nxt; nxt = t;                  // advance rows
+    memset(nxt, 0, rowN * sizeof(int16_t));
+  }
+  free(cur); free(nxt);
+  return true;
+}
+#endif
+
+// Dither the decoded buffer to the panel's native depth, push it, and refresh.
+// Profile-specific: GRAY16 uses the sprite + in-file grey dither; COLOR_E6 dithers
+// RGB888 -> 6 colours in place (no extra full-size buffer).
 static void renderToPanel() {
-  ditherGray16InPlace(g_gray, g_w, g_h);   // luma -> 4-bit indices, in place
-  pack_4bpp_in_place(g_gray, g_w, g_h);    // 2 px/byte
-  epaper.pushImage(0, 0, g_w, g_h, (uint16_t*)g_gray);
+#if defined(EINK_COLOR_E6)
+  if (!ditherE6InPlace(g_buf, g_w, g_h)) { LOG.println("[eink] OOM dither rows"); free(g_buf); g_buf = nullptr; return; }
+  pack_4bpp_in_place(g_buf, g_w, g_h);      // 2 px/byte (E6 codes), in place
+  epaper.begin();
+  epaper.setRotation((g_rotation / 90) & 3);
+  epaper.pushImage(0, 0, g_w, g_h, (uint16_t*)g_buf);
+  epaper.update();                          // full-colour refresh (~20s on Spectra-6)
+  free(g_buf); g_buf = nullptr;
+#else
+  // GRAY16: sprite was allocated by initGrayMode() before decode; dither in place.
+  ditherGray16InPlace(g_buf, g_w, g_h);     // luma -> 4-bit indices, in place
+  pack_4bpp_in_place(g_buf, g_w, g_h);      // 2 px/byte
+  epaper.pushImage(0, 0, g_w, g_h, (uint16_t*)g_buf);
   epaper.update();                          // ~1-3s panel refresh
-  free(g_gray); g_gray = nullptr;
+  free(g_buf); g_buf = nullptr;
+#endif
   LOG.printf("[eink] rendered %dx%d\n", g_w, g_h);
 }
 
@@ -315,10 +411,14 @@ void setup() {
   if (!changed) {
     LOG.printf("[eink] unchanged (hash=%s); skipping render\n", g_serverHash);
   } else {
+#if defined(EINK_GRAY16)
+    // Gray16 needs its sprite allocated BEFORE decode (renderToPanel pushes into
+    // it). Color allocates its framebuffer inside renderToPanel, after freeing RGB.
     epaper.begin();
     epaper.initGrayMode(GRAY_LEVEL16);
     epaper.setRotation((g_rotation / 90) & 3);
     epaper.fillSprite(TFT_GRAY_15);                  // start from white
+#endif
     LOG.printf("[eink] fetching %s\n", urlPanelResolved().c_str());
     if (fetchAndDecode()) {
       renderToPanel();
