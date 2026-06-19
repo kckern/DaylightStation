@@ -13,7 +13,7 @@ The Governance Engine controls video playback based on heart rate zone requireme
 ## Related code:
 
 - frontend/src/hooks/fitness/GovernanceEngine.js
-- frontend/src/modules/Fitness/FitnessPlayer.jsx
+- frontend/src/modules/Fitness/player/FitnessPlayer.jsx
 - frontend/src/Apps/FitnessApp.jsx
 
 ---
@@ -195,6 +195,43 @@ This means:
 - Users must meet BASE requirements for challenge timer to run
 - If phase is `warning` or `pending`, challenge pauses
 - Challenge can never timeout while video is locked
+
+---
+
+## Sequential Lock (Separate Access Control)
+
+Some shows carry a **sequential guardrail** that is distinct from heart-rate governance. It is a *progression* control (which episode you may start), not an *effort* control (whether you may keep watching). A show is sequential when one of its Plex labels is listed under `plex.sequential_labels` in `fitness.yml` (e.g. the `Sequential` label).
+
+For a sequential show, episodes are locked **linearly across all seasons**: episodes are ordered by season number then episode index, and every episode *after the first unwatched one* is greyed out and locked. Watching the earliest unlocked episode advances the gate so the next one opens. This set is computed in `FitnessShow.jsx` (`lockedEpisodeIds`) purely from watch state — it does not consult governance.
+
+### Ad-hoc per-episode unlock
+
+A greyed-out (sequentially locked) episode can be unlocked **on demand by clicking/tapping the greyed card itself**. The tap requests a `skip_content` fingerprint scan via the shared `UnlockPrompt` overlay:
+
+- On a matched fingerprint, that **one** episode plays immediately (the rest of the gate stays closed).
+- Denied / cancel / timeout does **not** play anything.
+- The unlock affordance only appears when the `skip_content` lock is configured for the household (otherwise locked cards are simply not tappable).
+- **Scroll wins in the scrollable list.** A pointer tap on a partially-visible locked episode only scrolls it into view; the unlock prompt opens on a second tap once the episode is fully visible — the same scroll-vs-tap rule (`scrollIntoViewIfNeeded` / `didScroll`) every other tap target on the screen follows. Keyboard activation (Enter/Space) opens the prompt directly, since it isn't a scroll gesture.
+
+This is a one-shot override for a single episode, not a permanent unlock of the show's progression.
+
+### Independent from governance
+
+The sequential lock and heart-rate governance are **separate controls with separate unlocks**, and unlocking one does not unlock the other:
+
+| Control | Trigger | Unlock affordance | Fingerprint lock | Scope of unlock |
+|---------|---------|-------------------|------------------|-----------------|
+| Heart-rate governance | `governed_labels` / `governed_types` | Lock icon next to the **show title** | `governance_bypass` | Whole show (skips min-HR / challenges on subsequent plays) |
+| Sequential guardrail | `sequential_labels` | Click the **greyed-out episode** | `skip_content` | That single episode |
+
+Bypassing governance via the show-title icon flips the title icon to unlocked and stamps `nogovern` on plays you start afterward, but it leaves the greyed episodes locked. Conversely, an ad-hoc episode unlock plays a locked episode without affecting governance.
+
+> **Route-level exception:** deep-linking directly to `/fitness/play/:id` for an episode of a sequential show redirects to the show UI unless `nogovern` is set — there the single `nogovern` flag lifts both the governance gate and the sequential redirect (see the `?nogovern` table below). This coupling exists only on the URL play path; inside the show UI the two controls remain independent. **This is intended behavior.**
+
+Related code:
+- `frontend/src/modules/Fitness/player/FitnessShow.jsx` — `isSequential`, `lockedEpisodeIds`, `handleLockedEpisodeUnlockTap` (`skip_content`), `handleGovernanceUnlockTap` (`governance_bypass`)
+- `frontend/src/modules/Fitness/player/overlays/UnlockPrompt.jsx` — shared fingerprint-unlock overlay
+- `frontend/src/Apps/FitnessApp.jsx` — `sequentialLabelSet`, route-level sequential redirect
 
 ---
 
@@ -534,7 +571,10 @@ zones:
 | `frontend/src/hooks/fitness/DeviceManager.js` | Device tracking |
 | `frontend/src/hooks/fitness/UserManager.js` | User-device mapping |
 | `frontend/src/context/FitnessContext.jsx` | React context provider |
-| `frontend/src/modules/Fitness/FitnessLockOverlay.jsx` | Lock screen UI |
+| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective governance state |
+| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` |
+| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI |
+| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Audio cue + duck/restore lifecycle |
 | `tests/live/flow/fitness/governance-comprehensive.runtime.test.mjs` | Test suite |
 
 ---

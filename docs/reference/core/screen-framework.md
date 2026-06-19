@@ -162,6 +162,7 @@ Simple name-to-component map. Widgets are mounted directly — the registry reso
 | `health` | `Weight` | Self-contained |
 | `entropy` | `EntropyPanel` | Self-contained |
 | `piano` | `PianoVisualizer` | WS subscription (overlay) |
+| `art` | `ArtMode` | Self-contained (screensaver/scene; see `../content/features/artmode.md`) |
 
 ### Widget Interface
 
@@ -219,14 +220,25 @@ Priority rule: a fullscreen overlay with `priority: 'high'` (like Piano from MID
 
 ### Action Handler
 
-`ScreenActionHandler` bridges ActionBus events to the overlay system. It subscribes to:
+`ScreenActionHandler` bridges ActionBus events to the overlay system and to direct effects. It subscribes to:
 
 | Action | Effect |
 |--------|--------|
-| `menu:open` | `showOverlay(MenuStack, { rootMenu: menuId })` |
-| `media:play` | `showOverlay(Player, { play: contentId })` |
-| `media:queue` | `showOverlay(Player, { queue: [contentId] })` |
-| `escape` | `dismissOverlay()` |
+| `menu:open` | Opens a menu (or a registered app) as a fullscreen overlay; a repeat of the same menu navigates the selection instead of reopening |
+| `media:play` | Opens the player with a single content item |
+| `media:queue` | Opens the player with a queued content item |
+| `media:queue-op` | Queue ops — `play-now` / `play-next` route to the active player (in-place swap / on-deck push) or mount a fresh player when idle |
+| `media:playback` | Transport on the active media (play/pause, prev, next, fwd, rew); an idle screen can fall back to a configured secondary action |
+| `media:rate` | Cycles playback speed of the active media |
+| `display:volume` | Software master volume up/down/mute |
+| `display:shader` | Cycles the screen-dimming overlay through fixed levels |
+| `display:sleep` | Full-blackout toggle with wake-on-keypress / wake-on-click |
+| `display:overlay` | Shows a registered widget by name as a fullscreen overlay |
+| `display:content` | Mounts an ad-hoc scene (e.g. an `art:<preset>` ArtMode slideshow) fullscreen |
+| `pip:doorbell` / `pip:promote` / `pip:dismiss` | Picture-in-picture controls |
+| `escape` | Defers to a registered escape interceptor (e.g. MenuStack pops its own stack), then dismisses PIP, then walks a configurable escape chain or dismisses the overlay |
+
+The handler receives the screen's `inputType`; ad-hoc scenes use it to decide raw-key defaults (remotes get the full interactive surface, macro-keypad screens default it off to avoid companion-key double-triggers). Hardware Back (popstate) is bridged through the menu-navigation context so a "dumb" fullscreen scene above the menu is dismissed by Back before the hidden menu stack is popped.
 
 ### WebSocket Subscriptions
 

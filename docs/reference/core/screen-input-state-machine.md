@@ -1,7 +1,7 @@
 # Screen Framework Input State Machine
 
 Reference document for the numpad input → ActionBus → overlay lifecycle in the screen-framework.
-Covers the repeat-key-to-navigate pattern and known issues.
+Covers the repeat-key-to-navigate pattern, the escape/back stack model, and one known caveat.
 
 ---
 
@@ -17,8 +17,9 @@ window 'keydown' event
     │       │
     │       ├── Match key in keymap
     │       ├── translateAction()
+    │       ├── event.preventDefault() + event.stopImmediatePropagation()
     │       ├── actionBus.emit(action, payload)
-    │       └── return   ◄── NOTE: does NOT preventDefault/stopPropagation
+    │       └── return   ◄── matched keys do NOT reach Menu.jsx
     │
     ├──► Menu.jsx handleKeyDown()       (listener 2, added when menu is mounted)
     │       │
@@ -59,8 +60,8 @@ window 'keydown' event
     │ (transient)│
     └────┬───────┘
          │
-         │ synthetic Enter dispatched
-         │ Menu.jsx onSelect(items[selectedIndex])
+         │ synthetic ArrowRight dispatched
+         │ Menu.jsx advances selection +1
          ▼
     ┌──────────────────┐
     │ SUBMENU / PLAYER │  (MenuStack internal navigation)
@@ -71,76 +72,41 @@ window 'keydown' event
         │
         │ escape (4)
         ▼
-   dismissOverlay() → HOME  ◄── BUG: should pop MenuStack, not nuke overlay
+   escape interceptor pops MenuStack one level;
+   only dismisses the overlay at the root → HOME
    currentMenuRef = null
 ```
 
-## Bugs Identified
+## Input Model & Resolved Issues
 
-### Bug 1: Double-Action on Every Key Press (CRITICAL)
+The key-handling model below is the current, working behavior. Three earlier
+defects (double-action on every key, escape-triggers-selection, escape-nukes-the-
+whole-stack) are **resolved**; they are kept here as the rationale for why the
+adapter stops propagation and why escape defers to an interceptor.
 
-**Root cause:** `NumpadAdapter` does not call `event.preventDefault()` or `event.stopPropagation()` after matching a key.
+### Resolved: Double-action / escape-triggers-selection (was CRITICAL/HIGH)
 
-**Effect:** When Menu.jsx is mounted, both listeners receive the same keydown:
+When the adapter let a matched key keep propagating, both `NumpadAdapter` and
+`Menu.jsx` acted on the same keydown — two selections per press, and an escape key
+that dismissed the overlay *and* selected the highlighted item on the way out. The
+adapter now calls `event.preventDefault()` + `event.stopImmediatePropagation()` on
+any key it matches in the keymap, so a matched numpad key never reaches Menu.jsx.
+The only keydown that reaches Menu.jsx for a navigate-mode repeat is the synthetic
+`ArrowRight` the action handler dispatches to advance the selection by one.
 
-```
-User presses 'k' (menu key for education):
+### Resolved: Escape pops the stack instead of nuking the overlay (was MEDIUM)
 
-  1. NumpadAdapter matches 'k' → emits menu:open
-     → handleMenuOpen: duplicate='navigate', same menu
-     → dispatches synthetic Enter
-     → Menu.jsx receives Enter → onSelect()        ← ACTION 1
+Escape no longer unconditionally calls `dismissOverlay()`. It first defers to a
+registered **escape interceptor** — MenuStack registers one that pops its own
+navigation stack a level at a time, so `MENU → SUBMENU → PLAYER` walks back through
+the stack and only collapses to HOME at the root. After the interceptor, escape
+dismisses PIP if visible, then walks the YAML-configured escape chain
+(`shader_active` → clear shader, `overlay_active` → dismiss, `idle` → reload). The
+hardware Back button (popstate) is bridged through the same path via the menu-
+navigation context, so a "dumb" fullscreen scene above the menu is dismissed by Back
+before the hidden menu stack is popped.
 
-  2. Original 'k' keydown propagates (not stopped)
-     → Menu.jsx receives 'k' → not arrow/escape/modifier
-     → onSelect()                                   ← ACTION 2 (duplicate!)
-```
-
-This causes **two selections per key press** when the menu is open.
-
-**Fix:** NumpadAdapter must call `event.preventDefault()` and `event.stopPropagation()` after matching a key in the keymap.
-
-```js
-// NumpadAdapter.handler — after emitting:
-event.preventDefault();
-event.stopPropagation();
-```
-
-### Bug 2: Escape Key Triggers Menu Selection (HIGH)
-
-**Root cause:** Same as Bug 1 — escape key (Digit4, key='4') propagates to Menu.jsx.
-
-**Effect:**
-
-```
-User presses '4' (escape) while menu is open:
-
-  1. NumpadAdapter matches '4' → emits escape
-     → handleEscape: overlay_active → dismissOverlay()
-
-  2. Original '4' keydown propagates
-     → Menu.jsx receives '4' → not arrow/escape/modifier
-     → onSelect(items[selectedIndex])   ← UNINTENDED SELECTION
-```
-
-The menu item gets selected at the same instant the overlay is dismissed. May cause content to play unexpectedly.
-
-**Fix:** Same as Bug 1 — stop propagation in NumpadAdapter.
-
-### Bug 3: Escape Nukes Entire Overlay Instead of Popping Stack (MEDIUM)
-
-**Root cause:** `handleEscape` calls `dismissOverlay()` which removes the fullscreen overlay entirely. MenuStack has an internal navigation stack (push/pop), but the escape action bypasses it.
-
-**Effect:** If user is in `MENU → SUBMENU → PLAYER`, pressing escape goes directly to HOME instead of popping back through the stack.
-
-**Legacy behavior:** OfficeApp had separate `currentContent` and `menuOpen` state. Escape cleared content first, then closed menu, then reloaded. The screen-framework has a single overlay slot with no awareness of MenuStack's internal depth.
-
-**Fix options:**
-1. Have escape dispatch a synthetic Escape keydown first (let Menu.jsx/Player handle it). Only if overlay is still showing after a tick, then dismiss.
-2. Pass an `onEscape` callback to the overlay that calls MenuStack's `pop()` when depth > 0, or `dismissOverlay()` at root.
-3. Track overlay depth in ScreenActionHandler.
-
-### Bug 4: `currentMenuRef` Stale After Overlay Replacement (LOW)
+### Known caveat: `currentMenuRef` Stale After Overlay Replacement (LOW)
 
 **Root cause:** If a MIDI session_start opens PianoVisualizer via `showOverlay()` with `priority: 'high'`, it replaces the menu overlay. But `currentMenuRef` still holds the old menu ID.
 
@@ -154,13 +120,14 @@ The menu item gets selected at the same instant the overlay is dismissed. May ca
 
 | Listener | Phase | Added When | Calls preventDefault? | Calls stopPropagation? |
 |----------|-------|------------|----------------------|----------------------|
-| NumpadAdapter | bubble | page load (attach) | **NO** ← bug | **NO** ← bug |
+| NumpadAdapter | bubble | page load (attach) | Yes (matched keys) | Yes (`stopImmediatePropagation`, matched keys) |
 | Menu.jsx handleKeyDown | bubble | menu mount | Yes (for matched keys) | No |
 | Sleep wake handler | **capture** | sleep enter | Yes | Yes |
 | Player keydown handler | bubble | player mount | Varies | No |
 
 **Capture phase listeners fire first.** Sleep wake correctly intercepts before others.
-Bubble phase: NumpadAdapter and Menu.jsx both fire — order depends on registration order, but both execute.
+Bubble phase: a key NumpadAdapter matches in the keymap is stopped there and never
+reaches Menu.jsx; an unmatched key propagates normally so menu/player can handle it.
 
 ## Focus Retention Probe
 
@@ -174,7 +141,7 @@ This prevents the common kiosk failure mode where the page silently drops keyboa
 
 ---
 
-## Correct Flow After Fixes
+## Key-Handling Flow
 
 ```
 Physical Key Press
@@ -188,7 +155,7 @@ NumpadAdapter.handler() [bubble phase]
     ├── Match found in keymap?
     │     YES:
     │       ├── event.preventDefault()
-    │       ├── event.stopPropagation()    ◄── STOPS propagation to Menu.jsx
+    │       ├── event.stopImmediatePropagation()  ◄── STOPS propagation to Menu.jsx
     │       ├── actionBus.emit(action)
     │       └── return
     │     NO:
@@ -198,7 +165,9 @@ NumpadAdapter.handler() [bubble phase]
 Menu.jsx / Player / other handlers
 ```
 
-After the fix, the synthetic Enter dispatched by `handleMenuOpen` (navigate mode) is the ONLY keydown that reaches Menu.jsx for matched numpad keys.
+The synthetic `ArrowRight` dispatched by the menu-open handler (navigate mode, repeat
+of the open menu) is the only keydown that reaches Menu.jsx for matched numpad keys —
+it advances the selection by one item.
 
 ---
 
@@ -206,7 +175,7 @@ After the fix, the synthetic Enter dispatched by `handleMenuOpen` (navigate mode
 
 | File | Role |
 |------|------|
-| `frontend/src/screen-framework/input/adapters/NumpadAdapter.js` | Key → ActionBus translation (needs propagation fix) |
+| `frontend/src/screen-framework/input/adapters/NumpadAdapter.js` | Key → ActionBus translation (stops propagation on matched keys) |
 | `frontend/src/screen-framework/ScreenRenderer.jsx` | Focus retention probe (`document.hasFocus`) and fallback focus recovery |
 | `frontend/src/screen-framework/actions/ScreenActionHandler.jsx` | ActionBus → overlay/effect dispatch |
 | `frontend/src/screen-framework/overlays/ScreenOverlayProvider.jsx` | Overlay state management |

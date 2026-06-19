@@ -1,6 +1,6 @@
 # Weekly Review
 
-**Last Updated:** 2026-05-31
+**Last Updated:** 2026-06-18
 
 ---
 
@@ -30,11 +30,11 @@ It can be launched three ways, and behaves the same in each: as a widget inside 
 
 2. **Microphone warms up.** A gentle "Listening for your microphone…" overlay appears while the mic is acquired. The person can already start moving around the grid underneath it — the overlay is an invitation to start talking, not a hard gate. As soon as the first real audio is heard, the overlay clears and recording is officially underway.
 
-3. **Browse and narrate.** The person moves across the week, opening individual days, paging through photos, playing videos, and talking through what happened. The whole time, the recording bar shows that the mic is live, how long they've been recording, and that their audio is being saved.
+3. **Browse and narrate.** The person moves across the week, opening individual days, paging through photos, playing videos, and talking through what happened. The whole time, the recording bar shows that the mic is live, how long they've been recording, and that their audio is being saved. If the mic stops hearing them, a visible prompt nudges them to speak up.
 
-4. **Save and close.** When finished, the person ends the session. The recording is flushed, finalized on the server, and the experience exits back to wherever it was launched from.
+4. **Save and close.** When finished, the person ends the session. The recording is flushed and finalized on the server, and the experience exits back to wherever it was launched from. Finalizing is bounded by a short timeout, so save-and-exit always returns promptly even if the network is wedged — the audio is durable either way and any unfinished upload is finalized on the next visit.
 
-The person is never trapped. From any screen there is always a way to back out, and any attempt to leave while recording asks for confirmation rather than silently discarding the reflection.
+The person is never trapped. From any screen there is always a way to back out, and any attempt to leave while recording asks for confirmation rather than silently discarding the reflection. A persistent control legend along the screen always shows the buttons that matter right now — including how to exit.
 
 ---
 
@@ -44,13 +44,19 @@ The person is never trapped. From any screen there is always a way to back out, 
 
 The week is laid out as a 4×2 grid of the eight most recent days. Each cell is a living collage of that day's media — the day's photos and videos arranged by quantity (a single photo fills the cell; a busier day tiles into a balanced mosaic; the most photo-filled days show the first items and a "+N" badge). Each cell is also annotated with the date, weekday, weather, and small chips for calendar events and workouts.
 
-Focus starts on the most recent day. Empty days are visually dimmed so the eye is drawn to the days where something happened.
+A day counts as having content if it has photos, workouts, *or* calendar events. Days with no media are never blank: instead of an empty tile they surface that day's context — the weather (a large icon and high/low), or, failing that, the weekday name — so the cell still reads as a real day. Days with nothing recorded are visually dimmed so the eye is drawn to the days where something happened.
+
+Every one of the eight days is rendered as a focusable cell, so directional focus can always move within the grid and can never fall out of the view.
+
+Focus starts on the most recent day.
 
 The recording bar sits at the bottom of the grid as a pure ambient status display. It is never part of the D-pad path.
 
 ### The day reel (inside a day)
 
 Opening a day enters a fullscreen media reel — one unified, chronological strip of every photo and video from that day.
+
+Opening a day with no media doesn't drop into a blank screen: the reel shows the day's context directly — its weather, timeline of calendar events and workouts, people, and summary counts — the same facts that otherwise live behind the context panel.
 
 - A focused **photo** fills the screen with a small caption showing the time it was taken and any people in the frame.
 - A focused **video** shows its poster frame with a play hint. Pressing Enter plays it muted; pressing Enter again unmutes. Pressing Enter a second time on an unmuted video re-mutes. When a video ends or the person backs out of it, the view returns to the poster.
@@ -67,6 +73,7 @@ A persistent bar across the bottom of the week grid is the person's status displ
 - **A microphone indicator** — live when audio is flowing, lost if the mic has dropped.
 - **A recording dot and running timer** once recording is underway.
 - **A live level meter** that moves with the person's voice, so they can see they're being heard.
+- **A silence prompt** — when the mic stops picking up audio, the bar surfaces a visible "we can't hear you" message inviting the person to speak up or check the mic.
 - **A sync badge** reporting where the audio stands: actively syncing with a count still pending, saved a moment ago, queued, or saved locally while offline.
 
 The bar is status-only. It is never focusable and never receives D-pad focus — it is never a step in the navigation path. The level meter and timer update continuously and smoothly, deliberately decoupled from the browsing layer so that watching your voice move the meter never makes the grid feel sluggish.
@@ -88,6 +95,10 @@ The experience has two browsing levels. Moving "in" goes deeper (week grid → d
                                   └─────────────────────┘
                                     ←← / →→ cross days
 ```
+
+### The control legend
+
+A persistent legend sits at the edge of the screen and always shows the handful of buttons that matter in the current context — opening a day and navigating on the grid; browsing, opening details, and going back in a photo or video; muting or stopping a playing video; closing the details panel. On the grid it always shows how to **exit**. The legend steps aside whenever a prompt is up, because the prompt carries its own choices.
 
 ### Two rules that make it learnable
 
@@ -153,7 +164,7 @@ Read-only — timeline, weather, people, calendar events, workouts.
 | **Left / Right** | Inert — nothing to step through. |
 | **Enter** | No-op (panel is read-only). |
 
-#### On the exit gate ("End review & save?")
+#### On the exit gate ("End weekly review recording?")
 
 Two choices: **Keep going** and **Save & end**. Default focus is *Keep going*. Recording continues until *Save & end* is chosen.
 
@@ -162,7 +173,7 @@ Two choices: **Keep going** and **Save & end**. Default focus is *Keep going*. R
 | **Left / Right** | Toggle focus between the two buttons. |
 | **Up / Down** | Also toggle focus. |
 | **Enter** | Activate. *Keep going* → close, return to grid. *Save & end* → finalize recording, exit. |
-| **Back** | Cancel → close, return to grid (same as *Keep going*). |
+| **Back** | **Save & end** — a second Back while the gate is up always escapes. Mashing Back can never strand the person in front of the gate; it commits the save and leaves. |
 
 ### Exit: reached from the grid only
 
@@ -176,17 +187,17 @@ Throughout the experience, Up climbs out of every level — day reel, video play
 
 ## Prompts and Interruptions
 
-The experience speaks to the person through a small set of focused prompts. Each is operable with the same remote buttons: where a prompt has two choices, Left/Right (or Up/Down) move between them and Enter chooses; Back generally cancels.
+The experience speaks to the person through a small set of focused prompts. Each is operable with the same remote buttons: where a prompt has two choices, Left/Right (or Up/Down) move between them and Enter chooses; Back generally cancels. When a prompt opens, keyboard and screen-reader focus moves onto it so assistive technology announces it, and each dialog is labelled for screen readers.
 
-When several of these conditions could appear at once, the more important one wins. Priority order, highest first: microphone unavailable → microphone disconnected → save failure → exit gate → resume draft.
+When several of these conditions could appear at once, the more important one wins, and a more important prompt can never be displaced by a less important one. Priority order, highest first: microphone unavailable → microphone disconnected → save failure → exit gate → resume draft.
 
 ### Resume an unfinished recording
 
-If a previous session for this week was started but never properly closed — the app was shut, the device rebooted, the network dropped — the person is offered the chance to **finalize the previous recording** when they return. Nothing is lost; the unfinished audio is still held both locally and on the server. This prompt insists on an explicit choice (Back won't dismiss it) so a stray recording isn't silently abandoned. The grid behind it stays browsable while the prompt is up.
+If a previous session for this week was started but never properly closed — the app was shut, the device rebooted, the network dropped — the person is offered the chance to **finalize the previous recording** when they return, or to choose **Not now**. Nothing is lost either way; the unfinished audio is still held both locally and on the server, and "Not now" (or Back) simply defers — the same draft is offered again on a later visit. Finalizing the prior draft runs in the background, so the prompt clears immediately and the grid behind it becomes usable right away. The grid stays browsable the whole time the prompt is up.
 
 ### Confirm ending the session
 
-Any attempt to leave while recording brings up **"End review & save?"** with two choices: keep going, or **save and close**. This is the gate that prevents a reflection from being thrown away by an accidental Back press or an errant remote.
+Any attempt to leave while recording brings up the exit gate with two choices: keep going, or **save and end**. This is the gate that prevents a reflection from being thrown away by an accidental Back press or an errant remote — and because a second Back on the gate commits the save and leaves, repeatedly mashing Back always escapes rather than getting stuck.
 
 ### Microphone unavailable
 
@@ -209,7 +220,8 @@ A weekly reflection is something a person says once; the experience treats it as
 - Audio is captured in short segments and continuously handed off to be saved, rather than held until the end.
 - Each segment is queued and uploaded as it's produced, with the sync badge reporting progress. If the network is down, segments are kept locally and the badge says so.
 - If the person closes the page or the device navigates away mid-session, a final flush is fired so in-flight audio still reaches the server.
-- On the next visit, any segment that didn't make it is offered for finalization through the resume prompt.
+- Saving and ending finalizes the recording on the server, but that step is bounded by a short timeout: if the server can't be reached in time, the experience exits anyway rather than hanging on the exit screen, and leaves the local draft in place.
+- On the next visit, any segment that didn't make it — including a draft whose finalize timed out — is offered for finalization through the resume prompt.
 
 The result is that closing the lid, a dropped connection, or a reboot degrades gracefully into "finish saving this later" rather than "your reflection is gone."
 
@@ -223,7 +235,9 @@ The result is that closing the lid, a dropped connection, or a reboot degrades g
 - **Browsing is the star.** Re-living the week visually is the point; the recording is a quiet side-channel that captures whatever the person says while they explore.
 - **Depth is cheap and reversible.** Up pops out of any level in one press; crossing into an adjacent day takes one deliberate double-tap.
 - **Metadata on demand.** The screen stays media-first; the day's facts are one Down-press away and disappear the same way.
-- **The mic is honest.** A live indicator, a moving level meter, a running timer, and a sync badge mean the person always knows whether they're being heard and saved.
+- **The mic is honest.** A live indicator, a moving level meter, a running timer, a silence prompt, and a sync badge mean the person always knows whether they're being heard and saved.
+- **No empty space.** A day with no media still shows its weather, calendar, and fitness context rather than a blank tile or screen, so every day reads as a real part of the week.
+- **Accessible by default.** Empty states stay readable, the controls are described for screen readers, and opening a prompt moves focus onto it so assistive technology announces what's being asked.
 
 ---
 

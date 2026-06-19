@@ -245,6 +245,27 @@ toggle out-ranks the spinner (`pointer-events: none` on the spinner). *(2026-02-
 unconditionally (~60 lines/min of noise that buried real diagnostics). Only emit
 when the overlay is visible or status isn't "playing". *(2026-03-22)*
 
+### The spinner must never sit over visibly-playing video — advancement is the authority
+A `waiting`/`buffering` flag can get stuck `true` when its matching `playing` event
+is missed — most commonly because a resilience recovery swapped the `<video>` element
+out from under the listeners. The overlay then shows a buffering spinner on top of
+video that is plainly advancing. Fix: sample the media clock directly (a self-contained
+poll that keeps working when the metrics bridge goes quiet during a stall) and expose
+an `isAdvancing` signal — `currentTime` moved forward past an epsilon between samples
+while not paused/ended. Gate the buffering state on it: `isBuffering = (isWaiting ||
+isStalledEvent) && !isAdvancing`. Forward motion overrides any stale waiting flag.
+*(confirmed in code: `usePlaybackHealth` `isAdvancing` + the `useMediaResilience`
+`isBuffering` gate; tested in `usePlaybackHealth.test.jsx`)*
+
+### Re-attach element listeners when the element identity changes
+The health hook's event listeners and frame poll capture the element at setup time. A
+`softReinit` bumps React's key → a brand-new `<video>`/`<audio>` element, and listeners
+left bound to the dead element silently report stale state — the exact failure that
+strands a spinner after a mid-playback recovery. Bump an `elementGeneration` counter
+when the live element identity changes (detected by the advancement poll) so the
+listener and frame-poll effects re-bind to the new element. *(confirmed in code:
+`usePlaybackHealth` `elementGeneration`)*
+
 ### Hide the loading overlay when paused at duration
 After a seek to duration on a zero-byte tail, `mediaEl.seeking` stays `true`
 forever and the overlay spammed "Seeking…" for 87s. Detect paused-within-0.5s-of-
