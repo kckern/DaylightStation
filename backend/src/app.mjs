@@ -1284,6 +1284,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'art-api' })
   });
 
+  // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
+  const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
+  const { createEinkRouter } = await import('./4_api/v1/routers/eink.mjs');
+  const einkPanelService = new EinkPanelService({
+    baseUrl: 'http://localhost:3112',
+    fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`,
+    logger: rootLogger.child({ module: 'eink' }),
+  });
+  v1Routers.eink = createEinkRouter({
+    einkPanelService,
+    logger: rootLogger.child({ module: 'eink-api' }),
+  });
+
   // Config router - serves configuration to frontend
   v1Routers.config = createConfigRouter({
     dataPath: dataBasePath,
