@@ -2,9 +2,24 @@
  * Eink Router — serves rendered panels to hardware e-paper displays.
  * @module api/v1/routers/eink
  *
- * Consumed by Seeed reTerminal panels (firmware in _extensions/eink-panel):
- *   GET /api/v1/eink/panel?id=<panelId>            -> image/png (current view)
- *   GET /api/v1/eink/action?id=<panelId>&action=.. -> { ok, view, index }
+ * Consumed by Seeed reTerminal panels (firmware in _extensions/eink-panel).
+ * Panel id is a PATH segment (matches the rest of the v1 API — /sessions/:id,
+ * /budgets/:id, /info/plex/:id; query strings are reserved for filters/options):
+ *   GET /api/v1/eink/:id/config         -> text/plain key=value snapshot
+ *   GET /api/v1/eink/:id/panel          -> image/png (current view)
+ *   GET /api/v1/eink/:id/action/:action -> { ok, view, index }
+ *
+ * Change detection lives on /config, not /panel. /config is the CHEAP render of
+ * the SSOT blueprint's now-state: it resolves the current view's data and returns
+ * an `image_hash` fingerprint of every pixel-affecting input WITHOUT drawing the
+ * PNG, plus `next_wake` (sleep cadence) and the runtime config (rotation, button→
+ * action map). The battery panel polls /config on every wake and pulls the
+ * expensive /panel PNG only when image_hash differs from the one it cached. So
+ * /panel is a pure on-demand render — no ETag/304 dance.
+ *
+ * Server-driven: only Wi-Fi + host/port + panel id are burned into the panel's
+ * config.h; rotation, button map, cadence/schedule all come from /config — so an
+ * edit is a SSOT change + redeploy, never a reflash.
  *
  * The device is on the LAN (networkTrustResolver grants it sysadmin), so no
  * token is required.
@@ -22,25 +37,61 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createEinkRouter({ einkPanelService, logger = console }) {
   const router = express.Router();
 
-  // Current rendered screen for a panel.
-  router.get('/panel', asyncHandler(async (req, res) => {
-    const id = String(req.query.id || '').trim();
+  // Pure on-demand render of a panel's current view. The panel only reaches here
+  // after /config told it the image_hash changed, so there is no conditional-GET
+  // dance — just render and ship the PNG.
+  router.get('/:id/panel', asyncHandler(async (req, res) => {
+    const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ error: 'id required' });
     try {
-      const png = await einkPanelService.render(id);
+      const { png } = await einkPanelService.renderResult(id);
+      res.set('Cache-Control', 'no-cache');
       res.set('Content-Type', 'image/png');
-      res.set('Cache-Control', 'no-store');   // panels poll on wake; never cache
-      return res.send(png);
+      // res.end (not res.send): /panel is an unconditional render, so bypass
+      // Express's automatic If-None-Match/304 freshness check entirely.
+      return res.end(png);
     } catch (err) {
       if (err?.status === 404) return res.status(404).json({ error: err.message });
       throw err;
     }
   }));
 
-  // Button action: advance per-panel view state. Firmware re-fetches /panel after.
-  router.get('/action', asyncHandler(async (req, res) => {
-    const id = String(req.query.id || '').trim();
-    const action = String(req.query.action || '').trim();
+  // The wake-time snapshot the panel polls every cycle. Resolves the SSOT
+  // blueprint's now-state into a cheap fingerprint (no PNG render): runtime config
+  // (rotation, button→action map), `next_wake` cadence, the `image` URL, and the
+  // `image_hash` the panel diffs against its cache to decide whether to pull the
+  // PNG. Served as lib-free `key=value` lines (text/plain) so the panel parses it
+  // without a JSON library.
+  router.get('/:id/config', asyncHandler(async (req, res) => {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id required' });
+    try {
+      const snap = await einkPanelService.stateSnapshot(id);
+      const body = [
+        `id=${snap.id}`,
+        `rotation=${snap.rotation}`,
+        `btn_green=${snap.buttons.green}`,
+        `btn_right=${snap.buttons.right}`,
+        `btn_left=${snap.buttons.left}`,
+        `next_wake=${snap.nextWakeSec}`,
+        `image=${snap.image}`,
+        `image_hash=${snap.imageHash}`,
+        '',
+      ].join('\n');
+      res.set('Cache-Control', 'no-cache');
+      res.type('text/plain');
+      return res.send(body);
+    } catch (err) {
+      if (err?.status === 404) return res.status(404).json({ error: err.message });
+      throw err;
+    }
+  }));
+
+  // Button action: advance per-panel view state. The panel re-snapshots /config
+  // after, picking up the new view's image_hash.
+  router.get('/:id/action/:action', asyncHandler(async (req, res) => {
+    const id = String(req.params.id || '').trim();
+    const action = String(req.params.action || '').trim();
     if (!id || !action) return res.status(400).json({ error: 'id and action required' });
     try {
       const result = await einkPanelService.advance(id, action);

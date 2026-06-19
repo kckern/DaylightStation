@@ -15,11 +15,34 @@
  * default view again).
  */
 
-import { render as einkRender } from '#rendering/eink/index.mjs';
+import crypto from 'node:crypto';
+import { render as einkRender, resolveData, RENDERER_VERSION } from '#rendering/eink/index.mjs';
+import { computeNextWakeSeconds } from './wakeSchedule.mjs';
 import { dataService as defaultDataService } from '#system/config/index.mjs';
 
 const DEFAULT_WIDTH = 1872;   // E1003 native landscape
 const DEFAULT_HEIGHT = 1404;
+
+/**
+ * Deterministic JSON: serialize with object keys sorted at every depth so the
+ * same logical value always yields the same string (and thus the same hash),
+ * regardless of property insertion order from a data feed.
+ */
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+/** Local calendar date (YYYY-MM-DD) — the only clock the clock-less panel shows. */
+function localYMD(now) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 export class EinkPanelService {
   #baseUrl;
@@ -29,7 +52,9 @@ export class EinkPanelService {
   #viewIndex = new Map();   // panelId -> current view index
 
   constructor({ baseUrl, fontDir, dataService, logger } = {}) {
-    this.#baseUrl = baseUrl || 'http://localhost:3112';
+    // Host/port are injected by the composition root from household config
+    // (devices.yml daylightHostInternal) — never hardcoded here.
+    this.#baseUrl = baseUrl;
     this.#fontDir = fontDir || '/usr/share/fonts';
     this.#dataService = dataService || defaultDataService;   // household-tier I/O
     this.#logger = logger || console;
@@ -62,18 +87,17 @@ export class EinkPanelService {
   #wrap(i, len) { return len ? (((i % len) + len) % len) : 0; }
 
   /**
-   * Render the panel's current view to a PNG buffer.
-   * @param {string} panelId
-   * @returns {Promise<Buffer>}
+   * Resolve the panel's CURRENT view into the inputs a render consumes — the
+   * view index/id and the renderer `screenConfig` (width/height/theme/layout/
+   * data sources). Shared by renderResult (which renders it) and stateSnapshot
+   * (which fingerprints it without rendering).
    */
-  async render(panelId) {
-    const screen = this.#loadScreen(panelId);
+  #currentView(screen, panelId) {
     const content = screen.content || {};
     const display = screen.hardware?.display || {};
     const views = this.#views(screen);
     const index = this.#wrap(this.#viewIndex.get(panelId) ?? 0, views.length);
     const view = views[index];
-
     const screenConfig = {
       width: content.width || display.width || DEFAULT_WIDTH,
       height: content.height || display.height || DEFAULT_HEIGHT,
@@ -81,13 +105,100 @@ export class EinkPanelService {
       layout: view.layout,
       data: view.data || content.data || {},
     };
+    return { index, view, screenConfig };
+  }
+
+  /**
+   * Render the panel's current view to a PNG buffer. This is the expensive path
+   * (canvas draw) the panel only reaches when /config's image_hash told it the
+   * content changed — so there is no conditional-GET / ETag dance here anymore;
+   * change detection lives entirely in stateSnapshot.
+   *
+   * @param {string} panelId
+   * @returns {Promise<{ png: Buffer, view: string }>}
+   */
+  async renderResult(panelId) {
+    const screen = this.#loadScreen(panelId);
+    const { index, view, screenConfig } = this.#currentView(screen, panelId);
 
     const png = await einkRender(screenConfig, { baseUrl: this.#baseUrl, fontDir: this.#fontDir });
     this.#logger.info?.('eink.panel.rendered', {
       panelId, view: view.id, index, bytes: png.length,
       size: `${screenConfig.width}x${screenConfig.height}`,
     });
+    return { png, view: view.id };
+  }
+
+  /**
+   * Render the panel's current view to a PNG buffer.
+   * @param {string} panelId
+   * @returns {Promise<Buffer>}
+   */
+  async render(panelId) {
+    const { png } = await this.renderResult(panelId);
     return png;
+  }
+
+  /**
+   * The cheap "what should I show, and has it changed?" snapshot the firmware
+   * polls on every wake. It is a *render of the now-state of the SSOT blueprint*
+   * WITHOUT drawing any pixels: it resolves the current view's data feeds and
+   * fingerprints every input that affects the image — date, view, resolved data,
+   * layout, theme, and the renderer version — into `imageHash`. The panel pulls
+   * the expensive /panel PNG only when that hash differs from the one it cached.
+   *
+   * Also carries the device's runtime config (rotation, button→action map) and
+   * `nextWakeSec` (server-driven cadence). Only Wi-Fi + host/port + id are burned
+   * into config.h; everything here is a SSOT edit + redeploy, never a reflash.
+   *
+   * @param {string} panelId
+   * @returns {Promise<{ id: string, rotation: number,
+   *   buttons: { green: string, right: string, left: string },
+   *   nextWakeSec: number, image: string, imageHash: string, view: string }>}
+   */
+  async stateSnapshot(panelId) {
+    const screen = this.#loadScreen(panelId);
+    const buttons = screen.buttons || {};
+    const { index, view, screenConfig } = this.#currentView(screen, panelId);
+
+    // Resolve the same data the renderer would — but stop there (no canvas).
+    const data = await resolveData(screenConfig.data, this.#baseUrl);
+
+    // Fingerprint of every pixel-affecting input. Stable key ordering so a feed
+    // reordering its JSON keys does not spuriously bust the hash. RENDERER_VERSION
+    // folds in code changes so a renderer/widget edit forces a refresh too.
+    const now = new Date();
+    const fingerprint = stableStringify({
+      date: localYMD(now),
+      view: view.id,
+      index,
+      width: screenConfig.width,
+      height: screenConfig.height,
+      theme: screenConfig.theme,
+      layout: screenConfig.layout,
+      data,
+      renderer: RENDERER_VERSION,
+    });
+    const imageHash = crypto.createHash('sha1').update(fingerprint).digest('hex');
+    const nextWakeSec = computeNextWakeSeconds(screen.refresh, now);
+
+    const snapshot = {
+      id: panelId,
+      rotation: parseInt(screen.hardware?.display?.rotation ?? 0, 10) || 0,
+      buttons: {
+        green: String(buttons.green || 'select'),
+        right: String(buttons.right || 'next'),
+        left: String(buttons.left || 'prev'),
+      },
+      nextWakeSec,
+      image: `/api/v1/eink/${encodeURIComponent(panelId)}/panel`,
+      imageHash,
+      view: view.id,
+    };
+    this.#logger.info?.('eink.panel.snapshot', {
+      panelId, view: view.id, index, imageHash, nextWakeSec,
+    });
+    return snapshot;
   }
 
   /**

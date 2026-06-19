@@ -22,15 +22,17 @@ screens/<id>.yml  ──►  1_rendering/eink  ──► PNG  ──HTTP──�
  data, theme,                               to panel)
  hardware, buttons)
         ▲                                                         │
-        └───────────  GET /action?...  ◄──── button press ────────┘
+        └────────  GET /<id>/action/<a>  ◄──── button press ───────┘
 ```
 
-**The contract (device-agnostic):**
+**The contract (device-agnostic).** The panel `id` is a **path segment** (the v1
+API convention); query strings are reserved for filters.
 
 | Endpoint | Returns | Notes |
 |----------|---------|-------|
-| `GET /api/v1/eink/panel?id=<panel>` | `image/png` sized to the panel | server renders; any PNG type is fine |
-| `GET /api/v1/eink/action?id=<panel>&action=<next\|prev\|select>` | `200 JSON` | advances per-panel view state |
+| `GET /api/v1/eink/<id>/config` | `text/plain` key=value | cheap wake-time snapshot: `next_wake`, button map, `image`, `image_hash` — computed without rendering |
+| `GET /api/v1/eink/<id>/panel` | `image/png` sized to the panel | server renders; pulled only when `image_hash` changed |
+| `GET /api/v1/eink/<id>/action/<next\|prev\|select>` | `200 JSON` | advances per-panel view state |
 
 Everything on the **server** side is already device-agnostic: it renders a PNG at
 whatever `width`/`height` the panel's SSOT declares. Porting to a new device is

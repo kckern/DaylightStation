@@ -39,16 +39,31 @@ no vibe-coded dependency.
 button press / timer
   -> ESP wakes from deep sleep
   -> WiFi
-  -> [if a button] GET /api/eink/action?id=<panel>&action=<next|prev|select>
-  -> GET /api/eink/panel?id=<panel>            (a PNG)
-  -> pngle decode -> Floyd-Steinberg dither to Gray16 -> push to IT8951 -> refresh
-  -> deep sleep (wake on any button via ext1, or timer)
+  -> [if a button] GET /api/v1/eink/<panel>/action/<next|prev|select>
+  -> GET /api/v1/eink/<panel>/config     (cheap key=value snapshot, no pixels)
+       -> read next_wake, btn map, rotation, image path, image_hash
+       -> image_hash == stored hash?  -> skip download + refresh, straight back to sleep
+       -> image_hash changed?         -> GET <image> -> pngle decode -> dither Gray16 -> IT8951 -> refresh
+  -> deep sleep for next_wake seconds (wake on any button via ext1, or timer)
 ```
 
-The panel is a dumb client: each press just asks DaylightStation "what should I
-show now?". Layout/content live on the server (reusing its rendering layer),
-keeping the firmware tiny. E-paper refresh is ~1–3 s with the characteristic
-flash — great for discrete menus/paging, not live UI.
+The panel is a dumb client: each wake just asks DaylightStation "what should I
+show now, and has it changed?". Layout/content live on the server (reusing its
+rendering layer), keeping the firmware tiny. E-paper refresh is ~1–3 s with the
+characteristic flash — great for discrete menus/paging, not live UI.
+
+**State snapshot (battery saver).** Instead of conditionally fetching the
+expensive PNG, the panel first polls `/config` — a cheap text snapshot the server
+computes **without rendering any pixels**. It resolves the current view's data
+feeds and fingerprints every pixel-affecting input (date, view, layout, theme,
+resolved data, `RENDERER_VERSION`) into `image_hash`. The firmware stores that
+hash in RTC memory (survives deep sleep) and compares it on the next wake; an
+unchanged hash means the panel skips the `/panel` download and the ~1–3 s e-ink
+refresh entirely. This is what makes a short cadence (e.g. 15 min) affordable on
+battery — most wakes never touch `/panel`. `/config` also carries `next_wake`
+(server-driven deep-sleep duration) and the runtime button/rotation map, so cadence
+and config are SSOT edits, never reflashes. A button action just pages the server's
+view state; the next `/config` poll reflects the freshly-selected view's hash.
 
 ## Config-driven (no secrets, no instance values in this public repo)
 
@@ -59,15 +74,26 @@ button map, and content. Two generated artifacts are **gitignored**:
 - `firmware/include/config.h` — generated from the SSOT (`tools/gen-config.mjs`)
 - `firmware/lib/seeed/` — Seeed's render pipeline, fetched on demand (`tools/fetch-deps.mjs`)
 
-## Backend contract (DaylightStation side — TODO, not yet implemented)
+## Backend contract (DaylightStation side — implemented)
+
+Served at `/api/v1/eink/*` (router: `backend/src/4_api/v1/routers/eink.mjs`,
+orchestration: `backend/src/3_applications/eink/EinkPanelService.mjs`).
+
+The panel `id` is a **path segment** (the v1 API convention — `/sessions/:id`,
+`/:deviceId/load`); query strings are reserved for filters/options.
 
 | Route | Returns | Purpose |
 |-------|---------|---------|
-| `GET /api/eink/panel?id=<panel>` | **PNG** sized to the panel (1872×1404, or 1404×1872 if `rotation: 270`), any standard PNG (it's dithered on-device) | current screen |
-| `GET /api/eink/action?id=<panel>&action=<next\|prev\|select>` | 200 (body ignored) | advance per-panel view state; firmware then re-fetches `/panel` |
+| `GET /api/v1/eink/<id>/config` | **text/plain** key=value snapshot: `id`, `rotation`, `btn_green/right/left`, `next_wake`, `image`, `image_hash`. `Cache-Control: no-cache`. Computed **without rendering** (resolves data, fingerprints inputs). | the cheap wake-time poll: what to show, cadence, and whether the image changed |
+| `GET /api/v1/eink/<id>/panel` | **PNG** sized to the panel (1872×1404, or 1404×1872 if `rotation: 270`); dithered on-device. `Cache-Control: no-cache`. Pure on-demand render — **no ETag/304** (change detection lives on `/config`). | the expensive render — pulled only when `image_hash` changed |
+| `GET /api/v1/eink/<id>/action/<next\|prev\|select>` | `{ ok, action, index, view, viewCount }` | advance per-panel view state; firmware then re-polls `/config` |
 
-Render server-side in `backend/src/1_rendering/`, keyed by `id`, from the
-`content` block of `screens/<id>.yml`.
+Rendered server-side in `backend/src/1_rendering/eink/`, keyed by `id`, from the
+`content` block of `screens/<id>.yml`. `image_hash` is the SHA-1 of every
+pixel-affecting input (date, view, layout, theme, resolved data feeds, and the
+`RENDERER_VERSION` constant in `1_rendering/eink/index.mjs`) — so it changes when
+the content changes **or** when a renderer/widget code change would alter pixels
+for identical inputs (bump `RENDERER_VERSION` to force a refresh).
 
 ## Build & flash
 
@@ -108,12 +134,15 @@ eink-panel/
 ## Status
 
 Working end-to-end on the kitchen E1003 (2026-06-18):
-- ✅ Backend `/api/v1/eink/{panel,action}` implemented (DDD: `EinkPanelService`
-  in 3_applications + `eink.mjs` router in 4_api, reusing `1_rendering/eink`),
-  reads the SSOT via `dataService.household.read`. Renders verified (1872×1404).
-- ✅ Firmware compiles, flashes, and runs: device wakes → WiFi → fetches PNG →
-  pngle decode → on-device Floyd-Steinberg Gray16 dither → IT8951 push → deep
-  sleep. Confirmed via serial (`[eink] rendered 1872x1404`) + backend fetch.
+- ✅ Backend `/api/v1/eink/<id>/{config,panel,action}` implemented (DDD:
+  `EinkPanelService` in 3_applications + `eink.mjs` router in 4_api, reusing
+  `1_rendering/eink`), reads the SSOT via `dataService.household.read`.
+  `stateSnapshot` fingerprints inputs for `/config` without rendering. Renders
+  verified (1872×1404).
+- ✅ Firmware compiles, flashes, and runs: device wakes → WiFi → polls `/config`
+  → on hash change fetches PNG → pngle decode → on-device Floyd-Steinberg Gray16
+  dither → IT8951 push → deep sleep for `next_wake`. Confirmed via serial
+  (`[eink] rendered 1872x1404`) + backend fetch.
 
 Notes / not-yet-verified:
 - **Serial logging** is on `Serial1` (GPIO44/43), the reTerminal's CH340 UART —

@@ -1287,12 +1287,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
   const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
   const { createEinkRouter } = await import('./4_api/v1/routers/eink.mjs');
-  // Renderer fetches its data sources (e.g. /api/v1/home/weather) from THIS
-  // server. Derive the real listen port exactly like index.js: prod (Docker)
-  // serves on appPort; dev backend hides on appPort+1 (Vite owns appPort).
-  const einkSelfPort = isDocker ? configService.getAppPort() : configService.getAppPort() + 1;
+  // Self-fetch base for panel data sources comes from household config, never a
+  // literal — same source the MediaBundle uses (see bootstrap.mjs). Internal
+  // host (e.g. http://daylight-station:3111) so the round-trip stays on-LAN.
+  const einkDevices = configService.getHouseholdDevices(householdId) || {};
   const einkPanelService = new EinkPanelService({
-    baseUrl: `http://localhost:${einkSelfPort}`,
+    baseUrl: einkDevices.daylightHostInternal || einkDevices.daylightHost,
     fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`,
     logger: rootLogger.child({ module: 'eink' }),
   });
