@@ -1287,8 +1287,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
   const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
   const { createEinkRouter } = await import('./4_api/v1/routers/eink.mjs');
+  // Renderer fetches its data sources (e.g. /api/v1/home/weather) from THIS
+  // server. Derive the real listen port exactly like index.js: prod (Docker)
+  // serves on appPort; dev backend hides on appPort+1 (Vite owns appPort).
+  const einkSelfPort = isDocker ? configService.getAppPort() : configService.getAppPort() + 1;
   const einkPanelService = new EinkPanelService({
-    baseUrl: 'http://localhost:3112',
+    baseUrl: `http://localhost:${einkSelfPort}`,
     fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`,
     logger: rootLogger.child({ module: 'eink' }),
   });
