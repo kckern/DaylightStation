@@ -8,11 +8,12 @@
  * that can be changed at runtime (e.g. via admin UI).
  */
 
-import { loadYaml, loadYamlFromPath } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath, listYamlFiles } from '#system/utils/FileIO.mjs';
 
 export class ConfigService {
   #config;
   #secretsHandler;
+  #streamingProfilesCache = null;
 
   constructor(config, secretsHandler = null) {
     this.#config = Object.freeze(config);
@@ -477,6 +478,25 @@ export class ConfigService {
       // Add other system configs here as needed
     };
     return configMap[name] ?? null;
+  }
+
+  /**
+   * Load raw streaming site profiles from <configDir>/streaming/*.yml.
+   * Returns plain objects (NOT StreamProfile instances — keep 0_system vendor/domain-free).
+   * Cached after first read.
+   * @returns {Array<Object>}
+   */
+  getStreamingProfiles() {
+    if (this.#streamingProfilesCache) return this.#streamingProfilesCache;
+    const dir = `${this.getConfigDir()}/streaming`;
+    const files = listYamlFiles(dir, { stripExtension: false });
+    const profiles = [];
+    for (const f of files) {
+      const parsed = loadYamlFromPath(`${dir}/${f}`);
+      if (parsed && typeof parsed === 'object') profiles.push(parsed);
+    }
+    this.#streamingProfilesCache = profiles;
+    return profiles;
   }
 
   /**
