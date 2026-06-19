@@ -1,0 +1,110 @@
+// Paired hand silhouettes with a fingerprint glyph on each fingertip. Matches the
+// fitness overlay language (slate silhouette, green = enrolled, cyan = focused).
+
+.fp-hands {
+  display: flex;
+  gap: 2%;
+  justify-content: center;
+  align-items: flex-start;
+
+  &--sm { --fp-hand-size: 88px; --fp-tip: 22%; }
+  &--md { --fp-hand-size: 132px; --fp-tip: 21%; }
+  &--lg { --fp-hand-size: 200px; --fp-tip: 20%; }
+}
+
+.fp-hand {
+  position: relative;
+  width: var(--fp-hand-size);
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+
+  &__silhouette {
+    width: 100%;
+    height: 100%;
+    color: rgba(58, 70, 100, 0.85); // dim slate hand on the dark card
+    display: block;
+  }
+}
+
+// A fingertip slot — positioned at the calibrated pad %, centered on that point.
+.fp-tip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: var(--fp-tip);
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+
+  &__glyph {
+    width: 100%;
+    height: 100%;
+    display: block;
+    svg { width: 100%; height: 100%; display: block; }
+  }
+
+  // Not enrolled: a faint print etched on the fingertip.
+  &--empty .fp-tip__glyph { color: rgba(148, 163, 184, 0.28); transition: color 0.18s ease, filter 0.18s ease; }
+
+  // Enrolled: lit green with a soft glow.
+  &--enrolled .fp-tip__glyph {
+    color: #22c55e;
+    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.55));
+  }
+
+  // Focused (the print being chosen): cyan, ringed, breathing.
+  &--selected .fp-tip__glyph {
+    color: #38bdf8;
+    filter: drop-shadow(0 0 7px rgba(56, 189, 248, 0.7));
+    animation: fp-tip-pulse 1.4s ease-in-out infinite;
+  }
+  &--selected::before {
+    content: '';
+    position: absolute;
+    inset: -34%;
+    border-radius: 50%;
+    border: 2px solid rgba(56, 189, 248, 0.65);
+    animation: fp-tip-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+// Interactive (picker / roster) tips are buttons with generous hit areas.
+button.fp-tip {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.85);
+    outline-offset: 2px;
+    border-radius: 50%;
+  }
+
+  &.fp-tip--empty:hover .fp-tip__glyph { color: rgba(186, 230, 253, 0.85); }
+  &.fp-tip--enrolled:hover .fp-tip__glyph {
+    color: #ff6b6b; // tap-to-remove intent
+    filter: drop-shadow(0 0 6px rgba(255, 107, 107, 0.6));
+  }
+}
+
+// Enlarge hit targets on the interactive picker so touch is comfortable.
+.fp-hands--lg button.fp-tip { min-width: 44px; min-height: 44px; }
+
+// The glyph and ring sit inside the already-translated tip, so they scale only.
+@keyframes fp-tip-pulse {
+  0%, 100% { opacity: 0.72; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+@keyframes fp-ring-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.92); }
+  50% { opacity: 0.9; transform: scale(1.06); }
+}
+.fp-tip--selected::before { animation-name: fp-ring-pulse; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-tip--selected .fp-tip__glyph,
+  .fp-tip--selected::before { animation: none; }
+}
