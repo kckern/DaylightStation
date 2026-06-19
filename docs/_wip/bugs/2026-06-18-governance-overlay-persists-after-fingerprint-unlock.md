@@ -269,3 +269,17 @@ truth and closes the two latent siblings, at the cost of a slightly larger chang
 | `frontend/src/hooks/fitness/GovernanceEngine.js:1894,1917,1204` | Computes `isGoverned`/`videoLocked`; has a suspend precedent to mirror |
 | `frontend/src/modules/Fitness/player/overlays/UnlockPrompt.jsx` | Presentational prompt (correct; not the defect) |
 | `docs/reference/fitness/governance-engine.md:335` | Stale "throughout the component" claim to correct |
+
+## Resolution (2026-06-18)
+
+Fixed via the contained prop-threading approach (Option B):
+- `FitnessPlayerOverlay` accepts an optional `governanceStateOverride` prop and
+  prefers it over `FitnessContext.governanceState`.
+- `FitnessPlayer` passes its bypass-aware `effectiveGovernanceState` as that prop.
+
+This closes all three bypass paths (fingerprint unlock, `?nogovern`, per-item
+`nogovern`) for the lock panel. Covered by
+`frontend/src/modules/Fitness/player/FitnessPlayerOverlay.governanceOverride.test.jsx`.
+
+Deferred follow-up (Option A): fold the bypass into `GovernanceEngine` so the
+engine state is the single source of truth and no downstream override is needed.
