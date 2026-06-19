@@ -10,6 +10,7 @@ import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
+import { isGovernedContainer } from '@/hooks/fitness/governedContent.js';
 
 const formatWatchedDate = (dateString) => {
   try {
@@ -849,27 +850,19 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     ? info.type.trim().toLowerCase()
     : (typeof info?.contentType === 'string' ? info.contentType.trim().toLowerCase() : '');
 
-  // Lock icon (rendered at show-title-row) is driven by this flag.
-  // A show is governed when EITHER:
-  //   (a) its `type`/`contentType` is in governed_types (broad: every show of that
-  //       type gets the lock — config with e.g. `governed_types: ["show"]` will
-  //       lock every show), OR
-  //   (b) any of its labels are in governed_labels (per-item gating via tags).
-  // If "lock appears globally", audit governed_types in the fitness config first.
-  const isGovernedShow = useMemo(() => {
-    const typeGoverned = governedTypeSet.size > 0 && showType ? governedTypeSet.has(showType) : false;
-    if (typeGoverned) return true;
-    if (!governedLabelSet.size || !showLabelSet.size) return false;
-    for (const label of showLabelSet) {
-      if (governedLabelSet.has(label)) return true;
-    }
-    return false;
-  }, [governedTypeSet, showType, governedLabelSet, showLabelSet]);
+  // Lock icon (rendered at show-title-row) is driven by this flag. A show is
+  // governed iff it carries a governed scope-label (e.g. KidsFun), constrained to
+  // `governed_types` as a SCOPE (a show's type is "show", always in the default
+  // [show, movie]). Type alone NEVER locks — that would lock every show. This is
+  // the same rule as the backend's getItemsByLabel(governedLabels, { types }) and
+  // the runtime engine's label trigger. See governedContent.js.
+  const isGovernedShow = useMemo(
+    () => isGovernedContainer({ type: showType, labels: showLabelSet }, governedLabelSet, governedTypeSet),
+    [governedTypeSet, showType, governedLabelSet, showLabelSet]
+  );
 
-  // Diagnostic: log each show-lock evaluation so a "global lock" report can be
-  // root-caused from the session log (look for fitness.show-lock-eval events,
-  // inspect governedTypes vs showType — a broad governed_types config is the
-  // most common cause of unexpected locks).
+  // Diagnostic: log each show-lock evaluation so an unexpected-lock report can be
+  // root-caused from the session log (look for fitness.show-lock-eval events).
   useEffect(() => {
     if (!info?.title) return;
     const logger = getLogger().child({ component: 'FitnessShow' });

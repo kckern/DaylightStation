@@ -51,9 +51,11 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import FitnessShow from './FitnessShow.jsx';
 
 // ── fixtures ──────────────────────────────────────────────────────────────
-// A governed show: type "show" is in governed_types so isGovernedShow === true.
+// A governed show: it carries a governed scope-label ("kidsfun") AND its type
+// ("show") is in the governed_types scope, so isGovernedShow === true. (Type
+// alone no longer governs — the label is the trigger; see governedContent.js.)
 const GOVERNED_SHOW = {
-  info: { type: 'show', title: 'Governed Show', labels: [], image: 'poster.jpg' },
+  info: { type: 'show', title: 'Governed Show', labels: ['kidsfun'], image: 'poster.jpg' },
   items: [
     { plex: '101', id: 'plex:101', label: 'Ep 1', parentId: 'p1', itemIndex: 1, image: 'e1.jpg', duration: 600, isWatched: true }
   ],
@@ -84,7 +86,8 @@ const CTX_FNS = {
 const GOVERNANCE_CTX = (locks = {}) => ({
   ...CTX_FNS,
   fitnessConfiguration: { locks },
-  governedTypes: ['show'],
+  governedLabels: ['kidsfun'],   // the trigger
+  governedTypes: ['show'],       // the scope
   plexConfig: {}
 });
 

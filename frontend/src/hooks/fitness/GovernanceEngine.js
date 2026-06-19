@@ -6,6 +6,7 @@ const normalizeLabel = (value) => {
 import getLogger from '../../lib/logging/Logger.js';
 import { CadenceFilter } from './CadenceFilter.js';
 import { resolveCycleAudioCue } from './challengeAudioCues.js';
+import { hasGovernedLabel } from './governedContent.js';
 
 const normalizeLabelList = (labels) => {
   if (!Array.isArray(labels)) return [];
@@ -277,7 +278,6 @@ export class GovernanceEngine {
     };
 
     this._governedLabelSet = new Set();
-    this._governedTypeSet = new Set();
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
@@ -829,25 +829,13 @@ export class GovernanceEngine {
     return null;
   }
 
-  _mediaHasGovernedLabel() {
-    if (!this.media || !this.media.id || !this._governedLabelSet.size) {
-      return false;
-    }
-    const labels = Array.isArray(this.media.labels) ? this.media.labels : [];
-    return labels.some((label) => this._governedLabelSet.has(normalizeLabel(label)));
-  }
-
-  _mediaHasGovernedType() {
-    if (!this.media || !this.media.id || !this._governedTypeSet.size) {
-      return false;
-    }
-    const mediaType = typeof this.media.type === 'string' ? normalizeLabel(this.media.type) : '';
-    if (!mediaType) return false;
-    return this._governedTypeSet.has(mediaType);
-  }
-
+  // A playing item is governed iff it carries a governed scope-label (e.g.
+  // KidsFun). Type is NOT a trigger — episodes inherit their show's labels
+  // (deriveEpisodeLabels), so this label check == "the parent show is governed".
+  // `governed_types` is a discovery scope only; see governedContent.js.
   _mediaIsGoverned() {
-    return this._mediaHasGovernedLabel() || this._mediaHasGovernedType();
+    if (!this.media || !this.media.id) return false;
+    return hasGovernedLabel(this.media.labels, this._governedLabelSet);
   }
 
   _captureLatestInputs(payload) {
@@ -943,10 +931,9 @@ export class GovernanceEngine {
       ? this.config.governed_labels
       : [];
     this._governedLabelSet = new Set(normalizeLabelList(governedLabelSource));
-    const governedTypeSource = this.config && Array.isArray(this.config.governed_types)
-      ? this.config.governed_types
-      : [];
-    this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
+    // NOTE: governed_types is a backend DISCOVERY scope, not a runtime trigger —
+    // the engine governs by label only (see governedContent.js), so it is not
+    // read here.
 
     // Seed _latestInputs with zone maps from config param or session snapshot
     // This ensures fallbacks work even on first evaluate() call
@@ -1954,7 +1941,9 @@ export class GovernanceEngine {
     }
 
     const now = this._now();
-    const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
+    // Governance is configured iff there are governed labels — the trigger.
+    // governed_types alone (no labels) governs nothing (see governedContent.js).
+    const hasGovernanceRules = this._governedLabelSet.size > 0;
 
     // Use canonical participant state from ParticipantRoster (SSOT).
     // This replaces reading session.roster and re-extracting IDs/zones.

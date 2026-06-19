@@ -25,7 +25,10 @@ import { GovernanceEngine } from './GovernanceEngine.js';
  */
 
 const TEST_CONFIG = {
-  governed_types: ['test'],
+  // Governance triggers on a label (not type — see governedContent.js). The
+  // media below carries this label so governance engages; these tests exercise
+  // INACTIVE-participant filtering, not the governance trigger itself.
+  governed_labels: ['governed'],
   policies: {
     default: {
       base_requirement: [{ active: 'all' }],
@@ -81,7 +84,7 @@ describe('GovernanceEngine — INACTIVE device filtering at evaluation boundary 
     session = makeSession(ROSTER);
     engine = new GovernanceEngine(session);
     engine.configure(TEST_CONFIG);
-    engine.setMedia({ id: 'm1', type: 'test', labels: [] });
+    engine.setMedia({ id: 'm1', type: 'test', labels: ['governed'] });
   });
 
   it('does NOT fail base requirement when an INACTIVE participant is present', () => {
@@ -118,7 +121,7 @@ describe('GovernanceEngine — INACTIVE device filtering at evaluation boundary 
     const session2 = makeSession(rosterAliceCool);
     const engine2 = new GovernanceEngine(session2);
     engine2.configure(TEST_CONFIG);
-    engine2.setMedia({ id: 'm1', type: 'test', labels: [] });
+    engine2.setMedia({ id: 'm1', type: 'test', labels: ['governed'] });
 
     engine2.evaluate({
       activeParticipants: ['alice', 'bob'],
