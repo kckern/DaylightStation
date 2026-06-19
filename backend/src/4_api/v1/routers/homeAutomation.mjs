@@ -13,7 +13,7 @@
 import express from 'express';
 import moment from 'moment';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { buildPhotoTitle, formatPhotoDate } from '#adapters/content/gallery/immich/photoLabels.mjs';
+import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#adapters/content/gallery/immich/photoLabels.mjs';
 
 // --- Small presentation helpers for the e-ink agenda feeds -------------------
 const MD_LINK = /\[([^\]]*)\]\([^)]*\)/g;
@@ -479,8 +479,11 @@ export function createHomeAutomationRouter(config) {
     }
 
     const meta = viewable.metadata || {};
-    const people = Array.isArray(meta.people) ? meta.people.map((p) => p.name).filter(Boolean) : [];
-    const location = meta.exif?.city || null;
+    // Order names left-to-right by face position (same SSoT helper the art placard
+    // uses), so the caption reads the way the faces appear — not Immich's raw
+    // detection order. orientation projects raw face boxes into display space.
+    const people = orderPeopleByFace(meta.people, meta.exif?.orientation).map((p) => p.name).filter(Boolean);
+    const location = meta.exif?.city || meta.exif?.country || null;
     const when = meta.localDateTime || null; // TZ-contract field for photoLabels
     const payload = {
       id: viewable.id,

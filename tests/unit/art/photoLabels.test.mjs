@@ -121,4 +121,18 @@ describe('orderPeopleByFace', () => {
     expect(orderPeopleByFace([], 1)).toEqual([]);
     expect(orderPeopleByFace(null, 1)).toEqual([]);
   });
+
+  // ImmichAdapter.getViewable curates faces to {x1,y1,x2,y2} (the shape the
+  // frontend ImageFrame depends on), while the raw client gives boundingBoxX1…
+  // The helper must order either shape so /home/photo and the art path agree.
+  it('also accepts the adapter-curated face shape (x1/x2)', () => {
+    const curated = (name, x1, x2) => ({
+      name,
+      faces: [{ x1, x2, y1: 0, y2: 100, imageWidth: 2000, imageHeight: 1000 }],
+    });
+    const right = curated('Right', 1600, 1800);
+    const left = curated('Left', 100, 300);
+    const mid = curated('Mid', 900, 1100);
+    expect(names(orderPeopleByFace([right, mid, left], 1))).toEqual(['Left', 'Mid', 'Right']);
+  });
 });

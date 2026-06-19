@@ -40,9 +40,14 @@ export function formatPeopleList(names) {
 // must use raw-Y instead. Only relative order matters, so signs count but offsets
 // don't. Orientation values: 1 normal, 2 mirror-H, 3 180°, 4 mirror-V, 5 transpose,
 // 6 90°CW, 7 transverse, 8 90°CCW.
+//
+// Accepts both face shapes the codebase produces: the raw Immich client shape
+// (`boundingBoxX1`…) and ImmichAdapter's curated shape (`x1`…, the contract the
+// frontend ImageFrame reads). `??` (not `||`) so a legitimate 0 coordinate isn't
+// discarded.
 function faceSortKey(face, orientation) {
-  const cx = (Number(face.boundingBoxX1) + Number(face.boundingBoxX2)) / 2;
-  const cy = (Number(face.boundingBoxY1) + Number(face.boundingBoxY2)) / 2;
+  const cx = (Number(face.boundingBoxX1 ?? face.x1) + Number(face.boundingBoxX2 ?? face.x2)) / 2;
+  const cy = (Number(face.boundingBoxY1 ?? face.y1) + Number(face.boundingBoxY2 ?? face.y2)) / 2;
   const w = Number(face.imageWidth) || 0;
   const h = Number(face.imageHeight) || 0;
   switch (Number(orientation)) {
