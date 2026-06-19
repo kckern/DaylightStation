@@ -72,18 +72,6 @@ def _to_bytes(serialized):
     return bytes(serialized)
 
 
-def _load_gallery(store):
-    """Deserialize every stored .tpl into an FpPrint list (skips unreadable files)."""
-    gallery = []
-    for path in glob.glob(os.path.join(store, '*.tpl')):
-        try:
-            with open(path, 'rb') as fh:
-                gallery.append(FPrint.Print.deserialize(fh.read()))
-        except Exception:  # noqa: BLE001 — a corrupt template must not block enroll
-            pass
-    return gallery
-
-
 def cmd_enroll(args):
     finger = FINGER_MAP.get(args.finger)
     if finger is None:
@@ -92,34 +80,6 @@ def cmd_enroll(args):
 
     ctx, dev = open_device()  # noqa: F841 — keep ctx referenced (GC guard)
     stages = dev.get_nr_enroll_stages()
-
-    # Duplicate-identity guard: a physical finger must map to exactly ONE identity.
-    # Before capturing, scan once and reject if this finger already matches an
-    # enrolled template — otherwise the same finger could be filed under several
-    # users (e.g. an admin enrolling everyone with their own thumb). One extra
-    # touch is worth the integrity guarantee.
-    gallery = _load_gallery(args.store)
-    if gallery:
-        log('Place the finger once — checking it is not already enrolled …')
-        cancellable = Gio_new_cancellable()
-        GLib.timeout_add_seconds(25, lambda: (cancellable.cancel(), False)[1])
-        try:
-            matched, _scanned = dev.identify_sync(gallery, cancellable, None, None)
-        except GLib.Error as exc:
-            # FAIL CLOSED: if the check can't be completed (scan glitch / timeout),
-            # do NOT enroll. Never risk saving one person's finger under another
-            # identity just because the verify scan hiccuped on a flaky reader.
-            dev.close_sync()
-            reason = 'timeout' if cancellable.is_cancelled() else 'verify-failed'
-            print(json.dumps({'enrolled': False, 'reason': reason, 'error': str(exc)}))
-            return 0
-        if matched is not None:
-            # Already on file → this is someone's existing finger; refuse to re-file it.
-            dev.close_sync()
-            print(json.dumps({'enrolled': False, 'reason': 'duplicate',
-                              'matchedUuid': matched.get_username()}))
-            return 0
-
     log(f'Device ready: {dev.get_name()} — place the SAME finger {stages}x (lift between each).')
 
     template = FPrint.Print.new(dev)
