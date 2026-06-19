@@ -16,6 +16,7 @@ import { FONT_FACES } from './widgets/lib/fonts.mjs';
 import { draw as drawPlaceholder } from './widgets/PlaceholderWidget.mjs';
 import { canvasToGray8 } from './widgets/lib/greyscale.mjs';
 import { encodeGray8Png } from './widgets/lib/grayscalePng.mjs';
+import { encodeRgb8Png } from './widgets/lib/rgbPng.mjs';
 
 // The target (Seeed reTerminal E1003) is a MONOCHROME, 16-level grayscale panel —
 // there is no color. The palette is therefore a grayscale ramp whose values snap
@@ -117,12 +118,16 @@ export async function render(screenConfig, options = {}) {
   // rather than per-widget so every tone — chrome and photos alike — lands in the
   // panel's colour space.
   //
-  // COLOUR panels (Spectra-6): keep the full RGB image so the firmware's own
-  // 6-colour dither has real chroma to work with; greyscaling here would throw the
-  // colour away. canvas emits RGBA PNG, which pngle decodes fine on-device.
+  // COLOUR panels (Spectra-6): emit a colour-type-2 RGB PNG, NOT canvas's RGBA. The
+  // panel firmware ignores the alpha byte and runs its own 6-colour dither on the RGB,
+  // so the alpha plane is wasted Wi-Fi bytes (a battery cost). We keep the image SMOOTH
+  // (no server-side quantise to the 6 colours — that would starve the firmware's
+  // error-diffusion dither of gradients); adaptive PNG filtering makes the RGB stream
+  // ~13% smaller than the RGBA canvas default while staying lossless.
   if (grayscale) {
     const gray = canvasToGray8(ctx, width, height);
     return encodeGray8Png(gray, width, height);
   }
-  return canvas.toBuffer('image/png');
+  const { data: rgba } = ctx.getImageData(0, 0, width, height);
+  return encodeRgb8Png(rgba, width, height);
 }
