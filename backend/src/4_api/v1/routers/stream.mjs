@@ -17,7 +17,15 @@ const MIME_TYPES = {
   '.flac': 'audio/flac',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
-  '.mkv': 'video/x-matroska'
+  '.mkv': 'video/x-matroska',
+  // Images — without these, `nosniff` + octet-stream makes browsers refuse to
+  // render media-folder images in <img> (e.g. apps/fitness/ux/accessdenied.gif).
+  '.gif': 'image/gif',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml'
 };
 
 /**
