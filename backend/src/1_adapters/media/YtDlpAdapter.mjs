@@ -21,6 +21,43 @@ import path from 'path';
 const exec = promisify(child_process.exec);
 
 /**
+ * Pick the best directly-playable format from a yt-dlp -J info object.
+ *
+ * Preference order:
+ *   1. info.url (yt-dlp already merged / single direct URL)
+ *   2. best progressive/combined format (vcodec!='none' && acodec!='none'),
+ *      preferring higher height
+ *   3. last format that has a url
+ *
+ * @param {Object} info - parsed yt-dlp -J info object
+ * @returns {{url: string, protocol?: string}|null}
+ */
+export function pickPlayableFormat(info) {
+  if (!info || typeof info !== 'object') return null;
+
+  if (typeof info.url === 'string' && info.url) {
+    return { url: info.url, protocol: info.protocol };
+  }
+
+  const formats = Array.isArray(info.formats) ? info.formats : [];
+
+  const combined = formats
+    .filter((f) => f && f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none')
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+  if (combined.length) {
+    return { url: combined[0].url, protocol: combined[0].protocol || info.protocol };
+  }
+
+  for (let i = formats.length - 1; i >= 0; i--) {
+    if (formats[i] && formats[i].url) {
+      return { url: formats[i].url, protocol: formats[i].protocol || info.protocol };
+    }
+  }
+
+  return null;
+}
+
+/**
  * yt-dlp adapter for video source downloads
  */
 export class YtDlpAdapter {
@@ -262,6 +299,46 @@ export class YtDlpAdapter {
       });
       return null;
     }
+  }
+
+  /**
+   * Probe a URL with `yt-dlp -J` (JSON dump, NO download) and return the best
+   * directly-playable format. Used by the stream content source for vendor-blind
+   * resolution. Reuses the file's #execWithTimeout helper and "${url}" quoting.
+   *
+   * @param {string} url - URL to probe
+   * @param {Object} [opts] - optional profile-derived options
+   * @param {string[]} [opts.args] - extra yt-dlp CLI arg strings to append
+   * @param {number} [opts.timeoutMs=60000] - probe timeout
+   * @returns {Promise<{title: string|null, duration: number|null, thumbnail: string|null, url: string, protocol: string|null}>}
+   * @throws if yt-dlp fails, output is unparseable, or no playable format is found
+   */
+  async probe(url, opts = {}) {
+    const { args = [], timeoutMs = 60000 } = opts;
+    const cmd = [
+      'yt-dlp',
+      '--js-runtimes node',
+      '-J',
+      '--no-warnings',
+      '--no-playlist',
+      ...args,
+      `"${url}"`
+    ].filter(Boolean).join(' ');
+
+    const { stdout } = await this.#execWithTimeout(cmd, timeoutMs);
+    const info = JSON.parse(stdout.trim());
+    const chosen = pickPlayableFormat(info);
+    if (!chosen) {
+      throw new Error('yt-dlp probe found no playable format');
+    }
+
+    return {
+      title: info.title ?? null,
+      duration: info.duration ?? null,
+      thumbnail: info.thumbnail ?? null,
+      url: chosen.url,
+      protocol: chosen.protocol || info.protocol || null
+    };
   }
 
   /**
