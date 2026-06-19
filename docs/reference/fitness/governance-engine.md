@@ -332,7 +332,7 @@ The flag is **sticky** — captured once on initial page load and stored in Reac
 
 - `FitnessApp.jsx` captures the param on mount via `useState(() => ...)` — persists across route changes
 - Passes `nogovern` to `handlePlayFromUrl` (skips sequential redirect) and as a prop to `FitnessPlayer`
-- `FitnessPlayer` creates `effectiveGovernanceState` with `videoLocked: false, isGoverned: false, status: 'unlocked'`, used in place of the real `governanceState` throughout the component
+- `FitnessPlayer` derives a bypass-aware `effectiveGovernanceState` (fingerprint unlock, `?nogovern`, or per-item `nogovern`) and uses it for its own playback/autoplay gating. It also passes it to `FitnessPlayerOverlay` via the `governanceStateOverride` prop, which the overlay prefers over the raw `FitnessContext.governanceState` when deciding whether to show the lock panel. Note this is a downstream override, not the engine SSoT: the `GovernanceEngine` itself has no knowledge of these bypasses. Folding the bypass into the engine state remains a deferred follow-up.
 
 **When to use:** Automated Playwright tests, debugging video stall/seek issues, verifying resume behavior without needing real HR devices and participants.
 
