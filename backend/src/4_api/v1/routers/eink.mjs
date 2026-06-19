@@ -8,6 +8,10 @@
  *   GET /api/v1/eink/:id/config         -> text/plain key=value snapshot
  *   GET /api/v1/eink/:id/panel          -> image/png (current view)
  *   GET /api/v1/eink/:id/action/:action -> { ok, view, index }
+ *   GET /api/v1/eink/:id/status         -> JSON last-reported device telemetry
+ *
+ * The panel piggybacks its telemetry (battery/signal/wake/memory) as query params
+ * on the /config wake poll; /status surfaces the latest reading for the server.
  *
  * Change detection lives on /config, not /panel. /config is the CHEAP render of
  * the SSOT blueprint's now-state: it resolves the current view's data and returns
@@ -65,6 +69,13 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
   router.get('/:id/config', asyncHandler(async (req, res) => {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ error: 'id required' });
+    // The battery panel piggybacks its status (bat/rssi/wake/up/heap/psram/rst) on
+    // this wake poll — zero extra cost, since a deep-sleep device can't host its own
+    // server. Capture it before rendering the snapshot; it must never break /config,
+    // so guard it (recordTelemetry is also internally non-throwing).
+    try { einkPanelService.recordTelemetry(id, req.query); } catch (e) {
+      logger.warn?.('eink.telemetry.record_failed', { id, error: e?.message });
+    }
     try {
       const snap = await einkPanelService.stateSnapshot(id);
       const body = [
@@ -85,6 +96,18 @@ export function createEinkRouter({ einkPanelService, logger = console }) {
       if (err?.status === 404) return res.status(404).json({ error: err.message });
       throw err;
     }
+  }));
+
+  // Last-reported device telemetry (battery, signal, wake cause, memory, reset
+  // reason), captured from the panel's /config wake polls. JSON for the always-on
+  // server / a dashboard — the panel itself is asleep and never reads this. Returns
+  // { reported: false } until the panel has woken at least once since the file existed.
+  router.get('/:id/status', asyncHandler(async (req, res) => {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const telemetry = einkPanelService.getTelemetry(id);
+    if (!telemetry) return res.json({ id, reported: false });
+    return res.json({ id, reported: true, ...telemetry });
   }));
 
   // Button action: advance per-panel view state. The panel re-snapshots /config

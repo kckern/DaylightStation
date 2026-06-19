@@ -23,6 +23,32 @@ import { dataService as defaultDataService } from '#system/config/index.mjs';
 const DEFAULT_WIDTH = 1872;   // E1003 native landscape
 const DEFAULT_HEIGHT = 1404;
 
+// Where the latest per-panel telemetry is persisted (household scope →
+// data/household/state/eink-telemetry.yml). It must survive a server redeploy: a
+// deep-sleep battery panel only reports on its ~6h wake, so an in-memory-only store
+// would show "unknown" for hours after every deploy.
+const TELEMETRY_PATH = 'state/eink-telemetry';
+
+// Single-cell LiPo voltage→charge envelope (raw, not a discharge curve): the panel
+// reads battery millivolts off a GPIO divider. ~4.2V full, ~3.3V is the usable floor.
+const BAT_FULL_MV = 4200;
+const BAT_EMPTY_MV = 3300;
+const BAT_LOW_PCT = 15;       // warn/flag at or below this charge
+
+/** Numeric query param → finite Number, or undefined if absent/blank/NaN. */
+function numParam(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Battery millivolts → percent (0..100), or null when unavailable (bat=0/absent). */
+function batteryPercent(mv) {
+  if (!mv) return null;
+  const pct = Math.round(((mv - BAT_EMPTY_MV) / (BAT_FULL_MV - BAT_EMPTY_MV)) * 100);
+  return Math.max(0, Math.min(100, pct));
+}
+
 /**
  * Deterministic JSON: serialize with object keys sorted at every depth so the
  * same logical value always yields the same string (and thus the same hash),
@@ -56,6 +82,9 @@ export class EinkPanelService {
   // CURRENT content on demand, instead of waiting for the next timer wake. Ephemeral
   // (in-memory) like #viewIndex: a panel reboot just resets to 0, harmless.
   #refreshNonce = new Map();
+  // panelId -> latest telemetry record. Lazily hydrated from the persisted file on
+  // first access (null until then) so the last-known reading survives a redeploy.
+  #telemetry = null;
 
   constructor({ baseUrl, fontDir, dataService, logger } = {}) {
     // Host/port are injected by the composition root from household config
@@ -267,6 +296,80 @@ export class EinkPanelService {
     const refreshNonce = this.#refreshNonce.get(panelId) ?? 0;
     this.#logger.info?.('eink.panel.action', { panelId, action, from, to, view: views[to]?.id, refreshNonce });
     return { action, index: to, view: views[to]?.id, viewCount: views.length, refreshNonce };
+  }
+
+  /** Lazily hydrate the telemetry map from the persisted household file (once). */
+  #loadTelemetry() {
+    if (this.#telemetry) return this.#telemetry;
+    let stored = null;
+    try { stored = this.#dataService.household.read(TELEMETRY_PATH); } catch { stored = null; }
+    this.#telemetry = new Map(Object.entries(stored && typeof stored === 'object' ? stored : {}));
+    return this.#telemetry;
+  }
+
+  /** Write the whole telemetry map back to disk. Never throws into the caller. */
+  #persistTelemetry() {
+    try {
+      this.#dataService.household.write(TELEMETRY_PATH, Object.fromEntries(this.#loadTelemetry()));
+    } catch (e) {
+      this.#logger.warn?.('eink.telemetry.persist_failed', { error: e?.message });
+    }
+  }
+
+  /**
+   * Record the device status the firmware piggybacks on its /config wake poll
+   * (bat/rssi/wake/up/heap/psram/rst — see the eink-panel firmware). Keeps only the
+   * LATEST reading per panel, persisted so it survives a redeploy. A poll carrying
+   * NONE of these params (e.g. a manual /config curl, or pre-telemetry firmware) is
+   * ignored so it cannot clobber the last real reading. Never throws — telemetry must
+   * not break the panel's wake path.
+   *
+   * @param {string} panelId
+   * @param {Object} query - the /config request query params (strings)
+   * @returns {Object|null} the stored record, or null if nothing to record
+   */
+  recordTelemetry(panelId, query = {}) {
+    const id = String(panelId || '').trim();
+    if (!id) return null;
+    const fields = {
+      bat: numParam(query.bat),
+      rssi: numParam(query.rssi),
+      up: numParam(query.up),
+      heap: numParam(query.heap),
+      psram: numParam(query.psram),
+      rst: numParam(query.rst),
+      wake: typeof query.wake === 'string' && query.wake ? query.wake : undefined,
+    };
+    // A wake report must carry at least one known field; otherwise leave the last
+    // reading untouched (a bare /config poll is not a telemetry update).
+    if (Object.values(fields).every((v) => v === undefined)) return null;
+
+    const record = { at: new Date().toISOString() };
+    for (const [k, v] of Object.entries(fields)) if (v !== undefined) record[k] = v;
+    if (fields.bat !== undefined) {
+      record.batteryPercent = batteryPercent(fields.bat);
+      record.low = record.batteryPercent !== null && record.batteryPercent <= BAT_LOW_PCT;
+    } else {
+      record.low = false;
+    }
+
+    this.#loadTelemetry().set(id, record);
+    this.#persistTelemetry();
+
+    if (record.low) {
+      this.#logger.warn?.('eink.telemetry.low_battery', {
+        panelId: id, bat: record.bat, batteryPercent: record.batteryPercent,
+      });
+    }
+    this.#logger.info?.('eink.telemetry.recorded', { panelId: id, ...record });
+    return record;
+  }
+
+  /** Latest telemetry for a panel, or null if it has never reported. */
+  getTelemetry(panelId) {
+    const id = String(panelId || '').trim();
+    if (!id) return null;
+    return this.#loadTelemetry().get(id) || null;
   }
 }
 
