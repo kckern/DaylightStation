@@ -51,6 +51,9 @@ const DEFAULT_THEME = {
  * @param {string} [options.baseUrl] - Backend base URL for data fetching
  * @param {string} [options.fontDir] - Font directory path
  * @param {Object} [options.dataOverride] - Skip fetching, use this data directly
+ * @param {boolean} [options.grayscale=true] - emit a compact 8-bit grayscale PNG
+ *   (mono panels, e.g. E1003 Gray16). Pass false for full-colour panels (e.g.
+ *   E1004 Spectra-6) to emit an RGB PNG the panel firmware colour-dithers itself.
  * @returns {Promise<Buffer>} PNG buffer
  */
 export async function render(screenConfig, options = {}) {
@@ -58,6 +61,7 @@ export async function render(screenConfig, options = {}) {
     baseUrl,          // injected from household config by the caller; no host literal here
     fontDir = '/usr/share/fonts',
     dataOverride,
+    grayscale = true,
   } = options;
 
   const width = screenConfig.width || 1600;
@@ -105,12 +109,20 @@ export async function render(screenConfig, options = {}) {
     }
   }
 
-  // Emit a compact 8-bit GRAYSCALE PNG, not canvas's 32-bit RGBA. The panel is
-  // monochrome, so three colour channels are wasted bytes over its Wi-Fi link (a
-  // battery cost) and the device luma-reduces them anyway. Shipping one smooth
-  // grey byte/pixel is ~3x smaller and the panel firmware dithers it unchanged
-  // (no reflash). We reduce the whole canvas at once here rather than per-widget so
-  // every tone — chrome and photos alike — lands in the panel's colour space.
-  const gray = canvasToGray8(ctx, width, height);
-  return encodeGray8Png(gray, width, height);
+  // MONO panels (default): emit a compact 8-bit GRAYSCALE PNG, not canvas's 32-bit
+  // RGBA. The panel is monochrome, so three colour channels are wasted bytes over
+  // its Wi-Fi link (a battery cost) and the device luma-reduces them anyway.
+  // Shipping one smooth grey byte/pixel is ~3x smaller and the panel firmware
+  // dithers it unchanged (no reflash). We reduce the whole canvas at once here
+  // rather than per-widget so every tone — chrome and photos alike — lands in the
+  // panel's colour space.
+  //
+  // COLOUR panels (Spectra-6): keep the full RGB image so the firmware's own
+  // 6-colour dither has real chroma to work with; greyscaling here would throw the
+  // colour away. canvas emits RGBA PNG, which pngle decodes fine on-device.
+  if (grayscale) {
+    const gray = canvasToGray8(ctx, width, height);
+    return encodeGray8Png(gray, width, height);
+  }
+  return canvas.toBuffer('image/png');
 }

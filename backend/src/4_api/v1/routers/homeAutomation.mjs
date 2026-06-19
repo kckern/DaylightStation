@@ -420,7 +420,12 @@ export function createHomeAutomationRouter(config) {
    * HOLDS it for ?holdHours (default 12) via a server-side cache, so the e-ink
    * panel's content hash is stable across wakes and it only does the costly e-ink
    * refresh once per hold window. Returns { id, imageUrl, title, date } — the
-   * renderer preloads `imageUrl` and converts it to the panel's 16 grey tones.
+   * renderer preloads `imageUrl` and renders it for the panel (grey tones on a
+   * mono panel, full colour on Spectra-6).
+   *
+   * `?hold_key=<panelId>` buckets the hold per device, so each panel cycles its
+   * OWN favorite instead of every panel showing the one global pick. Omitting it
+   * keeps the legacy global hold (one shared photo).
    */
   router.get('/photo', asyncHandler(async (req, res) => {
     if (!immichAdapter) {
@@ -429,12 +434,13 @@ export function createHomeAutomationRouter(config) {
     const favorites = req.query.favorites === 'true' || req.query.favorites === '1';
     const holdHours = Number(req.query.holdHours) > 0 ? Number(req.query.holdHours) : 12;
     const holdMs = holdHours * 3600 * 1000;
-    const key = JSON.stringify({ favorites, holdHours });
+    const holdKey = typeof req.query.hold_key === 'string' ? req.query.hold_key : '';
+    const key = JSON.stringify({ favorites, holdHours, holdKey });
     const now = Date.now();
 
     const cached = photoCache.get(key);
     if (cached && now - cached.pickedAt < holdMs) {
-      logger.info?.('home.photo.cached', { ageMs: now - cached.pickedAt, holdHours });
+      logger.info?.('home.photo.cached', { ageMs: now - cached.pickedAt, holdHours, holdKey });
       return res.json(cached.payload);
     }
 
@@ -465,7 +471,7 @@ export function createHomeAutomationRouter(config) {
     };
 
     photoCache.set(key, { pickedAt: now, payload });
-    logger.info?.('home.photo.picked', { id: picked, count: ids.length, holdHours });
+    logger.info?.('home.photo.picked', { id: picked, count: ids.length, holdHours, holdKey });
     res.json(payload);
   }));
 
