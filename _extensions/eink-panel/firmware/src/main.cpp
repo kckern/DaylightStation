@@ -25,6 +25,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <esp_sleep.h>
+#include <esp_system.h>   // esp_reset_reason()
 #include <driver/rtc_io.h>
 
 #include "TFT_eSPI.h"      // Seeed_GFX; EPaper class appears when EPAPER_ENABLE is set
@@ -169,10 +170,41 @@ static void pack_4bpp_in_place(uint8_t* idx, int W, int H) {
   }
 }
 
+// ---- telemetry (pushed to the server, piggybacked on the /config GET) -------
+// A deep-sleep battery panel is unreachable ~99.99% of the time, so it can't host
+// a status server. Instead it REPORTS on each wake — the always-on backend stores
+// it and you query the backend. Zero extra wake cost: it rides the /config GET.
+static int         g_batMv   = 0;        // battery millivolts (0 = unread)
+static const char* g_wakeStr = "boot";   // what woke us: green/right/left/timer/boot
+
+// Battery: ADC (GPIO1) behind a /2 divider, gated by bsp_battery_enable on GPIO21.
+// MUST be an ESP32-S3 ADC pin (GPIO1-20) — GPIO40 is NOT ADC-capable and crashes.
+// Verified ~4140mV on E1004. On E1003 GPIO1 reads 0 (its battery sense pin is TBD),
+// but it's valid so it won't crash; E1003 battery telemetry stays 0 until the pin
+// is confirmed.
+static constexpr int BAT_ADC_GPIO = 1;
+static int readBatteryMv() {
+  pinMode(21, OUTPUT); digitalWrite(21, HIGH);            // enable the battery divider rail
+  analogSetPinAttenuation(BAT_ADC_GPIO, ADC_11db);        // full-scale (~3.3V)
+  delay(20);                                              // let the divider settle
+  return (int)(analogReadMilliVolts(BAT_ADC_GPIO) * 2);  // x2 divider compensation
+}
+
 static String urlHost()   { return String("http://") + DS_HOST + ":" + DS_PORT; }
 // Panel id is a path segment (matches the v1 API convention, not a ?id= query).
 static String urlBase()   { return urlHost() + "/api/v1/eink/" + PANEL_ID; }
-static String urlConfig() { return urlBase() + "/config"; }
+// /config carries this wake's telemetry as query params; the backend records them.
+static String urlConfig() {
+  String u = urlBase() + "/config";
+  u += "?bat="    + String(g_batMv);
+  u += "&rssi="   + String(WiFi.RSSI());
+  u += "&wake="   + String(g_wakeStr);
+  u += "&up="     + String(millis());
+  u += "&heap="   + String((unsigned)ESP.getFreeHeap());
+  u += "&psram="  + String((unsigned)ESP.getFreePsram());
+  u += "&rst="    + String((int)esp_reset_reason());
+  return u;
+}
 static String urlPanel()  { return urlBase() + "/panel"; }
 static String urlAction(const char* a) { return urlBase() + "/action/" + a; }
 // Prefer the PNG path /config advertised (an absolute /api/... path the server
@@ -398,6 +430,12 @@ void setup() {
     else if (st & (1ULL << BTN_RIGHT_GPIO)) wokeBtn = 1;
     else if (st & (1ULL << BTN_LEFT_GPIO))  wokeBtn = 2;
   }
+
+  // Telemetry gathered before WiFi: wake cause + battery (RSSI/heap added at send).
+  g_wakeStr = wokeBtn == 0 ? "green" : wokeBtn == 1 ? "right" : wokeBtn == 2 ? "left"
+            : (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER ? "timer" : "boot");
+  g_batMv = readBatteryMv();
+  LOG.printf("[eink] telemetry wake=%s bat=%dmV\n", g_wakeStr, g_batMv);
 
   if (!wifiUp()) { LOG.println("[eink] wifi FAIL"); sleepNow(); }
   LOG.printf("[eink] wifi ok ssid=%s ip=%s\n", WIFI_SSID, WiFi.localIP().toString().c_str());
