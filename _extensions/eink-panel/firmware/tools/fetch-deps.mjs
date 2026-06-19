@@ -18,9 +18,9 @@ mkdirSync(DEST, { recursive: true });
 const RAW = 'https://raw.githubusercontent.com/Seeed-Studio/Seeed_GFX/master';
 const EX = `${RAW}/examples/ePaper/reTerminal_SDcard_Bitmap/reTerminal_E1003_SDcard_Gray16`;
 
-// Only the PNG decoder (pngle + miniz). Grayscale dither + 4bpp packing are done
-// in main.cpp (memory-light); Seeed's RGB888 dither_image doesn't fit in PSRAM.
-// The E1003 panel wiring (Setup522) is inlined as -D flags in platformio.ini.
+// Just the PNG decoder (pngle + miniz). BOTH render profiles dither in main.cpp
+// with their own memory-light Floyd-Steinberg (grey16 and 6-colour) — Seeed's
+// dither_image needs multi-MB whole-image buffers that don't fit on these panels.
 const files =
   ['pngle.h', 'pngle.c', 'miniz.h', 'miniz.c'].map(f => [`${EX}/${f}`, f]);
 
