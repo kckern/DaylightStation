@@ -12,40 +12,13 @@
  * server-side, as that bloats the download), the panel firmware dithers the result
  * to its 16 tones exactly as before — no reflash.
  *
- * Uses only Node's built-in zlib (IDAT deflate). PNG framing — chunk length/type/
- * CRC32 and the deflate stream's own Adler32 — is done by hand; it's ~40 lines and
- * avoids pulling in a PNG library for one narrow output path.
+ * Uses only Node's built-in zlib (IDAT deflate); the PNG chunk framing comes from
+ * the shared pngFraming helper — together that avoids pulling in a PNG library for
+ * this narrow output path.
  */
 
 import zlib from 'node:zlib';
-
-// Standard PNG CRC-32 (polynomial 0xEDB88320), precomputed table. Done locally
-// rather than via zlib.crc32 (only present on newer Node) so this works anywhere.
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-
-function crc32(buf) {
-  let c = 0xFFFFFFFF;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
-  return (c ^ 0xFFFFFFFF) >>> 0;
-}
-
-/** Frame a PNG chunk: length(4) + type(4) + data + CRC32(type+data). */
-function chunk(type, data) {
-  const typeBuf = Buffer.from(type, 'ascii');
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([len, typeBuf, data, crc]);
-}
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+import { chunk, PNG_SIGNATURE } from './pngFraming.mjs';
 
 /**
  * Encode an 8-bit grayscale PNG from one gray byte per pixel (row-major).

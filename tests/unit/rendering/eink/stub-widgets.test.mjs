@@ -67,7 +67,7 @@ describe('eink canned widgets', () => {
   });
 
   // PNG colour-type byte lives at offset 25 (IHDR data starts at 16: w,h,bitdepth,
-  // then colortype at 25). 0 = grayscale, 6 = RGBA.
+  // then colortype at 25). 0 = grayscale, 2 = RGB, 6 = RGBA.
   const colorType = (png) => png[25];
 
   it('emits an 8-bit GRAYSCALE PNG by default (mono panels)', async () => {
@@ -81,13 +81,16 @@ describe('eink canned widgets', () => {
     expect(colorType(png)).toBe(0);   // grayscale
   });
 
-  it('emits a full-colour RGBA PNG when grayscale:false (Spectra-6 panels)', async () => {
+  it('emits a 24-bit RGB PNG (no alpha) when grayscale:false (Spectra-6 panels)', async () => {
     const layout = { children: [{ widget: 'date', grow: 1 }] };
     const png = await render(
       { width: 400, height: 200, layout, data: {} },
       { fontDir: FONT_DIR, dataOverride: {}, grayscale: false },
     );
     expect(png.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
-    expect(colorType(png)).toBe(6);   // RGBA — colour preserved for on-device dither
+    expect(png[24]).toBe(8);          // bit depth 8
+    // colour-type 2 = truecolour RGB. We drop the alpha plane the firmware ignores
+    // (it dithers RGB on-device), keeping the chroma a colour panel needs.
+    expect(colorType(png)).toBe(2);
   });
 });
