@@ -7,6 +7,64 @@ import { streamFileWithRanges } from '#system/http/streamFile.mjs';
 import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
 import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
 
+const HLS_CONTENT_TYPES = new Set([
+  'application/vnd.apple.mpegurl',
+  'application/x-mpegurl',
+  'audio/mpegurl',
+]);
+
+/**
+ * SSRF guard for the stream proxy. Returns true if the host should be blocked
+ * (loopback, private/link-local ranges, or *.local mDNS names).
+ * Pure + exported so it can be unit-tested.
+ * @param {string} host
+ * @returns {boolean}
+ */
+export function isBlockedStreamHost(host) {
+  if (!host) return true;
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1') return true;
+  if (h.endsWith('.local')) return true;
+
+  // IPv4 literal ranges
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    if (a === 127) return true;                       // 127.0.0.0/8
+    if (a === 10) return true;                        // 10.0.0.0/8
+    if (a === 192 && b === 168) return true;          // 192.168.0.0/16
+    if (a === 169 && b === 254) return true;          // 169.254.0.0/16
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  }
+  return false;
+}
+
+/**
+ * Rewrite an HLS (m3u8) playlist so that every segment / variant / key URI is
+ * routed back through this stream proxy (carrying the same profile).
+ * Pure + exported for unit testing.
+ * @param {string} text - raw playlist body
+ * @param {string} baseUrl - absolute URL the playlist was fetched from (resolves relatives)
+ * @param {string} [profile] - profile name to carry forward
+ * @returns {string}
+ */
+export function rewriteHlsPlaylist(text, baseUrl, profile) {
+  const wrap = (u) => {
+    const abs = new URL(u, baseUrl).toString();
+    const q = new URLSearchParams({ src: abs });
+    if (profile) q.set('profile', profile);
+    return `/api/v1/proxy/stream?${q.toString()}`;
+  };
+  return text.split('\n').map((line) => {
+    const t = line.trim();
+    if (!t) return line;
+    if (t.startsWith('#')) {
+      return line.replace(/URI="([^"]+)"/g, (_, u) => `URI="${wrap(u)}"`);
+    }
+    return wrap(t);
+  }).join('\n');
+}
+
 /**
  * Create proxy router for streaming and thumbnails
  * @param {Object} config
@@ -18,7 +76,7 @@ import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
  */
 export function createProxyRouter(config) {
   const router = express.Router();
-  const { registry, proxyService, mediaBasePath, dataPath, retroarchProxy, logger = console } = config;
+  const { registry, proxyService, configService, mediaBasePath, dataPath, retroarchProxy, logger = console } = config;
 
   /**
    * GET /proxy/media/stream/*
@@ -466,6 +524,115 @@ export function createProxyRouter(config) {
       });
 
       logger.debug?.('proxy.media.served', { path: relativePath, mimeType });
+  }));
+
+  /**
+   * GET /proxy/stream?src=<absUrl>&profile=<name>
+   * Dynamic-origin proxy for third-party HLS/video streams. Injects per-profile
+   * referer/user-agent headers (to defeat hotlink protection), rewrites m3u8
+   * playlists so child URIs route back through this proxy, and pipes segments
+   * (with HTTP Range support) so CORS-less CDN streams play in the browser.
+   *
+   * Unlike #system/proxy/ProxyService (fixed per-service base URL), the target
+   * origin here varies per request, so this route lives at the API layer.
+   */
+  router.get('/stream', asyncHandler(async (req, res) => {
+    const src = req.query.src;
+    const profileName = req.query.profile ? String(req.query.profile) : undefined;
+
+    if (!src || typeof src !== 'string') {
+      return res.status(400).json({ error: 'Missing src parameter' });
+    }
+
+    let target;
+    try {
+      target = new URL(src);
+    } catch {
+      return res.status(400).json({ error: 'Invalid src URL' });
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Only http/https URLs allowed' });
+    }
+    if (isBlockedStreamHost(target.hostname)) {
+      logger.warn?.('proxy.stream.blocked', { host: target.hostname });
+      return res.status(400).json({ error: 'Blocked host' });
+    }
+
+    // Look up per-profile scrape headers (referer / user-agent).
+    let headers = { 'User-Agent': 'Mozilla/5.0' };
+    const profiles = configService?.getStreamingProfiles?.() || [];
+    const profile = profiles.find((p) => p?.name === profileName) || null;
+    if (profile?.scrape?.headers && typeof profile.scrape.headers === 'object') {
+      headers = { ...headers, ...profile.scrape.headers };
+    }
+
+    // Propagate the client's Range header upstream for segment seeking.
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+    }
+
+    let upstream;
+    try {
+      upstream = await fetch(target.toString(), {
+        headers,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (err) {
+      logger.warn?.('proxy.stream.fetchFailed', { host: target.hostname, error: err.message });
+      return res.status(502).json({ error: 'Upstream fetch failed' });
+    }
+
+    if (!upstream.ok && upstream.status !== 206) {
+      logger.warn?.('proxy.stream.upstreamStatus', { host: target.hostname, status: upstream.status });
+      return res.status(upstream.status).json({ error: `Upstream returned ${upstream.status}` });
+    }
+
+    const upstreamType = (upstream.headers.get('content-type') || '').toLowerCase();
+    const baseType = upstreamType.split(';')[0].trim();
+    const pathName = target.pathname.toLowerCase();
+    const isHls = HLS_CONTENT_TYPES.has(baseType) || pathName.endsWith('.m3u8');
+
+    if (isHls) {
+      const body = await upstream.text();
+      const rewritten = rewriteHlsPlaylist(body, target.toString(), profileName);
+      res.set({
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff',
+        'Access-Control-Allow-Origin': '*',
+      });
+      return res.send(rewritten);
+    }
+
+    // Segment / key / mp4: pipe bytes through, honoring Range (206).
+    res.status(upstream.status);
+    res.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Accept-Ranges', upstream.headers.get('accept-ranges') || 'bytes');
+    const contentRange = upstream.headers.get('content-range');
+    if (contentRange) res.set('Content-Range', contentRange);
+    const contentLength = upstream.headers.get('content-length');
+    if (contentLength) res.set('Content-Length', contentLength);
+
+    if (!upstream.body) {
+      return res.end();
+    }
+    try {
+      // Web ReadableStream → Node response.
+      const reader = upstream.body.getReader();
+      const pump = async () => {
+        const { done, value } = await reader.read();
+        if (done) return res.end();
+        res.write(Buffer.from(value));
+        return pump();
+      };
+      await pump();
+    } catch (err) {
+      logger.warn?.('proxy.stream.pipeFailed', { host: target.hostname, error: err.message });
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    }
   }));
 
   return router;
