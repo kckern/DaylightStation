@@ -614,9 +614,12 @@ describe('GovernanceEngine', () => {
       expect(engine.state.isGoverned).toBe(true);
     });
 
-    it('isGoverned reflects _mediaIsGoverned() for type match', () => {
+    it('type alone does NOT govern — the label is the sole trigger', () => {
+      // governed_types is a backend discovery scope, not a runtime trigger. A
+      // media item whose type is in governed_types but carries no governed label
+      // must NOT be governed (see governedContent.js / the 673634 lock bug).
       engine.setMedia({ id: 'test-5', labels: [], type: 'workout' });
-      expect(engine.state.isGoverned).toBe(true);
+      expect(engine.state.isGoverned).toBe(false);
     });
   });
 
