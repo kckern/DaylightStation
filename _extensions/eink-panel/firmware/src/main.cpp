@@ -254,25 +254,42 @@ static bool fetchAndDecode() {
   int code = http.GET();
   if (code != HTTP_CODE_OK) { LOG.printf("[eink] GET %d\n", code); http.end(); return false; }
 
-  int len = http.getSize();
+  int len = http.getSize();                 // Content-Length, or -1 if chunked
   WiFiClient* s = http.getStreamPtr();
   pngle_t* p = pngle_new();
   pngle_set_draw_callback(p, on_draw);
 
   uint8_t buf[2048];
   bool ok = true;
-  while (http.connected() && (len < 0 || len > 0)) {
-    size_t avail = s->available();
-    if (!avail) { delay(1); continue; }
-    int n = s->readBytes(buf, avail > sizeof(buf) ? sizeof(buf) : avail);
-    if (n <= 0) break;
-    if (pngle_feed(p, buf, n) < 0) { LOG.printf("[eink] png: %s\n", pngle_error(p)); ok = false; break; }
-    if (len > 0) len -= n;
+  uint32_t lastData = millis();
+  // Drain buffered bytes BEFORE honoring a disconnect: the server closes the TCP
+  // connection as soon as it finishes sending, so http.connected() can go false
+  // while the tail is still in the RX buffer. Reading until connected() (the old
+  // bug) dropped that tail — invisible on the 41KB grey image, but lopped the
+  // bottom ~15% off the 1.44MB colour image. Loop on remaining length instead.
+  while (len != 0) {
+    const size_t avail = s->available();
+    if (avail) {
+      const int n = s->readBytes(buf, avail > sizeof(buf) ? sizeof(buf) : avail);
+      if (n > 0) {
+        if (pngle_feed(p, buf, n) < 0) { LOG.printf("[eink] png: %s\n", pngle_error(p)); ok = false; break; }
+        if (len > 0) len -= n;
+        lastData = millis();
+      }
+    } else if (!s->connected()) {
+      break;                                // nothing buffered AND closed -> done
+    } else if (millis() - lastData > 20000) {
+      LOG.println("[eink] stream stall"); ok = false; break;   // safety net
+    } else {
+      delay(2);                             // connected, waiting for more bytes
+    }
   }
+  const bool complete = (len == 0 || len < 0);   // all Content-Length bytes consumed
   pngle_destroy(p);
   http.end();
+  if (!complete) LOG.printf("[eink] truncated: %d bytes short\n", len);
 
-  return ok && g_buf && g_w > 0 && g_h > 0;
+  return ok && complete && g_buf && g_w > 0 && g_h > 0;
 }
 
 #if defined(EINK_COLOR_E6)
