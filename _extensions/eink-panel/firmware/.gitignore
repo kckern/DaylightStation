@@ -1,0 +1,8 @@
+# Generated from household SSOT — contains Wi-Fi creds. NEVER commit.
+include/config.h
+
+# Vendored Seeed pipeline (fetched on demand; not ours to redistribute)
+lib/seeed/
+
+# PlatformIO build output
+.pio/
