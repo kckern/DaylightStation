@@ -15,7 +15,7 @@ export class YtDlpStreamResolver extends IStreamResolver {
     try { info = await this.#probe(url, profile?.raw?.ytdlp); }
     catch (e) { this.#logger.warn?.('stream.ytdlp.probe_failed', { url, error: e.message }); return null; }
     if (!info?.url) return null;
-    const isHls = /m3u8/i.test(info.protocol || '') || /\.m3u8(\?|$)/i.test(info.url);
+    const isHls = /m3u8/i.test(info.protocol || '') || /\.m3u8(\?|#|\/|$)/i.test(info.url);
     return new StreamResult({
       format: isHls ? 'hls_video' : 'video',
       mediaUrl: info.url,

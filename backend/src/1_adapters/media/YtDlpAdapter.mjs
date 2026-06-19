@@ -14,11 +14,13 @@
  */
 
 import child_process from 'child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 
 const exec = promisify(child_process.exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Pick the best directly-playable format from a yt-dlp -J info object.
@@ -55,6 +57,31 @@ export function pickPlayableFormat(info) {
   }
 
   return null;
+}
+
+/**
+ * Build the argv array for a `yt-dlp -J` probe of a single URL.
+ *
+ * Security: the `url` and every `opts.args` element are returned as discrete
+ * argv elements. They are NEVER interpolated into a shell command string, so
+ * `$(...)`/backtick/`;` content in the URL can never be shell-evaluated.
+ * The URL is always the LAST element so it is passed positionally to yt-dlp.
+ *
+ * @param {string} url - URL to probe (untrusted external input)
+ * @param {Object} [opts] - optional profile-derived options
+ * @param {string[]} [opts.args] - extra yt-dlp CLI arg elements to append
+ * @returns {string[]} argv array (excluding the `yt-dlp` binary itself)
+ */
+export function buildProbeArgs(url, opts = {}) {
+  const extraArgs = Array.isArray(opts.args) ? opts.args : [];
+  return [
+    '--js-runtimes', 'node',
+    '-J',
+    '--no-warnings',
+    '--no-playlist',
+    ...extraArgs,
+    url
+  ];
 }
 
 /**
@@ -304,28 +331,28 @@ export class YtDlpAdapter {
   /**
    * Probe a URL with `yt-dlp -J` (JSON dump, NO download) and return the best
    * directly-playable format. Used by the stream content source for vendor-blind
-   * resolution. Reuses the file's #execWithTimeout helper and "${url}" quoting.
+   * resolution.
    *
-   * @param {string} url - URL to probe
+   * Security: the URL is UNTRUSTED external input (the `stream:<url>` feature),
+   * so this invokes yt-dlp via execFile with an argv array — NO shell. The URL
+   * and every `opts.args` element are discrete argv elements (see
+   * buildProbeArgs), so they can never be shell-parsed/expanded.
+   *
+   * @param {string} url - URL to probe (untrusted external input)
    * @param {Object} [opts] - optional profile-derived options
-   * @param {string[]} [opts.args] - extra yt-dlp CLI arg strings to append
+   * @param {string[]} [opts.args] - extra yt-dlp CLI arg elements to append
    * @param {number} [opts.timeoutMs=60000] - probe timeout
    * @returns {Promise<{title: string|null, duration: number|null, thumbnail: string|null, url: string, protocol: string|null}>}
    * @throws if yt-dlp fails, output is unparseable, or no playable format is found
    */
   async probe(url, opts = {}) {
-    const { args = [], timeoutMs = 60000 } = opts;
-    const cmd = [
-      'yt-dlp',
-      '--js-runtimes node',
-      '-J',
-      '--no-warnings',
-      '--no-playlist',
-      ...args,
-      `"${url}"`
-    ].filter(Boolean).join(' ');
+    const { timeoutMs = 60000 } = opts;
+    const argv = buildProbeArgs(url, opts);
 
-    const { stdout } = await this.#execWithTimeout(cmd, timeoutMs);
+    const { stdout } = await execFileAsync('yt-dlp', argv, {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024 * 32
+    });
     const info = JSON.parse(stdout.trim());
     const chosen = pickPlayableFormat(info);
     if (!chosen) {
