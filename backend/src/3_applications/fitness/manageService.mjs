@@ -39,7 +39,7 @@ export function initManageService({ eventBus, logger } = {}) {
         break;
       case ENROLL_RESULT_TOPIC:
         log.debug?.('fitness.fingerprint.enroll.result', { requestId: message.requestId, success: !!message.success });
-        broker.resolveEnrollResult({ requestId: message.requestId, success: !!message.success, uuid: message.uuid, error: message.error });
+        broker.resolveEnrollResult({ requestId: message.requestId, success: !!message.success, uuid: message.uuid, error: message.error, matchedUuid: message.matchedUuid });
         break;
       case DELETE_RESULT_TOPIC:
         log.debug?.('fitness.fingerprint.delete.result', { requestId: message.requestId, success: !!message.success });

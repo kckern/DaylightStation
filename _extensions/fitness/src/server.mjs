@@ -337,9 +337,13 @@ async function connectWebSocket() {
         if (result?.enrolled) {
           sendBus('fitness.enroll.result', { requestId, success: true, uuid });
           console.log(`🔐 Enroll result sent (success, uuid=${uuid}) for requestId=${requestId}`);
+        } else if (result?.reason === 'duplicate') {
+          sendBus('fitness.enroll.result', { requestId, success: false, error: 'duplicate', matchedUuid: result.matchedUuid });
+          console.log(`🔐 Enroll REJECTED (duplicate of ${result.matchedUuid}) for requestId=${requestId}`);
         } else {
-          sendBus('fitness.enroll.result', { requestId, success: false, error: result?.error || 'enroll-failed' });
-          console.log(`🔐 Enroll result sent (failed: ${result?.error || 'enroll-failed'}) for requestId=${requestId}`);
+          const err = result?.error || result?.reason || 'enroll-failed';
+          sendBus('fitness.enroll.result', { requestId, success: false, error: err });
+          console.log(`🔐 Enroll result sent (failed: ${err}) for requestId=${requestId}`);
         }
         return;
       }

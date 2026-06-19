@@ -42,6 +42,7 @@ import { SessionLockService } from '#apps/fitness/services/SessionLockService.mj
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
+import { buildFingerprintIdentityIndex } from '#apps/fitness/identityRelay.mjs';
 
 // Module-level session lock (shared across all router instances)
 const sessionLockService = new SessionLockService();
@@ -1555,6 +1556,14 @@ export function createFitnessRouter(config) {
     } catch (err) {
       logger.error?.('fitness.fingerprint.enroll.error', { username, error: err?.message });
       return res.status(500).json({ error: 'enroll-failed' });
+    }
+    // The finger already belongs to someone — refuse to file it under another
+    // identity. Name the existing owner so the UI can say who.
+    if (result?.error === 'duplicate') {
+      const owner = buildFingerprintIdentityIndex(userService?.getAllProfiles?.() || {})[result.matchedUuid]?.userId || null;
+      const registeredTo = (owner && userService?.getProfile?.(owner)?.display_name) || owner || 'another user';
+      logger.warn?.('fitness.fingerprint.enroll.duplicate', { username, finger, matchedUuid: result.matchedUuid, owner });
+      return res.status(409).json({ error: 'duplicate-finger', registeredTo });
     }
     if (!result?.success || !result.uuid) {
       logger.warn?.('fitness.fingerprint.enroll.unsuccessful', { username, reason: result?.error });
