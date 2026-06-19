@@ -47,8 +47,10 @@ export function createManageBroker({
     pending.get(requestId)?.onProgress?.({ stage, stagesTotal });
   }
 
-  function resolveEnrollResult({ requestId, success, uuid, error } = {}) {
-    const result = success ? { success: true, uuid } : { success: false, error: error || 'enroll-failed' };
+  function resolveEnrollResult({ requestId, success, uuid, error, matchedUuid } = {}) {
+    const result = success
+      ? { success: true, uuid }
+      : { success: false, error: error || 'enroll-failed', ...(matchedUuid ? { matchedUuid } : {}) };
     settle(requestId, result);
   }
 

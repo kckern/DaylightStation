@@ -13,7 +13,15 @@ const FALLBACK_AVATAR = '/media/static/img/users/user';
 // the self/admin verify scan not matching (a tired/overheated reader, or a
 // finger that didn't read) — that must NOT silently close the modal.
 function friendlyError(result) {
-  const raw = String(result?.error || result?.reason || '').toLowerCase();
+  const rawError = String(result?.error || result?.reason || '');
+  const raw = rawError.toLowerCase();
+  if (raw.includes('duplicate')) {
+    const who = rawError.match(/"registeredTo":"([^"]+)"/)?.[1] || 'another person';
+    return `That fingerprint is already registered to ${who}. Each finger can belong to only one person.`;
+  }
+  if (raw.includes('verify-failed')) {
+    return 'Couldn’t verify the finger (reader hiccup). Try again — nothing was saved.';
+  }
   if (raw.includes('auth') || raw.includes('denied') || raw.includes('no-match')) {
     return 'Couldn’t verify your fingerprint. Press an already-enrolled finger firmly and flat, then try again.';
   }
