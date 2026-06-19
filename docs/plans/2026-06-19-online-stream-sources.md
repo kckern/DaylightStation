@@ -781,6 +781,8 @@ git commit -m "feat(stream): register StreamAdapter (stream: prefix)"
 
 ## Task 7: Backend stream proxy (`/api/v1/proxy/stream`)
 
+> **Why proxy at all, and why NOT `backend/src/0_system/proxy/ProxyService`:** `hls_video` requires a proxy because hls.js fetches the `.m3u8` + every `.ts` segment via CORS-gated `fetch`/XHR, and third-party CDNs don't send `Access-Control-Allow-Origin`; proxying makes them same-origin. Remote `video` (mp4) usually needs it too, because CDNs enforce `Referer`/`User-Agent` hotlink checks the browser can't satisfy cross-origin. **`webview` is never proxied** (the iframe navigates the page itself; CORS doesn't apply). The existing `ProxyService`/`IProxyAdapter` is the WRONG vehicle: it resolves the target as `new URL(path, adapter.getBaseUrl())` — a **fixed base host per registered service** — and only pipes bytes. Our proxy needs a **dynamic per-request origin** (the CDN varies per stream) and **m3u8 playlist rewriting**, neither of which fits that contract. So implement a dedicated route in `proxy.mjs` (same file/layer as the existing Plex/media proxy routes).
+
 **Files:**
 - Modify: `backend/src/4_api/v1/routers/proxy.mjs` (add route)
 - Test: `backend/src/4_api/v1/routers/proxy.stream.test.mjs` (unit-test the m3u8 rewrite helper)
