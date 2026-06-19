@@ -50,6 +50,12 @@ export class EinkPanelService {
   #dataService;
   #logger;
   #viewIndex = new Map();   // panelId -> current view index
+  // panelId -> monotonic counter bumped by the 'refresh' button action. Folded
+  // into the /config fingerprint so a press changes image_hash WITHOUT changing
+  // the view — that is what lets the green button force a full e-ink redraw of the
+  // CURRENT content on demand, instead of waiting for the next timer wake. Ephemeral
+  // (in-memory) like #viewIndex: a panel reboot just resets to 0, harmless.
+  #refreshNonce = new Map();
 
   constructor({ baseUrl, fontDir, dataService, logger } = {}) {
     // Host/port are injected by the composition root from household config
@@ -166,7 +172,9 @@ export class EinkPanelService {
 
     // Fingerprint of every pixel-affecting input. Stable key ordering so a feed
     // reordering its JSON keys does not spuriously bust the hash. RENDERER_VERSION
-    // folds in code changes so a renderer/widget edit forces a refresh too.
+    // folds in code changes so a renderer/widget edit forces a refresh too. The
+    // per-panel refreshNonce folds in the manual 'refresh' button: bumping it
+    // changes the hash (so the panel redraws) without altering the content.
     const now = new Date();
     const fingerprint = stableStringify({
       date: localYMD(now),
@@ -177,6 +185,7 @@ export class EinkPanelService {
       theme: screenConfig.theme,
       layout: screenConfig.layout,
       data,
+      refresh: this.#refreshNonce.get(panelId) ?? 0,
       renderer: RENDERER_VERSION,
     });
     const imageHash = crypto.createHash('sha1').update(fingerprint).digest('hex');
@@ -203,9 +212,10 @@ export class EinkPanelService {
 
   /**
    * Apply a button action and return the resulting view state.
-   * next/prev page through views; select is reserved for per-view behavior.
+   * next/prev page through views; refresh forces a redraw of the current view;
+   * select is reserved for per-view behavior.
    * @param {string} panelId
-   * @param {'next'|'prev'|'select'} action
+   * @param {'next'|'prev'|'refresh'|'select'} action
    */
   async advance(panelId, action) {
     const screen = this.#loadScreen(panelId);
@@ -214,11 +224,22 @@ export class EinkPanelService {
     let to = from;
     if (action === 'next') to = this.#wrap(from + 1, views.length);
     else if (action === 'prev') to = this.#wrap(from - 1, views.length);
-    // 'select' (and unknown actions): keep current view; the re-fetched /panel
-    // reflects any per-view select handling once widgets implement it.
+    else if (action === 'refresh') {
+      // Manual "redraw now": keep the view, bump the per-panel nonce so the next
+      // /config snapshot reports a new image_hash. The panel (which re-polls
+      // /config right after this action) then sees the change and pulls a fresh
+      // /panel — a full e-ink refresh of the SAME content, on demand, instead of
+      // waiting for the timer wake. No reflash: the panel already redraws on any
+      // hash change; we just give it one.
+      this.#refreshNonce.set(panelId, (this.#refreshNonce.get(panelId) ?? 0) + 1);
+    }
+    // 'select' (and unknown actions): keep current view, no nonce bump (true
+    // no-op); the re-fetched /panel reflects any per-view select handling once
+    // widgets implement it.
     this.#viewIndex.set(panelId, to);
-    this.#logger.info?.('eink.panel.action', { panelId, action, from, to, view: views[to]?.id });
-    return { action, index: to, view: views[to]?.id, viewCount: views.length };
+    const refreshNonce = this.#refreshNonce.get(panelId) ?? 0;
+    this.#logger.info?.('eink.panel.action', { panelId, action, from, to, view: views[to]?.id, refreshNonce });
+    return { action, index: to, view: views[to]?.id, viewCount: views.length, refreshNonce };
   }
 }
 

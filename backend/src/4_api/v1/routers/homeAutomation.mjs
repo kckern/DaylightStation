@@ -11,7 +11,37 @@
  */
 
 import express from 'express';
+import moment from 'moment';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { buildPhotoTitle, formatPhotoDate } from '#adapters/content/gallery/immich/photoLabels.mjs';
+
+// --- Small presentation helpers for the e-ink agenda feeds -------------------
+const MD_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+
+/** Todoist task content is often a markdown link `[text](url)` — keep the text. */
+function stripMarkdownLinks(s) {
+  return String(s ?? '').replace(MD_LINK, '$1').replace(/\s+/g, ' ').trim();
+}
+
+/** Clip to `n` chars with an ellipsis (the eink rows don't wrap). */
+function truncate(s, n) {
+  const str = String(s ?? '').trim();
+  return str.length > n ? `${str.slice(0, n - 1).trimEnd()}…` : str;
+}
+
+/** "Today" / "Tmrw" / weekday for a calendar event's start. */
+function calDayLabel(m, now) {
+  if (m.isSame(now, 'day')) return 'Today';
+  if (m.isSame(now.clone().add(1, 'day'), 'day')) return 'Tmrw';
+  return m.format('ddd');
+}
+
+/** Compact clock label: "9a" / "12:30p" (top-of-hour drops the :00). */
+function calTimeLabel(m) {
+  const ap = m.hours() < 12 ? 'a' : 'p';
+  const t = m.minutes() === 0 ? m.format('h') : m.format('h:mm');
+  return `${t}${ap}`;
+}
 
 /**
  * Create home automation router
@@ -46,9 +76,15 @@ export function createHomeAutomationRouter(config) {
     entropyService,
     configService,
     eventAggregationService,
+    immichAdapter,
     callHomeAssistantService,
     logger = console
   } = config;
+
+  // Photo-of-the-day cache for the e-ink panel. A chosen favorite is held for
+  // `holdHours` so the panel's content hash stays stable and it does NOT burn
+  // battery on a costly e-ink refresh until the hold expires.
+  const photoCache = new Map(); // key -> { pickedAt, payload }
 
   // ===========================================================================
   // TV Control Endpoints
@@ -321,6 +357,116 @@ export function createHomeAutomationRouter(config) {
     // loadFile already prepends household path, just use relative path
     const eventsData = loadFile('common/events') || [];
     res.json(eventsData);
+  }));
+
+  // ===========================================================================
+  // E-ink agenda feeds (calendar / todos / photo)
+  // Shaped for the hardware panel's canned widgets (1_rendering/eink/widgets).
+  // ===========================================================================
+
+  /**
+   * GET /home/calendar
+   * Upcoming calendar events as widget-ready rows: { events: [{ day, time, title }] }.
+   */
+  router.get('/calendar', asyncHandler(async (req, res) => {
+    if (!eventAggregationService) {
+      return res.status(503).json({ error: 'Event aggregation not configured' });
+    }
+    const now = moment();
+    const startOfToday = now.clone().startOf('day');
+    const limit = Math.min(Number(req.query.limit) || 8, 20);
+
+    const events = eventAggregationService.getUpcomingEvents()
+      .filter((e) => e.type === 'calendar' && e.start)
+      // parseZone keeps each event's own UTC offset (the wall-clock at its place).
+      .map((e) => ({ e, m: moment.parseZone(e.start) }))
+      .filter(({ m }) => m.isValid() && m.isSameOrAfter(startOfToday))
+      .sort((a, b) => a.m.valueOf() - b.m.valueOf())
+      .slice(0, limit)
+      .map(({ e, m }) => ({
+        day: calDayLabel(m, now),
+        time: e.allday ? '' : calTimeLabel(m),
+        title: truncate(e.summary, 26),
+      }));
+
+    logger.info?.('home.calendar.served', { count: events.length });
+    res.json({ events });
+  }));
+
+  /**
+   * GET /home/todos
+   * Open Todoist tasks as widget-ready rows: { items: [{ text, done:false }] }.
+   */
+  router.get('/todos', asyncHandler(async (req, res) => {
+    if (!eventAggregationService) {
+      return res.status(503).json({ error: 'Event aggregation not configured' });
+    }
+    const limit = Math.min(Number(req.query.limit) || 8, 20);
+
+    const items = eventAggregationService.getUpcomingEvents()
+      .filter((e) => e.type === 'todoist')
+      .map((e) => truncate(stripMarkdownLinks(e.summary), 28))
+      .filter(Boolean)
+      .slice(0, limit)
+      .map((text) => ({ text, done: false }));
+
+    logger.info?.('home.todos.served', { count: items.length });
+    res.json({ items });
+  }));
+
+  /**
+   * GET /home/photo
+   * Picks a random gallery photo (config-driven query, e.g. ?favorites=true) and
+   * HOLDS it for ?holdHours (default 12) via a server-side cache, so the e-ink
+   * panel's content hash is stable across wakes and it only does the costly e-ink
+   * refresh once per hold window. Returns { id, imageUrl, title, date } — the
+   * renderer preloads `imageUrl` and converts it to the panel's 16 grey tones.
+   */
+  router.get('/photo', asyncHandler(async (req, res) => {
+    if (!immichAdapter) {
+      return res.status(503).json({ error: 'Immich gallery not configured' });
+    }
+    const favorites = req.query.favorites === 'true' || req.query.favorites === '1';
+    const holdHours = Number(req.query.holdHours) > 0 ? Number(req.query.holdHours) : 12;
+    const holdMs = holdHours * 3600 * 1000;
+    const key = JSON.stringify({ favorites, holdHours });
+    const now = Date.now();
+
+    const cached = photoCache.get(key);
+    if (cached && now - cached.pickedAt < holdMs) {
+      logger.info?.('home.photo.cached', { ageMs: now - cached.pickedAt, holdHours });
+      return res.json(cached.payload);
+    }
+
+    const result = await immichAdapter.search({ favorites, mediaType: 'image', take: 1000 });
+    const ids = (result?.items || [])
+      .map((it) => it?.id)
+      .filter(Boolean)
+      .sort(); // stable order independent of Immich's internal sort
+    if (!ids.length) {
+      return res.status(404).json({ error: 'no photos found for query' });
+    }
+
+    const picked = ids[Math.floor(Math.random() * ids.length)];
+    const viewable = await immichAdapter.getViewable(picked);
+    if (!viewable) {
+      return res.status(502).json({ error: 'failed to load chosen photo' });
+    }
+
+    const meta = viewable.metadata || {};
+    const people = Array.isArray(meta.people) ? meta.people.map((p) => p.name).filter(Boolean) : [];
+    const location = meta.exif?.city || null;
+    const when = meta.localDateTime || null; // TZ-contract field for photoLabels
+    const payload = {
+      id: viewable.id,
+      imageUrl: viewable.imageUrl,
+      title: buildPhotoTitle(people, location, when),
+      date: formatPhotoDate(when) || '',
+    };
+
+    photoCache.set(key, { pickedAt: now, payload });
+    logger.info?.('home.photo.picked', { id: picked, count: ids.length, holdHours });
+    res.json(payload);
   }));
 
   // ===========================================================================

@@ -1701,6 +1701,7 @@ export function createHomeAutomationApiRouter(config) {
     entropyService,
     configService,
     eventAggregationService,
+    immichAdapter,
     logger = console
   } = config;
 
@@ -1724,6 +1725,7 @@ export function createHomeAutomationApiRouter(config) {
     entropyService,
     configService,
     eventAggregationService,
+    immichAdapter,
     callHomeAssistantService,
     logger
   });

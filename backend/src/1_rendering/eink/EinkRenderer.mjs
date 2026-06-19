@@ -65,8 +65,9 @@ export async function render(screenConfig, options = {}) {
   // Ensure built-in widgets are registered
   registerBuiltins();
 
-  // Resolve data
-  const data = dataOverride || await resolveData(screenConfig.data, baseUrl);
+  // Resolve data — the render path preloads images (loadImages) so widgets like
+  // PhotoWidget have ready pixels; the /config snapshot deliberately does not.
+  const data = dataOverride || await resolveData(screenConfig.data, baseUrl, { loadImages: true });
 
   // Create canvas and register the base font (Roboto Condensed) so widgets can
   // address it by name. Missing faces degrade gracefully (synthetic bold).
