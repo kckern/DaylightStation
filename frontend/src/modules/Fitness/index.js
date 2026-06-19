@@ -78,7 +78,15 @@ registry.register('fitness:suggestions', FitnessSuggestionsWidget);
 // through the unified widget registry via the legacy ID map.
 
 function resolveKey(moduleId) {
-  return LEGACY_ID_MAP[moduleId] || moduleId;
+  if (!moduleId) return moduleId;
+  if (LEGACY_ID_MAP[moduleId]) return LEGACY_ID_MAP[moduleId];
+  // Tolerate hyphen/underscore variance in bare (non-namespaced) ids. Config and
+  // manifests use underscores (e.g. `fingerprint_manager`), but a manifest id or a
+  // hand-typed deep link may use hyphens (`fingerprint-manager`). Namespaced keys
+  // (`fitness:...`) already match the registry directly and fall through unchanged.
+  const underscored = moduleId.replace(/-/g, '_');
+  if (LEGACY_ID_MAP[underscored]) return LEGACY_ID_MAP[underscored];
+  return moduleId;
 }
 
 export const getModule = (moduleId) => registry.get(resolveKey(moduleId));
