@@ -3,19 +3,20 @@
 
 .fp-hands {
   display: flex;
-  gap: 2%;
+  gap: 8%;
   justify-content: center;
   align-items: flex-start;
 
-  &--sm { --fp-hand-size: 88px; --fp-tip: 22%; }
-  &--md { --fp-hand-size: 132px; --fp-tip: 21%; }
-  &--lg { --fp-hand-size: 200px; --fp-tip: 20%; }
+  // --fp-hand-size is the WIDTH; height derives from the cropped aspect (480/495).
+  &--sm { --fp-hand-size: 58px; --fp-tip: 24%; }
+  &--md { --fp-hand-size: 74px; --fp-tip: 23%; }
+  &--lg { --fp-hand-size: 188px; --fp-tip: 21%; }
 }
 
 .fp-hand {
   position: relative;
   width: var(--fp-hand-size);
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 480 / 495; // matches the cropped viewBox so fingertip %s align
   flex: 0 0 auto;
 
   &__silhouette {
@@ -50,10 +51,10 @@
   // Not enrolled: a faint print etched on the fingertip.
   &--empty .fp-tip__glyph { color: rgba(148, 163, 184, 0.28); transition: color 0.18s ease, filter 0.18s ease; }
 
-  // Enrolled: lit green with a soft glow.
+  // Enrolled: lit bright green with a glow so it clearly reads against the hand.
   &--enrolled .fp-tip__glyph {
-    color: #22c55e;
-    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.55));
+    color: #2ee06a;
+    filter: drop-shadow(0 0 5px rgba(46, 224, 106, 0.85));
   }
 
   // Focused (the print being chosen): cyan, ringed, breathing.

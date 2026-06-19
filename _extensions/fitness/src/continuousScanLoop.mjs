@@ -6,6 +6,14 @@ const NO_TEMPLATES_BACKOFF_MS = 5000; // nothing enrolled yet — check back occ
 const HEARTBEAT_ITERATIONS = 100;   // periodic health summary so the loop is provably alive over long uptime
 const ERROR_BACKOFF_CAP_MS = 30000; // ceiling for escalating fault backoff
 const ERROR_ALERT_THRESHOLD = 10;   // consecutive faults → one prominent "reader wedged" alert
+const OVERHEAT_COOLDOWN_MS = 30000; // thermal fault: rest this long (device closed, LED off) to cool
+
+// The uru4000 firmware disables the device when it overheats (error quark 257).
+// Re-probing on the normal escalating backoff keeps the illumination LED cycling
+// and never lets it cool, so one thermal trip snowballs into a persistent fault.
+export function isOverheat(error) {
+  return /overheat/i.test(String(error || ''));
+}
 
 // Escalating backoff for genuine reader faults (identify-error / throw). A wedged
 // reader must NOT be re-probed every 800ms: that open/close USB churn is what
@@ -125,11 +133,22 @@ export function createContinuousScanLoop({
             // binding shows up in logs before it wedges. A rising streak ⇒ restart.
             stats.identifyErrors += 1;
             consecutiveErrors += 1;
-            lastQuietReason = null;
             const detail = result.error ? `: ${result.error}` : '';
-            logger.warn?.(`⚠️ scan-loop identify-error (#${consecutiveErrors} consecutive)${detail}`);
-            maybeAlertWedged();
-            await delay(faultBackoffMs(consecutiveErrors));
+            if (isOverheat(result.error)) {
+              // Thermal fault: rest a full cooldown (device closed → LED off) so the
+              // reader can cool, instead of re-probing every ~800ms and cooking it.
+              if (lastQuietReason !== 'overheat') {
+                logger.warn?.(`🌡️ scan-loop: reader overheated (#${consecutiveErrors}) — resting ${OVERHEAT_COOLDOWN_MS / 1000}s to cool${detail}`);
+                lastQuietReason = 'overheat';
+              }
+              maybeAlertWedged();
+              await delay(OVERHEAT_COOLDOWN_MS);
+            } else {
+              lastQuietReason = null;
+              logger.warn?.(`⚠️ scan-loop identify-error (#${consecutiveErrors} consecutive)${detail}`);
+              maybeAlertWedged();
+              await delay(faultBackoffMs(consecutiveErrors));
+            }
           }
         }
       }

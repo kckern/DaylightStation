@@ -38,4 +38,18 @@ describe('EnrollModal', () => {
     await act(async () => { progressCb({ clientToken: 'other', stage: 4, stagesTotal: 5 }); });
     expect(screen.queryByText(/4.*5/)).not.toBeInTheDocument();
   });
+
+  it('on FAILURE stays open with a retry — does NOT close (the disappearing-menu bug)', async () => {
+    const onEnroll = vi.fn().mockResolvedValue({ success: false, error: 'auth-denied' });
+    const onDone = vi.fn();
+    render(<EnrollModal username="test-user" clientToken="tok-1" onEnroll={onEnroll} onDone={onDone} onCancel={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /start/i }));
+    // Error message shown, a Try again button offered, and onDone NOT called.
+    expect(await screen.findByText(/couldn’t verify/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+    // Retry returns to the picker so the operator can scan again.
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(screen.getByRole('button', { name: /start/i })).toBeInTheDocument();
+  });
 });
