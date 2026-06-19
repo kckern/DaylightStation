@@ -3,7 +3,6 @@ import {
   createIdentityRelay,
   buildFingerprintIdentityIndex,
   buildAuthz,
-  EMERGENCY_LOCK,
   ADMIN_LOCK,
 } from './identityRelay.mjs';
 
@@ -33,19 +32,17 @@ describe('buildFingerprintIdentityIndex', () => {
 });
 
 describe('buildAuthz', () => {
-  it('collects all lock memberships and flags emergency', () => {
-    expect(buildAuthz('kc', fitnessConfig())).toEqual({ emergency: true, locks: ['emergency', 'dance_party', 'admin'] });
-    expect(buildAuthz('guest', fitnessConfig())).toEqual({ emergency: false, locks: ['dance_party'] });
+  it('collects all lock memberships and flags admin', () => {
+    expect(buildAuthz('kc', fitnessConfig())).toEqual({ admin: true, locks: ['emergency', 'dance_party', 'admin'] });
+    expect(buildAuthz('guest', fitnessConfig())).toEqual({ admin: false, locks: ['dance_party'] });
   });
 
-  it('emergency arming requires recognized + ADMIN — a non-admin in the emergency list cannot arm', () => {
-    // sitter is listed in locks.emergency but is NOT an admin → emergency must be false.
+  it('admin IS the emergency authority — a non-admin in a config lock list is not admin', () => {
+    // sitter is listed in a lock group but is NOT an admin → admin must be false,
+    // so they cannot arm/abort/release the emergency shutdown.
     const cfg = { locks: { emergency: ['kc', 'sitter'] }, users: { admin: ['kc'] } };
-    expect(buildAuthz('kc', cfg)).toEqual({ emergency: true, locks: ['emergency', 'admin'] });
-    expect(buildAuthz('sitter', cfg)).toEqual({ emergency: false, locks: ['emergency'] });
-  });
-  it('EMERGENCY_LOCK is the canonical emergency lock id', () => {
-    expect(EMERGENCY_LOCK).toBe('emergency');
+    expect(buildAuthz('kc', cfg)).toEqual({ admin: true, locks: ['emergency', 'admin'] });
+    expect(buildAuthz('sitter', cfg)).toEqual({ admin: false, locks: ['emergency'] });
   });
   it('grants the ADMIN_LOCK to fitness.yml admins (in sync, not hand-listed)', () => {
     const cfg = { locks: { dance_party: ['kc'] }, users: { admin: ['kc', 'elizabeth'] } };
@@ -74,7 +71,7 @@ describe('createIdentityRelay', () => {
     const evt = d.eventBus.broadcasts.find((b) => b.topic === 'fitness.identity.detected');
     expect(evt.payload).toEqual({
       modality: 'fingerprint', matched: true, userId: 'guest', finger: 'left-thumb',
-      authz: { emergency: false, locks: ['dance_party'] }, at: 1000,
+      authz: { admin: false, locks: ['dance_party'] }, at: 1000,
     });
     expect(relay.consumePendingDetection(1000)).toBeNull();
   });
@@ -121,7 +118,7 @@ describe('createIdentityRelay', () => {
     expect(evt.payload.matched).toBe(false);
   });
 
-  it('stamps a pending detection for an emergency-authorized identity, consumable once within TTL', () => {
+  it('stamps a pending detection for an admin identity, consumable once within TTL', () => {
     const d = deps(() => 1000);
     const relay = createIdentityRelay({ ...d, pendingTtlMs: 30000 });
     d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-kc' });

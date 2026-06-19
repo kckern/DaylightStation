@@ -132,8 +132,9 @@ export function IdentityProvider({ children }) {
       return;
     }
 
-    // (2) No modal open: only emergency-authorized matches matter.
-    if (!msg.matched || !msg.authz?.emergency) return;
+    // (2) No modal open: only admins drive the emergency state machine. Admin IS
+    // the emergency authority — there is no separate emergency flag.
+    if (!msg.matched || !msg.authz?.admin) return;
     const phase = emergencyRef.current?.phase;
     if (phase === PHASE_NORMAL) {
       logger().info('emergency-ceremony-start', { userId: msg.userId ?? null });
@@ -142,11 +143,11 @@ export function IdentityProvider({ children }) {
       logger().info('emergency-ceremony-abort', { userId: msg.userId ?? null });
       emergencyRef.current?.abort?.();
     } else if (phase === PHASE_LOCKED) {
-      // An emergency-authorized (admin) scan releases the lockdown immediately —
-      // even ahead of the scheduled lockedUntil. We're already past the
-      // `msg.authz.emergency` guard above, and the relay just stamped a pending
-      // detection that /release consumes, so release() succeeds without a second
-      // scan. The press-and-hold path remains as a manual fallback.
+      // An admin scan releases the lockdown immediately — even ahead of the
+      // scheduled lockedUntil. We're already past the `msg.authz.admin` guard
+      // above, and the relay just stamped a pending detection that /release
+      // consumes, so release() succeeds without a second scan. The press-and-hold
+      // path remains as a manual fallback.
       logger().info('emergency-release-scan', { userId: msg.userId ?? null });
       emergencyRef.current?.release?.();
     }

@@ -36,26 +36,26 @@ beforeEach(() => { emergency.phase = 'normal'; vi.clearAllMocks(); });
 
 test('no modal + emergency-authorized → starts ceremony', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
-  emit({ matched: true, userId: 'kc', finger: 'right-index', authz: { emergency: true, locks: ['emergency'] } });
+  emit({ matched: true, userId: 'kc', finger: 'right-index', authz: { admin: true, locks: ['emergency'] } });
   expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
 });
 test('triggering + emergency-authorized → abort', () => {
   emergency.phase = 'triggering';
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
-  emit({ matched: true, userId: 'kc', authz: { emergency: true, locks: ['emergency'] } });
+  emit({ matched: true, userId: 'kc', authz: { admin: true, locks: ['emergency'] } });
   expect(emergency.abort).toHaveBeenCalledTimes(1);
 });
 test('modal open + authorized for that lock → granted verdict resolves', async () => {
   let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
   let verdict; act(() => { api.registerUnlock('dance_party').then((v) => { verdict = v; }); });
-  emit({ matched: true, userId: 'kc', authz: { emergency: false, locks: ['dance_party'] } });
+  emit({ matched: true, userId: 'kc', authz: { admin: false, locks: ['dance_party'] } });
   await waitFor(() => expect(verdict).toEqual({ matched: true, userId: 'kc' }));
 });
 test('modal open + recognized but NOT authorized → unauthorized, no resolve until cancel', async () => {
   let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
   let verdict; act(() => { api.registerUnlock('dance_party').then((v) => { verdict = v; }); });
   // A known person whose finger doesn't carry this lock → recognized, not allowed.
-  emit({ matched: true, userId: 'kc', authz: { emergency: false, locks: ['skip_content'] } });
+  emit({ matched: true, userId: 'kc', authz: { admin: false, locks: ['skip_content'] } });
   await waitFor(() => expect(api.unlockState).toBe('unauthorized'));
   expect(api.unlockedUser).toMatchObject({ userId: 'kc' });
   expect(verdict).toBeUndefined();
@@ -65,11 +65,11 @@ test('modal open + recognized but NOT authorized → unauthorized, no resolve un
 test('modal open + UNrecognized finger → denied (distinct from unauthorized)', async () => {
   let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
   act(() => { api.registerUnlock('dance_party'); });
-  emit({ matched: false, userId: null, authz: { emergency: false, locks: [] } });
+  emit({ matched: false, userId: null, authz: { admin: false, locks: [] } });
   await waitFor(() => expect(api.unlockState).toBe('denied'));
 });
 test('no modal + non-emergency scan → ignored', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
-  emit({ matched: true, userId: 'guest', authz: { emergency: false, locks: ['dance_party'] } });
+  emit({ matched: true, userId: 'guest', authz: { admin: false, locks: ['dance_party'] } });
   expect(emergency.triggerCeremony).not.toHaveBeenCalled();
 });
