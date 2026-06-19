@@ -72,6 +72,56 @@ describe('GET /fingerprints', () => {
     expect(res.body.find((u) => u.username === 'kckern')).toMatchObject({ admin: true });
     expect(res.body.find((u) => u.username === 'felix')).toMatchObject({ admin: false });
   });
+
+  it('hides simulated fixtures so they never show as phantom duplicate fingers', async () => {
+    const { app } = appWith({
+      profiles: {
+        kckern: {
+          display_name: 'KC',
+          identities: {
+            fingerprints: [
+              { id: 'sim-kckern-0001', finger: 'right-index', enrolled: '2026-06-17', simulated: true },
+              fp('real-1', 'right-index'),
+              fp('real-2', 'right-thumb'),
+            ],
+          },
+        },
+      },
+      primary: ['kckern'],
+    });
+    const res = await request(app).get('/fingerprints');
+    const kc = res.body.find((u) => u.username === 'kckern');
+    // Only the two REAL prints — one right-index, no duplicate, no sim uuid leaked.
+    expect(kc.fingerprints).toHaveLength(2);
+    expect(kc.fingerprints.filter((f) => f.finger === 'right-index')).toHaveLength(1);
+    expect(JSON.stringify(res.body)).not.toContain('sim-kckern-0001');
+  });
+});
+
+describe('DELETE /fingerprints with a simulated fixture present', () => {
+  it('deletes the real finger without 409 ambiguity from the colliding sim entry', async () => {
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'kckern' });
+    const requestDelete = vi.fn().mockResolvedValue({ success: true });
+    const { app, fingerprintProfileWriter } = appWith({
+      profiles: {
+        kckern: {
+          identities: {
+            fingerprints: [
+              { id: 'sim-kckern-0001', finger: 'right-index', enrolled: '2026-06-17', simulated: true },
+              fp('real-1', 'right-index'),
+            ],
+          },
+        },
+      },
+      primary: ['kckern'],
+      unlockService: { requestUnlock },
+      manageService: { requestDelete },
+    });
+    const res = await request(app).delete('/fingerprints').send({ username: 'kckern', finger: 'right-index' });
+    expect(res.status).toBe(200);
+    expect(requestDelete).toHaveBeenCalledWith({ uuid: 'real-1' });
+    expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('kckern', 'real-1');
+  });
 });
 
 describe('admin eligibility (config admin, not primary)', () => {
