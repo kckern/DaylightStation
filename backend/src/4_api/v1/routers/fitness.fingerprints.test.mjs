@@ -7,7 +7,7 @@ import { createFitnessRouter } from './fitness.mjs';
 
 const silent = { info(){}, warn(){}, error(){}, debug(){} };
 
-function appWith({ profiles = {}, primary, admin, unlockService, manageService } = {}) {
+function appWith({ profiles = {}, primary, admin, unlockService, manageService, identityRelay } = {}) {
   const userService = {
     getProfile: (u) => profiles[u] ?? null,
     getAllProfiles: () => new Map(Object.entries(profiles)),
@@ -27,6 +27,7 @@ function appWith({ profiles = {}, primary, admin, unlockService, manageService }
     userService, configService, fitnessConfigService, fingerprintProfileWriter,
     resolveUnlockService: () => unlockService ?? null,
     resolveManageService: () => manageService ?? null,
+    identityRelay: identityRelay ?? null,
     logger: silent,
   }));
   return { app, fingerprintProfileWriter, writes };
@@ -232,6 +233,23 @@ describe('DELETE /fingerprints', () => {
     const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'right-index' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true });
+    expect(requestDelete).toHaveBeenCalledWith({ uuid: 'own-1' });
+    expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('test-user', 'own-1');
+  });
+
+  it('an active admin session authorizes delete without a second scan', async () => {
+    const requestUnlock = vi.fn();
+    const requestDelete = vi.fn().mockResolvedValue({ success: true });
+    const { app, fingerprintProfileWriter } = appWith({
+      profiles: { 'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } } },
+      unlockService: { requestUnlock },
+      manageService: { requestDelete },
+      identityRelay: { adminVerifiedWithin: () => ({ userId: 'kckern' }) },
+    });
+    const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'right-index' });
+    expect(res.status).toBe(200);
+    // The admin-gate scan stood in — no second verify scan was requested.
+    expect(requestUnlock).not.toHaveBeenCalled();
     expect(requestDelete).toHaveBeenCalledWith({ uuid: 'own-1' });
     expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('test-user', 'own-1');
   });

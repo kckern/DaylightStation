@@ -42,19 +42,26 @@ export function buildAuthz(username, fitnessConfig) {
   return { emergency, locks };
 }
 
+// How long an admin scan authorizes manage operations (enroll-verify / delete)
+// without a second scan. The fingerprint manager is admin-gated on entry; this
+// lets the gate's scan stand in for the per-operation verify within the session.
+const DEFAULT_ADMIN_SESSION_TTL_MS = 300000; // 5 min
+
 export function createIdentityRelay({
   eventBus,
   userService,
   loadFitnessConfig,
   now = () => Date.now(),
   pendingTtlMs = DEFAULT_PENDING_TTL_MS,
+  adminSessionTtlMs = DEFAULT_ADMIN_SESSION_TTL_MS,
   logger = console,
 }) {
   if (!eventBus || typeof eventBus.broadcast !== 'function' || typeof eventBus.onClientMessage !== 'function') {
     throw new Error('createIdentityRelay: eventBus with broadcast() and onClientMessage() is required');
   }
 
-  let pending = null; // { userId, at }
+  let pending = null;   // { userId, at } — emergency ceremony guard
+  let lastAdmin = null; // { userId, at } — most recent admin verification (sliding session)
 
   function emitUnrecognized(modality, at) {
     eventBus.broadcast(IDENTITY_TOPIC, {
@@ -84,6 +91,10 @@ export function createIdentityRelay({
       pending = { userId: entry.userId, at };
       logger.info?.('identity.pending_stamped', { userId: entry.userId });
     }
+    if (authz.locks.includes(ADMIN_LOCK)) {
+      lastAdmin = { userId: entry.userId, at };
+      logger.info?.('identity.admin_verified', { userId: entry.userId });
+    }
     eventBus.broadcast(IDENTITY_TOPIC, {
       modality, matched: true, userId: entry.userId, finger: entry.finger, authz, at,
     });
@@ -104,6 +115,13 @@ export function createIdentityRelay({
       const consumed = pending;
       pending = null;
       return consumed;
+    },
+    // Non-consuming: was an admin verified within the session window? Manage
+    // operations reuse the admin-gate scan instead of demanding a second one.
+    adminVerifiedWithin(ttlMs = adminSessionTtlMs, nowMs = now()) {
+      if (!lastAdmin) return null;
+      if (nowMs - lastAdmin.at > ttlMs) { lastAdmin = null; return null; }
+      return { userId: lastAdmin.userId, at: lastAdmin.at };
     },
   };
 }

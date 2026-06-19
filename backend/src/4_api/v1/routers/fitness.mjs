@@ -1493,6 +1493,15 @@ export function createFitnessRouter(config) {
       logger.info?.('fitness.fingerprint.access.tofu', { username });
       return { ok: true };
     }
+    // The manager is admin-gated on entry; if an admin verified within the session
+    // window, that scan authorizes manage ops (enroll-verify / delete) — no second
+    // scan. This is what makes deleting a print from the UX work (and not depend on
+    // a flaky reader, since delete itself never touches it).
+    const adminSession = identityRelay?.adminVerifiedWithin?.();
+    if (adminSession) {
+      logger.info?.('fitness.fingerprint.access.admin-session', { username, by: adminSession.userId });
+      return { ok: true };
+    }
     const unlockService = resolveUnlockService?.();
     if (!unlockService) return { ok: false, status: 503, body: { error: 'unlock-service-unavailable' } };
     logger.info?.('fitness.fingerprint.access.requires-auth', { username, candidates: gallery.length });
