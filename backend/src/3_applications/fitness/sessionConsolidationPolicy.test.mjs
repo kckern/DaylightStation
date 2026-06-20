@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateRecapReadiness, evaluateAbandonedSkeleton, SESSION_RESUME_MERGE_WINDOW_MS } from './sessionConsolidationPolicy.mjs';
+import { evaluateRecapReadiness, evaluateAbandonedSkeleton, classifySessionMediaDir, SESSION_RESUME_MERGE_WINDOW_MS } from './sessionConsolidationPolicy.mjs';
 
 const NOW = 1_700_000_000_000;
 
@@ -105,4 +105,86 @@ test('does NOT reap when capture activity is unknown (no timestamp to age out)',
     assert.equal(r.reap, false);
     assert.equal(r.reason, 'no-capture-activity');
   }
+});
+
+// ---- classifySessionMediaDir ---------------------------------------------------
+// The garbage collector walks media/apps/fitness/sessions/<date>/<id> dirs and
+// decides what to do with each based on disk + session facts.
+
+const STALE = SESSION_RESUME_MERGE_WINDOW_MS + 1000;
+const RECENT = SESSION_RESUME_MERGE_WINDOW_MS - 1000;
+
+test('prunes an empty leftover dir once it has aged past the window', () => {
+  const r = classifySessionMediaDir({ hasFiles: false, dirAgeMs: STALE });
+  assert.equal(r.action, 'prune-empty');
+});
+
+test('keeps an empty dir that is still recent (a live session may be mid-capture)', () => {
+  const r = classifySessionMediaDir({ hasFiles: false, dirAgeMs: RECENT });
+  assert.equal(r.action, 'keep');
+  assert.equal(r.reason, 'empty-recent');
+});
+
+test('deletes an aged orphan frame dir (frames present, no session record)', () => {
+  const r = classifySessionMediaDir({ hasFiles: true, sessionExists: false, dirAgeMs: STALE });
+  assert.equal(r.action, 'delete-orphan');
+});
+
+test('keeps a recent orphan (session YAML may not be written yet)', () => {
+  const r = classifySessionMediaDir({ hasFiles: true, sessionExists: false, dirAgeMs: RECENT });
+  assert.equal(r.action, 'keep');
+  assert.equal(r.reason, 'orphan-recent');
+});
+
+test('keeps frames of a not-yet-settled session (recap may still come)', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: false, endTime: NOW - RECENT,
+    hasCameraFrames: true, timelapseStatus: null, dirAgeMs: RECENT, now: NOW
+  });
+  assert.equal(r.action, 'keep');
+  assert.equal(r.reason, 'session-active');
+});
+
+test('keeps a settled session with camera frames awaiting its recap', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: true, endTime: NOW,
+    hasCameraFrames: true, timelapseStatus: null, dirAgeMs: STALE, now: NOW
+  });
+  assert.equal(r.action, 'keep');
+  assert.equal(r.reason, 'recap-pending');
+});
+
+test('deletes frames of a settled, camera-less (un-recappable) session', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: true, endTime: NOW,
+    hasCameraFrames: false, timelapseStatus: null, dirAgeMs: STALE, now: NOW
+  });
+  assert.equal(r.action, 'delete-frames');
+  assert.equal(r.reason, 'no-camera-unrecappable');
+});
+
+test('deletes leftover frames after a recap already succeeded (ready)', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: true, endTime: NOW,
+    hasCameraFrames: true, timelapseStatus: 'ready', dirAgeMs: STALE, now: NOW
+  });
+  assert.equal(r.action, 'delete-frames');
+  assert.equal(r.reason, 'post-recap-leftover');
+});
+
+test('deletes frames of a terminally skipped session', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: true, endTime: NOW,
+    hasCameraFrames: false, timelapseStatus: 'skipped', dirAgeMs: STALE, now: NOW
+  });
+  assert.equal(r.action, 'delete-frames');
+});
+
+test('keeps frames of a settled FAILED recap with camera (sweep will retry)', () => {
+  const r = classifySessionMediaDir({
+    hasFiles: true, sessionExists: true, finalized: true, endTime: NOW,
+    hasCameraFrames: true, timelapseStatus: 'failed', dirAgeMs: STALE, now: NOW
+  });
+  assert.equal(r.action, 'keep');
+  assert.equal(r.reason, 'recap-pending');
 });
