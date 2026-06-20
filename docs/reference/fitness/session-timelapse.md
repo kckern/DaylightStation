@@ -146,6 +146,25 @@ so the sweep can never jump the gun or double-render. It runs on the agents sche
 only ticks in the production container — there is no dev-instance double-fire — and the
 `processing` status is the soft lock across any concurrent trigger.
 
+## Garbage collection
+
+On the same scheduler tick, after reaping, a frame-store **garbage collector** sweeps the
+media tree (`sessions/<date>/<id>/`) for the loose ends the recap pipeline leaves behind:
+
+- **Empty leftover shells** — an `<id>/` dir whose `screenshots/` was cleaned after a
+  successful recap. Pruned.
+- **Orphan frame dirs** — frames with no owning session record (a true leak). Deleted once
+  aged past the settle window.
+- **Un-recappable / done-with frames** — frames of a *settled* real session that will never
+  (re)render: a recap already succeeded or was terminally skipped, or the session captured no
+  camera hero (player-only) so the camera-centric recap can't run. The frames are freed; the
+  session record, its summary/stats, and any finished recap video are left untouched.
+
+The GC only ever deletes under the media frame store — it never writes to the data-volume
+session record. All decisions live in a pure classifier; window guards keep it from racing a
+live capture (a brand-new dir or an orphan whose session YAML hasn't landed yet is left alone
+until it ages out). A GC failure is isolated and never fails the recap sweep.
+
 ---
 
 ## Render details
