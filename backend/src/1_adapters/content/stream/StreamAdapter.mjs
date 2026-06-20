@@ -1,7 +1,6 @@
 import { Item } from '#domains/content/entities/Item.mjs';
 import { decodeStreamUrl } from './streamUrlCodec.mjs';
-
-const STREAM_PROXY_PATH = '/api/v1/proxy/stream';
+import { proxifyStreamUrl } from './streamProxyPath.mjs';
 
 /**
  * Vendor-blind content source for arbitrary online URLs.
@@ -67,9 +66,7 @@ export class StreamAdapter {
   }
 
   #proxify(mediaUrl, profileName) {
-    const q = new URLSearchParams({ src: mediaUrl });
-    if (profileName) q.set('profile', profileName);
-    return `${STREAM_PROXY_PATH}?${q.toString()}`;
+    return proxifyStreamUrl(mediaUrl, profileName);
   }
 
   async resolvePlayables(id) {
