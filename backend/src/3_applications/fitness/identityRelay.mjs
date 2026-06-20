@@ -11,7 +11,18 @@ export const ADMIN_LOCK = 'admin';
 
 const SCAN_TOPIC = 'biometric.scan';
 const IDENTITY_TOPIC = 'fitness.identity.detected';
+const CEREMONY_TOPIC = 'fitness.emergency.ceremony';
 const DEFAULT_PENDING_TTL_MS = 30000;
+
+// Scanner-abuse auto-lockdown defaults (overridable via fitness.yml emergency.abuse).
+const DEFAULT_ABUSE_THRESHOLD = 3;
+const DEFAULT_ABUSE_WINDOW_SEC = 30;
+// After a trip, ignore further failed scans for this long so the in-flight ceremony
+// (and the lock it produces) isn't re-tripped. Once the lock is active getLockdownState
+// keeps suppressing; an aborted ceremony resumes counting after this window.
+const ABUSE_COOLDOWN_MS = 60000;
+// Sentinel recorded as lockedBy when the lockdown is auto-tripped by scanner abuse.
+const ABUSE_USER = 'abuse-protection';
 
 export function buildFingerprintIdentityIndex(profiles) {
   const index = {};
@@ -54,6 +65,7 @@ export function createIdentityRelay({
   eventBus,
   userService,
   loadFitnessConfig,
+  getLockdownState = null,
   now = () => Date.now(),
   pendingTtlMs = DEFAULT_PENDING_TTL_MS,
   adminSessionTtlMs = DEFAULT_ADMIN_SESSION_TTL_MS,
@@ -65,6 +77,8 @@ export function createIdentityRelay({
 
   let pending = null;   // { userId, at } — emergency ceremony guard
   let lastAdmin = null; // { userId, at } — most recent admin verification (sliding session)
+  let failedTimes = [];        // ms timestamps of recent failed scans (abuse counter)
+  let abuseSuppressUntil = 0;  // ms; ignore failed scans until this time after a trip
 
   function emitUnrecognized(modality, at) {
     eventBus.broadcast(IDENTITY_TOPIC, {
@@ -73,12 +87,57 @@ export function createIdentityRelay({
     });
   }
 
+  // Auto-trip: stamp a synthetic pending so the existing frontend ceremony →
+  // POST /commit path locks unchanged, then broadcast the "start ceremony" signal.
+  async function tripAbuse(at, threshold, windowMs) {
+    // Never auto-trip while a lockdown is already active: a synthetic pending stamped
+    // during a lock would let the LockedScreen press-and-hold release succeed without
+    // an admin scan (it consumes pending too). Bail if already locked.
+    if (getLockdownState) {
+      try {
+        const state = await getLockdownState.execute({ now: Math.floor(at / 1000) });
+        if (state) return; // already locked — never stamp a pending /release could consume
+      } catch (err) {
+        // Fail CLOSED. A missed abuse-trip is harmless (the next failed scan re-evaluates),
+        // but stamping a synthetic pending while the lock state is unknown could let
+        // /release succeed without an admin scan. Don't trip on a lookup error.
+        logger.warn?.('identity.abuse_lockcheck_failed', { message: err?.message ?? null });
+        return;
+      }
+    }
+    pending = { userId: ABUSE_USER, at: now() };
+    eventBus.broadcast(CEREMONY_TOPIC, {
+      reason: 'abuse', count: threshold, windowSec: Math.round(windowMs / 1000), at,
+    });
+    logger.warn?.('identity.abuse_tripped', { count: threshold, windowSec: Math.round(windowMs / 1000) });
+  }
+
+  // Feed each scan's outcome into the sliding-window abuse counter. A safe
+  // (authorized) scan breaks the streak; threshold failures within the window trip.
+  function recordScanOutcome(failed, at) {
+    const abuseCfg = loadFitnessConfig?.()?.emergency?.abuse || {};
+    if (abuseCfg.enabled === false) return;
+    if (!failed) { failedTimes = []; return; }
+    if (at < abuseSuppressUntil) return;
+    const threshold = Number(abuseCfg.threshold) > 0 ? Math.floor(Number(abuseCfg.threshold)) : DEFAULT_ABUSE_THRESHOLD;
+    const windowMs = (Number(abuseCfg.window_sec) > 0 ? Number(abuseCfg.window_sec) : DEFAULT_ABUSE_WINDOW_SEC) * 1000;
+    failedTimes.push(at);
+    failedTimes = failedTimes.filter((t) => at - t < windowMs);
+    if (failedTimes.length >= threshold) {
+      failedTimes = [];
+      abuseSuppressUntil = at + ABUSE_COOLDOWN_MS; // sync guard against re-entrant trips
+      tripAbuse(at, threshold, windowMs).catch((err) =>
+        logger.warn?.('identity.abuse_trip_failed', { message: err?.message ?? null }));
+    }
+  }
+
   function handleScan(message) {
     const at = now();
     const modality = message.modality || 'fingerprint';
     if (!message.matched || !message.uuid) {
       emitUnrecognized(modality, at);
       logger.debug?.('identity.unrecognized', { modality });
+      recordScanOutcome(true, at);
       return;
     }
     const index = buildFingerprintIdentityIndex(userService?.getAllProfiles?.() || {});
@@ -86,6 +145,7 @@ export function createIdentityRelay({
     if (!entry) {
       emitUnrecognized(modality, at);
       logger.warn?.('identity.unknown_uuid', { modality });
+      recordScanOutcome(true, at);
       return;
     }
     const fitnessConfig = loadFitnessConfig?.() || {};
@@ -105,6 +165,9 @@ export function createIdentityRelay({
     logger.info?.('identity.detected', {
       userId: entry.userId, finger: entry.finger, admin: authz.admin, locks: authz.locks.length,
     });
+    // Recognized members holding ≥1 lock are legitimate (resets the abuse streak);
+    // a recognized identity holding NO locks counts as a failed/abusive scan.
+    recordScanOutcome(authz.locks.length === 0, at);
   }
 
   eventBus.onClientMessage((_clientId, message) => {
