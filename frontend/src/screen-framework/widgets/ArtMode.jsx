@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision, cropFocus } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -36,6 +36,12 @@ const CURTAIN_MAX_MS = 8000;  // safety rail: always part by this, even if asset
 const CURTAIN_CLOSE_MS = 1400; // matches the .artmode__curtain-panel transition (ArtMode.css)
 const CROSSFADE_MS = 1200;     // default cross-dissolve duration for transition:'crossfade'
 const SEEK_STEP_SEC = 15;      // fwd/rew scrub grain within the current song
+// The Shield TV remote's Rewind delivers a phantom DUPLICATE `MediaRewind`
+// keydown ~180ms after the real press (a hardware/WebView quirk; D-pad keys
+// don't echo). Swallow a repeat of the same cycle key inside this window so one
+// press = one view-mode step. Deliberate presses on this remote are >450ms
+// apart, well clear of it.
+const CYCLE_DEDUPE_MS = 250;
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // Typographic quotes/apostrophes via the smartquotes library (no hand-rolled regex).
@@ -92,7 +98,7 @@ function ArtMode({
   curtainMinMs = CURTAIN_MIN_MS, curtainMaxMs = CURTAIN_MAX_MS, curtainCloseMs = CURTAIN_CLOSE_MS,
   music = null, collection = null,
   advance = 'hold', transition = 'curtains', intervalSec = null, crossfadeMs = CROSSFADE_MS,
-  rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS,
+  rawKeys = true, cycleKeys = DEFAULT_CYCLE_KEYS, cycleDedupeMs = CYCLE_DEDUPE_MS,
 }) {
   const [art, setArt] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -137,6 +143,7 @@ function ArtMode({
   // own per-image default.
   const userCycledRef = useRef(false);
   const manualModeRef = useRef(null);
+  const lastCycleRef = useRef({ key: null, t: 0 });   // dedupe the Shield remote's phantom MediaRewind echo
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
@@ -406,6 +413,17 @@ function ArtMode({
       e.stopPropagation();
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       if (isCycle) {
+        // Drop a phantom duplicate of the same cycle key within the dedupe
+        // window (the Shield remote's double-fired Rewind). Tab is the wired-
+        // keyboard fallback — it never echoes — so it's exempt and always cycles.
+        if (k !== 'Tab') {
+          const t = nowMs();
+          if (k === lastCycleRef.current.key && t - lastCycleRef.current.t < cycleDedupeMs) {
+            lastCycleRef.current.t = t;   // keep swallowing if the echo itself repeats
+            return;
+          }
+          lastCycleRef.current = { key: k, t };
+        }
         userCycledRef.current = true;
         setModeIdx((i) => { const n = e.shiftKey ? prevMode(i) : nextMode(i); manualModeRef.current = n; return n; });
         logger.info('artmode.viewmode', { dir: e.shiftKey ? 'prev' : 'next', key: k });
@@ -416,7 +434,7 @@ function ArtMode({
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [exit, goNext, goPrev, logger, rawKeys, cycleKeySet]);
+  }, [exit, goNext, goPrev, logger, rawKeys, cycleKeySet, cycleDedupeMs]);
 
   useWebSocketSubscription([ambientTopic], (msg) => {
     if (!ambientCurve || !msg) return;
@@ -585,6 +603,7 @@ function ArtMode({
                        style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
                     <img className="artmode__image" data-testid={testid('artmode-image', i)}
                          src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                         style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
                          onLoad={onLoaded} onError={onLoaded} />
                     <span className="artmode__cut" aria-hidden="true" />
                   </div>
@@ -600,6 +619,7 @@ function ArtMode({
                   <img className={`artmode__fitimage artmode__fitimage--${mode.fit}`}
                        data-testid={testid('artmode-image', i)}
                        src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                       style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
                        onLoad={onLoaded} onError={onLoaded} />
                 </div>
               );
