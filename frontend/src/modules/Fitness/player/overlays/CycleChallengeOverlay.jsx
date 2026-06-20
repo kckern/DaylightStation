@@ -23,8 +23,7 @@ import './CycleChallengeOverlay.scss';
  *   - Rider avatar centered (sole rider identifier; heart-rate gate dot pinned to it)
  *   - Health meter bar (depletes below loRpm; empty meter = video paused)
  *   - Phase count blocks (rounded squares — one per phase, completed phases lit)
- *   - Up to 4 booster avatars at the corners (NE/SE/SW/NW) (Task 23)
- *   - Boost multiplier pill (×2.5) below the avatar when >1.0 (Task 23)
+ *   - Boost multiplier badge (×2.5) shown below the widget when >1.0
  *
  * During a health-lock (cycleState='locked', lockReason='health') the overlay
  * stays mounted with the empty health meter so the rider knows to pedal back
@@ -468,7 +467,6 @@ CycleChallengeOverlay.propTypes = {
       name: PropTypes.string
     }),
     swapAllowed: PropTypes.bool,
-    boostingUsers: PropTypes.arrayOf(PropTypes.string),
     boostMultiplier: PropTypes.number,
     baseReqSatisfiedForRider: PropTypes.bool,
     cadenceFlags: PropTypes.shape({
@@ -479,8 +477,6 @@ CycleChallengeOverlay.propTypes = {
     }),
     waitingForBaseReq: PropTypes.bool,
     clockPaused: PropTypes.bool,
-    initRemainingMs: PropTypes.number,
-    rampRemainingMs: PropTypes.number,
     cycleHealthPct: PropTypes.number,
     status: PropTypes.string
   }),
