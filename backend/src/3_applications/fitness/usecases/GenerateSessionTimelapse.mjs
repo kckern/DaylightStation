@@ -18,7 +18,8 @@ export class GenerateSessionTimelapse {
   async execute({ sessionId, householdId, force = false }) {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
-      videoEncoder, posterProvider, avatarProvider, resolveName, resolveColor,
+      videoEncoder, posterProvider, avatarProvider, equipmentProvider,
+      resolveName, resolveColor, cadenceDevices, cadenceColors,
       mediaDir, config, fileIO, logger
     } = this.#d;
 
@@ -70,7 +71,11 @@ export class GenerateSessionTimelapse {
     const cameraCount = allCaptures.filter(c => (c.role || 'camera') === 'camera').length;
     const playerCount = allCaptures.filter(c => c.role === 'player').length;
 
-    const descriptors = frameMapper.buildFrames(data, { speedup, outputFps: fps, resolveName: resolveName || null, resolveColor: resolveColor || null });
+    const descriptors = frameMapper.buildFrames(data, {
+      speedup, outputFps: fps,
+      resolveName: resolveName || null, resolveColor: resolveColor || null,
+      cadenceDevices: cadenceDevices || null, cadenceColors: cadenceColors || null
+    });
     if (!descriptors.length) {
       session.markTimelapseSkipped('no-captures');
       await sessionDatastore.save(session, householdId);
@@ -99,6 +104,7 @@ export class GenerateSessionTimelapse {
 
       stage = 'avatars';
       const avatarBuffers = avatarProvider ? (await avatarProvider(uniqueParticipantIds(descriptors)) || {}) : {};
+      const equipmentBuffers = equipmentProvider ? (await equipmentProvider(uniqueEquipment(descriptors)) || {}) : {};
       const posterCache = new Map();
       const bufCache = new Map(); // absolutePath -> Buffer (many output frames reuse one capture)
 
@@ -120,7 +126,7 @@ export class GenerateSessionTimelapse {
         }
         const posterBuffer = await resolvePoster(d, posterCache, posterProvider, logger);
         if (posterBuffer) posterUsed = true;
-        const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, descriptor: d });
+        const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, equipmentBuffers, descriptor: d });
         const name = `frame_${String(written).padStart(5, '0')}.jpg`;
         fileIO.writeFileSync(path.join(tmpDir, name), frameBuffer);
         written++;
@@ -190,6 +196,11 @@ async function resolvePoster(d, cache, provider, logger) {
 function uniqueParticipantIds(descriptors) {
   const s = new Set();
   descriptors.forEach(d => (d.participants || []).forEach(p => s.add(p.id)));
+  return [...s];
+}
+function uniqueEquipment(descriptors) {
+  const s = new Set();
+  descriptors.forEach(d => (d.cadence || []).forEach(c => { if (c.equipment) s.add(c.equipment); }));
   return [...s];
 }
 function pickCapture(sorted, ts) {

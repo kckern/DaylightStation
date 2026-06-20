@@ -73,7 +73,7 @@ export function createTimelapseFrameRenderer(config = {}) {
   const footerH = showStats ? Math.round(H * 0.185) : 0;
   const titleFpx = Math.round(H * 0.04);
 
-  async function renderFrame({ cameraBuffer, playerBuffer, posterBuffer = null, avatarBuffers = {}, descriptor }) {
+  async function renderFrame({ cameraBuffer, playerBuffer, posterBuffer = null, avatarBuffers = {}, equipmentBuffers = {}, descriptor }) {
     const canvas = createCanvas(W, H);
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'middle';
@@ -166,12 +166,18 @@ export function createTimelapseFrameRenderer(config = {}) {
       const centerY = H - Math.round(footerH * 0.5);
       const participants = descriptor.participants || [];
 
-      // Per-participant chips span the full footer width. There is deliberately NO
-      // global zone pill or cadence readout: zone is shown per person via the heart
-      // colour, and cadence (4 bikes here) has no rider attribution in the data, so
-      // a single "WARM / 66 RPM" would be misleading.
+      // Active bikes (equipment icon + RPM, in each bike's cadence colour),
+      // right-anchored. The icon identifies WHICH device each cadence belongs to —
+      // cadence isn't rider-attributed, so it stays device-labelled, not a bare number.
+      let rightLimit = W - margin;
+      if (descriptor.cadence?.length) {
+        rightLimit = await drawCadenceCluster(ctx, descriptor.cadence, equipmentBuffers, W - margin, centerY, footerH);
+      }
+
+      // Per-participant chips fill the rest of the width. (Zone is shown per person
+      // via the heart colour, so there is no global zone pill.)
       if (participants.length) {
-        const avail = W - margin * 2;
+        const avail = (rightLimit - Math.round(footerH * 0.25)) - margin;
         const slotW = Math.min(Math.round(W * 0.21), Math.floor(avail / participants.length));
         for (let i = 0; i < participants.length; i++) {
           await drawParticipant(ctx, participants[i], margin + i * slotW, centerY, slotW, footerH, avatarBuffers);
@@ -201,10 +207,19 @@ export function createTimelapseFrameRenderer(config = {}) {
 async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuffers) {
   const color = p.color || COL.text;
   const heartColor = p.zone ? zoneMeta(p.zone).color : COL.heart;
-  const D = Math.round(scrimH * 0.46);
-  const nameFpx = Math.round(scrimH * 0.17);
-  const hrFpx = Math.round(scrimH * 0.34);
-  const gap = Math.round(scrimH * 0.1);
+  let D = Math.round(scrimH * 0.46);
+  let hrFpx = Math.round(scrimH * 0.34);
+  let nameFpx = Math.round(scrimH * 0.17);
+  let gap = Math.round(scrimH * 0.1);
+
+  // Scale the whole chip down (never up) so avatar + big HR + heart fit the slot.
+  ctx.font = `700 ${hrFpx}px "${FONT_FAMILY}"`;
+  const naturalW = D + gap + ctx.measureText('000').width + Math.round(hrFpx * 0.94) + Math.round(scrimH * 0.06);
+  const scale = Math.min(1, slotW / naturalW);
+  if (scale < 1) {
+    D = Math.round(D * scale); hrFpx = Math.round(hrFpx * scale);
+    nameFpx = Math.round(nameFpx * scale); gap = Math.round(gap * scale);
+  }
 
   let x = slotX;
   const avatar = avatarBuffers[p.id];
@@ -227,13 +242,13 @@ async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuff
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `600 ${nameFpx}px "${FONT_FAMILY}"`;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillText(ellipsize(ctx, participantName(p), textW), x, centerY - Math.round(scrimH * 0.07));
+  ctx.fillText(ellipsize(ctx, participantName(p), textW), x, centerY - Math.round(hrFpx * 0.2));
 
-  // HR (bottom, the hero number) + fixed-cell red heart.
+  // HR (bottom, the hero number) + fixed-cell zone-coloured heart.
   ctx.font = `700 ${hrFpx}px "${FONT_FAMILY}"`;
   ctx.fillStyle = COL.text;
   const hr = p.hr != null ? String(p.hr) : '--';
-  const hrBaseY = centerY + Math.round(scrimH * 0.27);
+  const hrBaseY = centerY + Math.round(hrFpx * 0.8);
   ctx.fillText(hr, x, hrBaseY);
   drawHeart(ctx, x + hrCellW + Math.round(hrFpx * 0.22), hrBaseY - Math.round(hrFpx * 0.34), heartSize, heartColor);
   ctx.textBaseline = 'middle';
@@ -248,6 +263,43 @@ function participantName(p) {
   // alone (KC Kern stays KC Kern).
   if (n === n.toLowerCase()) n = n.replace(/\b\w/g, c => c.toUpperCase());
   return n;
+}
+
+// Active-bike cadence cluster: [equipment icon][rpm RPM] per bike, laid out
+// right-to-left from rightX, each in its bike's cadence colour. The icon names the
+// device. Returns the left edge reached (so chips don't overrun it).
+async function drawCadenceCluster(ctx, cadence, equipmentBuffers, rightX, centerY, bandH) {
+  const iconD = Math.round(bandH * 0.5);
+  const numFpx = Math.round(bandH * 0.32);
+  const unitFpx = Math.round(numFpx * 0.45);
+  const baseY = centerY + Math.round(numFpx * 0.36);
+  const gap = Math.round(bandH * 0.1);
+  const entryGap = Math.round(bandH * 0.32);
+  let x = rightX;
+  for (let i = cadence.length - 1; i >= 0; i--) {
+    const c = cadence[i];
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'right';
+    ctx.font = `600 ${unitFpx}px "${FONT_FAMILY}"`;
+    ctx.fillStyle = COL.textDim;
+    ctx.fillText('RPM', x, baseY);
+    x -= ctx.measureText('RPM').width + Math.round(numFpx * 0.14);
+    ctx.font = `700 ${numFpx}px "${FONT_FAMILY}"`;
+    ctx.fillStyle = c.color || COL.text;
+    const rpmStr = String(c.rpm);
+    ctx.fillText(rpmStr, x, baseY);
+    x -= ctx.measureText(rpmStr).width + gap;
+    const iconX = x - iconD;
+    const buf = equipmentBuffers?.[c.equipment];
+    if (buf) {
+      drawCircleImage(ctx, await loadImage(buf), iconX, centerY - iconD / 2, iconD, c.color || COL.cardBorder);
+    } else {
+      ctx.beginPath(); ctx.arc(iconX + iconD / 2, centerY, iconD / 2, 0, Math.PI * 2);
+      ctx.fillStyle = c.color || COL.textDim; ctx.fill();
+    }
+    x = iconX - entryGap;
+  }
+  ctx.textBaseline = 'middle';
+  return x;
 }
 
 // ----------------------------------------------------------------- primitives
