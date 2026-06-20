@@ -2,6 +2,25 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { playbackLog } from './playbackLogger.js';
 
 /**
+ * Normalize a `stream:` contentId to a path-safe token.
+ *
+ * A stream: id may arrive as `stream:<raw url>` (from device load). The url's
+ * slashes/colons break Express path routing, so encode it base64url here.
+ * Already-encoded stream ids (no scheme) and non-stream ids pass through unchanged.
+ *
+ * @param {string} contentId
+ * @returns {string}
+ */
+export function normalizeStreamContentId(contentId) {
+  if (typeof contentId !== 'string' || !contentId.startsWith('stream:')) return contentId;
+  const rest = contentId.slice('stream:'.length);
+  if (!/^https?:\/\//i.test(rest)) return contentId; // already a token
+  const b64 = btoa(unescape(encodeURIComponent(rest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `stream:${b64}`;
+}
+
+/**
  * Fetch media information from API
  * @param {Object} params - Parameters for fetching media
  * @param {string} params.contentId - Content identifier (compound ID, bare number, or bare name)
@@ -15,8 +34,11 @@ import { playbackLog } from './playbackLogger.js';
  */
 export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideoBitrate, maxResolution, session, resume }) {
   // Normalize legacy params to contentId — backend handles all source resolution
-  const effectiveContentId = contentId || (plex != null ? String(plex) : null) || media || null;
-  if (!effectiveContentId) return null;
+  const rawContentId = contentId || (plex != null ? String(plex) : null) || media || null;
+  if (!rawContentId) return null;
+  // stream: ids carry a raw url whose slashes/colons break the /play/<id> path —
+  // encode to a path-safe base64url token before building any request URL.
+  const effectiveContentId = normalizeStreamContentId(rawContentId);
 
   const buildUrl = (base, params = {}) => {
     const searchParams = new URLSearchParams();

@@ -19,6 +19,7 @@ import PagedReader from '../renderers/PagedReader.jsx';
 import FlowReader from '../renderers/FlowReader.jsx';
 import SlideShow from '../renderers/SlideShow.jsx';
 import { TitleCardRenderer } from '../renderers/TitleCardRenderer.jsx';
+import WebViewRenderer from '../renderers/WebViewRenderer.jsx';
 
 /**
  * Content format → renderer component.
@@ -33,9 +34,10 @@ const CONTENT_FORMAT_COMPONENTS = {
   readable_flow: FlowReader,
   slideshow: SlideShow,
   titlecard: TitleCardRenderer,
+  webview: WebViewRenderer,
 };
 
-const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio', 'image']);
+const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'hls_video', 'audio', 'image']);
 
 /**
  * Get the renderer component for a content format.

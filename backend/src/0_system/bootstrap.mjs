@@ -30,6 +30,12 @@ import { RetroArchAdapter } from '#adapters/content/retroarch/RetroArchAdapter.m
 import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs';
 import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
+import { StreamAdapter } from '#adapters/content/stream/StreamAdapter.mjs';
+import { IframeStreamResolver } from '#adapters/content/stream/resolvers/IframeStreamResolver.mjs';
+import { ScrapeStreamResolver } from '#adapters/content/stream/resolvers/ScrapeStreamResolver.mjs';
+import { YtDlpStreamResolver } from '#adapters/content/stream/resolvers/YtDlpStreamResolver.mjs';
+import { StreamProfile } from '#domains/content/value-objects/StreamProfile.mjs';
+import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
@@ -48,6 +54,7 @@ import appRegistryManifest from '#adapters/content/app-registry/manifest.mjs';
 import komgaManifest from '#adapters/content/readable/komga/manifest.mjs';
 import queryManifest from '#adapters/content/query/manifest.mjs';
 import freshvideoManifest from '#adapters/content/freshvideo/manifest.mjs';
+import streamManifest from '#adapters/content/stream/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
@@ -626,6 +633,28 @@ export function createContentRegistry(config, deps = {}) {
     }
   }
 
+  // Register StreamAdapter for `stream:` prefix — arbitrary online URLs.
+  {
+    const logger = deps.logger || console;
+    const configService = deps.configService || null;
+    const rawProfiles = configService?.getStreamingProfiles?.() || [];
+    const profiles = [];
+    for (const raw of rawProfiles) {
+      try { profiles.push(new StreamProfile(raw)); }
+      catch (e) { logger.warn?.('stream.profile.invalid', { name: raw?.name, error: e.message }); }
+    }
+    const ytDlpAdapter = new YtDlpAdapter({ logger });
+    const resolvers = [
+      new ScrapeStreamResolver({ logger }),
+      new YtDlpStreamResolver({ ytDlpAdapter, logger }),
+      new IframeStreamResolver(),
+    ];
+    registry.register(
+      new StreamAdapter({ resolvers, profiles, fallbackStrategy: 'ytdlp', logger }),
+      { category: streamManifest.capability, provider: streamManifest.provider }
+    );
+  }
+
   // Register Immich adapter if configured
   if (config.immich?.host && config.immich?.apiKey && httpClient) {
     registry.register(
@@ -832,7 +861,7 @@ export function createApiRouters(config) {
   return {
     routers: {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, configService, logger, aliasResolver }),
-      proxy: createProxyRouter({ registry, proxyService, mediaBasePath, dataPath, retroarchProxy, logger }),
+      proxy: createProxyRouter({ registry, proxyService, configService, mediaBasePath, dataPath, retroarchProxy, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory'), logger }),

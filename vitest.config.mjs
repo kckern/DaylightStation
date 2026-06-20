@@ -1,12 +1,24 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, realpathSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// In worktrees, frontend/node_modules may not exist — fall back to main repo location.
+// In worktrees, frontend/node_modules may not exist — fall back to the main repo.
+// Worktrees can live either INSIDE the main repo (.claude/worktrees/<name>, 3 levels
+// deep) or as a SIBLING checkout. To cover both, resolve candidate locations and pick
+// the first that exists. The root `node_modules` is symlinked to the main checkout, so
+// its realpath gives us the main repo root regardless of worktree layout.
 const frontendNodeModulesLocal = path.resolve(__dirname, 'frontend/node_modules');
-const frontendNodeModulesMain = path.resolve(__dirname, '../../../frontend/node_modules');
-import { existsSync } from 'fs';
-const frontendNodeModules = existsSync(frontendNodeModulesLocal) ? frontendNodeModulesLocal : frontendNodeModulesMain;
+const candidates = [
+  frontendNodeModulesLocal,
+  path.resolve(__dirname, '../../../frontend/node_modules'),
+];
+try {
+  // node_modules -> <main-repo>/node_modules ; its parent is the main repo root.
+  const mainRepoRoot = path.dirname(realpathSync(path.join(__dirname, 'node_modules')));
+  candidates.push(path.join(mainRepoRoot, 'frontend/node_modules'));
+} catch (_) { /* no node_modules symlink — rely on other candidates */ }
+const frontendNodeModules = candidates.find((p) => existsSync(p)) || frontendNodeModulesLocal;
 
 // Load React plugin from frontend's node_modules (it's not installed at the root).
 const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/plugin-react/dist/index.mjs'));
@@ -23,6 +35,7 @@ export default {
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
       '@mantine/core': path.join(frontendNodeModules, '@mantine/core'),
       '@mantine/charts': path.join(frontendNodeModules, '@mantine/charts'),
+      'dash-video-element': path.join(frontendNodeModules, 'dash-video-element'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
     },
