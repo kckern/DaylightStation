@@ -19,7 +19,7 @@ export class GenerateSessionTimelapse {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
       videoEncoder, posterProvider, avatarProvider, equipmentProvider,
-      resolveName, resolveColor, cadenceDevices, cadenceColors,
+      resolveName, resolveColor, resolveGroupLabel, cadenceDevices, cadenceColors,
       mediaDir, config, fileIO, logger
     } = this.#d;
 
@@ -74,6 +74,7 @@ export class GenerateSessionTimelapse {
     const descriptors = frameMapper.buildFrames(data, {
       speedup, outputFps: fps,
       resolveName: resolveName || null, resolveColor: resolveColor || null,
+      resolveGroupLabel: resolveGroupLabel || null,
       cadenceDevices: cadenceDevices || null, cadenceColors: cadenceColors || null
     });
     if (!descriptors.length) {

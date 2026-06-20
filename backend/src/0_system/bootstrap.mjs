@@ -1154,6 +1154,8 @@ export function createFitnessApiRouter(config) {
     avatarProvider,
     equipmentProvider,
     resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
+    // When a group is exercising, prefer each user's short group label (e.g. "Dad").
+    resolveGroupLabel: userService?.resolveGroupLabel ? userService.resolveGroupLabel.bind(userService) : null,
     // Each rider's real assigned strap colour (fitness.yml device_colors.heart_rate),
     // keyed by HR device id — the same colours the live fitness UI uses.
     resolveColor: makeDeviceColorResolver(fitnessConfig?.device_colors?.heart_rate),
