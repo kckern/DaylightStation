@@ -44,6 +44,11 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
 // is back in green. Replaces the old 3-second danger grace.
 const CYCLE_HEALTH_MAX_MS = 3000;
 const CYCLE_SUCCESS_PUBLISH_MS = 600;
+// Never-started failure: once a cycle has been stuck in the init lock (rider at
+// 0 rpm, never reaching init.min_rpm) for at least this long, fail it so it is
+// recorded and the engine moves on instead of sitting locked forever. Floored
+// so a tiny init window can't cause an instant fail.
+const CYCLE_INIT_FAIL_GRACE_MS = 15000;
 const CYCLE_HEALTH_DEPLETE_RATE = 1;    // ms health lost per ms below loRpm
 const CYCLE_HEALTH_REGEN_RATE = 1.5;    // ms health gained per ms in green
 
@@ -3034,6 +3039,7 @@ export class GovernanceEngine {
           const prevLockReason = active.lockReason;
           active.cycleState = 'init';
           active.initElapsedMs = 0;
+          active.initLockElapsedMs = 0; // rider showed up — reset the fail timer
           active.lockReason = null;
           getLogger().info('governance.cycle.state_transition', {
             challengeId: active.id, from: 'locked', to: 'init',
@@ -3044,6 +3050,28 @@ export class GovernanceEngine {
             challengeId: active.id, fromLockReason: prevLockReason,
             currentRpm: ctx.equipmentRpm, resumeState: 'init',
             lockDurationMs: null
+          });
+          return;
+        }
+        // Rider still hasn't started. Accumulate init-lock time and fail the
+        // challenge once it exceeds the grace, so a never-started cycle is
+        // recorded as a failure instead of sitting locked indefinitely.
+        active.initLockElapsedMs = (active.initLockElapsedMs || 0) + dt;
+        const failGraceMs = Math.max(active.initTotalMs || 0, CYCLE_INIT_FAIL_GRACE_MS);
+        if (active.initLockElapsedMs >= failGraceMs) {
+          active.status = 'failed';
+          active.failReason = 'never_started';
+          active.completedAt = now;
+          getLogger().info('governance.cycle.state_transition', {
+            challengeId: active.id, from: 'locked', to: 'failed',
+            currentPhaseIndex: active.currentPhaseIndex, rider: active.rider,
+            currentRpm: ctx.equipmentRpm, reason: 'never_started'
+          });
+          getLogger().info('governance.cycle.failed', {
+            challengeId: active.id, failReason: 'never_started',
+            rider: active.rider,
+            initLockElapsedMs: Math.round(active.initLockElapsedMs),
+            failGraceMs
           });
         }
         return;
@@ -3595,6 +3623,80 @@ export class GovernanceEngine {
             }
 
             this._maybeClearCycleSuccess(challenge, challengeConfig, queueNextChallenge);
+            return;
+          }
+
+          // Failure (e.g. never started past the init grace): record history,
+          // apply the rider cooldown, hold the locked video for one brief window
+          // (so the fail is visible), then clear and schedule the next challenge.
+          if (challenge.status === 'failed') {
+            if (!challenge.historyRecorded) {
+              const completedAt = challenge.completedAt || now;
+              const cooldownMs = (challenge.selection?.userCooldownSeconds || 600) * 1000;
+              const ridersUsed = Array.isArray(challenge.ridersUsed)
+                ? [...challenge.ridersUsed]
+                : (challenge.rider ? [challenge.rider] : []);
+              const phasesCompleted = Math.max(0, challenge.currentPhaseIndex || 0);
+
+              ridersUsed.forEach((uid) => { this._cycleCooldowns[uid] = now + cooldownMs; });
+
+              this.challengeState.challengeHistory.push({
+                id: challenge.id,
+                type: 'cycle',
+                status: 'failed',
+                failReason: challenge.failReason || null,
+                startedAt: challenge.startedAt,
+                completedAt,
+                selectionLabel: challenge.selectionLabel || null,
+                equipment: challenge.equipment,
+                rider: challenge.rider,
+                ridersUsed,
+                totalPhases: challenge.totalPhases,
+                phasesCompleted,
+                totalLockEventsCount: challenge.totalLockEventsCount || 0,
+                totalBoostedMs: Math.round(challenge.totalBoostedMs || 0),
+                boostContributors: challenge.boostContributors ? [...challenge.boostContributors] : []
+              });
+              if (this.challengeState.challengeHistory.length > 20) {
+                this.challengeState.challengeHistory.splice(
+                  0,
+                  this.challengeState.challengeHistory.length - 20
+                );
+              }
+              challenge.historyRecorded = true;
+
+              getLogger().info('governance.cycle.completed', {
+                challengeId: challenge.id,
+                status: 'failed',
+                failReason: challenge.failReason || null,
+                rider: challenge.rider,
+                ridersUsed,
+                totalPhases: challenge.totalPhases,
+                phasesCompleted,
+                durationMs: completedAt - challenge.startedAt
+              });
+
+              ridersUsed.forEach((uid) => {
+                getLogger().info('governance.cycle.cooldown_applied', {
+                  rider: uid,
+                  cooldownUntilMs: this._cycleCooldowns[uid],
+                  trigger: 'failed'
+                });
+              });
+            }
+
+            this.challengeState.videoLocked = true;
+            if (!Number.isFinite(challenge.failPublishedAt)) {
+              challenge.failPublishedAt = now;
+            }
+            if (now - challenge.failPublishedAt < CYCLE_SUCCESS_PUBLISH_MS) {
+              this._schedulePulse(100);
+              return;
+            }
+            this.challengeState.activeChallenge = null;
+            const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
+            queueNextChallenge(nextDelay);
+            this._schedulePulse(50);
             return;
           }
 

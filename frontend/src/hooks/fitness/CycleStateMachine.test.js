@@ -945,3 +945,51 @@ describe('Cycle SM — locked cycle recovers from cadence despite unmet global b
     expect(active._pausedAt).not.toBe(null);
   });
 });
+
+describe('Cycle SM — never-started failure timeout', () => {
+  it('fails a challenge the rider never starts (stays at 0 rpm past the init grace)', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(11);
+    const originalId = engine.challengeState.activeChallenge.id;
+
+    // init.time_allowed_seconds = 10 → initTotalMs = 10000. Grace floor is
+    // 15000ms, so failure fires ~10s (init) + 15s (init-lock) later. Drive
+    // rpm=0 for 40s of 500ms ticks — the rider never reaches min_rpm (30).
+    for (let i = 0; i < 80; i += 1) {
+      advance(500);
+      tick(engine, engine._now(), { zone: 'active', rpm: 0 });
+      void engine.state; // build the snapshot each tick, mirroring the overlay
+    }
+
+    const failedEntry = engine.challengeState.challengeHistory.find(
+      (h) => h.type === 'cycle' && h.status === 'failed'
+    );
+    expect(failedEntry).toBeTruthy();
+    expect(failedEntry.failReason).toBe('never_started');
+    expect(failedEntry.rider).toBe('felix');
+    expect(failedEntry.phasesCompleted).toBe(0);
+
+    // The original never-started challenge must be cleared (engine moved on),
+    // not stuck in init-lock limbo. (felix is on cooldown after the fail, so no
+    // replacement cycle can re-fire with him as the only eligible rider.)
+    expect(engine.challengeState.activeChallenge?.id).not.toBe(originalId);
+  });
+
+  it('does NOT fail a rider who starts pedalling within the grace', () => {
+    const { engine, advance } = makeEngineWithActiveCycle(12);
+    // Sit idle 12s — into the init lock but well short of the 25s fail point...
+    for (let i = 0; i < 24; i += 1) { advance(500); tick(engine, engine._now(), { rpm: 0 }); }
+    // ...then pedal above min_rpm (30) and reach hi (60) — recovers into the workout.
+    for (let i = 0; i < 16; i += 1) { advance(500); tick(engine, engine._now(), { zone: 'warm', rpm: 80 }); void engine.state; }
+
+    // The rider recovered from the init lock and was NEVER failed...
+    const failedEntry = engine.challengeState.challengeHistory.find(
+      (h) => h.type === 'cycle' && h.status === 'failed'
+    );
+    expect(failedEntry).toBeUndefined();
+    // ...and in fact completed the workout successfully (proving recovery, not a never-start fail).
+    const successEntry = engine.challengeState.challengeHistory.find(
+      (h) => h.type === 'cycle' && h.status === 'success'
+    );
+    expect(successEntry).toBeTruthy();
+  });
+});
