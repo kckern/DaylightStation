@@ -28,8 +28,8 @@ in the governance engine's display projection and carries:
 | `phaseProgressPct` | Fraction `[0,1]` of the current phase's maintain time elapsed (the "Pct" suffix is historical — the value is a fraction, not 0–100). Drives the lower-hemisphere progress arc. |
 | `dimFactor` | `[0,1]` dim amount during maintain; > 0 means the rider has slipped into the orange "dimming" band. |
 | `cycleHealthPct` | Fraction `[0,1]` of the health pool remaining. Depletes at 1ms/ms while RPM is below loRpm; regenerates at 1.5ms/ms in the green zone (≥ hiRpm). At zero the video pauses (`videoLocked`). Shown as a compact horizontal bar in the lower stack. |
-| `clockPaused` / `initRemainingMs` / `rampRemainingMs` | Countdown text for the `init` and `ramp` states; `clockPaused` is set when the rider is below the init min-RPM threshold. |
-| `boostingUsers` / `boostMultiplier` | Corner booster pips and the `×N.N` multiplier pill. |
+| `clockPaused` / `initRemainingMs` / `rampRemainingMs` | Still emitted by the engine; the trimmed overlay no longer renders countdown text. |
+| `boostMultiplier` | Drives the `×N.N` multiplier badge (shown only when > 1). `boostingUsers` is still emitted by the engine but no longer rendered. |
 | `baseReqSatisfiedForRider` / `waitingForBaseReq` | Heart-rate gate status, shown as a dot on the rider avatar. |
 | `swapAllowed` | Whether tapping the rider avatar may request a swap (engine allows it only during `init`, or `ramp` while on phase 0). |
 | `cadenceFlags` | `{ lostSignal, stale, … }` — surfaced as overlay modifier classes. |
@@ -98,7 +98,9 @@ rider's remaining health:
   entry, so riders start each phase with a fresh buffer.
 
 The separate danger ring and numeric countdown are removed; the health bar is the
-sole punishment affordance.
+sole punishment affordance. It is **hidden by default** — it appears only when the
+rider is actually at risk (RPM below `loRpm` during maintain, or a health lock),
+so a rider holding green sees a clean dial.
 
 ### Rider, phases, countdown, RPM readout
 
@@ -115,15 +117,7 @@ Below/around the ring, all stacked in one bottom-anchored flex column
 - **Phase blocks** via `CompletionCountBlocks` — one rounded square per phase,
   the first `currentPhaseIndex` of them lit (phases before the current one are
   complete).
-- **Countdown text** for `init` ("Start in 8s") and `ramp` ("Reach target in 5s"),
-  prefixed with "Paused —" when `clockPaused`.
 - **Current RPM readout** (large number + "RPM").
-
-### Booster pips
-
-`getBoosterAvatarSlots` returns up to four corner pips (NE/SE/SW/NW) at fixed
-percentage offsets so they scale with the overlay and sit on the ring's diagonals.
-Caps at four with no overflow indicator.
 
 ### Accessibility & logging
 
