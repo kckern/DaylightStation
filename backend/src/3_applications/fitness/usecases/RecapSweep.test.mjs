@@ -10,6 +10,7 @@ function session(id, { status, captures = [{ role: 'camera' }] } = {}) {
 
 function harness(byDate, { executeImpl } = {}) {
   const executed = [];
+  const deleted = [];
   const sessionService = {
     listSessionsByDate: async (date) => (byDate[date] || []).map(s => ({ sessionId: s.sessionId })),
     getSession: async (sessionId) => {
@@ -18,7 +19,8 @@ function harness(byDate, { executeImpl } = {}) {
         if (found) return found;
       }
       return null;
-    }
+    },
+    deleteSession: async (sessionId) => { deleted.push(sessionId); }
   };
   const generateSessionTimelapse = {
     execute: async ({ sessionId }) => {
@@ -32,7 +34,18 @@ function harness(byDate, { executeImpl } = {}) {
     configService: { getDefaultHouseholdId: () => 'h' },
     logger: { info() {}, warn() {}, error() {}, debug() {} }
   });
-  return { sweep, executed };
+  return { sweep, executed, deleted };
+}
+
+/** A rosterless skeleton: camera frames captured, but no rider, no endTime. */
+function skeleton(id, { lastCaptureMs } = {}) {
+  return {
+    sessionId: id,
+    roster: [],
+    endTime: null,
+    finalized: false,
+    snapshots: { captures: [{ role: 'camera', timestamp: lastCaptureMs }], updatedAt: lastCaptureMs }
+  };
 }
 
 test('recentDateStrings yields today + N prior days, newest first', () => {
@@ -88,6 +101,27 @@ test('a deferred (within-window) result is counted, not rendered', async () => {
   assert.deepEqual(executed, ['recent']);
   assert.equal(stats.deferred, 1);
   assert.equal(stats.rendered, 0);
+});
+
+test('reaps a stale rosterless skeleton instead of deferring it forever', async () => {
+  const { sweep, executed, deleted } = harness({
+    '2026-06-18': [skeleton('ghost', { lastCaptureMs: NOW - (35 * 60 * 1000) })]
+  });
+  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
+  assert.deepEqual(deleted, ['ghost']);   // reaped (record + frames)
+  assert.deepEqual(executed, []);          // never handed to the timelapse generator
+  assert.equal(stats.reaped, 1);
+  assert.equal(stats.triggered, 0);
+});
+
+test('does NOT reap a skeleton whose capture is still recent', async () => {
+  const { sweep, executed, deleted } = harness({
+    '2026-06-18': [skeleton('fresh', { lastCaptureMs: NOW - (60 * 1000) })]
+  });
+  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
+  assert.deepEqual(deleted, []);
+  assert.deepEqual(executed, ['fresh']);   // still flows to the generator (which will defer)
+  assert.equal(stats.reaped, 0);
 });
 
 test('scans across the full lookback window', async () => {

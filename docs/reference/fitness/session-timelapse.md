@@ -130,11 +130,21 @@ Recaps reach the render along three paths:
    Sessions that are already done, in flight, known to have no captures, or still within the
    settle window are passed over.
 
-The sweep is a thin orchestrator: every real decision (the settle defer and the
-idempotency guard) lives in the render use case, so the sweep can never jump the gun or
-double-render. It runs on the agents scheduler, which only ticks in the production
-container — there is no dev-instance double-fire — and the `processing` status is the soft
-lock across any concurrent trigger.
+The sweep also **reaps abandoned skeleton sessions**. The always-on screenshot capture
+creates a session record the moment frames start arriving, even when no rider ever tags in.
+If no participant joins, session persistence refuses to write the session (the roster gate),
+so the record never gets an `endTime` — it would otherwise be deferred on every tick forever
+(reason `not-ended`) while its captured frames leak on disk. A record that is never finalized,
+never ended, has an empty roster, and has stopped capturing past the settle window can neither
+be recapped (no workout) nor resumed (no roster), so the sweep deletes it outright — both the
+session record and its orphaned frames. Any participant, an `endTime`, or recent capture
+activity exempts a session from reaping.
+
+The sweep is a thin orchestrator: every real decision (the settle defer, the idempotency
+guard, and the abandoned-skeleton reap predicate) lives in pure policy / the render use case,
+so the sweep can never jump the gun or double-render. It runs on the agents scheduler, which
+only ticks in the production container — there is no dev-instance double-fire — and the
+`processing` status is the soft lock across any concurrent trigger.
 
 ---
 
