@@ -20,6 +20,26 @@ export function modeIndexByName(name) {
 export const nextMode = (i) => (i + 1) % VIEW_MODES.length;
 export const prevMode = (i) => (i - 1 + VIEW_MODES.length) % VIEW_MODES.length;
 
+const ANCHOR_KEYWORDS = new Set(['top', 'bottom', 'left', 'right', 'center']);
+
+/**
+ * Sanitize a per-item `crop_anchor` hint (metadata.yaml) into a safe CSS
+ * `object-position`, or null. The anchor decides which edge a cover-crop KEEPS:
+ * `top` pins the image's top to the window so the crop is taken off the bottom
+ * (keeps heads). Accepts 1–2 tokens, each a keyword (top|bottom|left|right|center)
+ * or an `NN%`; anything else returns null so no arbitrary text reaches a style.
+ * Only affects `object-fit: cover` images.
+ * @param {string} anchor
+ * @returns {string|null}
+ */
+export function cropFocus(anchor) {
+  if (typeof anchor !== 'string') return null;
+  const tokens = anchor.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2);
+  if (!tokens.length) return null;
+  const ok = tokens.every((t) => ANCHOR_KEYWORDS.has(t) || /^\d{1,3}%$/.test(t));
+  return ok ? tokens.join(' ') : null;
+}
+
 /**
  * Per-image matless-fill decision (with reasoning, for logging). Cover-filling the
  * bare frame opening crops exactly ONE axis: a SINGLE narrower than the opening

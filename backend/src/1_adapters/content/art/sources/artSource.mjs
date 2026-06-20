@@ -48,6 +48,10 @@ export function createArtSource({ imgBasePath, logger = console }) {
         origin: p.origin ?? null, medium: p.medium ?? null,
         department: p.department ?? null, credit: p.credit ?? null,
         category: p.category ?? null, display: p.display ?? null,
+        // Per-item ArtMode hint: `crop_anchor` (e.g. `top`) anchors which edge a
+        // cover-crop keeps, so subjects near an edge aren't trimmed. The frontend
+        // sanitizes the value into a CSS object-position.
+        crop_anchor: p.crop_anchor ?? null,
         width: toInt(p.width), height: toInt(p.height),
       };
     } catch (err) {
@@ -162,6 +166,8 @@ export function createArtSource({ imgBasePath, logger = console }) {
           origin: meta.origin, medium: meta.medium,
           department: meta.department, credit: meta.credit,
           section: meta.section ?? null,
+          // Per-item ArtMode crop anchor (see readMeta).
+          crop_anchor: meta.crop_anchor ?? null,
           // width/height feed the frontend artLayout aspect-ratio math.
           width: meta.width, height: meta.height,
         },

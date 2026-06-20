@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor, act, fireEvent } from '@testing-library/react';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { VIEW_MODES, nextMode } from './artModes.js';
 import ArtMode from './ArtMode.jsx';
 
 const press = (key) =>
@@ -171,6 +172,49 @@ describe('ArtMode', () => {
     pressShift('Tab'); expect(modeOf()).toBe('bare-cover');  // reverse wrap
   });
 
+  // Mode helpers — assert relative advancement so these tests don't depend on
+  // which view mode a given fixture happens to start in.
+  const nameAfter = (start, steps) => {
+    let i = VIEW_MODES.findIndex((m) => m.name === start);
+    for (let n = 0; n < steps; n += 1) i = nextMode(i);
+    return VIEW_MODES[i].name;
+  };
+
+  it('dedupes a phantom duplicate MediaRewind (one press = one cycle)', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
+    const start = modeOf();
+    // Shield remote Rewind delivers two MediaRewind keydowns ~180ms apart per
+    // physical press; only the first should advance the view mode.
+    press('MediaRewind'); press('MediaRewind');
+    expect(modeOf()).toBe(nameAfter(start, 1));   // advanced once, not twice
+  });
+
+  it('cycles again on a real MediaRewind press after the dedupe window', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode cycleDedupeMs={30} />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
+    const start = modeOf();
+    press('MediaRewind');
+    expect(modeOf()).toBe(nameAfter(start, 1));
+    await new Promise((r) => setTimeout(r, 50));   // outlast the dedupe window
+    press('MediaRewind');
+    expect(modeOf()).toBe(nameAfter(start, 2));    // a genuine second press still cycles
+  });
+
+  it('does not dedupe Tab (keyboard fallback never phantom-echoes)', async () => {
+    DaylightAPI.mockResolvedValue(single());
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
+    const start = modeOf();
+    press('Tab'); press('Tab');                     // two rapid Tabs both count
+    expect(modeOf()).toBe(nameAfter(start, 2));
+  });
+
   it('hides the frame in bare modes, shows it in framed modes', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode />);
@@ -290,6 +334,15 @@ describe('ArtMode', () => {
     press('Tab'); press('Tab'); press('Tab'); press('Tab');  // bare-cover
     expect(queryByTestId('artmode-music-plaque')).toBeNull();
     expect(getByTestId('artmode-music')).toBeTruthy();        // audio still mounted
+  });
+
+  it('per-item crop_anchor sets the image object-position (crop flush top)', async () => {
+    DaylightAPI.mockResolvedValue(single({
+      panels: [{ image: '/a.jpg', meta: { title: 'A', artist: 'X', date: '1', width: 1600, height: 1000, crop_anchor: 'top' } }],
+    }));
+    const { getByTestId } = render(<ArtMode />);
+    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    expect(getByTestId('artmode-image').style.objectPosition).toBe('top');
   });
 
   it('requests the configured collection from the art API', async () => {
