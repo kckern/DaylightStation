@@ -28,7 +28,7 @@ export class DanceLightingController {
 
   async start(householdId) {
     const cfg = this.#config(householdId);
-    if (!cfg.enabled || cfg.colorStrips.length === 0) {
+    if (!cfg.enabled || (cfg.colorStrips.length === 0 && cfg.plugs.length === 0)) {
       return { ok: true, skipped: true, reason: 'lighting_not_configured' };
     }
     let flagFailed = false;
@@ -41,6 +41,19 @@ export class DanceLightingController {
         flagFailed = true;
         this.#logger.warn?.('fitness.dance.lighting.party_flag_on_failed', { entity: cfg.partyModeFlag, error: error.message });
       }
+    }
+    // Smart plugs (e.g. the disco light) turn on with the party. Fired in their
+    // own try so a plug failure never blocks the Hue strips and vice versa.
+    if (cfg.plugs.length) {
+      try {
+        await this.#gateway.callService('switch', 'turn_on', { entity_id: cfg.plugs });
+        this.#logger.info?.('fitness.dance.lighting.plugs_on', { plugs: cfg.plugs.length });
+      } catch (error) {
+        this.#logger.warn?.('fitness.dance.lighting.plugs_on_failed', { error: error.message });
+      }
+    }
+    if (cfg.colorStrips.length === 0) {
+      return { ok: true, started: true, plugsOnly: true };
     }
     try {
       // If the flag failed to raise, skip the white-lights turn_off so the
@@ -125,6 +138,9 @@ export class DanceLightingController {
       }
       if (cfg.colorStrips.length) {
         await this.#gateway.callService('light', 'turn_off', { entity_id: cfg.colorStrips });
+      }
+      if (cfg.plugs.length) {
+        await this.#gateway.callService('switch', 'turn_off', { entity_id: cfg.plugs });
       }
       this.#logger.info?.('fitness.dance.lighting.stop', {});
     } catch (error) {
