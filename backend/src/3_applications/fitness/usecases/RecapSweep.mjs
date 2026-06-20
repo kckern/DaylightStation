@@ -37,6 +37,22 @@ function lastCaptureTimestamp(session) {
   return max;
 }
 
+/**
+ * Session start time (ms epoch) derived from its id, which encodes the local wall
+ * clock at start (`[fs_]YYYYMMDDHHMMSS`). Used as the staleness fallback for a
+ * skeleton that never recorded a timestamped capture. Returns NaN for a malformed id.
+ */
+function sessionStartMsFromId(sessionId) {
+  const digits = String(sessionId || '').replace(/\D/g, '');
+  if (digits.length < 14) return NaN;
+  const [y, mo, d, h, mi, s] = [
+    digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8),
+    digits.slice(8, 10), digits.slice(10, 12), digits.slice(12, 14)
+  ].map(Number);
+  const t = new Date(y, mo - 1, d, h, mi, s).getTime();
+  return Number.isNaN(t) ? NaN : t;
+}
+
 export class RecapSweep {
   #d;
   constructor(deps) { this.#d = deps; }
@@ -48,7 +64,7 @@ export class RecapSweep {
    * @param {number} [opts.now] - current time ms (injectable for tests)
    */
   async run({ householdId, lookbackDays = 2, now = Date.now() } = {}) {
-    const { sessionService, generateSessionTimelapse, configService, logger } = this.#d;
+    const { sessionService, generateSessionTimelapse, garbageCollector, configService, logger } = this.#d;
     const hid = householdId || configService?.getDefaultHouseholdId?.() || undefined;
 
     const dates = recentDateStrings(now, lookbackDays);
@@ -85,23 +101,23 @@ export class RecapSweep {
         const status = session.timelapse?.status || null;
         if (status && TERMINAL_OR_INFLIGHT.has(status)) continue;
 
-        // Needs camera captures to render anything (mirrors buildFrames' requirement).
-        const hasCamera = (session.snapshots?.captures || [])
-          .some(c => (c.role || 'camera') === 'camera');
-        if (!hasCamera) continue;
-
-        // Reap abandoned skeletons: the always-on screenshot capture creates a
-        // session record even when no rider tags in, but the persistence roster
-        // gate then refuses to ever write an endTime — so the recap below would
-        // defer it forever (reason `not-ended`) while its frames leak. Once such a
-        // rosterless, never-ended record has stopped capturing past the merge
-        // window it can neither be recapped nor resumed, so delete it outright
-        // (deleteSession removes both the YAML record and the screenshot frames).
+        // Reap abandoned skeletons FIRST, before the camera-captures guard. The
+        // always-on screenshot capture creates a session record even when no rider
+        // tags in, but the persistence roster gate then refuses to ever write an
+        // endTime — so the recap below would defer it forever (reason `not-ended`)
+        // while its frames leak. Such a rosterless, never-ended record can neither
+        // be recapped nor resumed; once it has stopped showing activity past the
+        // merge window, delete it outright (deleteSession removes both the YAML
+        // record and any screenshot frames). Checking before the camera guard is
+        // what lets player-only and zero-capture skeletons get reaped too — the
+        // guard below would otherwise skip them and they'd linger forever.
         const reap = evaluateAbandonedSkeleton({
           finalized: session.finalized,
           endTime: session.endTime,
           rosterSize: Array.isArray(session.roster) ? session.roster.length : 0,
-          lastCaptureMs: lastCaptureTimestamp(session),
+          // Best activity signal: newest capture, else the session's own start time
+          // derived from its id (so a never-captured skeleton still ages out).
+          lastCaptureMs: lastCaptureTimestamp(session) ?? sessionStartMsFromId(sessionId),
           now
         });
         if (reap.reap) {
@@ -115,6 +131,11 @@ export class RecapSweep {
           }
           continue;
         }
+
+        // Needs camera captures to render anything (mirrors buildFrames' requirement).
+        const hasCamera = (session.snapshots?.captures || [])
+          .some(c => (c.role || 'camera') === 'camera');
+        if (!hasCamera) continue;
 
         // Hand off to the use case — it owns the merge-window defer + render/cleanup.
         stats.triggered++;
@@ -132,6 +153,18 @@ export class RecapSweep {
     }
 
     logger?.info?.('fitness.recap_sweep.done', { householdId: hid || null, ...stats });
+
+    // Janitor pass on the same tick: now that abandoned skeletons are reaped, sweep
+    // the media frame store for empty shells, orphan frames, and un-recappable
+    // leftovers. Isolated so a GC failure never fails the recap sweep.
+    if (garbageCollector) {
+      try {
+        stats.gc = await garbageCollector.run({ householdId: hid, now });
+      } catch (err) {
+        logger?.warn?.('fitness.recap_sweep.gc_failed', { error: err?.message });
+      }
+    }
+
     return stats;
   }
 }

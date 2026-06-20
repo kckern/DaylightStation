@@ -84,3 +84,65 @@ export function evaluateAbandonedSkeleton({ finalized, endTime, rosterSize, last
 
   return { reap: true, reason: 'abandoned-skeleton' };
 }
+
+/** Recap statuses that mean the raw frames will never be (re)rendered. */
+const TERMINAL_RECAP_STATUS = new Set(['ready', 'skipped']);
+
+/**
+ * Classify a fitness session's media dir (`sessions/<date>/<id>/`) for the
+ * garbage collector. Pure: callers gather the disk + session facts and execute
+ * the returned action.
+ *
+ * Actions:
+ * - `prune-empty`    — no frame files left (a post-cleanup shell); delete the dir.
+ * - `delete-orphan`  — frames present but no session record owns them; delete the dir.
+ * - `delete-frames`  — frames belong to a settled session that is done with them
+ *                      (recap succeeded, terminally skipped, or un-recappable because
+ *                      it has no camera hero); delete the frames, keep the record.
+ * - `keep`           — still live, still recappable, or too recent to touch.
+ *
+ * The window guards protect against racing a live capture: a brand-new empty dir
+ * or an orphan whose session YAML hasn't landed yet is left alone until it ages out.
+ *
+ * @param {Object} args
+ * @param {boolean} args.hasFiles          - any frame file present under the dir
+ * @param {boolean} [args.hasCameraFrames] - any non-player (camera) frame present
+ * @param {boolean} [args.sessionExists]   - a session record owns this dir
+ * @param {boolean} [args.finalized]       - session.finalized
+ * @param {number|string|null} [args.endTime] - session end (ms epoch / date string)
+ * @param {string|null} [args.timelapseStatus] - session.timelapse?.status
+ * @param {number} args.dirAgeMs           - age (ms) of the dir's most recent change
+ * @param {number} [args.now]
+ * @param {number} [args.windowMs]
+ * @returns {{ action: 'keep'|'prune-empty'|'delete-orphan'|'delete-frames', reason: string }}
+ */
+export function classifySessionMediaDir({
+  hasFiles, hasCameraFrames = false, sessionExists = false,
+  finalized = false, endTime = null, timelapseStatus = null,
+  dirAgeMs, now = Date.now(), windowMs = SESSION_RESUME_MERGE_WINDOW_MS
+}) {
+  if (!hasFiles) {
+    return dirAgeMs >= windowMs
+      ? { action: 'prune-empty', reason: 'empty-shell' }
+      : { action: 'keep', reason: 'empty-recent' };
+  }
+
+  if (!sessionExists) {
+    return dirAgeMs >= windowMs
+      ? { action: 'delete-orphan', reason: 'orphan-frames' }
+      : { action: 'keep', reason: 'orphan-recent' };
+  }
+
+  const { settled } = evaluateRecapReadiness({ finalized, endTime, now, windowMs });
+  if (!settled) return { action: 'keep', reason: 'session-active' };
+
+  if (TERMINAL_RECAP_STATUS.has(timelapseStatus)) {
+    return { action: 'delete-frames', reason: timelapseStatus === 'ready' ? 'post-recap-leftover' : 'terminal-skipped' };
+  }
+  if (!hasCameraFrames) {
+    return { action: 'delete-frames', reason: 'no-camera-unrecappable' };
+  }
+  // Settled, has a camera hero, recap not yet terminal (null/failed) → the recap
+  // sweep still owns it (renders or retries). Leave the frames in place.
+  return { action: 'keep', reason: 'recap-pending' };
+}
