@@ -104,6 +104,12 @@ export default function SessionCameraCapture({ sessionId, intervalMs = 1000, ena
         enabled
         audioConstraints={false}
         captureIntervalMs={period}
+        // Recap frames are captured RAW: the default `mirrorAdaptive` filter bakes
+        // `saturate(2) contrast(1.2) brightness(1.2)` + a horizontal mirror into the
+        // saved JPEG, which blew out highlights (washed-out look) and flipped the
+        // scene. The live CameraViewApp keeps its filter; only this headless recap
+        // capture grabs the true, un-mirrored image.
+        filterId="none"
         onSnapshot={handleSnapshot}
         onStreamReady={handleStreamReady}
         onError={handleStreamError}

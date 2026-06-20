@@ -48,6 +48,7 @@ export class TimelapseFrameMapper {
     // participation and normalizing the cumulative curve to end at totalCoins.
     const totalCoins = Number.isFinite(session?.treasureBox?.totalCoins) ? session.treasureBox.totalCoins : 0;
     const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
+    const chartBase = buildChart(decoded, roster);
 
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
@@ -59,13 +60,13 @@ export class TimelapseFrameMapper {
       const player = nearestByTimestamp(playerCaptures, wallClockMs);
       const media = activeMedia(mediaEvents, wallClockMs);
 
-      const participants = roster.map(p => ({
+      const participants = roster.map((p, idx) => ({
         id: p.id,
         // Honor the persisted resolver output first (display_name), then the
         // injected backend resolver (userService), then the slug — mirrors
         // FitnessReceiptRenderer's name chain.
         displayName: p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id,
-        color: p.color || null,
+        color: p.color || PALETTE[idx % PALETTE.length],
         avatarRef: p.avatarRef || p.avatar || p.id,
         hr: valueAtTick(decoded, hrKeyFor(decoded, p.id), tickIndex),
         zone: valueAtTick(decoded, `${p.id}:zone`, tickIndex)
@@ -83,11 +84,48 @@ export class TimelapseFrameMapper {
         participants,
         zone: zoneAtTick(decoded, roster, tickIndex),
         rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
-        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount)
+        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount),
+        chart: chartFor(chartBase, participants, tickIndex)
       }));
     }
     return frames;
   }
+}
+
+// Stable per-participant identity colours (avatar ring + race line) when the
+// roster carries none — distinct and legible on a dark TV background.
+const PALETTE = ['#ff5b5b', '#4ea1ff', '#4ee07a', '#ffb84e', '#c98bff', '#3dd6c4', '#ff8fb0', '#ffd24a'];
+
+// Simplified FitnessChart payload: per-participant cumulative-coins series (the
+// "race" the chart visualises). The series arrays are shared across every frame
+// (cheap); only `tick` + the per-participant live zone change frame to frame.
+const COIN_RATE = { rest: 0, c: 0, cool: 0, a: 1, active: 1, w: 3, warm: 3, h: 5, hot: 5, m: 7, max: 7, f: 7, fire: 7 };
+function cumulativeFromZone(zones) {
+  if (!Array.isArray(zones)) return null;
+  const out = []; let run = 0;
+  for (const z of zones) { run += COIN_RATE[String(z).toLowerCase()] ?? 0; out.push(run); }
+  return out;
+}
+function buildChart(decoded, roster) {
+  if (!roster.length) return null;
+  const series = roster.map((p, idx) => {
+    let coins = decoded[`${p.id}:coins`];
+    if (!Array.isArray(coins) || !coins.length) coins = cumulativeFromZone(decoded[`${p.id}:zone`]) || [];
+    return { id: p.id, color: p.color || PALETTE[idx % PALETTE.length], coins };
+  });
+  const totalTicks = series.reduce((m, s) => Math.max(m, s.coins.length), 0);
+  let maxCoins = 0;
+  for (const s of series) for (const v of s.coins) if (v != null && v > maxCoins) maxCoins = v;
+  return (totalTicks && maxCoins > 0) ? { totalTicks, maxCoins, series } : null;
+}
+function chartFor(base, participants, tick) {
+  if (!base) return null;
+  return {
+    tick,
+    totalTicks: base.totalTicks,
+    maxCoins: base.maxCoins,
+    series: base.series.map((s, i) => ({ id: s.id, color: s.color, coins: s.coins, zone: participants[i]?.zone ?? null }))
+  };
 }
 
 // Per-tick earning weight by zone, accumulated and normalized to totalCoins.
