@@ -14,11 +14,75 @@
  */
 
 import child_process from 'child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 
 const exec = promisify(child_process.exec);
+const execFileAsync = promisify(execFile);
+
+/**
+ * Pick the best directly-playable format from a yt-dlp -J info object.
+ *
+ * Preference order:
+ *   1. info.url (yt-dlp already merged / single direct URL)
+ *   2. best progressive/combined format (vcodec!='none' && acodec!='none'),
+ *      preferring higher height
+ *   3. last format that has a url
+ *
+ * @param {Object} info - parsed yt-dlp -J info object
+ * @returns {{url: string, protocol?: string}|null}
+ */
+export function pickPlayableFormat(info) {
+  if (!info || typeof info !== 'object') return null;
+
+  if (typeof info.url === 'string' && info.url) {
+    return { url: info.url, protocol: info.protocol };
+  }
+
+  const formats = Array.isArray(info.formats) ? info.formats : [];
+
+  const combined = formats
+    .filter((f) => f && f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none')
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+  if (combined.length) {
+    return { url: combined[0].url, protocol: combined[0].protocol || info.protocol };
+  }
+
+  for (let i = formats.length - 1; i >= 0; i--) {
+    if (formats[i] && formats[i].url) {
+      return { url: formats[i].url, protocol: formats[i].protocol || info.protocol };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Build the argv array for a `yt-dlp -J` probe of a single URL.
+ *
+ * Security: the `url` and every `opts.args` element are returned as discrete
+ * argv elements. They are NEVER interpolated into a shell command string, so
+ * `$(...)`/backtick/`;` content in the URL can never be shell-evaluated.
+ * The URL is always the LAST element so it is passed positionally to yt-dlp.
+ *
+ * @param {string} url - URL to probe (untrusted external input)
+ * @param {Object} [opts] - optional profile-derived options
+ * @param {string[]} [opts.args] - extra yt-dlp CLI arg elements to append
+ * @returns {string[]} argv array (excluding the `yt-dlp` binary itself)
+ */
+export function buildProbeArgs(url, opts = {}) {
+  const extraArgs = Array.isArray(opts.args) ? opts.args : [];
+  return [
+    '--js-runtimes', 'node',
+    '-J',
+    '--no-warnings',
+    '--no-playlist',
+    ...extraArgs,
+    url
+  ];
+}
 
 /**
  * yt-dlp adapter for video source downloads
@@ -262,6 +326,46 @@ export class YtDlpAdapter {
       });
       return null;
     }
+  }
+
+  /**
+   * Probe a URL with `yt-dlp -J` (JSON dump, NO download) and return the best
+   * directly-playable format. Used by the stream content source for vendor-blind
+   * resolution.
+   *
+   * Security: the URL is UNTRUSTED external input (the `stream:<url>` feature),
+   * so this invokes yt-dlp via execFile with an argv array — NO shell. The URL
+   * and every `opts.args` element are discrete argv elements (see
+   * buildProbeArgs), so they can never be shell-parsed/expanded.
+   *
+   * @param {string} url - URL to probe (untrusted external input)
+   * @param {Object} [opts] - optional profile-derived options
+   * @param {string[]} [opts.args] - extra yt-dlp CLI arg elements to append
+   * @param {number} [opts.timeoutMs=60000] - probe timeout
+   * @returns {Promise<{title: string|null, duration: number|null, thumbnail: string|null, url: string, protocol: string|null}>}
+   * @throws if yt-dlp fails, output is unparseable, or no playable format is found
+   */
+  async probe(url, opts = {}) {
+    const { timeoutMs = 60000 } = opts;
+    const argv = buildProbeArgs(url, opts);
+
+    const { stdout } = await execFileAsync('yt-dlp', argv, {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024 * 32
+    });
+    const info = JSON.parse(stdout.trim());
+    const chosen = pickPlayableFormat(info);
+    if (!chosen) {
+      throw new Error('yt-dlp probe found no playable format');
+    }
+
+    return {
+      title: info.title ?? null,
+      duration: info.duration ?? null,
+      thumbnail: info.thumbnail ?? null,
+      url: chosen.url,
+      protocol: chosen.protocol || info.protocol || null
+    };
   }
 
   /**

@@ -8,3 +8,4 @@ export { IMediaProgressMemory, validateMediaProgressMemory } from './IMediaProgr
 export { IRemoteProgressProvider, validateRemoteProgressProvider } from './IRemoteProgressProvider.mjs';
 export { IListStore } from './IListStore.mjs';
 export { ISyncSource, isSyncSource, assertSyncSource, createNoOpSyncSource } from './ISyncSource.mjs';
+export { IStreamResolver, isStreamResolver } from './IStreamResolver.mjs';

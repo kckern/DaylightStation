@@ -2,13 +2,24 @@
 // This allows tests in tests/isolated/ to use React testing libraries
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// In worktrees, frontend/node_modules may not exist — fall back to main repo location.
-const frontendNodeModulesLocal = path.resolve(__dirname, '../../frontend/node_modules');
-const frontendNodeModulesMain = path.resolve(__dirname, '../../../../../frontend/node_modules');
-const frontendNodeModules = existsSync(frontendNodeModulesLocal) ? frontendNodeModulesLocal : frontendNodeModulesMain;
+const worktreeRoot = path.resolve(__dirname, '../..');
+// In worktrees, frontend/node_modules may not exist — fall back to the main repo.
+// Worktrees can live INSIDE the main repo (.claude/worktrees/<name>) or as a SIBLING
+// checkout. Cover both by probing candidate locations. The worktree root's
+// `node_modules` is symlinked to the main checkout, so its realpath yields the main
+// repo root regardless of layout.
+const candidates = [
+  path.resolve(__dirname, '../../frontend/node_modules'),
+  path.resolve(__dirname, '../../../../../frontend/node_modules'),
+];
+try {
+  const mainRepoRoot = path.dirname(realpathSync(path.join(worktreeRoot, 'node_modules')));
+  candidates.push(path.join(mainRepoRoot, 'frontend/node_modules'));
+} catch (_) { /* no node_modules symlink — rely on other candidates */ }
+const frontendNodeModules = candidates.find((p) => existsSync(p)) || candidates[0];
 const happyDomPath = path.join(frontendNodeModules, 'happy-dom', 'lib', 'index.js');
 
 const { Window, GlobalWindow } = await import(happyDomPath);
