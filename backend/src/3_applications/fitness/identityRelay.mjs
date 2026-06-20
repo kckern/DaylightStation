@@ -96,8 +96,14 @@ export function createIdentityRelay({
     if (getLockdownState) {
       try {
         const state = await getLockdownState.execute({ now: Math.floor(at / 1000) });
-        if (state) return;
-      } catch { /* lookup failed — fall through and trip (fail-safe toward locking) */ }
+        if (state) return; // already locked — never stamp a pending /release could consume
+      } catch (err) {
+        // Fail CLOSED. A missed abuse-trip is harmless (the next failed scan re-evaluates),
+        // but stamping a synthetic pending while the lock state is unknown could let
+        // /release succeed without an admin scan. Don't trip on a lookup error.
+        logger.warn?.('identity.abuse_lockcheck_failed', { message: err?.message ?? null });
+        return;
+      }
     }
     pending = { userId: ABUSE_USER, at: now() };
     eventBus.broadcast(CEREMONY_TOPIC, {
