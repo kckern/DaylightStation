@@ -2188,6 +2188,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Trash retention: hard-delete recap frames that have sat in `_trash` past the
+  // 7-day window (frames are soft-deleted there after a confirmed recap). Daily is
+  // plenty for a 7-day TTL. The ONLY hard-delete in the session media lifecycle,
+  // and it only ever touches the `_trash` root.
+  if (agentsServices.scheduler && v1Routers.fitness?.trashRetentionSweep) {
+    agentsServices.scheduler.registerTask('fitness:trash-retention', '17 4 * * *', async () => {
+      await v1Routers.fitness.trashRetentionSweep.run();
+    });
+  }
+
   // Mount each registered agent's HTTP surface (run, run-stream, run-background) via mountAgentHttp
   for (const { id: agentId } of agentsServices.orchestrator.list()) {
     mountAgentHttp(app, {

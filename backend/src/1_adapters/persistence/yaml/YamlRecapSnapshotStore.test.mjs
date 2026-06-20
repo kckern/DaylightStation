@@ -56,3 +56,47 @@ test('cleanup archives instead of deletes when archive:true', async () => {
   assert.equal(fs.existsSync(screenshotsDir), false);
   assert.equal(fs.existsSync(path.join(root, 'screenshots_archive')), true);
 });
+
+function setupTrash() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'snap-'));
+  const screenshotsDir = path.join(root, 'sessions', '2026-06-12', '20260612090000', 'screenshots');
+  fs.mkdirSync(screenshotsDir, { recursive: true });
+  ['0000', '0001'].forEach((i, n) =>
+    fs.writeFileSync(path.join(screenshotsDir, `2026-06-12_${i}.jpg`), Buffer.from([0xff, 0xd8, n])));
+  const trashDir = path.join(root, '_trash', '2026-06-12', '20260612090000');
+  const datastore = { getStoragePaths: () => ({ screenshotsDir, trashDir }) };
+  return { root, screenshotsDir, trashDir, datastore };
+}
+
+test('moveToTrash relocates the frames into _trash (does NOT hard-delete)', async () => {
+  const { datastore, screenshotsDir, trashDir } = setupTrash();
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const now = Date.UTC(2026, 5, 12, 9, 30, 0);
+  const dest = await store.moveToTrash('S1', 'h', { now });
+  // Source gone, frames preserved under _trash
+  assert.equal(fs.existsSync(screenshotsDir), false);
+  assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', '2026-06-12_0000.jpg')), true);
+  assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', '2026-06-12_0001.jpg')), true);
+  assert.ok(dest.startsWith(trashDir));
+  // The trash entry's mtime is stamped to the trash time (drives 7-day retention)
+  assert.equal(Math.round(fs.statSync(trashDir).mtimeMs), now);
+});
+
+test('moveToTrash is a no-op when there are no frames to move', async () => {
+  const { datastore, screenshotsDir } = setupTrash();
+  fs.rmSync(screenshotsDir, { recursive: true, force: true });
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  const dest = await store.moveToTrash('S1', 'h', { now: Date.now() });
+  assert.equal(dest, null);
+});
+
+test('moveToTrash overwrites a stale prior trash entry for the same session', async () => {
+  const { datastore, trashDir } = setupTrash();
+  // a leftover trash entry from a previous run
+  fs.mkdirSync(path.join(trashDir, 'screenshots'), { recursive: true });
+  fs.writeFileSync(path.join(trashDir, 'screenshots', 'OLD.jpg'), Buffer.from([0]));
+  const store = new YamlRecapSnapshotStore({ sessionDatastore: datastore, fileIO: fs, logger: silent });
+  await store.moveToTrash('S1', 'h', { now: Date.now() });
+  assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', 'OLD.jpg')), false);
+  assert.equal(fs.existsSync(path.join(trashDir, 'screenshots', '2026-06-12_0000.jpg')), true);
+});

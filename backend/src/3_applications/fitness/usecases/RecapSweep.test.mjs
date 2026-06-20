@@ -8,9 +8,8 @@ function session(id, { status, captures = [{ role: 'camera' }] } = {}) {
   return { sessionId: id, snapshots: { captures }, timelapse: status ? { status } : null };
 }
 
-function harness(byDate, { executeImpl, garbageCollector } = {}) {
+function harness(byDate, { executeImpl } = {}) {
   const executed = [];
-  const deleted = [];
   const sessionService = {
     listSessionsByDate: async (date) => (byDate[date] || []).map(s => ({ sessionId: s.sessionId })),
     getSession: async (sessionId) => {
@@ -19,8 +18,7 @@ function harness(byDate, { executeImpl, garbageCollector } = {}) {
         if (found) return found;
       }
       return null;
-    },
-    deleteSession: async (sessionId) => { deleted.push(sessionId); }
+    }
   };
   const generateSessionTimelapse = {
     execute: async ({ sessionId }) => {
@@ -31,22 +29,10 @@ function harness(byDate, { executeImpl, garbageCollector } = {}) {
   const sweep = new RecapSweep({
     sessionService,
     generateSessionTimelapse,
-    garbageCollector,
     configService: { getDefaultHouseholdId: () => 'h' },
     logger: { info() {}, warn() {}, error() {}, debug() {} }
   });
-  return { sweep, executed, deleted };
-}
-
-/** A rosterless skeleton: camera frames captured, but no rider, no endTime. */
-function skeleton(id, { lastCaptureMs } = {}) {
-  return {
-    sessionId: id,
-    roster: [],
-    endTime: null,
-    finalized: false,
-    snapshots: { captures: [{ role: 'camera', timestamp: lastCaptureMs }], updatedAt: lastCaptureMs }
-  };
+  return { sweep, executed };
 }
 
 test('recentDateStrings yields today + N prior days, newest first', () => {
@@ -102,63 +88,6 @@ test('a deferred (within-window) result is counted, not rendered', async () => {
   assert.deepEqual(executed, ['recent']);
   assert.equal(stats.deferred, 1);
   assert.equal(stats.rendered, 0);
-});
-
-test('reaps a stale PLAYER-ONLY skeleton (no camera) — the gap the hasCamera guard left', async () => {
-  const stale = NOW - (35 * 60 * 1000);
-  const playerOnly = {
-    sessionId: '20260618061200', roster: [], endTime: null, finalized: false,
-    snapshots: { captures: [{ role: 'player', timestamp: stale }], updatedAt: stale }
-  };
-  const { sweep, executed, deleted } = harness({ '2026-06-18': [playerOnly] });
-  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
-  assert.deepEqual(deleted, ['20260618061200']);
-  assert.deepEqual(executed, []);
-  assert.equal(stats.reaped, 1);
-});
-
-test('reaps a stale ZERO-capture skeleton via its id-derived age', async () => {
-  // id encodes 2026-06-18 06:12:00 — well past the window relative to NOW (06-20 noon)
-  const zeroCap = {
-    sessionId: '20260618061200', roster: [], endTime: null, finalized: false,
-    snapshots: { captures: [{ role: 'camera' }], updatedAt: null } // camera present but untimestamped
-  };
-  const { sweep, deleted, executed } = harness({ '2026-06-18': [zeroCap] });
-  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
-  assert.deepEqual(deleted, ['20260618061200']);
-  assert.deepEqual(executed, []);
-  assert.equal(stats.reaped, 1);
-});
-
-test('runs the injected garbage collector at the end of the tick', async () => {
-  let gcRan = 0;
-  const { sweep } = harness(
-    { '2026-06-18': [session('s1')] },
-    { garbageCollector: { run: async () => { gcRan++; return {}; } } }
-  );
-  await sweep.run({ now: NOW, lookbackDays: 0 });
-  assert.equal(gcRan, 1);
-});
-
-test('reaps a stale rosterless skeleton instead of deferring it forever', async () => {
-  const { sweep, executed, deleted } = harness({
-    '2026-06-18': [skeleton('ghost', { lastCaptureMs: NOW - (35 * 60 * 1000) })]
-  });
-  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
-  assert.deepEqual(deleted, ['ghost']);   // reaped (record + frames)
-  assert.deepEqual(executed, []);          // never handed to the timelapse generator
-  assert.equal(stats.reaped, 1);
-  assert.equal(stats.triggered, 0);
-});
-
-test('does NOT reap a skeleton whose capture is still recent', async () => {
-  const { sweep, executed, deleted } = harness({
-    '2026-06-18': [skeleton('fresh', { lastCaptureMs: NOW - (60 * 1000) })]
-  });
-  const stats = await sweep.run({ now: NOW, lookbackDays: 0 });
-  assert.deepEqual(deleted, []);
-  assert.deepEqual(executed, ['fresh']);   // still flows to the generator (which will defer)
-  assert.equal(stats.reaped, 0);
 });
 
 test('scans across the full lookback window', async () => {
