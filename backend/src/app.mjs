@@ -1716,6 +1716,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     userService,
     loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
+    getLockdownState,
     logger: emergencyLogger,
   });
 
