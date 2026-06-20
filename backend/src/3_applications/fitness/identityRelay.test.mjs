@@ -234,6 +234,18 @@ describe('scanner-abuse auto-lockdown', () => {
     expect(ceremonies).toHaveLength(1);
   });
 
+  it('fails closed: a lockdown-state lookup error does NOT trip or stamp a pending', async () => {
+    let t = 0;
+    const d = abuseDeps(() => t, { getLockdownState: { execute: async () => { throw new Error('repo down'); } } });
+    const relay = createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+    expect(relay.consumePendingDetection(3000)).toBeNull();
+  });
+
   it('does not trip (or stamp a synthetic pending) while a lockdown is already active', async () => {
     let t = 0;
     const d = abuseDeps(() => t, { getLockdownState: { execute: async () => ({ lockedUntil: 9999999999 }) } });
