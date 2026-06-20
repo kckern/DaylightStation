@@ -140,3 +140,109 @@ describe('createIdentityRelay', () => {
     expect(d.eventBus.broadcasts).toHaveLength(0);
   });
 });
+
+describe('scanner-abuse auto-lockdown', () => {
+  // kc = admin (holds ADMIN_LOCK); guest = holds dance_party. Both are "safe".
+  const abuseDeps = (now, overrides = {}) => ({
+    eventBus: makeBus(),
+    userService: { getAllProfiles: () => profiles() },
+    loadFitnessConfig: () => ({
+      locks: { dance_party: ['kc', 'guest'] },
+      users: { admin: ['kc'] },
+      emergency: { abuse: { enabled: true, threshold: 3, window_sec: 30 } },
+    }),
+    now,
+    logger: { debug() {}, info() {}, warn() {} },
+    ...overrides,
+  });
+  const fail = (bus) => bus.deliver({ topic: 'biometric.scan', matched: false });
+
+  it('trips the ceremony after N unrecognized scans within the window', () => {
+    let t = 1000;
+    const d = abuseDeps(() => t);
+    const relay = createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+    t = 3000; fail(d.eventBus);
+    const evt = d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony');
+    expect(evt).toBeDefined();
+    expect(evt.payload).toMatchObject({ reason: 'abuse', count: 3, windowSec: 30 });
+    // A synthetic pending is stamped so the existing ceremony→commit path can lock.
+    expect(relay.consumePendingDetection(3000)).toEqual({ userId: 'abuse-protection', at: 3000 });
+  });
+
+  it('does not trip when failures fall outside the window', () => {
+    let t = 0;
+    const d = abuseDeps(() => t);
+    createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 32000; fail(d.eventBus); // prunes the two >30s-old entries; only 1 in window
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+  });
+
+  it('an authorized scan resets the streak', () => {
+    let t = 0;
+    const d = abuseDeps(() => t);
+    createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 2500; d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-guest' }); // holds dance_party → safe
+    t = 3000; fail(d.eventBus);
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+  });
+
+  it('counts a recognized identity holding no locks as a failed scan', () => {
+    let t = 0;
+    const d = {
+      eventBus: makeBus(),
+      userService: { getAllProfiles: () => profiles() },
+      loadFitnessConfig: () => ({ locks: {}, users: { admin: ['kc'] }, emergency: { abuse: { threshold: 3, window_sec: 30 } } }),
+      now: () => t,
+      logger: { debug() {}, info() {}, warn() {} },
+    };
+    createIdentityRelay(d);
+    const noAccess = () => d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-guest' });
+    t = 1000; noAccess();
+    t = 2000; noAccess();
+    t = 3000; noAccess();
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeDefined();
+  });
+
+  it('does not trip when abuse protection is disabled', () => {
+    let t = 0;
+    const d = abuseDeps(() => t, {
+      loadFitnessConfig: () => ({ locks: {}, users: { admin: ['kc'] }, emergency: { abuse: { enabled: false } } }),
+    });
+    createIdentityRelay(d);
+    for (let i = 1; i <= 5; i++) { t = 1000 * i; fail(d.eventBus); }
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+  });
+
+  it('suppresses re-trips during the cooldown window', () => {
+    let t = 0;
+    const d = abuseDeps(() => t);
+    createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus); // trips; cooldown until 63000
+    t = 4000; fail(d.eventBus);
+    t = 5000; fail(d.eventBus);
+    t = 6000; fail(d.eventBus);
+    const ceremonies = d.eventBus.broadcasts.filter((b) => b.topic === 'fitness.emergency.ceremony');
+    expect(ceremonies).toHaveLength(1);
+  });
+
+  it('does not trip (or stamp a synthetic pending) while a lockdown is already active', async () => {
+    let t = 0;
+    const d = abuseDeps(() => t, { getLockdownState: { execute: async () => ({ lockedUntil: 9999999999 }) } });
+    const relay = createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    await new Promise((r) => setTimeout(r, 0)); // let tripAbuse's async lock-check settle
+    expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
+    expect(relay.consumePendingDetection(3000)).toBeNull();
+  });
+});
