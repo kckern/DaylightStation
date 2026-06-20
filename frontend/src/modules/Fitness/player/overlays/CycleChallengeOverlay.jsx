@@ -187,6 +187,16 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
   // --- RPM gauge geometry (Task 22) -----------------------------------------
   const currentRpm = Number.isFinite(challenge.currentRpm) ? challenge.currentRpm : 0;
 
+  // Health bar is hidden by default. It only appears when the rider is actually
+  // at risk: below the red line (loRpm) during maintain, or held in a health
+  // lock (empty pool, video paused). Holding green / init / ramp show nothing.
+  const loRpm = Number.isFinite(challenge.currentPhase?.loRpm)
+    ? challenge.currentPhase.loRpm
+    : null;
+  const showHealthBar =
+    (challenge.cycleState === 'maintain' && loRpm != null && currentRpm < loRpm)
+    || (challenge.cycleState === 'locked' && challenge.lockReason === 'health');
+
   const needleAngle = rpmToAngle(currentRpm, CYCLE_GAUGE_MAX_RPM);
   const needleDeg = ((needleAngle - 1.5 * Math.PI) * 180) / Math.PI;
   const atHi = hiRpm != null && currentRpm >= hiRpm;
@@ -426,7 +436,7 @@ export const CycleChallengeOverlay = ({ challenge, onRequestSwap, done = false }
         </div>
       </div>
 
-      <CycleHealthBar pct={cycleHealthPct ?? 1} />
+      {showHealthBar && <CycleHealthBar pct={cycleHealthPct ?? 1} />}
 
       {showBoostBadge && (
         <div
