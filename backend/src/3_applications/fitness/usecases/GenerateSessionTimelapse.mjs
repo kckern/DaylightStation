@@ -153,16 +153,25 @@ export class GenerateSessionTimelapse {
       const relPath = path.relative(mediaDir, outputPath);
       let sizeBytes = null;
       try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* best-effort */ }
+      // Confirm the MP4 actually landed BEFORE we touch the source frames. If the
+      // encode silently produced nothing, fail here — the catch leaves the captures
+      // untouched (it only removes the temp dir), so a re-run can retry instead of
+      // destroying the only copy of the screenshots.
+      if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
       session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
       await sessionDatastore.save(session, householdId);
 
       stage = 'cleanup';
-      await snapshotStore.cleanup(sessionId, householdId, { archive: !!config.archive_frames });
+      // Default to ARCHIVING the source frames (screenshots -> screenshots_archive)
+      // so a recap can always be regenerated later; set `archive_frames: false` to
+      // hard-delete (saves disk, but the recap can never be re-rendered).
+      const archiveFrames = config.archive_frames !== false;
+      await snapshotStore.cleanup(sessionId, householdId, { archive: archiveFrames });
       safeRm(fileIO, tmpDir);
       logger.info?.('fitness.timelapse.ready', {
         sessionId, videoPath: session.timelapse.videoPath, frames: written,
         durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
-        archivedFrames: !!config.archive_frames
+        archivedFrames: archiveFrames
       });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {

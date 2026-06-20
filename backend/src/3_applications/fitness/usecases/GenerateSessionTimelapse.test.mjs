@@ -44,7 +44,7 @@ function fakes(overrides = {}) {
       }] : [])
     },
     frameRenderer: { renderFrame: async (args) => { calls.rendered.push(args); return Buffer.from([0xff, 0xd8, 1, 2, 3]); } },
-    videoEncoder: { encodeSequence: async ({ outputPath }) => ({ outputPath }) },
+    videoEncoder: { encodeSequence: async ({ outputPath }) => { fs.writeFileSync(outputPath, Buffer.from([0, 1, 2, 3])); return { outputPath }; } },
     posterProvider: async (contentId) => { calls.posters.push(contentId); return Buffer.from([0xff, 0xd8, 9]); },
     avatarProvider: async () => { calls.avatars++; return { kc: Buffer.from([0xff, 0xd8, 7]) }; },
     resolveName: (slug) => slug.toUpperCase(),
@@ -101,6 +101,29 @@ test('encoder failure -> failed status, no cleanup', async () => {
   assert.equal(res.status, 'failed');
   assert.equal(f.calls.cleaned, undefined);
   assert.equal(f.saved.at(-1).timelapse.status, 'failed');
+});
+
+test('mp4 not written (0 bytes) -> failed, frames NOT cleaned (kept for retry)', async () => {
+  const f = fakes();
+  f.videoEncoder.encodeSequence = async () => ({});   // returns but writes no file
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'failed');
+  assert.equal(f.calls.cleaned, undefined);            // source captures preserved
+});
+
+test('archives frames by default when archive_frames is unset', async () => {
+  const f = fakes(); delete f.config.archive_frames;
+  const uc = new GenerateSessionTimelapse(f);
+  await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.deepEqual(f.calls.cleaned[2], { archive: true });
+});
+
+test('hard-deletes frames only when archive_frames is explicitly false', async () => {
+  const f = fakes(); f.config.archive_frames = false;
+  const uc = new GenerateSessionTimelapse(f);
+  await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.deepEqual(f.calls.cleaned[2], { archive: false });
 });
 
 test('disabled config -> no work', async () => {
