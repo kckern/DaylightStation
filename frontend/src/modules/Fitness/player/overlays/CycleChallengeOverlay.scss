@@ -329,11 +329,12 @@
     top: calc(100% + 32px);
     left: 50%;
     transform: translateX(-50%);
-    padding: 2px clamp(6px, calc(var(--cycle-overlay-diameter) * 0.04), 10px);
-    border-radius: 8px;
+    // 2x larger for legibility at workout distance.
+    padding: 4px clamp(12px, calc(var(--cycle-overlay-diameter) * 0.08), 20px);
+    border-radius: 12px;
     background: rgba(249, 115, 22, 0.9);
     color: #1e293b;
-    font-size: clamp(0.6rem, calc(var(--cycle-overlay-diameter) * 0.06), 0.85rem);
+    font-size: clamp(1.2rem, calc(var(--cycle-overlay-diameter) * 0.12), 1.7rem);
     font-weight: 800;
     letter-spacing: 0.04em;
     text-shadow: none;
