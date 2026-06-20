@@ -1,5 +1,6 @@
 import { decodeSeries } from './TimelineService.mjs';
 import { FrameDescriptor } from '#domains/fitness/value-objects/FrameDescriptor.mjs';
+import { cssColorForStrap } from '#domains/fitness/strapColors.mjs';
 
 /**
  * Pure domain service: maps persisted session data into an ordered list of
@@ -16,7 +17,7 @@ export class TimelapseFrameMapper {
    * @param {{speedup:number, outputFps:number, resolveName?:(slug:string)=>string}} spec
    * @returns {FrameDescriptor[]}
    */
-  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null }) {
+  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null, cadenceDevices = null, cadenceColors = null }) {
     const captures = session?.snapshots?.captures || [];
     if (!captures.length) return [];
 
@@ -50,6 +51,7 @@ export class TimelapseFrameMapper {
     const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
     const idColors = assignIdentityColors(roster.map(p => p.id));
     const chartBase = buildChart(decoded, roster, resolveColor);
+    const cadenceBases = buildCadenceBases(decoded, cadenceDevices, cadenceColors);
 
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
@@ -86,7 +88,8 @@ export class TimelapseFrameMapper {
         zone: zoneAtTick(decoded, roster, tickIndex),
         rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
         coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount),
-        chart: chartFor(chartBase, participants, tickIndex)
+        chart: chartFor(chartBase, participants, tickIndex),
+        cadence: cadenceAt(cadenceBases, tickIndex)
       }));
     }
     return frames;
@@ -144,6 +147,34 @@ function chartFor(base, participants, tick) {
     maxCoins: base.maxCoins,
     series: base.series.map((s, i) => ({ id: s.id, color: s.color, coins: s.coins, zone: participants[i]?.zone ?? null }))
   };
+}
+
+// Cadence/equipment: each `bike:{deviceId}:rpm` series → its equipment name + the
+// bike's assigned cadence colour (fitness.yml devices.cadence + device_colors.cadence).
+// The equipment icon (rendered later) identifies WHICH device each RPM belongs to.
+function buildCadenceBases(decoded, cadenceDevices, cadenceColors) {
+  if (!cadenceDevices) return null;
+  const get = (map, id) => (map ? (map[id] ?? map[Number(id)]) : undefined);
+  const bases = [];
+  for (const key of Object.keys(decoded)) {
+    const m = key.match(/^bike:(.+):rpm$/);
+    if (!m || !Array.isArray(decoded[key])) continue;
+    const deviceId = m[1];
+    const equipment = get(cadenceDevices, deviceId) || null;
+    if (!equipment) continue;
+    bases.push({ deviceId, series: decoded[key], equipment, color: cssColorForStrap(get(cadenceColors, deviceId)) || null });
+  }
+  return bases.length ? bases : null;
+}
+function cadenceAt(bases, tick) {
+  if (!bases) return null;
+  const out = [];
+  for (const b of bases) {
+    const rpm = b.series[tick];
+    if (rpm == null || rpm <= 0) continue;
+    out.push({ deviceId: b.deviceId, equipment: b.equipment, color: b.color, rpm });
+  }
+  return out.length ? out : null;
 }
 
 // Per-tick earning weight by zone, accumulated and normalized to totalCoins.

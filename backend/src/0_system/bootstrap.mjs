@@ -1130,6 +1130,20 @@ export function createFitnessApiRouter(config) {
     }
     return out;
   };
+  // Equipment (bike) icons by name — media/img/equipment/{name}.{ext} — used to
+  // label each cadence/RPM readout with its device in the recap footer.
+  const equipmentProvider = async (names) => {
+    const out = {};
+    const dir = path.join(configService.getPath('img') || path.join(configService.getMediaDir(), 'img'), 'equipment');
+    const exts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+    for (const name of names || []) {
+      for (const ext of exts) {
+        const p = path.join(dir, `${name}.${ext}`);
+        if (nodeFs.existsSync(p)) { out[name] = nodeFs.readFileSync(p); break; }
+      }
+    }
+    return out;
+  };
   const generateSessionTimelapse = new GenerateSessionTimelapse({
     sessionDatastore: fitnessServices.sessionStore,
     snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, fileIO: nodeFs, logger }),
@@ -1138,10 +1152,14 @@ export function createFitnessApiRouter(config) {
     videoEncoder: new FfmpegVideoAdapter({ logger }),
     posterProvider,
     avatarProvider,
+    equipmentProvider,
     resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
     // Each rider's real assigned strap colour (fitness.yml device_colors.heart_rate),
     // keyed by HR device id — the same colours the live fitness UI uses.
     resolveColor: makeDeviceColorResolver(fitnessConfig?.device_colors?.heart_rate),
+    // Cadence (bike) device → equipment name + per-bike colour, for the RPM readouts.
+    cadenceDevices: fitnessConfig?.devices?.cadence || null,
+    cadenceColors: fitnessConfig?.device_colors?.cadence || null,
     mediaDir: configService.getMediaDir(),
     config: timelapseConfig,
     fileIO: nodeFs,

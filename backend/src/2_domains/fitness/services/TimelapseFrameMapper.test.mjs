@@ -83,6 +83,27 @@ test('honors a provided resolveName for participant display names', () => {
   assert.equal(frames[0].participants[0].displayName, 'KC');
 });
 
+test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes', () => {
+  const s = fakeSession();
+  s.timeline.series['bike:7138:rpm'] = JSON.stringify([[66, 12]]);
+  s.timeline.series['bike:49904:rpm'] = JSON.stringify([[0, 12]]);   // idle -> excluded
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    cadenceDevices: { 7138: 'niceday', 49904: 'cycle_ace' },
+    cadenceColors: { 7138: 'orange', 49904: 'yellow' }
+  });
+  const cad = frames[50].cadence;
+  assert.equal(cad.length, 1);
+  assert.equal(cad[0].equipment, 'niceday');
+  assert.equal(cad[0].rpm, 66);
+  assert.equal(cad[0].color, '#ff922b');   // orange via strapColors SSOT
+});
+
+test('no cadence config -> descriptor.cadence is null', () => {
+  const frames = new TimelapseFrameMapper().buildFrames(fakeSession(), { speedup: 10, outputFps: 10 });
+  assert.equal(frames[50].cadence, null);
+});
+
 test('no captures -> empty frame list', () => {
   const mapper = new TimelapseFrameMapper();
   const s = fakeSession(); s.snapshots.captures = [];
