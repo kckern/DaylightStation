@@ -89,6 +89,7 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
+import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
@@ -1138,6 +1139,9 @@ export function createFitnessApiRouter(config) {
     posterProvider,
     avatarProvider,
     resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
+    // Each rider's real assigned strap colour (fitness.yml device_colors.heart_rate),
+    // keyed by HR device id — the same colours the live fitness UI uses.
+    resolveColor: makeDeviceColorResolver(fitnessConfig?.device_colors?.heart_rate),
     mediaDir: configService.getMediaDir(),
     config: timelapseConfig,
     fileIO: nodeFs,

@@ -18,7 +18,7 @@ export class GenerateSessionTimelapse {
   async execute({ sessionId, householdId, force = false }) {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
-      videoEncoder, posterProvider, avatarProvider, resolveName,
+      videoEncoder, posterProvider, avatarProvider, resolveName, resolveColor,
       mediaDir, config, fileIO, logger
     } = this.#d;
 
@@ -70,7 +70,7 @@ export class GenerateSessionTimelapse {
     const cameraCount = allCaptures.filter(c => (c.role || 'camera') === 'camera').length;
     const playerCount = allCaptures.filter(c => c.role === 'player').length;
 
-    const descriptors = frameMapper.buildFrames(data, { speedup, outputFps: fps, resolveName: resolveName || null });
+    const descriptors = frameMapper.buildFrames(data, { speedup, outputFps: fps, resolveName: resolveName || null, resolveColor: resolveColor || null });
     if (!descriptors.length) {
       session.markTimelapseSkipped('no-captures');
       await sessionDatastore.save(session, householdId);

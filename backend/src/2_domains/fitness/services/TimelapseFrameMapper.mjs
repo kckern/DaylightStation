@@ -16,7 +16,7 @@ export class TimelapseFrameMapper {
    * @param {{speedup:number, outputFps:number, resolveName?:(slug:string)=>string}} spec
    * @returns {FrameDescriptor[]}
    */
-  buildFrames(session, { speedup, outputFps, resolveName = null }) {
+  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null }) {
     const captures = session?.snapshots?.captures || [];
     if (!captures.length) return [];
 
@@ -48,7 +48,8 @@ export class TimelapseFrameMapper {
     // participation and normalizing the cumulative curve to end at totalCoins.
     const totalCoins = Number.isFinite(session?.treasureBox?.totalCoins) ? session.treasureBox.totalCoins : 0;
     const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
-    const chartBase = buildChart(decoded, roster);
+    const idColors = assignIdentityColors(roster.map(p => p.id));
+    const chartBase = buildChart(decoded, roster, resolveColor);
 
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
@@ -66,7 +67,7 @@ export class TimelapseFrameMapper {
         // injected backend resolver (userService), then the slug — mirrors
         // FitnessReceiptRenderer's name chain.
         displayName: p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id,
-        color: p.color || PALETTE[idx % PALETTE.length],
+        color: colorForParticipant(p, idColors, resolveColor),
         avatarRef: p.avatarRef || p.avatar || p.id,
         hr: valueAtTick(decoded, hrKeyFor(decoded, p.id), tickIndex),
         zone: valueAtTick(decoded, `${p.id}:zone`, tickIndex)
@@ -92,9 +93,25 @@ export class TimelapseFrameMapper {
   }
 }
 
-// Stable per-participant identity colours (avatar ring + race line) when the
-// roster carries none — distinct and legible on a dark TV background.
-const PALETTE = ['#ff5b5b', '#4ea1ff', '#4ee07a', '#ffb84e', '#c98bff', '#3dd6c4', '#ff8fb0', '#ffd24a'];
+// Identity palette + assignment — MUST mirror the frontend SSOT
+// (frontend/src/modules/Fitness/lib/participantColors.js) so the recap uses each
+// user's SAME assigned colour as the live UI. Colours are assigned by SORTED
+// participant id, so a given roster always yields the same colours.
+const IDENTITY_PALETTE = ['#b388ff', '#ff6fd8', '#00bfa5', '#8c9eff', '#a1887f', '#26c6da'];
+function assignIdentityColors(ids) {
+  const clean = [...new Set((ids || []).filter(Boolean).map(String))].sort((a, b) => a.localeCompare(b));
+  const map = new Map();
+  clean.forEach((id, i) => map.set(id, IDENTITY_PALETTE[i % IDENTITY_PALETTE.length]));
+  return map;
+}
+
+// A participant's display colour: an explicit roster colour, else their real
+// assigned strap colour (resolved from the HR device), else the identity fallback.
+function colorForParticipant(p, idColors, resolveColor) {
+  return p.color
+    || (resolveColor ? resolveColor(p.hrDeviceId ?? p.hr_device) : null)
+    || idColors.get(p.id);
+}
 
 // Simplified FitnessChart payload: per-participant cumulative-coins series (the
 // "race" the chart visualises). The series arrays are shared across every frame
@@ -106,12 +123,13 @@ function cumulativeFromZone(zones) {
   for (const z of zones) { run += COIN_RATE[String(z).toLowerCase()] ?? 0; out.push(run); }
   return out;
 }
-function buildChart(decoded, roster) {
+function buildChart(decoded, roster, resolveColor = null) {
   if (!roster.length) return null;
-  const series = roster.map((p, idx) => {
+  const idColors = assignIdentityColors(roster.map(p => p.id));
+  const series = roster.map(p => {
     let coins = decoded[`${p.id}:coins`];
     if (!Array.isArray(coins) || !coins.length) coins = cumulativeFromZone(decoded[`${p.id}:zone`]) || [];
-    return { id: p.id, color: p.color || PALETTE[idx % PALETTE.length], coins };
+    return { id: p.id, color: colorForParticipant(p, idColors, resolveColor), coins };
   });
   const totalTicks = series.reduce((m, s) => Math.max(m, s.coins.length), 0);
   let maxCoins = 0;

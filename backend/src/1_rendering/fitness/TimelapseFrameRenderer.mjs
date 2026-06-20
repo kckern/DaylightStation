@@ -166,20 +166,12 @@ export function createTimelapseFrameRenderer(config = {}) {
       const centerY = H - Math.round(footerH * 0.5);
       const participants = descriptor.participants || [];
 
-      // Right cluster (cadence + zone pill), right-anchored — laid out first so it
-      // reserves its width and the participant grid can never overrun into it.
-      let rightClusterLeft = W - margin;
-      if (descriptor.rpm != null) {
-        rightClusterLeft = drawCadence(ctx, String(descriptor.rpm), W - margin, centerY, footerH) - Math.round(footerH * 0.2);
-      }
-      if (descriptor.zone) {
-        rightClusterLeft = drawZonePill(ctx, String(descriptor.zone), rightClusterLeft, centerY, Math.round(footerH * 0.24)) - Math.round(footerH * 0.22);
-      }
-
-      // Equal-width slots → an even grid (no ragged trailing space), capped so 1–2
-      // people don't sprawl across the whole frame.
+      // Per-participant chips span the full footer width. There is deliberately NO
+      // global zone pill or cadence readout: zone is shown per person via the heart
+      // colour, and cadence (4 bikes here) has no rider attribution in the data, so
+      // a single "WARM / 66 RPM" would be misleading.
       if (participants.length) {
-        const avail = rightClusterLeft - Math.round(footerH * 0.2) - margin;
+        const avail = W - margin * 2;
         const slotW = Math.min(Math.round(W * 0.21), Math.floor(avail / participants.length));
         for (let i = 0; i < participants.length; i++) {
           await drawParticipant(ctx, participants[i], margin + i * slotW, centerY, slotW, footerH, avatarBuffers);
@@ -247,28 +239,6 @@ async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuff
   ctx.textBaseline = 'middle';
 }
 
-// Cadence: big white number + small dim "RPM", right-anchored at rightX.
-function drawCadence(ctx, rpm, rightX, centerY, scrimH) {
-  const numFpx = Math.round(scrimH * 0.34);
-  const unitFpx = Math.round(numFpx * 0.5);
-  const baseY = centerY + Math.round(numFpx * 0.36);
-  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-  ctx.font = `700 ${numFpx}px "${FONT_FAMILY}"`;
-  const numW = ctx.measureText(rpm).width;
-  ctx.font = `600 ${unitFpx}px "${FONT_FAMILY}"`;
-  const unitW = ctx.measureText('RPM').width;
-  const innerGap = Math.round(numFpx * 0.18);
-  const startX = rightX - (numW + innerGap + unitW);
-  ctx.font = `700 ${numFpx}px "${FONT_FAMILY}"`;
-  ctx.fillStyle = COL.text;
-  ctx.fillText(rpm, startX, baseY);
-  ctx.font = `600 ${unitFpx}px "${FONT_FAMILY}"`;
-  ctx.fillStyle = COL.textDim;
-  ctx.fillText('RPM', startX + numW + innerGap, baseY);
-  ctx.textBaseline = 'middle';
-  return startX;
-}
-
 // A participant chip never shows the poisoned literal "Unknown" — fall through to
 // any id we have rather than render a dead label. (Real fix is upstream resolution.)
 function participantName(p) {
@@ -289,25 +259,6 @@ function drawBand(ctx, x, y, w, h, accent) {
   const t = Math.max(2, Math.round(h * 0.018));
   ctx.fillStyle = 'rgba(255,255,255,0.10)';
   ctx.fillRect(x, accent === 'bottom' ? y + h - t : y, w, t);
-}
-
-function drawZonePill(ctx, zone, rightX, cy, fpx) {
-  const { label, color } = zoneMeta(zone);
-  const padX = Math.round(fpx * 0.5);
-  const h = Math.round(fpx * 1.35);
-  ctx.font = `700 ${Math.round(fpx * 0.8)}px "${FONT_FAMILY}"`;
-  const tw = ctx.measureText(label).width;
-  const w = tw + padX * 2;
-  const x = rightX - w;
-  roundRect(ctx, x, cy - h / 2, w, h, h / 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.fillStyle = '#111';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + w / 2, cy + 1);
-  ctx.textAlign = 'left';
-  return x;
 }
 
 // Zone series persist single-letter codes (h/m/w/a/c); also accept full words.
