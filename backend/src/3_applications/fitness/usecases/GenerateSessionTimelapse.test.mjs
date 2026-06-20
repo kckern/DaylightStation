@@ -34,7 +34,8 @@ function fakes(overrides = {}) {
     snapshotStore: {
       listCaptures: async () => sessionData.snapshots.captures.map(c => ({ ...c, absolutePath: '/abs/' + c.filename })),
       readCapture: async () => Buffer.from([0xff, 0xd8]),
-      cleanup: async (...a) => { calls.cleaned = a; }
+      cleanup: async (...a) => { calls.cleaned = a; },
+      moveToTrash: async (...a) => { calls.trashed = a; }
     },
     frameMapper: {
       buildFrames: (s) => (s.snapshots.captures.some(c => (c.role || 'camera') === 'camera') ? [{
@@ -44,7 +45,8 @@ function fakes(overrides = {}) {
       }] : [])
     },
     frameRenderer: { renderFrame: async (args) => { calls.rendered.push(args); return Buffer.from([0xff, 0xd8, 1, 2, 3]); } },
-    videoEncoder: { encodeSequence: async ({ outputPath }) => ({ outputPath }) },
+    // Write a real (non-empty) file so the MP4-confirmation gate passes.
+    videoEncoder: { encodeSequence: async ({ outputPath }) => { fs.writeFileSync(outputPath, Buffer.from('fake-mp4-bytes')); return { outputPath }; } },
     posterProvider: async (contentId) => { calls.posters.push(contentId); return Buffer.from([0xff, 0xd8, 9]); },
     avatarProvider: async () => { calls.avatars++; return { kc: Buffer.from([0xff, 0xd8, 7]) }; },
     resolveName: (slug) => slug.toUpperCase(),
@@ -70,8 +72,29 @@ test('happy path: processing -> render with poster+avatars -> encode -> ready ->
   assert.ok(f.calls.rendered[0].avatarBuffers.kc);
   // player frame came from the stored role:player capture
   assert.ok(f.calls.rendered[0].playerBuffer);
-  // raw frames cleaned up on success
-  assert.ok(f.calls.cleaned);
+  // raw frames MOVED TO TRASH on success (soft-delete, not hard rm)
+  assert.ok(f.calls.trashed);
+  assert.equal(f.calls.cleaned, undefined);
+});
+
+test('confirmed MP4 is required before frames are trashed: missing/empty output -> failed, frames KEPT', async () => {
+  // Encoder "succeeds" but produces no real file (0 bytes) — we must NOT trash the frames.
+  const f = fakes();
+  f.videoEncoder.encodeSequence = async ({ outputPath }) => { fs.writeFileSync(outputPath, Buffer.alloc(0)); return {}; };
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'failed');
+  assert.equal(f.calls.trashed, undefined);   // frames preserved for a retry
+  assert.equal(f.saved.at(-1).timelapse.status, 'failed');
+});
+
+test('no MP4 file at all -> failed, frames KEPT', async () => {
+  const f = fakes();
+  f.videoEncoder.encodeSequence = async () => ({}); // writes nothing
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'failed');
+  assert.equal(f.calls.trashed, undefined);
 });
 
 test('no captures -> skipped, no encode', async () => {
@@ -160,7 +183,7 @@ test('force:true overrides the idempotency guard and re-renders', async () => {
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h', force: true });
   assert.equal(res.status, 'ready');
-  assert.ok(f.calls.cleaned);
+  assert.ok(f.calls.trashed);
 });
 
 test('finalized session bypasses the merge window and renders immediately', async () => {
@@ -171,5 +194,5 @@ test('finalized session bypasses the merge window and renders immediately', asyn
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'ready');
-  assert.ok(f.calls.cleaned);
+  assert.ok(f.calls.trashed);
 });

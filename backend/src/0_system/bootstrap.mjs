@@ -90,7 +90,7 @@ import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
-import { FitnessGarbageCollector } from '#apps/fitness/usecases/FitnessGarbageCollector.mjs';
+import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 import { createTimelapseFrameRenderer } from '#rendering/fitness/TimelapseFrameRenderer.mjs';
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
@@ -305,51 +305,12 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, listSubdirectories, saveYaml, deleteYaml, deleteDir, ensureDir, writeBinary } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, listSubdirectories, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { google } from 'googleapis';
-
-/**
- * Recursively list every regular file (by name) under a dir. Used by the fitness
- * media garbage collector to detect frame presence and camera vs player frames.
- * Returns [] if the dir is missing.
- */
-function walkFilesRecursive(dir) {
-  const out = [];
-  let entries;
-  try { entries = nodeFs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) out.push(...walkFilesRecursive(full));
-    else if (e.isFile()) out.push(e.name);
-  }
-  return out;
-}
-
-/**
- * Newest mtime (ms epoch) of a dir and everything under it — the staleness signal
- * for GC window guards. Falls back to the dir's own mtime (so an empty dir still
- * ages out); returns 0 if the dir is missing.
- */
-function newestMtimeRecursive(dir) {
-  let newest = 0;
-  let stat;
-  try { stat = nodeFs.statSync(dir); } catch { return 0; }
-  newest = stat.mtimeMs || 0;
-  let entries;
-  try { entries = nodeFs.readdirSync(dir, { withFileTypes: true }); } catch { return newest; }
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    try {
-      if (e.isDirectory()) newest = Math.max(newest, newestMtimeRecursive(full));
-      else newest = Math.max(newest, nodeFs.statSync(full).mtimeMs || 0);
-    } catch { /* skip unreadable entry */ }
-  }
-  return newest;
-}
 
 // =============================================================================
 // Integration Registry Bootstrap
@@ -1187,31 +1148,21 @@ export function createFitnessApiRouter(config) {
   // Recap sweep: the safety net that recaps sessions which ended via the common
   // paths (inactivity, closed tab, crash) that never fire a per-event trigger.
   // Registered on the agents Scheduler in app.mjs (Docker/prod-gated cron).
-  // Media frame-store janitor, run on the same sweep tick. A thin node-fs adapter
-  // implements the media tree port; all cleanup decisions live in the use case +
-  // pure policy. Bound to the fitness sessions media root.
-  const fitnessSessionsRoot = path.join(configService.getMediaDir(), 'apps', 'fitness', 'sessions');
-  const gcMediaFs = {
-    listDates: () => listSubdirectories(fitnessSessionsRoot),
-    listSessions: (date) => listSubdirectories(path.join(fitnessSessionsRoot, date)),
-    frameFiles: (date, id) => walkFilesRecursive(path.join(fitnessSessionsRoot, date, id)),
-    newestMtimeMs: (date, id) => newestMtimeRecursive(path.join(fitnessSessionsRoot, date, id)),
-    deleteDir: (date, id) => deleteDir(path.join(fitnessSessionsRoot, date, id)),
-    isEmptyDate: (date) => listSubdirectories(path.join(fitnessSessionsRoot, date)).length === 0,
-    deleteDate: (date) => deleteDir(path.join(fitnessSessionsRoot, date))
-  };
-  const fitnessGarbageCollector = new FitnessGarbageCollector({
-    mediaFs: gcMediaFs,
+  const recapSweep = new RecapSweep({
     sessionService: fitnessServices.sessionService,
+    generateSessionTimelapse,
     configService,
     logger
   });
 
-  const recapSweep = new RecapSweep({
-    sessionService: fitnessServices.sessionService,
-    generateSessionTimelapse,
-    garbageCollector: fitnessGarbageCollector,
-    configService,
+  // Trash retention: the ONLY hard-delete in the session media lifecycle. A
+  // confirmed recap moves raw frames into `_trash` (recoverable); this sweep
+  // permanently removes trash entries older than the retention window. Bound to
+  // the `_trash` root so it can never reach the live sessions tree. Registered on
+  // the agents Scheduler in app.mjs (Docker/prod-gated cron).
+  const trashRetentionSweep = new TrashRetentionSweep({
+    trashDir: path.join(configService.getMediaDir(), 'apps', 'fitness', '_trash'),
+    fileIO: nodeFs,
     logger
   });
 
@@ -1244,8 +1195,9 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
-  // Expose the sweep so app.mjs can register it on the agents Scheduler.
+  // Expose the sweeps so app.mjs can register them on the agents Scheduler.
   fitnessRouter.recapSweep = recapSweep;
+  fitnessRouter.trashRetentionSweep = trashRetentionSweep;
   return fitnessRouter;
 }
 

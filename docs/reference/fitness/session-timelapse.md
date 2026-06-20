@@ -73,7 +73,7 @@ the media tree; the capture records live in the session's persisted document.
         ▼
    ffmpeg stitches frames ─► silent H.264 MP4
         ▼
-   record video on the session ─► delete (or archive) the raw frames
+   record video on the session ─► move the raw frames to _trash (7-day retention)
 ```
 
 ### Settle window (why the recap waits)
@@ -81,8 +81,9 @@ the media tree; the capture records live in the session's persisted document.
 An interrupted workout that is resumed — or manually stitched — shortly after is treated
 as **one** session: a recently-ended, non-finalized session stays eligible to be resumed or
 merged for a fixed window after it ends. The recap must obey the same window, because
-rendering **deletes the raw captures** as cleanup. Recapping a session that could still be
-consolidated would destroy the frames the merged session needs.
+rendering **clears the raw captures** as cleanup (moving them to `_trash`). Recapping a
+session that could still be consolidated would pull the frames the merged session needs out
+from under it.
 
 So a recap renders only once the session has **settled**, meaning either:
 
@@ -130,40 +131,33 @@ Recaps reach the render along three paths:
    Sessions that are already done, in flight, known to have no captures, or still within the
    settle window are passed over.
 
-The sweep also **reaps abandoned skeleton sessions**. The always-on screenshot capture
-creates a session record the moment frames start arriving, even when no rider ever tags in.
-If no participant joins, session persistence refuses to write the session (the roster gate),
-so the record never gets an `endTime` — it would otherwise be deferred on every tick forever
-(reason `not-ended`) while its captured frames leak on disk. A record that is never finalized,
-never ended, has an empty roster, and has stopped capturing past the settle window can neither
-be recapped (no workout) nor resumed (no roster), so the sweep deletes it outright — both the
-session record and its orphaned frames. Any participant, an `endTime`, or recent capture
-activity exempts a session from reaping.
+The sweep is a thin orchestrator: every real decision (the settle defer and the idempotency
+guard) lives in the render use case, so the sweep can never jump the gun or double-render. It
+runs on the agents scheduler, which only ticks in the production container — there is no
+dev-instance double-fire — and the `processing` status is the soft lock across any concurrent
+trigger.
 
-The sweep is a thin orchestrator: every real decision (the settle defer, the idempotency
-guard, and the abandoned-skeleton reap predicate) lives in pure policy / the render use case,
-so the sweep can never jump the gun or double-render. It runs on the agents scheduler, which
-only ticks in the production container — there is no dev-instance double-fire — and the
-`processing` status is the soft lock across any concurrent trigger.
+---
 
-## Garbage collection
+## Frame cleanup: confirm → trash → retain → delete
 
-On the same scheduler tick, after reaping, a frame-store **garbage collector** sweeps the
-media tree (`sessions/<date>/<id>/`) for the loose ends the recap pipeline leaves behind:
+Raw frames are only ever cleaned up **after the recap MP4 is confirmed on disk** (encoded and
+non-empty). If encoding produced nothing, the render fails and the frames are left untouched
+for a retry — the frames are never removed on the strength of an unconfirmed video.
 
-- **Empty leftover shells** — an `<id>/` dir whose `screenshots/` was cleaned after a
-  successful recap. Pruned.
-- **Orphan frame dirs** — frames with no owning session record (a true leak). Deleted once
-  aged past the settle window.
-- **Un-recappable / done-with frames** — frames of a *settled* real session that will never
-  (re)render: a recap already succeeded or was terminally skipped, or the session captured no
-  camera hero (player-only) so the camera-centric recap can't run. The frames are freed; the
-  session record, its summary/stats, and any finished recap video are left untouched.
+Cleanup is a **soft delete**: the session's `screenshots/` dir is **moved into a sibling
+`_trash` root** (`media/apps/fitness/_trash/<date>/<id>/`), never hard-deleted inline. The MP4
+is the durable artifact; the raw frames stay fully recoverable in `_trash`. The trash entry's
+mtime is stamped to the moment it was trashed, which drives retention.
 
-The GC only ever deletes under the media frame store — it never writes to the data-volume
-session record. All decisions live in a pure classifier; window guards keep it from racing a
-live capture (a brand-new dir or an orphan whose session YAML hasn't landed yet is left alone
-until it ages out). A GC failure is isolated and never fails the recap sweep.
+A separate **trash-retention sweep** is the only step that hard-deletes. It runs daily, walks
+the `_trash` root, and permanently removes entries that have sat there longer than the
+retention window (**7 days**), then prunes the emptied date dirs. It is bound to the `_trash`
+root and only ever deletes paths under it — it can never reach the live `sessions/` tree.
+
+The net lifecycle: **capture → confirmed recap → frames moved to `_trash` → (7 days later)
+hard-deleted.** Nothing outside `_trash` is ever hard-deleted, and everything is recoverable
+for a week.
 
 ---
 
@@ -177,14 +171,14 @@ degrades that element gracefully. Captures are buffered and reused across frames
 image isn't read from disk many times.
 
 Encoding stitches the rendered frame sequence into a silent H.264 MP4 (audio explicitly
-dropped) at the configured output frame rate and quality. The finished video is written
-into the fitness video media folder, recorded on the session, and the raw captures are then
-cleaned up — deleted by default, or moved aside if frame archival is configured. Anything
-short of a finished video leaves the frames in place for a retry.
+dropped) at the configured output frame rate and quality. The finished video is written into
+the fitness video media folder and recorded on the session; only then — once the MP4 is
+confirmed — are the raw captures moved to `_trash` (see *Frame cleanup* above). Anything short
+of a confirmed video leaves the frames in place for a retry.
 
 The whole render is configurable (enable/disable, speed-up factor, output frame rate,
-encoder quality, PiP, header, stat strip, frame archival) and config changes take effect on
-the next backend start.
+encoder quality, PiP, header, stat strip) and config changes take effect on the next backend
+start.
 
 ---
 

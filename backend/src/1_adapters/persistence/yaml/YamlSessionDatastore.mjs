@@ -117,12 +117,25 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // Relative path for API responses
     const screenshotsRelativeBase = `apps/fitness/sessions/${sessionDate}/${canonicalId}/screenshots`;
 
+    // Soft-delete destination: frames are moved here (not hard-deleted) after a
+    // confirmed recap, then aged out by the trash-retention sweep. Mirrors the
+    // session layout under a sibling `_trash` root so entries stay date/id keyed.
+    const trashDir = path.join(
+      this.mediaRoot,
+      'apps',
+      'fitness',
+      '_trash',
+      sessionDate,
+      canonicalId
+    );
+
     return {
       sessionDate,
       sessionsDir,
       sessionFilePath,
       screenshotsDir,
-      screenshotsRelativeBase
+      screenshotsRelativeBase,
+      trashDir
     };
   }
 

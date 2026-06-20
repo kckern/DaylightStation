@@ -58,6 +58,40 @@ export class YamlRecapSnapshotStore extends IRecapSnapshotStore {
       : this.#fs.readFileSync(absolutePath);
   }
 
+  /**
+   * Soft-delete a session's raw frames: MOVE the screenshots dir into the media
+   * `_trash` (never a hard `rm`). The recap MP4 is the durable artifact; the raw
+   * frames are kept recoverable in `_trash` and only hard-deleted later by the
+   * trash-retention sweep once they age past its window. The trash entry's mtime
+   * is stamped to `now` so retention measures "time since trashed", not the
+   * original frame time.
+   *
+   * @returns {Promise<string|null>} the trash destination, or null if nothing moved.
+   */
+  async moveToTrash(sessionId, householdId, { now = Date.now() } = {}) {
+    const paths = this.#datastore.getStoragePaths(sessionId, householdId);
+    const screenshotsDir = paths?.screenshotsDir;
+    const trashDir = paths?.trashDir;
+    if (!screenshotsDir || !this.#fs.existsSync(screenshotsDir)) return null;
+    if (!trashDir) {
+      throw new InfrastructureError('moveToTrash requires a trashDir from storage paths', { code: 'MISSING_TRASH_DIR' });
+    }
+    try {
+      const dest = path.join(trashDir, 'screenshots');
+      // Clear any stale trash entry for this session, then move the frames in.
+      this.#fs.rmSync(trashDir, { recursive: true, force: true });
+      this.#fs.mkdirSync(trashDir, { recursive: true });
+      this.#fs.renameSync(screenshotsDir, dest);
+      // Stamp the trash entry so retention ages it from when it was trashed.
+      const t = new Date(now);
+      try { this.#fs.utimesSync(trashDir, t, t); } catch { /* mtime stamp best-effort */ }
+      this.#logger.debug?.('recap.snapshots.trashed', { sessionId, dest });
+      return dest;
+    } catch (err) {
+      throw new InfrastructureError(`recap snapshot move-to-trash failed: ${err.message}`, { code: 'TRASH_FAILED' });
+    }
+  }
+
   async cleanup(sessionId, householdId, { archive = false } = {}) {
     const paths = this.#datastore.getStoragePaths(sessionId, householdId);
     const screenshotsDir = paths?.screenshotsDir;

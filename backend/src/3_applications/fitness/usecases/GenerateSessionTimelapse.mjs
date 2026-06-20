@@ -141,21 +141,34 @@ export class GenerateSessionTimelapse {
       await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20 });
       const encodeMs = Date.now() - encodeStart;
 
+      stage = 'confirm-mp4';
+      // Confirm the encoder actually produced a real video before we touch the raw
+      // frames. The frames are only ever cleaned up once the MP4 is on disk and
+      // non-empty — if encoding silently produced nothing, we fail and KEEP the
+      // frames so a later retry can succeed.
+      let sizeBytes = null;
+      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* missing → fail below */ }
+      if (!sizeBytes || sizeBytes <= 0) {
+        throw new Error('mp4-not-confirmed');
+      }
+
       stage = 'persist';
       const durationSeconds = Math.round(written / fps);
       const relPath = path.relative(mediaDir, outputPath);
-      let sizeBytes = null;
-      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* best-effort */ }
       session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
       await sessionDatastore.save(session, householdId);
 
       stage = 'cleanup';
-      await snapshotStore.cleanup(sessionId, householdId, { archive: !!config.archive_frames });
+      // Soft-delete: MOVE the raw frames into the media `_trash` (never a hard rm).
+      // The MP4 above is the durable artifact; the frames stay recoverable in
+      // `_trash` until the retention sweep ages them out (7 days). This runs only
+      // AFTER the MP4 is confirmed and the session record is saved.
+      await snapshotStore.moveToTrash(sessionId, householdId);
       safeRm(fileIO, tmpDir);
       logger.info?.('fitness.timelapse.ready', {
         sessionId, videoPath: session.timelapse.videoPath, frames: written,
         durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
-        archivedFrames: !!config.archive_frames
+        framesTrashed: true
       });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {
