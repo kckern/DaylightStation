@@ -19,10 +19,23 @@
  * Multi-instance safe: the Scheduler only ticks in the Docker/prod container, and
  * the `processing` status acts as a soft lock for any concurrent trigger.
  */
+import { evaluateAbandonedSkeleton } from '../sessionConsolidationPolicy.mjs';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Recap statuses that mean "leave it alone" — finished, in flight, or no-captures. */
 const TERMINAL_OR_INFLIGHT = new Set(['ready', 'processing', 'skipped']);
+
+/** Most-recent capture time (ms epoch), or null if none of the captures are timestamped. */
+function lastCaptureTimestamp(session) {
+  const updatedAt = session?.snapshots?.updatedAt;
+  if (Number.isFinite(updatedAt)) return updatedAt;
+  let max = null;
+  for (const c of session?.snapshots?.captures || []) {
+    if (Number.isFinite(c?.timestamp) && (max == null || c.timestamp > max)) max = c.timestamp;
+  }
+  return max;
+}
 
 export class RecapSweep {
   #d;
@@ -39,7 +52,7 @@ export class RecapSweep {
     const hid = householdId || configService?.getDefaultHouseholdId?.() || undefined;
 
     const dates = recentDateStrings(now, lookbackDays);
-    const stats = { scanned: 0, triggered: 0, deferred: 0, rendered: 0, skipped: 0, failed: 0, errors: 0 };
+    const stats = { scanned: 0, triggered: 0, deferred: 0, rendered: 0, skipped: 0, failed: 0, reaped: 0, errors: 0 };
 
     logger?.info?.('fitness.recap_sweep.start', { householdId: hid || null, dates, lookbackDays });
 
@@ -76,6 +89,32 @@ export class RecapSweep {
         const hasCamera = (session.snapshots?.captures || [])
           .some(c => (c.role || 'camera') === 'camera');
         if (!hasCamera) continue;
+
+        // Reap abandoned skeletons: the always-on screenshot capture creates a
+        // session record even when no rider tags in, but the persistence roster
+        // gate then refuses to ever write an endTime — so the recap below would
+        // defer it forever (reason `not-ended`) while its frames leak. Once such a
+        // rosterless, never-ended record has stopped capturing past the merge
+        // window it can neither be recapped nor resumed, so delete it outright
+        // (deleteSession removes both the YAML record and the screenshot frames).
+        const reap = evaluateAbandonedSkeleton({
+          finalized: session.finalized,
+          endTime: session.endTime,
+          rosterSize: Array.isArray(session.roster) ? session.roster.length : 0,
+          lastCaptureMs: lastCaptureTimestamp(session),
+          now
+        });
+        if (reap.reap) {
+          try {
+            await sessionService.deleteSession(sessionId, hid);
+            stats.reaped++;
+            logger?.info?.('fitness.recap_sweep.reaped', { sessionId, reason: reap.reason });
+          } catch (err) {
+            stats.errors++;
+            logger?.warn?.('fitness.recap_sweep.reap_failed', { sessionId, error: err?.message });
+          }
+          continue;
+        }
 
         // Hand off to the use case — it owns the merge-window defer + render/cleanup.
         stats.triggered++;
