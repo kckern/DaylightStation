@@ -19,6 +19,18 @@ config — currently the parents) on the garage reader while the Fitness app is 
 a normal state (browsing, playing, etc.). The backend keeps an `emergency` scan
 armed in the background; an admin match starts the sequence.
 
+### Automatic trip on scanner abuse
+
+To stop an unauthorized person overheating the reader by mashing fingers, the
+backend counts **failed** scans (unrecognized, OR a recognized identity that
+holds no locks). On `emergency.abuse.threshold` failures within
+`emergency.abuse.window_sec` it auto-runs the same ceremony as an admin press —
+DEFCON screen, cancel window, then commit + `garage_deactivate`. An **admin scan
+during the ceremony still aborts it**, so a false positive is recoverable. A
+recognized member holding ≥1 lock (incl. admins) is "safe" and resets the streak.
+The lock records `lockedBy: abuse-protection`. The trip is decided server-side
+(the relay), then broadcast as `fitness.emergency.ceremony` to start the overlay.
+
 ## The sequence
 
 1. **DEFCON screen** — black/red glowing power glyph, "SYSTEM LOCKDOWN
@@ -49,6 +61,10 @@ emergency:
   duration_sec: 1800                 # lockdown length (default 30 min)
   ha_script: garage_deactivate       # HA script.<name> fired on commit
   audio: apps/fitness/ux/powerdown.mp3
+  abuse:                             # scanner-abuse auto-lockdown (default ON)
+    enabled: true                    # set false to disable entirely
+    threshold: 3                     # failed scans to trip
+    window_sec: 30                   # sliding window for the count
   arming:                            # hardware hedge for the always-armed reader
     inter_arm_idle_ms: 1000          # rest between re-arms (0 = continuous)
     # active_hours: { start: 6, end: 24 }   # optional: only arm 6am–midnight local
@@ -89,7 +105,8 @@ the lock as expired once `now ≥ lockedUntil`.
 | `POST /emergency/abort` | Confirm a cancel via admin scan → `{confirmed}` |
 | `POST /emergency/release` | Release an active lock via admin scan → `{released}` |
 
-WebSocket broadcasts: `fitness.emergency.detected`, `fitness.emergency.locked`,
+WebSocket broadcasts: `fitness.emergency.detected`, `fitness.emergency.ceremony`
+(auto-trip → start ceremony), `fitness.emergency.locked`,
 `fitness.emergency.released`.
 
 ## Observability

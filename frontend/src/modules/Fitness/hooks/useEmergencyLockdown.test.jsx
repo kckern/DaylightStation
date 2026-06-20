@@ -73,6 +73,14 @@ describe('useEmergencyLockdown', () => {
     expect(result.current.phase).toBe('triggering');
   });
 
+  it('a fitness.emergency.ceremony broadcast starts the ceremony (normal → triggering)', async () => {
+    DaylightAPI.mockResolvedValue({ locked: false });
+    const { result } = renderHook(() => useEmergencyLockdown());
+    await waitFor(() => expect(result.current.phase).toBe('normal'));
+    act(() => { emit({ topic: 'fitness.emergency.ceremony', reason: 'abuse', count: 3, windowSec: 30 }); });
+    expect(result.current.phase).toBe('triggering');
+  });
+
   it('released ws → normal', async () => {
     DaylightAPI.mockResolvedValue({ locked: true, lockedUntil: 9999999999, lockedBy: 'test-user' });
     const { result } = renderHook(() => useEmergencyLockdown());
