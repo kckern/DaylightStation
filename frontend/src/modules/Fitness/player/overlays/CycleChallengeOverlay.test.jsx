@@ -57,14 +57,34 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(complete.length).toBe(1);
   });
 
-  it('renders a health meter reflecting cycleHealthPct', () => {
-    const ch = { ...baseChallenge, cycleState: 'maintain', cycleHealthPct: 0.5 };
+  it('renders a health meter reflecting cycleHealthPct when below the red line', () => {
+    // Below loRpm (37) during maintain → at risk → bar is shown.
+    const ch = { ...baseChallenge, cycleState: 'maintain', currentRpm: 20, cycleHealthPct: 0.5 };
     const { container } = render(<CycleChallengeOverlay challenge={ch} />);
     const meter = container.querySelector('.cycle-health-bar');
     expect(meter).toBeTruthy();
     const litSegs = container.querySelectorAll('.cycle-health-bar__seg--lit');
     // 0.5 pct × 10 segments → 5 lit segments
     expect(litSegs.length).toBe(5);
+  });
+
+  it('hides the health bar by default while holding at/above the red line in maintain', () => {
+    // rpm 60 ≥ loRpm 37 → not at risk → bar hidden.
+    const ch = { ...baseChallenge, cycleState: 'maintain', currentRpm: 60, cycleHealthPct: 1 };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-health-bar')).toBeNull();
+  });
+
+  it('hides the health bar during init (hidden by default)', () => {
+    // baseChallenge is cycleState 'init', rpm 60 → bar hidden.
+    const { container } = render(<CycleChallengeOverlay challenge={baseChallenge} />);
+    expect(container.querySelector('.cycle-health-bar')).toBeNull();
+  });
+
+  it('shows the health bar the moment rpm drops below the red line in maintain', () => {
+    const ch = { ...baseChallenge, cycleState: 'maintain', currentRpm: 30, cycleHealthPct: 0.8 };
+    const { container } = render(<CycleChallengeOverlay challenge={ch} />);
+    expect(container.querySelector('.cycle-health-bar')).toBeTruthy();
   });
 
   it('keeps the phase-progress arc (positive indicator)', () => {
@@ -202,7 +222,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
       rider: { id: 'felix', name: 'Felix' },
       currentPhaseIndex: 1, totalPhases: 4,
       currentPhase: { hiRpm: 70, loRpm: 52 },
-      currentRpm: 68, phaseProgressPct: 0.4, cycleHealthPct: 0.5
+      currentRpm: 40, phaseProgressPct: 0.4, cycleHealthPct: 0.5
     };
     const { container } = render(<CycleChallengeOverlay challenge={challenge} />);
     expect(container.querySelector('.cycle-health-bar')).not.toBeNull();
