@@ -7,9 +7,11 @@ let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'emergency' }));
 
 const EMERGENCY_PATH = 'api/v1/fitness/emergency';
+const CEREMONY_TOPIC = 'fitness.emergency.ceremony';
 const TOPICS = [
   'fitness.emergency.locked',
-  'fitness.emergency.released'
+  'fitness.emergency.released',
+  CEREMONY_TOPIC
 ];
 
 // Phases of the three-stage lockdown state machine.
@@ -77,6 +79,19 @@ export function useEmergencyLockdown() {
     logger().info('emergency.normal', { reason });
   }, []);
 
+  // Imperative entry point for the ceremony. The IdentityProvider calls this in
+  // response to an enriched identity event; begin only from a clean state so
+  // repeated calls are idempotent (functional setState avoids stale `phase`).
+  const triggerCeremony = useCallback(() => {
+    setPhase((prev) => {
+      if (prev === PHASE_NORMAL) {
+        logger().info('emergency.triggering', { source: 'triggerCeremony' });
+        return PHASE_TRIGGERING;
+      }
+      return prev;
+    });
+  }, []);
+
   // --- Mount: hydrate current lock state from the server ---------------------
   useEffect(() => {
     // If the URL seam forced a phase, don't let the GET stomp it (tests).
@@ -118,12 +133,16 @@ export function useEmergencyLockdown() {
           logger().info('emergency.released', { by: msg.by ?? null, at: msg.at ?? null });
           enterNormal('ws-released');
           break;
+        case CEREMONY_TOPIC:
+          logger().info('emergency.ceremony_broadcast', { reason: msg.reason ?? null, count: msg.count ?? null });
+          triggerCeremony();
+          break;
         default:
           break;
       }
     });
     return () => { try { unsub(); } catch { /* noop */ } };
-  }, [enterLocked, enterNormal]);
+  }, [enterLocked, enterNormal, triggerCeremony]);
 
   // --- Locked expiry timer --------------------------------------------------
   useEffect(() => {
@@ -155,19 +174,6 @@ export function useEmergencyLockdown() {
   }, [phase, lockedUntil, enterNormal]);
 
   // --- Actions --------------------------------------------------------------
-  // Imperative entry point for the ceremony. The IdentityProvider calls this in
-  // response to an enriched identity event; begin only from a clean state so
-  // repeated calls are idempotent (functional setState avoids stale `phase`).
-  const triggerCeremony = useCallback(() => {
-    setPhase((prev) => {
-      if (prev === PHASE_NORMAL) {
-        logger().info('emergency.triggering', { source: 'triggerCeremony' });
-        return PHASE_TRIGGERING;
-      }
-      return prev;
-    });
-  }, []);
-
   const commit = useCallback(async () => {
     try {
       const res = await DaylightAPI(`${EMERGENCY_PATH}/commit`, {}, 'POST');
