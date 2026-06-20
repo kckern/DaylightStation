@@ -31,6 +31,8 @@ import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs'
 import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
 import { StreamAdapter } from '#adapters/content/stream/StreamAdapter.mjs';
+import { YouTubeContentSource } from '#adapters/content/media/youtube/YouTubeContentSource.mjs';
+import { YouTubeAdapter } from '#adapters/content/media/youtube/YouTubeAdapter.mjs';
 import { IframeStreamResolver } from '#adapters/content/stream/resolvers/IframeStreamResolver.mjs';
 import { ScrapeStreamResolver } from '#adapters/content/stream/resolvers/ScrapeStreamResolver.mjs';
 import { YtDlpStreamResolver } from '#adapters/content/stream/resolvers/YtDlpStreamResolver.mjs';
@@ -650,9 +652,21 @@ export function createContentRegistry(config, deps = {}) {
       new YtDlpStreamResolver({ ytDlpAdapter, logger }),
       new IframeStreamResolver(),
     ];
+    const streamAdapter = new StreamAdapter({ resolvers, profiles, fallbackStrategy: 'ytdlp', logger });
     registry.register(
-      new StreamAdapter({ resolvers, profiles, fallbackStrategy: 'ytdlp', logger }),
+      streamAdapter,
       { category: streamManifest.capability, provider: streamManifest.provider }
+    );
+
+    // Register `youtube:<videoId>` content source — routing-safe published
+    // identity for YouTube. Cascades Piped → stream (yt-dlp) → iframe embed.
+    const pipedHost = configService?.resolveServiceUrl?.('piped') || null;
+    const pipedAdapter = pipedHost
+      ? new YouTubeAdapter({ host: pipedHost, logger: logger.child?.({ module: 'youtube-adapter' }) || logger })
+      : null;
+    registry.register(
+      new YouTubeContentSource({ pipedAdapter, streamAdapter, logger }),
+      { category: 'media', provider: 'youtube' }
     );
   }
 
