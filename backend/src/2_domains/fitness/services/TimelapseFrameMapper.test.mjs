@@ -99,6 +99,34 @@ test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes
   assert.equal(cad[0].color, '#ff922b');   // orange via strapColors SSOT
 });
 
+test('prefers group labels when 2+ riders are present (KC -> Dad)', () => {
+  const s = fakeSession();
+  s.roster = [{ id: 'kckern' }, { id: 'felix' }];
+  s.timeline.series['felix:hr'] = JSON.stringify([[120, 12]]);
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    resolveName: (id) => (id === 'kckern' ? 'KC Kern' : id),
+    resolveGroupLabel: (id) => (id === 'kckern' ? 'Dad' : id)   // felix has no label -> returns id
+  });
+  assert.deepEqual(frames[0].participants.map(p => p.displayName), ['Dad', 'felix']);
+});
+
+test('keeps the full name for a solo rider (no group)', () => {
+  const s = fakeSession();
+  s.roster = [{ id: 'kckern' }];
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    resolveName: () => 'KC Kern', resolveGroupLabel: () => 'Dad'
+  });
+  assert.equal(frames[0].participants[0].displayName, 'KC Kern');
+});
+
+test('carries the session timezone onto each frame', () => {
+  const s = fakeSession(); s.timezone = 'America/Los_Angeles';
+  const frames = new TimelapseFrameMapper().buildFrames(s, { speedup: 10, outputFps: 10 });
+  assert.equal(frames[0].timezone, 'America/Los_Angeles');
+});
+
 test('no cadence config -> descriptor.cadence is null', () => {
   const frames = new TimelapseFrameMapper().buildFrames(fakeSession(), { speedup: 10, outputFps: 10 });
   assert.equal(frames[50].cadence, null);

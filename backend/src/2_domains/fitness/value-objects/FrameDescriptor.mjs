@@ -22,7 +22,8 @@ export class FrameDescriptor {
     rpm = null,
     coins = null,
     chart = null,
-    cadence = null
+    cadence = null,
+    timezone = null
   }) {
     if (!Number.isFinite(frameIndex) || frameIndex < 0) {
       throw new ValidationError('frameIndex must be a non-negative number', { code: 'INVALID_FRAME_INDEX', field: 'frameIndex', value: frameIndex });
@@ -41,6 +42,7 @@ export class FrameDescriptor {
     this.coins = coins;
     this.chart = chart;
     this.cadence = cadence;
+    this.timezone = timezone;
     Object.freeze(this);
   }
 }

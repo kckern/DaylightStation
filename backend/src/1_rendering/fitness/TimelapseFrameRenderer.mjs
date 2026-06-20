@@ -143,11 +143,18 @@ export function createTimelapseFrameRenderer(config = {}) {
       ctx.font = `700 ${titleFpx}px "${FONT_FAMILY}"`;
       ctx.fillText(ellipsize(ctx, buildTitle(descriptor), titleMax), margin, cy);
 
-      // Time (right).
+      // Right cluster: the session count-up (top, prominent) over the wall-clock
+      // date + time-of-day (bottom, dim) — both elapsed and real time are readable.
+      const wall = formatWallClock(descriptor.wallClockMs, descriptor.timezone);
       ctx.textAlign = 'right';
-      ctx.font = `600 ${titleFpx}px "${FONT_FAMILY}"`;
+      ctx.font = `700 ${titleFpx}px "${FONT_FAMILY}"`;
       ctx.fillStyle = COL.text;
-      ctx.fillText(timeStr, W - margin, cy);
+      ctx.fillText(timeStr, W - margin, wall ? cy - Math.round(headerH * 0.16) : cy);
+      if (wall) {
+        ctx.font = `600 ${Math.round(titleFpx * 0.5)}px "${FONT_FAMILY}"`;
+        ctx.fillStyle = COL.textDim;
+        ctx.fillText(wall, W - margin, cy + Math.round(headerH * 0.26));
+      }
 
       // Coins (centre).
       if (coinVal != null) {
@@ -480,6 +487,15 @@ function buildTitle(descriptor) {
 }
 
 function formatCoins(n) { return Number(n).toLocaleString('en-US'); }
+
+// Wall-clock date + time-of-day in the session's timezone, e.g. "Jun 19 · 3:45 PM".
+function formatWallClock(ms, timezone) {
+  if (!Number.isFinite(ms)) return null;
+  const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+  const fmt = (o) => new Intl.DateTimeFormat('en-US', o).format(new Date(ms)).replace(',', ' ·');
+  try { return fmt(timezone ? { ...opts, timeZone: timezone } : opts); }
+  catch { try { return fmt(opts); } catch { return null; } }
+}
 
 function formatElapsed(ms) {
   const s = Math.floor((ms || 0) / 1000);

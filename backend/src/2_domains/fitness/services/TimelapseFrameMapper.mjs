@@ -17,7 +17,7 @@ export class TimelapseFrameMapper {
    * @param {{speedup:number, outputFps:number, resolveName?:(slug:string)=>string}} spec
    * @returns {FrameDescriptor[]}
    */
-  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null, cadenceDevices = null, cadenceColors = null }) {
+  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null, resolveGroupLabel = null, cadenceDevices = null, cadenceColors = null }) {
     const captures = session?.snapshots?.captures || [];
     if (!captures.length) return [];
 
@@ -52,6 +52,10 @@ export class TimelapseFrameMapper {
     const idColors = assignIdentityColors(roster.map(p => p.id));
     const chartBase = buildChart(decoded, roster, resolveColor);
     const cadenceBases = buildCadenceBases(decoded, cadenceDevices, cadenceColors);
+    // 2+ riders → prefer each user's short GROUP LABEL (e.g. "Dad" for kckern),
+    // mirroring the live UI's shouldPreferGroupLabels. Solo session keeps full names.
+    const preferGroup = roster.length >= 2;
+    const tz = typeof session?.timezone === 'string' ? session.timezone : null;
 
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
@@ -65,10 +69,7 @@ export class TimelapseFrameMapper {
 
       const participants = roster.map((p, idx) => ({
         id: p.id,
-        // Honor the persisted resolver output first (display_name), then the
-        // injected backend resolver (userService), then the slug — mirrors
-        // FitnessReceiptRenderer's name chain.
-        displayName: p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id,
+        displayName: pickName(p, preferGroup, resolveGroupLabel, resolveName),
         color: colorForParticipant(p, idColors, resolveColor),
         avatarRef: p.avatarRef || p.avatar || p.id,
         hr: valueAtTick(decoded, hrKeyFor(decoded, p.id), tickIndex),
@@ -89,7 +90,8 @@ export class TimelapseFrameMapper {
         rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
         coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount),
         chart: chartFor(chartBase, participants, tickIndex),
-        cadence: cadenceAt(cadenceBases, tickIndex)
+        cadence: cadenceAt(cadenceBases, tickIndex),
+        timezone: tz
       }));
     }
     return frames;
@@ -106,6 +108,19 @@ function assignIdentityColors(ids) {
   const map = new Map();
   clean.forEach((id, i) => map.set(id, IDENTITY_PALETTE[i % IDENTITY_PALETTE.length]));
   return map;
+}
+
+// Participant label: when a group is present, prefer the resolved GROUP LABEL
+// (e.g. "Dad"); otherwise the persisted display name, the injected resolver, then
+// the slug. resolveGroupLabel returns the id unchanged when there's no profile, so
+// that case falls through to the normal name.
+function pickName(p, preferGroup, resolveGroupLabel, resolveName) {
+  const base = p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id;
+  if (preferGroup && resolveGroupLabel) {
+    const g = resolveGroupLabel(p.id);
+    if (g && g !== p.id) return g;
+  }
+  return base;
 }
 
 // A participant's display colour: an explicit roster colour, else their real
