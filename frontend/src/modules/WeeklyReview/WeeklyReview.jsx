@@ -102,9 +102,12 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     firstAudibleFrameSeen, disconnected, reconnect,
   } = useAudioRecorder({ onChunk: handleChunk });
 
-  const preflightStatus = modal.type === 'preflightFailed'
-    ? 'failed'
-    : (firstAudibleFrameSeen ? 'ok' : 'acquiring');
+  // Audio status is NON-BLOCKING: the review is always usable. preflightStatus is
+  // only 'acquiring' (mic warming up) or 'ok' (an audible frame was seen). If the
+  // mic never produces audio, `audioUnavailable` drives a non-blocking notice that
+  // tells the user to record their review separately — it never traps them.
+  const [audioUnavailable, setAudioUnavailable] = useState(false);
+  const preflightStatus = firstAudibleFrameSeen ? 'ok' : 'acquiring';
 
   // Ref so handleKeyDown reads the latest preflightStatus without stale-closure lag.
   // Assigning during render (rather than useEffect) is intentional: a useEffect-based
@@ -184,6 +187,8 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   useEffect(() => {
     if (recorderError) {
       logger.error('state.recorder-error', { error: recorderError });
+      // Surface the non-blocking "record separately" notice; never block the UI.
+      setAudioUnavailable(true);
     }
   }, [recorderError]);
 
@@ -232,19 +237,19 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
   useEffect(() => {
     if (firstAudibleFrameSeen) {
-      // Audio recovered — clear the preflight-failed modal if it's the one open.
-      // Don't blindly CLOSE: other modals (exitGate, finalizeError) must persist.
-      if (modalTypeRef.current === 'preflightFailed') {
-        dispatchModal({ type: 'CLOSE' });
-      }
+      // Audio is working — clear any "record separately" notice.
+      setAudioUnavailable(false);
       return;
     }
     if (!isRecording) return;
+    // Grace period: if no audible frame within 10s of recording, surface a
+    // NON-BLOCKING notice (record separately). This never opens a modal — the
+    // user is never locked out of the review. The effect re-runs (and clears the
+    // timer) the instant an audible frame is seen, so this only fires if audio
+    // genuinely never arrived.
     const timer = setTimeout(() => {
-      if (!firstAudibleFrameSeen) {
-        logger.warn('recording.preflight-timeout');
-        dispatchModal({ type: 'OPEN', modal: 'preflightFailed' });
-      }
+      logger.warn('recording.preflight-timeout');
+      setAudioUnavailable(true);
     }, 10000);
     return () => clearTimeout(timer);
   }, [firstAudibleFrameSeen, isRecording]);
@@ -572,9 +577,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
       <PreFlightOverlay
         status={preflightStatus}
-        focusIndex={modal.focusIndex}
-        onRetry={onPreflightRetry}
-        onExit={onExitWidget}
+        unavailable={audioUnavailable}
       />
 
       <ControlLegend

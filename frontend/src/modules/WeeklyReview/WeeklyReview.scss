@@ -1008,6 +1008,38 @@
 
 // ---- Task 16: Pre-flight overlay, fullscreen image, mic indicator, upload flash ----
 
+// Non-blocking audio status notice (replaces the old blocking preflight overlay).
+// pointer-events:none guarantees it can never trap the user — the review stays usable.
+.weekly-review-audio-notice {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 0.6rem;
+  font-size: 1.05rem;
+  color: #f0f4f8;
+  background: rgba(10, 12, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  max-width: 90%;
+
+  .audio-notice-icon { font-size: 1.3rem; }
+  &--acquiring { opacity: 0.92; }
+  &--error {
+    background: rgba(60, 20, 20, 0.92);
+    border-color: rgba(255, 120, 120, 0.5);
+    color: #ffd9d9;
+    font-weight: 600;
+  }
+}
+
+// Legacy blocking overlay — no longer rendered (kept harmless; safe to remove later).
 .weekly-review-preflight-overlay {
   position: absolute;
   inset: 0;
