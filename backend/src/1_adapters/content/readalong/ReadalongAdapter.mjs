@@ -239,11 +239,19 @@ export class ReadalongAdapter {
    * @private
    */
   _loadManifest(collection) {
+    if (!this._manifestCache) this._manifestCache = new Map();
+    if (this._manifestCache.has(collection)) return this._manifestCache.get(collection);
+    let manifest = null;
     try {
-      return loadContainedYaml(path.join(this.dataPath, collection), 'manifest');
+      manifest = loadContainedYaml(path.join(this.dataPath, collection), 'manifest');
     } catch {
-      return null;
+      manifest = null;
     }
+    // Manifests are static config (resolver name, defaults, styles) — read once
+    // per process. The same file was previously re-read for every child during a
+    // watchlist resolve. A redeploy/restart picks up manifest edits.
+    this._manifestCache.set(collection, manifest);
+    return manifest;
   }
 
   /**
