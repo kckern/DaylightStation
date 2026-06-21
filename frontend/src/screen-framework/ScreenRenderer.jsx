@@ -18,6 +18,7 @@ import { useScreenSubscriptions } from './subscriptions/useScreenSubscriptions.j
 import { useScreenCommands } from './commands/useScreenCommands.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
+import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
@@ -373,6 +374,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                   <ScreenSessionPublishers wsConfig={config.websocket} />
                   <ScreenSubscriptionHandler subscriptions={config.subscriptions} />
                   <ScreenScreensaver config={config.screensaver} />
+                  <ScreenPresencePublisher deviceId={config.websocket?.guardrails?.device} />
                   <ScreenProvider config={config.layout}>
                     {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
                   </ScreenProvider>

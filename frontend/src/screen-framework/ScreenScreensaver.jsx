@@ -4,6 +4,7 @@ import { useScreenOverlay } from './overlays/ScreenOverlayProvider.jsx';
 import { getWidgetRegistry } from './widgets/registry.js';
 import { useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import getLogger from '../lib/logging/Logger.js';
+import { BROWSE_NAV_TYPES } from './screenActivity.js';
 
 let _logger;
 function logger() {
@@ -12,13 +13,6 @@ function logger() {
 }
 
 const ACTIVITY_EVENTS = ['keydown', 'pointerdown', 'click'];
-
-// Nav-stack surfaces that are "browsing" — an idle one of these is exactly when
-// the screensaver SHOULD fire. Anything else on the stack (player, app, display,
-// launch, android-launch, future content types) is active content that must
-// suppress the screensaver. Default-suppress is the safe bias: a new content
-// type should never silently get bumped off by the screensaver.
-const BROWSE_NAV_TYPES = new Set(['menu', 'plex-menu', 'show-view', 'season-view']);
 
 /**
  * ScreenScreensaver — renderless controller that shows a configured widget as a

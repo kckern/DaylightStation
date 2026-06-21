@@ -84,6 +84,7 @@ import {
 } from './0_system/bootstrap.mjs';
 
 import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
+import { createScreenPresenceService } from './0_system/bootstrap/screenPresence.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -1863,6 +1864,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     daylightHost,
     configService,
     logger: rootLogger.child({ module: 'devices' })
+  });
+
+  // Screen presence → HA input_boolean (e.g. office_tv_active). Reads the
+  // `presence:` block on each device in devices.yml. No-op if no device declares
+  // one or the HA gateway is absent.
+  createScreenPresenceService({
+    eventBus,
+    haGateway: homeAutomationAdapters.haGateway,
+    devicesConfig: devicesConfig.devices || {},
+    logger: rootLogger.child({ module: 'screen-presence' }),
   });
 
   // Transcode pre-warming for device loads
