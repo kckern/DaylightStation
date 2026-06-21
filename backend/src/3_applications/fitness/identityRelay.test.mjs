@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createIdentityRelay,
   buildFingerprintIdentityIndex,
@@ -20,6 +20,18 @@ function makeBus() {
     broadcast(topic, payload) { this.broadcasts.push({ topic, payload }); },
     onClientMessage(fn) { handler = fn; },
     deliver(message) { handler('client-1', message); },
+  };
+}
+
+// A deterministic scheduler: setTimeout records the callback; fire() runs all
+// non-cancelled callbacks so tests can simulate the server-commit delay elapsing.
+function makeScheduler() {
+  const timers = [];
+  return {
+    timers,
+    setTimeout(fn) { const h = { fn, cancelled: false }; timers.push(h); return h; },
+    clearTimeout(h) { if (h) h.cancelled = true; },
+    async fire() { for (const t of timers) { if (!t.cancelled) await t.fn(); } },
   };
 }
 
@@ -183,8 +195,10 @@ describe('scanner-abuse auto-lockdown', () => {
     const evt = d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony');
     expect(evt).toBeDefined();
     expect(evt.payload).toMatchObject({ reason: 'abuse', count: 3, windowSec: 30 });
-    // A synthetic pending is stamped so the existing ceremony→commit path can lock.
-    expect(relay.consumePendingDetection(3000)).toEqual({ userId: 'abuse-protection', at: 3000 });
+    // A trip ARMS a commit token (not a short-lived pending) so the lock survives
+    // a long/paused browser ceremony.
+    expect(relay.consumePendingDetection(3000)).toBeNull();
+    expect(relay.consumeArmedCommit(3000)).toEqual({ userId: 'abuse-protection', at: 3000 });
   });
 
   it('does not trip when failures fall outside the window', () => {
@@ -259,6 +273,7 @@ describe('scanner-abuse auto-lockdown', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
     expect(relay.consumePendingDetection(3000)).toBeNull();
+    expect(relay.consumeArmedCommit(3000)).toBeNull();
   });
 
   it('does not trip (or stamp a synthetic pending) while a lockdown is already active', async () => {
@@ -271,5 +286,70 @@ describe('scanner-abuse auto-lockdown', () => {
     await new Promise((r) => setTimeout(r, 0)); // let tripAbuse's async lock-check settle
     expect(d.eventBus.broadcasts.find((b) => b.topic === 'fitness.emergency.ceremony')).toBeUndefined();
     expect(relay.consumePendingDetection(3000)).toBeNull();
+    expect(relay.consumeArmedCommit(3000)).toBeNull();
+  });
+
+  it('server fallback commits the lockdown itself if the browser never does', async () => {
+    let t = 3000;
+    const sched = makeScheduler();
+    const trigger = { execute: vi.fn().mockResolvedValue({ lockedUntil: 9 }) };
+    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    await sched.fire(); // simulate serverCommitDelayMs elapsing with no browser commit
+    expect(trigger.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ lockedBy: 'abuse-protection' }),
+    );
+  });
+
+  it('a browser commit before the fallback cancels the server commit (no double lock)', async () => {
+    let t = 3000;
+    const sched = makeScheduler();
+    const trigger = { execute: vi.fn().mockResolvedValue({ lockedUntil: 9 }) };
+    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    const relay = createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    expect(relay.consumeArmedCommit(3000)).toEqual({ userId: 'abuse-protection', at: 3000 });
+    await sched.fire(); // timer was cancelled when the token was consumed
+    expect(trigger.execute).not.toHaveBeenCalled();
+  });
+
+  it('disarmCommit cancels a pending server commit (admin abort) and clears the token', async () => {
+    let t = 3000;
+    const sched = makeScheduler();
+    const trigger = { execute: vi.fn() };
+    const d = abuseDeps(() => t, { scheduler: sched, triggerEmergencyLockdown: trigger });
+    const relay = createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    relay.disarmCommit();
+    await sched.fire();
+    expect(trigger.execute).not.toHaveBeenCalled();
+    expect(relay.consumeArmedCommit(3000)).toBeNull();
+  });
+
+  it('server fallback does not double-lock when a lock became active first', async () => {
+    let t = 3000;
+    let lockState = null; // null at trip (so it arms), locked by the time the fallback fires
+    const sched = makeScheduler();
+    const trigger = { execute: vi.fn() };
+    const d = abuseDeps(() => t, {
+      scheduler: sched,
+      triggerEmergencyLockdown: trigger,
+      getLockdownState: { execute: async () => lockState },
+    });
+    createIdentityRelay(d);
+    t = 1000; fail(d.eventBus);
+    t = 2000; fail(d.eventBus);
+    t = 3000; fail(d.eventBus);
+    await new Promise((r) => setTimeout(r, 0)); // let tripAbuse's async lock-check settle (it sees null → arms)
+    lockState = { lockedUntil: 9999999999 };
+    await sched.fire();
+    expect(trigger.execute).not.toHaveBeenCalled();
   });
 });
