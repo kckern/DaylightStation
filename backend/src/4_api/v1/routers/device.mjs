@@ -187,6 +187,57 @@ export function createDeviceRouter(config) {
     });
   });
 
+  // ===========================================================================
+  // Audio Bridge Heal (collection route — MUST be registered before /:deviceId
+  // routes to avoid 'audio-bridge' being captured as a deviceId param).
+  // ===========================================================================
+
+  /**
+   * POST /device/audio-bridge/heal
+   * Relaunch companion audio-bridge apps from FKB's foreground context so their
+   * MICROPHONE foreground service regains mic access (Android-11 background-start
+   * denial recovery). WeeklyReview calls this proactively and reactively.
+   *
+   * Body:
+   *   - force?: boolean   — relaunch even when already foreground-healthy
+   *   - deviceId?: string — target a single device; otherwise heal all eligible
+   */
+  router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {
+    const force = !!req.body?.force;
+    const deviceId = req.body?.deviceId;
+
+    // Resolve [{ id, device }] targets, keeping the id alongside the Device.
+    let targets;
+    if (deviceId) {
+      const device = deviceService.get(deviceId);
+      targets = device ? [{ id: deviceId, device }] : [];
+    } else {
+      targets = deviceService.listDeviceIds()
+        .map((id) => ({ id, device: deviceService.get(id) }))
+        .filter(({ device }) =>
+          typeof device?.getCapabilities?.().contentControl?.healAudioBridge === 'function'
+        );
+    }
+
+    if (targets.length === 0) {
+      logger.info?.('device.router.heal-audio-bridge', { count: 0, force });
+      return res.status(200).json({ ok: true, healed: [], reason: 'no-eligible-devices' });
+    }
+
+    logger.info?.('device.router.heal-audio-bridge', { count: targets.length, force });
+
+    const results = [];
+    for (const { id, device } of targets) {
+      const r = await device.healAudioBridge({ force });
+      results.push({ deviceId: id, ...r });
+    }
+
+    return res.status(200).json({
+      ok: results.every((r) => r.ok !== false),
+      healed: results,
+    });
+  }));
+
   /**
    * GET /device/:deviceId
    * Get device info and capabilities
