@@ -58,6 +58,23 @@ describe('ReadalongAdapter', () => {
     });
   });
 
+  describe('_loadManifest memoization', () => {
+    it('reads each collection manifest only once', () => {
+      loadContainedYaml.mockReturnValue({ resolver: 'scripture' });
+      const first = adapter._loadManifest('scripture');
+      const second = adapter._loadManifest('scripture');
+      expect(loadContainedYaml).toHaveBeenCalledTimes(1);
+      expect(second).toBe(first); // same cached reference
+    });
+
+    it('caches per collection independently', () => {
+      loadContainedYaml.mockReturnValue({ resolver: 'scripture' });
+      adapter._loadManifest('scripture');
+      adapter._loadManifest('poetry');
+      expect(loadContainedYaml).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('getItem', () => {
     it('applies resolver when manifest declares one', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
