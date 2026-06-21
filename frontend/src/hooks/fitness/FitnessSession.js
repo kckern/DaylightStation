@@ -2267,7 +2267,12 @@ export class FitnessSession {
     const endedSessionId = this.sessionId;
     this._notifySessionEnded(endedSessionId, reason);
 
-    _lastSessionEndTimestamp = Date.now();
+    // A deliberate end is a clean split: don't arm the auto-start cooldown, so a
+    // genuinely new workout can begin immediately (still gated by the 3-sample
+    // pre-session buffer). Auto/inactivity/empty_roster ends keep the cooldown to
+    // suppress duplicate sessions from leftover HR.
+    const deliberateEnd = reason === 'manual' || reason === 'user_initiated' || reason === 'force_break';
+    _lastSessionEndTimestamp = deliberateEnd ? 0 : Date.now();
     this.reset();
     return true;
   }
