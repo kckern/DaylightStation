@@ -57,6 +57,19 @@ function getFirstDir(basePath) {
 function tryResolveReference(segment, options = {}) {
   const { allowVolumeAsContainer = false } = options;
 
+  // Fast path: a bare all-digits segment is a global verse_id in our VOLUME_RANGES
+  // addressing. Resolve it directly and skip lookupReference — scripture-guide returns
+  // no match for a numeric string anyway, but the call costs ~150ms and was previously
+  // made for every child (×2 per getItem) during a watchlist resolve, dominating the
+  // queue-resolve time. Strict /^\d+$/ so compound refs like "1-nephi-1" still fall
+  // through to lookupReference below. The lenient parseInt fallback further down is
+  // retained unchanged for any non-pure-numeric edge cases.
+  if (/^\d+$/.test(segment)) {
+    const numericId = parseInt(segment, 10);
+    const volume = getVolumeFromVerseId(numericId);
+    if (volume) return { volume, verseId: String(numericId) };
+  }
+
   // Try as reference string (e.g., "alma-32", "1-nephi-1", "john-1")
   try {
     const ref = lookupReference(segment);
