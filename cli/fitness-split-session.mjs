@@ -182,6 +182,9 @@ function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, trea
     treasureBox,
     summary,
     snapshots: { captures },
+    // A deliberate split: mark both parts finalized so the session-consolidation
+    // policy treats each as a settled standalone session (won't re-merge them).
+    finalized: true,
   };
 }
 
