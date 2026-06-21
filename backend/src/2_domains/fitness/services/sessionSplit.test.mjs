@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  isCumulativeKey, zoneToColor, splitDecodedSeries, computeSplitTick
+  isCumulativeKey, zoneToColor, splitDecodedSeries, computeSplitTick, recomputeSummaryForPart,
+  allocateBucketsRedistribute
 } from './sessionSplit.mjs';
+
+const COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
+const sum = (o) => COLORS.reduce((s, c) => s + (o[c] || 0), 0);
 
 test('isCumulativeKey: cumulative suffixes only', () => {
   assert.equal(isCumulativeKey('milo:beats'), true);
@@ -48,4 +52,50 @@ test('splitDecodedSeries: cumulative re-zero carries nulls forward for baseline'
   const decoded = { 'x:beats': [5, null, 9, 12, 15] };
   const { part2 } = splitDecodedSeries(decoded, 3); // baseline = value at idx 2 = 9
   assert.deepEqual(part2['x:beats'], [3, 6]); // 12-9, 15-9
+});
+
+test('recomputeSummaryForPart maps zone SYMBOLS (a/w/h) to color buckets + full-name minutes', () => {
+  // zones stored as single-char symbols (ZONE_SYMBOL_MAP); coins cumulative.
+  const series = {
+    'milo:hr': [120, 130, 140],
+    'milo:zone': ['a', 'w', 'h'],   // active, warm, hot
+    'milo:coins': [10, 25, 40],     // deltas: 10, 15, 15
+  };
+  const { summary } = recomputeSummaryForPart({
+    series, slugs: ['milo'], events: [], intervalMs: 5000, coinTimeUnitMs: 5000,
+  });
+  assert.equal(summary.coins.total, 40);
+  assert.equal(summary.coins.buckets.green, 10);   // active tick delta
+  assert.equal(summary.coins.buckets.yellow, 15);  // warm tick delta
+  assert.equal(summary.coins.buckets.orange, 15);  // hot tick delta
+  assert.deepEqual(Object.keys(summary.participants.milo.zone_minutes).sort(), ['active', 'hot', 'warm']);
+});
+
+test('allocateBucketsRedistribute: preserves per-color totals AND per-part coin totals exactly', () => {
+  const orig = { blue: 0, green: 1060, yellow: 1578, orange: 435, red: 30 };
+  const est1 = { blue: 100, green: 600, yellow: 200, orange: 50, red: 0 };
+  const est2 = { blue: 244, green: 1310, yellow: 473, orange: 126, red: 0 };
+  const total1 = 558, total2 = 2545; // exact per-user coin sums (558+2545=3103=sum(orig))
+
+  const { part1, part2 } = allocateBucketsRedistribute(orig, est1, est2, total1, total2);
+
+  // Per-color totals reconcile to the original EXACTLY.
+  for (const c of COLORS) {
+    assert.equal((part1[c] || 0) + (part2[c] || 0), orig[c], `color ${c} reconciles`);
+  }
+  // Per-part bucket sums equal each part's exact coin total.
+  assert.equal(sum(part1), total1);
+  assert.equal(sum(part2), total2);
+  // A color with zero original stays zero in both parts.
+  assert.equal(part1.blue, 0);
+  assert.equal(part2.blue, 0);
+});
+
+test('allocateBucketsRedistribute: zero-weight color falls back to coin-share', () => {
+  const orig = { blue: 0, green: 0, yellow: 0, orange: 0, red: 30 };
+  const est1 = { red: 0 }, est2 = { red: 0 }; // no activity signal for red
+  const { part1, part2 } = allocateBucketsRedistribute(orig, est1, est2, 10, 20);
+  assert.equal(part1.red + part2.red, 30);   // total preserved
+  assert.equal(sum(part1), 10);              // part totals exact
+  assert.equal(sum(part2), 20);
 });
