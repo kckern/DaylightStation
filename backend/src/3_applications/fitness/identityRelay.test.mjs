@@ -133,6 +133,21 @@ describe('createIdentityRelay', () => {
     expect(relay.consumePendingDetection(1000 + 30001)).toBeNull();
   });
 
+  it('consumePendingDetection honors a generous per-call maxAge override', () => {
+    const d = deps(() => 1000);
+    const relay = createIdentityRelay({ ...d, pendingTtlMs: 30000 });
+    d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-kc' }); // admin → stamps pending at 1000
+    // Past the default 30s TTL but within the override → still consumable (commit path).
+    expect(relay.consumePendingDetection(1000 + 90000, 120000)).toEqual({ userId: 'kc', at: 1000 });
+  });
+
+  it('consumePendingDetection still expires at the default TTL when no override is given', () => {
+    const d = deps(() => 1000);
+    const relay = createIdentityRelay({ ...d, pendingTtlMs: 30000 });
+    d.eventBus.deliver({ topic: 'biometric.scan', matched: true, uuid: 'uuid-kc' });
+    expect(relay.consumePendingDetection(1000 + 30001)).toBeNull();
+  });
+
   it('ignores non-biometric.scan messages', () => {
     const d = deps(() => 1);
     createIdentityRelay(d);

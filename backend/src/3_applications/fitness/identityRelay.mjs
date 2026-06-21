@@ -176,9 +176,9 @@ export function createIdentityRelay({
   });
 
   return {
-    consumePendingDetection(nowMs = now()) {
+    consumePendingDetection(nowMs = now(), maxAgeMs = pendingTtlMs) {
       if (!pending) return null;
-      if (nowMs - pending.at > pendingTtlMs) { pending = null; return null; }
+      if (nowMs - pending.at > maxAgeMs) { pending = null; return null; }
       const consumed = pending;
       pending = null;
       return consumed;
