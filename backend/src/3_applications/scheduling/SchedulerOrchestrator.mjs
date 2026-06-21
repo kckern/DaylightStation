@@ -24,7 +24,8 @@ export class SchedulerOrchestrator {
     stateStore,
     moduleBasePath = null,
     harvesterExecutor = null,
-    mediaExecutor = null
+    mediaExecutor = null,
+    newsReporterExecutor = null
   }) {
     this.schedulerService = schedulerService;
     this.jobStore = jobStore;
@@ -32,6 +33,7 @@ export class SchedulerOrchestrator {
     this.moduleBasePath = moduleBasePath;
     this.harvesterExecutor = harvesterExecutor;
     this.mediaExecutor = mediaExecutor;
+    this.newsReporterExecutor = newsReporterExecutor;
     this.runningJobs = new Map();
   }
 
@@ -140,8 +142,19 @@ export class SchedulerOrchestrator {
     execution.start(timestamp);
 
     try {
-      // Check if harvester executor can handle this job
-      if (this.harvesterExecutor?.canHandle(job.id)) {
+      // Check newsreporter executor FIRST. Reporter jobs have no `module`, so if
+      // they fell through to the legacy dynamic-import branch they would throw
+      // INVALID_MODULE.
+      if (this.newsReporterExecutor?.canHandle(job.id)) {
+        await Promise.race([
+          this.newsReporterExecutor.execute(job.id, job.options || {}, { executionId }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
+          )
+        ]);
+
+        execution.succeed(timestamp);
+      } else if (this.harvesterExecutor?.canHandle(job.id)) {
         await Promise.race([
           this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }),
           new Promise((_, reject) =>

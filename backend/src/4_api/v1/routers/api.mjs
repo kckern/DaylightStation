@@ -94,6 +94,7 @@ export function createApiRouter(config) {
     '/journalist': 'journalist',
     '/homebot': 'homebot',
     '/scheduling': 'scheduling',
+    '/newsreporter': 'newsreporter',
     '/messaging': 'messaging',
     '/printer': 'printer',
     '/tts': 'tts',
