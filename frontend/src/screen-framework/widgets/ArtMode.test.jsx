@@ -160,7 +160,8 @@ describe('ArtMode', () => {
 
   it('Tab cycles view modes (wraps); Shift+Tab reverses', async () => {
     DaylightAPI.mockResolvedValue(single());
-    const { getByTestId } = render(<ArtMode />);
+    // fillSingles:false disables the matless override so the start is deterministically gallery.
+    const { getByTestId } = render(<ArtMode fillSingles={false} />);
     await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
     const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
     expect(modeOf()).toBe('gallery');
@@ -217,7 +218,7 @@ describe('ArtMode', () => {
 
   it('hides the frame in bare modes, shows it in framed modes', async () => {
     DaylightAPI.mockResolvedValue(single());
-    const { getByTestId, queryByTestId } = render(<ArtMode />);
+    const { getByTestId, queryByTestId } = render(<ArtMode fillSingles={false} />);
     await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
     expect(getByTestId('artmode-frame')).toBeTruthy();          // gallery
     press('Tab'); press('Tab'); press('Tab');                   // bare-contain
@@ -226,7 +227,7 @@ describe('ArtMode', () => {
 
   it('hides placards in bare modes', async () => {
     DaylightAPI.mockResolvedValue(single());
-    const { getByTestId, queryByTestId } = render(<ArtMode />);
+    const { getByTestId, queryByTestId } = render(<ArtMode fillSingles={false} />);
     await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
     expect(getByTestId('artmode-placard')).toBeTruthy();
     press('Tab'); press('Tab'); press('Tab'); press('Tab');     // bare-cover
@@ -254,7 +255,7 @@ describe('ArtMode', () => {
 
   it('preserves the mode across a shuffle', async () => {
     DaylightAPI.mockResolvedValue(single());
-    const { getByTestId } = render(<ArtMode />);
+    const { getByTestId } = render(<ArtMode fillSingles={false} />);
     await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
     press('Tab'); press('Tab');  // framed-cover
     expect(getByTestId('artmode').getAttribute('data-mode')).toBe('framed-cover');
@@ -329,7 +330,7 @@ describe('ArtMode', () => {
       path.startsWith('api/v1/queue/')
         ? Promise.resolve({ items: [{ mediaUrl: 'a.mp3', title: 'A', artist: 'X' }] })
         : Promise.resolve(single()));
-    const { getByTestId, queryByTestId } = render(<ArtMode music={{ queue: 'ambient' }} />);
+    const { getByTestId, queryByTestId } = render(<ArtMode music={{ queue: 'ambient' }} fillSingles={false} />);
     await waitFor(() => expect(getByTestId('artmode-music-plaque')).toBeTruthy());
     press('Tab'); press('Tab'); press('Tab'); press('Tab');  // bare-cover
     expect(queryByTestId('artmode-music-plaque')).toBeNull();
