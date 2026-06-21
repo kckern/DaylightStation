@@ -185,8 +185,18 @@ export function useEmergencyLockdown() {
       logger().warn('emergency.commit_no_lock', { res });
       return { locked: false };
     } catch (err) {
-      // 409 no-pending-detection (or any failure) → fall back to normal.
+      // Don't blindly drop to normal: the server-side abuse fallback may have
+      // already locked. Reconcile against authoritative server state first.
       logger().warn('emergency.commit_failed', { message: err?.message ?? null });
+      try {
+        const st = await DaylightAPI(EMERGENCY_PATH);
+        if (st && st.locked) {
+          enterLocked(st.lockedUntil ?? null, st.lockedBy ?? null);
+          return { locked: true };
+        }
+      } catch (reconcileErr) {
+        logger().warn('emergency.commit_reconcile_failed', { message: reconcileErr?.message ?? null });
+      }
       enterNormal('commit-failed');
       return { locked: false };
     }
