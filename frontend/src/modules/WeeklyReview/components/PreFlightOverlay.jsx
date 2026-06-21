@@ -1,50 +1,44 @@
 import React from 'react';
 
 /**
- * Blocks the WeeklyReview UI until the mic is verified.
+ * Non-blocking audio status notice for WeeklyReview.
+ *
+ * IMPORTANT: this NEVER blocks the UI. The review is always usable regardless of
+ * microphone state — it only informs the user. If audio isn't working it tells
+ * them to record their review separately, but never traps them in a modal/overlay.
+ *
  * Props:
- *   - status: 'acquiring' | 'failed' | 'ok'
- *   - focusIndex: 0 | 1   (which failed-state button is focused: 0=Retry, 1=Exit)
- *   - onRetry: () => void
- *   - onExit:  () => void
+ *   - status: 'acquiring' | 'ok'   — derived from firstAudibleFrameSeen
+ *   - unavailable: boolean         — mic failed or no audio within the grace period
  */
-export default function PreFlightOverlay({ status, focusIndex = 0, onRetry, onExit }) {
-  if (status === 'ok') return null;
-
-  return (
-    <div
-      className="weekly-review-preflight-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="weekly-review-preflight-label"
-      aria-live="polite"
-    >
-      <div className="preflight-content">
-        {status === 'acquiring' && (
-          <>
-            <div className="preflight-mic-pulse">🎤</div>
-            <div className="preflight-title" id="weekly-review-preflight-label">Listening for your microphone…</div>
-            <div className="preflight-subtitle">Speak to begin.</div>
-          </>
-        )}
-        {status === 'failed' && (
-          <>
-            <div className="preflight-mic-error">🎤❌</div>
-            <div className="preflight-title" id="weekly-review-preflight-label">Microphone unavailable</div>
-            <div className="preflight-subtitle">Please check the device and try again.</div>
-            <div className="preflight-actions">
-              <button
-                className={`preflight-btn preflight-btn--primary${focusIndex === 0 ? ' focused' : ''}`}
-                onClick={onRetry}
-              >Retry</button>
-              <button
-                className={`preflight-btn${focusIndex === 1 ? ' focused' : ''}`}
-                onClick={onExit}
-              >Exit</button>
-            </div>
-          </>
-        )}
+export default function PreFlightOverlay({ status, unavailable = false }) {
+  if (unavailable) {
+    return (
+      <div
+        className="weekly-review-audio-notice weekly-review-audio-notice--error"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="audio-notice-icon">🎤❌</span>
+        <span className="audio-notice-text">
+          Audio isn’t recording on this device — please record your review separately.
+        </span>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (status === 'acquiring') {
+    return (
+      <div
+        className="weekly-review-audio-notice weekly-review-audio-notice--acquiring"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="audio-notice-icon">🎤</span>
+        <span className="audio-notice-text">Listening for your microphone…</span>
+      </div>
+    );
+  }
+
+  return null;
 }

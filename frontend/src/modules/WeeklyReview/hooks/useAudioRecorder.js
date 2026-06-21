@@ -311,6 +311,17 @@ export function useAudioRecorder({ onChunk }) {
         ]);
       }
       streamRef.current = stream;
+      // Rebuild the level monitor (VU meter + first-audible-frame VAD) on the NEW
+      // stream. Without this the analyser stays bound to the torn-down old stream,
+      // so firstAudibleFrameSeen can never flip after a reconnect — leaving the
+      // "Speak to begin" preflight stuck forever even though audio keeps recording.
+      if (levelRafRef.current) { cancelAnimationFrame(levelRafRef.current); levelRafRef.current = null; }
+      const prevCtx = audioContextRef.current;
+      analyserRef.current = null;
+      startLevelMonitor(stream);
+      if (prevCtx && prevCtx !== audioContextRef.current && prevCtx !== stream._bridgeCtx) {
+        try { prevCtx.close?.(); } catch {}
+      }
       // Re-wire disconnect detection on new tracks.
       const tracks = stream.getAudioTracks?.() || [];
       for (const track of tracks) {
@@ -346,7 +357,7 @@ export function useAudioRecorder({ onChunk }) {
       logger().error('recorder.reconnect-failed', { error: err.message });
       return false;
     }
-  }, [onChunk, cleanup]);
+  }, [onChunk, cleanup, startLevelMonitor]);
 
   return { isRecording, duration, micLevelRef, silenceWarning, firstAudibleFrameSeen, disconnected, error, startRecording, stopRecording, reconnect };
 }

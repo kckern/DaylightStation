@@ -117,6 +117,48 @@ describe('useAudioRecorder', () => {
     expect(result.current.disconnected).toBe(false);
   });
 
+  it('rebuilds the level monitor after reconnect so firstAudibleFrameSeen can still flip', async () => {
+    // Audible AudioContext: getByteTimeDomainData yields a level above threshold.
+    global.AudioContext = class {
+      state = 'running';
+      createAnalyser() {
+        return {
+          fftSize: 256,
+          frequencyBinCount: 128,
+          getByteTimeDomainData: (arr) => { for (let i = 0; i < arr.length; i++) arr[i] = 200; },
+        };
+      }
+      createMediaStreamSource() { return { connect: () => {} }; }
+      resume() { return Promise.resolve(); }
+      close() { return Promise.resolve(); }
+    };
+    const trackHandlers = {};
+    global.navigator.mediaDevices.getUserMedia = vi.fn(async () => {
+      const track = {
+        kind: 'audio', readyState: 'live', stop: vi.fn(),
+        addEventListener: (ev, fn) => { trackHandlers[ev] = fn; },
+      };
+      return { getTracks: () => [track], getAudioTracks: () => [track] };
+    });
+
+    const { result } = renderHook(() => useAudioRecorder({ onChunk: () => {} }));
+    await act(async () => { await result.current.startRecording(); });
+    // Audio confirmed once during the original session.
+    await act(async () => { await new Promise(r => setTimeout(r, 100)); });
+    expect(result.current.firstAudibleFrameSeen).toBe(true);
+
+    // Simulate a drop + reconnect, then prove the monitor is live again by
+    // observing the mic level update on the NEW stream (regression guard: the
+    // reconnect path must re-attach the analyser, not just the MediaRecorder).
+    await act(async () => { trackHandlers.ended?.(); });
+    let ok;
+    await act(async () => { ok = await result.current.reconnect(); });
+    expect(ok).toBe(true);
+    result.current.micLevelRef.current = 0; // reset, then let the rebuilt loop run
+    await act(async () => { await new Promise(r => setTimeout(r, 100)); });
+    expect(result.current.micLevelRef.current).toBeGreaterThan(0);
+  });
+
   it('exposes micLevelRef whose .current updates without React re-render', async () => {
     global.AudioContext = class {
       state = 'running';
