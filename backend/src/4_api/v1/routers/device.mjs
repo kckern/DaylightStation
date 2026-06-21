@@ -204,37 +204,29 @@ export function createDeviceRouter(config) {
    */
   router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {
     const force = !!req.body?.force;
-    const deviceId = req.body?.deviceId;
+    // Either a single explicit target or every device. We do NOT pre-filter
+    // via getCapabilities() — that returns contentControl as a boolean summary,
+    // not the live adapter, so it would match zero real devices. Instead we
+    // call Device.healAudioBridge() directly; it returns { supported: false }
+    // and no-ops when the underlying content adapter can't heal, which we use
+    // as the eligibility signal.
+    const ids = req.body?.deviceId ? [req.body.deviceId] : deviceService.listDeviceIds();
 
-    // Resolve [{ id, device }] targets, keeping the id alongside the Device.
-    let targets;
-    if (deviceId) {
-      const device = deviceService.get(deviceId);
-      targets = device ? [{ id: deviceId, device }] : [];
-    } else {
-      targets = deviceService.listDeviceIds()
-        .map((id) => ({ id, device: deviceService.get(id) }))
-        .filter(({ device }) =>
-          typeof device?.getCapabilities?.().contentControl?.healAudioBridge === 'function'
-        );
-    }
-
-    if (targets.length === 0) {
-      logger.info?.('device.router.heal-audio-bridge', { count: 0, force });
-      return res.status(200).json({ ok: true, healed: [], reason: 'no-eligible-devices' });
-    }
-
-    logger.info?.('device.router.heal-audio-bridge', { count: targets.length, force });
-
-    const results = [];
-    for (const { id, device } of targets) {
+    const healed = [];
+    for (const id of ids) {
+      const device = deviceService.get(id);
+      if (!device) continue;
       const r = await device.healAudioBridge({ force });
-      results.push({ deviceId: id, ...r });
+      if (r && r.supported === false) continue; // adapter can't heal — skip silently
+      healed.push({ deviceId: id, ...r });
     }
 
+    const ok = healed.every((r) => r.ok !== false);
+    logger.info?.('device.router.heal-audio-bridge', { count: healed.length, force });
     return res.status(200).json({
-      ok: results.every((r) => r.ok !== false),
-      healed: results,
+      ok,
+      healed,
+      ...(healed.length ? {} : { reason: 'no-eligible-devices' }),
     });
   }));
 
