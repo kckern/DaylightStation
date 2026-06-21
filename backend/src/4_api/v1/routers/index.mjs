@@ -53,6 +53,7 @@ export { createItemRouter } from './item.mjs';
 export { createListRouter, toListItem } from './list.mjs';
 export { createMessagingRouter } from './messaging.mjs';
 export { createSchedulingRouter } from './scheduling.mjs';
+export { createNewsReporterRouter } from './newsreporter.mjs';
 
 // Domain routers - Utilities
 export { createEntropyRouter } from './entropy.mjs';

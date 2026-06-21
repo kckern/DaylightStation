@@ -22,16 +22,21 @@ const RETRY_CORRECTION =
   'Return ONLY the JSON object { "sections": [...] }. No prose, no code fences.';
 
 export class Consolidator {
-  #agentRuntime;
+  #runtimeFor;
   #logger;
   #defaultModel;
 
   /**
-   * @param {{ agentRuntime: { execute: Function }, logger?: object, defaultModel?: string }} deps
+   * @param {{ runtimeFor: (model: string|null) => { execute: Function }, logger?: object, defaultModel?: string }} deps
+   *   runtimeFor(model) returns an IAgentRuntime bound to that model (model may be
+   *   null → default). This honors each reporter's `consolidate.model` instead of
+   *   forwarding a per-call model the underlying MastraAdapter ignores.
    */
-  constructor({ agentRuntime, logger, defaultModel } = {}) {
-    if (!agentRuntime) throw new Error('Consolidator requires an agentRuntime');
-    this.#agentRuntime = agentRuntime;
+  constructor({ runtimeFor, logger, defaultModel } = {}) {
+    if (typeof runtimeFor !== 'function') {
+      throw new Error('Consolidator requires a runtimeFor(model) factory');
+    }
+    this.#runtimeFor = runtimeFor;
     this.#logger = logger || console;
     this.#defaultModel = defaultModel;
   }
@@ -67,11 +72,11 @@ export class Consolidator {
    * @returns {Promise<{ sections: Array } | null>} validated report, or null on failure
    */
   async #attempt({ input, systemPrompt, model, ctx }) {
-    const result = await this.#agentRuntime.execute({
+    const runtime = this.#runtimeFor(model || this.#defaultModel);
+    const result = await runtime.execute({
       agentId: AGENT_ID,
       input,
       systemPrompt,
-      model: model || this.#defaultModel,
       tools: [],
       context: { ...ctx },
     });

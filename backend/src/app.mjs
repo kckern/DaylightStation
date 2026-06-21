@@ -149,8 +149,13 @@ import { SchedulerService } from '#domains/scheduling/services/SchedulerService.
 import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
+import { CompositeJobDatastore } from '#adapters/scheduling/CompositeJobDatastore.mjs';
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
+
+// NewsReporter domain — scheduled, LLM-generated reports
+import { NewsReporterContainer } from '#apps/newsreporter/NewsReporterContainer.mjs';
+import { createNewsReporterRouter } from './4_api/v1/routers/newsreporter.mjs';
 
 // Canvas domain
 import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
@@ -2370,12 +2375,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: 'America/Los_Angeles'
   });
 
+  // NewsReporter — surfaces configured reporters as scheduler jobs and runs them.
+  const newsReporter = NewsReporterContainer.build({
+    configService,
+    agentRuntimeDeps: { mediaDir: mediaBasePath || null },
+    printerRegistry: hardwareAdapters.printerRegistry,
+    dataService,
+    httpClient: axios,
+    logger: rootLogger.child({ module: 'newsreporter' }),
+  });
+
+  // Compose the canonical jobs.yml store with the newsreporter store. Order is
+  // [yaml, newsreporter] so jobs.yml ids win on collision.
+  const compositeJobStore = new CompositeJobDatastore({
+    stores: [schedulingJobStore, newsReporter.jobDatastore],
+    logger: rootLogger.child({ module: 'scheduling-jobs' }),
+  });
+
   const schedulerOrchestrator = new SchedulerOrchestrator({
     schedulerService,
-    jobStore: schedulingJobStore,
+    jobStore: compositeJobStore,
     stateStore: schedulingStateStore,
     harvesterExecutor: harvesterServices.jobExecutor,
-    mediaExecutor
+    mediaExecutor,
+    newsReporterExecutor: newsReporter.executor
   });
 
   const scheduler = new Scheduler({
@@ -2396,6 +2419,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schedulerService,
     scheduler,
     logger: rootLogger.child({ module: 'scheduling-api' })
+  });
+
+  // NewsReporter manual-run endpoint (POST /api/v1/newsreporter/:id/run)
+  v1Routers.newsreporter = createNewsReporterRouter({
+    newsReporterService: newsReporter.service,
+    logger: rootLogger.child({ module: 'newsreporter-api' })
   });
 
   // Canvas router for art display
