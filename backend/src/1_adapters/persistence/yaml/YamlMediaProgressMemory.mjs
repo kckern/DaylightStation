@@ -5,7 +5,9 @@ import {
   saveYaml,
   deleteYaml,
   listYamlFiles,
-  dirExists
+  dirExists,
+  resolveYamlPath,
+  getStats
 } from '#system/utils/FileIO.mjs';
 import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -27,6 +29,11 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       });
     this.basePath = config.basePath;
     this.mediaKeyResolver = config.mediaKeyResolver || null;
+    // mtime-keyed parse cache: storagePath -> { mtimeMs, data }.
+    // loadYamlSafe (fs.readFileSync + yaml.load) is otherwise uncached, so hot
+    // paths re-parsed the same file repeatedly. mtime keying picks up app writes
+    // AND external (Dropbox-synced) edits; writes invalidate explicitly.
+    this._readCache = new Map();
   }
 
   /**
@@ -54,7 +61,20 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   _readFile(storagePath) {
     const basePath = this._getBasePath(storagePath);
-    return loadYamlSafe(basePath) || {};
+    const resolvedPath = resolveYamlPath(basePath);
+    if (!resolvedPath) {
+      // No file on disk — drop any stale cache entry and return empty.
+      this._readCache.delete(storagePath);
+      return {};
+    }
+    const mtimeMs = getStats(resolvedPath)?.mtimeMs ?? 0;
+    const cached = this._readCache.get(storagePath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      return cached.data;
+    }
+    const data = loadYamlSafe(basePath) || {};
+    this._readCache.set(storagePath, { mtimeMs, data });
+    return data;
   }
 
   /**
@@ -66,6 +86,9 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
     const basePath = this._getBasePath(storagePath);
     // saveYaml handles directory creation internally
     saveYaml(basePath, data);
+    // Invalidate so the next read reloads (the in-process mtime may not advance
+    // within the same millisecond as this write).
+    this._readCache.delete(storagePath);
   }
 
   /**
@@ -160,6 +183,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
     const fullPath = this._getBasePath(storagePath);
     const basePath = fullPath.replace(/\.ya?ml$/, '');
     deleteYaml(basePath);
+    this._readCache.delete(storagePath);
   }
 
   /**

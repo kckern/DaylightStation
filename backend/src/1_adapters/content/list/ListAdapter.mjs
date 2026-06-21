@@ -856,6 +856,24 @@ export class ListAdapter {
 
     const results = [];
 
+    // Bulk-load progress once per namespace/category instead of one disk read
+    // per child. mediaProgressMemory.get() → _readFile() does an uncached
+    // fs.readFileSync + yaml.load on EVERY call, so the old per-item lookup
+    // re-parsed the same YAML N times (a 447-child scripture watchlist re-read
+    // scriptures.yml 447×, ~4.3s). Mirror the bulk-load in
+    // _getNextPlayableFromChild(): read each category file once into a Map.
+    const progressByCategory = new Map(); // watchCategory -> Map(assetId -> MediaProgress)
+    const getCategoryProgress = async (watchCategory) => {
+      let map = progressByCategory.get(watchCategory);
+      if (!map) {
+        map = new Map();
+        const all = await this.mediaProgressMemory.getAll(watchCategory);
+        for (const p of all) map.set(p.contentId, p);
+        progressByCategory.set(watchCategory, map);
+      }
+      return map;
+    };
+
     for (const item of items) {
       if (item.active === false) continue;
 
@@ -954,7 +972,8 @@ export class ListAdapter {
       if (isWatchlist && this.mediaProgressMemory) {
         const watchCategory = listMetadata?.namespace || watchCategoryMap[source] || source;
         if (watchCategory) {
-          const watchState = await this.mediaProgressMemory.get(assetId, watchCategory);
+          const progressMap = await getCategoryProgress(watchCategory);
+          const watchState = progressMap.get(assetId) || null;
           percent = watchState?.percent ?? 0;
           playhead = watchState?.playhead ?? 0;
           lastPlayed = watchState?.lastPlayed ?? null;
