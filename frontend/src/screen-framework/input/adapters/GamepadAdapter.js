@@ -41,6 +41,13 @@ const REPEAT_INTERVAL_MS = 120;
 // hit the same button simultaneously inside ~50ms.
 const SAME_ID_DUPLICATE_WINDOW_MS = 50;
 
+// Normal poll frames are ~16ms apart (rAF). A gap this large means the poll
+// loop was frozen — the WebView was backgrounded while another Android app
+// (e.g. RetroArch) held the foreground. Button state can change out-of-band
+// during that freeze, so the next frame must re-seed rather than edge-detect
+// against pre-freeze state (which would fire a phantom Escape/Enter on resume).
+const STALE_POLL_GAP_MS = 1000;
+
 const STICK_DIRECTIONS = [
   { axis: 0, threshold: -STICK_DEADZONE, key: 'ArrowLeft',  action: 'navigate', payload: { direction: 'left' } },
   { axis: 0, threshold:  STICK_DEADZONE, key: 'ArrowRight', action: 'navigate', payload: { direction: 'right' } },
@@ -68,6 +75,9 @@ export class GamepadAdapter {
     this._lastFireById = {};
     this._onConnected = null;
     this._onDisconnected = null;
+    this._onVisibility = null;
+    // Timestamp of the last poll frame; a large gap means the loop was frozen.
+    this._lastPollAt = null;
   }
 
   attach() {
@@ -76,15 +86,36 @@ export class GamepadAdapter {
       logger().info('gamepad.connected', {
         index: gp.index, id: gp.id, buttons: gp.buttons.length, axes: gp.axes.length, mapping: gp.mapping,
       });
+      // A (re)connect makes our last-known button state untrustworthy: on the
+      // RetroArch→FKB handoff `gamepadconnected` re-fires (often with no
+      // intervening disconnect) while the Bluetooth link re-establishes and
+      // button state flickers. Force a re-seed so that flicker is absorbed as
+      // the new baseline instead of edge-detecting into a phantom press.
+      this._invalidateSeed(gp.index);
       this._startPolling();
     };
     this._onDisconnected = (e) => {
       logger().info('gamepad.disconnected', { index: e.gamepad.index, id: e.gamepad.id });
       this._handleDisconnect(e);
     };
+    // When the WebView is backgrounded (an Android app like RetroArch takes the
+    // foreground) the rAF poll loop freezes and controller button state can
+    // change out-of-band. On resume the stale seed would edge-detect those
+    // changes as fresh presses (phantom Escape/Enter). Re-seed every gamepad on
+    // resume so the post-suspend state becomes the new baseline.
+    this._onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        logger().info('gamepad.resume-reseed', {});
+        this._invalidateAllSeeds();
+        this._startPolling();
+      }
+    };
 
     window.addEventListener('gamepadconnected', this._onConnected);
     window.addEventListener('gamepaddisconnected', this._onDisconnected);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this._onVisibility);
+    }
 
     // If any gamepad is already connected, start polling immediately
     const existing = getActiveGamepads();
@@ -107,6 +138,12 @@ export class GamepadAdapter {
     if (this._onDisconnected) {
       window.removeEventListener('gamepaddisconnected', this._onDisconnected);
       this._onDisconnected = null;
+    }
+    if (this._onVisibility) {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', this._onVisibility);
+      }
+      this._onVisibility = null;
     }
     this._stopPolling();
     this._clearAllRepeats();
@@ -136,6 +173,27 @@ export class GamepadAdapter {
     }
   }
 
+  /**
+   * Drop the seed for one gamepad index so the next poll re-records its live
+   * button/stick state as the baseline (skipping edge detection for that frame).
+   */
+  _invalidateSeed(idx) {
+    if (idx == null) return;
+    delete this._seeded[idx];
+    delete this._prevButtons[idx];
+    delete this._prevStick[idx];
+  }
+
+  /**
+   * Drop seeds for all gamepads (e.g. on visibility resume, when the poll loop
+   * was frozen and any last-known state is stale).
+   */
+  _invalidateAllSeeds() {
+    this._seeded = {};
+    this._prevButtons = {};
+    this._prevStick = {};
+  }
+
   _handleDisconnect(e) {
     // Drop state for the disconnected gamepad only — leave others' state intact.
     const idx = e?.gamepad?.index;
@@ -155,6 +213,14 @@ export class GamepadAdapter {
   }
 
   _pollGamepad() {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (this._lastPollAt != null && (now - this._lastPollAt) > STALE_POLL_GAP_MS) {
+      // Loop was frozen (WebView backgrounded). Re-seed all gamepads so any
+      // out-of-band button changes during the freeze become the new baseline.
+      logger().info('gamepad.stale-poll-reseed', { gapMs: Math.round(now - this._lastPollAt) });
+      this._invalidateAllSeeds();
+    }
+    this._lastPollAt = now;
     const gamepads = getActiveGamepads();
     for (const gp of gamepads) {
       this._pollOne(gp);
