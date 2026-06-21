@@ -44,7 +44,8 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     replacedPrimaryPool,
     preferredMicrophoneId,
     setPreferredMicrophoneId,
-    musicPlayerRef
+    musicPlayerRef,
+    requestEndSession
   } = fitnessContext;
   const menuOpen = menuState.open;
 
@@ -60,6 +61,9 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     if (endingSession) return;
     setEndingSession(true);
     setEndSessionError(null);
+    // End the LIVE session immediately (reliable, same-browser). The server POST
+    // below is a finalize backstop that also triggers the time-lapse recap.
+    try { requestEndSession?.(); } catch (_) { /* live-end best effort */ }
     try {
       await DaylightAPI(req.path, req.body, req.method);
     } catch (err) {
@@ -67,7 +71,7 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
     } finally {
       setEndingSession(false);
     }
-  }, [activeSessionId, endingSession]);
+  }, [activeSessionId, endingSession, requestEndSession]);
   const guestCandidates = React.useMemo(() => {
     const tag = (list, category) => (Array.isArray(list) ? list.map(item => ({ ...item, category })) : []);
     const family = tag(usersConfigRaw?.family, 'Family');

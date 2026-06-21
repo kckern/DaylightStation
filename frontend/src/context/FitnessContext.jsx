@@ -16,6 +16,7 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
 import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
+import { endLiveSession } from '../hooks/fitness/endLiveSession.js';
 import { normalizeToast, dismissMatches } from '../modules/Fitness/player/overlays/fitnessToastSlot.js';
 import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderToast.js';
 import { lookupUserName } from '../modules/Fitness/player/overlays/lookupUserName.js';
@@ -540,6 +541,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Derived Session State
   const session = fitnessSessionRef.current;
+
+  // Deliberate "End Session" from the kiosk UI. Ends the LIVE session instance
+  // (the SSoT for the active recording) — the server POST alone never reaches it.
+  const requestEndSession = useCallback(() => {
+    const ok = endLiveSession(fitnessSessionRef.current);
+    if (ok) {
+      getLogger().info('fitness.session.user_end', { source: 'sidebar_button' });
+      batchedForceUpdate();
+    }
+    return ok;
+  }, [batchedForceUpdate]);
+
   const fitnessDevices = session.deviceManager.devices;
   const users = session.userManager.users;
   useEffect(() => {
@@ -2458,6 +2471,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Legacy / Compatibility
     fitnessSession: session?.summary,
     fitnessSessionInstance: session,
+    requestEndSession,
     isSessionActive: session?.isActive,
     fitnessPlayQueue,
     setFitnessPlayQueue,
