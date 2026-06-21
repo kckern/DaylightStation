@@ -44,6 +44,11 @@ import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
 import { buildFingerprintIdentityIndex } from '#apps/fitness/identityRelay.mjs';
 
+// Commit (locking down) is the safe direction, so the admin-press pending may be
+// consumed within a generous window that covers the on-screen ceremony. Un-locking
+// (/abort, /release) keeps the tight default TTL.
+const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
+
 // Module-level session lock (shared across all router instances)
 const sessionLockService = new SessionLockService();
 
@@ -1338,7 +1343,18 @@ export function createFitnessRouter(config) {
    */
   router.post('/emergency/commit', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
-    const pending = identityRelay?.consumePendingDetection?.(Date.now());
+    // Idempotent: if a lockdown is already active (e.g. the server-side abuse
+    // fallback already committed), return the current state instead of 409 — so a
+    // late browser commit never trips the client's failure path and unlocks.
+    const existing = getLockdownState ? await getLockdownState.execute({ now }) : null;
+    if (existing) {
+      logger?.info?.('emergency.commit_idempotent', { lockedBy: existing.lockedBy });
+      return res.json({ locked: true, lockedUntil: existing.lockedUntil, lockedBy: existing.lockedBy });
+    }
+    // Abuse trips arm a server-authoritative commit token; admin presses stamp a
+    // (generously-aged) pending detection. Either authorizes this commit.
+    const pending = identityRelay?.consumeArmedCommit?.(Date.now())
+      || identityRelay?.consumePendingDetection?.(Date.now(), COMMIT_PENDING_MAX_AGE_MS);
     if (!pending) {
       logger?.warn?.('emergency.commit_rejected', { reason: 'no-pending-detection' });
       return res.status(409).json({ error: 'no-pending-detection' });
