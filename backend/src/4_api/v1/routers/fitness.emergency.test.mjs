@@ -123,6 +123,53 @@ describe('fitness router — POST /emergency/commit', () => {
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: 'emergency-unavailable' });
   });
+
+  it('is idempotent: returns the current lock state without re-triggering when already locked', async () => {
+    const getLockdownState = { execute: vi.fn().mockResolvedValue({ lockedUntil: 5000, lockedBy: 'abuse-protection' }) };
+    const triggerEmergencyLockdown = { execute: vi.fn() };
+    const identityRelay = { consumeArmedCommit: vi.fn(), consumePendingDetection: vi.fn() };
+    const { app } = appWith({ getLockdownState, triggerEmergencyLockdown, identityRelay });
+
+    const res = await request(app).post('/emergency/commit').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ locked: true, lockedUntil: 5000, lockedBy: 'abuse-protection' });
+    expect(triggerEmergencyLockdown.execute).not.toHaveBeenCalled();
+    expect(identityRelay.consumeArmedCommit).not.toHaveBeenCalled();
+  });
+
+  it('commits an armed abuse token when present (does not touch pending)', async () => {
+    const getLockdownState = { execute: vi.fn().mockResolvedValue(null) };
+    const triggerEmergencyLockdown = { execute: vi.fn().mockResolvedValue({ lockedUntil: 3600, lockedBy: 'abuse-protection' }) };
+    const identityRelay = {
+      consumeArmedCommit: vi.fn(() => ({ userId: 'abuse-protection', at: 1 })),
+      consumePendingDetection: vi.fn(),
+    };
+    const { app } = appWith({ getLockdownState, triggerEmergencyLockdown, identityRelay });
+
+    const res = await request(app).post('/emergency/commit').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ locked: true, lockedUntil: 3600, lockedBy: 'abuse-protection' });
+    expect(triggerEmergencyLockdown.execute).toHaveBeenCalledWith(expect.objectContaining({ lockedBy: 'abuse-protection' }));
+    expect(identityRelay.consumePendingDetection).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a generously-aged pending detection (admin press)', async () => {
+    const getLockdownState = { execute: vi.fn().mockResolvedValue(null) };
+    const triggerEmergencyLockdown = { execute: vi.fn().mockResolvedValue({ lockedUntil: 3600, lockedBy: 'alice' }) };
+    const identityRelay = {
+      consumeArmedCommit: vi.fn(() => null),
+      consumePendingDetection: vi.fn(() => ({ userId: 'alice', at: 1 })),
+    };
+    const { app } = appWith({ getLockdownState, triggerEmergencyLockdown, identityRelay });
+
+    const res = await request(app).post('/emergency/commit').send({});
+
+    expect(res.status).toBe(200);
+    expect(identityRelay.consumePendingDetection).toHaveBeenCalledWith(expect.any(Number), 120000);
+    expect(triggerEmergencyLockdown.execute).toHaveBeenCalledWith(expect.objectContaining({ lockedBy: 'alice' }));
+  });
 });
 
 describe('fitness router — POST /emergency/abort', () => {
