@@ -137,6 +137,33 @@ describe('useEmergencyLockdown', () => {
     expect(result.current.phase).toBe('normal');
   });
 
+  it('commit failure reconciles to LOCKED when the server already locked (abuse fallback)', async () => {
+    setSearch('?emergency=triggering'); // skip mount GET; start in triggering
+    // ~30min out: a past (8888) or far-future (9999999999) epoch makes the locked
+    // expiry timer's delay clamp/overflow to ~0ms and fire immediately, stealing
+    // the next mocked response (same hazard the release() test documents below).
+    const future = Math.floor(Date.now() / 1000) + 1800;
+    DaylightAPI
+      .mockRejectedValueOnce(new Error('HTTP 409: Conflict')) // commit POST
+      .mockResolvedValueOnce({ locked: true, lockedUntil: future, lockedBy: 'abuse-protection' }); // reconcile GET
+    const { result } = renderHook(() => useEmergencyLockdown());
+    expect(result.current.phase).toBe('triggering');
+    await act(async () => { await result.current.commit(); });
+    expect(result.current.phase).toBe('locked');
+    expect(result.current.lockedBy).toBe('abuse-protection');
+    expect(result.current.lockedUntil).toBe(future);
+  });
+
+  it('commit failure drops to normal when the server is NOT locked', async () => {
+    setSearch('?emergency=triggering');
+    DaylightAPI
+      .mockRejectedValueOnce(new Error('HTTP 409: Conflict')) // commit POST
+      .mockResolvedValueOnce({ locked: false }); // reconcile GET
+    const { result } = renderHook(() => useEmergencyLockdown());
+    await act(async () => { await result.current.commit(); });
+    expect(result.current.phase).toBe('normal');
+  });
+
   it('abort() confirmed → normal', async () => {
     DaylightAPI.mockResolvedValueOnce({ locked: false })
       .mockResolvedValueOnce({ confirmed: true });
