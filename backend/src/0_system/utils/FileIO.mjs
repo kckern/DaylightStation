@@ -482,8 +482,27 @@ export function listDirsMatching(dirPath, pattern) {
  * @param {string|string[]} extensions - File extension(s) to match (e.g., '.yml' or ['.yml', '.yaml'])
  * @returns {string|null} Full path to matching file, or null if not found
  */
+// mtime-keyed directory-listing cache: dirPath -> { mtimeMs, files }.
+// findFileByPrefix is called once per item for both the YAML and the media
+// lookup, so a large readalong watchlist re-readdir'd the same 921-entry
+// scripture directory hundreds of times. Caching the raw listing (invalidated
+// when the directory mtime changes — i.e. a file is added/removed) collapses
+// that to one read per directory per change.
+const _dirListCache = new Map();
+
+function _readdirCached(dirPath) {
+  const stat = getStats(dirPath);
+  if (!stat || !stat.isDirectory()) return null;
+  const cached = _dirListCache.get(dirPath);
+  if (cached && cached.mtimeMs === stat.mtimeMs) return cached.files;
+  const files = fs.readdirSync(dirPath);
+  _dirListCache.set(dirPath, { mtimeMs: stat.mtimeMs, files });
+  return files;
+}
+
 export function findFileByPrefix(dirPath, prefix, extensions) {
-  if (!fs.existsSync(dirPath)) return null;
+  const all = _readdirCached(dirPath);
+  if (!all) return null;
 
   // Normalize prefix: remove leading zeros for comparison
   const normalizedPrefix = String(prefix).replace(/^0+/, '') || '0';
@@ -491,7 +510,7 @@ export function findFileByPrefix(dirPath, prefix, extensions) {
   // Normalize extensions to array
   const extArray = Array.isArray(extensions) ? extensions : [extensions];
 
-  const files = fs.readdirSync(dirPath).filter(f => {
+  const files = all.filter(f => {
     if (f.startsWith('._')) return false;
     return extArray.some(ext => f.endsWith(ext));
   });
