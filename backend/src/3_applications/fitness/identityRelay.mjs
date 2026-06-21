@@ -24,6 +24,15 @@ const ABUSE_COOLDOWN_MS = 60000;
 // Sentinel recorded as lockedBy when the lockdown is auto-tripped by scanner abuse.
 const ABUSE_USER = 'abuse-protection';
 
+// Server-side fallback: if the browser ceremony never POSTs /commit, the relay
+// commits the abuse lockdown itself this long after the trip. Longer than the
+// browser's MIN_CEREMONY_MS (10s) so a live kiosk normally commits first and the
+// server is only a safety net. Overridable via fitness.yml emergency.abuse.
+const DEFAULT_SERVER_COMMIT_DELAY_MS = 25000;
+// How long an armed token may still be consumed by a (late/paused) browser
+// commit. The safe direction (locking), single-use, so a generous window is fine.
+const DEFAULT_ARMED_MAX_AGE_MS = 600000; // 10 min
+
 export function buildFingerprintIdentityIndex(profiles) {
   const index = {};
   const entries = profiles instanceof Map ? [...profiles.entries()] : Object.entries(profiles || {});
@@ -66,6 +75,9 @@ export function createIdentityRelay({
   userService,
   loadFitnessConfig,
   getLockdownState = null,
+  triggerEmergencyLockdown = null,
+  scheduler = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h) },
+  serverCommitDelayMs = DEFAULT_SERVER_COMMIT_DELAY_MS,
   now = () => Date.now(),
   pendingTtlMs = DEFAULT_PENDING_TTL_MS,
   adminSessionTtlMs = DEFAULT_ADMIN_SESSION_TTL_MS,
@@ -79,6 +91,8 @@ export function createIdentityRelay({
   let lastAdmin = null; // { userId, at } — most recent admin verification (sliding session)
   let failedTimes = [];        // ms timestamps of recent failed scans (abuse counter)
   let abuseSuppressUntil = 0;  // ms; ignore failed scans until this time after a trip
+  let armed = null;     // { userId, at } — abuse lockdown armed for commit
+  let armTimer = null;  // scheduler handle for the server-side fallback commit
 
   function emitUnrecognized(modality, at) {
     eventBus.broadcast(IDENTITY_TOPIC, {
@@ -87,29 +101,67 @@ export function createIdentityRelay({
     });
   }
 
-  // Auto-trip: stamp a synthetic pending so the existing frontend ceremony →
-  // POST /commit path locks unchanged, then broadcast the "start ceremony" signal.
+  // Auto-trip: arm a single-use commit token (+ schedule the server-side fallback)
+  // so the lockdown engages even if the browser ceremony never POSTs /commit, then
+  // broadcast the "start ceremony" signal.
   async function tripAbuse(at, threshold, windowMs) {
-    // Never auto-trip while a lockdown is already active: a synthetic pending stamped
-    // during a lock would let the LockedScreen press-and-hold release succeed without
-    // an admin scan (it consumes pending too). Bail if already locked.
+    // Never auto-trip while a lockdown is already active: arming during a lock would
+    // let the LockedScreen press-and-hold release succeed without an admin scan (it
+    // consumes the token too). Bail if already locked.
     if (getLockdownState) {
       try {
         const state = await getLockdownState.execute({ now: Math.floor(at / 1000) });
-        if (state) return; // already locked — never stamp a pending /release could consume
+        if (state) return; // already locked — never arm a token /release could consume
       } catch (err) {
         // Fail CLOSED. A missed abuse-trip is harmless (the next failed scan re-evaluates),
-        // but stamping a synthetic pending while the lock state is unknown could let
+        // but arming a commit token while the lock state is unknown could let
         // /release succeed without an admin scan. Don't trip on a lookup error.
         logger.warn?.('identity.abuse_lockcheck_failed', { message: err?.message ?? null });
         return;
       }
     }
-    pending = { userId: ABUSE_USER, at: now() };
+    armCommit(ABUSE_USER, at);
     eventBus.broadcast(CEREMONY_TOPIC, {
       reason: 'abuse', count: threshold, windowSec: Math.round(windowMs / 1000), at,
     });
     logger.warn?.('identity.abuse_tripped', { count: threshold, windowSec: Math.round(windowMs / 1000) });
+  }
+
+  function cancelArmTimer() {
+    if (armTimer != null) {
+      try { scheduler.clearTimeout(armTimer); } catch { /* noop */ }
+      armTimer = null;
+    }
+  }
+
+  // Server-authoritative commit: if the browser ceremony never finalized, the
+  // relay locks down itself so an abuse trip ALWAYS engages. Single-use token —
+  // whoever commits first (browser via consumeArmedCommit, or this) wins.
+  async function runServerCommit() {
+    armTimer = null;
+    const token = armed;
+    if (!token) return;            // already consumed (browser beat us) or disarmed (aborted)
+    armed = null;
+    if (!triggerEmergencyLockdown) return;
+    try {
+      if (getLockdownState) {
+        const state = await getLockdownState.execute({ now: Math.floor(now() / 1000) });
+        if (state) return;         // a lock already became active — nothing to do
+      }
+      await triggerEmergencyLockdown.execute({ lockedBy: token.userId, now: Math.floor(now() / 1000) });
+      logger.warn?.('identity.abuse_server_committed', { lockedBy: token.userId });
+    } catch (err) {
+      logger.warn?.('identity.abuse_server_commit_failed', { message: err?.message ?? null });
+    }
+  }
+
+  // Arm an abuse lockdown for commit and schedule the server-side fallback.
+  function armCommit(userId, at) {
+    armed = { userId, at };
+    cancelArmTimer();
+    if (triggerEmergencyLockdown) {
+      armTimer = scheduler.setTimeout(() => { runServerCommit(); }, serverCommitDelayMs);
+    }
   }
 
   // Feed each scan's outcome into the sliding-window abuse counter. A safe
@@ -182,6 +234,20 @@ export function createIdentityRelay({
       const consumed = pending;
       pending = null;
       return consumed;
+    },
+    // Consume the armed abuse-commit token (the safe, single-use lock authorization).
+    consumeArmedCommit(nowMs = now(), maxAgeMs = DEFAULT_ARMED_MAX_AGE_MS) {
+      if (!armed) return null;
+      cancelArmTimer();
+      if (nowMs - armed.at > maxAgeMs) { armed = null; return null; }
+      const consumed = armed;
+      armed = null;
+      return consumed;
+    },
+    // Disarm a pending abuse commit (admin confirmed a cancel during the ceremony).
+    disarmCommit() {
+      armed = null;
+      cancelArmTimer();
     },
     // Non-consuming: was an admin verified within the session window? Manage
     // operations reuse the admin-gate scan instead of demanding a second one.
