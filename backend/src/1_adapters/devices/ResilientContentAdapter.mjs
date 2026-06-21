@@ -193,6 +193,19 @@ export class ResilientContentAdapter {
   }
 
   /**
+   * Heal the companion audio bridge (delegates to primary). Optional capability —
+   * primaries that don't implement it report unsupported rather than throwing.
+   * @param {Object} [opts] - Forwarded to primary.healAudioBridge (e.g. { force }).
+   * @returns {Promise<Object>}
+   */
+  async healAudioBridge(opts = {}) {
+    if (typeof this.#primary.healAudioBridge !== 'function') {
+      return { ok: false, reason: 'unsupported' };
+    }
+    return this.#primary.healAudioBridge(opts);
+  }
+
+  /**
    * Get content control status (delegates to primary)
    * @returns {Promise<Object>}
    */
