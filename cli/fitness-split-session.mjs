@@ -154,8 +154,13 @@ console.log(`--- ${allOk ? 'ALL INVARIANTS PASS' : 'INVARIANT FAILURE — refusi
 
 // Build the two output documents.
 function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, treasureBox, captures, memos, keepStrava }) {
+  // Only keep participants who were actually active in THIS part (had HR data).
+  // summaryParts.participants is already filtered to hr-present slugs, so a user
+  // who joined only during the other part isn't carried in as a no-HR ghost.
+  const activeSlugs = new Set(Object.keys(summaryParts.participants || {}));
   const participants = {};
   for (const [slug, meta] of Object.entries(doc.participants)) {
+    if (!activeSlugs.has(slug)) continue;
     const copy = { ...meta };
     if (!keepStrava) delete copy.strava;
     participants[slug] = copy;
