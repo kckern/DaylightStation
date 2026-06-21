@@ -37,7 +37,7 @@ export class NewsReporterService {
 
   /**
    * @param {{
-   *   configService: { getHouseholdAppConfig: Function },
+   *   configService: { getHouseholdAppConfig: Function, getHouseholdTimezone?: Function, getTimezone?: Function },
    *   sourceRegistry: { create: Function },
    *   consolidator: { consolidate: Function },
    *   sinkRegistry: { create: Function },
@@ -204,10 +204,13 @@ export class NewsReporterService {
     return counts;
   }
 
-  /** Household timezone, fallback to America/Denver. */
+  /** Household timezone via the canonical ConfigService accessor; hard fallback last. */
   #resolveTimezone() {
-    const household = this.#configService.getHouseholdAppConfig(null, 'household') || {};
-    return household.timezone || household.tz || DEFAULT_TIMEZONE;
+    return (
+      this.#configService.getHouseholdTimezone?.()
+      ?? this.#configService.getTimezone?.()
+      ?? DEFAULT_TIMEZONE
+    );
   }
 }
 

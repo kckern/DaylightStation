@@ -22,12 +22,14 @@ const captureLogger = () => {
 const fixedClock = (iso) => ({ now: () => new Date(iso) });
 
 // configService returning a fixed reporter config map.
-const fakeConfig = (map, household = {}) => ({
+// `timezone` (when set) is returned by the canonical getHouseholdTimezone accessor.
+const fakeConfig = (map, { household = {}, timezone } = {}) => ({
   getHouseholdAppConfig: (hid, app) => {
     if (app === 'newsreporter') return map;
     if (app === 'household') return household;
     return undefined;
   },
+  ...(timezone !== undefined ? { getHouseholdTimezone: () => timezone } : {}),
 });
 
 // source registry: create() returns a source built from a per-type factory.
@@ -214,6 +216,61 @@ describe('NewsReporterService', () => {
     const result = await svc.run('rep', { force: true });
     expect(result.status).toBe('ok');
     expect(consolidator.calls).toHaveLength(1);
+    expect(emits).toHaveLength(1);
+  });
+
+  it('uses the household timezone from configService to resolve date placeholders', async () => {
+    // 2026-06-21T04:30:00Z: in America/New_York (UTC-4) it's 00:30 on 06-21,
+    // but in the default America/Denver (UTC-6) it's 22:30 on 06-20.
+    // So {{date}} → 2026-06-21 in NY vs 2026-06-20 in Denver: the test would
+    // fail if the service ignored the configService timezone.
+    let gatheredCfg = null;
+    const deps = baseDeps({
+      configService: fakeConfig(
+        { rep: { ...CFG_BASE, sources: [{ type: 'http', id: 'matches', url: 'http://x?d={{date}}' }] } },
+        { timezone: 'America/New_York' },
+      ),
+      sourceRegistry: fakeSourceRegistry(() => ({
+        gather: async ({ config }) => { gatheredCfg = config; return { items: [{ a: 1 }], meta: {} }; },
+      })),
+      clock: fixedClock('2026-06-21T04:30:00.000Z'),
+    });
+    const svc = new NewsReporterService(deps);
+    await svc.run('rep');
+    expect(gatheredCfg.url).toBe('http://x?d=2026-06-21');
+  });
+
+  it('resolves placeholders on sink config before sink.emit', async () => {
+    let sinkCfg = null;
+    const deps = baseDeps({
+      configService: fakeConfig({
+        rep: {
+          ...CFG_BASE,
+          sinks: [{ type: 'printer', printer: 'upstairs', template: { footer: 'daylight · {{date}}' } }],
+        },
+      }),
+      sinkRegistry: fakeSinkRegistry(() => ({ emit: async (s, c) => { sinkCfg = c; return { status: 'ok' }; } })),
+      clock: fixedClock('2026-06-21T13:50:00.000Z'),
+    });
+    const svc = new NewsReporterService(deps);
+    const result = await svc.run('rep');
+    expect(result.status).toBe('ok');
+    // Default timezone (America/Denver): 2026-06-21T13:50Z → 07:50 on 06-21.
+    expect(sinkCfg.template.footer).toBe('daylight · 2026-06-21');
+  });
+
+  it('force bypasses the empty-SECTIONS check (non-empty sources, no sections) → ok, sink attempted', async () => {
+    const consolidator = okConsolidator([]); // LLM returns no sections
+    const emits = [];
+    const deps = baseDeps({
+      // sources return NON-empty items → only the empty-sections branch is exercised
+      sourceRegistry: fakeSourceRegistry(() => ({ gather: async () => ({ items: [{ a: 1 }], meta: {} }) })),
+      consolidator,
+      sinkRegistry: fakeSinkRegistry(() => ({ emit: async () => { emits.push(1); return { status: 'ok' }; } })),
+    });
+    const svc = new NewsReporterService(deps);
+    const result = await svc.run('rep', { force: true });
+    expect(result.status).toBe('ok');
     expect(emits).toHaveLength(1);
   });
 });
