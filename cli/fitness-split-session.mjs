@@ -191,8 +191,14 @@ function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, trea
 if (WRITE) {
   if (!allOk) { console.error('Refusing to write: invariants failed.'); process.exit(1); }
 
-  const dir = path.dirname(FILE);
-  const backup = path.join(dir, `${part1Id}.PRE-SPLIT.bak.yml`);
+  // IMPORTANT: write the backup OUTSIDE any scanned day folder. The session
+  // lister globs every *.yml in a YYYY-MM-DD dir, so a backup left there would be
+  // loaded as a duplicate sessionId and shadow the real (truncated) part 1. The
+  // `_split_backups` sibling does not match the date regex, so it is ignored.
+  const sessionsRoot = path.dirname(path.dirname(FILE)); // history/fitness
+  const backupDir = path.join(sessionsRoot, '_split_backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backup = path.join(backupDir, `${part1Id}.${doc.session.date}.PRE-SPLIT.bak.yml`);
   fs.writeFileSync(backup, raw, 'utf8');
   console.log(`backup written: ${backup}`);
 
