@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 vi.mock('../../services/WebSocketService.js', () => ({
@@ -11,6 +11,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   wsService.send.mockClear();
 });
+afterEach(() => { vi.useRealTimers(); });
 
 const lastMsg = () => wsService.send.mock.calls.at(-1)?.[0];
 
@@ -26,6 +27,7 @@ describe('useScreenPresencePublisher', () => {
     renderHook(() => useScreenPresencePublisher({ deviceId: 'office-tv', active: true }));
     expect(wsService.send).toHaveBeenCalledTimes(1);
     expect(lastMsg()).toMatchObject({ type: 'screen.presence', deviceId: 'office-tv', active: true });
+    expect(lastMsg().ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     vi.advanceTimersByTime(5000);
     expect(wsService.send).toHaveBeenCalledTimes(2);
     vi.advanceTimersByTime(5000);

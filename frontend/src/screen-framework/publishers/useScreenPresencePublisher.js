@@ -40,10 +40,11 @@ export function useScreenPresencePublisher({ deviceId, active }) {
 
     // Transition/mount emit.
     send();
+    logger().info('mounted', { deviceId, active: !!active });
 
-    if (!active) return undefined; // inactive: no heartbeat
+    if (!active) return () => { logger().info('unmounted', { deviceId }); };
     const timer = setInterval(send, HEARTBEAT_MS);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); logger().info('unmounted', { deviceId }); };
   }, [deviceId, active]);
 }
 
