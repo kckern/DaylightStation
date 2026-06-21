@@ -4,6 +4,10 @@
  * Tests the handler in isolation via req/res mocks (same pattern as
  * device.session.test.mjs). No real HTTP — just verify routing + the
  * heal orchestration over deviceService.
+ *
+ * The handler does NOT pre-filter via getCapabilities() (which returns
+ * contentControl as a boolean summary). It calls device.healAudioBridge()
+ * directly and treats a `{ supported: false }` return as "not eligible".
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
@@ -28,15 +32,15 @@ function findHealHandler(router) {
 }
 
 /**
- * Build a fake device with capabilities and a healAudioBridge spy.
- * @param {boolean} healable - whether contentControl supports heal
+ * Build a fake device exposing a healAudioBridge spy. The handler relies on
+ * the return value (not getCapabilities) to decide eligibility.
+ * @param {Object} [healResult] - what healAudioBridge resolves to.
  */
-function makeDevice(id, { healable = true, healResult } = {}) {
+function makeDevice(id, { healResult } = {}) {
   return {
-    getCapabilities: vi.fn(() => ({
-      contentControl: healable ? { healAudioBridge: () => {} } : false,
-    })),
-    healAudioBridge: vi.fn(async () => healResult ?? { ok: true, companions: [{ pkg: 'net.kckern.audiobridge', action: 'relaunched', ok: true }] }),
+    healAudioBridge: vi.fn(async () =>
+      healResult ?? { ok: true, companions: [{ pkg: 'net.kckern.audiobridge', action: 'relaunched', ok: true }] }
+    ),
     _id: id,
   };
 }
@@ -53,12 +57,11 @@ describe('POST /device/audio-bridge/heal', () => {
     return findHealHandler(router);
   }
 
-  it('heals eligible devices and returns 200', async () => {
-    const shield = makeDevice('shield');
-    const pc = makeDevice('pc', { healable: false });
+  it('(a) heals an eligible device and returns 200', async () => {
+    const shield = makeDevice('shield', { healResult: { ok: true, companions: [{ pkg: 'net.kckern.audiobridge' }] } });
     const deviceService = {
-      get: vi.fn((id) => ({ shield, pc }[id] || null)),
-      listDeviceIds: vi.fn(() => ['shield', 'pc']),
+      get: vi.fn((id) => ({ shield }[id] || null)),
+      listDeviceIds: vi.fn(() => ['shield']),
       listDevices: vi.fn(() => []),
     };
     const handler = buildRouter(deviceService);
@@ -70,14 +73,16 @@ describe('POST /device/audio-bridge/heal', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.healed).toEqual([
-      expect.objectContaining({ deviceId: 'shield', ok: true }),
+      expect.objectContaining({
+        deviceId: 'shield',
+        ok: true,
+        companions: [{ pkg: 'net.kckern.audiobridge' }],
+      }),
     ]);
-    // Only the eligible device is healed
     expect(shield.healAudioBridge).toHaveBeenCalledWith({ force: false });
-    expect(pc.healAudioBridge).not.toHaveBeenCalled();
   });
 
-  it('passes force:true through to the device', async () => {
+  it('(b) passes force:true through to the device', async () => {
     const shield = makeDevice('shield');
     const deviceService = {
       get: vi.fn(() => shield),
@@ -94,7 +99,31 @@ describe('POST /device/audio-bridge/heal', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('targets only the given deviceId when provided', async () => {
+  it('(c) skips unsupported devices and only heals supported ones', async () => {
+    const shield = makeDevice('shield', { healResult: { ok: true } });
+    const pc = makeDevice('pc', { healResult: { ok: false, supported: false } });
+    const deviceService = {
+      get: vi.fn((id) => ({ shield, pc }[id] || null)),
+      listDeviceIds: vi.fn(() => ['shield', 'pc']),
+      listDevices: vi.fn(() => []),
+    };
+    const handler = buildRouter(deviceService);
+
+    const req = { body: {} };
+    const res = makeRes();
+    await handler(req, res, vi.fn());
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.ok).toBe(true);
+    // Both were called, but only the supported one appears in `healed`.
+    expect(shield.healAudioBridge).toHaveBeenCalledWith({ force: false });
+    expect(pc.healAudioBridge).toHaveBeenCalledWith({ force: false });
+    expect(res.body.healed).toEqual([
+      expect.objectContaining({ deviceId: 'shield', ok: true }),
+    ]);
+  });
+
+  it('(d) targets only the given deviceId when provided', async () => {
     const shield = makeDevice('shield');
     const tv2 = makeDevice('tv2');
     const deviceService = {
@@ -115,8 +144,8 @@ describe('POST /device/audio-bridge/heal', () => {
     ]);
   });
 
-  it('returns no-eligible-devices when nothing is healable', async () => {
-    const pc = makeDevice('pc', { healable: false });
+  it('(e) returns no-eligible-devices when every device is unsupported', async () => {
+    const pc = makeDevice('pc', { healResult: { ok: false, supported: false } });
     const deviceService = {
       get: vi.fn(() => pc),
       listDeviceIds: vi.fn(() => ['pc']),
@@ -130,6 +159,6 @@ describe('POST /device/audio-bridge/heal', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ ok: true, healed: [], reason: 'no-eligible-devices' });
-    expect(pc.healAudioBridge).not.toHaveBeenCalled();
+    expect(pc.healAudioBridge).toHaveBeenCalledWith({ force: false });
   });
 });
