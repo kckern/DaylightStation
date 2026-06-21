@@ -80,6 +80,11 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
   }, [data, view.dayIndex, view.itemIndex, view.level]);
 
   const autoStartRef = useRef(false);
+  // Proactive Shield AudioBridge heal must complete (or time out) before the
+  // recorder first probes the mic — otherwise the recorder silently falls back
+  // to getUserMedia and records silence. bridgeReady gates both start paths.
+  const [bridgeReady, setBridgeReady] = useState(false);
+  const bridgeHealRef = useRef(false);
   const menuNav = React.useContext(MenuNavigationContext);
 
   // Durable recording pipeline: stable sessionId per mount+week.
@@ -164,8 +169,13 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
     dispatchModal({ type: 'CLOSE' });
     autoStartRef.current = false;
     stopRecording();
-    setTimeout(() => { autoStartRef.current = true; startRecording(); }, 100);
-  }, [stopRecording, startRecording]);
+    setTimeout(() => {
+      // Don't re-probe the mic until the proactive heal has settled.
+      if (!bridgeReady) return;
+      autoStartRef.current = true;
+      startRecording();
+    }, 100);
+  }, [stopRecording, startRecording, bridgeReady]);
   useEffect(() => {
     logger.info('mount');
     return () => {
@@ -173,6 +183,22 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       // Stop routing global logs to the weekly-review session file once we leave.
       configure({ context: { sessionLog: false } });
     };
+  }, []);
+
+  // Proactive AudioBridge heal: relaunch the Shield companion from FKB's
+  // foreground BEFORE the recorder probes the mic. Capped at 6s so a slow/dead
+  // Shield never blocks the review — bridgeReady flips true either way.
+  useEffect(() => {
+    if (bridgeHealRef.current) return;
+    bridgeHealRef.current = true;
+    logger.info('bridge-heal.requested');
+    Promise.race([
+      DaylightAPI('/api/v1/device/audio-bridge/heal', { force: false }, 'POST').catch(() => {}),
+      new Promise((r) => setTimeout(r, 6000)),
+    ]).finally(() => {
+      logger.info('bridge-heal.ready');
+      setBridgeReady(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -222,10 +248,13 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
 
   useEffect(() => {
     if (!data || autoStartRef.current) return;
+    // Wait for the proactive AudioBridge heal before probing the mic. The effect
+    // re-runs once bridgeReady flips true.
+    if (!bridgeReady) return;
     autoStartRef.current = true;
     logger.info('recording.auto-start');
     startRecording();
-  }, [data, startRecording]);
+  }, [data, startRecording, bridgeReady]);
 
   // Ref so the audio-recovery and pop-guard effects can read modal.type without
   // taking modal as a dep (which would tear down/restart inner timers on every
@@ -268,6 +297,18 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       dispatchModal({ type: 'OPEN', modal: 'disconnect', payload: { phase: 'reconnecting' } });
       const ok = await reconnect();
       if (ok) {
+        logger.info('disconnect.recovered');
+        dispatchModal({ type: 'CLOSE' });
+        return;
+      }
+      // Reconnect failed — the Shield companion may have lost the mic. Force a
+      // heal (relaunch from FKB foreground), give it a moment, then retry once
+      // more before falling through to finalize-and-exit.
+      logger.warn('bridge-heal.reactive');
+      await DaylightAPI('/api/v1/device/audio-bridge/heal', { force: true }, 'POST').catch(() => {});
+      await new Promise((r) => setTimeout(r, 2500));
+      const ok2 = await reconnect();
+      if (ok2) {
         logger.info('disconnect.recovered');
         dispatchModal({ type: 'CLOSE' });
         return;
