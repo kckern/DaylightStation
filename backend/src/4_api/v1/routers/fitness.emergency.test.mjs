@@ -193,6 +193,32 @@ describe('fitness router — POST /emergency/abort', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ confirmed: false });
   });
+
+  it('disarms the armed abuse commit when an admin confirms the cancel', async () => {
+    const identityRelay = {
+      consumePendingDetection: vi.fn(() => ({ userId: 'alice', at: 1 })),
+      disarmCommit: vi.fn(),
+    };
+    const { app } = appWith({ identityRelay });
+
+    const res = await request(app).post('/emergency/abort').send({});
+
+    expect(res.body).toEqual({ confirmed: true });
+    expect(identityRelay.disarmCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not disarm when no detection is pending', async () => {
+    const identityRelay = {
+      consumePendingDetection: vi.fn(() => null),
+      disarmCommit: vi.fn(),
+    };
+    const { app } = appWith({ identityRelay });
+
+    const res = await request(app).post('/emergency/abort').send({});
+
+    expect(res.body).toEqual({ confirmed: false });
+    expect(identityRelay.disarmCommit).not.toHaveBeenCalled();
+  });
 });
 
 describe('fitness router — POST /emergency/release', () => {

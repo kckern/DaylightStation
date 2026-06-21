@@ -1403,8 +1403,12 @@ export function createFitnessRouter(config) {
    */
   router.post('/emergency/abort', asyncHandler(async (req, res) => {
     const pending = identityRelay?.consumePendingDetection?.(Date.now());
-    if (pending) logger?.info?.('emergency.cancelled', { userId: pending.userId });
-    else logger?.info?.('emergency.cancel_denied', { reason: 'no-pending-detection' });
+    if (pending) {
+      identityRelay?.disarmCommit?.(); // cancel any armed abuse server-commit
+      logger?.info?.('emergency.cancelled', { userId: pending.userId });
+    } else {
+      logger?.info?.('emergency.cancel_denied', { reason: 'no-pending-detection' });
+    }
     res.json({ confirmed: !!pending });
   }));
 
