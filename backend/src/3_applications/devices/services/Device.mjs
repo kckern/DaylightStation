@@ -157,6 +157,22 @@ export class Device {
   }
 
   /**
+   * Heal the companion audio bridge via the content control adapter.
+   * Optional capability — returns { supported: false } when the underlying
+   * content control does not implement it.
+   * @param {Object} [opts] - Forwarded to contentControl.healAudioBridge (e.g. { force }).
+   * @returns {Promise<Object>}
+   */
+  async healAudioBridge(opts = {}) {
+    if (!this.#contentControl?.healAudioBridge) {
+      return { ok: false, supported: false };
+    }
+
+    this.#logger.info?.('device.healAudioBridge', { id: this.#id, force: !!opts.force });
+    return this.#contentControl.healAudioBridge(opts);
+  }
+
+  /**
    * Set volume level
    * @param {number|string} level - Volume level (0-100, '+', '-', 'mute', 'unmute')
    * @returns {Promise<Object>}
