@@ -510,6 +510,108 @@ describe('FullyKioskContentAdapter', () => {
     });
   });
 
+  describe('healAudioBridge', () => {
+    const companionConfig = {
+      ...defaultConfig,
+      launchActivity: 'de.ozerov.fully/.TvActivity',
+      companionApps: ['net.kckern.audiobridge'],
+    };
+
+    it('skips relaunch when companion mic is already healthy (foreground)', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = {
+        connect: vi.fn(async () => ({ ok: true })),
+        shell: vi.fn(async (cmd) => {
+          if (cmd.includes('dumpsys')) {
+            return { ok: true, output: 'ServiceRecord ... allowWhileInUsePermissionInFgs=true ...' };
+          }
+          return { ok: true, output: '' };
+        }),
+        launchActivity: vi.fn(async () => ({ ok: true })),
+      };
+
+      const adapter = new FullyKioskContentAdapter(companionConfig, { httpClient, logger: mockLogger, adbAdapter: mockAdb });
+      const result = await adapter.healAudioBridge();
+
+      expect(result.ok).toBe(true);
+      expect(result.companions).toEqual([
+        { pkg: 'net.kckern.audiobridge', action: 'skipped', reason: 'already-foreground' },
+      ]);
+
+      // No force-stop, no startApplication
+      const forceStop = mockAdb.shell.mock.calls.filter(c => c[0].includes('force-stop'));
+      expect(forceStop).toHaveLength(0);
+      const startApp = httpClient.get.mock.calls.map(c => c[0]).filter(u => u.includes('cmd=startApplication'));
+      expect(startApp).toHaveLength(0);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'fullykiosk.healAudioBridge.skip',
+        expect.objectContaining({ pkg: 'net.kckern.audiobridge' })
+      );
+    });
+
+    it('relaunches companion when mic is unhealthy (force-stop + startApplication)', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = {
+        connect: vi.fn(async () => ({ ok: true })),
+        shell: vi.fn(async (cmd) => {
+          if (cmd.includes('dumpsys')) {
+            // No allowWhileInUsePermissionInFgs=true → unhealthy
+            return { ok: true, output: 'ServiceRecord ... allowWhileInUsePermissionInFgs=false ...' };
+          }
+          return { ok: true, output: '' };
+        }),
+        launchActivity: vi.fn(async () => ({ ok: true })),
+      };
+
+      const adapter = new FullyKioskContentAdapter(companionConfig, { httpClient, logger: mockLogger, adbAdapter: mockAdb });
+      const result = await adapter.healAudioBridge();
+
+      expect(result.ok).toBe(true);
+      expect(result.companions).toEqual([
+        { pkg: 'net.kckern.audiobridge', action: 'relaunched', ok: true },
+      ]);
+
+      expect(mockAdb.shell).toHaveBeenCalledWith('am force-stop net.kckern.audiobridge');
+      const startApp = httpClient.get.mock.calls.map(c => c[0]).filter(u => u.includes('cmd=startApplication'));
+      expect(startApp).toHaveLength(1);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'fullykiosk.healAudioBridge.relaunch',
+        expect.objectContaining({ pkg: 'net.kckern.audiobridge', ok: true })
+      );
+    });
+
+    it('force:true relaunches even when mic is already healthy', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = {
+        connect: vi.fn(async () => ({ ok: true })),
+        shell: vi.fn(async (cmd) => {
+          if (cmd.includes('dumpsys')) {
+            return { ok: true, output: 'allowWhileInUsePermissionInFgs=true' };
+          }
+          return { ok: true, output: '' };
+        }),
+        launchActivity: vi.fn(async () => ({ ok: true })),
+      };
+
+      const adapter = new FullyKioskContentAdapter(companionConfig, { httpClient, logger: mockLogger, adbAdapter: mockAdb });
+      const result = await adapter.healAudioBridge({ force: true });
+
+      expect(result.ok).toBe(true);
+      expect(result.companions).toEqual([
+        { pkg: 'net.kckern.audiobridge', action: 'relaunched', ok: true },
+      ]);
+      expect(mockAdb.shell).toHaveBeenCalledWith('am force-stop net.kckern.audiobridge');
+    });
+
+    it('returns no-companions when companionApps is empty', async () => {
+      const httpClient = createMockHttpClient();
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+      const result = await adapter.healAudioBridge();
+
+      expect(result).toEqual({ ok: true, companions: [], reason: 'no-companions' });
+    });
+  });
+
   describe('loadStartUrl', () => {
     it('should send cmd=loadStartURL to the FKB host:port', async () => {
       const httpClient = createMockHttpClient();

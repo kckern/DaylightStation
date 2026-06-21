@@ -607,20 +607,83 @@ export class FullyKioskContentAdapter {
    */
   async #launchCompanions() {
     for (const pkg of this.#companionApps) {
-      // Force-stop first so the app's Activity recreates the service
-      // with fresh foreground context (restarting over a BootReceiver
-      // instance that has createdFromFg=false).
-      if (this.#adbAdapter) {
-        try {
-          await this.#adbAdapter.shell(`am force-stop ${pkg}`);
-          await new Promise(r => setTimeout(r, 300));
-        } catch (err) {
-          this.#logger.debug?.('fullykiosk.prepareForContent.companionForceStop.failed', { pkg, error: err.message });
-        }
-      }
-      const appResult = await this.#sendCommand('startApplication', { package: pkg });
-      this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
+      await this.#relaunchCompanion(pkg);
     }
+  }
+
+  /**
+   * Force-stop then relaunch a single companion package from FKB's foreground
+   * context. Force-stop first so the app's Activity recreates the service
+   * with fresh foreground context (restarting over a BootReceiver instance
+   * that has createdFromFg=false).
+   * @private
+   * @param {string} pkg - Android package name
+   * @returns {Promise<{pkg: string, ok: boolean}>}
+   */
+  async #relaunchCompanion(pkg) {
+    if (this.#adbAdapter) {
+      try {
+        await this.#adbAdapter.shell(`am force-stop ${pkg}`);
+        await new Promise(r => setTimeout(r, 300));
+      } catch (err) {
+        this.#logger.debug?.('fullykiosk.prepareForContent.companionForceStop.failed', { pkg, error: err.message });
+      }
+    }
+    const appResult = await this.#sendCommand('startApplication', { package: pkg });
+    this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
+    return { pkg, ok: appResult.ok };
+  }
+
+  /**
+   * Check whether a companion's foreground service holds the mic-eligible
+   * foreground privilege (allowWhileInUsePermissionInFgs=true). When false,
+   * an Android-11 background-started service was denied the mic and the
+   * companion must be relaunched from FKB's foreground.
+   * @private
+   * @param {string} pkg - Android package name
+   * @returns {Promise<boolean>} true when the companion's service is healthy
+   */
+  async #isCompanionMicHealthy(pkg) {
+    if (!this.#adbAdapter) return false;
+    const res = await this.#adbAdapter.shell(`dumpsys activity services ${pkg}`);
+    return !!res?.ok && /allowWhileInUsePermissionInFgs=true/.test(res.output || '');
+  }
+
+  /**
+   * On-demand heal of companion audio-bridge apps. Relaunches each companion
+   * from FKB's foreground context (force-stop + startApplication) so its
+   * MICROPHONE foreground service is granted mic access, recovering from the
+   * Android-11 background-start denial. Skips companions already foreground-
+   * healthy unless `force` is set.
+   * @param {Object} [opts]
+   * @param {boolean} [opts.force=false] - Relaunch even when already healthy.
+   * @returns {Promise<{ok: boolean, companions: Array, reason?: string}>}
+   */
+  async healAudioBridge({ force = false } = {}) {
+    if (!this.#companionApps.length) {
+      return { ok: true, companions: [], reason: 'no-companions' };
+    }
+
+    // Pre-connect ADB once (mirrors prepareForContent) so cold-daemon timeouts
+    // don't cascade across dumpsys/force-stop calls.
+    if (this.#adbAdapter) {
+      const c = await this.#adbAdapter.connect();
+      if (!c.ok) this.#logger.warn?.('fullykiosk.healAudioBridge.adbPreconnect.failed', { error: c.error });
+    }
+
+    const companions = [];
+    for (const pkg of this.#companionApps) {
+      if (!force && await this.#isCompanionMicHealthy(pkg)) {
+        companions.push({ pkg, action: 'skipped', reason: 'already-foreground' });
+        this.#logger.info?.('fullykiosk.healAudioBridge.skip', { pkg });
+        continue;
+      }
+      const r = await this.#relaunchCompanion(pkg);
+      companions.push({ pkg, action: 'relaunched', ok: r.ok });
+      this.#logger.info?.('fullykiosk.healAudioBridge.relaunch', { pkg, ok: r.ok });
+    }
+
+    return { ok: companions.every(c => c.action === 'skipped' || c.ok), companions };
   }
 
   /**
