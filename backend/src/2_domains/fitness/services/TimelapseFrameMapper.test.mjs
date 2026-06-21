@@ -83,6 +83,55 @@ test('honors a provided resolveName for participant display names', () => {
   assert.equal(frames[0].participants[0].displayName, 'KC');
 });
 
+test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes', () => {
+  const s = fakeSession();
+  s.timeline.series['bike:7138:rpm'] = JSON.stringify([[66, 12]]);
+  s.timeline.series['bike:49904:rpm'] = JSON.stringify([[0, 12]]);   // idle -> excluded
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    cadenceDevices: { 7138: 'niceday', 49904: 'cycle_ace' },
+    cadenceColors: { 7138: 'orange', 49904: 'yellow' }
+  });
+  const cad = frames[50].cadence;
+  assert.equal(cad.length, 1);
+  assert.equal(cad[0].equipment, 'niceday');
+  assert.equal(cad[0].rpm, 66);
+  assert.equal(cad[0].color, '#ff922b');   // orange via strapColors SSOT
+});
+
+test('prefers group labels when 2+ riders are present (KC -> Dad)', () => {
+  const s = fakeSession();
+  s.roster = [{ id: 'kckern' }, { id: 'felix' }];
+  s.timeline.series['felix:hr'] = JSON.stringify([[120, 12]]);
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    resolveName: (id) => (id === 'kckern' ? 'KC Kern' : id),
+    resolveGroupLabel: (id) => (id === 'kckern' ? 'Dad' : id)   // felix has no label -> returns id
+  });
+  assert.deepEqual(frames[0].participants.map(p => p.displayName), ['Dad', 'felix']);
+});
+
+test('keeps the full name for a solo rider (no group)', () => {
+  const s = fakeSession();
+  s.roster = [{ id: 'kckern' }];
+  const frames = new TimelapseFrameMapper().buildFrames(s, {
+    speedup: 10, outputFps: 10,
+    resolveName: () => 'KC Kern', resolveGroupLabel: () => 'Dad'
+  });
+  assert.equal(frames[0].participants[0].displayName, 'KC Kern');
+});
+
+test('carries the session timezone onto each frame', () => {
+  const s = fakeSession(); s.timezone = 'America/Los_Angeles';
+  const frames = new TimelapseFrameMapper().buildFrames(s, { speedup: 10, outputFps: 10 });
+  assert.equal(frames[0].timezone, 'America/Los_Angeles');
+});
+
+test('no cadence config -> descriptor.cadence is null', () => {
+  const frames = new TimelapseFrameMapper().buildFrames(fakeSession(), { speedup: 10, outputFps: 10 });
+  assert.equal(frames[50].cadence, null);
+});
+
 test('no captures -> empty frame list', () => {
   const mapper = new TimelapseFrameMapper();
   const s = fakeSession(); s.snapshots.captures = [];

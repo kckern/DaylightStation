@@ -262,17 +262,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // Compatibility: synthesize roster from v2 participants if missing
     if ((!Array.isArray(data.roster) || data.roster.length === 0) &&
         data.participants && typeof data.participants === 'object') {
-      data.roster = Object.entries(data.participants)
-        .map(([slug, entry]) => {
-          if (!entry || typeof entry !== 'object') return null;
-          return {
-            name: entry.display_name || slug,
-            hrDeviceId: entry.hr_device || null,
-            isGuest: entry.is_guest === true,
-            isPrimary: entry.is_primary === true
-          };
-        })
-        .filter(Boolean);
+      data.roster = synthesizeRosterFromParticipants(data.participants);
     }
 
     return data;
@@ -675,6 +665,34 @@ export class YamlSessionDatastore extends ISessionDatastore {
     deleteDir(sessionMediaDir);
     this.#invalidateIndexDay(paths.sessionDate, householdId);
   }
+}
+
+/**
+ * Synthesize a normalized roster from the v2 `participants` map (keyed by slug).
+ *
+ * Downstream (TimelapseFrameMapper) keys EVERY per-participant series off the
+ * roster entry's `id` — HR (`{id}:hr`), zone (`{id}:zone`), avatar (`avatarBuffers[id]`),
+ * and the coin curve — and reads the label from `display_name`. The slug IS that id,
+ * so it must be carried through. Dropping it (the previous bug) made every name
+ * resolve to "Unknown" and every HR collapse onto the first participant's series.
+ */
+export function synthesizeRosterFromParticipants(participants) {
+  if (!participants || typeof participants !== 'object') return [];
+  return Object.entries(participants)
+    .map(([slug, entry]) => {
+      if (!entry || typeof entry !== 'object') return null;
+      return {
+        id: slug,
+        name: entry.display_name || slug,
+        display_name: entry.display_name || slug,
+        color: entry.color || null,
+        avatarRef: slug,
+        hrDeviceId: entry.hr_device || null,
+        isGuest: entry.is_guest === true,
+        isPrimary: entry.is_primary === true
+      };
+    })
+    .filter(Boolean);
 }
 
 export default YamlSessionDatastore;

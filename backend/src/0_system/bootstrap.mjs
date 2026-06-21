@@ -31,6 +31,8 @@ import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs'
 import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
 import { StreamAdapter } from '#adapters/content/stream/StreamAdapter.mjs';
+import { YouTubeContentSource } from '#adapters/content/media/youtube/YouTubeContentSource.mjs';
+import { YouTubeAdapter } from '#adapters/content/media/youtube/YouTubeAdapter.mjs';
 import { IframeStreamResolver } from '#adapters/content/stream/resolvers/IframeStreamResolver.mjs';
 import { ScrapeStreamResolver } from '#adapters/content/stream/resolvers/ScrapeStreamResolver.mjs';
 import { YtDlpStreamResolver } from '#adapters/content/stream/resolvers/YtDlpStreamResolver.mjs';
@@ -89,6 +91,7 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
+import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
 import { TrashRetentionSweep } from '#apps/fitness/usecases/TrashRetentionSweep.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
@@ -650,9 +653,21 @@ export function createContentRegistry(config, deps = {}) {
       new YtDlpStreamResolver({ ytDlpAdapter, logger }),
       new IframeStreamResolver(),
     ];
+    const streamAdapter = new StreamAdapter({ resolvers, profiles, fallbackStrategy: 'ytdlp', logger });
     registry.register(
-      new StreamAdapter({ resolvers, profiles, fallbackStrategy: 'ytdlp', logger }),
+      streamAdapter,
       { category: streamManifest.capability, provider: streamManifest.provider }
+    );
+
+    // Register `youtube:<videoId>` content source — routing-safe published
+    // identity for YouTube. Cascades Piped → stream (yt-dlp) → iframe embed.
+    const pipedHost = configService?.resolveServiceUrl?.('piped') || null;
+    const pipedAdapter = pipedHost
+      ? new YouTubeAdapter({ host: pipedHost, logger: logger.child?.({ module: 'youtube-adapter' }) || logger })
+      : null;
+    registry.register(
+      new YouTubeContentSource({ pipedAdapter, streamAdapter, logger }),
+      { category: 'media', provider: 'youtube' }
     );
   }
 
@@ -1130,6 +1145,20 @@ export function createFitnessApiRouter(config) {
     }
     return out;
   };
+  // Equipment (bike) icons by name — media/img/equipment/{name}.{ext} — used to
+  // label each cadence/RPM readout with its device in the recap footer.
+  const equipmentProvider = async (names) => {
+    const out = {};
+    const dir = path.join(configService.getPath('img') || path.join(configService.getMediaDir(), 'img'), 'equipment');
+    const exts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+    for (const name of names || []) {
+      for (const ext of exts) {
+        const p = path.join(dir, `${name}.${ext}`);
+        if (nodeFs.existsSync(p)) { out[name] = nodeFs.readFileSync(p); break; }
+      }
+    }
+    return out;
+  };
   const generateSessionTimelapse = new GenerateSessionTimelapse({
     sessionDatastore: fitnessServices.sessionStore,
     snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, fileIO: nodeFs, logger }),
@@ -1138,7 +1167,16 @@ export function createFitnessApiRouter(config) {
     videoEncoder: new FfmpegVideoAdapter({ logger }),
     posterProvider,
     avatarProvider,
+    equipmentProvider,
     resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
+    // When a group is exercising, prefer each user's short group label (e.g. "Dad").
+    resolveGroupLabel: userService?.resolveGroupLabel ? userService.resolveGroupLabel.bind(userService) : null,
+    // Each rider's real assigned strap colour (fitness.yml device_colors.heart_rate),
+    // keyed by HR device id — the same colours the live fitness UI uses.
+    resolveColor: makeDeviceColorResolver(fitnessConfig?.device_colors?.heart_rate),
+    // Cadence (bike) device → equipment name + per-bike colour, for the RPM readouts.
+    cadenceDevices: fitnessConfig?.devices?.cadence || null,
+    cadenceColors: fitnessConfig?.device_colors?.cadence || null,
     mediaDir: configService.getMediaDir(),
     config: timelapseConfig,
     fileIO: nodeFs,
