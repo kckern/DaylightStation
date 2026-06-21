@@ -153,17 +153,27 @@ const allOk = checks.every(c => c.ok);
 console.log(`--- ${allOk ? 'ALL INVARIANTS PASS' : 'INVARIANT FAILURE — refusing to write'} ---`);
 
 // Build the two output documents.
-function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, treasureBox, captures, memos, keepStrava }) {
+function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, treasureBox, captures, memos }) {
   // Only keep participants who were actually active in THIS part (had HR data).
   // summaryParts.participants is already filtered to hr-present slugs, so a user
   // who joined only during the other part isn't carried in as a no-HR ghost.
+  // Their per-user meta (including any strava block) travels with them, so the
+  // Strava ride naturally lands on whichever part the rider was active in.
+  const allSlugs = Object.keys(doc.participants || {});
   const activeSlugs = new Set(Object.keys(summaryParts.participants || {}));
   const participants = {};
-  for (const [slug, meta] of Object.entries(doc.participants)) {
+  for (const slug of allSlugs) {
     if (!activeSlugs.has(slug)) continue;
-    const copy = { ...meta };
-    if (!keepStrava) delete copy.strava;
-    participants[slug] = copy;
+    participants[slug] = { ...doc.participants[slug] };
+  }
+  // Drop the inactive participants' own series so no orphan (no-HR) user data
+  // lingers in this part. Only user-keyed series are pruned; device/bike/global
+  // series are left intact.
+  const inactive = allSlugs.filter(s => !activeSlugs.has(s));
+  const prunedSeries = {};
+  for (const [key, arr] of Object.entries(series)) {
+    if (inactive.some(s => key.startsWith(`${s}:`))) continue;
+    prunedSeries[key] = arr;
   }
   const summary = { ...summaryParts };
   if (memos.length) summary.voiceMemos = memos; // else omit
@@ -180,9 +190,9 @@ function buildDoc({ id, date, startMs, endMs, series, events, summaryParts, trea
     timezone: tz,
     participants,
     timeline: {
-      series: encodeSeries(series),
+      series: encodeSeries(prunedSeries),
       events,
-      tick_count: Math.max(0, ...Object.values(series).map(a => a.length)),
+      tick_count: Math.max(0, ...Object.values(prunedSeries).map(a => a.length)),
     },
     treasureBox,
     summary,
@@ -210,12 +220,12 @@ if (WRITE) {
   const doc1 = buildDoc({
     id: part1Id, date: doc.session.date, startMs: startAbsMs, endMs: SPLIT_TS,
     series: s1, events: ev1, summaryParts: r1.summary, treasureBox: r1.treasureBox,
-    captures: cap1, memos: memo1, keepStrava: true, // the Strava Ride covers the cycling part
+    captures: cap1, memos: memo1,
   });
   const doc2 = buildDoc({
     id: part2Id, date: newDate, startMs: SPLIT_TS, endMs: endAbsMs,
     series: s2, events: ev2, summaryParts: r2.summary, treasureBox: r2.treasureBox,
-    captures: cap2, memos: memo2, keepStrava: false,
+    captures: cap2, memos: memo2,
   });
 
   const file1 = FILE; // overwrite original (part 1 keeps the id)

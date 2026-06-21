@@ -91,6 +91,19 @@ test('allocateBucketsRedistribute: preserves per-color totals AND per-part coin 
   assert.equal(part2.blue, 0);
 });
 
+test('recomputeSummaryForPart excludes participants below the HR-sample threshold (no-HR ghosts)', () => {
+  const series = {
+    'ghost:hr': [95, null, null, null],          // 1 sample — a blip, not a participant
+    'real:hr':  [120, 121, 122, 123],            // 4 samples — genuinely present
+    'ghost:zone': ['a', null, null, null], 'real:zone': ['a', 'a', 'w', 'w'],
+    'ghost:coins': [0, 0, 0, 0], 'real:coins': [1, 2, 3, 4],
+  };
+  const { summary } = recomputeSummaryForPart({
+    series, slugs: ['ghost', 'real'], events: [], intervalMs: 5000, coinTimeUnitMs: 5000, minHrSamples: 3,
+  });
+  assert.deepEqual(Object.keys(summary.participants), ['real']);
+});
+
 test('recomputeSummaryForPart marks the longest media as primary (so the part stands alone)', () => {
   const series = { 'milo:hr': [120, 130], 'milo:zone': ['a', 'w'], 'milo:coins': [5, 10] };
   const events = [

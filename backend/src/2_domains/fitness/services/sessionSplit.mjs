@@ -161,7 +161,7 @@ export function splitDecodedSeries(decoded, splitTick) {
  * @param {number} args.intervalMs
  * @param {number} args.coinTimeUnitMs
  */
-export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coinTimeUnitMs }) {
+export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coinTimeUnitMs, minHrSamples = 3 }) {
   const intervalSeconds = intervalMs / 1000;
   const participants = {};
   const buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
@@ -172,7 +172,9 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coi
     const zones = (series[`${slug}:zone`] || []).map(normalizeZone);
     const coins = series[`${slug}:coins`] || [];
     const hrValid = hr.filter(v => v != null && v > 0);
-    if (hrValid.length === 0) continue; // participant not active in this part
+    // Require a minimum of real HR samples — a one-or-two-reading blip from a
+    // strap that connected briefly is not a participant in this part.
+    if (hrValid.length < minHrSamples) continue;
 
     const stats = computeParticipantStats({ hr, zones, coins, intervalSeconds, participant: {} });
     const zoneMinutes = {};
