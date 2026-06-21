@@ -314,6 +314,8 @@ describe('scanner-abuse auto-lockdown', () => {
     t = 2000; fail(d.eventBus);
     t = 3000; fail(d.eventBus);
     expect(relay.consumeArmedCommit(3000)).toEqual({ userId: 'abuse-protection', at: 3000 });
+    // Pin the cancellation itself: consuming the token must cancel the armed timer.
+    expect(sched.timers.filter((t) => !t.cancelled)).toHaveLength(0);
     await sched.fire(); // timer was cancelled when the token was consumed
     expect(trigger.execute).not.toHaveBeenCalled();
   });
