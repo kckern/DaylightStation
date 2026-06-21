@@ -1717,6 +1717,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userService,
     loadFitnessConfig: () => loadFitnessConfig(householdId) || {},
     getLockdownState,
+    triggerEmergencyLockdown,
+    serverCommitDelayMs: Number(emergencyConfig?.abuse?.server_commit_delay_ms) > 0
+      ? Number(emergencyConfig.abuse.server_commit_delay_ms)
+      : undefined,
     logger: emergencyLogger,
   });
 
