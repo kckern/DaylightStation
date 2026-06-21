@@ -9,6 +9,16 @@ import { computeParticipantStats } from './SessionStatsService.mjs';
 const CUMULATIVE_SUFFIXES = ['beats', 'coins', 'rotations', 'impacts'];
 const ZONE_COLOR = { cool: 'blue', active: 'green', warm: 'yellow', hot: 'orange', fire: 'red' };
 
+// Persisted `<slug>:zone` series store single-char zone SYMBOLS (see
+// FitnessSession.ZONE_SYMBOL_MAP), not full names. Map them back before stats.
+const ZONE_SYMBOL_TO_NAME = { c: 'cool', a: 'active', w: 'warm', h: 'hot', f: 'fire' };
+
+/** Normalize a zone value (symbol or full name) to its full name; null stays null. */
+export function normalizeZone(z) {
+  if (z == null) return null;
+  return ZONE_SYMBOL_TO_NAME[z] ?? z;
+}
+
 /** A series whose values accumulate monotonically and must rebase to 0 in part 2. */
 export function isCumulativeKey(key) {
   if (typeof key !== 'string') return false;
@@ -18,6 +28,88 @@ export function isCumulativeKey(key) {
 
 export function zoneToColor(zone) {
   return ZONE_COLOR[zone] ?? null;
+}
+
+const BUCKET_COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
+
+/**
+ * Split the ORIGINAL per-color coin buckets between two parts so that:
+ *  - each color total is preserved exactly: part1[c] + part2[c] === orig[c]
+ *  - each part's bucket sum equals its exact coin total (total1 / total2)
+ *  - within those margins, allocation is weighted by each part's actual zone
+ *    activity (est1/est2 estimated buckets); colors with no activity signal
+ *    fall back to each part's share of total coins.
+ *
+ * Per-color buckets cannot be exactly reconstructed from the persisted per-tick
+ * data (coins are colored by the highest zone per award interval, not stored),
+ * so we redistribute the KNOWN originals rather than re-deriving them.
+ *
+ * @returns {{ part1: Record<string, number>, part2: Record<string, number> }}
+ */
+export function allocateBucketsRedistribute(orig, est1, est2, total1, total2) {
+  const O = {};
+  for (const c of BUCKET_COLORS) O[c] = Math.max(0, Math.round(orig?.[c] || 0));
+
+  // Activity-weighted fractional part-1 target per color (seed), summing to total1
+  // via water-filling that respects the [0, O[c]] caps.
+  const seed = {};
+  for (const c of BUCKET_COLORS) {
+    const w1 = est1?.[c] || 0;
+    const w2 = est2?.[c] || 0;
+    const share = (w1 + w2) > 0
+      ? w1 / (w1 + w2)
+      : ((total1 + total2) > 0 ? total1 / (total1 + total2) : 0);
+    seed[c] = O[c] * share;
+  }
+
+  const part1f = {};
+  for (const c of BUCKET_COLORS) part1f[c] = 0;
+  let remaining = total1;
+  let active = BUCKET_COLORS.filter(c => O[c] > 0);
+  for (let iter = 0; iter < 50 && active.length && remaining > 1e-9; iter++) {
+    const dsum = active.reduce((s, c) => s + seed[c], 0);
+    const overflow = [];
+    if (dsum <= 1e-12) {
+      // No activity signal among active colors — fill by remaining capacity.
+      const capSum = active.reduce((s, c) => s + (O[c] - part1f[c]), 0) || 1;
+      for (const c of active) part1f[c] += (O[c] - part1f[c]) * (remaining / capSum);
+      break;
+    }
+    const scale = remaining / dsum;
+    for (const c of active) {
+      const want = part1f[c] + seed[c] * scale;
+      if (want >= O[c]) { part1f[c] = O[c]; overflow.push(c); }
+      else part1f[c] = want;
+    }
+    if (!overflow.length) break;
+    remaining = total1 - BUCKET_COLORS.reduce((s, c) => s + part1f[c], 0);
+    active = active.filter(c => !overflow.includes(c) && (O[c] - part1f[c]) > 1e-9);
+  }
+
+  // Integer rounding that preserves both margins exactly.
+  const part1 = {};
+  let used = 0;
+  for (const c of BUCKET_COLORS) {
+    part1[c] = Math.min(O[c], Math.floor(part1f[c]));
+    used += part1[c];
+  }
+  let leftover = total1 - used;
+  let guard = 0;
+  while (leftover > 0 && guard++ < 100000) {
+    let best = null;
+    for (const c of BUCKET_COLORS) {
+      if (O[c] - part1[c] <= 0) continue;
+      const r = part1f[c] - Math.floor(part1f[c]);
+      if (best === null || r > best.r) best = { c, r };
+    }
+    if (!best) break;
+    part1[best.c] += 1;
+    leftover -= 1;
+  }
+
+  const part2 = {};
+  for (const c of BUCKET_COLORS) part2[c] = O[c] - part1[c];
+  return { part1, part2 };
 }
 
 export function computeSplitTick({ splitTs, startAbsMs, intervalMs }) {
@@ -77,7 +169,7 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coi
 
   for (const slug of slugs) {
     const hr = series[`${slug}:hr`] || [];
-    const zones = series[`${slug}:zone`] || [];
+    const zones = (series[`${slug}:zone`] || []).map(normalizeZone);
     const coins = series[`${slug}:coins`] || [];
     const hrValid = hr.filter(v => v != null && v > 0);
     if (hrValid.length === 0) continue; // participant not active in this part
