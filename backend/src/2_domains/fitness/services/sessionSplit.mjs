@@ -198,22 +198,33 @@ export function recomputeSummaryForPart({ series, slugs, events, intervalMs, coi
   const failed = challengeEvents.filter(e => e?.data?.result === 'failed').length;
 
   const mediaEvents = events.filter(e => e?.type === 'media');
+  const media = mediaEvents.map(e => ({
+    contentId: e.data?.contentId,
+    title: e.data?.title ?? null,
+    mediaType: 'video',
+    showTitle: e.data?.grandparentTitle ?? null,
+    seasonTitle: e.data?.parentTitle ?? null,
+    grandparentId: e.data?.grandparentId ?? null,
+    parentId: e.data?.parentId ?? null,
+    durationMs: (e.data?.start != null && e.data?.end != null) ? Math.max(0, e.data.end - e.data.start) : 0,
+    ...(e.data?.description ? { description: e.data.description } : {}),
+    ...(Array.isArray(e.data?.labels) && e.data.labels.length ? { labels: e.data.labels } : {}),
+  }));
+
+  // Mark the longest-watched media as `primary`. The list/grouping reads this:
+  // a session with a primary video "stands alone" and is NOT merged into an
+  // adjacent block — which is exactly what a deliberate split needs (two cards).
+  let primaryIdx = -1;
+  let primaryDur = -1;
+  media.forEach((m, i) => {
+    if (m.durationMs > primaryDur) { primaryDur = m.durationMs; primaryIdx = i; }
+  });
+  if (primaryIdx >= 0) media[primaryIdx].primary = true;
 
   return {
     summary: {
       participants,
-      media: mediaEvents.map(e => ({
-        contentId: e.data?.contentId,
-        title: e.data?.title ?? null,
-        mediaType: 'video',
-        showTitle: e.data?.grandparentTitle ?? null,
-        seasonTitle: e.data?.parentTitle ?? null,
-        grandparentId: e.data?.grandparentId ?? null,
-        parentId: e.data?.parentId ?? null,
-        durationMs: (e.data?.start != null && e.data?.end != null) ? Math.max(0, e.data.end - e.data.start) : 0,
-        ...(e.data?.description ? { description: e.data.description } : {}),
-        ...(Array.isArray(e.data?.labels) && e.data.labels.length ? { labels: e.data.labels } : {}),
-      })),
+      media,
       coins: { total: totalCoins, buckets },
       challenges: { total: challengeEvents.length, succeeded, failed },
     },

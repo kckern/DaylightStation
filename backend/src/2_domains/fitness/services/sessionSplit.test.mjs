@@ -91,6 +91,18 @@ test('allocateBucketsRedistribute: preserves per-color totals AND per-part coin 
   assert.equal(part2.blue, 0);
 });
 
+test('recomputeSummaryForPart marks the longest media as primary (so the part stands alone)', () => {
+  const series = { 'milo:hr': [120, 130], 'milo:zone': ['a', 'w'], 'milo:coins': [5, 10] };
+  const events = [
+    { type: 'media', timestamp: 1, data: { contentId: 'plex:1', grandparentTitle: 'Short Show', start: 0, end: 60000 } },
+    { type: 'media', timestamp: 2, data: { contentId: 'plex:2', grandparentTitle: 'Long Show', start: 60000, end: 600000 } },
+  ];
+  const { summary } = recomputeSummaryForPart({ series, slugs: ['milo'], events, intervalMs: 5000, coinTimeUnitMs: 5000 });
+  const primaries = summary.media.filter(m => m.primary === true);
+  assert.equal(primaries.length, 1, 'exactly one primary');
+  assert.equal(primaries[0].contentId, 'plex:2', 'longest-duration media is primary');
+});
+
 test('allocateBucketsRedistribute: zero-weight color falls back to coin-share', () => {
   const orig = { blue: 0, green: 0, yellow: 0, orange: 0, red: 30 };
   const est1 = { red: 0 }, est2 = { red: 0 }; // no activity signal for red
