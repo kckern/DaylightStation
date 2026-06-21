@@ -1,5 +1,6 @@
 import { decodeSeries } from './TimelineService.mjs';
 import { FrameDescriptor } from '#domains/fitness/value-objects/FrameDescriptor.mjs';
+import { cssColorForStrap } from '#domains/fitness/strapColors.mjs';
 
 /**
  * Pure domain service: maps persisted session data into an ordered list of
@@ -16,7 +17,7 @@ export class TimelapseFrameMapper {
    * @param {{speedup:number, outputFps:number, resolveName?:(slug:string)=>string}} spec
    * @returns {FrameDescriptor[]}
    */
-  buildFrames(session, { speedup, outputFps, resolveName = null }) {
+  buildFrames(session, { speedup, outputFps, resolveName = null, resolveColor = null, resolveGroupLabel = null, cadenceDevices = null, cadenceColors = null }) {
     const captures = session?.snapshots?.captures || [];
     if (!captures.length) return [];
 
@@ -48,6 +49,13 @@ export class TimelapseFrameMapper {
     // participation and normalizing the cumulative curve to end at totalCoins.
     const totalCoins = Number.isFinite(session?.treasureBox?.totalCoins) ? session.treasureBox.totalCoins : 0;
     const coinCurve = buildCoinCurve(decoded, roster, totalCoins);
+    const idColors = assignIdentityColors(roster.map(p => p.id));
+    const chartBase = buildChart(decoded, roster, resolveColor);
+    const cadenceBases = buildCadenceBases(decoded, cadenceDevices, cadenceColors);
+    // 2+ riders → prefer each user's short GROUP LABEL (e.g. "Dad" for kckern),
+    // mirroring the live UI's shouldPreferGroupLabels. Solo session keeps full names.
+    const preferGroup = roster.length >= 2;
+    const tz = typeof session?.timezone === 'string' ? session.timezone : null;
 
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
@@ -59,13 +67,10 @@ export class TimelapseFrameMapper {
       const player = nearestByTimestamp(playerCaptures, wallClockMs);
       const media = activeMedia(mediaEvents, wallClockMs);
 
-      const participants = roster.map(p => ({
+      const participants = roster.map((p, idx) => ({
         id: p.id,
-        // Honor the persisted resolver output first (display_name), then the
-        // injected backend resolver (userService), then the slug — mirrors
-        // FitnessReceiptRenderer's name chain.
-        displayName: p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id,
-        color: p.color || null,
+        displayName: pickName(p, preferGroup, resolveGroupLabel, resolveName),
+        color: colorForParticipant(p, idColors, resolveColor),
         avatarRef: p.avatarRef || p.avatar || p.id,
         hr: valueAtTick(decoded, hrKeyFor(decoded, p.id), tickIndex),
         zone: valueAtTick(decoded, `${p.id}:zone`, tickIndex)
@@ -83,11 +88,108 @@ export class TimelapseFrameMapper {
         participants,
         zone: zoneAtTick(decoded, roster, tickIndex),
         rpm: rpmKey ? valueAtTick(decoded, rpmKey, tickIndex) : null,
-        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount)
+        coins: coinsAt(coinCurve, tickIndex, totalCoins, i, frameCount),
+        chart: chartFor(chartBase, participants, tickIndex),
+        cadence: cadenceAt(cadenceBases, tickIndex),
+        timezone: tz
       }));
     }
     return frames;
   }
+}
+
+// Identity palette + assignment — MUST mirror the frontend SSOT
+// (frontend/src/modules/Fitness/lib/participantColors.js) so the recap uses each
+// user's SAME assigned colour as the live UI. Colours are assigned by SORTED
+// participant id, so a given roster always yields the same colours.
+const IDENTITY_PALETTE = ['#b388ff', '#ff6fd8', '#00bfa5', '#8c9eff', '#a1887f', '#26c6da'];
+function assignIdentityColors(ids) {
+  const clean = [...new Set((ids || []).filter(Boolean).map(String))].sort((a, b) => a.localeCompare(b));
+  const map = new Map();
+  clean.forEach((id, i) => map.set(id, IDENTITY_PALETTE[i % IDENTITY_PALETTE.length]));
+  return map;
+}
+
+// Participant label: when a group is present, prefer the resolved GROUP LABEL
+// (e.g. "Dad"); otherwise the persisted display name, the injected resolver, then
+// the slug. resolveGroupLabel returns the id unchanged when there's no profile, so
+// that case falls through to the normal name.
+function pickName(p, preferGroup, resolveGroupLabel, resolveName) {
+  const base = p.display_name || p.displayName || (resolveName ? resolveName(p.id) : null) || p.id;
+  if (preferGroup && resolveGroupLabel) {
+    const g = resolveGroupLabel(p.id);
+    if (g && g !== p.id) return g;
+  }
+  return base;
+}
+
+// A participant's display colour: an explicit roster colour, else their real
+// assigned strap colour (resolved from the HR device), else the identity fallback.
+function colorForParticipant(p, idColors, resolveColor) {
+  return p.color
+    || (resolveColor ? resolveColor(p.hrDeviceId ?? p.hr_device) : null)
+    || idColors.get(p.id);
+}
+
+// Simplified FitnessChart payload: per-participant cumulative-coins series (the
+// "race" the chart visualises). The series arrays are shared across every frame
+// (cheap); only `tick` + the per-participant live zone change frame to frame.
+const COIN_RATE = { rest: 0, c: 0, cool: 0, a: 1, active: 1, w: 3, warm: 3, h: 5, hot: 5, m: 7, max: 7, f: 7, fire: 7 };
+function cumulativeFromZone(zones) {
+  if (!Array.isArray(zones)) return null;
+  const out = []; let run = 0;
+  for (const z of zones) { run += COIN_RATE[String(z).toLowerCase()] ?? 0; out.push(run); }
+  return out;
+}
+function buildChart(decoded, roster, resolveColor = null) {
+  if (!roster.length) return null;
+  const idColors = assignIdentityColors(roster.map(p => p.id));
+  const series = roster.map(p => {
+    let coins = decoded[`${p.id}:coins`];
+    if (!Array.isArray(coins) || !coins.length) coins = cumulativeFromZone(decoded[`${p.id}:zone`]) || [];
+    return { id: p.id, color: colorForParticipant(p, idColors, resolveColor), coins };
+  });
+  const totalTicks = series.reduce((m, s) => Math.max(m, s.coins.length), 0);
+  let maxCoins = 0;
+  for (const s of series) for (const v of s.coins) if (v != null && v > maxCoins) maxCoins = v;
+  return (totalTicks && maxCoins > 0) ? { totalTicks, maxCoins, series } : null;
+}
+function chartFor(base, participants, tick) {
+  if (!base) return null;
+  return {
+    tick,
+    totalTicks: base.totalTicks,
+    maxCoins: base.maxCoins,
+    series: base.series.map((s, i) => ({ id: s.id, color: s.color, coins: s.coins, zone: participants[i]?.zone ?? null }))
+  };
+}
+
+// Cadence/equipment: each `bike:{deviceId}:rpm` series → its equipment name + the
+// bike's assigned cadence colour (fitness.yml devices.cadence + device_colors.cadence).
+// The equipment icon (rendered later) identifies WHICH device each RPM belongs to.
+function buildCadenceBases(decoded, cadenceDevices, cadenceColors) {
+  if (!cadenceDevices) return null;
+  const get = (map, id) => (map ? (map[id] ?? map[Number(id)]) : undefined);
+  const bases = [];
+  for (const key of Object.keys(decoded)) {
+    const m = key.match(/^bike:(.+):rpm$/);
+    if (!m || !Array.isArray(decoded[key])) continue;
+    const deviceId = m[1];
+    const equipment = get(cadenceDevices, deviceId) || null;
+    if (!equipment) continue;
+    bases.push({ deviceId, series: decoded[key], equipment, color: cssColorForStrap(get(cadenceColors, deviceId)) || null });
+  }
+  return bases.length ? bases : null;
+}
+function cadenceAt(bases, tick) {
+  if (!bases) return null;
+  const out = [];
+  for (const b of bases) {
+    const rpm = b.series[tick];
+    if (rpm == null || rpm <= 0) continue;
+    out.push({ deviceId: b.deviceId, equipment: b.equipment, color: b.color, rpm });
+  }
+  return out.length ? out : null;
 }
 
 // Per-tick earning weight by zone, accumulated and normalized to totalCoins.

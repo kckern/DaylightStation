@@ -18,7 +18,8 @@ export class GenerateSessionTimelapse {
   async execute({ sessionId, householdId, force = false }) {
     const {
       sessionDatastore, snapshotStore, frameMapper, frameRenderer,
-      videoEncoder, posterProvider, avatarProvider, resolveName,
+      videoEncoder, posterProvider, avatarProvider, equipmentProvider,
+      resolveName, resolveColor, resolveGroupLabel, cadenceDevices, cadenceColors,
       mediaDir, config, fileIO, logger
     } = this.#d;
 
@@ -70,7 +71,12 @@ export class GenerateSessionTimelapse {
     const cameraCount = allCaptures.filter(c => (c.role || 'camera') === 'camera').length;
     const playerCount = allCaptures.filter(c => c.role === 'player').length;
 
-    const descriptors = frameMapper.buildFrames(data, { speedup, outputFps: fps, resolveName: resolveName || null });
+    const descriptors = frameMapper.buildFrames(data, {
+      speedup, outputFps: fps,
+      resolveName: resolveName || null, resolveColor: resolveColor || null,
+      resolveGroupLabel: resolveGroupLabel || null,
+      cadenceDevices: cadenceDevices || null, cadenceColors: cadenceColors || null
+    });
     if (!descriptors.length) {
       session.markTimelapseSkipped('no-captures');
       await sessionDatastore.save(session, householdId);
@@ -99,6 +105,7 @@ export class GenerateSessionTimelapse {
 
       stage = 'avatars';
       const avatarBuffers = avatarProvider ? (await avatarProvider(uniqueParticipantIds(descriptors)) || {}) : {};
+      const equipmentBuffers = equipmentProvider ? (await equipmentProvider(uniqueEquipment(descriptors)) || {}) : {};
       const posterCache = new Map();
       const bufCache = new Map(); // absolutePath -> Buffer (many output frames reuse one capture)
 
@@ -120,7 +127,7 @@ export class GenerateSessionTimelapse {
         }
         const posterBuffer = await resolvePoster(d, posterCache, posterProvider, logger);
         if (posterBuffer) posterUsed = true;
-        const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, descriptor: d });
+        const frameBuffer = await frameRenderer.renderFrame({ cameraBuffer, playerBuffer, posterBuffer, avatarBuffers, equipmentBuffers, descriptor: d });
         const name = `frame_${String(written).padStart(5, '0')}.jpg`;
         fileIO.writeFileSync(path.join(tmpDir, name), frameBuffer);
         written++;
@@ -141,34 +148,30 @@ export class GenerateSessionTimelapse {
       await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20 });
       const encodeMs = Date.now() - encodeStart;
 
-      stage = 'confirm-mp4';
-      // Confirm the encoder actually produced a real video before we touch the raw
-      // frames. The frames are only ever cleaned up once the MP4 is on disk and
-      // non-empty — if encoding silently produced nothing, we fail and KEEP the
-      // frames so a later retry can succeed.
-      let sizeBytes = null;
-      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* missing → fail below */ }
-      if (!sizeBytes || sizeBytes <= 0) {
-        throw new Error('mp4-not-confirmed');
-      }
-
       stage = 'persist';
       const durationSeconds = Math.round(written / fps);
       const relPath = path.relative(mediaDir, outputPath);
+      let sizeBytes = null;
+      try { sizeBytes = fileIO.statSync(outputPath)?.size ?? null; } catch { /* best-effort */ }
+      // Confirm the MP4 actually landed BEFORE we touch the source frames. If the
+      // encode silently produced nothing, fail here — the catch leaves the captures
+      // untouched (it only removes the temp dir), so a re-run can retry instead of
+      // destroying the only copy of the screenshots.
+      if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
       session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
       await sessionDatastore.save(session, householdId);
 
       stage = 'cleanup';
-      // Soft-delete: MOVE the raw frames into the media `_trash` (never a hard rm).
-      // The MP4 above is the durable artifact; the frames stay recoverable in
-      // `_trash` until the retention sweep ages them out (7 days). This runs only
-      // AFTER the MP4 is confirmed and the session record is saved.
-      await snapshotStore.moveToTrash(sessionId, householdId);
+      // Default to ARCHIVING the source frames (screenshots -> screenshots_archive)
+      // so a recap can always be regenerated later; set `archive_frames: false` to
+      // hard-delete (saves disk, but the recap can never be re-rendered).
+      const archiveFrames = config.archive_frames !== false;
+      await snapshotStore.cleanup(sessionId, householdId, { archive: archiveFrames });
       safeRm(fileIO, tmpDir);
       logger.info?.('fitness.timelapse.ready', {
         sessionId, videoPath: session.timelapse.videoPath, frames: written,
         durationSeconds, fps, sizeBytes, encodeMs, totalMs: Date.now() - startedAt,
-        framesTrashed: true
+        archivedFrames: archiveFrames
       });
       return { status: 'ready', ...session.timelapse };
     } catch (err) {
@@ -203,6 +206,11 @@ async function resolvePoster(d, cache, provider, logger) {
 function uniqueParticipantIds(descriptors) {
   const s = new Set();
   descriptors.forEach(d => (d.participants || []).forEach(p => s.add(p.id)));
+  return [...s];
+}
+function uniqueEquipment(descriptors) {
+  const s = new Set();
+  descriptors.forEach(d => (d.cadence || []).forEach(c => { if (c.equipment) s.add(c.equipment); }));
   return [...s];
 }
 function pickCapture(sorted, ts) {

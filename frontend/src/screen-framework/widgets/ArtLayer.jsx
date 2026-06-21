@@ -9,7 +9,7 @@
 import React, { useMemo, useRef } from 'react';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import { artLayout } from './artLayout.js';
-import { objectFitWindows } from './artModes.js';
+import { objectFitWindows, cropFocus } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import smartquotes from 'smartquotes';
 
@@ -96,6 +96,7 @@ export default function ArtLayer({
                  style={{ height: `${layout.panels[i].heightPct}%`, aspectRatio: String(layout.panels[i].boxAspect) }}>
               <img className="artmode__image" data-testid={testid('artmode-image', i)}
                    src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                   style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
                    onLoad={handleLoaded} onError={handleLoaded} />
               <span className="artmode__cut" aria-hidden="true" />
             </div>
@@ -111,6 +112,7 @@ export default function ArtLayer({
             <img className={`artmode__fitimage artmode__fitimage--${mode.fit}`}
                  data-testid={testid('artmode-image', i)}
                  src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
+                 style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
                  onLoad={handleLoaded} onError={handleLoaded} />
           </div>
         );
