@@ -28,8 +28,19 @@ holds no locks). On `emergency.abuse.threshold` failures within
 DEFCON screen, cancel window, then commit + `garage_deactivate`. An **admin scan
 during the ceremony still aborts it**, so a false positive is recoverable. A
 recognized member holding ≥1 lock (incl. admins) is "safe" and resets the streak.
-The lock records `lockedBy: abuse-protection`. The trip is decided server-side
-(the relay), then broadcast as `fitness.emergency.ceremony` to start the overlay.
+
+The trip is decided server-side: the relay **arms a server-authoritative commit**
+and broadcasts `fitness.emergency.ceremony` to start the overlay. The lock no
+longer depends on the browser finishing its ceremony — if the kiosk commits first
+(normal case) it locks immediately; otherwise the relay commits the lockdown
+itself `emergency.abuse.server_commit_delay_ms` after the trip (default 25s). An
+admin abort during the ceremony disarms this server commit — but only if it lands
+within `server_commit_delay_ms`; a slow abort (e.g. dithering in the cancel modal
+past that window) locks anyway, which is the safe direction and recoverable by an
+admin re-scan to release. The lock records `lockedBy: abuse-protection`.
+`/emergency/commit` is idempotent (an already-active lock returns the current
+state, never a 409), so a late or duplicate browser commit can never bounce the
+kiosk out of LOCKED.
 
 ## The sequence
 
@@ -65,6 +76,7 @@ emergency:
     enabled: true                    # set false to disable entirely
     threshold: 3                     # failed scans to trip
     window_sec: 30                   # sliding window for the count
+    server_commit_delay_ms: 25000    # server-side fallback commit delay after a trip
   arming:                            # hardware hedge for the always-armed reader
     inter_arm_idle_ms: 1000          # rest between re-arms (0 = continuous)
     # active_hours: { start: 6, end: 24 }   # optional: only arm 6am–midnight local
