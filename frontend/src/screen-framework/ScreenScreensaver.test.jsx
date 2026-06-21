@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { ScreenOverlayProvider } from './overlays/ScreenOverlayProvider.jsx';
-import { MenuNavigationProvider } from '../context/MenuNavigationContext.jsx';
+import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
 import { getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
 
@@ -9,10 +9,19 @@ function DummyArt() {
   return <div data-testid="dummy-art">art</div>;
 }
 
+// Captures the live MenuNavigation context so tests can push/pop nav-stack
+// content (e.g. a player) the way MenuStack does in production.
+let navApi = null;
+function NavCapture() {
+  navApi = useMenuNavigationContext();
+  return null;
+}
+
 const renderWithProviders = (config) =>
   render(
     <MenuNavigationProvider>
       <ScreenOverlayProvider>
+        <NavCapture />
         <ScreenScreensaver config={config} />
       </ScreenOverlayProvider>
     </MenuNavigationProvider>
@@ -27,6 +36,7 @@ describe('ScreenScreensaver', () => {
   afterEach(() => {
     vi.useRealTimers();
     resetWidgetRegistry();
+    navApi = null;
   });
 
   it('shows the screensaver widget after the idle timeout', () => {
@@ -60,6 +70,33 @@ describe('ScreenScreensaver', () => {
     act(() => { vi.advanceTimersByTime(3000); }); // 6s total, but timer was reset at 3s
     expect(queryByTestId('dummy-art')).toBeNull();
     act(() => { vi.advanceTimersByTime(1000); }); // now 4s since reset
+    expect(queryByTestId('dummy-art')).toBeTruthy();
+  });
+
+  it('does NOT show while active content (a player) is on the nav stack', () => {
+    const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 2, showOnLoad: false });
+    // Production mounts the readalong/Player as a nav-stack push, NOT a fullscreen
+    // overlay — so hasOverlay stays false. The screensaver must still be suppressed.
+    act(() => { navApi.push({ type: 'player', props: {} }); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(queryByTestId('dummy-art')).toBeNull();
+  });
+
+  it('shows after returning from content to the menu', () => {
+    const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 2, showOnLoad: false });
+    act(() => { navApi.push({ type: 'player', props: {} }); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(queryByTestId('dummy-art')).toBeNull(); // suppressed while playing
+    act(() => { navApi.reset(); });                // content closed → back to menu
+    act(() => { vi.advanceTimersByTime(2000); });   // idle elapses on the menu
+    expect(queryByTestId('dummy-art')).toBeTruthy();
+  });
+
+  it('still shows while only a menu is on the nav stack', () => {
+    const { queryByTestId } = renderWithProviders({ widget: 'art', idle: 2, showOnLoad: false });
+    // A menu is a browse surface — idle there is exactly when the screensaver SHOULD fire.
+    act(() => { navApi.push({ type: 'menu', props: {} }); });
+    act(() => { vi.advanceTimersByTime(2000); });
     expect(queryByTestId('dummy-art')).toBeTruthy();
   });
 

@@ -13,10 +13,21 @@ function logger() {
 
 const ACTIVITY_EVENTS = ['keydown', 'pointerdown', 'click'];
 
+// Nav-stack surfaces that are "browsing" — an idle one of these is exactly when
+// the screensaver SHOULD fire. Anything else on the stack (player, app, display,
+// launch, android-launch, future content types) is active content that must
+// suppress the screensaver. Default-suppress is the safe bias: a new content
+// type should never silently get bumped off by the screensaver.
+const BROWSE_NAV_TYPES = new Set(['menu', 'plex-menu', 'show-view', 'season-view']);
+
 /**
  * ScreenScreensaver — renderless controller that shows a configured widget as a
- * lowest-priority fullscreen overlay on idle / at boot. Suppressed while another
- * fullscreen overlay (player/piano/camera) is active. The idle timer restarts
+ * lowest-priority fullscreen overlay on idle / at boot. The screensaver is
+ * reserved for an idle *menu* — it is suppressed whenever content is active,
+ * either as a fullscreen overlay (piano/camera/overlay-mounted player) OR as a
+ * nav-stack surface (the readalong/Player is pushed onto MenuNavigation, which
+ * does NOT register as a fullscreen overlay). Only browse surfaces (the base
+ * panels and menu views) let the idle timer fire. The idle timer restarts
  * whenever the screensaver closes.
  *
  * Two dismissal modes:
@@ -35,7 +46,11 @@ const ACTIVITY_EVENTS = ['keydown', 'pointerdown', 'click'];
  */
 export function ScreenScreensaver({ config }) {
   const { showOverlay, dismissOverlay, hasOverlay } = useScreenOverlay();
-  const { reset } = useMenuNavigationContext();
+  const { reset, currentContent } = useMenuNavigationContext();
+
+  // Active content = a non-browse surface on the nav stack (e.g. the readalong
+  // Player). Such content does NOT set hasOverlay, so it must be gated here too.
+  const contentActive = !!currentContent && !BROWSE_NAV_TYPES.has(currentContent.type);
 
   const widgetKey = config?.widget ?? null;
   const idleSeconds = config?.idle ?? 120;
@@ -43,9 +58,11 @@ export function ScreenScreensaver({ config }) {
   const interactive = config?.interactive ?? false;
   const propsJson = JSON.stringify(config?.props ?? {});
 
-  // Read latest hasOverlay without re-running the effect.
+  // Read latest suppression signals without re-running the effect.
   const hasOverlayRef = useRef(hasOverlay);
   hasOverlayRef.current = hasOverlay;
+  const contentActiveRef = useRef(contentActive);
+  contentActiveRef.current = contentActive;
 
   useEffect(() => {
     if (!widgetKey) return undefined;
@@ -83,7 +100,9 @@ export function ScreenScreensaver({ config }) {
 
     function show() {
       if (shown) return;
-      if (hasOverlayRef.current) { schedule(); return; } // suppressed by active overlay
+      // Suppressed while content is active — a fullscreen overlay OR a nav-stack
+      // player/app/etc. Reschedule so it re-checks once content ends.
+      if (hasOverlayRef.current || contentActiveRef.current) { schedule(); return; }
       const Component = getWidgetRegistry().get(widgetKey);
       if (!Component) { logger().warn('screensaver.widget-not-found', { widget: widgetKey }); return; }
       reset?.();
