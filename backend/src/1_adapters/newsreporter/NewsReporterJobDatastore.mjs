@@ -30,24 +30,29 @@ export class NewsReporterJobDatastore extends IJobDatastore {
   }
 
   /**
+   * Enabled reporters as `[id, reporter]` pairs, re-read from config each call.
+   * Single source of truth for both loadJobs() and reporterIds().
+   * @returns {Array<[string, object]>}
+   */
+  #enabledReporters() {
+    const reporters = this.#configService.getHouseholdAppConfig(null, BUCKET) || {};
+    return Object.entries(reporters).filter(([, reporter]) => reporter && reporter.enabled !== false);
+  }
+
+  /**
    * @returns {Promise<Job[]>} one Job per enabled reporter
    */
   async loadJobs() {
-    const reporters = this.#configService.getHouseholdAppConfig(null, BUCKET) || {};
-    const jobs = [];
-    for (const [id, reporter] of Object.entries(reporters)) {
-      if (!reporter || reporter.enabled === false) continue;
-      jobs.push(
-        Job.fromObject({
-          id,
-          name: `${BUCKET}:${id}`,
-          schedule: reporter.schedule,
-          enabled: reporter.enabled !== false,
-          timeout: REPORTER_TIMEOUT_MS,
-          bucket: BUCKET,
-        })
-      );
-    }
+    const jobs = this.#enabledReporters().map(([id, reporter]) =>
+      Job.fromObject({
+        id,
+        name: `${BUCKET}:${id}`,
+        schedule: reporter.schedule,
+        enabled: reporter.enabled !== false,
+        timeout: REPORTER_TIMEOUT_MS,
+        bucket: BUCKET,
+      })
+    );
     this.#logger.info?.('scheduler.jobStore.newsreporter_loaded', { count: jobs.length });
     return jobs;
   }
@@ -63,17 +68,13 @@ export class NewsReporterJobDatastore extends IJobDatastore {
 
   /**
    * Enabled reporter ids, re-read each call so new reporters register without a
-   * restart. Consumed by NewsReporterJobExecutor.canHandle().
-   * @returns {Promise<Set<string>>}
+   * restart. SYNCHRONOUS — the executor's canHandle() guards on `instanceof Set`,
+   * so a Promise would silently disable dispatch. Consumed by
+   * NewsReporterJobExecutor.canHandle().
+   * @returns {Set<string>}
    */
-  async reporterIds() {
-    const reporters = this.#configService.getHouseholdAppConfig(null, BUCKET) || {};
-    const ids = new Set();
-    for (const [id, reporter] of Object.entries(reporters)) {
-      if (!reporter || reporter.enabled === false) continue;
-      ids.add(id);
-    }
-    return ids;
+  reporterIds() {
+    return new Set(this.#enabledReporters().map(([id]) => id));
   }
 }
 
