@@ -68,4 +68,32 @@ describe('admin art router', () => {
     const res = await request(app).get('/art/works?source=..%2f..%2f..%2fetc');
     expect(res.status).toBe(400);
   });
+
+  // A known collection name matches by RULE or hand-tag — so rule-based members are
+  // curatable, not just hand-tagged ones — and hidden members are still listed.
+  it('tag filter matches a known collection by rule OR hand-tag (hidden still listed)', async () => {
+    await writeWork('gamma', "date: '1500'\ntags:\n  - impressionism\n"); // tagged, out of date range
+    await writeWork('delta', "date: '1500'\n");                            // neither rule nor tag
+    const colApp = express();
+    colApp.use(express.json());
+    colApp.use('/art', createAdminArtRouter({
+      mediaPath, logger: noop,
+      getCollections: async () => ({ impressionism: { dateMin: 1860, dateMax: 1900 } }),
+    }));
+    const res = await request(colApp).get('/art/works?tag=impressionism');
+    // alpha+beta match the 1860-1900 rule (beta hidden, still listed), gamma by tag; delta excluded.
+    expect(res.body.works.map((w) => w.id).sort()).toEqual(['alpha', 'beta', 'gamma']);
+  });
+
+  it('tag filter falls back to a plain hand-tag match for a non-collection tag', async () => {
+    await writeWork('tagged', "date: '1500'\ntags:\n  - misc\n");
+    const colApp = express();
+    colApp.use(express.json());
+    colApp.use('/art', createAdminArtRouter({
+      mediaPath, logger: noop,
+      getCollections: async () => ({ impressionism: { dateMin: 1860, dateMax: 1900 } }),
+    }));
+    const res = await request(colApp).get('/art/works?tag=misc');
+    expect(res.body.works.map((w) => w.id)).toEqual(['tagged']);
+  });
 });
