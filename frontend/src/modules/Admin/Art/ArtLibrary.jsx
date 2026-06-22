@@ -40,6 +40,11 @@ export default function ArtLibrary() {
     flash();
   }, [mutate, flash]);
 
+  const setCrop = useCallback(async (crop) => {
+    await mutate({ crop });
+    flash();
+  }, [mutate, flash]);
+
   const onAction = useCallback(async (a) => {
     if (!a) return;
     // Logged at info so every action is visible in prod logs (not just debug) —
@@ -149,14 +154,14 @@ export default function ArtLibrary() {
       </Group>
 
       <div className="art-library__legend">
-        ←/→ cycle · Enter grid/loupe · click image region (or numpad) sets crop anchor
+        ←/→ cycle · Enter grid/loupe · drag the crop window (or “Don’t crop”) to set cropping
         {quickTags.length ? ` · 1–${quickTags.length} quick-tag` : ''} · X hide · F flag · E edit · A auto-advance · U undo
       </div>
 
       <ArtErrorBoundary>
         {loading ? <div className="art-library__loading">Loading…</div>
           : view === 'loupe'
-            ? <Loupe work={focused} total={works.length} index={index} saved={saved} onAnchor={setAnchor} />
+            ? <Loupe work={focused} total={works.length} index={index} saved={saved} onAnchor={setAnchor} onCrop={setCrop} />
             : <GridView works={works} index={index} onPick={(i) => { goto(i); setView('loupe'); }} />}
       </ArtErrorBoundary>
     </div>

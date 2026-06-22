@@ -8,6 +8,19 @@ import { Jimp } from 'jimp';
 import { isMember } from '../collections.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+
+// Normalize a raw metadata `crop` into { enabled, top, bottom, left, right } or null.
+// enabled defaults true when a crop object exists; margins are numbers or null.
+function normalizeCrop(raw) {
+  if (raw == null || typeof raw !== 'object') return null;
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  return {
+    enabled: raw.enabled === false ? false : true,
+    top: num(raw.top), bottom: num(raw.bottom),
+    left: num(raw.left), right: num(raw.right),
+  };
+}
+
 // Orientation split: anything at least as wide as it is tall hangs as a single
 // landscape; only true portraits (taller than wide) are eligible to pair into a
 // diptych. Near-square works (e.g. ratio ~1.3) are landscapes, not portraits.
@@ -38,6 +51,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
     section: meta.section ?? null, crop_anchor: meta.crop_anchor ?? null,
     tags: meta.tags ?? [], exclude: meta.exclude ?? [],
     hidden: meta.hidden === true, flagged: meta.flagged === true,
+    crop: meta.crop ?? null,
     width: meta.width, height: meta.height,
   });
 
@@ -65,6 +79,7 @@ export function createArtSource({ imgBasePath, logger = console }) {
         // Hand-curation (ArtMode admin). tags/exclude are collection-name lists.
         tags: arr(p.tags), exclude: arr(p.exclude),
         hidden: p.hidden === true, flagged: p.flagged === true,
+        crop: normalizeCrop(p.crop),
         width: toInt(p.width), height: toInt(p.height),
       };
     } catch (err) {

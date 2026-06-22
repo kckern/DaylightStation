@@ -60,4 +60,12 @@ describe('ArtLibrary', () => {
     await waitFor(() =>
       expect(api.mock.calls.some(([p]) => typeof p === 'string' && p.includes('q=monet'))).toBe(true));
   });
+
+  it('toggling "Don\'t crop" PATCHes crop.enabled:false', async () => {
+    renderLib();
+    await waitFor(() => expect(screen.getByText('Sunrise')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/don.t crop/i));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith('api/v1/admin/art/works/a', { crop: { enabled: false } }, 'PATCH'));
+  });
 });
