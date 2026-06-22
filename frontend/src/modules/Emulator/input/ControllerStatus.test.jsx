@@ -63,4 +63,46 @@ describe('ControllerStatus', () => {
     expect(empty.textContent).toContain('keyboard always works');
     expect(empty.textContent).toContain('Enter = Start');
   });
+
+  it('omits the OS badge entirely when btInventory is absent (browser-only mode)', () => {
+    const getGamepads = () => [pad({ index: 0, id: '8BitDo SN30 Pro' })];
+    let container;
+    act(() => {
+      ({ container } = render(<ControllerStatus controllers={controllers} getGamepads={getGamepads} />));
+    });
+    // Browser badge still works exactly as before.
+    const knownRow = container.querySelector('[data-controller-id="8bitdo_sn30"]');
+    expect(knownRow.textContent).toContain('1 of 1 connected');
+    // No OS column anywhere.
+    expect(container.querySelector('.ccs-os-badge')).toBeNull();
+  });
+
+  it('renders an OS badge with battery when btInventory matches by MAC', () => {
+    const ctrls = [
+      { id: '8bitdo_sn30', label: '8BitDo SN30 Pro', match: '8BitDo', address: 'AA:BB:CC:DD:EE:FF' },
+      { id: 'xbox', label: 'Xbox Wireless', match: 'Xbox', address: '11:22:33:44:55:66' },
+    ];
+    const btInventory = [
+      { address: 'aa:bb:cc:dd:ee:ff', name: '8BitDo', connected: true, battery: 75 },
+    ];
+    const getGamepads = () => [];
+    let container;
+    act(() => {
+      ({ container } = render(
+        <ControllerStatus controllers={ctrls} getGamepads={getGamepads} btInventory={btInventory} />,
+      ));
+    });
+
+    const sn30 = container.querySelector('[data-controller-id="8bitdo_sn30"] .ccs-os-badge');
+    expect(sn30).toBeTruthy();
+    expect(sn30.className).toContain('ccs-os-on');
+    expect(sn30.textContent).toContain('BT: connected');
+    expect(sn30.textContent).toContain('75%');
+
+    // Xbox MAC not in feed → BT: off.
+    const xbox = container.querySelector('[data-controller-id="xbox"] .ccs-os-badge');
+    expect(xbox).toBeTruthy();
+    expect(xbox.className).toContain('ccs-os-off');
+    expect(xbox.textContent).toContain('BT: off');
+  });
 });
