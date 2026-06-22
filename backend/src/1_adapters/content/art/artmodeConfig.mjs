@@ -23,7 +23,10 @@ async function readYamlDoc(filePath, logger, event) {
 export async function loadArtmodeConfig(dataPath, logger = console) {
   const doc = await readYamlDoc(
     path.join(dataPath, 'household', 'config', 'artmode.yml'), logger, 'artmode.config.read_failed');
-  return { presets: doc.presets || {}, defaults: doc.defaults || {}, frames: doc.frames || {} };
+  return {
+    presets: doc.presets || {}, defaults: doc.defaults || {}, frames: doc.frames || {},
+    schedule: Array.isArray(doc.schedule) ? doc.schedule : [],
+  };
 }
 
 // art.yml → the named collection catalog (the query definitions). Used to let a
