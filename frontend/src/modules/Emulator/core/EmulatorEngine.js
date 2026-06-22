@@ -37,11 +37,11 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
    * Boot the emulator. Idempotent: a second call returns the same readiness
    * promise rather than re-loading the single-instance library.
    */
-  async function boot({ mount, romUrl, pathtodata, core = 'gb' } = {}) {
+  async function boot({ mount, romUrl, pathtodata, core = 'gb', controls } = {}) {
     if (bootPromise) return bootPromise;
 
     log().info('boot.start', { core });
-    bootPromise = load({ player: mount, core, romUrl, pathtodata, win })
+    bootPromise = load({ player: mount, core, romUrl, pathtodata, controls, win })
       .then((emu) => {
         instance = emu;
         ready = true;
