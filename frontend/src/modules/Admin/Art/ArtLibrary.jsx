@@ -122,20 +122,23 @@ export default function ArtLibrary() {
   return (
     <div className="art-library">
       <Group className="art-library__bar" gap="sm">
+        {/* Capture the event value SYNCHRONOUSLY before the functional updater —
+            React nulls e.currentTarget once the handler returns, but the updater
+            runs later during reconciliation (the "reading 'value' of null" crash). */}
         <TextInput
           ref={searchRef} size="xs" placeholder="search title / artist…"
           value={filters.q || ''}
-          onChange={(e) => setFilters((f) => ({ ...f, q: e.currentTarget.value }))}
+          onChange={(e) => { const v = e.currentTarget.value; setFilters((f) => ({ ...f, q: v })); }}
         />
         <TextInput
           size="xs" placeholder="filter tag / collection…"
           value={filters.tag || ''}
-          onChange={(e) => setFilters((f) => ({ ...f, tag: e.currentTarget.value }))}
+          onChange={(e) => { const v = e.currentTarget.value; setFilters((f) => ({ ...f, tag: v })); }}
         />
         <Switch size="xs" label="hidden" checked={!!filters.hidden}
-          onChange={(e) => setFilters((f) => ({ ...f, hidden: e.currentTarget.checked ? 'true' : '' }))} />
+          onChange={(e) => { const on = e.currentTarget.checked; setFilters((f) => ({ ...f, hidden: on ? 'true' : '' })); }} />
         <Switch size="xs" label="flagged" checked={!!filters.flagged}
-          onChange={(e) => setFilters((f) => ({ ...f, flagged: e.currentTarget.checked ? 'true' : '' }))} />
+          onChange={(e) => { const on = e.currentTarget.checked; setFilters((f) => ({ ...f, flagged: on ? 'true' : '' })); }} />
         <Switch size="xs" label="auto-advance" checked={autoAdvance}
           onChange={(e) => setAutoAdvance(e.currentTarget.checked)} />
         <Badge size="sm" variant="light">{works.length} works</Badge>
