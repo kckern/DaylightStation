@@ -154,7 +154,7 @@ export default function ArtLibrary() {
       </Group>
 
       <div className="art-library__legend">
-        ←/→ cycle · Enter grid/loupe · click image region (or numpad) sets crop anchor
+        ←/→ cycle · Enter grid/loupe · drag the crop window (or “Don’t crop”) to set cropping
         {quickTags.length ? ` · 1–${quickTags.length} quick-tag` : ''} · X hide · F flag · E edit · A auto-advance · U undo
       </div>
 

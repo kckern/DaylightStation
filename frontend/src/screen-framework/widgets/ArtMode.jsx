@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision, cropFocus, openingAspect, cropBandFit } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision, cropFocus, cropBandFit } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -32,14 +32,19 @@ const DIMMER_KEYS = new Set(['ArrowDown']);
 const DEFAULT_CYCLE_KEYS = ['Tab', 'MediaRewind'];
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
-// A panel has an active crop band when in a cover mode and crop has vertical margins.
-const bandFor = (panel, fit, fullWindow, frame) => {
+// A panel has an active crop band when in a cover mode and crop has vertical
+// margins. `openingRatio` is the panel's ACTUAL window aspect (a diptych half is
+// narrower than the full opening), so the band covers the right box.
+const bandFor = (panel, fit, openingRatio) => {
   const c = panel?.meta?.crop;
   if (fit !== 'cover' || !c || c.enabled === false) return null;
   if (!(Number.isFinite(c.top) || Number.isFinite(c.bottom))) return null;
   const srcRatio = (panel.meta.width > 0 && panel.meta.height > 0) ? panel.meta.width / panel.meta.height : 1;
-  return cropBandFit(c, srcRatio, openingAspect({ frame, fullWindow }));
+  return cropBandFit(c, srcRatio, openingRatio);
 };
+// Aspect (w/h) of a fit-window from its stage-% insets, over the 16:9 stage.
+const windowAspect = (win) =>
+  ((100 - win.left - win.right) / 100 * 16) / ((100 - win.top - win.bottom) / 100 * 9);
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
 const CURTAIN_MAX_MS = 8000;  // safety rail: always part by this, even if assets stall
 const CURTAIN_CLOSE_MS = 1400; // matches the .artmode__curtain-panel transition (ArtMode.css)
@@ -629,7 +634,7 @@ function ArtMode({
 
             {!isGallery && panels.map((p, i) => {
               const win = fitWindows[i];
-              const band = bandFor(p, mode.fit, mode.fullWindow, frame);
+              const band = bandFor(p, mode.fit, windowAspect(win));
               return (
                 <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
                      style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>
