@@ -102,6 +102,28 @@ export function readBinary(absPath, { range } = {}) {
 }
 
 /**
+ * Build a reader for the vendored EmulatorJS engine bundle living under
+ * engineDir. The relPath is expected to already be segment-validated by the
+ * route, but we still resolve it under engineDir and reject any path that
+ * escapes the directory (defense in depth). Reads use the same stat+read
+ * approach as readBinary and map missing files to .code === 'ENOENT'.
+ *
+ * @param {string} engineDir  Absolute path to the _engine bundle directory.
+ * @returns {(relPath: string) => { buffer: Buffer, size: number, contentType: string }}
+ */
+export function makeReadEngineFile(engineDir) {
+  const root = path.resolve(engineDir);
+  return function readEngineFile(relPath) {
+    const abs = path.resolve(root, relPath);
+    // Ensure the resolved path stays inside engineDir (no traversal escape).
+    if (abs !== root && !abs.startsWith(root + path.sep)) {
+      throw enoent();
+    }
+    return readBinary(abs);
+  };
+}
+
+/**
  * Atomic binary write: write to a temp file in the same dir, then rename.
  * Creates parent directories as needed.
  */
