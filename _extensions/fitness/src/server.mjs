@@ -10,6 +10,13 @@ import { selectSimCandidate } from './unlockSim.mjs';
 import { createReaderArbiter } from './readerArbiter.mjs';
 import { createContinuousScanLoop } from './continuousScanLoop.mjs';
 import { startBtInventoryBroadcast } from './btInventory.mjs';
+import { handleBtPairRequest } from './btPairing.mjs';
+import { exec as nodeExec } from 'child_process';
+import { promisify } from 'util';
+
+// Promisified exec used by the bt.pair pairing window (mirrors btInventory's
+// own injected exec). Centralized here so the handler + tests share one shape.
+const execAsync = promisify(nodeExec);
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
@@ -203,10 +210,10 @@ async function connectWebSocket() {
       // Subscribe to the fingerprint request topics. The backend bus topic-filters
       // by subscription, so without these we'd never receive the requests.
       try {
-        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request']) {
+        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request']) {
           websocketClient.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
         }
-        console.log('🔐 Subscribed to unlock / enroll / delete request topics');
+        console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair request topics');
       } catch (error) {
         console.error('❌ Failed to subscribe to fingerprint requests:', error.message);
       }
@@ -218,6 +225,18 @@ async function connectWebSocket() {
         message = JSON.parse(data);
       } catch (error) {
         console.log('📥 Received raw message:', data.toString());
+        return;
+      }
+
+      // BT controller-pairing request: the backend wants this box to open a
+      // time-boxed BlueZ pairing window and pair any discovered game controllers.
+      // Progress streams back as `bt.pair.progress`. Best-effort — never throws.
+      if (message.topic === 'bt.pair.request') {
+        await handleBtPairRequest(message, {
+          exec: execAsync,
+          send: (topic, payload) => sendBus(topic, payload),
+          logger: console,
+        });
         return;
       }
 
