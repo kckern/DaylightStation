@@ -4,12 +4,18 @@
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const r2 = (n) => Number(n.toFixed(2));
 
+// Clamp two opposing margins to [0,90] keeping ≥10% between them (shrink the second).
+export function clampPair(a, b) {
+  const x = clamp(Number(a) || 0, 0, 90);
+  let y = clamp(Number(b) || 0, 0, 90);
+  if (x + y > 90) y = 90 - x;
+  return [r2(x), r2(y)];
+}
+
 // Keep each margin in [0,90]; if they'd keep <10% of height, shrink `bottom`.
 export function clampBand({ top, bottom }) {
-  let t = clamp(Number(top) || 0, 0, 90);
-  let b = clamp(Number(bottom) || 0, 0, 90);
-  if (t + b > 90) b = 90 - t;
-  return { top: r2(t), bottom: r2(b) };
+  const [t, b] = clampPair(top, bottom);
+  return { top: t, bottom: b };
 }
 
 // Handle pixel offsets (from the top / from the bottom of the displayed image) → %.
@@ -24,4 +30,4 @@ export function bandToPx({ top, bottom }, imageHeightPx) {
   return { topPx: r2((top / 100) * h), bottomPx: r2((bottom / 100) * h) };
 }
 
-export default { clampBand, pxToBand, bandToPx };
+export default { clampBand, clampPair, pxToBand, bandToPx };
