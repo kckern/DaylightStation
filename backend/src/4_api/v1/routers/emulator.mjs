@@ -1,0 +1,229 @@
+import express from 'express';
+import { safeSegment } from './lib/emulatorPaths.mjs';
+import { buildCatalog, resolveGameRules } from '../../../3_applications/emulator/EmulatorCatalog.mjs';
+
+const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
+const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+
+/**
+ * Parse a single-range `Range: bytes=start-end` header against a known size.
+ * Returns { start, end } (inclusive) or null if absent/unsatisfiable.
+ */
+function parseRange(header, size) {
+  if (!header || typeof size !== 'number') return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return null;
+  let start = m[1] === '' ? null : Number(m[1]);
+  let end = m[2] === '' ? null : Number(m[2]);
+  if (start === null && end === null) return null;
+  if (start === null) {
+    // suffix range: last N bytes
+    start = Math.max(0, size - end);
+    end = size - 1;
+  } else if (end === null) {
+    end = size - 1;
+  }
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) return null;
+  end = Math.min(end, size - 1);
+  return { start, end };
+}
+
+/**
+ * Send a binary result ({ buffer|stream, size, contentType }) honoring an
+ * optional already-resolved range. Sets long immutable cache for static media.
+ */
+function sendBinary(res, result, { range, cache = true } = {}) {
+  const headers = {
+    'Content-Type': result.contentType || 'application/octet-stream',
+    'Accept-Ranges': 'bytes',
+  };
+  if (cache) headers['Cache-Control'] = IMMUTABLE_CACHE;
+
+  if (range) {
+    headers['Content-Range'] = `bytes ${range.start}-${range.end}/${result.size}`;
+    headers['Content-Length'] = String(range.end - range.start + 1);
+    res.writeHead(206, headers);
+  } else {
+    if (typeof result.size === 'number') headers['Content-Length'] = String(result.size);
+    res.writeHead(200, headers);
+  }
+
+  if (result.stream) {
+    result.stream.pipe(res);
+  } else {
+    res.end(result.buffer);
+  }
+}
+
+/**
+ * Emulator router. Addresses all media by safe (:system, :gameId) slugs and
+ * resolves the real on-disk (messy) filenames server-side via injected
+ * resolvers. All file I/O is injected so the router is unit-testable.
+ *
+ * @param {object} deps
+ * @param {object}   [deps.logger]
+ * @param {function} deps.loadConfig       () => normalized cfg.
+ * @param {function} deps.readBinary       (absPath, { range }?) => { buffer|stream, size, contentType }; throws .code==='ENOENT'.
+ * @param {function} deps.writeBinary      (absPath, buffer) => Promise<void> (atomic).
+ * @param {function} deps.resolveRomPath   (cfg, system, gameId) => absPath.
+ * @param {function} deps.resolveArtPath   (cfg, system, gameId, kind) => absPath.
+ * @param {function} deps.resolveSavePath  (system, gameId, user) => absPath.
+ * @param {function} deps.resolveStatePath (system, gameId, slot, user) => absPath.
+ * @returns {express.Router}
+ */
+export function createEmulatorRouter({
+  logger = NOOP_LOGGER,
+  loadConfig,
+  readBinary,
+  writeBinary,
+  resolveRomPath,
+  resolveArtPath,
+  resolveSavePath,
+  resolveStatePath,
+}) {
+  const router = express.Router();
+
+  // ---- GET /library --------------------------------------------------------
+  router.get('/library', (req, res) => {
+    try {
+      const cfg = loadConfig();
+      const { systems } = buildCatalog(cfg, logger);
+      const user = req.query.user ? safeSegment(String(req.query.user)) : null;
+
+      const games = (cfg.games ?? [])
+        .filter((g) => g.system in systems)
+        .map((g) => {
+          const rules = resolveGameRules(cfg, g.id, user) ?? {};
+          return {
+            id: g.id,
+            system: g.system,
+            title: g.title,
+            governance: rules.governance ?? null,
+            shader: rules.shader ?? null,
+            chrome: rules.chrome ?? null,
+            romUrl: `/api/v1/emulator/rom/${g.system}/${g.id}`,
+            coverUrl: `/api/v1/emulator/art/${g.system}/${g.id}/cover`,
+            bezelUrl: `/api/v1/emulator/art/${g.system}/${g.id}/bezel`,
+          };
+        });
+
+      res.json({ systems, games });
+    } catch (err) {
+      if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
+      logger.error('emulator.library.error', { error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  });
+
+  // ---- GET /rom/:system/:gameId -------------------------------------------
+  router.get('/rom/:system/:gameId', (req, res) => {
+    let system, gameId;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const cfg = loadConfig();
+      const absPath = resolveRomPath(cfg, system, gameId);
+      let result = readBinary(absPath);
+      const range = parseRange(req.headers.range, result.size);
+      if (range) result = readBinary(absPath, { range });
+      sendBinary(res, result, { range, cache: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+      logger.error('emulator.rom.error', { system, gameId, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  });
+
+  // ---- GET /art/:system/:gameId/:kind -------------------------------------
+  router.get('/art/:system/:gameId/:kind', (req, res) => {
+    let system, gameId, kind;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+      kind = safeSegment(req.params.kind);
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    if (kind !== 'cover' && kind !== 'bezel') return res.status(400).json({ error: 'bad kind' });
+    try {
+      const cfg = loadConfig();
+      const absPath = resolveArtPath(cfg, system, gameId, kind);
+      const result = readBinary(absPath);
+      sendBinary(res, result, { cache: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+      logger.error('emulator.art.error', { system, gameId, kind, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  });
+
+  // ---- save / state read/write helpers ------------------------------------
+  const rawBody = express.raw({ type: '*/*', limit: '8mb' });
+
+  function readUserBlob(req, res, resolvePath) {
+    let system, gameId, slot, user;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+      if (req.params.slot !== undefined) slot = safeSegment(req.params.slot, { dot: true });
+      user = safeSegment(String(req.query.user ?? ''));
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const absPath = resolvePath({ system, gameId, slot, user });
+      const result = readBinary(absPath);
+      sendBinary(res, result, { cache: false });
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(204).end();
+      logger.error('emulator.blob.read_error', { system, gameId, slot, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  }
+
+  async function writeUserBlob(req, res, resolvePath) {
+    let system, gameId, slot, user;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+      if (req.params.slot !== undefined) slot = safeSegment(req.params.slot, { dot: true });
+      user = safeSegment(String(req.query.user ?? ''));
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    const body = req.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return res.status(400).json({ error: 'empty body' });
+    }
+    try {
+      const absPath = resolvePath({ system, gameId, slot, user });
+      await writeBinary(absPath, body);
+      res.json({ ok: true, bytes: body.length });
+    } catch (err) {
+      logger.error('emulator.blob.write_error', { system, gameId, slot, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  }
+
+  // ---- saves ---------------------------------------------------------------
+  router.get('/save/:system/:gameId', (req, res) =>
+    readUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+  );
+  router.put('/save/:system/:gameId', rawBody, (req, res) =>
+    writeUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+  );
+
+  // ---- states --------------------------------------------------------------
+  router.get('/state/:system/:gameId/:slot', (req, res) =>
+    readUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+  );
+  router.put('/state/:system/:gameId/:slot', rawBody, (req, res) =>
+    writeUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+  );
+
+  return router;
+}
