@@ -11,12 +11,13 @@ const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
  * emulatorFs.readManifests and is passed in here.
  *
  * @param {object}   opts
- * @param {string}   opts.emulationDir   Base media dir (provenance/logging only).
- * @param {function} opts.readManifests  () => Array<{ system, manifest }>.
- * @param {object}   [opts.logger]       Logger with warn/info/debug/error.
- * @returns {{ systems: object, games: object[], defaults: object, users: object }}
+ * @param {string}   opts.emulationDir     Base media dir (provenance/logging only).
+ * @param {function} opts.readManifests    () => Array<{ system, manifest }>.
+ * @param {function} [opts.readInputConfig] () => parsed input.yml object (keyboard/controllers) or null.
+ * @param {object}   [opts.logger]         Logger with warn/info/debug/error.
+ * @returns {{ systems: object, games: object[], defaults: object, users: object, input: object|null }}
  */
-export function loadEmulatorConfig({ emulationDir, readManifests, logger = NOOP_LOGGER }) {
+export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, logger = NOOP_LOGGER }) {
   const systems = {};
   const games = [];
 
@@ -64,10 +65,13 @@ export function loadEmulatorConfig({ emulationDir, readManifests, logger = NOOP_
     }
   }
 
+  const input = (typeof readInputConfig === 'function' ? readInputConfig() : null) ?? null;
+
   return {
     systems,
     games,
     defaults: { governance: {}, shader: null, chrome: null },
     users: {},
+    input,
   };
 }

@@ -162,7 +162,7 @@ export function createEmulatorRouter({
           };
         });
 
-      res.json({ systems, games });
+      res.json({ systems, games, input: cfg.input ?? null });
     } catch (err) {
       if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
       logger.error('emulator.library.error', { error: err.message });

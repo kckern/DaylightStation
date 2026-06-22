@@ -181,3 +181,29 @@ export function readManifests(emulationDir) {
   }
   return out;
 }
+
+/**
+ * Build a reader for the top-level input config (emulationDir/input.yml) that
+ * holds the keyboard mapping + controller catalog. Returns null when the file
+ * is absent or unparseable so callers can fall back gracefully.
+ *
+ * @param {string} emulationDir
+ * @returns {() => object|null}
+ */
+export function makeReadInputConfig(emulationDir) {
+  const inputPath = path.join(emulationDir, 'input.yml');
+  return function readInputConfig() {
+    let raw;
+    try {
+      raw = fs.readFileSync(inputPath, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }
+    try {
+      return yaml.load(raw) ?? null;
+    } catch {
+      return null;
+    }
+  };
+}

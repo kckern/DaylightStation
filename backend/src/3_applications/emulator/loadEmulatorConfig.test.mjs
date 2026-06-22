@@ -27,11 +27,12 @@ const gameboyManifest = {
   retroarch_reference: { should: 'be ignored' },
 };
 
-function makeLoader(manifests) {
+function makeLoader(manifests, opts = {}) {
   return loadEmulatorConfig({
     emulationDir: '/media/emulation',
     readManifests: () => manifests,
     logger: { warn() {}, info() {}, debug() {}, error() {} },
+    ...opts,
   });
 }
 
@@ -102,6 +103,26 @@ describe('loadEmulatorConfig', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
     expect(cfg.defaults).toEqual({ governance: {}, shader: null, chrome: null });
     expect(cfg.users).toEqual({});
+  });
+
+  it('includes input config from injected readInputConfig', () => {
+    const input = { keyboard: { up: 'ArrowUp', a: 'x' }, controllers: [{ id: 'xbox', match: 'Xbox' }] };
+    const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }], {
+      readInputConfig: () => input,
+    });
+    expect(cfg.input).toEqual(input);
+  });
+
+  it('input defaults to null when no readInputConfig provided', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
+    expect(cfg.input).toBeNull();
+  });
+
+  it('input is null when readInputConfig returns null (absent file)', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }], {
+      readInputConfig: () => null,
+    });
+    expect(cfg.input).toBeNull();
   });
 
   it('manifest with no games contributes system but no games', () => {

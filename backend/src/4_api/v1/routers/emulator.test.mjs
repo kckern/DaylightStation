@@ -31,6 +31,10 @@ function makeCfg() {
     users: {
       soren: { governance: { required_zone: 'hot' } },
     },
+    input: {
+      keyboard: { up: 'ArrowUp', a: 'x' },
+      controllers: [{ id: 'xbox', label: 'Xbox Wireless', match: 'Xbox|045e' }],
+    },
   };
 }
 
@@ -106,6 +110,24 @@ describe('createEmulatorRouter', () => {
       expect(g.bezelUrl).toBe('/api/v1/emulator/art/gb/pokemon-red/bezel');
       // No-user governance: game value
       expect(g.governance.required_zone).toBe('warm');
+    });
+
+    it('includes the input config (keyboard + controllers)', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.status).toBe(200);
+      expect(res.body.input).toBeTruthy();
+      expect(res.body.input.keyboard.up).toBe('ArrowUp');
+      expect(res.body.input.controllers[0].id).toBe('xbox');
+    });
+
+    it('returns input:null when cfg has no input', async () => {
+      const { app } = makeApp({
+        loadConfig: () => ({ systems: { gb: { core: 'gb', label: 'Game Boy' } }, games: [], defaults: { governance: {}, shader: null, chrome: null }, users: {} }),
+      });
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.status).toBe(200);
+      expect(res.body.input).toBeNull();
     });
 
     it('applies per-user governance overlay with ?user=', async () => {
