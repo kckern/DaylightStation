@@ -5,7 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { Jimp } from 'jimp';
-import { buildArtPredicate, isMember } from '../collections.mjs';
+import { isMember } from '../collections.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 // Orientation split: anything at least as wide as it is tall hangs as a single
