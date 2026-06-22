@@ -18,6 +18,42 @@ function logger() {
 }
 
 /**
+ * Translate a pairing-progress status into the button's display/disabled state.
+ *
+ * Pure helper so it can be reasoned about (and tested) without rendering.
+ *
+ * @param {{ phase?: string, device?: object, message?: string, paired?: Array }|null|undefined} pairing
+ * @returns {{ label: string, disabled: boolean, scanning: boolean }}
+ */
+export function pairButtonState(pairing) {
+  const phase = pairing && pairing.phase;
+  switch (phase) {
+    case 'scanning':
+      return { label: 'Scanning for controllers… (~30s)', disabled: true, scanning: true };
+    case 'paired': {
+      const name = pairing?.device?.name;
+      return { label: name ? `Paired: ${name}` : 'Paired', disabled: true, scanning: false };
+    }
+    case 'done': {
+      const n = Array.isArray(pairing?.paired) ? pairing.paired.length : 0;
+      return {
+        label: n > 0 ? `Done — ${n} paired` : 'Done',
+        disabled: false,
+        scanning: false,
+      };
+    }
+    case 'error':
+      return {
+        label: `Pairing failed — ${pairing?.message || 'unknown error'}`,
+        disabled: false,
+        scanning: false,
+      };
+    default:
+      return { label: '🎮 Pair controller', disabled: false, scanning: false };
+  }
+}
+
+/**
  * @param {object} props
  * @param {Array<object>} props.controllers   [{ id, label, match, count?, address? }].
  * @param {Function} [props.getGamepads]       injectable for tests.
@@ -25,8 +61,12 @@ function logger() {
  *   ([{ address, name, connected, battery }]) passed in by the host. Optional —
  *   when absent the panel renders browser-only (no OS column). This component is
  *   host-agnostic: it never imports FitnessContext; the feed arrives as a prop.
+ * @param {Function} [props.onPair]            () => void | Promise<void>. When
+ *   provided, render a "Pair controller" button that calls this on click.
+ * @param {{ phase?: string, device?: object, message?: string, paired?: Array }} [props.pairing]
+ *   optional live pairing status driving the button's label/disabled state.
  */
-export function ControllerStatus({ controllers = [], getGamepads, btInventory }) {
+export function ControllerStatus({ controllers = [], getGamepads, btInventory, onPair, pairing }) {
   const { connected, known } = useGamepadStatus(controllers, { getGamepads, btInventory });
 
   // Show the OS column only when a BT inventory feed is actually present.
@@ -41,6 +81,9 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory })
 
   const hasConnected = connected.length > 0;
 
+  const canPair = typeof onPair === 'function';
+  const btn = pairButtonState(pairing);
+
   useEffect(() => {
     logger().debug('controller-status.connected-change', {
       count: connected.length,
@@ -48,6 +91,20 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory })
       matched: connected.map((p) => p.matchedId),
     });
   }, [connected]);
+
+  const handlePairClick = () => {
+    logger().info('controller-status.pair-click', {});
+    try {
+      const r = onPair();
+      if (r && typeof r.catch === 'function') {
+        r.catch((err) =>
+          logger().warn('controller-status.pair-error', { error: err && err.message }),
+        );
+      }
+    } catch (err) {
+      logger().warn('controller-status.pair-error', { error: err && err.message });
+    }
+  };
 
   return (
     <div className="emulator-controller-status" data-connected={hasConnected ? '1' : '0'}>
@@ -100,6 +157,21 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory })
           </p>
         )}
       </section>
+
+      {canPair && (
+        <section className="ccs-pair">
+          <button
+            type="button"
+            className={`ccs-pair-button${btn.scanning ? ' ccs-pair-scanning' : ''}`}
+            data-phase={pairing?.phase || 'idle'}
+            disabled={btn.disabled}
+            onClick={handlePairClick}
+          >
+            {btn.label}
+          </button>
+          {btn.scanning && <span className="ccs-pair-progress" aria-hidden="true" />}
+        </section>
+      )}
     </div>
   );
 }

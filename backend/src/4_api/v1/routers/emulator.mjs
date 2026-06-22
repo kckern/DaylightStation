@@ -85,6 +85,8 @@ function sendBinary(res, result, { range, cache = true } = {}) {
  * @param {function} deps.resolveArtPath   (cfg, system, gameId, kind) => absPath.
  * @param {function} deps.resolveSavePath  (system, gameId, user) => absPath.
  * @param {function} deps.resolveStatePath (system, gameId, slot, user) => absPath.
+ * @param {function} [deps.publishBtPair]  ({ requestId, durationMs }) => void — broadcasts the bt.pair.request bus topic the garage bridge listens for. Default: warn no-op.
+ * @param {function} [deps.makeRequestId]  () => string — injectable for deterministic tests. Default: incrementing counter.
  * @returns {express.Router}
  */
 export function createEmulatorRouter({
@@ -97,8 +99,29 @@ export function createEmulatorRouter({
   resolveArtPath,
   resolveSavePath,
   resolveStatePath,
+  publishBtPair = () => { logger.warn('emulator.bt_pair.no_publisher', {}); },
+  makeRequestId = (() => { let n = 0; return () => `btpair-${++n}`; })(),
 }) {
   const router = express.Router();
+  router.use(express.json());
+
+  // ---- POST /bt/pair -------------------------------------------------------
+  // Puts the garage box into controller-pairing mode without SSH: broadcasts a
+  // bt.pair.request bus topic the fitness bridge listens for. The bridge runs a
+  // time-boxed BlueZ pairing window and streams bt.pair.progress back. We don't
+  // wait on the window — respond 202 with the requestId for progress correlation.
+  router.post('/bt/pair', (req, res) => {
+    const requestId = makeRequestId();
+    const durationMs = Number(req.body?.durationMs) || 30000;
+    try {
+      publishBtPair({ requestId, durationMs });
+    } catch (err) {
+      logger.error('emulator.bt_pair.publish_error', { requestId, error: err.message });
+      return res.status(500).json({ error: 'internal error' });
+    }
+    logger.info('emulator.bt_pair.requested', { requestId, durationMs });
+    res.status(202).json({ requestId });
+  });
 
   // ---- GET /engine/* -------------------------------------------------------
   // Serves the vendored EmulatorJS bundle (loader.js, emulator.min.js/css,

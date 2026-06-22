@@ -1315,6 +1315,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       resolveArtPath: (cfg, system, gameId, kind) => emuFs.resolveArtPath(emulationDir, cfg, system, gameId, kind),
       resolveSavePath: (system, gameId, user) => emuFs.resolveSavePath(emulationDir, system, gameId, user),
       resolveStatePath: (system, gameId, slot, user) => emuFs.resolveStatePath(emulationDir, system, gameId, slot, user),
+      // Broadcasts the bt.pair.request bus topic the garage fitness bridge
+      // listens for (puts the box into controller-pairing mode without SSH).
+      // eventBus is already constructed (above) and in scope here.
+      publishBtPair: (payload) => eventBus.broadcast('bt.pair.request', { topic: 'bt.pair.request', ...payload }),
     });
   }
 
