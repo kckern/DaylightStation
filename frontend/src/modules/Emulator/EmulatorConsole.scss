@@ -1,0 +1,77 @@
+// EmulatorConsole — minimal layout. Phase 7 expands chrome/shader styling.
+
+.emulator-console {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+
+  // Full-bleed layers; chrome & shader sit above the mount but pass clicks.
+  .emulator-chrome,
+  .emulator-shader {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .emulator-chrome {
+    z-index: 1;
+  }
+
+  .emulator-mount {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    transition: filter 0.25s ease;
+  }
+
+  .emulator-shader {
+    z-index: 2;
+  }
+
+  // Governance overlay covers the mount with a translucent dim.
+  .emulator-governance-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: 'Roboto Condensed', sans-serif;
+    font-size: 2rem;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+
+    &.overlay-warning {
+      background: rgba(180, 120, 0, 0.35);
+    }
+    &.overlay-paused {
+      background: rgba(0, 0, 0, 0.55);
+    }
+    &.overlay-depleted {
+      background: rgba(120, 0, 0, 0.55);
+    }
+  }
+
+  // Blur the live game while governance is not "playing".
+  &[data-state='warning'] .emulator-mount,
+  &[data-state='paused'] .emulator-mount,
+  &[data-state='depleted'] .emulator-mount {
+    filter: blur(4px) brightness(0.7);
+  }
+
+  .emulator-exit-affordance {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    border: none;
+    background: transparent;
+    pointer-events: auto;
+  }
+}
