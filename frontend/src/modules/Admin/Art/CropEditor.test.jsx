@@ -25,4 +25,12 @@ describe('CropEditor', () => {
     fireEvent.keyDown(topHandle, { key: 'ArrowDown' }); // +1% top margin
     expect(onCrop).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, top: 11, bottom: 10 }));
   });
+
+  it('horizontal axis edits left/right margins', () => {
+    const onCrop = vi.fn();
+    render(<CropEditor axis="horizontal" crop={{ enabled: true, left: 10, right: 10 }} onCrop={onCrop} />);
+    const leftHandle = screen.getByTestId('crop-handle-left');
+    fireEvent.keyDown(leftHandle, { key: 'ArrowRight' }); // +1% left margin
+    expect(onCrop).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, left: 11, right: 10 }));
+  });
 });

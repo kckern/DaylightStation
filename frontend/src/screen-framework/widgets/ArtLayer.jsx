@@ -15,13 +15,15 @@ import smartquotes from 'smartquotes';
 
 const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
 
-// A panel has an active crop band when in a cover mode and crop has vertical
-// margins. `openingRatio` is the panel's ACTUAL window aspect (a diptych half is
-// narrower than the full opening), so the band covers the right box.
+// A panel has an active crop band when in a cover mode and crop has margins on
+// either axis (top/bottom = vertical, left/right = horizontal panorama).
+// `openingRatio` is the panel's ACTUAL window aspect (a diptych half is narrower
+// than the full opening), so the band covers the right box.
 const bandFor = (panel, fit, openingRatio) => {
   const c = panel?.meta?.crop;
   if (fit !== 'cover' || !c || c.enabled === false) return null;
-  if (!(Number.isFinite(c.top) || Number.isFinite(c.bottom))) return null;
+  const hasMargins = ['top', 'bottom', 'left', 'right'].some((k) => Number.isFinite(c[k]));
+  if (!hasMargins) return null;
   const srcRatio = (panel.meta.width > 0 && panel.meta.height > 0) ? panel.meta.width / panel.meta.height : 1;
   return cropBandFit(c, srcRatio, openingRatio);
 };
@@ -124,7 +126,7 @@ export default function ArtLayer({
         return (
           <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
                style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>
-            <img className={`artmode__fitimage artmode__fitimage--${band ? 'band' : mode.fit}`}
+            <img className={`artmode__fitimage artmode__fitimage--${band ? (band.axis === 'horizontal' ? 'bandh' : 'band') : mode.fit}`}
                  data-testid={testid('artmode-image', i)}
                  src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
                  style={band

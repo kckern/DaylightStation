@@ -31,4 +31,23 @@ describe('cropBandFit', () => {
     expect(fit.scale).toBeCloseTo(1, 5);
     expect(fit.transform).toBe('translate(-0%, -0%) scale(1)');
   });
+  it('a vertical band reports axis vertical', () => {
+    expect(cropBandFit({ top: 10, bottom: 10 }, 1.0, 2.0).axis).toBe('vertical');
+  });
+});
+
+describe('cropBandFit horizontal (panorama, left/right)', () => {
+  it('left/right margins pick the horizontal axis and offset to the band left', () => {
+    // wide source (srcRatio 4) into a 2:1 opening, keep middle 50% by width.
+    const fit = cropBandFit({ left: 25, right: 25 }, 4.0, 2.0);
+    // bw=.5 → s = max(1, 2/(4*0.5)) = 1; tx=-1*0.25*100=-25%, ty centered=-0%
+    expect(fit.axis).toBe('horizontal');
+    expect(fit.scale).toBeCloseTo(1, 5);
+    expect(fit.transform).toBe('translate(-25%, -0%) scale(1)');
+  });
+  it('a thin horizontal band zooms in and centers vertically', () => {
+    const fit = cropBandFit({ left: 40, right: 40 }, 4.0, 2.0); // bw=.2 → s=2/(4*.2)=2.5
+    expect(fit.scale).toBeCloseTo(2.5, 4);
+    expect(fit.transform).toMatch(/translate\(-100\.?0*%, -75\.?0*%\) scale\(2\.5/);
+  });
 });
