@@ -231,13 +231,21 @@ export class DeviceEventRouter {
     // ANT+ Handler
     this.register('ant', (payload, ctx) => {
       if (!ctx.deviceManager) return null;
-      
+
+      // updateDevice only reads ANT metric fields (HR/cadence/power/revs/
+      // battery) from the data object; it does NOT propagate a sensor
+      // timestamp. payload.timestamp is the controller's ISO-8601 string
+      // (ant.mjs), so passing it here was a silently-dropped no-op — and if it
+      // had flowed through it would poison numeric device-timestamp math
+      // (an ISO string makes `_maybeTickTimeline` arithmetic NaN). Device
+      // time-of-event is the frontend receipt time (lastSeen). Dropped here to
+      // stop implying ANT timestamps flow through.
       const device = ctx.deviceManager.updateDevice(
         String(payload.deviceId),
         payload.profile,
-        { ...payload.data, dongleIndex: payload.dongleIndex, timestamp: payload.timestamp }
+        { ...payload.data, dongleIndex: payload.dongleIndex }
       );
-      
+
       return device;
     });
 
