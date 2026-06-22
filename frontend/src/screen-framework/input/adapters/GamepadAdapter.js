@@ -221,6 +221,10 @@ export class GamepadAdapter {
       this._invalidateAllSeeds();
     }
     this._lastPollAt = now;
+    if (typeof window !== 'undefined' && window.__emulatorCapturingGamepad === true) {
+      this._invalidateAllSeeds();
+      return;
+    }
     const gamepads = getActiveGamepads();
     for (const gp of gamepads) {
       this._pollOne(gp);
