@@ -9,6 +9,7 @@ import { playbackLog } from '@/modules/Player/lib/playbackLogger.js';
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { resolveDismissAction } from './voiceMemoOverlayUtils.js';
+import { resolveCurrentMemo } from './resolveCurrentMemo.js';
 
 // Auto-accept countdown for review mode
 const VOICE_MEMO_AUTO_ACCEPT_MS = 8000;
@@ -140,16 +141,13 @@ const VoiceMemoOverlay = ({
     });
   }, [voiceMemos]);
 
-  const currentMemo = useMemo(() => {
-    // Retroactive memos are passed inline via overlayState.memo because the
-    // backend response doesn't mint a memoId (so voiceMemos lookup misses).
-    if (overlayState?.memo && typeof overlayState.memo === 'object') {
-      return overlayState.memo;
-    }
-    if (!overlayState?.memoId) return null;
-    const targetId = String(overlayState.memoId);
-    return voiceMemos.find((memo) => memo && String(memo.memoId) === targetId) || null;
-  }, [overlayState?.memo, overlayState?.memoId, voiceMemos]);
+  // Prefer the live memo from the session list (SSoT) so a redo that replaces a
+  // memo in place is reflected immediately, falling back to the inline snapshot
+  // only for retroactive memos that have no id in the list. See resolveCurrentMemo.
+  const currentMemo = useMemo(
+    () => resolveCurrentMemo(overlayState, voiceMemos),
+    [overlayState?.memo, overlayState?.memoId, voiceMemos]
+  );
 
   const [autoAcceptProgress, setAutoAcceptProgress] = useState(0);
   // Fix 6 (bugbash 4C.5): Track if user cancelled auto-accept via interaction

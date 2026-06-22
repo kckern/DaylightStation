@@ -29,7 +29,8 @@ const FITNESS_TIMEOUTS = {
   remove: 1800000, // 30 minutes — keeps session alive during breaks
   rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
-  sessionEndCooldown: 600000 // 10 minutes — prevents duplicate sessions from leftover HR data
+  sessionEndCooldown: 600000, // 10 minutes — prevents duplicate sessions from leftover HR data
+  resumeContentWait: 6000 // Max time to wait for content to register before starting a fresh (un-merged) session
 };
 
 // Module-scope: survives FitnessSession instance destruction on screen navigation
@@ -297,6 +298,12 @@ export class FitnessSession {
     this._pendingResumePrompt = null;
     this._onResumePrompt = null;
     this._pendingContentId = null;
+    // Timestamp the resume check first found no content yet (mid-workout kiosk
+    // reload race). Used to bound how long we defer before starting fresh.
+    this._resumeDeferredSince = null;
+    // True while an async /resumable backend query is outstanding, so the
+    // pre-session buffer re-trigger can't fire overlapping checks.
+    this._resumeCheckInFlight = false;
 
     // Track users whose data was transferred to another identity (should be excluded from charts)
     this._transferredUsers = new Set();
@@ -1573,34 +1580,64 @@ export class FitnessSession {
     getLogger().info('fitness.session.resume_check.start', { reason, contentId });
 
     if (!contentId) {
-      getLogger().info('fitness.session.resume_check.no_content', { reason });
-      if (!this.sessionId) this.ensureStarted({ reason, force: true });
+      // Mid-workout kiosk reload race: the HR buffer hits threshold ~1s after
+      // load, but the play-queue head (and thus contentId) isn't registered for
+      // a few seconds. Starting fresh here permanently forks the session — the
+      // backend resumable query never runs, so two overlapping sessions are
+      // persisted instead of one resumed session (see 2026-06-22 incident).
+      // Defer and let the pre-session buffer re-trigger retry once content
+      // arrives, bounded by resumeContentWait so a genuinely content-less
+      // session still starts.
+      if (!this.sessionId) {
+        const now = Date.now();
+        if (this._resumeDeferredSince == null) this._resumeDeferredSince = now;
+        const waitedMs = now - this._resumeDeferredSince;
+        if (waitedMs < FITNESS_TIMEOUTS.resumeContentWait) {
+          getLogger().info('fitness.session.resume_check.deferred', { reason, waitedMs });
+          return;
+        }
+        getLogger().info('fitness.session.resume_check.no_content', { reason, waitedMs });
+        this._resumeDeferredSince = null;
+        this.ensureStarted({ reason, force: true });
+      }
       return;
     }
 
-    const result = await this._checkResumable(contentId);
-    getLogger().info('fitness.session.resume_check.result', {
-      contentId,
-      resumable: !!result.resumable,
-      finalized: !!result.finalized,
-      matchedSessionId: result.session?.sessionId || result.session?.session?.id || null
-    });
+    // Content is known — clear any pending defer and run the real check.
+    this._resumeDeferredSince = null;
 
-    if (!result.resumable) {
-      if (!this.sessionId) this.ensureStarted({ reason, force: true });
-      return;
+    // The backend query is async; the pre-session buffer can re-trip several
+    // times before it resolves. Guard against overlapping checks so we issue one
+    // /resumable query (and one start) rather than a burst.
+    if (this._resumeCheckInFlight) return;
+    this._resumeCheckInFlight = true;
+    try {
+      const result = await this._checkResumable(contentId);
+      getLogger().info('fitness.session.resume_check.result', {
+        contentId,
+        resumable: !!result.resumable,
+        finalized: !!result.finalized,
+        matchedSessionId: result.session?.sessionId || result.session?.session?.id || null
+      });
+
+      if (!result.resumable) {
+        if (!this.sessionId) this.ensureStarted({ reason, force: true });
+        return;
+      }
+
+      if (result.finalized) {
+        getLogger().info('fitness.session.resume_check.finalized_prompt', { contentId });
+        this._pendingResumePrompt = result.session;
+        this._notifyResumePromptNeeded(result.session);
+        return;
+      }
+
+      getLogger().info('fitness.session.resume_check.auto_resume', { contentId });
+      this.ensureStarted({ reason: 'resumed', force: true });
+      this._hydrateFromSession(result.session);
+    } finally {
+      this._resumeCheckInFlight = false;
     }
-
-    if (result.finalized) {
-      getLogger().info('fitness.session.resume_check.finalized_prompt', { contentId });
-      this._pendingResumePrompt = result.session;
-      this._notifyResumePromptNeeded(result.session);
-      return;
-    }
-
-    getLogger().info('fitness.session.resume_check.auto_resume', { contentId });
-    this.ensureStarted({ reason: 'resumed', force: true });
-    this._hydrateFromSession(result.session);
   }
 
   /**
@@ -2906,6 +2943,14 @@ export class FitnessSession {
     // Tick telemetry: track call rate
     this._tickTelemetry.maybeTickCalls++;
 
+    // Diagnostic capture for the catch-up storm (UI freeze, 2026-06-22). A
+    // single ingest should backfill at most ~1 interval; a large catch-up means
+    // lastTickTimestamp is lagging targetTimestamp persistently. Snapshot the
+    // exact inputs so the next occurrence reveals the timestamp arithmetic that
+    // log forensics could not (HR deviceData.timestamp is not otherwise logged).
+    const entryLastTick = lastTick;
+    const entryGapMs = targetTimestamp - lastTick;
+
     const maxIterations = 1000;
     let iterations = 0;
     while ((targetTimestamp - lastTick) >= interval && iterations < maxIterations) {
@@ -2914,6 +2959,22 @@ export class FitnessSession {
       lastTick = this.timeline.timebase?.lastTickTimestamp ?? nextTickTimestamp;
       iterations += 1;
       this._tickTelemetry.actualTicks++;
+    }
+
+    // A catch-up of >3 intervals (>15s) from one ingest is pathological — surface
+    // the inputs (rate-limited) instead of silently manufacturing ticks.
+    if (iterations > 3) {
+      getLogger().sampled('fitness.tick_catchup.anomaly', {
+        sessionId: this.sessionId,
+        iterations,
+        entryGapMs,
+        intervalMs: interval,
+        targetTimestamp,
+        entryLastTick,
+        startTime: this.timeline.timebase?.startTime ?? null,
+        tickCount: this.timeline.timebase?.tickCount ?? null,
+        wallNow: Date.now()
+      }, { maxPerMinute: 6 });
     }
 
     // Track loop iterations (even if 0)
