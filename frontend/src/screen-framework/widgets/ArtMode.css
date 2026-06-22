@@ -258,6 +258,13 @@
 }
 .artmode__fitimage--contain { object-fit: contain; }
 .artmode__fitimage--cover { object-fit: cover; }
+.artmode__fitimage--band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+}
 
 /* ---- Placard title may render as 1-2 balanced lines; truncate each with … ---- */
 .artmode__placard-line {
