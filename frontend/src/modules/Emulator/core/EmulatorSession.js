@@ -107,6 +107,7 @@ export function createEmulatorSession({
       romUrl: game.romUrl,
       pathtodata: engineConfig.pathtodata,
       core: engineConfig.core || system,
+      controls: engineConfig.controls,
     });
 
     // Calibrate WRAM via a harmless cheat ping.
