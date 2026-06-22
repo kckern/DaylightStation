@@ -4,7 +4,7 @@ import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getChildLogger } from '../../lib/logging/singleton.js';
 import smartquotes from 'smartquotes';
 import { artLayout } from './artLayout.js';
-import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision, cropFocus } from './artModes.js';
+import { VIEW_MODES, modeIndexByName, nextMode, prevMode, objectFitWindows, fillDecision, cropFocus, openingAspect, cropBandFit } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket.js';
 import { luxToDim } from './luxToDim.js';
@@ -32,6 +32,14 @@ const DIMMER_KEYS = new Set(['ArrowDown']);
 const DEFAULT_CYCLE_KEYS = ['Tab', 'MediaRewind'];
 const round2 = (n) => Math.round(n * 100) / 100;
 const DEFAULT_FRAME = { top: 11.9, right: 6.5, bottom: 11.1, left: 7.0 };
+// A panel has an active crop band when in a cover mode and crop has vertical margins.
+const bandFor = (panel, fit, fullWindow, frame) => {
+  const c = panel?.meta?.crop;
+  if (fit !== 'cover' || !c || c.enabled === false) return null;
+  if (!(Number.isFinite(c.top) || Number.isFinite(c.bottom))) return null;
+  const srcRatio = (panel.meta.width > 0 && panel.meta.height > 0) ? panel.meta.width / panel.meta.height : 1;
+  return cropBandFit(c, srcRatio, openingAspect({ frame, fullWindow }));
+};
 const CURTAIN_MIN_MS = 700;   // never part the curtain before this (minimum effect)
 const CURTAIN_MAX_MS = 8000;  // safety rail: always part by this, even if assets stall
 const CURTAIN_CLOSE_MS = 1400; // matches the .artmode__curtain-panel transition (ArtMode.css)
@@ -529,7 +537,7 @@ function ArtMode({
     if (!ps?.length) return;
     const ratios = ps.map((p) =>
       (p.meta?.width > 0 && p.meta?.height > 0) ? p.meta.width / p.meta.height : 1);
-    const d = fillDecision({ mode: activeArt.mode, ratios, frame, cropV, cropH, fallback: defaultViewMode });
+    const d = fillDecision({ mode: activeArt.mode, ratios, frame, cropV, cropH, fallback: defaultViewMode, crop: ps[0]?.meta?.crop ?? null });
     let target, reason;
     if (d.qualified) { target = d.index; reason = 'matless'; }
     else if (userCycledRef.current) { target = manualModeRef.current ?? d.index; reason = 'sticky'; }
@@ -621,13 +629,16 @@ function ArtMode({
 
             {!isGallery && panels.map((p, i) => {
               const win = fitWindows[i];
+              const band = bandFor(p, mode.fit, mode.fullWindow, frame);
               return (
                 <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
                      style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>
-                  <img className={`artmode__fitimage artmode__fitimage--${mode.fit}`}
+                  <img className={`artmode__fitimage artmode__fitimage--${band ? 'band' : mode.fit}`}
                        data-testid={testid('artmode-image', i)}
                        src={DaylightMediaPath(p.image)} alt={p.meta?.title || 'Artwork'}
-                       style={{ objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
+                       style={band
+                         ? { transform: band.transform, transformOrigin: band.transformOrigin }
+                         : { objectPosition: cropFocus(p.meta?.crop_anchor) || undefined }}
                        onLoad={onLoaded} onError={onLoaded} />
                 </div>
               );
