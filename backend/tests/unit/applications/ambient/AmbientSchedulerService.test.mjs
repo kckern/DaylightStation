@@ -65,4 +65,40 @@ describe('AmbientSchedulerService', () => {
     await svc.runOnce(AT_START);
     expect(deps.stateStore.peek().owned).toBeNull();
   });
+
+  it('skips an overlapping tick while a previous runOnce is still in flight', async () => {
+    const deps = makeDeps({ idle: true });
+
+    // Set up a deferred: execute holds until we call release(), and signals when
+    // it has been entered so we know the first tick is truly in-flight.
+    let release;
+    let resolveEntered;
+    const held = new Promise((res) => { release = res; });
+    const entered = new Promise((res) => { resolveEntered = res; });
+    deps.wakeAndLoadService.execute = async (device, query) => {
+      deps.calls.load.push({ device, query });
+      resolveEntered(); // signal: first tick is now suspended inside execute
+      await held;
+    };
+
+    const svc = new AmbientSchedulerService(deps);
+    // Advance past first (boot) tick so the next AT_START tick fires a real load.
+    await svc.runOnce(new Date('2026-06-22T13:30:00Z'));
+
+    // Start the first runOnce — it will suspend inside execute() awaiting `held`.
+    const first = svc.runOnce(AT_START);
+
+    // Wait until execute has been called (first tick is truly in-flight).
+    await entered;
+
+    // Second call while first is in-flight — must return skipped immediately.
+    const second = await svc.runOnce(AT_START);
+    expect(second).toEqual({ actions: [], state: null, skipped: true });
+    expect(deps.calls.load).toHaveLength(1); // execute only called once
+
+    // Release the first tick and confirm it completes normally.
+    release();
+    const firstResult = await first;
+    expect(firstResult.skipped).toBeUndefined();
+  });
 });
