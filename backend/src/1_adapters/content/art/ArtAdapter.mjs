@@ -113,10 +113,10 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
 
   async function candidatesFor(collection) {
     const { resolveCollection } = await import('./collections.mjs');
-    const { def } = resolveCollection(collections, collection);
+    const { key, def } = resolveCollection(collections, collection);
     const src = await sourceFor(def);
     if (!src) logger.warn?.('art.source.unavailable', { collection, source: def.source });
-    let cands = src ? await src.resolveCandidates(def) : [];
+    let cands = src ? await src.resolveCandidates(def, key) : [];
     // If a *narrowing* collection (immich source, or any art selector) yields
     // nothing, widen to the full art pool so the screensaver never blanks. An
     // already-unfiltered `all` pool that comes back empty has nothing to widen
@@ -126,7 +126,7 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
       if (narrowing) {
         logger.warn?.('art.collection.empty', { collection, source: def.source ?? 'art' });
         const art = await getArtSource();
-        cands = await art.resolveCandidates({});
+        cands = await art.resolveCandidates({}, 'all');
       }
     }
     return cands;
