@@ -253,6 +253,17 @@ export class FitnessActivityEnrichmentService {
 
       await this.#stravaClient.updateActivity(activityId, updatePayload);
 
+      // Record provenance of what we pushed so reconciliation can later tell
+      // our pushes apart from manual Strava edits (and propagate local
+      // corrections without clobbering the user's hand edits).
+      if (!session.strava) session.strava = {};
+      session.strava.pushed = {
+        name: updatePayload.name ?? session.strava.pushed?.name ?? currentActivity.name ?? null,
+        description: updatePayload.description ?? session.strava.pushed?.description ?? currentActivity.description ?? null,
+        at: new Date().toISOString(),
+      };
+      saveYaml(match.filePath.replace(/\.yml$/, ''), session);
+
       // Mark complete + cooldown
       this.#jobStore.update(activityId, {
         status: 'completed',
@@ -738,6 +749,16 @@ export class FitnessActivityEnrichmentService {
 
     // Push description only
     await this.#stravaClient.updateActivity(activityId, { description: enrichment.description });
+
+    // Record provenance of the pushed description so a later reconcile treats
+    // it as ours rather than a manual edit.
+    if (!session.strava) session.strava = {};
+    session.strava.pushed = {
+      name: session.strava.pushed?.name ?? currentActivity?.name ?? null,
+      description: enrichment.description,
+      at: new Date().toISOString(),
+    };
+    saveYaml(filePath.replace(/\.yml$/, ''), session);
 
     this.#logger.info?.('strava.voice_memo_backfill.pushed', {
       sessionId,
