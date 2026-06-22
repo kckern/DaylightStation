@@ -37,6 +37,19 @@ export function buildArtPredicate(def = {}) {
   };
 }
 
+// Hybrid membership (ArtMode "Model C"): a work belongs to collection `key` if the
+// rule matches OR it's hand-tagged with the collection name — but hidden/flagged
+// works are never shown, and an explicit `exclude` (or hide/flag) overrides a match.
+// Pure; the single source of truth for "is this work in this collection?".
+export function isMember(key, def = {}, entry) {
+  const meta = entry?.meta || {};
+  if (meta.hidden === true) return false;
+  if (meta.flagged === true) return false;
+  if (Array.isArray(meta.exclude) && meta.exclude.includes(key)) return false;
+  if (Array.isArray(meta.tags) && meta.tags.includes(key)) return true;
+  return buildArtPredicate(def)(entry);
+}
+
 // Resolve a collection key against a defs map, falling back to `all` (or {}).
 export function resolveCollection(defs = {}, key) {
   if (key && Object.prototype.hasOwnProperty.call(defs, key)) {
@@ -45,4 +58,4 @@ export function resolveCollection(defs = {}, key) {
   return { key: 'all', def: defs.all || {} };
 }
 
-export default { parseYear, buildArtPredicate, resolveCollection };
+export default { parseYear, buildArtPredicate, isMember, resolveCollection };
