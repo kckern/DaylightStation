@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createOpenGate } from './GovernanceGate.js';
+import { createOpenGate, createGateAdapter } from './GovernanceGate.js';
 
 describe('createOpenGate', () => {
   it('is always playable', () => {
@@ -16,6 +16,46 @@ describe('createOpenGate', () => {
   it('onChange returns a no-op unsubscribe', () => {
     const gate = createOpenGate();
     const unsub = gate.onChange(() => {});
+    expect(typeof unsub).toBe('function');
+    expect(() => unsub()).not.toThrow();
+  });
+});
+
+describe('createGateAdapter', () => {
+  it('has gate mode', () => {
+    const a = createGateAdapter({ getPhase: () => 'unlocked' });
+    expect(a.mode).toBe('gate');
+  });
+
+  it('isPlayable only when unlocked', () => {
+    let phase = 'unlocked';
+    const a = createGateAdapter({ getPhase: () => phase });
+    expect(a.isPlayable()).toBe(true);
+    phase = 'warning';
+    expect(a.isPlayable()).toBe(false);
+    phase = 'pending';
+    expect(a.isPlayable()).toBe(false);
+    phase = 'locked';
+    expect(a.isPlayable()).toBe(false);
+  });
+
+  it('maps each phase to a status state', () => {
+    let phase = 'unlocked';
+    const a = createGateAdapter({ getPhase: () => phase });
+    expect(a.getStatus().state).toBe('playing');
+    phase = 'warning';
+    expect(a.getStatus().state).toBe('warning');
+    phase = 'pending';
+    expect(a.getStatus().state).toBe('paused');
+    phase = 'locked';
+    expect(a.getStatus().state).toBe('paused');
+    phase = undefined;
+    expect(a.getStatus().state).toBe('paused');
+  });
+
+  it('onChange returns a no-op unsubscribe', () => {
+    const a = createGateAdapter({ getPhase: () => 'unlocked' });
+    const unsub = a.onChange(() => {});
     expect(typeof unsub).toBe('function');
     expect(() => unsub()).not.toThrow();
   });
