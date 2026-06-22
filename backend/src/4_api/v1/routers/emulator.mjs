@@ -4,6 +4,21 @@ import { buildCatalog, resolveGameRules } from '../../../3_applications/emulator
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
+const MODERATE_CACHE = 'public, max-age=3600';
+
+const ENGINE_CONTENT_TYPES = {
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.wasm': 'application/wasm',
+  '.data': 'application/octet-stream',
+};
+
+function engineContentTypeFor(relPath) {
+  const ext = relPath.slice(relPath.lastIndexOf('.')).toLowerCase();
+  return ENGINE_CONTENT_TYPES[ext] || 'application/octet-stream';
+}
 
 /**
  * Parse a single-range `Range: bytes=start-end` header against a known size.
@@ -65,6 +80,7 @@ function sendBinary(res, result, { range, cache = true } = {}) {
  * @param {function} deps.loadConfig       () => normalized cfg.
  * @param {function} deps.readBinary       (absPath, { range }?) => { buffer|stream, size, contentType }; throws .code==='ENOENT'.
  * @param {function} deps.writeBinary      (absPath, buffer) => Promise<void> (atomic).
+ * @param {function} [deps.readEngineFile] (relPath) => { buffer|stream, size, contentType }; throws .code==='ENOENT'. Serves the vendored EmulatorJS bundle.
  * @param {function} deps.resolveRomPath   (cfg, system, gameId) => absPath.
  * @param {function} deps.resolveArtPath   (cfg, system, gameId, kind) => absPath.
  * @param {function} deps.resolveSavePath  (system, gameId, user) => absPath.
@@ -76,12 +92,49 @@ export function createEmulatorRouter({
   loadConfig,
   readBinary,
   writeBinary,
+  readEngineFile,
   resolveRomPath,
   resolveArtPath,
   resolveSavePath,
   resolveStatePath,
 }) {
   const router = express.Router();
+
+  // ---- GET /engine/* -------------------------------------------------------
+  // Serves the vendored EmulatorJS bundle (loader.js, emulator.min.js/css,
+  // cores/*, compression/*). This is what EJS_pathtodata points at. Each path
+  // segment is validated (dot-allowed for filenames) so the wildcard can never
+  // escape the engine dir.
+  router.get('/engine/*', (req, res) => {
+    if (typeof readEngineFile !== 'function') {
+      return res.status(404).json({ error: 'not found' });
+    }
+    const wildcard = req.params[0] || '';
+    let relPath;
+    try {
+      const segments = wildcard.split('/').filter((s) => s !== '');
+      if (segments.length === 0) throw new Error('unsafe path segment');
+      for (const seg of segments) safeSegment(seg, { dot: true });
+      relPath = segments.join('/');
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const result = readEngineFile(relPath);
+      const headers = {
+        'Content-Type': result.contentType || engineContentTypeFor(relPath),
+        'Cache-Control': MODERATE_CACHE,
+      };
+      if (typeof result.size === 'number') headers['Content-Length'] = String(result.size);
+      res.writeHead(200, headers);
+      if (result.stream) result.stream.pipe(res);
+      else res.end(result.buffer);
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+      logger.error('emulator.engine.error', { relPath, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  });
 
   // ---- GET /library --------------------------------------------------------
   router.get('/library', (req, res) => {
