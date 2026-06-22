@@ -70,6 +70,15 @@ function makeApp(overrides = {}) {
     resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
     resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
     resolveStatePath: vi.fn((system, gameId, slot, user) => `/media/${system}/states/${user}/${gameId}/${slot}.state`),
+    readEngineFile: vi.fn((relPath) => {
+      const ENGINE = {
+        'loader.js': { buffer: Buffer.from('LOADER'), contentType: 'text/javascript' },
+        'cores/gambatte-wasm.data': { buffer: Buffer.from('COREDATA'), contentType: 'application/octet-stream' },
+      };
+      const entry = ENGINE[relPath];
+      if (!entry) throw enoent();
+      return { buffer: entry.buffer, size: entry.buffer.length, contentType: entry.contentType };
+    }),
     ...overrides,
   };
 
@@ -240,6 +249,38 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=soren');
       expect(res.status).toBe(204);
+    });
+  });
+
+  describe('GET /engine/*', () => {
+    it('serves loader.js with text/javascript', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/engine/loader.js');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/javascript/);
+      expect(res.text).toBe('LOADER');
+      expect(res.headers['cache-control']).toBeTruthy();
+    });
+
+    it('serves a nested core data file', async () => {
+      const { app, deps } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/engine/cores/gambatte-wasm.data');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/application\/octet-stream/);
+      expect(Buffer.from(res.body).toString()).toBe('COREDATA');
+      expect(deps.readEngineFile).toHaveBeenCalledWith('cores/gambatte-wasm.data');
+    });
+
+    it('400 on traversal segment', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/engine/..%2Fsecret');
+      expect(res.status).toBe(400);
+    });
+
+    it('404 on missing file', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/engine/nope.js');
+      expect(res.status).toBe(404);
     });
   });
 });
