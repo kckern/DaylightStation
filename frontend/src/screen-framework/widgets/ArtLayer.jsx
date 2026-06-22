@@ -9,20 +9,25 @@
 import React, { useMemo, useRef } from 'react';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import { artLayout } from './artLayout.js';
-import { objectFitWindows, cropFocus, openingAspect, cropBandFit } from './artModes.js';
+import { objectFitWindows, cropFocus, cropBandFit } from './artModes.js';
 import { layoutTitle } from './titleLayout.js';
 import smartquotes from 'smartquotes';
 
 const smartQuotes = (s) => (s == null ? s : smartquotes.string(String(s)));
 
-// A panel has an active crop band when in a cover mode and crop has vertical margins.
-const bandFor = (panel, fit, fullWindow, frame) => {
+// A panel has an active crop band when in a cover mode and crop has vertical
+// margins. `openingRatio` is the panel's ACTUAL window aspect (a diptych half is
+// narrower than the full opening), so the band covers the right box.
+const bandFor = (panel, fit, openingRatio) => {
   const c = panel?.meta?.crop;
   if (fit !== 'cover' || !c || c.enabled === false) return null;
   if (!(Number.isFinite(c.top) || Number.isFinite(c.bottom))) return null;
   const srcRatio = (panel.meta.width > 0 && panel.meta.height > 0) ? panel.meta.width / panel.meta.height : 1;
-  return cropBandFit(c, srcRatio, openingAspect({ frame, fullWindow }));
+  return cropBandFit(c, srcRatio, openingRatio);
 };
+// Aspect (w/h) of a fit-window from its stage-% insets, over the 16:9 stage.
+const windowAspect = (win) =>
+  ((100 - win.left - win.right) / 100 * 16) / ((100 - win.top - win.bottom) / 100 * 9);
 
 /**
  * @param {object}  o.art           featured-art payload ({ mode, panels, matte })
@@ -115,7 +120,7 @@ export default function ArtLayer({
 
       {!isGallery && panels.map((p, i) => {
         const win = fitWindows[i];
-        const band = bandFor(p, mode.fit, mode.fullWindow, frame);
+        const band = bandFor(p, mode.fit, windowAspect(win));
         return (
           <div key={p.image} className="artmode__fitwindow" data-testid={testid('artmode-window', i)}
                style={{ top: `${win.top}%`, left: `${win.left}%`, right: `${win.right}%`, bottom: `${win.bottom}%` }}>

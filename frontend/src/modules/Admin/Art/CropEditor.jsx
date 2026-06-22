@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { clampBand } from './cropGeometry.js';
 
 // Overlay on the loupe artwork: drag (or keyboard-nudge) the top/bottom edges of
@@ -10,6 +10,17 @@ export default function CropEditor({ crop, onCrop }) {
   const bottom = Number.isFinite(crop?.bottom) ? crop.bottom : 8;
   const stageRef = useRef(null);
   const dragRef = useRef(null); // { edge, startY, startTop, startBottom, h }
+  const listenersRef = useRef(null); // { move, up } — for unmount cleanup
+
+  // Drop any in-flight drag listeners if we unmount mid-drag (e.g. navigating to
+  // the next work), so a stray pointermove can't commit onto an unmounted editor.
+  useEffect(() => () => {
+    if (listenersRef.current) {
+      window.removeEventListener('pointermove', listenersRef.current.move);
+      window.removeEventListener('pointerup', listenersRef.current.up);
+      listenersRef.current = null;
+    }
+  }, []);
 
   const commit = useCallback((band) => {
     onCrop({ enabled: true, ...clampBand(band) });
@@ -41,7 +52,9 @@ export default function CropEditor({ crop, onCrop }) {
       dragRef.current = null;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      listenersRef.current = null;
     };
+    listenersRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   }, [top, bottom, commit]);

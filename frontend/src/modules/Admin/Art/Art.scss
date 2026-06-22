@@ -51,3 +51,6 @@
 .crop-editor__controls { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 10px; align-items: center;
   font-size: 12px; background: rgba(0,0,0,.5); padding: 4px 8px; border-radius: 4px; }
 .crop-editor__toggle { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.crop-editor__reset { background: rgba(255,255,255,.12); color: inherit; border: 1px solid rgba(255,255,255,.2);
+  border-radius: 4px; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+.crop-editor__reset:hover { background: rgba(255,255,255,.2); }
