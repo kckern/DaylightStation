@@ -122,7 +122,9 @@ export function createEmulatorRouter({
     try {
       const result = readEngineFile(relPath);
       const headers = {
-        'Content-Type': result.contentType || engineContentTypeFor(relPath),
+        // Engine files are typed by extension (the generic readBinary type would
+        // mislabel JS as octet-stream and break script execution / WASM streaming).
+        'Content-Type': engineContentTypeFor(relPath),
         'Cache-Control': MODERATE_CACHE,
       };
       if (typeof result.size === 'number') headers['Content-Length'] = String(result.size);
