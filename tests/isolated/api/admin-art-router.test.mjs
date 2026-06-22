@@ -58,4 +58,14 @@ describe('admin art router', () => {
     const res = await request(app).patch('/art/works/..%2f..%2fescape').send({ hidden: true });
     expect(res.status).toBe(400);
   });
+
+  it('PATCH rejects source-based traversal (scope escape)', async () => {
+    const res = await request(app).patch('/art/works/alpha').send({ source: '../../../../etc', hidden: true });
+    expect(res.status).toBe(400);
+  });
+
+  it('GET rejects source-based traversal (scope escape)', async () => {
+    const res = await request(app).get('/art/works?source=..%2f..%2f..%2fetc');
+    expect(res.status).toBe(400);
+  });
 });

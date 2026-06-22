@@ -19,11 +19,20 @@ export function createAdminArtRouter({ mediaPath, logger = console }) {
   const imgBasePath = path.join(mediaPath, 'img');
   const artSource = createArtSource({ imgBasePath, logger });
 
-  const scopeDirFor = (source) => path.join(imgBasePath, source ? `art/${source}` : 'art/classic');
+  // The art tree is the hard security boundary. `source` (a scope name) comes from
+  // the client, so resolve it and reject anything that escapes <imgBasePath>/art —
+  // otherwise a `source` of `../../etc` would relocate the whole scope before the
+  // per-work id guard below ever runs.
+  const artRoot = path.resolve(imgBasePath, 'art');
+  const safeScopeDir = (source) => {
+    const dir = path.resolve(imgBasePath, source ? `art/${source}` : 'art/classic');
+    return (dir === artRoot || dir.startsWith(artRoot + path.sep)) ? dir : null;
+  };
 
   router.get('/works', async (req, res) => {
     try {
       const { source, tag, hidden, flagged, q } = req.query;
+      if (!safeScopeDir(source)) return res.status(400).json({ error: 'Invalid source' });
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 60));
       const all = await artSource.listWorks({ folder: source && source !== 'classic' ? source : undefined });
@@ -44,12 +53,13 @@ export function createAdminArtRouter({ mediaPath, logger = console }) {
   // wildcard form `/works/*` with `req.params[0]`. Express 5's `*splat` form does not
   // apply here; the root-level express@5 is only used by test files, not imported modules.
   router.patch('/works/*', async (req, res) => {
+    const scopeDir = safeScopeDir(req.body?.source);
+    if (!scopeDir) return res.status(400).json({ error: 'Invalid source' });
     const rawId = req.params[0] || '';
-    const source = req.body?.source;
-    const scopeDir = scopeDirFor(source);
     const workDir = path.resolve(scopeDir, rawId);
-    // Traversal guard: the resolved work dir must stay inside the scope.
-    if (!workDir.startsWith(path.resolve(scopeDir) + path.sep)) {
+    // Per-work traversal guard: the resolved work dir must stay inside the (already
+    // art-root-bounded) scope, and must name an actual work (not the scope itself).
+    if (workDir === scopeDir || !workDir.startsWith(scopeDir + path.sep)) {
       return res.status(400).json({ error: 'Invalid work id' });
     }
     const file = path.join(workDir, 'metadata.yaml');
