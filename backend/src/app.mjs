@@ -149,6 +149,10 @@ import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
 import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
 import { ScreenContentTracker } from '#apps/devices/services/ScreenContentTracker.mjs';
+import { AmbientSchedulerService } from '#apps/ambient/AmbientSchedulerService.mjs';
+import { YamlAmbientStateStore } from '#adapters/ambient/YamlAmbientStateStore.mjs';
+import { normalizeWindows } from '#domains/ambient/normalizeWindows.mjs';
+import { loadArtmodeConfig } from '#adapters/content/art/artmodeConfig.mjs';
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { CompositeJobDatastore } from '#adapters/scheduling/CompositeJobDatastore.mjs';
@@ -2431,6 +2435,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     scheduler.start();
   } else {
     rootLogger.info('scheduler.disabled', { reason: 'Disabled by configuration' });
+  }
+
+  // Ambient TV schedule — wakes the living-room TV to a scheduled art preset and
+  // powers it off at the window's end, always yielding to active content. Reads
+  // the `schedule:` block in artmode.yml; "is a video playing" comes from the
+  // ScreenContentTracker. Shares the scheduler enable gate.
+  const ambientDataDir = configService.getDataDir();
+  const ambientScheduler = new AmbientSchedulerService({
+    loadSchedule: async () => normalizeWindows(
+      (await loadArtmodeConfig(ambientDataDir, rootLogger)).schedule,
+      { defaultDevice: 'livingroom-tv' },
+    ),
+    tracker: screenContentTracker,
+    wakeAndLoadService,
+    deviceService: deviceServices.deviceService,
+    stateStore: new YamlAmbientStateStore({
+      dataDir: ambientDataDir,
+      logger: rootLogger.child({ module: 'ambient-state' }),
+    }),
+    timeZone: 'America/Los_Angeles',
+    logger: rootLogger.child({ module: 'ambient-scheduler' }),
+  });
+  if (enableScheduler) {
+    ambientScheduler.start();
   }
 
   v1Routers.scheduling = createSchedulingRouter({
