@@ -5,7 +5,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { Jimp } from 'jimp';
-import { buildArtPredicate } from '../collections.mjs';
+import { isMember } from '../collections.mjs';
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 // Orientation split: anything at least as wide as it is tall hangs as a single
@@ -29,6 +29,18 @@ export function createArtSource({ imgBasePath, logger = console }) {
   // collections share one scan of the same scope.
   const scanCache = new Map();   // scopeDir → { mtimeMs, entries }
 
+  // Project a scanned entry's meta for output (screensaver + admin share this).
+  const projectMeta = (meta) => ({
+    title: meta.title, artist: meta.artist, date: meta.date,
+    origin: meta.origin, medium: meta.medium,
+    department: meta.department, credit: meta.credit,
+    category: meta.category ?? null, display: meta.display ?? null,
+    section: meta.section ?? null, crop_anchor: meta.crop_anchor ?? null,
+    tags: meta.tags ?? [], exclude: meta.exclude ?? [],
+    hidden: meta.hidden === true, flagged: meta.flagged === true,
+    width: meta.width, height: meta.height,
+  });
+
   async function readMeta(dir) {
     let raw;
     try {
@@ -42,16 +54,17 @@ export function createArtSource({ imgBasePath, logger = console }) {
     }
     try {
       const p = yaml.load(raw) || {};
+      const arr = (v) => (Array.isArray(v) ? v : (v == null ? [] : [v]));
       return {
         title: p.title ?? null, artist: p.artist ?? null,
         date: p.date != null ? String(p.date) : null,
         origin: p.origin ?? null, medium: p.medium ?? null,
         department: p.department ?? null, credit: p.credit ?? null,
         category: p.category ?? null, display: p.display ?? null,
-        // Per-item ArtMode hint: `crop_anchor` (e.g. `top`) anchors which edge a
-        // cover-crop keeps, so subjects near an edge aren't trimmed. The frontend
-        // sanitizes the value into a CSS object-position.
         crop_anchor: p.crop_anchor ?? null,
+        // Hand-curation (ArtMode admin). tags/exclude are collection-name lists.
+        tags: arr(p.tags), exclude: arr(p.exclude),
+        hidden: p.hidden === true, flagged: p.flagged === true,
         width: toInt(p.width), height: toInt(p.height),
       };
     } catch (err) {
@@ -147,38 +160,34 @@ export function createArtSource({ imgBasePath, logger = console }) {
     return entries;
   }
 
-  async function resolveCandidates(def = {}) {
+  async function resolveCandidates(def = {}, key = 'all') {
     const scope = def.folder ? `art/${def.folder}` : 'art/classic';
     const scopeDir = path.join(imgBasePath, scope);
-    const predicate = buildArtPredicate(def);
 
     const scanned = await scanScope(scope, scopeDir);
     const out = [];
     for (const e of scanned) {
-      if (!predicate({ folder: e.folder, meta: e.meta })) continue;
-      const { meta } = e;
+      if (!isMember(key, def, { folder: e.folder, meta: e.meta })) continue;
       out.push({
-        id: e.folder,
-        image: e.image,
-        width: meta.width, height: meta.height, kind: e.kind,
-        meta: {
-          title: meta.title, artist: meta.artist, date: meta.date,
-          origin: meta.origin, medium: meta.medium,
-          department: meta.department, credit: meta.credit,
-          section: meta.section ?? null,
-          // Per-item ArtMode crop anchor (see readMeta).
-          crop_anchor: meta.crop_anchor ?? null,
-          // width/height feed the frontend artLayout aspect-ratio math.
-          width: meta.width, height: meta.height,
-        },
+        id: e.folder, image: e.image,
+        width: e.meta.width, height: e.meta.height, kind: e.kind,
+        meta: projectMeta(e.meta),
         loadImage: () => Jimp.read(e.localPath),
       });
     }
-    logger.info?.('art.source.resolved', { scope, count: out.length });
+    logger.info?.('art.source.resolved', { scope, key, count: out.length });
     return out;
   }
 
-  return { resolveCandidates };
+  // Admin listing: every work in a scope with full curation meta, regardless of
+  // rules/hidden/flagged. No loadImage (admin needs only id/image/meta).
+  async function listWorks({ folder } = {}) {
+    const scope = folder ? `art/${folder}` : 'art/classic';
+    const scanned = await scanScope(scope, path.join(imgBasePath, scope));
+    return scanned.map((e) => ({ id: e.folder, image: e.image, meta: projectMeta(e.meta) }));
+  }
+
+  return { resolveCandidates, listWorks };
 }
 
 export default createArtSource;
