@@ -48,6 +48,17 @@ describe('buildEjsGlobals', () => {
   it('throws when player is missing', () => {
     expect(() => buildEjsGlobals({ romUrl: 'r', pathtodata: 'd/' })).toThrow();
   });
+
+  it('includes EJS_defaultControls when controls provided', () => {
+    const controls = { 0: { 4: { value: 'up arrow', value2: 'DPAD_UP' } }, 1: {}, 2: {}, 3: {} };
+    const g = buildEjsGlobals({ player: '#m', romUrl: 'r', pathtodata: 'd/', controls });
+    expect(g.EJS_defaultControls).toBe(controls);
+  });
+
+  it('omits EJS_defaultControls when no controls provided', () => {
+    const g = buildEjsGlobals({ player: '#m', romUrl: 'r', pathtodata: 'd/' });
+    expect('EJS_defaultControls' in g).toBe(false);
+  });
 });
 
 function makeFakeWin() {
@@ -94,6 +105,13 @@ describe('loadEmulatorJS', () => {
     win.EJS_emulator = fakeInstance;
     win.EJS_onGameStart();
     await expect(p).resolves.toBe(fakeInstance);
+  });
+
+  it('threads controls through to EJS_defaultControls on the window', () => {
+    const win = makeFakeWin();
+    const controls = { 0: { 8: { value: 'x', value2: 'BUTTON_1' } }, 1: {}, 2: {}, 3: {} };
+    loadEmulatorJS({ player: '#m', romUrl: 'r', pathtodata: 'd', win, controls });
+    expect(win.EJS_defaultControls).toBe(controls);
   });
 
   it('memoizes: a second call returns the same promise', async () => {

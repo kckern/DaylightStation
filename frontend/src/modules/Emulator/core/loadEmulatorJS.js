@@ -29,9 +29,10 @@ const LOADER_SCRIPT_ID = 'ejs-loader';
  * @param {string} args.pathtodata - URL to the served EmulatorJS `data/` bundle (normalized to end with `/`).
  * @param {Function} [args.onReady] - lifecycle callback wired to EJS_ready.
  * @param {Function} [args.onGameStart] - lifecycle callback wired to EJS_onGameStart.
+ * @param {object} [args.controls] - EJS_defaultControls object (player->index->{value,value2}).
  * @returns {object} key/value map of EJS_* globals.
  */
-export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart } = {}) {
+export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onReady, onGameStart, controls } = {}) {
   if (!player) throw new Error('buildEjsGlobals: player (mount selector/element) is required');
   if (!romUrl) throw new Error('buildEjsGlobals: romUrl is required');
   if (!pathtodata) throw new Error('buildEjsGlobals: pathtodata is required');
@@ -50,6 +51,7 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
   };
   if (onReady) globals.EJS_ready = onReady;
   if (onGameStart) globals.EJS_onGameStart = onGameStart;
+  if (controls) globals.EJS_defaultControls = controls;
   return globals;
 }
 
@@ -69,9 +71,10 @@ let _loadPromise = null;
  * @param {string} args.pathtodata
  * @param {Window} [args.win=window]
  * @param {number} [args.timeoutMs=60000]
+ * @param {object} [args.controls] - EJS_defaultControls (keyboard+gamepad mapping).
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
-export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls } = {}) {
   if (_loadPromise) {
     log().debug('load.memoized-hit', {});
     return _loadPromise;
@@ -108,7 +111,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 
     let globals;
     try {
-      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart });
+      globals = buildEjsGlobals({ player, core, romUrl, pathtodata, onGameStart: handleGameStart, controls });
     } catch (err) {
       fail(err);
       return;
