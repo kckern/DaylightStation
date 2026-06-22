@@ -14,6 +14,8 @@ import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMedia
 import { useStallExhaustion } from './hooks/useStallExhaustion.js';
 import { useMediaErrorReporter } from './hooks/useMediaErrorReporter.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
+import { resolveCollectionKey } from './utils/collectionKey.js';
+import { nextPlaybackRate } from './utils/playbackRateCycle.js';
 import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
@@ -314,6 +316,13 @@ const Player = forwardRef(function Player(props, ref) {
     return identifier ? `player-item:${identifier}` : 'player-item:idle';
   }, [currentMediaGuid, mediaIdentity]);
 
+  // Rate persists per show/album/artist (in-memory, per session). Falls back to the
+  // prefs (queue/item) scope when there's no collection metadata.
+  const rateSessionKey = useMemo(() => {
+    const collection = resolveCollectionKey(effectiveMeta);
+    return collection ? `player-rate:${collection}` : prefsSessionKey;
+  }, [effectiveMeta, prefsSessionKey]);
+
   const explicitStartProvided = effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
   const explicitStartSeconds = explicitStartProvided
     ? Math.max(0, Number(effectiveMeta.seconds) || 0)
@@ -321,10 +330,27 @@ const Player = forwardRef(function Player(props, ref) {
 
   const {
     volume: sessionVolume,
-    playbackRate: sessionPlaybackRate,
-    setVolume: setSessionVolume,
-    setPlaybackRate: setSessionPlaybackRate
+    setVolume: setSessionVolume
   } = usePlaybackSession({ sessionKey: prefsSessionKey });
+
+  // Rate lives on its own collection-scoped session so it persists across show/album/
+  // artist advances without changing how volume is scoped.
+  const {
+    playbackRate: sessionPlaybackRate,
+    setPlaybackRate: setSessionPlaybackRate
+  } = usePlaybackSession({ sessionKey: rateSessionKey });
+
+  // The rate button (ScreenActionHandler) dispatches `player:cycle-playback-rate`
+  // rather than poking the DOM — DOM pokes can't reach the dash-video shadow <video>
+  // and get re-asserted by the controlled rate. Cycle the session rate here; the
+  // controlled apply (useCommonMediaController) handles the shadow element.
+  const sessionPlaybackRateRef = useRef(sessionPlaybackRate);
+  sessionPlaybackRateRef.current = sessionPlaybackRate;
+  useEffect(() => {
+    const onCycle = () => setSessionPlaybackRate(nextPlaybackRate(sessionPlaybackRateRef.current));
+    window.addEventListener('player:cycle-playback-rate', onCycle);
+    return () => window.removeEventListener('player:cycle-playback-rate', onCycle);
+  }, [setSessionPlaybackRate]);
 
   const {
     targetTimeSeconds,

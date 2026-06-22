@@ -19,6 +19,15 @@ function logger() {
 }
 
 /**
+ * Tell the active Player to cycle its playback rate. We dispatch an event rather
+ * than mutate the media element directly: a DOM poke can't reach the <video> inside
+ * the dash-video shadow DOM and is overwritten by the Player's controlled rate.
+ */
+export function dispatchCyclePlaybackRate() {
+  window.dispatchEvent(new CustomEvent('player:cycle-playback-rate'));
+}
+
+/**
  * ScreenActionHandler - Bridges ActionBus events to the overlay system.
  *
  * Listens for actions emitted by input adapters (e.g., NumpadAdapter)
@@ -224,11 +233,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // ArtMode's background music is excluded: rate is meaningless for it, and the
   // office screen repurposes the rate button to cycle ArtMode's view mode instead.
   const handleMediaRate = useCallback(() => {
-    const media = document.querySelector('audio:not([data-role="ambient"]):not([data-role="artmode-music"]), video, dash-video');
-    if (!media) return;
-    const rates = [1.0, 1.5, 2.0];
-    const idx = rates.indexOf(media.playbackRate);
-    media.playbackRate = rates[(idx + 1) % rates.length];
+    dispatchCyclePlaybackRate();
   }, []);
 
   // --- Volume (software master, applied as a multiplier on every audio source

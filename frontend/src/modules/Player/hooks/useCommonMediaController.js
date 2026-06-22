@@ -339,6 +339,17 @@ export function useCommonMediaController({
     return container;
   }, []);
 
+  // Apply the controlled playbackRate to the live element the instant it changes.
+  // The element-setup effect only (re)applies rate on play/seeked, so without this a
+  // mid-playback rate change (e.g. the rate button) wouldn't take effect until the
+  // next seek. getMediaEl() resolves the real <video> inside the dash-video shadow DOM.
+  useEffect(() => {
+    const el = getMediaEl();
+    if (el && Number.isFinite(playbackRate) && el.playbackRate !== playbackRate) {
+      el.playbackRate = playbackRate;
+    }
+  }, [playbackRate, getMediaEl, elementKey]);
+
   // Re-apply master × volume to the active media element when either changes.
   // Volume is set once on loadedmetadata; this effect propagates live master
   // changes (vol-up/down on the screen-framework numpad) to playing media.
