@@ -10,6 +10,7 @@ import {
   resolveStatePath,
   readBinary,
   writeBinary,
+  makeReadEngineFile,
 } from './emulatorFs.mjs';
 
 const EMU_DIR = '/media/emulation';
@@ -109,5 +110,47 @@ describe('emulatorFs writeBinary → readBinary round-trip (real tmp dir)', () =
         resolve();
       });
     });
+  });
+});
+
+describe('makeReadEngineFile (real tmp engine dir)', () => {
+  const engineDir = fs.mkdtempSync(path.join(os.tmpdir(), 'emu-engine-test-'));
+  afterAll(() => fs.rmSync(engineDir, { recursive: true, force: true }));
+
+  it('reads a file under the engine dir (including nested)', () => {
+    fs.writeFileSync(path.join(engineDir, 'loader.js'), 'LOADER');
+    fs.mkdirSync(path.join(engineDir, 'cores'), { recursive: true });
+    fs.writeFileSync(path.join(engineDir, 'cores', 'gambatte-wasm.data'), 'COREDATA');
+
+    const read = makeReadEngineFile(engineDir);
+    expect(read('loader.js').buffer.toString()).toBe('LOADER');
+    expect(read('cores/gambatte-wasm.data').buffer.toString()).toBe('COREDATA');
+  });
+
+  it('throws ENOENT for a missing file', () => {
+    const read = makeReadEngineFile(engineDir);
+    try {
+      read('missing.js');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err.code).toBe('ENOENT');
+    }
+  });
+
+  it('refuses to escape the engine dir', () => {
+    // place a sibling secret outside the engine dir
+    const secret = path.join(engineDir, '..', `secret-${path.basename(engineDir)}.txt`);
+    fs.writeFileSync(secret, 'SECRET');
+    try {
+      const read = makeReadEngineFile(engineDir);
+      try {
+        read('../' + path.basename(secret));
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err.code).toBe('ENOENT');
+      }
+    } finally {
+      fs.rmSync(secret, { force: true });
+    }
   });
 });
