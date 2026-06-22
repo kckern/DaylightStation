@@ -17,13 +17,27 @@
 - **Frontend unit test:** `cd frontend && npx vitest run <path-relative-to-frontend> --reporter=dot`
 - **Backend unit test:** `npx vitest run <path-from-repo-root> --reporter=dot` (root has `vitest.config.mjs`)
 - **Logging:** Use the framework, never raw `console.*`. Module-level lazy logger pattern (see CLAUDE.md "Module-Level Loggers"). Components: `getLogger().child({ component })` via `useMemo`.
-- **Data paths (reconciled with `ConfigService.mjs`):**
-  - Config (small, structured): `getHouseholdAppPath('emulator', 'config.yml')` → `data/households/apps/emulator/config.yml`
-  - Binaries + saves (the "media data mount"): `getHouseholdAppMediaPath('emulator', <rel>)` → `media/apps/emulator/households/<rel>`
-    - `cores/{system}/…`, `roms/{system}/…`, `boxart/…`, `saves/{user}/{rom}.srm`, `states/{user}/{rom}/{slot}.state`
+- **Data paths — CORRECTED by the real seed (see ADDENDUM below):** everything is on the **media mount** under `media/emulation/{system}/`: `core/` (one core/system), `roms/`, `saves/{user}/{rom}.srm`, `states/{user}/{rom}/{slot}.state`, `cover.png`, `bezel.png`, and a per-system manifest `{system}.yml`. There is **no** central `config.yml` and **no** `data/households/apps/emulator`. Resolve the media root via `getMediaDir()` + `/emulation`.
 - **Interactive controls:** prefer `onPointerDown` + keyboard activation (Enter/Space), per FitnessApp note.
 - **Commit cadence:** commit after every green test (TDD step 5). Branch is `feature/emulator-console` in worktree `.worktrees/emulator-console`.
 - **Path-safety rule (security-critical):** every `user`, `romId`, `system`, `slot` segment that reaches the filesystem MUST be validated against `^[a-z0-9_-]+$` (romId/slot may also allow `.`) and rejected otherwise. This — not roster membership — is the hard requirement that prevents path traversal.
+
+---
+
+## ADDENDUM (2026-06-22) — real seed + VERIFIED EmulatorJS facts
+
+A real seed exists at `media/emulation/gb/` (Pokémon Red, with a working `.srm`). It supersedes several earlier assumptions. **Where this addendum conflicts with text below, the addendum wins.**
+
+**Filesystem layout (SSOT):** `media/emulation/{system}/` → `core/  roms/  saves/{user}/  states/{user}/  cover.png  bezel.png  {system}.yml`. The per-system manifest (`gameboy.yml`) is the config unit — no central `config.yml`.
+
+**Per-system manifest shape** (`{system}.yml`): top-level `system`, `label`, `core` (`{ name, ejs_core, reference_so }`), `defaults` (`{ governance }`), `games[]` (each `{ id, title, rom, save, cover, bezel, governance?, watches?, hooks? }`), `presentation` (`{ shader, chrome, core_options }`), and an informational `retroarch_reference` block (NEVER loaded). **Loader (Task 1.x / Phase 1C) responsibility:** scan `media/emulation/*/` manifests and normalize into the in-memory `cfg` that `buildCatalog`/`resolveGameRules` already consume — i.e. build `cfg.systems[systemId] = { core, label }`, and flatten each manifest's `games[]` into `cfg.games[]` **with the system's `defaults` deep-merged UNDER each game** (so the existing global-`cfg.defaults` pure functions stay valid; per-user overlay still applied via `cfg.users`). Hex addresses in `watches[].addr` (e.g. `0xD057`) parse to numbers via js-yaml — fine.
+
+**Verified EmulatorJS capabilities (do NOT re-derive from RetroArch):**
+- **Core:** gambatte is the *default* GB/GBC core → `EJS_core='gb'`; `mgba` is the alternative. The seed's `*_android.so` is ARM aarch64 — provenance only, NOT browser-loadable.
+- **Self-hosting:** serve the EmulatorJS `data/` bundle (cores/shaders/loader WASM) from our backend and set `EJS_pathtodata` to that URL. This is how lazy-load + mount-serving work. (Affects Phase 0 delivery + Phase 1 core serving + Phase 3 loader.)
+- **Shaders:** built-ins are ONLY `2xScaleHQ, 4xScaleHQ, crt-aperture, crt-easymode, crt-geom, crt-mattias` (`data/src/shaders.js`). **No handheld/LCD/dot-matrix.** Phase 7 must ADD a custom GLSL dot-matrix shader to our self-hosted data (or run our own WebGL pass) to match the GB look — not pick a built-in.
+- **Bezel/chrome:** EmulatorJS has NO overlay/bezel feature → `bezel.png` is rendered by **our DaylightStation JSX chrome layer** (Phase 7 / EmulatorConsole), not the emulator.
+- **Core options:** libretro options (e.g. `gambatte_gb_internal_palette`) ARE settable via `EJS_defaultOptions`; confirm exact keys at runtime via the "supported menu options" console log.
 
 ---
 
