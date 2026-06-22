@@ -82,6 +82,7 @@ export function createApiRouter(config) {
     '/lifelog': 'lifelog',
     '/static': 'static',
     '/art': 'art',
+    '/emulator': 'emulator',
     '/calendar': 'calendar',
     '/gratitude': 'gratitude',
     '/fitness': 'fitness',

@@ -9,6 +9,14 @@ import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
 import { createReaderArbiter } from './readerArbiter.mjs';
 import { createContinuousScanLoop } from './continuousScanLoop.mjs';
+import { startBtInventoryBroadcast } from './btInventory.mjs';
+import { handleBtPairRequest } from './btPairing.mjs';
+import { exec as nodeExec } from 'child_process';
+import { promisify } from 'util';
+
+// Promisified exec used by the bt.pair pairing window (mirrors btInventory's
+// own injected exec). Centralized here so the handler + tests share one shape.
+const execAsync = promisify(nodeExec);
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
@@ -134,6 +142,8 @@ const app = express();
 // Global state
 let websocketClient = null;
 let reconnectInterval = null;
+// Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
+let btInventoryBroadcast = null;
 
 // Pending interactive unlock requests, keyed by requestId. Only populated when
 // FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
@@ -200,10 +210,10 @@ async function connectWebSocket() {
       // Subscribe to the fingerprint request topics. The backend bus topic-filters
       // by subscription, so without these we'd never receive the requests.
       try {
-        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request']) {
+        for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request']) {
           websocketClient.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
         }
-        console.log('🔐 Subscribed to unlock / enroll / delete request topics');
+        console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair request topics');
       } catch (error) {
         console.error('❌ Failed to subscribe to fingerprint requests:', error.message);
       }
@@ -215,6 +225,18 @@ async function connectWebSocket() {
         message = JSON.parse(data);
       } catch (error) {
         console.log('📥 Received raw message:', data.toString());
+        return;
+      }
+
+      // BT controller-pairing request: the backend wants this box to open a
+      // time-boxed BlueZ pairing window and pair any discovered game controllers.
+      // Progress streams back as `bt.pair.progress`. Best-effort — never throws.
+      if (message.topic === 'bt.pair.request') {
+        await handleBtPairRequest(message, {
+          exec: execAsync,
+          send: (topic, payload) => sendBus(topic, payload),
+          logger: console,
+        });
         return;
       }
 
@@ -554,6 +576,11 @@ process.on('SIGINT', async () => {
   // Stop the continuous scan loop
   continuousScan.stop();
 
+  // Stop the BT inventory broadcast loop
+  if (btInventoryBroadcast) {
+    btInventoryBroadcast.stop();
+  }
+
   // Close WebSocket
   if (websocketClient) {
     websocketClient.close();
@@ -573,6 +600,11 @@ process.on('SIGTERM', async () => {
 
   // Stop the continuous scan loop
   continuousScan.stop();
+
+  // Stop the BT inventory broadcast loop
+  if (btInventoryBroadcast) {
+    btInventoryBroadcast.stop();
+  }
 
   // Close WebSocket
   if (websocketClient) {
@@ -640,6 +672,15 @@ async function startServer() {
 
   // Connect to DaylightStation WebSocket
   await connectWebSocket();
+
+  // Start the BlueZ BT inventory broadcast: periodically reports OS-level
+  // connected BT devices (address/name/connected/battery) over the WS as
+  // `bt_inventory`. Identity/inventory only — does NOT affect input. Sends via
+  // sendBus so the backend routes purely on topic (no `source: 'fitness'`).
+  btInventoryBroadcast = startBtInventoryBroadcast({
+    send: (topic, payload) => sendBus(topic, payload),
+  });
+  console.log('🎮 BlueZ bt_inventory broadcast started');
 
   // Start the continuous biometric scan loop (skipped in sim mode — no reader).
   if (process.env.FINGERPRINT_SIM) {
