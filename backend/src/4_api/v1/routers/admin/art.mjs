@@ -4,20 +4,43 @@ import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { createArtSource } from '../../../../1_adapters/content/art/sources/artSource.mjs';
 import { mergeWorkMetadata, filterWorks } from '../../../../1_adapters/content/art/workMetadata.mjs';
+import { matchesCollection } from '../../../../1_adapters/content/art/collections.mjs';
+import { loadArtCollections } from '../../../../1_adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Admin Art router — curate the classic file-based art library.
  *   GET  /works         list works (filter: source, tag, hidden, flagged, q, page, pageSize)
  *   PATCH /works/*       merge a metadata patch into one work's metadata.yaml
  *
+ * The `tag` filter doubles as a collection filter: if it names a known collection
+ * (from art.yml), works are matched by rule OR hand-tag (so rule-based members are
+ * curatable, not just hand-tagged ones); otherwise it matches the raw hand-tag.
+ *
  * @param {Object} config
  * @param {string} config.mediaPath - base media dir; images live under <mediaPath>/img/art/<scope>/
+ * @param {string} [config.dataPath] - base data dir; collection defs come from <dataPath>/household/config/art.yml
+ * @param {Function} [config.getCollections] - test seam: async () => collectionsMap (overrides dataPath load)
  * @param {Object} [config.logger=console]
  */
-export function createAdminArtRouter({ mediaPath, logger = console }) {
+export function createAdminArtRouter({ mediaPath, dataPath, getCollections, logger = console }) {
   const router = express.Router();
   const imgBasePath = path.join(mediaPath, 'img');
   const artSource = createArtSource({ imgBasePath, logger });
+
+  // Collection defs (art.yml) drive the collection-aware tag filter. Loaded once
+  // and cached; falls back to {} so an unknown/absent art.yml just means the tag
+  // filter behaves as a plain hand-tag match.
+  let _collections = null;
+  const loadCollections = getCollections || (async () => {
+    if (_collections) return _collections;
+    try {
+      _collections = dataPath ? await loadArtCollections(dataPath, logger) : {};
+    } catch (err) {
+      logger.warn?.('admin.art.collections.load_failed', { error: err.message });
+      _collections = {};
+    }
+    return _collections;
+  });
 
   // The art tree is the hard security boundary. `source` (a scope name) comes from
   // the client, so resolve it and reject anything that escapes <imgBasePath>/art —
@@ -35,10 +58,18 @@ export function createAdminArtRouter({ mediaPath, logger = console }) {
       if (!safeScopeDir(source)) return res.status(400).json({ error: 'Invalid source' });
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
       const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 60));
-      const all = await artSource.listWorks({ folder: source && source !== 'classic' ? source : undefined });
+      let all = await artSource.listWorks({ folder: source && source !== 'classic' ? source : undefined });
+      // Collection-aware tag filter: a known collection name matches by rule OR tag
+      // (hidden/flagged still listed, so they can be curated); any other tag is a
+      // plain hand-tag match. q/hidden/flagged narrow further via filterWorks.
+      if (tag) {
+        const cols = await loadCollections();
+        all = Object.prototype.hasOwnProperty.call(cols, tag)
+          ? all.filter((w) => matchesCollection(tag, cols[tag] || {}, { folder: w.id, meta: w.meta }))
+          : all.filter((w) => Array.isArray(w.meta.tags) && w.meta.tags.includes(tag));
+      }
       const filtered = filterWorks(all, {
-        tag: tag || undefined, q: q || undefined,
-        hidden: hidden === 'true', flagged: flagged === 'true',
+        q: q || undefined, hidden: hidden === 'true', flagged: flagged === 'true',
       });
       const start = (page - 1) * pageSize;
       res.json({ total: filtered.length, page, pageSize, works: filtered.slice(start, start + pageSize) });

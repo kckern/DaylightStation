@@ -71,7 +71,9 @@ export function useArtCuration(filters = {}) {
     if (recordUndo && prevMeta) undoStack.current.push({ id, prevMeta });
 
     try {
-      const res = await DaylightAPI(`${WORKS_PATH}/${id}`, patch, 'PATCH');
+      // Encode each path segment but keep the slashes (sectioned-scope work ids).
+      const encId = String(id).split('/').map(encodeURIComponent).join('/');
+      const res = await DaylightAPI(`${WORKS_PATH}/${encId}`, patch, 'PATCH');
       // Only update from server response if it returns a meta object; otherwise
       // keep the optimistic state (avoids overwriting it with a stale snapshot).
       if (res && res.meta) {

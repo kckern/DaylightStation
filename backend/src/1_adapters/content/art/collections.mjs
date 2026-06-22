@@ -50,6 +50,17 @@ export function isMember(key, def = {}, entry) {
   return buildArtPredicate(def)(entry);
 }
 
+// Admin-side membership: would this work belong to collection `key` by rule OR
+// hand-tag — IGNORING hidden/flagged/exclude. The Library uses this so a curator
+// filtering to a collection sees ALL its candidates (including ones they've hidden
+// or excluded) and can un-hide / re-include them. (isMember is the screensaver's
+// stricter view, which drops those.)
+export function matchesCollection(key, def = {}, entry) {
+  const meta = entry?.meta || {};
+  if (Array.isArray(meta.tags) && meta.tags.includes(key)) return true;
+  return buildArtPredicate(def)(entry);
+}
+
 // Resolve a collection key against a defs map, falling back to `all` (or {}).
 export function resolveCollection(defs = {}, key) {
   if (key && Object.prototype.hasOwnProperty.call(defs, key)) {
@@ -58,4 +69,4 @@ export function resolveCollection(defs = {}, key) {
   return { key: 'all', def: defs.all || {} };
 }
 
-export default { parseYear, buildArtPredicate, isMember, resolveCollection };
+export default { parseYear, buildArtPredicate, isMember, matchesCollection, resolveCollection };

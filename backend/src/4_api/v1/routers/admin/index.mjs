@@ -80,9 +80,11 @@ export function createAdminRouter(config) {
   });
   router.use('/apps', appsRouter);
 
-  // Mount art router (ArtMode library curation)
+  // Mount art router (ArtMode library curation). dataPath lets the collection-aware
+  // tag filter read collection defs from <dataPath>/household/config/art.yml.
   const artRouter = createAdminArtRouter({
     mediaPath,
+    dataPath: configService?.getDataDir?.(),
     logger: logger.child?.({ submodule: 'art' }) || logger
   });
   router.use('/art', artRouter);
