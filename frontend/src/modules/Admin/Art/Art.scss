@@ -1,0 +1,29 @@
+.art-library { display: flex; flex-direction: column; height: 100%; gap: 8px; }
+.art-library__bar { padding: 8px 12px; border-bottom: 1px solid var(--ds-border, #333); }
+.art-library__loading { padding: 24px; opacity: .6; }
+
+.art-loupe { display: flex; flex: 1; min-height: 0; }
+.art-loupe__stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.art-loupe__img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.art-loupe__compass { position: absolute; inset: 16px; display: grid;
+  grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); pointer-events: none; opacity: .25; }
+.art-loupe__cell { border: 1px dashed currentColor; }
+.art-loupe__cell.is-active { background: var(--ds-accent, #4a9); opacity: .35; }
+.art-loupe__counter { position: absolute; bottom: 18px; left: 20px; font-size: 12px; opacity: .6; }
+.art-loupe__meta { width: 220px; padding: 16px; border-left: 1px solid var(--ds-border, #333); }
+.art-loupe__title { margin: 0 0 2px; font-size: 16px; }
+.art-loupe__sub { opacity: .7; font-size: 12px; margin-bottom: 10px; }
+.art-tag, .art-pill { display: inline-block; padding: 1px 6px; margin: 2px 4px 2px 0;
+  font-size: 11px; border-radius: 3px; background: rgba(127,127,127,.2); }
+.art-pill--hidden { background: rgba(120,120,120,.35); }
+.art-pill--flagged { background: rgba(200,80,60,.35); }
+
+.art-grid { flex: 1; overflow: auto; display: grid; gap: 6px; padding: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); align-content: start; }
+.art-grid__cell { position: relative; padding: 0; border: 2px solid transparent;
+  background: none; cursor: pointer; aspect-ratio: 1; }
+.art-grid__cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art-grid__cell.is-focused { border-color: var(--ds-accent, #4a9); }
+.art-grid__cell.is-hidden { opacity: .4; }
+.art-grid__flag { position: absolute; top: 4px; right: 4px; color: #e0604a; }
+.art-grid__tagdot { position: absolute; bottom: 4px; left: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ds-accent, #4a9); }
