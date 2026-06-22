@@ -35,7 +35,9 @@ export function useArtCuration(filters = {}) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await DaylightAPI(`${WORKS_PATH}${qs(filters)}`);
+      // Load the whole filtered pool so the grid is a real gallery, not the first
+      // page. The backend caps pageSize, so this requests "all" up to that cap.
+      const res = await DaylightAPI(`${WORKS_PATH}${qs({ ...filters, pageSize: 2000 })}`);
       applyWorks(res.works || []);
       setIndex(0);
       logger.info('art.library.loaded', { total: res.total ?? 0 });

@@ -1,14 +1,23 @@
 .art-library { display: flex; flex-direction: column; height: 100%; gap: 8px; }
 .art-library__bar { padding: 8px 12px; border-bottom: 1px solid var(--ds-border, #333); }
+.art-library__legend { padding: 2px 12px 6px; font-size: 11px; opacity: .55; }
 .art-library__loading { padding: 24px; opacity: .6; }
+.art-library__crash { padding: 24px; color: #e0604a; }
+.art-library__crash pre { white-space: pre-wrap; opacity: .8; font-size: 12px; margin: 8px 0; }
+.art-library__crash button { margin-top: 8px; }
 
 .art-loupe { display: flex; flex: 1; min-height: 0; }
 .art-loupe__stage { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .art-loupe__img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Clickable anchor compass overlaid on the artwork. */
 .art-loupe__compass { position: absolute; inset: 16px; display: grid;
-  grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); pointer-events: none; opacity: .25; }
-.art-loupe__cell { border: 1px dashed currentColor; }
-.art-loupe__cell.is-active { background: var(--ds-accent, #4a9); opacity: .35; }
+  grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+.art-loupe__cell { border: 1px dashed rgba(127,127,127,.35); background: transparent;
+  cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; transition: background .1s; }
+.art-loupe__cell:hover { background: rgba(74,170,153,.18); }
+.art-loupe__cell-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(127,127,127,.4); }
+.art-loupe__cell.is-active { background: rgba(74,170,153,.28); }
+.art-loupe__cell.is-active .art-loupe__cell-dot { background: var(--ds-accent, #4a9); }
 .art-loupe__counter { position: absolute; bottom: 18px; left: 20px; font-size: 12px; opacity: .6; }
 .art-loupe__meta { width: 220px; padding: 16px; border-left: 1px solid var(--ds-border, #333); }
 .art-loupe__title { margin: 0 0 2px; font-size: 16px; }

@@ -9,17 +9,30 @@ const COMPASS = [
 ];
 const anchorOrCenter = (a) => (a == null ? 'center' : a);
 
-export default function Loupe({ work, total, index, saved }) {
+export default function Loupe({ work, total, index, saved, onAnchor }) {
   if (!work) return <div className="art-loupe art-loupe--empty">No artwork</div>;
   const m = work.meta || {};
   const active = anchorOrCenter(m.crop_anchor);
   return (
     <div className="art-loupe">
       <div className="art-loupe__stage">
-        <img className="art-loupe__img" src={DaylightMediaPath(work.image)} alt={m.title || 'Artwork'} />
-        <div className="art-loupe__compass" aria-hidden="true">
+        {/* key forces a fresh <img> on navigation so the previous artwork
+            unmounts instead of lingering while the new src decodes. */}
+        <img key={work.id} className="art-loupe__img"
+          src={DaylightMediaPath(work.image)} alt={m.title || 'Artwork'} />
+        {/* Clickable crop-anchor compass: click the region of the image to keep.
+            Works without a numpad (numpad keys still set the same anchors). */}
+        <div className="art-loupe__compass" role="group" aria-label="Set crop anchor">
           {COMPASS.flat().map((pos) => (
-            <span key={pos} className={`art-loupe__cell${pos === active ? ' is-active' : ''}`} />
+            <button
+              type="button"
+              key={pos}
+              className={`art-loupe__cell${pos === active ? ' is-active' : ''}`}
+              title={`Anchor: ${pos}`}
+              onClick={() => onAnchor?.(pos)}
+            >
+              <span className="art-loupe__cell-dot" aria-hidden="true" />
+            </button>
           ))}
         </div>
         <div className="art-loupe__counter">{index + 1} / {total}{saved ? ' · ✓ saved' : ''}</div>
