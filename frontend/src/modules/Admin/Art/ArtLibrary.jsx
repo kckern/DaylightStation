@@ -40,6 +40,11 @@ export default function ArtLibrary() {
     flash();
   }, [mutate, flash]);
 
+  const setCrop = useCallback(async (crop) => {
+    await mutate({ crop });
+    flash();
+  }, [mutate, flash]);
+
   const onAction = useCallback(async (a) => {
     if (!a) return;
     // Logged at info so every action is visible in prod logs (not just debug) —
@@ -156,7 +161,7 @@ export default function ArtLibrary() {
       <ArtErrorBoundary>
         {loading ? <div className="art-library__loading">Loading…</div>
           : view === 'loupe'
-            ? <Loupe work={focused} total={works.length} index={index} saved={saved} onAnchor={setAnchor} />
+            ? <Loupe work={focused} total={works.length} index={index} saved={saved} onAnchor={setAnchor} onCrop={setCrop} />
             : <GridView works={works} index={index} onPick={(i) => { goto(i); setView('loupe'); }} />}
       </ArtErrorBoundary>
     </div>
