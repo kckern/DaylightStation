@@ -9,6 +9,7 @@ import { BLEManager } from './ble.mjs';
 import { selectSimCandidate } from './unlockSim.mjs';
 import { createReaderArbiter } from './readerArbiter.mjs';
 import { createContinuousScanLoop } from './continuousScanLoop.mjs';
+import { startBtInventoryBroadcast } from './btInventory.mjs';
 
 // Configuration from environment variables
 const PORT = process.env.PORT || 3000;
@@ -134,6 +135,8 @@ const app = express();
 // Global state
 let websocketClient = null;
 let reconnectInterval = null;
+// Handle for the BlueZ bt_inventory broadcast loop (identity/inventory only).
+let btInventoryBroadcast = null;
 
 // Pending interactive unlock requests, keyed by requestId. Only populated when
 // FINGERPRINT_SIM === 'interactive': the request is held until a CLI resolves it
@@ -554,6 +557,11 @@ process.on('SIGINT', async () => {
   // Stop the continuous scan loop
   continuousScan.stop();
 
+  // Stop the BT inventory broadcast loop
+  if (btInventoryBroadcast) {
+    btInventoryBroadcast.stop();
+  }
+
   // Close WebSocket
   if (websocketClient) {
     websocketClient.close();
@@ -573,6 +581,11 @@ process.on('SIGTERM', async () => {
 
   // Stop the continuous scan loop
   continuousScan.stop();
+
+  // Stop the BT inventory broadcast loop
+  if (btInventoryBroadcast) {
+    btInventoryBroadcast.stop();
+  }
 
   // Close WebSocket
   if (websocketClient) {
@@ -640,6 +653,15 @@ async function startServer() {
 
   // Connect to DaylightStation WebSocket
   await connectWebSocket();
+
+  // Start the BlueZ BT inventory broadcast: periodically reports OS-level
+  // connected BT devices (address/name/connected/battery) over the WS as
+  // `bt_inventory`. Identity/inventory only — does NOT affect input. Sends via
+  // sendBus so the backend routes purely on topic (no `source: 'fitness'`).
+  btInventoryBroadcast = startBtInventoryBroadcast({
+    send: (topic, payload) => sendBus(topic, payload),
+  });
+  console.log('🎮 BlueZ bt_inventory broadcast started');
 
   // Start the continuous biometric scan loop (skipped in sim mode — no reader).
   if (process.env.FINGERPRINT_SIM) {

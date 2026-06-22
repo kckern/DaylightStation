@@ -1,0 +1,108 @@
+.emulator-controller-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: 'Roboto Condensed', sans-serif;
+  color: #e8e8e8;
+
+  .ccs-heading {
+    margin: 0 0 0.4rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .ccs-known-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+
+    &.ccs-on {
+      background: rgba(64, 200, 96, 0.12);
+    }
+  }
+
+  .ccs-label {
+    font-weight: 600;
+    // Push the badges to the right, keeping them grouped together.
+    margin-right: auto;
+  }
+
+  .ccs-badge {
+    font-size: 0.78rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 0.7;
+    white-space: nowrap;
+
+    &.ccs-badge-on {
+      background: rgba(64, 200, 96, 0.25);
+      color: #b6f5c4;
+      opacity: 1;
+    }
+  }
+
+  // OS-level (BlueZ) badge — sits alongside the browser-slot badge to show
+  // OS truth by MAC. Distinct blue tint so it reads as a separate signal.
+  .ccs-os-badge {
+    font-size: 0.78rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.08);
+
+    &.ccs-os-on {
+      background: rgba(80, 160, 255, 0.25);
+      color: #bcd9ff;
+    }
+
+    &.ccs-os-off {
+      opacity: 0.55;
+    }
+  }
+
+  .ccs-connected-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+
+    &.gp-active {
+      background: rgba(255, 210, 64, 0.2);
+      box-shadow: 0 0 0 2px rgba(255, 210, 64, 0.6);
+    }
+  }
+
+  .ccs-player {
+    font-weight: 600;
+  }
+
+  .ccs-raw-id {
+    font-size: 0.72rem;
+    opacity: 0.55;
+  }
+
+  .ccs-empty {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    opacity: 0.75;
+  }
+}
