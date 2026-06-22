@@ -103,11 +103,20 @@ export function cropBandFit(band, srcRatio, openingRatio) {
  * @returns {{index:number, view:string, qualified:boolean, winAR:number|null,
  *            axis:'top-bottom'|'left-right'|null, need:number|null, budget:number}}
  */
-export function fillDecision({ mode, ratios, frame, cropV = 0, cropH = 0, fallback = 'gallery' }) {
+export function fillDecision({ mode, ratios, frame, cropV = 0, cropH = 0, fallback = 'gallery', crop = null }) {
   const fb = modeIndexByName(fallback);
-  if (mode === 'diptych' || !(cropV > 0 || cropH > 0) || !ratios?.length) {
-    return { index: fb, view: VIEW_MODES[fb].name, qualified: false, winAR: null, axis: null, need: null, budget: 0 };
+  const matted = () => ({ index: fb, view: VIEW_MODES[fb].name, qualified: false, winAR: null, axis: null, need: null, budget: 0 });
+
+  // Explicit per-work crop overrides the auto gate.
+  if (crop && crop.enabled === false) return matted();
+  const hasBand = !!crop && crop.enabled !== false
+    && (Number.isFinite(crop.top) || Number.isFinite(crop.bottom));
+  if (hasBand && mode !== 'diptych') {
+    const fc = modeIndexByName('framed-cover');
+    return { index: fc, view: VIEW_MODES[fc].name, qualified: true, winAR: null, axis: 'top-bottom', need: null, budget: 0 };
   }
+
+  if (mode === 'diptych' || !(cropV > 0 || cropH > 0) || !ratios?.length) return matted();
   const winAR = (SW - ((frame.left + frame.right) / 100) * SW)
               / (SH - ((frame.top + frame.bottom) / 100) * SH);
   const vertical = ratios[0] <= winAR;        // narrower art → fills width, crops top/bottom
