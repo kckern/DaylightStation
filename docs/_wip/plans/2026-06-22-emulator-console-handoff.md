@@ -35,9 +35,12 @@ All under `frontend/src/modules/Emulator/` (host-agnostic — zero FitnessContex
 - Governance adapters: `GovernanceGate` (open/gate/credit).
 - Audio: `AudioMixer` (3-bus + duck), `AudioFx` (EQ/reverb/filter/compressor), `htmlAudioClip`.
 - Input: `buildEjsControls`, `useGamepadStatus`, `ControllerStatus`.
-- Bridge: `_extensions/fitness/src/btInventory.mjs` + `server.mjs` wiring (BlueZ `bt_inventory` WS feed) — **deploys to the garage box separately, NOT via the main prod deploy.**
+- Input: `EmulatorConsole` controller panel with a **"Pair controller"** button (frontend-triggered BT pairing, no SSH).
+- Bridge: `_extensions/fitness/src/{btInventory,btPairing}.mjs` + `server.mjs` wiring — BlueZ `bt_inventory` WS feed AND the `bt.pair.request` pairing-window handler — **deploys to the garage box separately, NOT via the main prod deploy.**
 
-**259 tests** (194 frontend + 65 backend), all green.
+**301 tests** (207 frontend + 68 backend + 26 bridge), all green.
+
+**BT pairing chain:** `EmulatorConsole` "Pair controller" → `POST /api/v1/emulator/bt/pair {durationMs}` → backend `eventBus.broadcast('bt.pair.request')` → bridge `handleBtPairRequest` runs a time-boxed `bluetoothctl` window (filtered to HID/gamepad) → emits `bt.pair.progress` `{phase: scanning|paired|error|done}`. **On-box caveat:** unattended pairing of confirmation-required pads needs a BlueZ default agent (`bluetoothctl agent on`/`default-agent`) on the garage box; "Just Works" pads pair without it. The garage bridge must be rebuilt for any of this to activate.
 
 ---
 

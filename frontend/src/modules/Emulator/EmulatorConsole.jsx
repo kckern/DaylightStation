@@ -10,16 +10,19 @@
  * props. It must NOT import from modules/Fitness or context/FitnessContext.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { createEmulatorEngine } from './core/EmulatorEngine.js';
 import { createAudioMixer } from './audio/AudioMixer.js';
 import { createEmulatorSession } from './core/EmulatorSession.js';
 import { createHtmlAudioClip } from './audio/htmlAudioClip.js';
+import { ControllerStatus } from './input/ControllerStatus.jsx';
 import './EmulatorConsole.scss';
 
 const STATUS_POLL_MS = 500;
 const ANIM_DURATION_MS = 1000;
+const PAIR_DURATION_MS = 30000;
+const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
 
 const DEFAULT_FACTORIES = {
   createEngine: createEmulatorEngine,
@@ -38,6 +41,18 @@ function overlayText(status) {
   return 'Paused — meet the zone to continue';
 }
 
+/**
+ * Read the live gamepad list in an SSR/jsdom-safe way. Accepts an injectable
+ * reader for tests; otherwise falls back to navigator.getGamepads.
+ */
+function readGamepads(getGamepads) {
+  if (typeof getGamepads === 'function') return getGamepads() || [];
+  if (typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function') {
+    return navigator.getGamepads() || [];
+  }
+  return [];
+}
+
 export function EmulatorConsole({
   game,
   engineConfig,
@@ -47,6 +62,13 @@ export function EmulatorConsole({
   resolveMediaUrl = (p) => p,
   onExit,
   factories,
+  // Controller panel
+  controllers = [],
+  btInventory,
+  pairing,
+  onPairController,
+  getGamepads,
+  fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
   const logger = useMemo(() => getLogger().child({ component: 'emulator-console' }), []);
@@ -58,6 +80,46 @@ export function EmulatorConsole({
   const [animClass, setAnimClass] = useState('');
   const [, setError] = useState(null);
   const animTimerRef = useRef(null);
+
+  // Controller panel: visibility + console-managed local pairing state.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [localPairing, setLocalPairing] = useState(null);
+  const pairTimerRef = useRef(null);
+
+  // Internal default pairing trigger: POST to this app's own backend, then flip
+  // local pairing to scanning → done (or error). Host can override via
+  // `onPairController`, or feed a `pairing` prop to drive the UI directly.
+  const defaultPair = useCallback(async () => {
+    if (pairTimerRef.current) {
+      clearTimeout(pairTimerRef.current);
+      pairTimerRef.current = null;
+    }
+    setLocalPairing({ phase: 'scanning', durationMs: PAIR_DURATION_MS });
+    logger.info('emulator.console.pair-start', { durationMs: PAIR_DURATION_MS });
+    try {
+      const doFetch = fetchImpl();
+      if (typeof doFetch !== 'function') throw new Error('no fetch implementation');
+      const res = await doFetch(PAIR_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMs: PAIR_DURATION_MS }),
+      });
+      if (res && res.ok === false) throw new Error(`pair request failed (${res.status})`);
+      pairTimerRef.current = setTimeout(() => {
+        setLocalPairing({ phase: 'done' });
+        pairTimerRef.current = null;
+        logger.info('emulator.console.pair-done', {});
+      }, PAIR_DURATION_MS);
+    } catch (err) {
+      const message = (err && err.message) || 'pairing failed';
+      setLocalPairing({ phase: 'error', message });
+      logger.warn('emulator.console.pair-error', { error: message });
+    }
+  }, [fetchImpl, logger]);
+
+  const effectiveOnPair = onPairController || defaultPair;
+  // Host-provided pairing prop takes precedence over console-managed local state.
+  const effectivePairing = pairing ?? localPairing;
 
   // Console-owned animation handler: flash a transient CSS class on the shader.
   const triggerAnim = (name) => {
@@ -147,6 +209,30 @@ export function EmulatorConsole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-open the controller panel on mount when no gamepads are connected, so a
+  // controller-less user immediately sees "keyboard works / pair one". Otherwise
+  // start collapsed. jsdom-safe via the injectable reader.
+  useEffect(() => {
+    const pads = readGamepads(getGamepads).filter((p) => p != null);
+    if (pads.length === 0) {
+      setPanelOpen(true);
+      logger.debug('emulator.console.panel-auto-open', { reason: 'no-gamepads' });
+    }
+    // Mount-once: a one-shot initial detection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clear any pending pair timer on unmount.
+  useEffect(
+    () => () => {
+      if (pairTimerRef.current) {
+        clearTimeout(pairTimerRef.current);
+        pairTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
   const showOverlay = status.state !== 'playing';
 
   return (
@@ -166,6 +252,27 @@ export function EmulatorConsole({
           aria-label="Exit emulator"
           onClick={onExit}
         />
+      )}
+
+      <button
+        type="button"
+        className={`emulator-controller-toggle${panelOpen ? ' is-open' : ''}`}
+        aria-label={panelOpen ? 'Hide controller panel' : 'Show controller panel'}
+        aria-expanded={panelOpen}
+        onClick={() => setPanelOpen((v) => !v)}
+      >
+        🎮
+      </button>
+      {panelOpen && (
+        <div className="emulator-controller-panel" role="dialog" aria-label="Controllers">
+          <ControllerStatus
+            controllers={controllers}
+            btInventory={btInventory}
+            getGamepads={getGamepads}
+            pairing={effectivePairing}
+            onPair={effectiveOnPair}
+          />
+        </div>
       )}
     </div>
   );

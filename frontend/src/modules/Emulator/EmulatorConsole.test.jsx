@@ -225,4 +225,110 @@ describe('EmulatorConsole', () => {
     // no pending timers should fire into a torn-down tree
     expect(() => act(() => vi.advanceTimersByTime(2000))).not.toThrow();
   });
+
+  describe('controller panel', () => {
+    const noPads = () => [];
+    const onePad = () => [{ index: 0, id: 'Xbox', connected: true, buttons: [], axes: [] }];
+
+    it('auto-opens the panel on mount when no gamepads are connected', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads } });
+      await act(async () => {});
+      expect(container.querySelector('.emulator-controller-panel')).toBeTruthy();
+      expect(container.querySelector('.emulator-controller-status')).toBeTruthy();
+    });
+
+    it('starts collapsed when a gamepad is already connected', async () => {
+      const { container } = renderConsole({ props: { getGamepads: onePad } });
+      await act(async () => {});
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      expect(container.querySelector('.emulator-controller-toggle')).toBeTruthy();
+    });
+
+    it('the toggle shows/hides the panel', async () => {
+      const { container } = renderConsole({ props: { getGamepads: onePad } });
+      await act(async () => {});
+      const toggle = container.querySelector('.emulator-controller-toggle');
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      act(() => toggle.click());
+      expect(container.querySelector('.emulator-controller-panel')).toBeTruthy();
+      act(() => toggle.click());
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+    });
+
+    it('clicking Pair calls the injected fetch with the right URL/body and flips local pairing to scanning', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
+      });
+      await act(async () => {});
+
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button).toBeTruthy();
+      await act(async () => {
+        button.click();
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, opts] = fetchSpy.mock.calls[0];
+      expect(url).toBe('/api/v1/emulator/bt/pair');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(opts.body)).toEqual({ durationMs: 30000 });
+
+      // Local pairing flipped to scanning → button disabled + scanning label.
+      const scanning = container.querySelector('.ccs-pair-button');
+      expect(scanning.disabled).toBe(true);
+      expect(scanning.textContent).toContain('Scanning for controllers');
+
+      // After the window elapses, local pairing flips to done.
+      await act(async () => {
+        vi.advanceTimersByTime(30000);
+      });
+      expect(container.querySelector('.ccs-pair-button').textContent).toContain('Done');
+    });
+
+    it('sets error local pairing when the fetch rejects', async () => {
+      const fetchSpy = vi.fn(() => Promise.reject(new Error('bridge offline')));
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
+      });
+      await act(async () => {});
+      await act(async () => {
+        container.querySelector('.ccs-pair-button').click();
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.textContent).toContain('Pairing failed — bridge offline');
+      expect(button.disabled).toBe(false);
+    });
+
+    it('host pairing prop overrides console-managed local pairing', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const { container } = renderConsole({
+        props: {
+          getGamepads: noPads,
+          fetchImpl: () => fetchSpy,
+          pairing: { phase: 'scanning', durationMs: 30000 },
+        },
+      });
+      await act(async () => {});
+      // Host says scanning even though no local pair was triggered.
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.disabled).toBe(true);
+      expect(button.textContent).toContain('Scanning for controllers');
+    });
+
+    it('host onPairController override is called instead of the internal fetch', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const onPairController = vi.fn();
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
+      });
+      await act(async () => {});
+      await act(async () => {
+        container.querySelector('.ccs-pair-button').click();
+      });
+      expect(onPairController).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
 });
