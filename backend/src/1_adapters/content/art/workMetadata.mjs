@@ -13,10 +13,25 @@ export function isValidAnchor(anchor) {
   return tokens.every((t) => ANCHOR_KEYWORDS.has(t) || /^\d{1,3}%$/.test(t));
 }
 
+// A crop is null (clear), or { enabled?:bool, top?,bottom?,left?,right?:0..90 } with
+// top+bottom ≤ 90 and left+right ≤ 90 (always keep ≥10% of each cropped axis).
+export function isValidCrop(crop) {
+  if (crop == null) return true;
+  if (typeof crop !== 'object' || Array.isArray(crop)) return false;
+  if ('enabled' in crop && typeof crop.enabled !== 'boolean') return false;
+  const side = (v) => v == null || (typeof v === 'number' && v >= 0 && v <= 90);
+  for (const k of ['top', 'bottom', 'left', 'right']) {
+    if (k in crop && !side(crop[k])) return false;
+  }
+  if ((Number(crop.top) || 0) + (Number(crop.bottom) || 0) > 90) return false;
+  if ((Number(crop.left) || 0) + (Number(crop.right) || 0) > 90) return false;
+  return true;
+}
+
 // Fields the admin is allowed to write. Anything else in metadata.yaml is preserved.
 const WRITABLE = new Set([
   'title', 'artist', 'date', 'medium', 'category', 'display',
-  'crop_anchor', 'tags', 'exclude', 'hidden', 'flagged',
+  'crop_anchor', 'tags', 'exclude', 'hidden', 'flagged', 'crop',
 ]);
 
 // Read-merge-write: parse the raw YAML, apply the patch (null deletes a key),
@@ -26,6 +41,9 @@ export function mergeWorkMetadata(raw, patch = {}) {
   const doc = yaml.load(raw) || {};
   if ('crop_anchor' in patch && !isValidAnchor(patch.crop_anchor)) {
     throw new Error(`Invalid crop_anchor: ${patch.crop_anchor}`);
+  }
+  if ('crop' in patch && !isValidCrop(patch.crop)) {
+    throw new Error(`Invalid crop: ${JSON.stringify(patch.crop)}`);
   }
   for (const [k, v] of Object.entries(patch)) {
     if (!WRITABLE.has(k)) continue;
@@ -51,4 +69,4 @@ export function filterWorks(works, { tag, hidden, flagged, q } = {}) {
   });
 }
 
-export default { isValidAnchor, mergeWorkMetadata, filterWorks };
+export default { isValidAnchor, isValidCrop, mergeWorkMetadata, filterWorks };
