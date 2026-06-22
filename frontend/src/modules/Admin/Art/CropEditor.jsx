@@ -1,15 +1,23 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { clampBand } from './cropGeometry.js';
+import { clampPair } from './cropGeometry.js';
 
-// Overlay on the loupe artwork: drag (or keyboard-nudge) the top/bottom edges of
-// the keep-window to set the crop band; toggle "Don't crop"; reset to auto.
-// Geometry is in % of the displayed image height, so it's resolution-independent.
-export default function CropEditor({ crop, onCrop }) {
+// Per-axis config: which margins, which dimension/coordinate to drag along.
+const AXES = {
+  vertical:   { a: 'top',  b: 'bottom', sizeDim: 'clientHeight', clientAxis: 'clientY', dimCss: 'height' },
+  horizontal: { a: 'left', b: 'right',  sizeDim: 'clientWidth',  clientAxis: 'clientX', dimCss: 'width'  },
+};
+
+// Overlay on the loupe artwork: drag (or keyboard-nudge) the two opposing edges of
+// the keep-window to set the crop band; toggle "Don't crop"; reset to auto. The
+// axis (vertical = top/bottom, horizontal = left/right for a panorama) is chosen by
+// the caller from the work's orientation. Geometry is in % of the displayed image,
+// so it's resolution-independent.
+export default function CropEditor({ crop, onCrop, axis = 'vertical' }) {
+  const ax = AXES[axis] || AXES.vertical;
   const disabled = crop?.enabled === false;
-  const top = Number.isFinite(crop?.top) ? crop.top : 8;
-  const bottom = Number.isFinite(crop?.bottom) ? crop.bottom : 8;
+  const a = Number.isFinite(crop?.[ax.a]) ? crop[ax.a] : 8;   // start-edge margin %
+  const b = Number.isFinite(crop?.[ax.b]) ? crop[ax.b] : 8;   // end-edge margin %
   const stageRef = useRef(null);
-  const dragRef = useRef(null); // { edge, startY, startTop, startBottom, h }
   const listenersRef = useRef(null); // { move, up } — for unmount cleanup
 
   // Drop any in-flight drag listeners if we unmount mid-drag (e.g. navigating to
@@ -22,34 +30,33 @@ export default function CropEditor({ crop, onCrop }) {
     }
   }, []);
 
-  const commit = useCallback((band) => {
-    onCrop({ enabled: true, ...clampBand(band) });
-  }, [onCrop]);
+  const commit = useCallback((sa, sb) => {
+    const [ca, cb] = clampPair(sa, sb);
+    onCrop({ enabled: true, [ax.a]: ca, [ax.b]: cb });
+  }, [onCrop, ax.a, ax.b]);
 
   const onHandleKey = useCallback((edge) => (e) => {
     const step = e.shiftKey ? 0.2 : 1;
     let d = 0;
-    if (e.key === 'ArrowUp') d = -step;
-    else if (e.key === 'ArrowDown') d = step;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') d = -step;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') d = step;
     else return;
     e.preventDefault();
-    if (edge === 'top') commit({ top: top + d, bottom });
-    else commit({ top, bottom: bottom + d });
-  }, [top, bottom, commit]);
+    if (edge === 'a') commit(a + d, b);
+    else commit(a, b + d);
+  }, [a, b, commit]);
 
   const onPointerDown = useCallback((edge) => (e) => {
     e.preventDefault();
-    const h = stageRef.current?.clientHeight || 1;
-    dragRef.current = { edge, startY: e.clientY, startTop: top, startBottom: bottom, h };
+    const size = stageRef.current?.[ax.sizeDim] || 1;
+    const start0 = e[ax.clientAxis];
     const move = (ev) => {
-      const dref = dragRef.current;
-      if (!dref) return;
-      const deltaPct = ((ev.clientY - dref.startY) / dref.h) * 100;
-      if (dref.edge === 'top') commit({ top: dref.startTop + deltaPct, bottom: dref.startBottom });
-      else commit({ top: dref.startTop, bottom: dref.startBottom - deltaPct });
+      const deltaPct = ((ev[ax.clientAxis] - start0) / size) * 100;
+      // The end edge's margin shrinks as you drag it toward the far side.
+      if (edge === 'a') commit(a + deltaPct, b);
+      else commit(a, b - deltaPct);
     };
     const up = () => {
-      dragRef.current = null;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       listenersRef.current = null;
@@ -57,27 +64,31 @@ export default function CropEditor({ crop, onCrop }) {
     listenersRef.current = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-  }, [top, bottom, commit]);
+  }, [a, b, commit, ax]);
+
+  const win = axis === 'horizontal' ? { left: `${a}%`, right: `${b}%` } : { top: `${a}%`, bottom: `${b}%` };
 
   return (
-    <div className="crop-editor" ref={stageRef} data-testid="crop-editor">
+    <div className={`crop-editor crop-editor--${axis}`} ref={stageRef} data-testid="crop-editor">
       {!disabled && (
         <>
-          <div className="crop-editor__shade crop-editor__shade--top" style={{ height: `${top}%` }} />
-          <div className="crop-editor__shade crop-editor__shade--bottom" style={{ height: `${bottom}%` }} />
-          <div className="crop-editor__window" style={{ top: `${top}%`, bottom: `${bottom}%` }}>
-            <button type="button" data-testid="crop-handle-top" className="crop-editor__handle crop-editor__handle--top"
-              aria-label="Top crop edge" onPointerDown={onPointerDown('top')} onKeyDown={onHandleKey('top')} />
-            <button type="button" data-testid="crop-handle-bottom" className="crop-editor__handle crop-editor__handle--bottom"
-              aria-label="Bottom crop edge" onPointerDown={onPointerDown('bottom')} onKeyDown={onHandleKey('bottom')} />
-            <span className="crop-editor__readout">top {top}% · bottom {bottom}%</span>
+          <div className={`crop-editor__shade crop-editor__shade--${ax.a}`} style={{ [ax.dimCss]: `${a}%` }} />
+          <div className={`crop-editor__shade crop-editor__shade--${ax.b}`} style={{ [ax.dimCss]: `${b}%` }} />
+          <div className="crop-editor__window" style={win}>
+            <button type="button" data-testid={`crop-handle-${ax.a}`}
+              className={`crop-editor__handle crop-editor__handle--${ax.a}`}
+              aria-label={`${ax.a} crop edge`} onPointerDown={onPointerDown('a')} onKeyDown={onHandleKey('a')} />
+            <button type="button" data-testid={`crop-handle-${ax.b}`}
+              className={`crop-editor__handle crop-editor__handle--${ax.b}`}
+              aria-label={`${ax.b} crop edge`} onPointerDown={onPointerDown('b')} onKeyDown={onHandleKey('b')} />
+            <span className="crop-editor__readout">{ax.a} {a}% · {ax.b} {b}%</span>
           </div>
         </>
       )}
       <div className="crop-editor__controls">
         <label className="crop-editor__toggle">
           <input type="checkbox" checked={disabled}
-            onChange={(e) => { const off = e.currentTarget.checked; onCrop(off ? { enabled: false } : { enabled: true, top, bottom }); }} />
+            onChange={(e) => { const off = e.currentTarget.checked; onCrop(off ? { enabled: false } : { enabled: true, [ax.a]: a, [ax.b]: b }); }} />
           Don&apos;t crop (matted)
         </label>
         <button type="button" className="crop-editor__reset" onClick={() => onCrop(null)}>Reset to auto</button>
