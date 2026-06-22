@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { ControllerStatus } from './ControllerStatus.jsx';
@@ -104,5 +104,109 @@ describe('ControllerStatus', () => {
     expect(xbox).toBeTruthy();
     expect(xbox.className).toContain('ccs-os-off');
     expect(xbox.textContent).toContain('BT: off');
+  });
+
+  describe('pairing affordance', () => {
+    it('renders no Pair button when onPair is absent', () => {
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(<ControllerStatus controllers={controllers} getGamepads={getGamepads} />));
+      });
+      expect(container.querySelector('.ccs-pair-button')).toBeNull();
+    });
+
+    it('renders the Pair button and calls onPair on click', () => {
+      const onPair = vi.fn();
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus controllers={controllers} getGamepads={getGamepads} onPair={onPair} />,
+        ));
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button).toBeTruthy();
+      expect(button.textContent).toContain('Pair controller');
+      expect(button.disabled).toBe(false);
+      act(() => button.click());
+      expect(onPair).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows scanning label + disabled + progress affordance while scanning', () => {
+      const onPair = vi.fn();
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={controllers}
+            getGamepads={getGamepads}
+            onPair={onPair}
+            pairing={{ phase: 'scanning', durationMs: 30000 }}
+          />,
+        ));
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.disabled).toBe(true);
+      expect(button.textContent).toContain('Scanning for controllers');
+      expect(container.querySelector('.ccs-pair-progress')).toBeTruthy();
+    });
+
+    it('shows "Paired: {name}" on the paired phase', () => {
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={controllers}
+            getGamepads={getGamepads}
+            onPair={vi.fn()}
+            pairing={{ phase: 'paired', device: { name: '8BitDo SN30 Pro' } }}
+          />,
+        ));
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.textContent).toContain('Paired: 8BitDo SN30 Pro');
+    });
+
+    it('shows "Done — N paired" and re-enables on the done phase', () => {
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={controllers}
+            getGamepads={getGamepads}
+            onPair={vi.fn()}
+            pairing={{ phase: 'done', paired: [{ name: 'A' }, { name: 'B' }] }}
+          />,
+        ));
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.textContent).toContain('Done — 2 paired');
+      expect(button.disabled).toBe(false);
+    });
+
+    it('shows the error message and re-enables on the error phase', () => {
+      const onPair = vi.fn();
+      const getGamepads = () => [];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={controllers}
+            getGamepads={getGamepads}
+            onPair={onPair}
+            pairing={{ phase: 'error', message: 'bridge offline' }}
+          />,
+        ));
+      });
+      const button = container.querySelector('.ccs-pair-button');
+      expect(button.textContent).toContain('Pairing failed — bridge offline');
+      expect(button.disabled).toBe(false);
+      act(() => button.click());
+      expect(onPair).toHaveBeenCalledTimes(1);
+    });
   });
 });
