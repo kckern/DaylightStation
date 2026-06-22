@@ -22,13 +22,38 @@ The whole point of the memory-watch framework is reading console RAM (e.g. Poké
 
 Conclusion: switching cores (mgba) won't help — EmulatorJS builds every core with the same `EXPORTED_FUNCTIONS` template, which omits the memory getters.
 
-## Options to enable memory-watch (the in-game-hooks "moonshot")
+## SOLUTION — build-free WRAM read via cheat-write + HEAPU8 scan (CONFIRMED)
 
-1. **Custom core build (proper fix).** Rebuild the EmulatorJS cores with `_retro_get_memory_data` + `_retro_get_memory_size` added to `EXPORTED_FUNCTIONS`. EmulatorJS has a Dockerized core build; the patch is small and additive, per-core. Once done, our `MemoryProbe` works unchanged against `Module.HEAPU8[ptr + offset]`. This is what browser RetroAchievements-style integrations do.
-2. **Save-state parsing.** Periodically `saveState` to a buffer and parse WRAM out of the (core-specific) state blob. Fragile, format-coupled, expensive at 10 Hz. Not recommended.
-3. **Separate GB engine for reads** (WasmBoy/binjgb expose memory). Breaks the unified multi-console EmulatorJS approach. Not recommended.
+No custom core build is needed. The full WASM linear memory is exposed as
+`Module.HEAPU8`; the only missing piece is *where* WRAM sits in it. We discover
+that at runtime:
 
-## Decision-gate outcome (per the design doc)
+1. **Calibrate once at boot:** write a unique multi-byte signature into a WRAM
+   scratch region using the cheat API (`gameManager.functions.setCheat(i, 1, code)`),
+   GB GameShark format `01 DD AAAA` where `DD`=data and `AAAA`=address **little-endian**,
+   and the **code string MUST be UPPERCASE** (lowercase is silently rejected — this
+   was the whole reason the first attempt wrote nothing).
+2. **Run a few frames** (cheats re-apply every frame), then **scan `HEAPU8`** for the
+   signature run. Require exactly ONE full-length match → that gives `wramBase`.
+3. **`resetCheat()`** to remove the calibration writes.
+4. **Read directly thereafter:** `HEAPU8[wramBase + (cpuAddr - 0xC000)]`. No cheats
+   needed for reads; reads are non-invasive.
 
-- The **playable baseline** — governed play (gate/credit), library browser, per-user saves, dot-matrix shader, JSX bezel — needs **none** of this and proceeds on stock EmulatorJS.
-- The **memory-watch framework code is already built and unit-tested** (`memoryPredicates`, `addressMap`, `HookDispatcher`); only its live RAM *source* is blocked. It stays "framework present, source disabled" until a custom core (Option 1) lands.
+**Verified headless:** signature wrote a clean 24-byte run, located uniquely
+(`fullRuns: 1`) at `wramBase = 0x821868`, and reading through it gave
+`$D057 = 0` (no battle at the intro — correct) and `$D35E = 0` (map id). End-to-end.
+
+### Production notes for `MemoryProbe`
+- **Re-fetch `Module.HEAPU8` on every read** — WASM `memory.grow` swaps the view object
+  (the byte *offset* of WRAM is stable; the typed-array wrapper is not).
+- **Calibrate during boot/load** (before meaningful gameplay) and `resetCheat()` — the
+  signature briefly corrupts the scratch region; harmless pre-game.
+- Use a long/rare signature (≥24 bytes) and assert a single full match for a safe base.
+- **GBC banked WRAM caveat:** `0xC000–0xCFFF` (bank 0) + flat-8KB DMG games (e.g. Pokémon
+  Red, where `0xD000–0xDFFF` maps to offset `0x1000–0x1FFF`) are reliable. GBC games with
+  *banked* `0xD000` WRAM need the active bank to disambiguate — a per-game nuance to
+  document, not a blocker for the seed.
+- Cache `wramBase` per session; re-calibrate on core reload.
+
+This keeps everything on stock EmulatorJS and unblocks the memory-watch hooks WITHOUT a
+custom core build — the custom-build detour is **not needed**.
