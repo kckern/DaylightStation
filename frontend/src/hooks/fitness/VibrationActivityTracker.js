@@ -176,6 +176,13 @@ export class VibrationActivityTracker {
           idleDurationMs: idleDuration
         });
         this._resetCounters();
+        // Fire exactly once per idle period. _resetCounters() intentionally
+        // preserves _idleSince; clearing it here stops the reset branch from
+        // re-firing on every subsequent tick (which flooded ~40k session-reset
+        // logs/8min once the tick path ran hot). A new impact re-arms _idleSince
+        // via the next idle transition, so a genuinely new idle period still
+        // resets.
+        this._idleSince = null;
       }
     }
   }
