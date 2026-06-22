@@ -57,7 +57,7 @@ export function createAdminArtRouter({ mediaPath, dataPath, getCollections, logg
       const { source, tag, hidden, flagged, q } = req.query;
       if (!safeScopeDir(source)) return res.status(400).json({ error: 'Invalid source' });
       const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-      const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 60));
+      const pageSize = Math.min(2000, Math.max(1, parseInt(req.query.pageSize, 10) || 60));
       let all = await artSource.listWorks({ folder: source && source !== 'classic' ? source : undefined });
       // Collection-aware tag filter: a known collection name matches by rule OR tag
       // (hidden/flagged still listed, so they can be curated); any other tag is a
