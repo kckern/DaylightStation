@@ -37,6 +37,30 @@ export function buildArtPredicate(def = {}) {
   };
 }
 
+// Hybrid membership (ArtMode "Model C"): a work belongs to collection `key` if the
+// rule matches OR it's hand-tagged with the collection name — but hidden/flagged
+// works are never shown, and an explicit `exclude` (or hide/flag) overrides a match.
+// Pure; the single source of truth for "is this work in this collection?".
+export function isMember(key, def = {}, entry) {
+  const meta = entry?.meta || {};
+  if (meta.hidden === true) return false;
+  if (meta.flagged === true) return false;
+  if (Array.isArray(meta.exclude) && meta.exclude.includes(key)) return false;
+  if (Array.isArray(meta.tags) && meta.tags.includes(key)) return true;
+  return buildArtPredicate(def)(entry);
+}
+
+// Admin-side membership: would this work belong to collection `key` by rule OR
+// hand-tag — IGNORING hidden/flagged/exclude. The Library uses this so a curator
+// filtering to a collection sees ALL its candidates (including ones they've hidden
+// or excluded) and can un-hide / re-include them. (isMember is the screensaver's
+// stricter view, which drops those.)
+export function matchesCollection(key, def = {}, entry) {
+  const meta = entry?.meta || {};
+  if (Array.isArray(meta.tags) && meta.tags.includes(key)) return true;
+  return buildArtPredicate(def)(entry);
+}
+
 // Resolve a collection key against a defs map, falling back to `all` (or {}).
 export function resolveCollection(defs = {}, key) {
   if (key && Object.prototype.hasOwnProperty.call(defs, key)) {
@@ -45,4 +69,4 @@ export function resolveCollection(defs = {}, key) {
   return { key: 'all', def: defs.all || {} };
 }
 
-export default { parseYear, buildArtPredicate, resolveCollection };
+export default { parseYear, buildArtPredicate, isMember, matchesCollection, resolveCollection };
