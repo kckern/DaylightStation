@@ -1305,6 +1305,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       loadConfig: () => loadEmulatorConfig({
         emulationDir,
         readManifests: () => emuFs.readManifests(emulationDir),
+        readInputConfig: emuFs.makeReadInputConfig(emulationDir),
         logger: emuLogger,
       }),
       readBinary: emuFs.readBinary,
