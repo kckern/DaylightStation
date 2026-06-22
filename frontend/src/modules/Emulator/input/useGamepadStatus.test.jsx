@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { computeStatus, useGamepadStatus } from './useGamepadStatus.js';
+import { computeStatus, mergeKnown, useGamepadStatus } from './useGamepadStatus.js';
 
 const controllers = [
   { id: '8bitdo_sn30', label: '8BitDo SN30 Pro', match: '8BitDo' },
@@ -89,8 +89,59 @@ describe('computeStatus', () => {
 
   it('tolerates empty/non-array controllersConfig', () => {
     const pads = [pad({ index: 0, id: 'Xbox' })];
-    expect(computeStatus(pads, null, {}).known).toEqual([]);
-    expect(computeStatus(pads, [], {}).connected[0].matchedId).toBeNull();
+    expect(computeStatus(pads, null).known).toEqual([]);
+    expect(computeStatus(pads, []).connected[0].matchedId).toBeNull();
+  });
+});
+
+describe('mergeKnown (OS-level BT inventory merge)', () => {
+  const withAddr = [
+    { id: '8bitdo_sn30', label: '8BitDo', match: '8BitDo', address: 'AA:BB:CC:DD:EE:FF' },
+    { id: 'xbox', label: 'Xbox', match: 'Xbox', address: '11:22:33:44:55:66' },
+    { id: 'no_addr', label: 'No Address', match: 'Nope' }, // no address field
+  ];
+
+  it('no btInventory → os is null for every row', () => {
+    const known = mergeKnown(withAddr, []);
+    expect(known.every((k) => k.os === null)).toBe(true);
+  });
+
+  it('matching address in feed → os.connected true + battery (case-insensitive)', () => {
+    const bt = [{ address: 'aa:bb:cc:dd:ee:ff', name: '8BitDo', connected: true, battery: 75 }];
+    const known = mergeKnown(withAddr, [], bt);
+    const row = known.find((k) => k.id === '8bitdo_sn30');
+    expect(row.os).toEqual({ connected: true, battery: 75 });
+  });
+
+  it('address present but NOT in feed → os.connected false, battery null', () => {
+    const bt = [{ address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo', connected: true, battery: 90 }];
+    const known = mergeKnown(withAddr, [], bt);
+    const row = known.find((k) => k.id === 'xbox'); // its MAC is absent from feed
+    expect(row.os).toEqual({ connected: false, battery: null });
+  });
+
+  it('feed device present but connected:false → os.connected false', () => {
+    const bt = [{ address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo', connected: false, battery: null }];
+    const row = mergeKnown(withAddr, [], bt).find((k) => k.id === '8bitdo_sn30');
+    expect(row.os).toEqual({ connected: false, battery: null });
+  });
+
+  it('controller with no address field → os null even when feed present', () => {
+    const bt = [{ address: 'AA:BB:CC:DD:EE:FF', name: 'x', connected: true, battery: 50 }];
+    const row = mergeKnown(withAddr, [], bt).find((k) => k.id === 'no_addr');
+    expect(row.os).toBeNull();
+  });
+
+  it('missing battery in matched device → battery null but connected preserved', () => {
+    const bt = [{ address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo', connected: true }];
+    const row = mergeKnown(withAddr, [], bt).find((k) => k.id === '8bitdo_sn30');
+    expect(row.os).toEqual({ connected: true, battery: null });
+  });
+
+  it('computeStatus threads btInventory into known', () => {
+    const bt = [{ address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo', connected: true, battery: 42 }];
+    const { known } = computeStatus([], withAddr, { btInventory: bt });
+    expect(known.find((k) => k.id === '8bitdo_sn30').os).toEqual({ connected: true, battery: 42 });
   });
 });
 

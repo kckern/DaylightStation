@@ -52,15 +52,71 @@ function isPadActive(gp) {
 }
 
 /**
+ * Look up OS-level (BlueZ) truth for a controller config in the BT inventory.
+ * Match by MAC address, case-insensitive.
+ *
+ * @param {object} config                       controller config entry.
+ * @param {Array<object>|null|undefined} btInventory  [{ address, name, connected, battery }].
+ * @returns {{ connected: boolean, battery: number|null }|null}
+ *   null when: no `address` on the config, no btInventory feed at all, or the
+ *   address is configured but not present in the feed → caller distinguishes
+ *   "no feed" (null) from "present but off" below.
+ */
+function lookupOsStatus(config, btInventory) {
+  // No feed at all → caller renders browser-only (no OS column).
+  if (!Array.isArray(btInventory)) return null;
+  // No MAC on this controller config → nothing to match.
+  if (!config.address) return null;
+  const want = String(config.address).toLowerCase();
+  const hit = btInventory.find(
+    (d) => d && typeof d.address === 'string' && d.address.toLowerCase() === want,
+  );
+  if (!hit) {
+    // Address configured but not in the feed → OS reports it as off.
+    return { connected: false, battery: null };
+  }
+  return {
+    connected: !!hit.connected,
+    battery: Number.isFinite(hit.battery) ? hit.battery : null,
+  };
+}
+
+/**
+ * Build the `known` controller rows, merging browser-slot matches with the
+ * optional OS-level BT inventory (matched by MAC `address`).
+ *
+ * @param {Array<object>} controllersConfig    [{ id, label, match, count?, address? }].
+ * @param {Array<object>} connected            output rows from computeStatus.
+ * @param {Array<object>|null} [btInventory]    [{ address, name, connected, battery }].
+ * @returns {object[]}
+ */
+export function mergeKnown(controllersConfig, connected, btInventory) {
+  const list = Array.isArray(controllersConfig) ? controllersConfig : [];
+  const conn = Array.isArray(connected) ? connected : [];
+  return list.map((config) => {
+    const connectedCount = conn.filter((c) => c.matchedId === config.id).length;
+    return {
+      id: config.id,
+      label: config.label ?? config.id,
+      count: Number.isFinite(config.count) ? config.count : 1,
+      connectedCount,
+      connected: connectedCount > 0,
+      os: lookupOsStatus(config, btInventory),
+    };
+  });
+}
+
+/**
  * Pure status computation from a gamepads snapshot.
  *
  * @param {Array<Gamepad|null>} gamepads      raw getGamepads() result.
- * @param {Array<object>} controllersConfig   [{ id, label, match, count? }].
- * @param {object} _prev                       reserved (prev-poll state); active
- *   detection is per-poll from current buttons/axes, so prev is not required.
+ * @param {Array<object>} controllersConfig   [{ id, label, match, count?, address? }].
+ * @param {object} [opts]
+ * @param {Array<object>} [opts.btInventory]  optional OS-level BT inventory feed
+ *   ([{ address, name, connected, battery }]); merged into `known` by MAC.
  * @returns {{ connected: object[], known: object[] }}
  */
-export function computeStatus(gamepads, controllersConfig, _prev = {}) {
+export function computeStatus(gamepads, controllersConfig, { btInventory } = {}) {
   const matchers = buildMatchers(controllersConfig);
   const live = Array.from(gamepads || []).filter((gp) => gp != null);
 
@@ -74,16 +130,7 @@ export function computeStatus(gamepads, controllersConfig, _prev = {}) {
     };
   });
 
-  const known = matchers.map(({ config }) => {
-    const connectedCount = connected.filter((c) => c.matchedId === config.id).length;
-    return {
-      id: config.id,
-      label: config.label ?? config.id,
-      count: Number.isFinite(config.count) ? config.count : 1,
-      connectedCount,
-      connected: connectedCount > 0,
-    };
-  });
+  const known = mergeKnown(controllersConfig, connected, btInventory);
 
   return { connected, known };
 }
@@ -97,11 +144,17 @@ const EMPTY_STATUS = { connected: [], known: [] };
  * @param {object} [opts]
  * @param {Function} [opts.getGamepads] - injectable; defaults to navigator.getGamepads.
  * @param {number}   [opts.pollMs=500]
+ * @param {Array<object>} [opts.btInventory] - optional OS-level BT inventory
+ *   ([{ address, name, connected, battery }]); merged into `known` by MAC.
  * @returns {{ connected: object[], known: object[] }}
  */
-export function useGamepadStatus(controllersConfig, { getGamepads, pollMs = 500 } = {}) {
+export function useGamepadStatus(controllersConfig, { getGamepads, pollMs = 500, btInventory } = {}) {
   const [status, setStatus] = useState(EMPTY_STATUS);
-  const prevRef = useRef({});
+
+  // Keep the latest btInventory in a ref so poll refreshes pick it up without
+  // re-subscribing the gamepad listeners on every feed update.
+  const btRef = useRef(btInventory);
+  btRef.current = btInventory;
 
   // Stable reader: navigator.getGamepads if not injected.
   const readPads =
@@ -112,8 +165,7 @@ export function useGamepadStatus(controllersConfig, { getGamepads, pollMs = 500 
 
     const refresh = () => {
       if (!mounted) return;
-      const next = computeStatus(readPads(), controllersConfig, prevRef.current);
-      prevRef.current = next;
+      const next = computeStatus(readPads(), controllersConfig, { btInventory: btRef.current });
       setStatus(next);
     };
 
@@ -147,6 +199,14 @@ export function useGamepadStatus(controllersConfig, { getGamepads, pollMs = 500 
     // controllersConfig identity drives re-subscribe; readPads/pollMs captured.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controllersConfig, pollMs]);
+
+  // Recompute promptly when the BT inventory feed changes (rather than waiting
+  // for the next poll tick), so the OS column reflects fresh OS-level truth.
+  useEffect(() => {
+    setStatus(computeStatus(readPads(), controllersConfig, { btInventory }));
+    // readPads/controllersConfig captured; btInventory identity is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [btInventory]);
 
   return status;
 }

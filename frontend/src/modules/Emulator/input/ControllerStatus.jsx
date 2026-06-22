@@ -19,11 +19,18 @@ function logger() {
 
 /**
  * @param {object} props
- * @param {Array<object>} props.controllers  [{ id, label, match, count? }].
- * @param {Function} [props.getGamepads]      injectable for tests.
+ * @param {Array<object>} props.controllers   [{ id, label, match, count?, address? }].
+ * @param {Function} [props.getGamepads]       injectable for tests.
+ * @param {Array<object>} [props.btInventory]  OS-level BlueZ inventory
+ *   ([{ address, name, connected, battery }]) passed in by the host. Optional —
+ *   when absent the panel renders browser-only (no OS column). This component is
+ *   host-agnostic: it never imports FitnessContext; the feed arrives as a prop.
  */
-export function ControllerStatus({ controllers = [], getGamepads }) {
-  const { connected, known } = useGamepadStatus(controllers, { getGamepads });
+export function ControllerStatus({ controllers = [], getGamepads, btInventory }) {
+  const { connected, known } = useGamepadStatus(controllers, { getGamepads, btInventory });
+
+  // Show the OS column only when a BT inventory feed is actually present.
+  const hasBtFeed = Array.isArray(btInventory);
 
   // label lookup for the "connected now" rows.
   const labelById = useMemo(() => {
@@ -57,6 +64,13 @@ export function ControllerStatus({ controllers = [], getGamepads }) {
               <span className={`ccs-badge${k.connected ? ' ccs-badge-on' : ''}`}>
                 {k.connectedCount} of {k.count} connected
               </span>
+              {hasBtFeed && k.os ? (
+                <span className={`ccs-os-badge${k.os.connected ? ' ccs-os-on' : ' ccs-os-off'}`}>
+                  {k.os.connected
+                    ? `BT: connected${k.os.battery != null ? ` · ${k.os.battery}%` : ''}`
+                    : 'BT: off'}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
