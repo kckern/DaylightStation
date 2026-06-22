@@ -49,4 +49,15 @@ describe('ArtLibrary', () => {
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith('api/v1/admin/art/works/a', { hidden: true }, 'PATCH'));
   });
+
+  // Typing in search must not throw and must reload the list with the q filter.
+  // (jsdom flushes updaters synchronously so it can't reproduce the null-currentTarget
+  // timing bug, but this guards the handler shape + the search→reload path.)
+  it('search reloads the list with a q filter', async () => {
+    renderLib();
+    await waitFor(() => expect(screen.getByText('Sunrise')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('search title / artist…'), { target: { value: 'monet' } });
+    await waitFor(() =>
+      expect(api.mock.calls.some(([p]) => typeof p === 'string' && p.includes('q=monet'))).toBe(true));
+  });
 });
