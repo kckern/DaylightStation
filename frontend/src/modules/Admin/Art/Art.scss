@@ -36,3 +36,18 @@
 .art-grid__cell.is-hidden { opacity: .4; }
 .art-grid__flag { position: absolute; top: 4px; right: 4px; color: #e0604a; }
 .art-grid__tagdot { position: absolute; bottom: 4px; left: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ds-accent, #4a9); }
+
+.crop-editor { position: absolute; inset: 0; }
+.crop-editor__shade { position: absolute; left: 0; right: 0; background: rgba(0,0,0,.55); pointer-events: none; }
+.crop-editor__shade--top { top: 0; }
+.crop-editor__shade--bottom { bottom: 0; }
+.crop-editor__window { position: absolute; left: 0; right: 0; border: 2px solid #4ad; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+.crop-editor__handle { position: absolute; left: 50%; transform: translateX(-50%); width: 54px; height: 12px;
+  background: #4ad; border: none; border-radius: 4px; cursor: ns-resize; padding: 0; }
+.crop-editor__handle--top { top: -6px; }
+.crop-editor__handle--bottom { bottom: -6px; }
+.crop-editor__handle:focus { outline: 2px solid #fff; }
+.crop-editor__readout { position: absolute; top: 4px; left: 6px; font-size: 11px; color: #bdf; }
+.crop-editor__controls { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 10px; align-items: center;
+  font-size: 12px; background: rgba(0,0,0,.5); padding: 4px 8px; border-radius: 4px; }
+.crop-editor__toggle { display: flex; gap: 6px; align-items: center; cursor: pointer; }
