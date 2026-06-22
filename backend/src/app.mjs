@@ -1636,6 +1636,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let providerWebhookAdapters = {};
   let stravaEnrichmentService = null;
+  let stravaReconciliationService = null;
   try {
     const stravaClientId = configService.getSystemAuth?.('strava', 'client_id');
     if (!stravaClientId) {
@@ -1664,7 +1665,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
-      const stravaReconciliationService = new StravaReconciliationService({
+      stravaReconciliationService = new StravaReconciliationService({
         stravaClient,
         configService,
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
@@ -2227,6 +2228,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (agentsServices.scheduler && v1Routers.fitness?.trashRetentionSweep) {
     agentsServices.scheduler.registerTask('fitness:trash-retention', '17 4 * * *', async () => {
       await v1Routers.fitness.trashRetentionSweep.run();
+    });
+  }
+
+  // Strava reconciliation sweep — propagates LOCAL session corrections (splits,
+  // edited primary media, late voice memos) back to Strava without waiting for
+  // the next workout's webhook to opportunistically trigger reconcile(). The
+  // service's own 1-hour per-session cooldown (last_reconciled_at) prevents
+  // thrash; this just guarantees the lookback window is actually swept.
+  if (agentsServices.scheduler && stravaReconciliationService) {
+    agentsServices.scheduler.registerTask('fitness:strava-reconcile', '23 * * * *', async () => {
+      await stravaReconciliationService.reconcile();
     });
   }
 

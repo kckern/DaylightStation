@@ -139,49 +139,63 @@ export class StravaReconciliationService {
   }
 
   /**
-   * Pass 1: Re-enrich Strava activities that were missed or have stale descriptions.
+   * Pass 1: Re-enrich Strava activities that were missed or have stale
+   * title/description — including propagating LOCAL corrections (e.g. a
+   * session split that changed the primary media) back to Strava.
+   *
+   * Provenance rule: a field is overwritten only if Strava still holds the
+   * value we last pushed (`session.strava.pushed`), i.e. the user has not
+   * manually edited it on Strava. For sessions enriched before provenance
+   * tracking existed, fall back to the legacy heuristic — an em-dash title is
+   * treated as ours (DaylightStation titles are always `Show—Episode`) and an
+   * empty description is treated as fillable. This lets already-stale sessions
+   * self-heal on the first reconcile after this ships.
+   *
    * @returns {boolean} Whether an update was pushed to Strava
    */
   async #pass1SessionToStrava(session, activity, selectionConfig) {
-    const hasEmDash = activity.name?.includes('\u2014');
-    const descEmpty = !activity.description?.trim();
-
-    // Build what we would enrich with
+    // Build what we would enrich with (pass {} so the builder never short-circuits)
     const enrichment = buildStravaDescription(session, {}, selectionConfig);
     if (!enrichment) return false;
 
+    const pushed = session.strava?.pushed || {};
     const updatePayload = {};
 
-    if (!hasEmDash) {
-      // Title was NOT set by us
-      if (descEmpty) {
-        // Fill both name and description
-        if (enrichment.name) updatePayload.name = enrichment.name;
-        if (enrichment.description) updatePayload.description = enrichment.description;
-      } else {
-        // Manual description exists — only fill name if it's missing/generic
-        if (enrichment.name && !activity.name?.includes('\u2014')) {
-          updatePayload.name = enrichment.name;
-        }
-      }
-    } else {
-      // Title WAS set by us (has em-dash)
-      if (descEmpty) {
-        // We set title but description was missing
-        if (enrichment.description) updatePayload.description = enrichment.description;
-      } else {
-        // Both set — check if description is stale
-        // Re-run buildStravaDescription with empty currentActivity to get fresh output
-        const freshEnrichment = buildStravaDescription(session, {}, selectionConfig);
-        if (freshEnrichment?.description && freshEnrichment.description !== activity.description) {
-          updatePayload.description = freshEnrichment.description;
-        }
-      }
+    // --- Title ---
+    // Overwrite only if the title changed AND Strava still holds what we last
+    // pushed (provenance). Legacy fallback when no provenance recorded: an
+    // em-dash title is ours, or the title is unset — so already-stale sessions
+    // self-heal.
+    if (enrichment.name && enrichment.name !== activity.name) {
+      const titleIsOurs = pushed.name != null
+        ? activity.name === pushed.name
+        : (!activity.name?.trim() || activity.name.includes('—'));
+      if (titleIsOurs) updatePayload.name = enrichment.name;
+    }
+
+    // --- Description ---
+    // Same provenance rule. Legacy fallback: fill when empty, or refresh when
+    // the title is ours (matches prior stale-description behavior).
+    if (enrichment.description && enrichment.description !== activity.description) {
+      const descIsOurs = pushed.description != null
+        ? activity.description === pushed.description
+        : (!activity.description?.trim() || activity.name?.includes('—'));
+      if (descIsOurs) updatePayload.description = enrichment.description;
     }
 
     if (Object.keys(updatePayload).length === 0) return false;
 
     await this.#stravaClient.updateActivity(String(activity.id), updatePayload);
+
+    // Record provenance so future manual edits on Strava are respected and not
+    // clobbered by a later reconcile.
+    if (!session.strava) session.strava = {};
+    session.strava.pushed = {
+      name: updatePayload.name ?? pushed.name ?? activity.name ?? null,
+      description: updatePayload.description ?? pushed.description ?? activity.description ?? null,
+      at: new Date().toISOString(),
+    };
+
     this.#logger.info?.('strava.reconciliation.enriched', {
       activityId: activity.id,
       fields: Object.keys(updatePayload),
