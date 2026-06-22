@@ -20,6 +20,7 @@ export { createInfoRouter } from './info.mjs';
 export { createQueueRouter } from './queue.mjs';
 export { createSiblingsRouter } from './siblings.mjs';
 export { createLocalContentRouter } from './localContent.mjs';
+export { createEmulatorRouter } from './emulator.mjs';
 export { createPlayRouter } from './play.mjs';
 export { createStreamRouter } from './stream.mjs';
 

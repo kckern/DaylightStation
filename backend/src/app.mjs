@@ -212,6 +212,9 @@ import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
+import { createEmulatorRouter } from './4_api/v1/routers/emulator.mjs';
+import { loadEmulatorConfig } from './3_applications/emulator/loadEmulatorConfig.mjs';
+import * as emuFs from './4_api/v1/routers/lib/emulatorFs.mjs';
 import { createAmbientLightService } from './3_applications/home-automation/AmbientLightService.mjs';
 import { normalizeAmbientZones, startAmbientZones } from './3_applications/home-automation/ambientZones.mjs';
 
@@ -1294,6 +1297,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: dataBasePath,
     logger: rootLogger.child({ module: 'art-api' })
   });
+
+  // Emulator console (games on the media mount). Addresses media by safe
+  // (system, gameId) slugs and resolves the real (messy) on-disk filenames
+  // server-side; also serves the vendored EmulatorJS engine bundle.
+  {
+    const emulationDir = path.join(configService.getMediaDir(), 'emulation');
+    const engineDir = path.join(emulationDir, '_engine');
+    const emuLogger = rootLogger.child({ module: 'emulator-api' });
+    v1Routers.emulator = createEmulatorRouter({
+      logger: emuLogger,
+      loadConfig: () => loadEmulatorConfig({
+        emulationDir,
+        readManifests: () => emuFs.readManifests(emulationDir),
+        readInputConfig: emuFs.makeReadInputConfig(emulationDir),
+        logger: emuLogger,
+      }),
+      readBinary: emuFs.readBinary,
+      writeBinary: emuFs.writeBinary,
+      readEngineFile: emuFs.makeReadEngineFile(engineDir),
+      resolveRomPath: (cfg, system, gameId) => emuFs.resolveRomPath(emulationDir, cfg, system, gameId),
+      resolveArtPath: (cfg, system, gameId, kind) => emuFs.resolveArtPath(emulationDir, cfg, system, gameId, kind),
+      resolveSavePath: (system, gameId, user) => emuFs.resolveSavePath(emulationDir, system, gameId, user),
+      resolveStatePath: (system, gameId, slot, user) => emuFs.resolveStatePath(emulationDir, system, gameId, slot, user),
+      // Broadcasts the bt.pair.request bus topic the garage fitness bridge
+      // listens for (puts the box into controller-pairing mode without SSH).
+      // eventBus is already constructed (above) and in scope here.
+      publishBtPair: (payload) => eventBus.broadcast('bt.pair.request', { topic: 'bt.pair.request', ...payload }),
+    });
+  }
 
   // Eink router — renders panels for hardware e-paper displays (Seeed reTerminal).
   const { EinkPanelService } = await import('./3_applications/eink/EinkPanelService.mjs');
