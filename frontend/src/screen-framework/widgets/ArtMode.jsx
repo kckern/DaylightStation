@@ -11,6 +11,7 @@ import { luxToDim } from './luxToDim.js';
 import { useScreenAmbient } from '../ambient/ScreenAmbientContext.jsx';
 import { resolveAmbient } from './resolveAmbient.js';
 import { useScreenAction } from '../input/useScreenAction.js';
+import { useScreenScene } from '../providers/ScreenSceneContext.jsx';
 import { useBackgroundMusic } from '../../lib/Player/useBackgroundMusic.js';
 import MusicPlaque from './MusicPlaque.jsx';
 import ArtLayer from './ArtLayer.jsx';
@@ -147,6 +148,13 @@ function ArtMode({
   const mode = VIEW_MODES[modeIdx];
   const isGallery = mode.fit === 'gallery';
   const logger = useMemo(() => getChildLogger({ widget: 'art' }), []);
+  // Tell the screen this is a passive art scene (screensaver or ambient preset),
+  // so presence reports playing:false while we're up. No-op outside a screen.
+  const { setArtSceneActive } = useScreenScene();
+  useEffect(() => {
+    setArtSceneActive(true);
+    return () => setArtSceneActive(false);
+  }, [setArtSceneActive]);
   const frameSrc = useMemo(() => DaylightMediaPath('media/img/ui/frame.png'), []);
   const mountedRef = useRef(true);
   useEffect(() => () => {
