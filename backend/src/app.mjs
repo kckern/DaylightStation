@@ -148,6 +148,7 @@ import { createIdentityRelay } from '#apps/fitness/identityRelay.mjs';
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
 import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
+import { ScreenContentTracker } from '#apps/devices/services/ScreenContentTracker.mjs';
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { CompositeJobDatastore } from '#adapters/scheduling/CompositeJobDatastore.mjs';
@@ -1875,6 +1876,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     devicesConfig: devicesConfig.devices || {},
     logger: rootLogger.child({ module: 'screen-presence' }),
   });
+
+  // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by
+  // the same `screen.presence` heartbeat. Read by the ambient scheduler.
+  const screenContentTracker = new ScreenContentTracker({
+    logger: rootLogger.child({ module: 'screen-content' }),
+  });
+  screenContentTracker.start(eventBus);
 
   // Transcode pre-warming for device loads
   const { prewarmService } = createTranscodePrewarmService({
