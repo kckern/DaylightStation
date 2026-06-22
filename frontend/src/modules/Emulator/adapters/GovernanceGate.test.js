@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createOpenGate, createGateAdapter } from './GovernanceGate.js';
+import { createOpenGate, createGateAdapter, createCreditAccumulator } from './GovernanceGate.js';
 
 describe('createOpenGate', () => {
   it('is always playable', () => {
@@ -58,5 +58,35 @@ describe('createGateAdapter', () => {
     const unsub = a.onChange(() => {});
     expect(typeof unsub).toBe('function');
     expect(() => unsub()).not.toThrow();
+  });
+});
+
+describe('createCreditAccumulator', () => {
+  it('earns net credit while in-zone (earnRate > 1)', () => {
+    const acc = createCreditAccumulator({ earnRate: 2, maxCredit: 100 });
+    acc.tick(1, true); // earn 2, spend 1 => net 1
+    expect(acc.creditSeconds).toBeCloseTo(1, 6);
+    expect(acc.isPlayable()).toBe(true);
+  });
+
+  it('depletes toward 0 when out-of-zone and never goes below 0', () => {
+    const acc = createCreditAccumulator({ earnRate: 2, maxCredit: 100 });
+    // seed some credit
+    acc.tick(1, true);
+    acc.tick(1, true); // ~2s of credit
+    expect(acc.creditSeconds).toBeCloseTo(2, 6);
+    acc.tick(1, false); // spend 1 => 1
+    acc.tick(1, false); // spend 1 => 0
+    expect(acc.creditSeconds).toBe(0);
+    expect(acc.isPlayable()).toBe(false);
+    acc.tick(1, false); // stays at 0
+    expect(acc.creditSeconds).toBe(0);
+  });
+
+  it('clamps earned credit to maxCredit', () => {
+    const acc = createCreditAccumulator({ earnRate: 1000, maxCredit: 5 });
+    acc.tick(1, true); // earn 1000 -> clamp 5, spend 1 -> 4
+    expect(acc.creditSeconds).toBeCloseTo(4, 6);
+    expect(acc.creditSeconds).toBeLessThanOrEqual(5);
   });
 });
