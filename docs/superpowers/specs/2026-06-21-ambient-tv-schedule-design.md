@@ -63,21 +63,43 @@ anything actively playing on that TV.
 - **Turn-on / load a preset:** `GET /api/v1/device/livingroom-tv/load?display=art:<preset>`
   performs the full wake → prepare → load. `art:<preset>` resolves any `artmode.yml`
   preset *or* collection through the existing `presetResolver` / `ArtContentSource`.
-- **Active-content check:** `GET /api/v1/device/:id/session` returns **204** when idle
-  (ArtMode screensaver / nothing playing = *passive*) and **200** with a `currentItem`
-  when a video is playing (*active*). This is the suppression signal — no log-scraping.
-- **Power off:** the device adapter exposes `powerOff()` (already refuses during an active
-  video call).
+- **Turn-on / load a preset:** `load?display=art:<preset>` (wake + load in one call).
+- **Power off:** the device adapter exposes `deviceService.get(deviceId).powerOff()` (already
+  refuses during an active video call).
 - The `AmbientSchedulerService` calls these via the **same internal services the device
-  router injects** (session snapshot service, wake-and-load service, the device object),
-  not via HTTP self-calls.
+  router injects** (`wakeAndLoadService.execute`, `deviceService.get().powerOff`), not via
+  HTTP self-calls.
 
-### Implementation risk to verify in the plan
+### Active-content (idle) detection — resolved design
 
-Confirm `livingroom-tv` actually populates session snapshots (some FKB screens may not).
-If it does not, fall back to the player render telemetry the deploy-gate already relies
-on (`playback.render_fps` / `videoState`) as the idle signal. The pure evaluator takes a
-boolean `sessionIdle`, so the detection source is swappable without touching the logic.
+The originally-assumed `GET /device/:id/session` endpoint is **not usable**:
+`sessionControlService` is not wired in `app.mjs` (the endpoint returns 501), and there is
+no backend playback registry. Investigation also showed the existing `screen.presence`
+heartbeat is **too coarse**: on the living-room screen both the Player **and** ArtMode
+render via `showOverlay`, so `screen.presence.active` (= `hasOverlay || non-browse-nav`)
+is `true` for a playing video, ambient art, and the idle screensaver alike. Reusing it raw
+would make ambient read its own art as active and never power off.
+
+**Resolved approach — extend the existing heartbeat with a finer `playing` flag:**
+
+1. ArtMode (the single widget behind both the screensaver and ambient scenes) advertises
+   "I am an art scene" via a small screen-framework context (`ScreenSceneContext`) while
+   mounted.
+2. The existing `ScreenPresencePublisher` adds one field to its `screen.presence` message:
+   `playing = isContentActive(currentContent, hasOverlay) && !artSceneActive`. The existing
+   `active` field is left unchanged, so the `office_tv_active` HA behavior is untouched.
+3. A new backend `ScreenContentTracker` (`3_applications/devices/`) consumes
+   `screen.presence` off the eventBus, tracks `{ playing, lastSeen }` per device with a TTL
+   (~15s), and exposes `isPlaying(deviceId)` (`playing === true && fresh`).
+4. `AmbientSchedulerService` injects this tracker; `isDeviceIdle(deviceId) =
+   !tracker.isPlaying(deviceId)`.
+
+Result: a real video → `playing:true` → suppress; art/screensaver/idle → `playing:false`
+→ safe to act. The pure evaluator still takes a boolean `sessionIdle`, so the detection
+source remains swappable.
+
+This adds a small **Part A** (the playing-state signal) ahead of **Part B** (the scheduler
+proper). Part A is independently useful (a reusable "is the TV playing a video" capability).
 
 ---
 
