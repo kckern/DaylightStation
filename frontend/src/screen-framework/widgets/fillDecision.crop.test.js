@@ -19,4 +19,10 @@ describe('fillDecision crop gate', () => {
     const d = fillDecision({ ...base, ratios: [1.0] });
     expect(d.view).toBe('gallery'); // 1.0 is squarer than the opening; stays matted
   });
+  it('a horizontal (left/right) band forces framed-cover on the left-right axis', () => {
+    const d = fillDecision({ ...base, ratios: [3.5], crop: { left: 15, right: 15 } });
+    expect(d.view).toBe('framed-cover');
+    expect(d.qualified).toBe(true);
+    expect(d.axis).toBe('left-right');
+  });
 });

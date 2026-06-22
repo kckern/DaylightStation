@@ -22,7 +22,9 @@ export default function Loupe({ work, total, index, saved, onAnchor, onCrop }) {
         <img key={work.id} className="art-loupe__img"
           src={DaylightMediaPath(work.image)} alt={m.title || 'Artwork'} />
         {onCrop
-          ? <CropEditor crop={m.crop} onCrop={onCrop} />
+          ? <CropEditor crop={m.crop} onCrop={onCrop}
+              axis={(m.width > 0 && m.height > 0 && m.width / m.height > 2) ? 'horizontal' : 'vertical'} />
+          /* > 2:1 (wider than the framed opening) → trim left/right; else top/bottom. */
           : (
             /* Clickable crop-anchor compass: click the region of the image to keep.
                Works without a numpad (numpad keys still set the same anchors). */

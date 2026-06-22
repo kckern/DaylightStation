@@ -265,6 +265,14 @@
   width: 100%;
   height: auto;
 }
+/* Horizontal (panorama) band: full-height, width follows source aspect. */
+.artmode__fitimage--bandh {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: auto;
+}
 
 /* ---- Placard title may render as 1-2 balanced lines; truncate each with … ---- */
 .artmode__placard-line {
