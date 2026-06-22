@@ -97,12 +97,14 @@ export function createAdminArtRouter({ mediaPath, dataPath, getCollections, logg
     try {
       const patch = { ...req.body }; delete patch.source;
       const raw = await fs.readFile(file, 'utf-8');
-      const merged = mergeWorkMetadata(raw, patch);   // throws on invalid anchor
+      const merged = mergeWorkMetadata(raw, patch);   // throws "Invalid ..." on bad anchor/crop
       await fs.writeFile(file, merged, 'utf-8');
       logger.info?.('admin.art.patched', { id: rawId, fields: Object.keys(patch) });
       res.json({ ok: true, id: rawId, meta: yaml.load(merged) });
     } catch (err) {
-      if (/anchor/i.test(err.message)) return res.status(400).json({ error: err.message });
+      // mergeWorkMetadata throws "Invalid crop_anchor:…" / "Invalid crop:…" on bad
+      // client input → 400, not 500.
+      if (/^Invalid /.test(err.message)) return res.status(400).json({ error: err.message });
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'Work not found' });
       logger.error?.('admin.art.patch.failed', { id: rawId, error: err.message });
       res.status(500).json({ error: err.message });

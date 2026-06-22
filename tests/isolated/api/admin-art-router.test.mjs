@@ -54,6 +54,11 @@ describe('admin art router', () => {
     expect(res.status).toBe(400);
   });
 
+  it('PATCH rejects an invalid crop with 400 (not 500)', async () => {
+    const res = await request(app).patch('/art/works/alpha').send({ crop: { top: 80, bottom: 30 } });
+    expect(res.status).toBe(400);
+  });
+
   it('PATCH rejects path traversal', async () => {
     const res = await request(app).patch('/art/works/..%2f..%2fescape').send({ hidden: true });
     expect(res.status).toBe(400);
