@@ -41,6 +41,48 @@ export function cropFocus(anchor) {
 }
 
 /**
+ * Aspect (w/h) of the ArtMode opening a panel fills. fullWindow → the whole 16:9
+ * stage; otherwise the frame insets shrink it (≈2:1 for the default gold frame).
+ * @param {{frame:{top,right,bottom,left}, fullWindow:boolean}} o
+ */
+export function openingAspect({ frame, fullWindow }) {
+  if (fullWindow) return SW / SH;
+  const w = SW - ((frame.left + frame.right) / 100) * SW;
+  const h = SH - ((frame.top + frame.bottom) / 100) * SH;
+  return w / h;
+}
+
+/**
+ * CSS to cover-fill a full-width vertical keep-band [top, 100−bottom] (% of source
+ * height) into an opening, applied to an <img width:100%> in an overflow:hidden
+ * window. Uniform cover scale; horizontal centered; band top aligned to the window
+ * top. Pure + px-independent (translate % is relative to the img's own box).
+ * @param {{top?:number, bottom?:number}} band
+ * @param {number} srcRatio  source aspect (w/h)
+ * @param {number} openingRatio  opening aspect (w/h)
+ * @returns {{transform:string, transformOrigin:'top left', scale:number}}
+ */
+export function cropBandFit(band, srcRatio, openingRatio) {
+  const t = Math.max(0, Math.min(90, Number(band?.top) || 0)) / 100;
+  const b = Math.max(0, Math.min(90, Number(band?.bottom) || 0)) / 100;
+  const bh = Math.max(0.1, 1 - t - b);                 // band height fraction of source
+  const scale = Math.max(1, srcRatio / (openingRatio * bh));
+  const tx = -((scale - 1) / 2) * 100;                 // center horizontally
+  const ty = -(scale * t) * 100;                       // align band top to window top
+  const r3 = (n) => {
+    // Preserve -0 (Object.is detects it); otherwise format to 3 decimals, convert to number
+    if (Object.is(n, -0)) return '-0';
+    const str = n.toFixed(3);
+    return `${Number(str)}`;
+  };
+  return {
+    transform: `translate(${r3(tx)}%, ${r3(ty)}%) scale(${Number(scale.toFixed(4))})`,
+    transformOrigin: 'top left',
+    scale,
+  };
+}
+
+/**
  * Per-image matless-fill decision (with reasoning, for logging). Cover-filling the
  * bare frame opening crops exactly ONE axis: a SINGLE narrower than the opening
  * fills the width and trims top/bottom (the vertical budget `cropV`); one wider
@@ -61,11 +103,20 @@ export function cropFocus(anchor) {
  * @returns {{index:number, view:string, qualified:boolean, winAR:number|null,
  *            axis:'top-bottom'|'left-right'|null, need:number|null, budget:number}}
  */
-export function fillDecision({ mode, ratios, frame, cropV = 0, cropH = 0, fallback = 'gallery' }) {
+export function fillDecision({ mode, ratios, frame, cropV = 0, cropH = 0, fallback = 'gallery', crop = null }) {
   const fb = modeIndexByName(fallback);
-  if (mode === 'diptych' || !(cropV > 0 || cropH > 0) || !ratios?.length) {
-    return { index: fb, view: VIEW_MODES[fb].name, qualified: false, winAR: null, axis: null, need: null, budget: 0 };
+  const matted = () => ({ index: fb, view: VIEW_MODES[fb].name, qualified: false, winAR: null, axis: null, need: null, budget: 0 });
+
+  // Explicit per-work crop overrides the auto gate.
+  if (crop && crop.enabled === false) return matted();
+  const hasBand = !!crop && crop.enabled !== false
+    && (Number.isFinite(crop.top) || Number.isFinite(crop.bottom));
+  if (hasBand && mode !== 'diptych') {
+    const fc = modeIndexByName('framed-cover');
+    return { index: fc, view: VIEW_MODES[fc].name, qualified: true, winAR: null, axis: 'top-bottom', need: null, budget: 0 };
   }
+
+  if (mode === 'diptych' || !(cropV > 0 || cropH > 0) || !ratios?.length) return matted();
   const winAR = (SW - ((frame.left + frame.right) / 100) * SW)
               / (SH - ((frame.top + frame.bottom) / 100) * SH);
   const vertical = ratios[0] <= winAR;        // narrower art → fills width, crops top/bottom
