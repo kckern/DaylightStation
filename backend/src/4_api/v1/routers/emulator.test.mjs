@@ -305,4 +305,38 @@ describe('createEmulatorRouter', () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe('POST /bt/pair', () => {
+    it('202 + requestId, calls publishBtPair once with default 30000ms', async () => {
+      const publishBtPair = vi.fn();
+      const makeRequestId = () => 'req-fixed';
+      const { app } = makeApp({ publishBtPair, makeRequestId });
+
+      const res = await request(app).post('/api/v1/emulator/bt/pair').send({});
+
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({ requestId: 'req-fixed' });
+      expect(publishBtPair).toHaveBeenCalledTimes(1);
+      expect(publishBtPair).toHaveBeenCalledWith({ requestId: 'req-fixed', durationMs: 30000 });
+    });
+
+    it('honors a provided durationMs', async () => {
+      const publishBtPair = vi.fn();
+      const makeRequestId = () => 'req-fixed';
+      const { app } = makeApp({ publishBtPair, makeRequestId });
+
+      const res = await request(app).post('/api/v1/emulator/bt/pair').send({ durationMs: 15000 });
+
+      expect(res.status).toBe(202);
+      expect(publishBtPair).toHaveBeenCalledWith({ requestId: 'req-fixed', durationMs: 15000 });
+    });
+
+    it('500 when the publisher throws', async () => {
+      const publishBtPair = vi.fn(() => { throw new Error('bus down'); });
+      const { app } = makeApp({ publishBtPair, makeRequestId: () => 'req-x' });
+
+      const res = await request(app).post('/api/v1/emulator/bt/pair').send({});
+      expect(res.status).toBe(500);
+    });
+  });
 });
