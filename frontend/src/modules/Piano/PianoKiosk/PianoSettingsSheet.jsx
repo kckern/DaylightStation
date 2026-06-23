@@ -2,6 +2,8 @@ import { useEffect, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
+import { usePianoKioskConfig } from './PianoConfig.jsx';
+import { startApplication } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
 import Icon from './icons/Icon.jsx';
@@ -27,6 +29,8 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-settings' }), []);
   const { connected, inputName, status, connect } = usePianoMidi();
   const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
+  const { config } = usePianoKioskConfig();
+  const bluetooth = config?.bluetooth || null;
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -96,6 +100,15 @@ export default function PianoSettingsSheet({ open, onClose }) {
             <span className="piano-settings__hwname">{connected ? (inputName || 'Piano') : ''}</span>
             {!connected && status !== 'unsupported' && (
               <button type="button" className="piano-settings__connect" onClick={connect}>Connect</button>
+            )}
+            {bluetooth && (
+              <button
+                type="button"
+                className="piano-settings__connect piano-settings__connect--ghost"
+                onClick={() => { logger.info('piano.settings.bluetooth', {}); startApplication(bluetooth.package, bluetooth.activity); }}
+              >
+                Bluetooth settings
+              </button>
             )}
           </div>
         </section>

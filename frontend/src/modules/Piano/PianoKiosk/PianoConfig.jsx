@@ -23,6 +23,11 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Physical key range of this piano. 88 keys = A0(21)..C8(108); a 61-key board
   // would be 36..96, a 49-key 36..84. MIDI note numbers.
   keyboard: { startNote: 21, endNote: 108 },
+  // OS Bluetooth-settings launcher for pairing the BLE-MIDI piano. Null = this
+  // client isn't an Android/FKB kiosk (no assumption). When set, the kiosk shows
+  // a "pair over Bluetooth" affordance that calls fully.startApplication(pkg, activity).
+  // e.g. { package: 'com.android.settings', activity: 'com.android.settings.Settings$BluetoothSettingsActivity' }
+  bluetooth: null,
   inactivityMinutes: 10,
   // Screensaver disabled until a deviceId is configured (null = no screen control).
   screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
@@ -73,6 +78,7 @@ export function resolvePianoConfig(raw, pianoId) {
       startNote: p.keyboard?.startNote ?? shared.keyboard?.startNote ?? PIANO_CONFIG_DEFAULTS.keyboard.startNote,
       endNote: p.keyboard?.endNote ?? shared.keyboard?.endNote ?? PIANO_CONFIG_DEFAULTS.keyboard.endNote,
     },
+    bluetooth: p.bluetooth ?? shared.bluetooth ?? PIANO_CONFIG_DEFAULTS.bluetooth,
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
