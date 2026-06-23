@@ -67,6 +67,37 @@ describe('usePianoVoiceBridge', () => {
     expect(FakeWS.instances).toHaveLength(2);
   });
 
+  it('sets link=reconnecting after an unexpected close', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => usePianoVoiceBridge({ url: 'ws://localhost:8770' }));
+    act(() => FakeWS.last._open());
+    expect(result.current.status.link).toBe('connected');
+    act(() => FakeWS.last.close());
+    expect(result.current.status.link).toBe('reconnecting');
+  });
+
+  it('closes the old socket and opens a new one when url changes', () => {
+    const { rerender } = renderHook(
+      ({ url }) => usePianoVoiceBridge({ url }),
+      { initialProps: { url: 'ws://localhost:8770' } },
+    );
+    const first = FakeWS.last;
+    act(() => first._open());
+    expect(FakeWS.instances).toHaveLength(1);
+    rerender({ url: 'ws://localhost:9999' });
+    expect(first.readyState).toBe(3); // old socket closed by effect teardown
+    expect(FakeWS.instances).toHaveLength(2);
+    expect(FakeWS.last.url).toBe('ws://localhost:9999');
+  });
+
+  it('ignores a malformed (non-JSON) message without throwing or changing status', () => {
+    const { result } = renderHook(() => usePianoVoiceBridge({ url: 'ws://localhost:8770' }));
+    act(() => FakeWS.last._open());
+    const before = result.current.status;
+    expect(() => act(() => FakeWS.last.onmessage?.({ data: 'not json{' }))).not.toThrow();
+    expect(result.current.status).toEqual(before);
+  });
+
   it('does not reconnect after unmount', () => {
     vi.useFakeTimers();
     const { unmount } = renderHook(() => usePianoVoiceBridge({ url: 'ws://localhost:8770' }));
