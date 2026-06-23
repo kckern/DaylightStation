@@ -44,7 +44,7 @@ function GamePicker() {
   const ids = getGameIds();
 
   return (
-    <section className="piano-mode piano-mode--games">
+    <section className="piano-menu piano-mode--games">
       <ul className="piano-menu__tiles">
         {ids.map((id) => (
           <li key={id}>
@@ -77,7 +77,7 @@ function GameHost() {
 
   const exit = () => {
     logger.info('piano.game-exit', { game: gameId });
-    navigate('..');
+    navigate('..', { relative: 'path' });
   };
 
   if (!entry?.LazyComponent) {

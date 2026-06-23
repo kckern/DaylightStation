@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 
 describe('applyPianoBodyTheme', () => {
-  it('sets a light body background and returns a restore fn', () => {
+  it('sets the charcoal body background and returns a restore fn', () => {
     document.body.style.backgroundColor = 'black';
     const restore = applyPianoBodyTheme();
-    expect(document.body.style.backgroundColor).toMatch(/^(#ffffff|rgb\(255,\s*255,\s*255\))$/i);
+    expect(document.body.style.backgroundColor).toMatch(/^(#16161b|rgb\(22,\s*22,\s*27\))$/i);
     restore();
     expect(document.body.style.backgroundColor).toBe('black');
   });

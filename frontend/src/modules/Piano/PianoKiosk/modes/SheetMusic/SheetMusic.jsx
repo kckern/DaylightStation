@@ -57,7 +57,7 @@ function ScoreViewerRoute() {
   return (
     <ScoreViewer
       score={score}
-      onBack={() => navigate('..')}
+      onBack={() => navigate('..', { relative: 'path' })}
     />
   );
 }

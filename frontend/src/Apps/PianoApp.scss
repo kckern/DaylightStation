@@ -10,19 +10,19 @@
 // opt-in, never the default.
 
 :root {
-  // --- light defaults (unconditional) ---
-  --piano-bg: #ffffff;          // page background
-  --piano-fg: #1a1a1a;          // primary text (AA on white)
-  --piano-surface: #f4f4f6;     // cards / tiles / bars
-  --piano-surface-2: #e7e7ea;   // nested / hover / pressed
-  --piano-border: #d6d6dc;      // hairlines
-  --piano-muted: #5a5a64;       // secondary text (~7:1 on white — AA)
-  --piano-accent: #1f9d57;      // accent fill (buttons, progress)
-  --piano-accent-ink: #ffffff;  // text/icon on an accent fill
-  --piano-accent-text: #137a3e; // accent used AS text on a light surface (AA)
-  --piano-danger: #c0392b;      // record / delete / disconnected
-  --piano-warn: #b07400;        // loop-arming / mark A
-  --piano-warn-2: #d2561a;      // mark B
+  // --- dark / charcoal theme (the app's identity — charcoal surfaces, light text) ---
+  --piano-bg: #16161b;          // charcoal page background
+  --piano-fg: #f1f1f4;          // primary light text
+  --piano-surface: #1f1f26;     // cards / tiles / bars
+  --piano-surface-2: #2a2a33;   // nested / hover / pressed
+  --piano-border: #34343f;      // hairlines
+  --piano-muted: #9a9aa6;       // secondary text (light muted on charcoal — AA)
+  --piano-accent: #2ec46f;      // accent fill (buttons, progress)
+  --piano-accent-ink: #07210f;  // text/icon on an accent fill
+  --piano-accent-text: #5fe39a; // accent used AS text on a charcoal surface (AA)
+  --piano-danger: #e05a4f;      // record / delete / disconnected
+  --piano-warn: #e0a83a;        // loop-arming / mark A
+  --piano-warn-2: #e8743a;      // mark B
 
   // --- type scale ---
   --t-cap: 0.85rem;

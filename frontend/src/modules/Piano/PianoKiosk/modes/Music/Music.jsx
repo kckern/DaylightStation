@@ -62,7 +62,7 @@ function AlbumDetailRoute() {
         logger.info('piano.music-play', { album: albumId, startIndex });
         navigate(`play?track=${startIndex}`);
       }}
-      onBack={() => navigate('..')}
+      onBack={() => navigate('..', { relative: 'path' })}
     />
   );
 }
@@ -89,11 +89,11 @@ function MusicPlayerRoute() {
     return (
       <div className="piano-mode__placeholder">
         No tracks found.{' '}
-        <button type="button" onClick={() => navigate('..')}>Back</button>
+        <button type="button" onClick={() => navigate('..', { relative: 'path' })}>Back</button>
       </div>
     );
   }
-  return <MusicPlayer album={{ id: albumId }} tracks={tracks} startIndex={startIndex} onBack={() => navigate('..')} />;
+  return <MusicPlayer album={{ id: albumId }} tracks={tracks} startIndex={startIndex} onBack={() => navigate('..', { relative: 'path' })} />;
 }
 
 export default Music;
