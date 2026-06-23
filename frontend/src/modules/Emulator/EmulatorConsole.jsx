@@ -41,18 +41,6 @@ function overlayText(status) {
   return 'Paused — meet the zone to continue';
 }
 
-/**
- * Read the live gamepad list in an SSR/jsdom-safe way. Accepts an injectable
- * reader for tests; otherwise falls back to navigator.getGamepads.
- */
-function readGamepads(getGamepads) {
-  if (typeof getGamepads === 'function') return getGamepads() || [];
-  if (typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function') {
-    return navigator.getGamepads() || [];
-  }
-  return [];
-}
-
 export function EmulatorConsole({
   game,
   engineConfig,
@@ -209,18 +197,9 @@ export function EmulatorConsole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-open the controller panel on mount when no gamepads are connected, so a
-  // controller-less user immediately sees "keyboard works / pair one". Otherwise
-  // start collapsed. jsdom-safe via the injectable reader.
-  useEffect(() => {
-    const pads = readGamepads(getGamepads).filter((p) => p != null);
-    if (pads.length === 0) {
-      setPanelOpen(true);
-      logger.debug('emulator.console.panel-auto-open', { reason: 'no-gamepads' });
-    }
-    // Mount-once: a one-shot initial detection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // No controller nag: the panel starts collapsed and is only opened via the
+  // 🎮 toggle. Keyboard always works (arrows = D-pad, Enter = Start, Space =
+  // Select), so a controller-less user is never interrupted on mount.
 
   // Clear any pending pair timer on unmount.
   useEffect(
