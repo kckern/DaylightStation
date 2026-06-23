@@ -24,6 +24,12 @@
   --piano-warn: #b07400;        // loop-arming / mark A
   --piano-warn-2: #d2561a;      // mark B
 
+  // --- radius scale ---
+  --r-sm: 8px;    // thumbnails, small chips, score pages
+  --r-md: 12px;   // cards, tiles, bars, buttons
+  --r-lg: 16px;   // hero tiles, album art
+  --r-pill: 999px;
+
   // --- media stages (dark, theme-independent) ---
   --piano-stage: #000000;       // video letterbox / game canvas
   --piano-stage-2: #0b0b0f;     // now-playing music backdrop
@@ -72,7 +78,7 @@
     background: var(--piano-surface-2);
     color: inherit;
     border: 1px solid var(--piano-border);
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     padding: 0.3rem 0.5rem;
     font: inherit;
   }
@@ -101,7 +107,7 @@
     gap: 0.4rem;
     background: none;
     border: 1px solid var(--piano-border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.3rem 0.8rem;
     color: inherit;
     cursor: pointer;
@@ -144,7 +150,7 @@
     gap: 0.5rem;
     background: var(--piano-surface);
     border: 1px solid var(--piano-border);
-    border-radius: 16px;
+    border-radius: var(--r-lg);
     color: inherit;
     cursor: pointer;
     transition: transform 0.12s ease, background 0.12s ease;
@@ -175,7 +181,7 @@
   &__tile {
     background: var(--piano-surface);
     border: 1px solid var(--piano-border);
-    border-radius: 10px;
+    border-radius: var(--r-md);
     color: inherit;
     padding: 1rem 1.5rem;
     cursor: pointer;
@@ -183,7 +189,7 @@
     &.is-selected { border-color: var(--piano-accent); }
   }
 
-  &__staff { min-height: 12rem; background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: 10px; }
+  &__staff { min-height: 12rem; background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); }
 }
 
 .piano-connect-gate {
@@ -204,7 +210,7 @@
   &__btn {
     font-size: 1.3rem;
     padding: 0.8rem 2rem;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     border: none;
     background: var(--piano-accent);
     color: var(--piano-accent-ink);
@@ -235,7 +241,7 @@
     background: var(--piano-surface-2);
     color: var(--piano-fg);
     border: 1px solid var(--piano-border);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.5rem 1.2rem;
     font: inherit;
     cursor: pointer;
@@ -247,7 +253,7 @@
     background: var(--piano-accent);
     color: var(--piano-accent-ink);
     border: none;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.5rem 1.2rem;
     font-weight: 700;
     cursor: pointer;
@@ -256,12 +262,12 @@
   &__status { color: var(--piano-muted); }
 
   // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
-  &__waterfall { height: 14rem; margin: 1rem 0; background: var(--piano-viz-bg); border-radius: 10px; overflow: hidden; }
+  &__waterfall { height: 14rem; margin: 1rem 0; background: var(--piano-viz-bg); border-radius: var(--r-md); overflow: hidden; }
 
   &__takes {
     ul { list-style: none; padding: 0; margin: 0; }
     li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--piano-border); }
-    button { background: var(--piano-surface-2); color: inherit; border: 1px solid var(--piano-border); border-radius: 6px; padding: 0.3rem 0.7rem; cursor: pointer; }
+    button { background: var(--piano-surface-2); color: inherit; border: 1px solid var(--piano-border); border-radius: var(--r-sm); padding: 0.3rem 0.7rem; cursor: pointer; }
   }
 
   &__take-title { flex: 1 1 auto; }
@@ -282,13 +288,13 @@
     gap: 0.4rem;
     background: var(--piano-surface);
     border: 1px solid var(--piano-border);
-    border-radius: 10px;
+    border-radius: var(--r-md);
     color: inherit;
     padding: 0.5rem;
     cursor: pointer;
     text-align: left;
 
-    img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
+    img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm); }
     &:active { background: var(--piano-surface-2); }
   }
 
@@ -316,7 +322,7 @@
   }
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
-    border-radius: 8px;
+    border-radius: var(--r-sm);
   }
 }
 
@@ -336,7 +342,7 @@
     background: rgba(0, 0, 0, 0.55);
     color: #fff;
     border: 1px solid #444;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.4rem 1rem;
     font: inherit;
     cursor: pointer;
@@ -346,7 +352,7 @@
 /* ---- Piano video: course detail ---- */
 .piano-video-detail {
   &__band { display: flex; gap: 1.25rem; align-items: flex-start; margin: 0.5rem 0 1rem; }
-  &__poster { max-height: 11rem; border-radius: 10px; flex: 0 0 auto; object-fit: cover; }
+  &__poster { max-height: 11rem; border-radius: var(--r-md); flex: 0 0 auto; object-fit: cover; }
   &__meta { flex: 1 1 auto; min-width: 0; }
   &__title { margin: 0 0 0.4rem; }
   &__summary { color: var(--piano-muted); max-width: 60ch; margin: 0; }
@@ -358,7 +364,7 @@
 .piano-video-grid__badge {
   position: absolute; top: 6px; right: 6px;
   background: var(--piano-accent); color: var(--piano-accent-ink); font-weight: 700;
-  border-radius: 999px; width: 1.4rem; height: 1.4rem;
+  border-radius: var(--r-pill); width: 1.4rem; height: 1.4rem;
   display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
 }
 .piano-video-grid__bar {
@@ -393,11 +399,11 @@
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 
   &__bar {
-    position: relative; height: 10px; border-radius: 999px;
+    position: relative; height: 10px; border-radius: var(--r-pill);
     background: rgba(0, 0, 0, 0.15); cursor: pointer; margin-bottom: 0.75rem;
   }
-  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--piano-accent); }
-  &__mark { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: 2px; }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-pill); background: var(--piano-accent); }
+  &__mark { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: var(--r-sm); }
   &__mark--a { background: var(--piano-warn); }
   &__mark--b { background: var(--piano-warn-2); }
 
@@ -408,7 +414,7 @@
   &__btn {
     min-width: 3rem; height: 3rem; padding: 0 0.75rem;
     background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
-    border-radius: 10px; font-size: 1rem; cursor: pointer;
+    border-radius: var(--r-md); font-size: 1rem; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     &:disabled { opacity: 0.4; cursor: default; }
     &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
@@ -426,12 +432,12 @@
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
 
   .piano-video-grid__tile { padding: 0 0 0.25rem; background: transparent; border: none; gap: 0.35rem; }
-  .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; }
+  .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: var(--r-sm); }
   // chip rides over album art (varies) — keep a dark translucent chip for legibility
   &__badge {
     position: absolute; top: 6px; left: 6px;
     background: rgba(14, 14, 18, 0.8); color: #6cf0a0;
-    border-radius: 999px; width: 1.5rem; height: 1.5rem;
+    border-radius: var(--r-pill); width: 1.5rem; height: 1.5rem;
     display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
   }
 }
@@ -440,10 +446,10 @@
 .piano-album-detail {
   &__head { display: flex; align-items: center; gap: 1rem; }
   &__body { display: flex; gap: 1.5rem; min-height: 0; flex: 1 1 auto; }
-  &__cover { width: 16rem; height: 16rem; object-fit: cover; border-radius: 12px; align-self: flex-start; }
+  &__cover { width: 16rem; height: 16rem; object-fit: cover; border-radius: var(--r-md); align-self: flex-start; }
   &__tracks { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
   &__playall {
-    background: var(--piano-accent); color: var(--piano-accent-ink); border: none; border-radius: 999px;
+    background: var(--piano-accent); color: var(--piano-accent-ink); border: none; border-radius: var(--r-pill);
     padding: 0.6rem 1.5rem; font: inherit; font-weight: 700; cursor: pointer; margin-bottom: 0.75rem;
   }
 }
@@ -485,7 +491,7 @@
   &__art {
     position: relative; z-index: 1;
     width: min(60vh, 80vw); height: min(60vh, 80vw);
-    img { width: 100%; height: 100%; object-fit: cover; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+    img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--r-lg); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
   }
 
   &__chrome {
@@ -502,8 +508,8 @@
   &__sub { color: var(--piano-stage-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   &__bottom { display: flex; flex-direction: column; gap: 0.75rem; }
-  &__bar { position: relative; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.25); cursor: pointer; }
-  &__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--piano-accent); }
+  &__bar { position: relative; height: 8px; border-radius: var(--r-pill); background: rgba(255,255,255,0.25); cursor: pointer; }
+  &__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-pill); background: var(--piano-accent); }
   &__times { display: flex; justify-content: space-between; color: var(--piano-stage-muted); font-variant-numeric: tabular-nums; font-size: 0.9rem; }
   &__transport { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
   &__volume { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
@@ -517,7 +523,7 @@
 .piano-music-btn {
   min-width: 3rem; height: 3rem; padding: 0 0.6rem;
   background: rgba(36,36,47,0.6); color: var(--piano-stage-fg); border: 1px solid var(--piano-stage-border);
-  border-radius: 12px; font-size: 1.1rem; cursor: pointer;
+  border-radius: var(--r-md); font-size: 1.1rem; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   &.is-on { border-color: var(--piano-accent); color: #6cf0a0; }
   &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
@@ -547,15 +553,15 @@
   }
   &__page {
     width: min(60rem, 100%); height: auto;
-    background: #fff; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    background: #fff; border-radius: var(--r-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   }
 }
 
 /* Task 8: skeleton tiles so posters don't flash empty rectangles on a fixed kiosk.
    aspect-ratio lives on the IMG (not the tile) so the caption below isn't clipped. */
 .piano-video-grid__tile img { background: var(--piano-surface-2); }
-.piano-video-grid--posters .piano-video-grid__tile img { aspect-ratio: 2 / 3; border-radius: 8px; background: var(--piano-surface-2); }
-.piano-music-grid .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; background: var(--piano-surface-2); }
+.piano-video-grid--posters .piano-video-grid__tile img { aspect-ratio: 2 / 3; border-radius: var(--r-sm); background: var(--piano-surface-2); }
+.piano-music-grid .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: var(--r-sm); background: var(--piano-surface-2); }
 
 /* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
 .piano-video-grid--posters .piano-video-grid__title,
