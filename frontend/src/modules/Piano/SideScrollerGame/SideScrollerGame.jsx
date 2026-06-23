@@ -11,7 +11,7 @@ import { computeKeyboardRange } from '../noteUtils.js';
 import { PLAYER_X } from './sideScrollerEngine.js';
 import './SideScrollerGame.scss';
 
-export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
+export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'side-scroller-game' }), []);
 
   const game = useSideScrollerGame(activeNotes, gameConfig);
@@ -137,6 +137,8 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate }) {
           endNote={endNote}
           showLabels={true}
           targetNotes={null}
+          onNoteOn={onNoteOn}
+          onNoteOff={onNoteOff}
         />
       </div>
 

@@ -20,7 +20,7 @@ import './SpaceInvadersGame.scss';
  * @param {Object} props.gameConfig - games['space-invaders'] from piano.yml
  * @param {function} props.onDeactivate - called to exit the game
  */
-export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeactivate }) {
+export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'space-invaders-game' }), []);
   const game = useSpaceInvadersGame(activeNotes, noteHistory, gameConfig);
   useAutoGameLifecycle(game.gameState, game.startGame, onDeactivate, logger, 'space-invaders');
@@ -125,6 +125,7 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
         <PianoKeyboard activeNotes={activeNotes} startNote={startNote} endNote={endNote}
           showLabels={true} targetNotes={targetNotes} wrongNotes={game.wrongNotes}
           destroyedKeys={game.destroyedKeys}
+          onNoteOn={onNoteOn} onNoteOff={onNoteOff}
         />
       </div>
 

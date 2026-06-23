@@ -88,6 +88,19 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     emit({ type: 'note_off', note, velocity: 0, time: endTime });
   }, [emit]);
 
+  // On-screen (touch/click) keyboard injection. Routes through the same internal
+  // handlers as hardware MIDI + the dev-key fallback, so a tapped key flows into
+  // activeNotes/noteHistory for every consumer. Also echoes to the MIDI output
+  // (if a piano/synth is connected) so the note sounds.
+  const pressNote = useCallback((note, velocity = 90) => {
+    applyNoteOn(note, velocity);
+    outputRef.current?.send?.([0x90, note & 0x7f, velocity & 0x7f]);
+  }, [applyNoteOn]);
+  const releaseNote = useCallback((note) => {
+    applyNoteOff(note);
+    outputRef.current?.send?.([0x80, note & 0x7f, 0]);
+  }, [applyNoteOff]);
+
   const handleRawMidi = useCallback((event) => {
     const parsed = parseMidiMessage(event.data);
     if (!parsed) return;
@@ -252,7 +265,9 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     sendNote,
     scheduleNotes,
     subscribe,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendNote, scheduleNotes, subscribe]);
+    pressNote,
+    releaseNote,
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendNote, scheduleNotes, subscribe, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;

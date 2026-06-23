@@ -32,12 +32,11 @@ export default function CourseGrid({ collection, onSelect }) {
       {items === null && <p className="piano-mode__placeholder">Loading…</p>}
       {items?.length === 0 && <p className="piano-mode__placeholder">{error || 'No videos found.'}</p>}
       {items?.length > 0 && (
-        <ul className="piano-video-grid">
+        <ul className="piano-video-grid piano-video-grid--posters">
           {items.map((item) => (
             <li key={item.id}>
-              <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)}>
-                {(item.thumbnail || item.image) && <img src={item.thumbnail || item.image} alt="" loading="lazy" />}
-                <span className="piano-video-grid__title">{item.title}</span>
+              <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
+                {(item.thumbnail || item.image) && <img src={item.thumbnail || item.image} alt={item.title} loading="lazy" />}
               </button>
             </li>
           ))}
