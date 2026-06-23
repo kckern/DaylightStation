@@ -39,6 +39,28 @@ export function launchApp(packageName) {
 }
 
 /**
+ * Launch a specific Android activity via FKB's two-arg startApplication API
+ * (package + fully-qualified activity class). Unlike launchApp's 1-arg launcher
+ * form, this targets an exact activity — e.g. the Bluetooth settings screen:
+ *   startApplication('com.android.settings', 'com.android.settings.Settings$BluetoothSettingsActivity')
+ * Fire-and-forget; no-op when FKB isn't present.
+ *
+ * @param {string} packageName - Android package name
+ * @param {string} [activityName] - fully-qualified activity class (optional)
+ * @returns {boolean} true if FKB was available and the launch was attempted
+ */
+export function startApplication(packageName, activityName) {
+  if (!isFKBAvailable() || typeof fully.startApplication !== 'function') {
+    logger().warn('fkb.startApplication.unavailable', { packageName, activityName });
+    return false;
+  }
+  logger().info('fkb.startApplication.attempt', { packageName, activityName });
+  if (activityName) fully.startApplication(packageName, activityName);
+  else fully.startApplication(packageName);
+  return true;
+}
+
+/**
  * Launch an Android intent with extras via FKB's startIntent API.
  * Uses Android intent URI format: intent:#Intent;component=pkg/act;S.key=val;end
  *

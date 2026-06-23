@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
+import { startApplication } from '../lib/fkb.js';
 import {
   PianoConfigProvider,
   ActivePianoProvider,
@@ -42,6 +43,7 @@ import './PianoApp.scss';
  */
 function ConnectGate({ children }) {
   const { status, connect } = usePianoMidi();
+  const { config } = usePianoKioskConfig();
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -65,6 +67,15 @@ function ConnectGate({ children }) {
       {status !== 'unsupported' && (
         <button type="button" className="piano-connect-gate__btn" onClick={connect}>
           Connect piano
+        </button>
+      )}
+      {config?.bluetooth && (
+        <button
+          type="button"
+          className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
+          onClick={() => startApplication(config.bluetooth.package, config.bluetooth.activity)}
+        >
+          Open Bluetooth settings
         </button>
       )}
       <button
