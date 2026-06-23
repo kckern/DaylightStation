@@ -16,7 +16,7 @@ import './PianoFlashcards.scss';
  * @param {Object} props.gameConfig - games.flashcards from piano.yml
  * @param {function} props.onDeactivate - called to exit the game
  */
-export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate }) {
+export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-flashcards' }), []);
 
   const game = useFlashcardGame(activeNotes, gameConfig);
@@ -112,6 +112,8 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate }) {
           showLabels={true}
           targetNotes={targetNotes}
           wrongNotes={wrongNotes}
+          onNoteOn={onNoteOn}
+          onNoteOff={onNoteOff}
         />
       </div>
     </div>

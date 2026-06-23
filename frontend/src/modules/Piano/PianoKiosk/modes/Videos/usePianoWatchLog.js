@@ -31,6 +31,9 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
   useEffect(() => {
     if (!mediaEl || !contentId) return undefined;
     const post = (reason) => {
+      // Backend rejects seconds < 10 (nothing meaningful to resume that early),
+      // so don't post until we're far enough in — avoids noisy 400s.
+      if (!(mediaEl.currentTime >= 10)) return;
       const payload = buildWatchLogPayload({
         contentId, title,
         seconds: mediaEl.currentTime,

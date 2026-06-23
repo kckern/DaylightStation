@@ -21,7 +21,7 @@ const GAME_LABELS = {
  */
 export function Games() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
-  const { activeNotes, noteHistory } = usePianoMidi();
+  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
   const { config } = usePianoKioskConfig();
   const [selected, setSelected] = useState(null);
   const ids = getGameIds();
@@ -51,6 +51,8 @@ export function Games() {
             noteHistory={noteHistory}
             gameConfig={gamesConfig?.[selected]}
             onDeactivate={exit}
+            onNoteOn={pressNote}
+            onNoteOff={releaseNote}
           />
         </Suspense>
       </div>

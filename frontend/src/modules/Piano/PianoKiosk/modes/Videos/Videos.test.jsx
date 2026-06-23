@@ -31,8 +31,10 @@ describe('Videos mode', () => {
     });
 
     renderVideos('plex:440630');
-    expect(await screen.findByText('Beethoven Sonatas')).toBeTruthy();
-    expect(screen.getByText('How to Listen to Opera')).toBeTruthy();
+    // Course tiles are poster-only — the title lives in the tile's title/alt
+    // attribute, not as a visible caption.
+    expect(await screen.findByTitle('Beethoven Sonatas')).toBeTruthy();
+    expect(screen.getByTitle('How to Listen to Opera')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/list/plex/440630');
   });
 
@@ -58,12 +60,13 @@ describe('Videos mode', () => {
     });
 
     renderVideos('plex:440630');
-    fireEvent.click(await screen.findByText('Beethoven Sonatas'));
+    fireEvent.click(await screen.findByTitle('Beethoven Sonatas'));
+    // Lectures keep visible caption titles (CourseDetail).
     expect(await screen.findByText('Lecture 1')).toBeTruthy();
     expect(screen.getByText('Lecture 2')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/fitness/show/1/playable');
 
     fireEvent.click(screen.getByText('‹ Courses'));
-    expect(await screen.findByText('Beethoven Sonatas')).toBeTruthy();
+    expect(await screen.findByTitle('Beethoven Sonatas')).toBeTruthy();
   });
 });
