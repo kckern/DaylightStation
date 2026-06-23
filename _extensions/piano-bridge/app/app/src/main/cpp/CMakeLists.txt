@@ -30,20 +30,23 @@ target_link_libraries(pianobridge
         log)
 
 # ---------------------------------------------------------------------------
-# OPTIONAL: real DSP engines. DISABLED by default so the lib links without them.
-# Uncomment AFTER vendoring sfizz / dexed under third_party/, then rebuild.
+# Real DSP engines.
 #
-# --- sfizz (SFZ sampler) ---
-# set(SFIZZ_JACK   OFF CACHE BOOL "" FORCE)
-# set(SFIZZ_RENDER OFF CACHE BOOL "" FORCE)
-# set(SFIZZ_LV2    OFF CACHE BOOL "" FORCE)
-# set(SFIZZ_VST    OFF CACHE BOOL "" FORCE)
-# set(SFIZZ_DEMOS  OFF CACHE BOOL "" FORCE)
-# set(SFIZZ_TESTS  OFF CACHE BOOL "" FORCE)
-# add_subdirectory(third_party/sfizz)
-# target_link_libraries(pianobridge sfizz::sfizz)
-# target_compile_definitions(pianobridge PRIVATE HAVE_SFIZZ)
+# --- sfizz (SFZ sampler) — ENABLED (vendored under third_party/sfizz) ---
+set(SFIZZ_JACK       OFF CACHE BOOL "" FORCE)
+set(SFIZZ_RENDER     OFF CACHE BOOL "" FORCE)
+set(SFIZZ_SHARED     OFF CACHE BOOL "" FORCE)
+set(SFIZZ_TESTS      OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEMOS      OFF CACHE BOOL "" FORCE)
+set(SFIZZ_DEVTOOLS   OFF CACHE BOOL "" FORCE)
+set(SFIZZ_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(SFIZZ_USE_SNDFILE OFF CACHE BOOL "" FORCE)   # use bundled st_audiofile/dr_libs (WAV)
+add_subdirectory(third_party/sfizz EXCLUDE_FROM_ALL)
+target_link_libraries(pianobridge sfizz::sfizz)
+target_include_directories(pianobridge PRIVATE third_party/sfizz/src)
+target_compile_definitions(pianobridge PRIVATE HAVE_SFIZZ)
 #
+# --- dexed / MSFA (DX7 FM core) --- still disabled (vendor later) ---
 # --- dexed / MSFA (DX7 FM core) ---
 # add_library(msfa STATIC
 #         third_party/dexed/msfa/dx7note.cc

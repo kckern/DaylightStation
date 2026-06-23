@@ -1,14 +1,27 @@
 # Piano Bridge (APK)
 
-> **STATUS: UNBUILT SCAFFOLD — native engine not yet compiled (no NDK/cmake on the authoring machine; sfizz/dexed not yet vendored).**
+> **STATUS: BUILDS + RUNS (sfizz enabled). Verified 2026-06-23 on the SM-T590.**
 >
-> Nothing here has been built, run, installed, or verified. The Java + C++ are
-> written to be *correct-by-reading* and internally self-consistent. The native
-> synth engines (`SfizzEngine`, `DexedEngine`) render **SILENCE** behind
-> `#ifdef HAVE_SFIZZ` / `#ifdef HAVE_DEXED` guards until those libraries are
-> vendored — so the project links and the control/MIDI/WebSocket plumbing can be
-> exercised end-to-end before the DSP exists. Do not assume `./gradlew` succeeds;
-> it will not until an NDK and cmake are installed (see Prerequisites).
+> The APK compiles (NDK r26b + cmake 3.22.1), installs on the tablet, runs the
+> foreground service + WebSocket control server on `:8770`, loads the Salamander
+> Grand SFZ via the vendored **sfizz** engine, and renders real audio through Oboe
+> (confirmed: `render signal peak>0` on note-on, no crash). **Dexed/FM is still
+> behind `#ifdef HAVE_DEXED` (silent) — not yet vendored.**
+>
+> ### What it took to build (gotchas, all fixed in this tree)
+> - Install toolchain: `JAVA_HOME=/opt/homebrew/opt/openjdk@17 sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"`.
+> - Vendor sfizz: `git clone --recursive https://github.com/sfztools/sfizz` into
+>   `app/src/main/cpp/third_party/sfizz` (gitignored; ~445 MB). CMake block is now enabled.
+> - **Oboe prefab needs `-DANDROID_STL=c++_shared`** (else "No compatible library for //oboe/oboe") + `buildFeatures { prefab true }`.
+> - **SM-T590 is Android 10** → `minSdk 29`, and `targetSdk 29` + app-specific external
+>   files dir for assets (Android-10 scoped storage / restricted `READ_EXTERNAL_STORAGE`
+>   blocks native `fopen` on arbitrary `/sdcard` paths).
+> - **Foreground service** (`startForegroundService` + `startForeground`, `foregroundServiceType=mediaPlayback`)
+>   so Fully Kiosk can't block the start / kill it. (No mic here, so the audio-bridge
+>   `startForeground` avoidance does not apply.)
+> - **sfizz `renderBlock(buffers, frames, numOutputs)`**: `numOutputs` is stereo-pair
+>   count — must be `1` for one L/R pair (passing 2 → SIGSEGV).
+> - Assets live on-device at `/sdcard/Android/data/net.kckern.pianobridge/files/piano-instruments/<id>/`.
 
 A native multi-engine synth host for an Android tablet, driven over WebSocket by
 the browser kiosk. It reads the BLE-MIDI piano directly via Android

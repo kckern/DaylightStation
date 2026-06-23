@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- INTERNET: required for the localhost WebSocket control server. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Read SFZ/sample assets from /sdcard/piano-instruments (legacy storage, targetSdk 29). -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <!-- The bridge reads the BLE-MIDI piano directly via Android MidiManager. -->
     <uses-feature
@@ -32,10 +34,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Regular started service (no foregroundServiceType): the synth host +
-             MIDI reader + WS control server. -->
+        <!-- Foreground service (mediaPlayback): the synth host + MIDI reader + WS
+             control server. Foreground so it can be (re)started under the Fully
+             Kiosk lockdown and isn't killed when the kiosk reclaims foreground. -->
         <service
             android:name=".PianoBridgeService"
+            android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
         <receiver
