@@ -1065,3 +1065,28 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+// ── Paint test harness (modes/Test/PianoTest.jsx, /piano/test route) ──
+.piano-test {
+  position: absolute;
+  inset: 0;
+  background: #0a0a14;
+  overflow: hidden;
+
+  &__waterfall { position: absolute; inset: 0; }
+  &__keys { position: absolute; left: 0; right: 0; bottom: 0; height: 22%; }
+}
+
+.piano-test-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  font: 12px/1.45 monospace;
+  color: #9ef;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 6px 10px;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+}

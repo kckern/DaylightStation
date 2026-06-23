@@ -35,6 +35,7 @@ import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
 import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
+import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import './PianoApp.scss';
 
 /**
@@ -137,6 +138,7 @@ function PianoShell() {
             <Route path="studio" element={<Studio />} />
             <Route path="producer/*" element={<Producer />} />
             <Route path="composers" element={<Composers />} />
+            <Route path="test/*" element={<PianoTest />} />
             <Route path="*" element={<PianoMenu />} />
           </Routes>
         </div>
