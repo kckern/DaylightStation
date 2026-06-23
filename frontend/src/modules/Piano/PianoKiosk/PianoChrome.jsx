@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
@@ -13,8 +13,9 @@ import Icon from './icons/Icon.jsx';
  * @param {Array<{label:string, program:number}>} [voices] - timbre options
  * @param {string} [label] - this piano's display name
  * @param {string} [modeLabel] - current mode name shown after the label (empty on home)
+ * @param {boolean} [showVoice=true] - whether to show the voice cycle button (hide on passive-media modes)
  */
-export function PianoChrome({ voices = [], label, modeLabel }) {
+export function PianoChrome({ voices = [], label, modeLabel, showVoice = true }) {
   const navigate = useNavigate();
   const { connected, inputName, status, sendProgramChange, connect } = usePianoMidi();
   const { pianoId, basePath } = usePianoKioskConfig();
@@ -22,9 +23,14 @@ export function PianoChrome({ voices = [], label, modeLabel }) {
   const multiPiano = pianos.length > 1;
   const logger = useMemo(() => getLogger().child({ component: 'piano-chrome' }), []);
 
-  const onVoice = (program) => {
-    const ok = sendProgramChange(program);
-    logger.info('piano.voice-change', { program, sent: ok, pianoId });
+  const [voiceIdx, setVoiceIdx] = useState(0);
+
+  const cycleVoice = () => {
+    if (!voices.length) return;
+    const next = (voiceIdx + 1) % voices.length;
+    setVoiceIdx(next);
+    const ok = sendProgramChange(voices[next].program);
+    logger.info('piano.voice-change', { program: voices[next].program, sent: ok, pianoId });
   };
 
   return (
@@ -53,18 +59,15 @@ export function PianoChrome({ voices = [], label, modeLabel }) {
 
       {modeLabel && <span className="piano-chrome__mode">{modeLabel}</span>}
 
-      {voices.length > 0 && (
-        <select
+      {showVoice && voices.length > 0 && (
+        <button
+          type="button"
           className="piano-chrome__voice"
-          defaultValue=""
-          onChange={(e) => e.target.value !== '' && onVoice(Number(e.target.value))}
-          aria-label="Instrument voice"
+          onClick={cycleVoice}
+          aria-label="Change instrument voice"
         >
-          <option value="" disabled>Voice…</option>
-          {voices.map((v) => (
-            <option key={v.program} value={v.program}>{v.label}</option>
-          ))}
-        </select>
+          {voices[voiceIdx]?.label || 'Voice'}
+        </button>
       )}
 
       <button

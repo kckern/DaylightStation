@@ -82,9 +82,12 @@
     background: var(--piano-surface-2);
     color: inherit;
     border: 1px solid var(--piano-border);
-    border-radius: var(--r-sm);
-    padding: 0.3rem 0.5rem;
+    border-radius: var(--r-pill);
+    padding: 0.4rem 0.9rem;
     font: inherit;
+    cursor: pointer;
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+    &:active { background: var(--piano-border); }
   }
 
   &__label {
