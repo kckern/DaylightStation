@@ -17,6 +17,10 @@ describe('validateInstrument', () => {
   it('rejects path traversal in asset', () => {
     expect(validateInstrument({ id: 'g', name: 'G', engine: 'sfizz', asset: '../etc/x' }).ok).toBe(false);
   });
+  it('rejects path traversal in id', () => {
+    expect(validateInstrument({ id: '../x', name: 'X', engine: 'sfizz', asset: 'a.sfz' }).ok).toBe(false);
+    expect(validateInstrument({ id: '/abs', name: 'X', engine: 'sfizz', asset: 'a.sfz' }).ok).toBe(false);
+  });
 
   // --- extra tests for confidence ---
   it('rejects absolute asset path', () => {
