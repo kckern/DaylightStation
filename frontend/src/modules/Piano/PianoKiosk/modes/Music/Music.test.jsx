@@ -48,7 +48,7 @@ describe('Music mode', () => {
   it('shows a helpful message when nothing is configured', async () => {
     renderMusic({ collection: null, playlists: [] });
     await waitFor(() =>
-      expect(screen.getByText(/No music.collection configured/i)).toBeTruthy()
+      expect(screen.getByText(/No music has been set up yet/i)).toBeTruthy()
     );
   });
 

@@ -4,6 +4,7 @@ import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { toMusicTracks, formatTime } from './musicTracks.js';
 import PianoBack from '../../PianoBack.jsx';
 import Icon from '../../icons/Icon.jsx';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -43,8 +44,8 @@ export default function AlbumDetail({ album, onPlay, onBack }) {
       <div className="piano-album-detail__body">
         {cover && <img className="piano-album-detail__cover" src={cover} alt={album?.title || ''} />}
         <div className="piano-album-detail__tracks">
-          {tracks === null && <p className="piano-mode__placeholder">Loading…</p>}
-          {tracks?.length === 0 && <p className="piano-mode__placeholder">{error || 'No tracks found.'}</p>}
+          {tracks === null && <PianoEmpty loading />}
+          {tracks?.length === 0 && <PianoEmpty message={error || 'No tracks found.'} />}
           {tracks?.length > 0 && (
             <>
               <button type="button" className="piano-album-detail__playall" onClick={() => onPlay(tracks, 0)}>

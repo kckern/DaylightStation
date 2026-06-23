@@ -49,7 +49,7 @@ describe('Videos mode', () => {
   it('shows a helpful message when no collection is configured', async () => {
     renderVideos(null);
     await waitFor(() =>
-      expect(screen.getByText(/No videos.plexCollection configured/i)).toBeTruthy()
+      expect(screen.getByText(/No video library has been set up yet/i)).toBeTruthy()
     );
   });
 

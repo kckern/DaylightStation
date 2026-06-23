@@ -1,4 +1,5 @@
 import usePianoList from '../../usePianoList.js';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -11,8 +12,8 @@ export default function ScoreGrid({ collection, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--sheetmusic">
-      {items === null && <p className="piano-mode__placeholder">Loading…</p>}
-      {items?.length === 0 && <p className="piano-mode__placeholder">{error || (collection ? 'No scores found.' : 'No sheetmusic.collection configured.')}</p>}
+      {items === null && <PianoEmpty loading />}
+      {items?.length === 0 && <PianoEmpty message={error || (collection ? 'No scores found.' : 'No sheet music has been set up yet.')} />}
       {items?.length > 0 && (
         <ul className="piano-video-grid piano-video-grid--posters">
           {items.map((item) => (

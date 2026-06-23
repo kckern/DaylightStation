@@ -1,5 +1,6 @@
 // CourseGrid.jsx
 import usePianoList from '../../usePianoList.js';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 /** Grid of the configured collection's courses; tap one to open its lectures. */
 export default function CourseGrid({ collection, onSelect }) {
@@ -8,8 +9,8 @@ export default function CourseGrid({ collection, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--videos">
-      {items === null && <p className="piano-mode__placeholder">Loading…</p>}
-      {items?.length === 0 && <p className="piano-mode__placeholder">{error || (collection ? 'No videos found.' : 'No videos.plexCollection configured.')}</p>}
+      {items === null && <PianoEmpty loading />}
+      {items?.length === 0 && <PianoEmpty message={error || (collection ? 'No videos found.' : 'No video library has been set up yet.')} />}
       {items?.length > 0 && (
         <ul className="piano-video-grid piano-video-grid--posters">
           {items.map((item) => (
