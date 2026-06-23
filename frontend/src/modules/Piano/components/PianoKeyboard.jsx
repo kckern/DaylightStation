@@ -1,6 +1,58 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { isWhiteKey, getNoteName } from '../noteUtils.js';
 import './PianoKeyboard.scss';
+
+/**
+ * One key. Memoized so a note-on/off re-renders ONLY the key that changed — not
+ * all 88. Before this, `activeNotes` (a fresh Map per note) was a dependency of a
+ * useMemo that rebuilt every key element on every note, so playing pegged the
+ * Chromium renderer (reconcile + repaint of 88 nodes per event). React.memo here
+ * bails out the unchanged keys: their props are identical primitives and the
+ * pointer handlers are referentially stable (see the refs in PianoKeyboard).
+ */
+const PianoKey = React.memo(function PianoKey({
+  note,
+  isWhite,
+  isActive,
+  velocity,
+  isTarget,
+  isWrong,
+  isDestroyed,
+  rebuildProgress,
+  isPerc,
+  isSplitStart,
+  showLabel,
+  interactive,
+  onNoteOn,
+  onNoteOff,
+}) {
+  const label = getNoteName(note);
+  const className = `piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}`
+    + `${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}`
+    + `${isPerc ? ' perc' : ''}${isSplitStart ? ' split-start' : ''}`;
+
+  return (
+    <div
+      className={className}
+      style={{
+        '--velocity': velocity / 127,
+        ...(isDestroyed ? { '--rebuild-progress': rebuildProgress } : {}),
+      }}
+      data-note={note}
+      data-label={label}
+      onPointerDown={interactive ? (e) => {
+        e.preventDefault();
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no-op */ }
+        onNoteOn(note, 90);
+      } : undefined}
+      onPointerUp={interactive ? (e) => { e.preventDefault(); onNoteOff(note); } : undefined}
+      onPointerCancel={interactive ? () => onNoteOff(note) : undefined}
+    >
+      {showLabel && <span className="note-label">{label}</span>}
+      {isDestroyed && <div className="rebuild-bar" />}
+    </div>
+  );
+});
 
 /**
  * Visual piano keyboard component
@@ -29,85 +81,82 @@ export function PianoKeyboard({
   splitNote = null,
 }) {
   const interactive = typeof onNoteOn === 'function';
-  // Tick for animating rebuild progress bars
+
+  // Stable handler identities so PianoKey's React.memo can bail on unchanged keys
+  // even if the parent passes fresh onNoteOn/onNoteOff each render.
+  const onNoteOnRef = useRef(onNoteOn);
+  const onNoteOffRef = useRef(onNoteOff);
+  onNoteOnRef.current = onNoteOn;
+  onNoteOffRef.current = onNoteOff;
+  const handleNoteOn = useCallback((note, vel) => onNoteOnRef.current?.(note, vel), []);
+  const handleNoteOff = useCallback((note) => onNoteOffRef.current?.(note), []);
+
+  // Tick for animating rebuild progress bars (games only — destroyedKeys present).
   const [rebuildTick, setRebuildTick] = useState(0);
   useEffect(() => {
-    if (!destroyedKeys || destroyedKeys.size === 0) return;
-    const id = setInterval(() => setRebuildTick(t => t + 1), 100);
+    if (!destroyedKeys || destroyedKeys.size === 0) return undefined;
+    const id = setInterval(() => setRebuildTick((t) => t + 1), 100);
     return () => clearInterval(id);
   }, [destroyedKeys?.size]);
 
-  const keys = useMemo(() => {
+  // Structural descriptors — stable across note changes (depend only on layout).
+  const descriptors = useMemo(() => {
     const result = [];
-    const now = Date.now();
     let splitMarked = false;
-
     for (let note = startNote; note <= endNote; note++) {
-      const isActive = activeNotes.has(note);
-      const noteData = activeNotes.get(note);
-      const velocity = noteData?.velocity || 0;
       const isWhite = isWhiteKey(note);
-      const isTarget = targetNotes?.has(note) ?? false;
-      const isWrong = wrongNotes?.has(note) ?? false;
-      const destroyed = destroyedKeys?.get(note);
-      const isDestroyed = !!destroyed;
-      // Split zones: keys below splitNote are percussion; the first white key
-      // at/above it gets the divider marker.
       const isPerc = splitNote != null && note < splitNote;
       const isSplitStart = splitNote != null && !splitMarked && note >= splitNote && isWhite;
       if (isSplitStart) splitMarked = true;
-
-      let rebuildProgress = 0;
-      if (destroyed) {
-        rebuildProgress = Math.min(1, (now - destroyed.destroyedAt) / destroyed.cooldownMs);
-      }
-
-      result.push(
-        <div
-          key={note}
-          className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}${isPerc ? ' perc' : ''}${isSplitStart ? ' split-start' : ''}`}
-          style={{
-            '--velocity': velocity / 127,
-            ...(isDestroyed ? { '--rebuild-progress': rebuildProgress } : {}),
-          }}
-          data-note={note}
-          data-label={getNoteName(note)}
-          onPointerDown={interactive ? (e) => {
-            e.preventDefault();
-            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no-op */ }
-            onNoteOn(note, 90);
-          } : undefined}
-          onPointerUp={interactive ? (e) => { e.preventDefault(); onNoteOff?.(note); } : undefined}
-          onPointerCancel={interactive ? () => onNoteOff?.(note) : undefined}
-        >
-          {showLabels && isWhite && note % 12 === 0 && (
-            <span className="note-label">{getNoteName(note)}</span>
-          )}
-          {isDestroyed && (
-            <div className="rebuild-bar" />
-          )}
-        </div>
-      );
+      result.push({
+        note,
+        isWhite,
+        isPerc,
+        isSplitStart,
+        showLabel: showLabels && isWhite && note % 12 === 0,
+      });
     }
-
     return result;
-  }, [activeNotes, startNote, endNote, showLabels, targetNotes, wrongNotes, destroyedKeys, rebuildTick, interactive, onNoteOn, onNoteOff, splitNote]);
+  }, [startNote, endNote, splitNote, showLabels]);
 
-  // Count white keys for sizing
-  const whiteKeyCount = useMemo(() => {
-    let count = 0;
-    for (let note = startNote; note <= endNote; note++) {
-      if (isWhiteKey(note)) count++;
-    }
-    return count;
-  }, [startNote, endNote]);
+  const whiteKeyCount = useMemo(
+    () => descriptors.reduce((n, d) => n + (d.isWhite ? 1 : 0), 0),
+    [descriptors],
+  );
+
+  const now = (destroyedKeys && destroyedKeys.size) ? Date.now() : 0;
 
   return (
     <div
       className={`piano-keyboard${interactive ? ' interactive' : ''}`}
       style={{ '--white-key-count': whiteKeyCount }}
     >
-      {keys}
+      {descriptors.map((d) => {
+        const noteData = activeNotes.get(d.note);
+        const destroyed = destroyedKeys?.get(d.note);
+        const rebuildProgress = destroyed
+          ? Math.min(1, (now - destroyed.destroyedAt) / destroyed.cooldownMs)
+          : 0;
+        return (
+          <PianoKey
+            key={d.note}
+            note={d.note}
+            isWhite={d.isWhite}
+            isPerc={d.isPerc}
+            isSplitStart={d.isSplitStart}
+            showLabel={d.showLabel}
+            isActive={activeNotes.has(d.note)}
+            velocity={noteData?.velocity || 0}
+            isTarget={targetNotes?.has(d.note) ?? false}
+            isWrong={wrongNotes?.has(d.note) ?? false}
+            isDestroyed={!!destroyed}
+            rebuildProgress={rebuildProgress}
+            interactive={interactive}
+            onNoteOn={handleNoteOn}
+            onNoteOff={handleNoteOff}
+          />
+        );
+      })}
     </div>
   );
 }
