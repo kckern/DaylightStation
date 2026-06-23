@@ -13,6 +13,8 @@ import './PianoKeyboard.scss';
  * @param {Map<number, { destroyedAt: number, cooldownMs: number }>} [props.destroyedKeys] - Destroyed keys with cooldown
  * @param {(note: number, velocity: number) => void} [props.onNoteOn] - When provided, keys become touch/clickable (press)
  * @param {(note: number) => void} [props.onNoteOff] - Release handler paired with onNoteOn
+ * @param {number} [props.splitNote] - When set, keys below it render as the
+ *   percussion zone (tinted) and the rest as melodic, with a divider at the split.
  */
 export function PianoKeyboard({
   activeNotes = new Map(),
@@ -24,6 +26,7 @@ export function PianoKeyboard({
   destroyedKeys = null,
   onNoteOn = null,
   onNoteOff = null,
+  splitNote = null,
 }) {
   const interactive = typeof onNoteOn === 'function';
   // Tick for animating rebuild progress bars
@@ -37,6 +40,7 @@ export function PianoKeyboard({
   const keys = useMemo(() => {
     const result = [];
     const now = Date.now();
+    let splitMarked = false;
 
     for (let note = startNote; note <= endNote; note++) {
       const isActive = activeNotes.has(note);
@@ -47,6 +51,11 @@ export function PianoKeyboard({
       const isWrong = wrongNotes?.has(note) ?? false;
       const destroyed = destroyedKeys?.get(note);
       const isDestroyed = !!destroyed;
+      // Split zones: keys below splitNote are percussion; the first white key
+      // at/above it gets the divider marker.
+      const isPerc = splitNote != null && note < splitNote;
+      const isSplitStart = splitNote != null && !splitMarked && note >= splitNote && isWhite;
+      if (isSplitStart) splitMarked = true;
 
       let rebuildProgress = 0;
       if (destroyed) {
@@ -56,7 +65,7 @@ export function PianoKeyboard({
       result.push(
         <div
           key={note}
-          className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}`}
+          className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}${isPerc ? ' perc' : ''}${isSplitStart ? ' split-start' : ''}`}
           style={{
             '--velocity': velocity / 127,
             ...(isDestroyed ? { '--rebuild-progress': rebuildProgress } : {}),
@@ -82,7 +91,7 @@ export function PianoKeyboard({
     }
 
     return result;
-  }, [activeNotes, startNote, endNote, showLabels, targetNotes, wrongNotes, destroyedKeys, rebuildTick, interactive, onNoteOn, onNoteOff]);
+  }, [activeNotes, startNote, endNote, showLabels, targetNotes, wrongNotes, destroyedKeys, rebuildTick, interactive, onNoteOn, onNoteOff, splitNote]);
 
   // Count white keys for sizing
   const whiteKeyCount = useMemo(() => {
