@@ -4,6 +4,7 @@ import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
 import useVanishingControls from './useVanishingControls.js';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import useReloadGuard from '../../useReloadGuard.js';
 
 /**
  * Plexamp-style now-playing for the Music mode. Album art + progress are the
@@ -31,6 +32,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
   const track = tracks[trackIndex] || null;
   const cover = track?.image || album?.image || album?.thumbnail || null;
   const { visible, reveal } = useVanishingControls({ active: playing && !showQueue });
+  useReloadGuard(playing);
 
   // Load + autoplay the current track whenever it changes.
   useEffect(() => {

@@ -12,6 +12,7 @@ import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
+import useReloadGuard from '../../useReloadGuard.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -35,6 +36,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const resumeSeconds = deriveResumeSeconds(lecture);
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
+  useReloadGuard(isPlaying);
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
