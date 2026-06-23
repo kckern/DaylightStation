@@ -20,6 +20,7 @@ import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
+import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMusic.jsx';
 import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
 import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
@@ -101,6 +102,7 @@ function PianoShell() {
         <Route index element={<PianoMenu />} />
         <Route path="videos" element={<Videos />} />
         <Route path="music" element={<Music />} />
+        <Route path="sheetmusic" element={<SheetMusic />} />
         <Route path="games" element={<Games />} />
         <Route path="lessons/*" element={<Lessons />} />
         <Route path="studio" element={<Studio />} />
