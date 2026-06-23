@@ -1,10 +1,39 @@
 # Piano Bridge — Design
 
-> **STATUS: UNBUILT SCAFFOLD — native engine not yet compiled (no NDK/cmake on the authoring machine; sfizz/dexed not yet vendored).** Nothing in this document has been built or verified on hardware. It describes the intended architecture and the contracts the code already targets.
+> **STATUS (2026-06-23): BUILT + RUNNING ON HARDWARE.** APK builds (`./gradlew :app:assembleDebug`
+> with `JAVA_HOME=/opt/homebrew/opt/openjdk@11/...`; native sfizz .so compiles), installs, and the
+> HTTP control plane on `:8770` is verified over LAN. BLE-MIDI direct-connect + the
+> ADB-replacement diagnostic endpoints are implemented. See **Deploy & Diagnostics** below and
+> the piano tablet's `CLAUDE.md`.
 
-**Date:** 2026-06-22
+**Date:** 2026-06-22 (design) · 2026-06-23 (built + hardware notes)
 **Package:** `net.kckern.pianobridge`
 **Target:** Samsung SM-T590 (Snapdragon 450, 32-bit `armeabi-v7a`)
+
+---
+
+## Deploy & Diagnostics (verified on hardware 2026-06-23)
+
+**Build:** no `java` on PATH — `export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home`
+then `cd app && ./gradlew :app:assembleDebug`. APK → `app/app/build/outputs/apk/debug/app-debug.apk`.
+
+**Deploy:** USB `adb install -r` is the only clean path today (preserves dev-perm grants). FKB
+`mdmApkToInstall` silent-installs **only if FKB is device-owner** (it is not → no-op even when
+PLUS-licensed); FKB `loadUrl <apk>` downloads but the kiosk swallows the install prompt. To get
+headless deploys: `adb shell dpm set-device-owner de.ozerov.fully/.MainDeviceAdminReceiver` once.
+
+**Diagnostic endpoints** (`ControlServer.serveHttp`): `/exec /logcat /cpu /info /props /ps` plus the
+BLE/engine routes. The bridge is `untrusted_app`, so **SELinux blocks `dumpsys` (any service),
+`/proc/stat`, `/proc/loadavg`, and other processes' `/proc`** — `READ_LOGS` (logcat) works, `DUMP`
+is useless, per-process CPU of other apps needs adb's shell uid. `/cpu` is therefore OWN-process
+per-thread only (`ProcStats`, read in-process from `/proc/self/task`). Dev perms (`READ_LOGS`,
+`DUMP`, `WRITE_SECURE_SETTINGS`) are `pm grant`-ed once over USB and persist across reboot.
+
+**BLE-MIDI:** `BleMidiConnector` connects **direct-by-MAC first** (`getRemoteDevice` +
+`openBluetoothDevice`) because a bonded/connected WIDI stops advertising and a scan never sees it;
+scan is the fallback. `BootReceiver` uses `startForegroundService()` (plain `startService()` is
+illegal from a background BOOT_COMPLETED on Android 8+). ADB-free recovery: `fkb.cli.mjs launch
+net.kckern.pianobridge`.
 
 ---
 

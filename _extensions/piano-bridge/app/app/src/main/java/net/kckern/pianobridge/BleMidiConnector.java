@@ -133,6 +133,11 @@ public class BleMidiConnector {
 
     private void connectInternal() {
         if (!running) return;
+        // Cancel any queued retry + in-flight scan so overlapping connect cycles
+        // can't pile up (a /connect racing a pending retry used to spawn parallel
+        // scans and burn the Android 5-scans/30s throttle).
+        handler.removeCallbacks(retryRunnable);
+        stopScan();
         closeDevice();
 
         if (adapter == null || !adapter.isEnabled()) {
@@ -159,6 +164,35 @@ public class BleMidiConnector {
             return;
         }
 
+        // DIRECT-FIRST. Once the WIDI is bonded (or already GATT-connected, e.g. to
+        // the jamcorder) it STOPS advertising, so a MAC-filtered scan never gets an
+        // onScanResult for it — confirmed on hardware via /logcat: "Start Scan" →
+        // 15s → "target not found". getRemoteDevice(MAC) + openBluetoothDevice
+        // connects it by handle with no advertising required. If that hasn't reached
+        // CONNECTED within a grace window, fall back to a scan (which handles the
+        // advertising-but-unbonded case, e.g. a freshly power-cycled WIDI).
+        BluetoothDevice direct = null;
+        try { direct = adapter.getRemoteDevice(targetMac); }
+        catch (IllegalArgumentException e) { Diag.log(TAG, "bad targetMac: " + targetMac); }
+
+        if (direct != null) {
+            Diag.log(TAG, "direct connect attempt → " + targetMac);
+            openTarget(direct, /*scanOnFail=*/true);
+            handler.postDelayed(() -> {
+                if (running && state == State.CONNECTING) {
+                    Diag.log(TAG, "direct connect still pending — falling back to scan");
+                    startScan(targetMac);
+                }
+            }, 6000);
+        } else {
+            startScan(targetMac);
+        }
+    }
+
+    /** Radio-filtered scan for the target MAC; opens it on first sighting. */
+    private void startScan(final String targetMac) {
+        if (!running || scanner == null) return;
+        stopScan();
         setState(State.SCANNING, null);
         // Filter at the radio layer to ONLY the target MAC — blocklist is moot.
         List<ScanFilter> filters = Collections.singletonList(
@@ -174,7 +208,7 @@ public class BleMidiConnector {
                 if (cfg.blocklistMacs().contains(mac)) return; // belt-and-suspenders
                 if (!mac.equals(targetMac)) return;
                 stopScan();
-                openTarget(dev);
+                openTarget(dev, /*scanOnFail=*/false);
             }
             @Override public void onScanFailed(int errorCode) {
                 setState(State.FAILED, "scan failed (" + errorCode + ")");
@@ -197,15 +231,20 @@ public class BleMidiConnector {
         }, cfg.scanTimeoutMs());
     }
 
-    private void openTarget(BluetoothDevice dev) {
+    private void openTarget(BluetoothDevice dev, final boolean scanOnFail) {
         setState(State.CONNECTING, null);
         final String mac = norm(dev.getAddress());
         final String name = dev.getName() != null ? dev.getName() : cfg.targetName();
         try {
             midiManager.openBluetoothDevice(dev, device -> {
                 if (device == null) {
-                    setState(State.FAILED, "openBluetoothDevice returned null");
-                    scheduleRetry();
+                    if (scanOnFail) {
+                        Diag.log(TAG, "direct open returned null — scanning");
+                        startScan(cfg.targetMac());
+                    } else {
+                        setState(State.FAILED, "openBluetoothDevice returned null");
+                        scheduleRetry();
+                    }
                     return;
                 }
                 openDevice = device;
@@ -231,15 +270,24 @@ public class BleMidiConnector {
                 reconnects++;
                 listener.onMidiDeviceClosed();
                 closeDevice();
+                // MUST reset state off CONNECTED here: scheduleRetry()'s retry guard
+                // is `state != CONNECTED`, so leaving a stale CONNECTED wedges the
+                // connector — the link drops but it never reconnects (observed:
+                // CONNECTED / name=null / reconnects=1, dead).
+                setState(State.FAILED, "device removed — reconnecting");
                 if (running) scheduleRetry();
             }
         }
     };
 
+    private final Runnable retryRunnable = new Runnable() {
+        @Override public void run() { if (running && state != State.CONNECTED) connectInternal(); }
+    };
+
     private void scheduleRetry() {
         if (!running) return;
-        handler.postDelayed(() -> { if (running && state != State.CONNECTED) connectInternal(); },
-                cfg.reconnectDelayMs());
+        handler.removeCallbacks(retryRunnable); // collapse duplicate retries into one
+        handler.postDelayed(retryRunnable, cfg.reconnectDelayMs());
     }
 
     private void stopScan() {
