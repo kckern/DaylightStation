@@ -24,6 +24,13 @@
   --piano-warn: #b07400;        // loop-arming / mark A
   --piano-warn-2: #d2561a;      // mark B
 
+  // --- type scale ---
+  --t-cap: 0.85rem;
+  --t-body: 1rem;
+  --t-h: 1.25rem;
+  --t-title: 1.6rem;
+  --t-display: 2.2rem;
+
   // --- radius scale ---
   --r-sm: 8px;    // thumbnails, small chips, score pages
   --r-md: 12px;   // cards, tiles, bars, buttons
@@ -173,10 +180,30 @@
   }
 }
 
+@media (orientation: portrait) {
+  .piano-menu__tiles {
+    grid-template-columns: repeat(2, minmax(9rem, 16rem));
+  }
+
+  .piano-album-detail__body {
+    flex-direction: column;
+  }
+
+  .piano-album-detail__cover {
+    width: 100%;
+    max-width: 20rem;
+    height: auto;
+    aspect-ratio: 1 / 1;
+  }
+}
+
 .piano-mode {
   flex: 1 1 auto;
   padding: 1.5rem;
   overflow: auto;
+
+  h2 { font-size: var(--t-display); font-weight: 700; margin: 0 0 1rem; }
+  h3 { font-size: var(--t-h); font-weight: 700; margin: 0 0 0.5rem; }
 
   &__placeholder { color: var(--piano-muted); font-style: italic; }
 
@@ -366,7 +393,7 @@
   &__band { display: flex; gap: 1.25rem; align-items: flex-start; margin: 0.5rem 0 1rem; }
   &__poster { max-height: 11rem; border-radius: var(--r-md); flex: 0 0 auto; object-fit: cover; }
   &__meta { flex: 1 1 auto; min-width: 0; }
-  &__title { margin: 0 0 0.4rem; }
+  &__title { margin: 0 0 0.4rem; font-size: var(--t-display); font-weight: 700; }
   &__summary { color: var(--piano-muted); max-width: 60ch; margin: 0; }
   &__count { color: var(--piano-muted); margin: 0.4rem 0 0; }
 }
@@ -419,7 +446,7 @@
   &__mark--a { background: var(--piano-warn); }
   &__mark--b { background: var(--piano-warn-2); }
 
-  &__row { display: flex; align-items: center; gap: 0.5rem; }
+  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.4rem; }
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
@@ -588,4 +615,27 @@
   &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   &:active { background: var(--piano-surface-2); }
   .piano-icon { font-size: 1.1rem; }
+}
+
+/* ---- Task 30: Focus-visible rings for remaining interactive controls ---- */
+.piano-music-btn:focus-visible,
+.piano-video-chrome__btn:focus-visible,
+.piano-track-list__row:focus-visible,
+.piano-chrome__home:focus-visible,
+.piano-chrome__status:focus-visible,
+.piano-album-detail__playall:focus-visible,
+.piano-studio__rec:focus-visible,
+.piano-studio__save:focus-visible,
+.piano-connect-gate__btn:focus-visible,
+.piano-game-fullscreen__back:focus-visible {
+  outline: 3px solid var(--piano-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
+@media (prefers-reduced-motion: reduce) {
+  .piano-app *, .piano-app *::before, .piano-app *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
