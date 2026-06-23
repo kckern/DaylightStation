@@ -4,6 +4,7 @@ import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
@@ -35,6 +36,12 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
   const resumeSeconds = deriveResumeSeconds(lecture);
+
+  // Header breadcrumb: the source show (tap → back to the course) › this lecture.
+  usePianoBreadcrumb(useMemo(() => [
+    ...(source ? [{ label: source, onClick: onBack }] : []),
+    ...(title ? [{ label: title }] : []),
+  ], [source, title, onBack]));
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
   useReloadGuard(isPlaying);
@@ -135,13 +142,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
 
   return (
     <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
-      {(source || title) && (
-        <div className="piano-video-player__crumbs">
-          {source && <span className="piano-video-player__crumb-src">{source}</span>}
-          {source && title && <span className="piano-video-player__crumb-sep" aria-hidden>›</span>}
-          {title && <span className="piano-video-player__crumb-cur">{title}</span>}
-        </div>
-      )}
+      {/* Upper row: video + transport (left) and the live staff (right of them only). */}
       <div className="piano-video-player__body">
         <div className="piano-video-player__stack">
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
@@ -163,22 +164,24 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
             onToggleLoop={loop.toggle}
             onClearLoop={loop.clear}
             onSeek={ctrl.seek}
-            onBack={onBack}
             onTogglePlayAlong={togglePlayAlong}
           />
-
-          {playAlong && (
-            <div className="piano-video-player__keys">
-              <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
-            </div>
-          )}
         </div>
 
         {/* Live grand-staff (treble + bass) of the notes being played along. */}
-        <aside className="piano-video-player__staff">
-          <CurrentChordStaff activeNotes={notes} />
-        </aside>
+        {playAlong && (
+          <aside className="piano-video-player__staff">
+            <CurrentChordStaff activeNotes={notes} />
+          </aside>
+        )}
       </div>
+
+      {/* Full-width playable keyboard footer spanning the whole bottom edge. */}
+      {playAlong && (
+        <div className="piano-video-player__keys">
+          <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
+        </div>
+      )}
     </div>
   );
 }

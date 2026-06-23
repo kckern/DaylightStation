@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
-import PianoBack from '../../PianoBack.jsx';
+import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -10,9 +10,12 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  * vertical scroll. A multi-page score resolves to its child pages via the list
  * endpoint; a single-image score falls back to its own image.
  */
-export default function ScoreViewer({ score, onBack }) {
+export default function ScoreViewer({ score }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic-viewer' }), []);
   const [pages, setPages] = useState(null); // null = loading
+
+  // Current location in the header breadcrumb (Sheet Music › this score).
+  usePianoBreadcrumb(useMemo(() => [{ label: score?.title || 'Score' }], [score?.title]));
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +39,6 @@ export default function ScoreViewer({ score, onBack }) {
 
   return (
     <div className="piano-score-viewer">
-      <PianoBack onClick={onBack} label="Sheet Music" />
       <div className="piano-score-viewer__pages">
         {pages === null && <p className="piano-mode__placeholder">Loading…</p>}
         {pages?.length === 0 && <p className="piano-mode__placeholder">This score has no viewable pages.</p>}

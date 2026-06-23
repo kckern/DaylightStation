@@ -74,8 +74,8 @@ export default function CoverFlow({ items, onOpen, startIndex = 0 }) {
           const abs = Math.abs(offset);
           if (abs > 5) return null; // cull far covers
           const sign = Math.sign(offset);
-          const x = offset === 0 ? 0 : sign * (9 + (abs - 1) * 4.2); // rem
-          const z = offset === 0 ? 4 : -abs * 5; // rem depth (center pops forward)
+          const x = offset === 0 ? 0 : sign * (12 + (abs - 1) * 5.4); // rem (scaled to 20rem covers)
+          const z = offset === 0 ? 5 : -abs * 5; // rem depth (center pops forward)
           const rotate = offset === 0 ? 0 : -sign * 58; // deg
           const scale = offset === 0 ? 1 : 0.86;
           const src = item.thumbnail || item.image;

@@ -4,8 +4,8 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
-import Icon from '../../icons/Icon.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
@@ -84,6 +84,10 @@ function GameHost() {
   const { config } = usePianoKioskConfig();
   const entry = getGameEntry(gameId);
 
+  // Current location in the header breadcrumb (Games › this game). The breadcrumb
+  // replaces the old in-canvas back pill — tap the "Games" crumb to exit.
+  usePianoBreadcrumb(useMemo(() => [{ label: GAME_LABELS[gameId] ?? gameId }], [gameId]));
+
   const exit = () => {
     logger.info('piano.game-exit', { game: gameId });
     navigate('..', { relative: 'path' });
@@ -100,9 +104,6 @@ function GameHost() {
 
   return (
     <div className="piano-game-fullscreen">
-      <button type="button" className="piano-game-fullscreen__back" onClick={exit}>
-        <Icon name="back" /> Games
-      </button>
       <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
         <entry.LazyComponent
           activeNotes={activeNotes}
