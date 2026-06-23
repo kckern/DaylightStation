@@ -10,6 +10,8 @@ export const PIANO_MODES = [
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: '🎮' },
   { id: 'lessons', label: 'Lessons', blurb: 'Guided & theory lessons', icon: '🎓' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: '🎹' },
+  { id: 'instruments', label: 'Instruments', blurb: 'Switch & tune voices', icon: '🎛️' },
+  { id: 'composers', label: 'Composers', blurb: 'Study the masters', icon: '🎻' },
 ];
 
 /**

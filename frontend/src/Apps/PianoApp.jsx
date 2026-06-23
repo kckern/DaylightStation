@@ -24,6 +24,8 @@ import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMu
 import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
 import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
+import { Instruments } from '../modules/Piano/PianoKiosk/modes/Instruments/Instruments.jsx';
+import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
 import './PianoApp.scss';
 
 /**
@@ -106,6 +108,8 @@ function PianoShell() {
         <Route path="games" element={<Games />} />
         <Route path="lessons/*" element={<Lessons />} />
         <Route path="studio" element={<Studio />} />
+        <Route path="instruments" element={<Instruments />} />
+        <Route path="composers" element={<Composers />} />
         <Route path="*" element={<PianoMenu />} />
       </Routes>
     </div>
