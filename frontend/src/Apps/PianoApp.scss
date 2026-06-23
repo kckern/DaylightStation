@@ -117,7 +117,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     &:hover { color: var(--piano-fg); }
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; border-radius: var(--r-sm); }
   }
   /* current location: bold, full-contrast, not a link */
   &__crumb--current {
@@ -143,7 +142,6 @@
     padding: 0.4rem 0.9rem;
     font: inherit;
     cursor: pointer;
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   }
 
   &__voice {
@@ -154,7 +152,6 @@
     padding: 0.4rem 0.9rem;
     font: inherit;
     cursor: pointer;
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
     &:active { background: var(--piano-border); }
   }
 
@@ -200,7 +197,6 @@
   transition: transform 0.12s ease, background 0.12s ease;
 
   &:active { transform: scale(0.97); background: var(--piano-surface-2); }
-  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   &.is-selected { border-color: var(--piano-accent); }
 
   &__icon { font-size: 3rem; }
@@ -458,7 +454,6 @@
   border-radius: var(--r-md); color: inherit; cursor: pointer; padding: 0; overflow: hidden;
   text-align: left;
   &:active { background: var(--piano-surface-2); }
-  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
 
   &__thumb {
     position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--piano-surface-2);
@@ -513,16 +508,18 @@
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-stage);
 
-  /* Upper row: the video+transport stack (left) and the live staff (right of them
-     only — it does NOT extend under the full-width keyboard footer). */
-  &__body { flex: 1 1 auto; min-height: 0; display: flex; }
-  &__stack { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  /* Upper row: the video+transport stack (left — its width is set in JS to the
+     video's aspect ratio at the available height, so the contained video fills it
+     edge-to-edge with no pillar bars) and the live staff, which flexes to fill ALL
+     the leftover width to the right of the video+controls. */
+  &__body { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
+  &__stack { flex: 0 0 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   &__staff {
-    flex: 0 0 18rem; width: 18rem; min-height: 0; overflow: hidden;
-    box-sizing: border-box; padding: 1.25rem 1.5rem;
+    flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden;
+    box-sizing: border-box; padding: 0.5rem;
     background: #fff; border-left: 1px solid var(--piano-border);
     display: flex; align-items: center; justify-content: center;
-    .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
+    .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0.25rem 0; }
   }
 
   &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
@@ -599,7 +596,6 @@
     background: none; border: none; color: var(--piano-muted);
     font: inherit; cursor: pointer; padding: 0.35rem 1rem; border-radius: var(--r-pill);
     &.is-on { background: var(--piano-surface-2); color: var(--piano-fg); font-weight: 700; }
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   }
 }
 
@@ -662,13 +658,11 @@
     background: var(--piano-surface); color: var(--piano-fg); border: 1px solid var(--piano-border);
     font-size: 1.4rem; cursor: pointer;
     &:disabled { opacity: 0.35; cursor: default; }
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   }
   &__open {
     height: 3rem; padding: 0 1.75rem; border-radius: var(--r-pill);
     background: var(--piano-accent); color: var(--piano-accent-ink); border: none;
     font: inherit; font-weight: 700; cursor: pointer;
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   }
 }
 
@@ -801,18 +795,12 @@
 .piano-video-grid--posters .piano-video-grid__title,
 .piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
 
-/* ---- Task 30: Focus-visible rings for remaining interactive controls ---- */
-.piano-music-btn:focus-visible,
-.piano-video-chrome__btn:focus-visible,
-.piano-track-list__row:focus-visible,
-.piano-chrome__home:focus-visible,
-.piano-chrome__status:focus-visible,
-.piano-album-detail__playall:focus-visible,
-.piano-studio__rec:focus-visible,
-.piano-studio__save:focus-visible,
-.piano-connect-gate__btn:focus-visible {
-  outline: 3px solid var(--piano-accent);
-  outline-offset: 2px;
+/* Touch kiosk: suppress focus rings entirely — they render as ugly teal boxes
+   when tiles/buttons are tapped. No keyboard-navigation use case here. */
+.piano-app :focus,
+.piano-app :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */

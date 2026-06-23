@@ -28,12 +28,13 @@ export function AbcRenderer({ notes, keySignature = 'C', scale = 1.5, className 
     try {
       const abc = generateAbc(notes, keySignature);
       const containerWidth = containerRef.current.parentElement?.offsetWidth || 600;
+      const sidePad = 12;
       abcjs.renderAbc(containerRef.current, abc, {
-        staffwidth: containerWidth - 100,
+        staffwidth: Math.max(120, containerWidth - sidePad * 2),
         paddingtop: 0,
         paddingbottom: 0,
-        paddingleft: 50,
-        paddingright: 50,
+        paddingleft: sidePad,
+        paddingright: sidePad,
         add_classes: true,
         scale,
       });

@@ -51,8 +51,8 @@ export default function AlbumDetail({ album, onPlay }) {
           {tracks?.length === 0 && <PianoEmpty message={error || 'No tracks found.'} />}
           {tracks?.length > 0 && (
             <>
-              <button type="button" className="piano-album-detail__playall" onClick={() => onPlay(tracks, 0)}>
-                <Icon name="play" />{' '}Play All
+              <button type="button" className="piano-album-detail__playall" onClick={() => onPlay(tracks, 0, true)}>
+                <Icon name="shuffle" />{' '}Play All
               </button>
               <ol className="piano-track-list">
                 {tracks.map((t, i) => (
