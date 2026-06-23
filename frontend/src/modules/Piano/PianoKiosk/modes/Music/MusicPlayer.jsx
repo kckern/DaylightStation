@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
-import useVanishingControls from './useVanishingControls.js';
+import useVanishingControls from '../../useVanishingControls.js';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 

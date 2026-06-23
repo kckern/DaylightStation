@@ -13,6 +13,7 @@ import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
+import useVanishingControls from '../../useVanishingControls.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -37,6 +38,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
   useReloadGuard(isPlaying);
+  const { visible, reveal } = useVanishingControls({ active: isPlaying });
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
@@ -110,7 +112,10 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   }
 
   return (
-    <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
+    <div
+      className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}${visible ? '' : ' chrome-hidden'}`}
+      onPointerDown={reveal}
+    >
       <div className="piano-video-player__video">
         <PlayerBoundary onBack={onBack}>
           <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>

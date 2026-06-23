@@ -404,7 +404,11 @@
     &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); }
   }
   &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+
+  transition: opacity 0.35s ease;
 }
+
+.piano-video-player.chrome-hidden .piano-video-chrome { opacity: 0; pointer-events: none; }
 
 /* ---- Music mode: album grid (square covers, titles in alt) ---- */
 .piano-music-grid {
