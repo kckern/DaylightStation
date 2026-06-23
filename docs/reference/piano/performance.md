@@ -1,80 +1,96 @@
 # Piano Kiosk — Performance and jank
 
-The piano tablet is a low-end 2018 device (Samsung SM-T590, Android 10, ~3 GB RAM)
-running the app full-screen in Fully Kiosk Browser. The SPA is light — mostly static
-surfaces reacting to MIDI — so when it feels slow the cause is almost never React render
-load. This document describes how the kiosk measures frame health, what actually limits
-frame rate on this hardware, and how to read the signals.
+The piano tablet (Samsung SM-T590, Android 10, ~3 GB RAM) runs the app full-screen in
+Fully Kiosk Browser. The SPA is light, so when it feels slow the cause is almost never
+React render load — and it turned out not to be the GPU's raw speed either. This document
+records what actually limited frame rate, how to diagnose it on-device, and the watchdog
+that observes frame health.
 
-## What "smooth" costs here
+## The root cause: a forced single hardware layer
 
-The dominant performance fact is that this WebView is **frame-clock / compositor bound, not
-main-thread bound.** With the app idle on the home menu, the JavaScript main thread is free
-(macrotasks flow at their normal rate with small gaps), yet the compositor presents frames
-at a ceiling below 60 — a fresh load settles to roughly the low-50s fps, dipping into the
-high-30s for the first few seconds while the SPA boots. There is no continuously-running CSS
-animation on the menu to explain it; it is simply what this GPU does compositing the menu's
-layered surfaces and the 88-key keyboard. This is the baseline to optimise against, and the
-lever is **compositing cost** (layer count, shadows, blurs, large filters), not more
-memoisation.
+The dominant historical symptom was brutal, systemic jank — **every** mode (menu, games,
+waterfall, Music) stuttering with "a little flash," frames landing at 60–300ms, and the
+state persisting until the WebView was reloaded or the device rebooted. It looked like a
+CPU or GPU ceiling, but it was neither:
 
-Things that are **not** the bottleneck, and have been ruled out by measurement:
+- **CPU was idle** during the jank — `top -H` showed ~6 of 8 cores idle; no thread pegged.
+- **The GPU draws fast** — `dumpsys gfxinfo` showed only a handful of "Slow issue draw
+  commands"; many frames rendered in 5ms (the panel is capable of 200fps).
+- **Yet nearly every frame did a "Slow bitmap upload"** of a single **full-screen
+  (1920×1200×4 ≈ 9.2 MB) texture.**
 
-- **GPU acceleration** — hardware acceleration is on; forcing it and rebooting did not change
-  the ceiling.
-- **Memory** — about half the tablet's RAM is free; the JS heap is a few tens of MB against a
-  far larger limit.
-- **Camera / motion detection** — FKB's motion and acoustic detection are disabled, so nothing
-  is holding the camera or an extra core.
-- **Logging / WebSocket storms** — event volume from the tablet is a handful per minute, not a
-  flood; the backend sends application-level heartbeats so the stale-connection watchdog does
-  not thrash a healthy socket.
-- **Multiple tabs** — the kiosk runs a single page context.
-- **Periodic reloads** — there is no automatic page reload on a healthy connection; the
-  WebSocket service only reloads after sustained connection failure, and that path is quiet in
-  normal operation.
+That fingerprint is **Fully Kiosk's `graphicsAccelerationMode = 1`**, which calls
+`WebView.setLayerType(LAYER_TYPE_HARDWARE)` and collapses the entire WebView into one
+Android hardware layer. That **bypasses Chromium's tiled compositing**: instead of
+re-uploading only the dirty 256×256 tiles, Android's hwui `RenderThread` re-captures and
+re-uploads the **whole screen** as one 9.2 MB texture on every invalidate. The CPU and GPU
+sit idle waiting on that wholesale DMA upload — hence idle cores, fast draws, and 60–300ms
+frames, on every screen at once.
 
-## How jank is measured
+**The fix is `graphicsAccelerationMode = 0`** (system default — hardware-accelerated *with*
+tiled partial updates). Measured impact, same session, same interaction:
 
-Two instruments observe frame health, both sampling `requestAnimationFrame`:
+| | mode = 1 (forced HW layer) | mode = 0 (default, tiled) |
+|---|---|---|
+| Slow bitmap uploads | 299 / 371 frames | **0 / 234** |
+| Slow UI thread | 306 | 16 |
+| Missed Vsync | 241 | 2 |
+| 50th pct frame | 77 ms | 27 ms |
+| 90th pct frame | 300 ms | 38 ms |
+
+> `graphicsAccelerationMode` is a per-device Fully Kiosk setting (persists across reboots).
+> It must be **0** on the piano tablet. A value of **1** (forced hardware) is the trap —
+> it sounds faster but disables tiling; **2** is software rendering. Set via the FKB REST
+> API: `node cli/fkb.cli.mjs set graphicsAccelerationMode 0` then restart FKB.
+
+## Diagnosing on-device (what worked, what misled)
+
+The decisive tools were **adb** (via the in-container `AdbAdapter`, `cli/pianobridge.cli.mjs`
+for the no-adb fallback) and Fully's REST/JS channel:
+
+- **`adb shell dumpsys gfxinfo de.ozerov.fully`** — the breakthrough. Its per-stage counters
+  (*Slow UI thread*, *Slow bitmap uploads*, *Slow issue draw commands*) split the frame time
+  into CPU-UI vs texture-upload vs GPU-draw. "Slow bitmap uploads on nearly every frame" +
+  a single full-screen texture in the GPU cache named the cause directly.
+- **`adb shell top -H`** — per-thread CPU. Showed the render threads *blocked*, not burning
+  CPU (idle cores), proving it was an upload/wait stall, not compute.
+- **What misled:** the **JS Self-Profiling API** (`window.Profiler`, enabled via the
+  `Document-Policy: js-profiling` header) showed the JS main thread ~idle, and the in-page
+  rAF probe showed low fps — both true but both pointed *away* from JS, because the stall
+  was in the native upload path the JS profiler can't see. Heap and DOM node counts were
+  flat (ruling out leaks). Do not conclude "compositor ceiling / weak hardware" from a
+  low-fps + idle-JS reading; confirm with `gfxinfo` before blaming paint cost or the GPU.
+
+The bridge's own `cpu`/`exec` diagnostics are limited to its own process (SELinux blocks
+other-app `/proc` from `untrusted_app`); FKB CPU needs adb (shell uid). When adb-over-wifi
+is off (it does not survive reboots on this tablet), re-enable it (Developer Options →
+wireless debugging / `adb tcpip 5555`); the container's `AdbAdapter` reaches it from there.
+
+## Paint cost is the secondary lever
+
+With tiling restored, frames sit at ~27ms during interaction — usable but short of 60. The
+remaining cost is ordinary paint, and the playbook in
+[`webview-paint-performance.md`](../core/webview-paint-performance.md) applies: flat colors
+over gradients, no per-element `box-shadow`/`filter: blur` on repeated elements,
+`transform`-only animation, and `contain: layout style paint` to bound repaints. The
+keyboard (rendered in every mode) was flattened — solid key fills instead of gradients, the
+per-note blurred glow dropped — and the Music cover-wash blur cut from 40px to 8px. These
+trim the per-frame paint that tiling now has to do.
+
+## How jank is measured in-app
+
+Two in-app instruments sample `requestAnimationFrame`:
 
 - **The render watchdog** (`useRenderWatchdog`) runs for the life of the app as a passive
-  sensor. Each second it compares effective fps against a floor; when fps stays below the
-  floor long enough it opens a **jank episode** (`piano.watchdog.jank-start`) and closes it on
-  recovery (`piano.watchdog.jank-end`, carrying the worst fps seen). Episodes are logged once
-  per occurrence, so a steady stall produces one start and no flood.
-- **Process diagnostics** (`perf.diagnostics`, from the shared logger) periodically report fps,
-  per-frame timing (average / min / max), jank-frame count, heap usage, and DOM node count.
+  sensor, logging jank **episodes** (`piano.watchdog.jank-start` / `jank-end` with worst
+  fps). Its self-heal restart is **gated off** (`SELF_HEAL_RESTART = false`): restarting the
+  WebView did not recover frame presentation and degenerated into a remount loop (every
+  ~40s), which was its own felt lag — a separate bug fixed by disabling the restart.
+- **Process diagnostics** (`perf.diagnostics`, from the shared logger) periodically report
+  fps, frame timing, jank-frame count, heap, and DOM node count.
 
-Read both from the running container's logs, filtered to the tablet. A healthy idle session
-shows no jank episodes and no reloads.
-
-## The watchdog is a sensor, not an actuator
-
-The watchdog can self-heal by restarting the WebView through the FKB interface, but that
-behaviour is **gated off** (`SELF_HEAL_RESTART = false`). On this hardware a restart does not
-recover a stalled frame clock — fps returns to the same low value after the reload — so an
-enabled watchdog degenerates into a restart loop: it remounts the entire app on a fixed
-interval, which is itself the worst kind of jank (a full white-flash reload every time) and
-buries the real signal in churn. Disabling the restart and keeping only the measurement is
-what makes a clean baseline readable and stops the felt lag of constant remounts.
-
-If the restart is ever re-enabled, it must come with a cap and backoff (stop after N restarts
-that don't help, widen the interval each time) and only after a restart is proven to actually
-recover frame presentation on the target device. Until then, a genuinely wedged WebView is
-recovered by reloading or restarting it by hand over the FKB control channel.
-
-## Diagnosing on the device
-
-The tablet is administered over the Fully Kiosk REST/JS control channel (see `cli/fkb.cli.mjs`),
-which survives reboots when ADB over Wi-Fi does not. That channel can read device info and
-settings, screenshot the screen, reload or restart the app, and inject a snippet of JavaScript
-into the running page. The injection path is how frame behaviour is probed directly: a small
-script that counts `requestAnimationFrame` against a self-rescheduling timer separates a
-throttled frame clock (animation slow, timer fine) from a blocked main thread (both slow), and
-reports page visibility — the single most useful experiment when fps is low for no obvious
-reason. What that channel deliberately cannot do without ADB is read per-process CPU; jank is
-judged from the frame-rate probe instead.
+These give fps and rule out JS/memory, but they cannot see the native upload stall — that is
+what `dumpsys gfxinfo` is for.
 
 ---
 
