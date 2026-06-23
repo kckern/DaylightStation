@@ -102,9 +102,13 @@ function PianoShell() {
     quietHours: config.screensaver?.quietHours,
   });
 
+  const MODE_LABELS = { videos: 'Videos', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio' };
+  const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
+  const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
+
   return (
     <div className="piano-app">
-      <PianoChrome voices={config.voices} label={config.label} />
+      <PianoChrome voices={config.voices} label={config.label} modeLabel={modeLabel} />
       <Routes>
         <Route index element={<PianoMenu />} />
         <Route path="videos/*" element={<Videos />} />

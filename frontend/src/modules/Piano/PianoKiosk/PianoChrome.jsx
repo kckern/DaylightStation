@@ -11,8 +11,9 @@ import { usePianoKioskConfig, usePianoRoster } from './PianoConfig.jsx';
  *
  * @param {Array<{label:string, program:number}>} [voices] - timbre options
  * @param {string} [label] - this piano's display name
+ * @param {string} [modeLabel] - current mode name shown after the label (empty on home)
  */
-export function PianoChrome({ voices = [], label }) {
+export function PianoChrome({ voices = [], label, modeLabel }) {
   const navigate = useNavigate();
   const { connected, inputName, status, sendProgramChange, connect } = usePianoMidi();
   const { pianoId, basePath } = usePianoKioskConfig();
@@ -48,6 +49,8 @@ export function PianoChrome({ voices = [], label }) {
       ) : (
         <span className="piano-chrome__label piano-chrome__label--static">{label}</span>
       ))}
+
+      {modeLabel && <span className="piano-chrome__mode">{modeLabel}</span>}
 
       {voices.length > 0 && (
         <select

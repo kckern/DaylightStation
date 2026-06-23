@@ -83,7 +83,6 @@ export function Studio() {
 
   return (
     <section className="piano-mode piano-mode--studio">
-      <h2>Studio</h2>
       <div className="piano-studio__toolbar">
         <button
           type="button"

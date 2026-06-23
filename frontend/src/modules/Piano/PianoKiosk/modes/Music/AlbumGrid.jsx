@@ -52,7 +52,6 @@ export default function AlbumGrid({ music, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--music">
-      <h2>Music</h2>
       {loading && <p className="piano-mode__placeholder">Loading…</p>}
       {!loading && items.length === 0 && <p className="piano-mode__placeholder">{error || 'No music found.'}</p>}
       {!loading && items.length > 0 && (
