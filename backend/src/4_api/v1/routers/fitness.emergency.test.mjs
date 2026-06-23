@@ -17,12 +17,16 @@ function appWith({
   releaseEmergencyLockdown,
   getLockdownState,
   identityRelay,
+  resolveUnlockService,
+  rawConfig,
+  profiles,
 } = {}) {
   const fitnessConfigService = {
-    loadRawConfig: vi.fn(() => ({ locks: { emergency: ['alice'] } })),
+    loadRawConfig: vi.fn(() => rawConfig ?? { locks: { emergency: ['alice'] } }),
   };
   const userService = {
     getProfile: vi.fn(() => null),
+    getAllProfiles: vi.fn(() => profiles ?? {}),
   };
   const configService = {
     getDefaultHouseholdId: () => 'default',
@@ -38,10 +42,19 @@ function appWith({
     releaseEmergencyLockdown: releaseEmergencyLockdown ?? null,
     getLockdownState: getLockdownState ?? null,
     identityRelay: identityRelay ?? null,
+    resolveUnlockService: resolveUnlockService ?? (() => null),
     logger: silentLogger,
   }));
   return { app, fitnessConfigService, userService };
 }
+
+// fitness config + profiles where `alice` is an admin with one enrolled print,
+// so emergencyAdminGallery() yields a non-empty candidate set.
+const ADMIN_CONFIG = { users: { admin: ['alice'] }, locks: { emergency: ['alice'] } };
+const ADMIN_PROFILES = {
+  alice: { identities: { fingerprints: [{ id: 'uuid-alice', finger: 'L1' }] } },
+  bob: { identities: { fingerprints: [{ id: 'uuid-bob', finger: 'R1' }] } },
+};
 
 // A fake identityRelay whose consumePendingDetection yields the given pending
 // detection (or null for no-pending).
@@ -222,9 +235,10 @@ describe('fitness router — POST /emergency/abort', () => {
 });
 
 describe('fitness router — POST /emergency/release', () => {
-  it('releases the lockdown when a detection is pending', async () => {
+  it('fast-path releases when an admin scan already left a pending detection', async () => {
     const identityRelay = relayWith({ userId: 'alice', at: 123 });
     const releaseEmergencyLockdown = { execute: vi.fn().mockResolvedValue(undefined) };
+    // No unlock service needed — a fresh pending short-circuits the re-arm.
     const { app } = appWith({ identityRelay, releaseEmergencyLockdown });
 
     const res = await request(app).post('/emergency/release').send({});
@@ -237,15 +251,66 @@ describe('fitness router — POST /emergency/release', () => {
     );
   });
 
-  it('returns { released:false } and does not release when no detection is pending', async () => {
+  it('actively re-arms the reader (admin candidates only) and releases on a match', async () => {
+    const identityRelay = relayWith(null); // nothing armed the reader during LOCKED
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'alice' });
+    const releaseEmergencyLockdown = { execute: vi.fn().mockResolvedValue(undefined) };
+    const { app } = appWith({
+      identityRelay,
+      releaseEmergencyLockdown,
+      resolveUnlockService: () => ({ requestUnlock }),
+      rawConfig: ADMIN_CONFIG,
+      profiles: ADMIN_PROFILES,
+    });
+
+    const res = await request(app).post('/emergency/release').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ released: true });
+    // Re-armed with the admin gallery only (alice is admin; bob is not).
+    expect(requestUnlock).toHaveBeenCalledWith(
+      'emergency:release',
+      [{ uuid: 'uuid-alice', username: 'alice' }],
+    );
+    expect(releaseEmergencyLockdown.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ by: 'alice' }),
+    );
+  });
+
+  it('stays locked when the re-armed scan does not match an admin', async () => {
     const identityRelay = relayWith(null);
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: false, reason: 'no-match' });
     const releaseEmergencyLockdown = { execute: vi.fn() };
-    const { app } = appWith({ identityRelay, releaseEmergencyLockdown });
+    const { app } = appWith({
+      identityRelay,
+      releaseEmergencyLockdown,
+      resolveUnlockService: () => ({ requestUnlock }),
+      rawConfig: ADMIN_CONFIG,
+      profiles: ADMIN_PROFILES,
+    });
 
     const res = await request(app).post('/emergency/release').send({});
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ released: false });
+    expect(releaseEmergencyLockdown.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when no unlock service is wired (cannot arm the reader)', async () => {
+    const identityRelay = relayWith(null);
+    const releaseEmergencyLockdown = { execute: vi.fn() };
+    const { app } = appWith({
+      identityRelay,
+      releaseEmergencyLockdown,
+      resolveUnlockService: () => null,
+      rawConfig: ADMIN_CONFIG,
+      profiles: ADMIN_PROFILES,
+    });
+
+    const res = await request(app).post('/emergency/release').send({});
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: 'unlock-service-unavailable', released: false });
     expect(releaseEmergencyLockdown.execute).not.toHaveBeenCalled();
   });
 });
