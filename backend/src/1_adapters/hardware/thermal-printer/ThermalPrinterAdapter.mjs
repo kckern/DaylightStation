@@ -19,6 +19,48 @@ import { createCanvas, loadImage } from 'canvas';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { encodeText } from '#adapters/hardware/thermal-printer/escposEncode.mjs';
+
+/**
+ * Code-page name → ESC/POS `ESC t n` table id (the standard Epson table; cheap
+ * clones like the Volcora V-WLRP5 follow the low ids but may not implement every
+ * one — hence configurable). The key doubles as the iconv-lite codec, so the
+ * selected ROM page and the encoded bytes can never drift; every entry is
+ * verified to exist in iconv-lite. CP858 (DOS Latin-1 + Euro) is the default:
+ * it carries the Western-European accent set (ç é ñ ô ü à …) receipts need.
+ */
+const CODE_PAGE_IDS = {
+  // Western / Latin
+  cp437: 0,        // USA, Standard Europe
+  cp850: 2,        // Latin-1 Multilingual
+  cp860: 3,        // Portuguese
+  cp863: 4,        // Canadian-French
+  cp865: 5,        // Nordic
+  cp857: 13,       // Turkish
+  win1252: 16,     // Windows Latin-1 (richer punctuation; some units ignore it)
+  cp1252: 16,      // alias for win1252
+  cp852: 18,       // Latin-2 Central European
+  cp858: 19,       // Latin-1 + Euro
+  'iso-8859-2': 27, // ISO Latin-2
+  'iso-8859-15': 28, // ISO Latin-9
+  win1257: 38,     // Baltic
+  win1258: 39,     // Vietnamese
+  // Cyrillic
+  cp866: 17,
+  win1251: 33,
+  // Greek
+  cp869: 26,
+  win1253: 34,
+  // Turkish (Windows)
+  win1254: 35,
+  // Hebrew
+  cp862: 24,
+  win1255: 36,
+  // Arabic
+  win1256: 37,
+};
+
+const DEFAULT_CODE_PAGE = 'cp858';
 
 /**
  * @typedef {Object} PrinterConfig
@@ -59,6 +101,8 @@ export class ThermalPrinterAdapter {
   #port;
   #timeout;
   #encoding;
+  #codepage;
+  #codePageId;
   #upsideDown;
   #logger;
   #printQueue;
@@ -73,6 +117,8 @@ export class ThermalPrinterAdapter {
     this.#port = config.port || 9100;
     this.#timeout = config.timeout || 5000;
     this.#encoding = config.encoding || 'utf8';
+    this.#codepage = (config.codepage || DEFAULT_CODE_PAGE).toLowerCase();
+    this.#codePageId = CODE_PAGE_IDS[this.#codepage] ?? CODE_PAGE_IDS[DEFAULT_CODE_PAGE];
     this.#upsideDown = config.upsideDown !== false; // Default true
     this.#logger = options.logger || console;
     this.#printQueue = Promise.resolve();
@@ -583,7 +629,10 @@ export class ThermalPrinterAdapter {
 
           try {
             let commands = Buffer.from([0x1B, 0x40]); // ESC @ - Initialize
-            commands = Buffer.concat([commands, Buffer.from([0x1B, 0x74, 16])]); // UTF-8
+            // ESC t n — select the character code page. Bytes written for text
+            // items are iconv-encoded to the matching codec (see #processTextItem),
+            // so the ROM page and the byte stream stay in lockstep.
+            commands = Buffer.concat([commands, Buffer.from([0x1B, 0x74, this.#codePageId])]);
 
             if (config.upsideDown) {
               commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x01])]);
@@ -709,7 +758,12 @@ export class ThermalPrinterAdapter {
 
     // Content
     if (item.content) {
-      const textBuffer = Buffer.from(item.content + '\n', 'utf8');
+      // Encode to the printer's selected code page (NOT raw UTF-8 — the ROM is
+      // single-byte; raw UTF-8 shatters every accent/emoji into mojibake).
+      const textBuffer = Buffer.concat([
+        encodeText(item.content, this.#codepage),
+        Buffer.from('\n'),
+      ]);
       commands = Buffer.concat([commands, textBuffer]);
     }
 
