@@ -64,6 +64,10 @@
   // Kiosk-fixity: kill pull-to-refresh and double-tap/pinch zoom at the source.
   overscroll-behavior: none;
   touch-action: manipulation;
+  // Touch UI: kill the full-area tap-highlight flash (WebKit/Blink paints the
+  // accent over the whole element on tap — separate from :focus outlines).
+  -webkit-tap-highlight-color: transparent;
+  * { -webkit-tap-highlight-color: transparent; }
 }
 
 .piano-chrome {
