@@ -97,7 +97,7 @@ function PianoShell() {
 
   return (
     <div className="piano-app">
-      <PianoChrome voices={config.voices} label={config.label} pianoId={pianoId} />
+      <PianoChrome voices={config.voices} instruments={config.instruments} label={config.label} pianoId={pianoId} />
       <Routes>
         <Route index element={<PianoMenu />} />
         <Route path="videos" element={<Videos />} />
