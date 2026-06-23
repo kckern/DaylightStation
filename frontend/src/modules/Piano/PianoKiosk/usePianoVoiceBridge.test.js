@@ -5,9 +5,10 @@ import { usePianoVoiceBridge } from './usePianoVoiceBridge.js';
 class FakeWS {
   constructor(url) { this.url = url; this.sent = []; this.readyState = 0; FakeWS.instances.push(this); FakeWS.last = this; }
   send(s) { this.sent.push(JSON.parse(s)); }
-  close() { this.readyState = 3; this.onclose?.({}); }
+  close(evt) { this.readyState = 3; this.onclose?.(evt ?? {}); }
   _open() { this.readyState = 1; this.onopen?.(); }
   _msg(obj) { this.onmessage?.({ data: JSON.stringify(obj) }); }
+  _error() { this.onerror?.({}); }
 }
 FakeWS.OPEN = 1;
 FakeWS.instances = [];
@@ -96,6 +97,17 @@ describe('usePianoVoiceBridge', () => {
     const before = result.current.status;
     expect(() => act(() => FakeWS.last.onmessage?.({ data: 'not json{' }))).not.toThrow();
     expect(result.current.status).toEqual(before);
+  });
+
+  it('onerror alone does not construct a second socket (onclose drives reconnect)', () => {
+    vi.useFakeTimers();
+    renderHook(() => usePianoVoiceBridge({ url: 'ws://localhost:8770' }));
+    act(() => FakeWS.last._open());
+    expect(FakeWS.instances).toHaveLength(1);
+    act(() => FakeWS.last._error());
+    // No close fired → no reconnect scheduled, so still one socket even after time passes.
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(FakeWS.instances).toHaveLength(1);
   });
 
   it('does not reconnect after unmount', () => {

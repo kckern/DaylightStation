@@ -19,6 +19,7 @@ export function usePianoVoiceBridge({ url = DEFAULT_URL, enabled = true } = {}) 
     const ws = wsRef.current;
     if (!ws || ws.readyState !== 1) { logger().warn('bridge.send-no-link', { type: msg.type }); return false; }
     ws.send(JSON.stringify(msg));
+    logger().debug('bridge.send', { type: msg.type });
     return true;
   }, []);
 
@@ -27,9 +28,15 @@ export function usePianoVoiceBridge({ url = DEFAULT_URL, enabled = true } = {}) 
     let closed = false;
     let timer = null;
     const open = () => {
+      logger().info('bridge.connecting', { url, attempt: retryRef.current });
       const ws = new WebSocket(url);
       wsRef.current = ws;
-      ws.onopen = () => { retryRef.current = 0; setStatus((s) => ({ ...s, link: 'connected' })); logger().info('bridge.open', { url }); };
+      ws.onopen = () => {
+        const attempts = retryRef.current;
+        retryRef.current = 0;
+        setStatus((s) => ({ ...s, link: 'connected' }));
+        logger().info('bridge.open', { url, attempts });
+      };
       ws.onmessage = (e) => {
         try {
           const m = JSON.parse(e.data);
@@ -37,11 +44,19 @@ export function usePianoVoiceBridge({ url = DEFAULT_URL, enabled = true } = {}) 
           else if (m.type === 'error') logger().error('bridge.remote-error', { code: m.code, msg: m.msg });
         } catch { /* ignore malformed */ }
       };
-      ws.onclose = () => {
+      ws.onerror = () => {
+        // WebSocket error events carry no detail; just record that one fired.
+        // Reconnection is driven by onclose — do NOT schedule a reconnect here.
+        logger().error('bridge.socket-error', { url });
+      };
+      ws.onclose = (e) => {
         wsRef.current = null;
+        const willReconnect = !closed;
+        logger().warn('bridge.closed', { url, code: e?.code, reason: e?.reason, wasClean: e?.wasClean, willReconnect });
         if (closed) { setStatus((s) => ({ ...s, link: 'closed' })); return; }
         setStatus((s) => ({ ...s, link: 'reconnecting' }));
         const delay = Math.min(5000, 250 * 2 ** retryRef.current++);
+        logger().info('bridge.reconnect-scheduled', { url, attempt: retryRef.current, delayMs: delay });
         timer = setTimeout(open, delay);
       };
     };
