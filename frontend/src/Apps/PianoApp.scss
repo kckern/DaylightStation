@@ -858,6 +858,20 @@
     font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
   }
 
+  /* Tabs: Sound | MIDI */
+  &__tabs {
+    flex: 0 0 auto; display: flex; gap: 0.25rem; margin: 0.25rem 0 0.5rem;
+    border-bottom: 1px solid var(--piano-border);
+  }
+  &__tab {
+    background: none; border: none; color: var(--piano-muted); cursor: pointer;
+    font: inherit; font-weight: 700; padding: 0.5rem 1rem;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    &:hover { color: var(--piano-fg); }
+    &.is-active { color: var(--piano-fg); border-bottom-color: var(--piano-accent); }
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
+  }
+
   &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
   &__section--grow { flex: 1 1 auto; min-height: 0; }
   &__eyebrow {

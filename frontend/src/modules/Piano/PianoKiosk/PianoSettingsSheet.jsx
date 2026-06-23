@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
@@ -31,6 +31,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
   const { config } = usePianoKioskConfig();
   const bluetooth = config?.bluetooth || null;
+  const [tab, setTab] = useState('sound');
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -46,6 +47,14 @@ export default function PianoSettingsSheet({ open, onClose }) {
           <button type="button" className="piano-settings__close" onClick={onClose} aria-label="Close settings"><Icon name="close" /></button>
         </header>
 
+        <nav className="piano-settings__tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === 'sound'} className={`piano-settings__tab${tab === 'sound' ? ' is-active' : ''}`} onClick={() => setTab('sound')}>Sound</button>
+          <button type="button" role="tab" aria-selected={tab === 'midi'} className={`piano-settings__tab${tab === 'midi' ? ' is-active' : ''}`} onClick={() => setTab('midi')}>MIDI</button>
+        </nav>
+
+        {/* ── Sound tab: onboard keyboard voices + rendered voices ── */}
+        {tab === 'sound' && (
+        <>
         {/* ── Keyboard (onboard hardware voices + effects, over MIDI) ── */}
         {device && (
           <section className="piano-settings__section">
@@ -90,7 +99,12 @@ export default function PianoSettingsSheet({ open, onClose }) {
           )}
         </section>
         )}
+        </>
+        )}
 
+        {/* ── MIDI tab: hardware + monitor ── */}
+        {tab === 'midi' && (
+        <>
         {/* ── MIDI hardware ── */}
         <section className="piano-settings__section">
           <h3 className="piano-settings__eyebrow">MIDI hardware</h3>
@@ -118,6 +132,8 @@ export default function PianoSettingsSheet({ open, onClose }) {
           <h3 className="piano-settings__eyebrow">MIDI monitor</h3>
           <PianoMidiMonitor />
         </section>
+        </>
+        )}
 
         {/* ── App ── */}
         <footer className="piano-settings__foot">
