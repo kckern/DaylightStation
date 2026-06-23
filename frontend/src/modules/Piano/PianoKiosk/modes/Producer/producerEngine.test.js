@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { barDuration, nextBoundary } from './decksEngine.js';
+import { barDuration, nextBoundary } from './producerEngine.js';
 
 describe('barDuration', () => {
   it('is 2s for one 4/4 bar at 120 BPM', () => {

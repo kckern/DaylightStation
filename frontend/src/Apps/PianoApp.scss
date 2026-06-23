@@ -991,8 +991,8 @@
   &__detail { color: var(--piano-fg); }
 }
 
-/* ---- Decks (DJ loop & pad launcher) ---- */
-.piano-decks-mode {
+/* ---- Producer (DJ loop & pad launcher) ---- */
+.piano-producer-mode {
   flex: 1 1 auto; min-height: 0; padding: 0;
   display: flex; flex-direction: column;
 
@@ -1003,7 +1003,7 @@
     width: 7rem; height: 7rem; flex: 0 0 auto; border-radius: 50%;
     background: radial-gradient(circle at center, #2a2a33 0 16%, #16161b 17% 100%);
     border: 2px solid var(--piano-border); display: flex; align-items: center; justify-content: center;
-    &.is-spinning { animation: piano-decks-spin 2s linear infinite; }
+    &.is-spinning { animation: piano-producer-spin 2s linear infinite; }
   }
   &__spindle { width: 1rem; height: 1rem; border-radius: 50%; background: var(--piano-accent); }
   &__deckinfo { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
@@ -1039,7 +1039,7 @@
   }
   &--shot:active { background: var(--piano-accent); color: var(--piano-accent-ink); }
 }
-@keyframes piano-decks-spin { to { transform: rotate(360deg); } }
+@keyframes piano-producer-spin { to { transform: rotate(360deg); } }
 
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
 @media (prefers-reduced-motion: reduce) {

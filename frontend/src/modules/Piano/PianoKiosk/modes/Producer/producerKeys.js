@@ -1,6 +1,6 @@
 import { isWhiteKey } from '../../../noteUtils.js';
 
-// Split-keyboard mapping for Decks: white keys below the split point fire the
+// Split-keyboard mapping for Producer: white keys below the split point fire the
 // kit's one-shots (cycling through them); everything else stays melodic.
 
 /** Default split point — MIDI 48 (C3) and below is the drum zone. */

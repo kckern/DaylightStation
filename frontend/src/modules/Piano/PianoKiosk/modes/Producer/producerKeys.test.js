@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { drumForNote, DEFAULT_SPLIT } from './decksKeys.js';
+import { drumForNote, DEFAULT_SPLIT } from './producerKeys.js';
 
 const KIT = [{ id: 'kick' }, { id: 'snare' }, { id: 'hat' }, { id: 'clap' }];
 

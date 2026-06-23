@@ -1,4 +1,4 @@
-// Web Audio engine for Decks. One-shots fire immediately; loop pads launch/stop
+// Web Audio engine for Producer. One-shots fire immediately; loop pads launch/stop
 // quantized to the bar grid so stacks stay in time. The bar grid is anchored to a
 // single `origin` so every loop shares one phase. Buffer durations equal the bar
 // length (loops are pre-rendered at the kit BPM), so loop=true keeps them aligned.
@@ -19,7 +19,7 @@ export function nextBoundary(now, origin, barDur) {
   return origin + n * barDur;
 }
 
-export class DecksEngine {
+export class ProducerEngine {
   constructor() {
     this.ctx = null;
     this.master = null;
@@ -108,4 +108,4 @@ export class DecksEngine {
   }
 }
 
-export default DecksEngine;
+export default ProducerEngine;
