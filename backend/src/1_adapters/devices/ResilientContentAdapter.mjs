@@ -193,6 +193,31 @@ export class ResilientContentAdapter {
   }
 
   /**
+   * Turn the device screen on (delegates to primary). Optional capability —
+   * primaries that don't implement it report unsupported rather than throwing.
+   * No ADB recovery: a screensaver wake is best-effort and the next MIDI note
+   * retries anyway.
+   * @returns {Promise<Object>}
+   */
+  async screenOn() {
+    if (typeof this.#primary.screenOn !== 'function') {
+      return { ok: false, error: 'Screen control not supported' };
+    }
+    return this.#primary.screenOn();
+  }
+
+  /**
+   * Turn the device screen off (delegates to primary). Optional capability.
+   * @returns {Promise<Object>}
+   */
+  async screenOff() {
+    if (typeof this.#primary.screenOff !== 'function') {
+      return { ok: false, error: 'Screen control not supported' };
+    }
+    return this.#primary.screenOff();
+  }
+
+  /**
    * Heal the companion audio bridge (delegates to primary). Optional capability —
    * primaries that don't implement it report unsupported rather than throwing.
    * @param {Object} [opts] - Forwarded to primary.healAudioBridge (e.g. { force }).

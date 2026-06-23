@@ -443,6 +443,45 @@ export class FullyKioskContentAdapter {
   }
 
   /**
+   * Turn the device screen on via FKB's `screenOn` REST command.
+   *
+   * Unlike prepareForContent (which also brings FKB to the foreground, disables
+   * mic-blocking services, etc.), this is a lightweight display-only wake used
+   * by the piano-kiosk screensaver: the kiosk WebView is already foreground, we
+   * just need the backlight back. Mirrors loadStartUrl's shape.
+   *
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  async screenOn() {
+    this.#logger.debug?.('fullykiosk.screenOn.start', { host: this.#host });
+    const result = await this.#sendCommand('screenOn');
+    if (!result.ok) {
+      this.#logger.warn?.('fullykiosk.screenOn.failed', { error: result.error });
+      return { ok: false, error: result.error || 'screenOn failed' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Turn the device screen off via FKB's `screenOff` REST command.
+   *
+   * Display-only sleep (screensaver). The kiosk WebView keeps running, so JS
+   * (and the BLE-MIDI stream) stays live and can call screenOn() again on the
+   * next note. Does NOT power off the device.
+   *
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  async screenOff() {
+    this.#logger.debug?.('fullykiosk.screenOff.start', { host: this.#host });
+    const result = await this.#sendCommand('screenOff');
+    if (!result.ok) {
+      this.#logger.warn?.('fullykiosk.screenOff.failed', { error: result.error });
+      return { ok: false, error: result.error || 'screenOff failed' };
+    }
+    return { ok: true };
+  }
+
+  /**
    * Get content control status
    * @returns {Promise<Object>}
    */

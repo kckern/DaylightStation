@@ -11,6 +11,10 @@ import {
 } from '../modules/Piano/PianoKiosk/PianoConfig.jsx';
 import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
+import {
+  PianoWakeLockProvider,
+  usePianoScreensaver,
+} from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
@@ -78,6 +82,17 @@ function PianoShell() {
     }
   });
 
+  // Screensaver: a MIDI note wakes the tablet screen; idle sleeps it. Guardrails
+  // (playing video / quiet hours) live in the hook. Inert until a deviceId is
+  // configured under the piano's `screensaver` config.
+  usePianoScreensaver({
+    deviceId: config.screensaver?.deviceId,
+    activeNotes,
+    noteHistory,
+    timeoutMinutes: config.screensaver?.timeoutMinutes,
+    quietHours: config.screensaver?.quietHours,
+  });
+
   return (
     <div className="piano-app">
       <PianoChrome voices={config.voices} label={config.label} pianoId={pianoId} />
@@ -103,7 +118,9 @@ function ActivePiano() {
     <ActivePianoProvider pianoId={pianoId} config={config}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
-          <PianoShell />
+          <PianoWakeLockProvider>
+            <PianoShell />
+          </PianoWakeLockProvider>
         </ConnectGate>
       </PianoMidiProvider>
     </ActivePianoProvider>
