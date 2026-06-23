@@ -34,10 +34,12 @@
       hsla(var(--hue), 100%, 80%, 0.1) 100%
     );
 
-    box-shadow:
-      0 0 calc(15px * var(--velocity)) hsla(var(--hue), 100%, 60%, calc(0.5 + 0.4 * var(--velocity))),
-      0 0 calc(30px * var(--velocity)) hsla(var(--hue), 100%, 50%, calc(0.3 + 0.3 * var(--velocity))),
-      0 0 calc(50px * var(--velocity)) hsla(var(--hue), 100%, 40%, calc(0.15 + 0.2 * var(--velocity)));
+    // NO box-shadow. Each note animates its height/position EVERY frame, so a
+    // blurred box-shadow (here 3 stacked, up to 50px*velocity) re-rasterizes the
+    // glow per frame — measured as THE dominant paint cost on the kiosk GPU
+    // (waterfall alone: 100% janky / ~6.5fps / every frame slow on draw-commands
+    // at 16 nps). The bright gradient fill above carries the neon look for free.
+    // See docs/reference/core/webview-paint-performance.md.
 
     // Active notes: anchored at bottom, height grows via CSS animation
     &.active {
@@ -56,7 +58,8 @@
           hsla(var(--hue), 100%, 70%, 0.8) 0%,
           hsla(var(--hue), 100%, 60%, 0) 70%
         );
-        filter: blur(3px);
+        // (was filter: blur(3px)) — blur on a per-frame-animated note re-rasterizes
+        // every frame; the radial gradient is already soft enough without it.
       }
     }
 
@@ -183,7 +186,8 @@
       hsla(var(--hue), 70%, 50%, 0.05) 50%,
       transparent 80%
     );
-    filter: blur(3px);
+    // (was filter: blur(3px)) — falling note, animated every frame; the gradient
+    // is soft enough without a per-frame blur pass.
     z-index: -1;
     pointer-events: none;
     transition: opacity 0.3s ease-out;
@@ -209,10 +213,9 @@
     width: 100%;
     max-width: 56px;
     height: auto;
-    color: hsla(var(--hue), 100%, 65%, 1);
-    filter:
-      drop-shadow(0 0 6px hsla(var(--hue), 100%, 60%, 0.7))
-      drop-shadow(0 0 14px hsla(var(--hue), 100%, 50%, 0.35));
+    color: hsla(var(--hue), 100%, 70%, 1);
+    // (was a 2-stack drop-shadow glow) — these sprites fall every frame; drop-shadow
+    // re-rasterizes per frame. Brighter flat color instead. (webview-paint-performance.md)
   }
 
   .game-note-label {
