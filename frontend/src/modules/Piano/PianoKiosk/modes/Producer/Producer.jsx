@@ -5,25 +5,25 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
-import useDecks from './useDecks.js';
-import { drumForNote, DEFAULT_SPLIT } from './decksKeys.js';
+import useProducer from './useProducer.js';
+import { drumForNote, DEFAULT_SPLIT } from './producerKeys.js';
 
 /**
- * Decks — DJ-style loop & pad launcher. A platter/deck for the beat bed, a pad
+ * Producer — DJ-style loop & pad launcher. A platter/deck for the beat bed, a pad
  * bank (loop toggles + one-shots), and a split keyboard: white keys below the
  * split fire the kit's one-shots, the rest play melodic over the mix. Kits come
- * from media/audio/dj (see useDecks).
+ * from media/audio/dj (see useProducer).
  */
-export function Decks() {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-decks' }), []);
+export function Producer() {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-producer' }), []);
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
-  const splitNote = config?.decks?.splitNote ?? DEFAULT_SPLIT;
+  const splitNote = config?.producer?.splitNote ?? DEFAULT_SPLIT;
   const { activeNotes, pressNote, releaseNote, subscribe } = usePianoMidi();
-  const { kits, kitId, setKitId, kit, ready, loopOn, error, playOneShot, toggleLoop, stopAll, playing } = useDecks();
+  const { kits, kitId, setKitId, kit, ready, loopOn, error, playOneShot, toggleLoop, stopAll, playing } = useProducer();
 
-  useEffect(() => { logger.info('piano.decks.mounted', {}); return () => logger.info('piano.decks.unmounted', {}); }, [logger]);
-  useKeepScreenAwake('decks', playing);
+  useEffect(() => { logger.info('piano.producer.mounted', {}); return () => logger.info('piano.producer.unmounted', {}); }, [logger]);
+  useKeepScreenAwake('producer', playing);
 
   const oneshots = kit?.oneshots || [];
   const loops = kit?.loops || [];
@@ -49,33 +49,33 @@ export function Decks() {
   const onNoteOff = (note) => { if (!drumForNote(note, splitNote, oneshots)) releaseNote(note); };
 
   return (
-    <section className="piano-mode piano-decks-mode">
+    <section className="piano-mode piano-producer-mode">
       {kits === null && <PianoEmpty loading />}
       {kits && kits.length === 0 && <PianoEmpty message="No kits yet — drop one into media/audio/dj (loops + one-shots + kit.yml)." />}
 
       {kit && (
-        <div className="piano-decks-mode__body">
-          <header className="piano-decks-mode__deck">
-            <div className={`piano-decks-mode__platter${playing ? ' is-spinning' : ''}`} aria-hidden>
-              <span className="piano-decks-mode__spindle" />
+        <div className="piano-producer-mode__body">
+          <header className="piano-producer-mode__deck">
+            <div className={`piano-producer-mode__platter${playing ? ' is-spinning' : ''}`} aria-hidden>
+              <span className="piano-producer-mode__spindle" />
             </div>
-            <div className="piano-decks-mode__deckinfo">
+            <div className="piano-producer-mode__deckinfo">
               {kits.length > 1 ? (
-                <select className="piano-decks-mode__kit" value={kitId} onChange={(e) => setKitId(e.target.value)} aria-label="Kit">
+                <select className="piano-producer-mode__kit" value={kitId} onChange={(e) => setKitId(e.target.value)} aria-label="Kit">
                   {kits.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
                 </select>
               ) : (
-                <div className="piano-decks-mode__kitname">{kit.name}</div>
+                <div className="piano-producer-mode__kitname">{kit.name}</div>
               )}
-              <div className="piano-decks-mode__bpm">{kit.bpm} BPM{kit.key ? ` · ${kit.key}` : ''}</div>
-              <button type="button" className="piano-decks-mode__stop" onClick={stopAll} disabled={!playing}>Stop</button>
+              <div className="piano-producer-mode__bpm">{kit.bpm} BPM{kit.key ? ` · ${kit.key}` : ''}</div>
+              <button type="button" className="piano-producer-mode__stop" onClick={stopAll} disabled={!playing}>Stop</button>
             </div>
           </header>
 
-          <div className="piano-decks-mode__pads">
+          <div className="piano-producer-mode__pads">
             {loops.length > 0 && (
-              <div className="piano-decks-mode__padrow">
-                <span className="piano-decks-mode__padlabel">Loops</span>
+              <div className="piano-producer-mode__padrow">
+                <span className="piano-producer-mode__padlabel">Loops</span>
                 {loops.map((l) => (
                   <button
                     key={l.id} type="button"
@@ -86,8 +86,8 @@ export function Decks() {
               </div>
             )}
             {oneshots.length > 0 && (
-              <div className="piano-decks-mode__padrow">
-                <span className="piano-decks-mode__padlabel">One-shots</span>
+              <div className="piano-producer-mode__padrow">
+                <span className="piano-producer-mode__padlabel">One-shots</span>
                 {oneshots.map((o) => (
                   <button
                     key={o.id} type="button" className="piano-pad piano-pad--shot"
@@ -103,7 +103,7 @@ export function Decks() {
       )}
 
       {/* Full-width split keyboard footer. */}
-      <div className="piano-decks-mode__keys">
+      <div className="piano-producer-mode__keys">
         <PianoKeyboard
           activeNotes={activeNotes}
           startNote={kb.startNote}
@@ -117,4 +117,4 @@ export function Decks() {
   );
 }
 
-export default Decks;
+export default Producer;
