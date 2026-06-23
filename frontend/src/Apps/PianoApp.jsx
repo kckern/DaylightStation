@@ -18,6 +18,7 @@ import {
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
+import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
 import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMusic.jsx';
@@ -140,6 +141,7 @@ export default function PianoApp() {
   useDocumentTitle('Piano');
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   useEffect(() => { logger.info('piano-app.mount', {}); }, [logger]);
+  useEffect(() => applyPianoBodyTheme(), []);
 
   return (
     <PianoConfigProvider>
