@@ -722,7 +722,7 @@
   &::before {
     content: ''; position: absolute; inset: 0;
     background-image: var(--cover); background-size: cover; background-position: center;
-    filter: blur(40px) brightness(0.4); transform: scale(1.2); z-index: 0;
+    filter: blur(8px) brightness(0.4); transform: scale(1.2); z-index: 0;
   }
 
   &__art {
@@ -760,9 +760,9 @@
   &__art { transition: filter 0.5s ease; }
   &::before { transition: filter 0.5s ease; }
   &.chrome-hidden &__art { filter: brightness(0.15); }
-  &.chrome-hidden::before { filter: blur(40px) brightness(0.1); }
+  &.chrome-hidden::before { filter: blur(8px) brightness(0.1); }
   &.chrome-hidden.is-playalong &__art { filter: brightness(0.62); }
-  &.chrome-hidden.is-playalong::before { filter: blur(40px) brightness(0.3); }
+  &.chrome-hidden.is-playalong::before { filter: blur(8px) brightness(0.3); }
 
   // Play-along: minimal title/artist (no transport), over the dimmed cover.
   &__pa-meta {
