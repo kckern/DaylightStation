@@ -3,6 +3,7 @@ import { useRef, useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
@@ -34,6 +35,13 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const resumeSeconds = deriveResumeSeconds(lecture);
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
+
+  // Report active playback to the kiosk context so the inactivity timer stays alive.
+  const { setPlaying: setGlobalPlaying } = usePianoPlayback();
+  useEffect(() => {
+    setGlobalPlaying(isPlaying);
+    return () => setGlobalPlaying(false);
+  }, [isPlaying, setGlobalPlaying]);
 
   const notes = activeNotes || EMPTY_NOTES;
 

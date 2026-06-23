@@ -3,6 +3,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
 import useVanishingControls from './useVanishingControls.js';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 
 /**
  * Plexamp-style now-playing for the Music mode. Album art + progress are the
@@ -15,6 +16,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
   const logger = useRef(null);
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-music-player' });
 
+  const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [order, setOrder] = useState(() => buildOrder(tracks.length, false));
@@ -41,6 +43,12 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
 
   // Apply volume to the element.
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
+
+  // Report active playback to the kiosk context so the inactivity timer stays alive.
+  useEffect(() => {
+    setGlobalPlaying(playing);
+    return () => setGlobalPlaying(false);
+  }, [playing, setGlobalPlaying]);
 
   const goNext = useCallback((auto = false) => {
     setPos((p) => {

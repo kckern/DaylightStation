@@ -15,6 +15,10 @@ import {
   PianoWakeLockProvider,
   usePianoScreensaver,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
+import {
+  PianoPlaybackProvider,
+  usePianoPlayback,
+} from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
@@ -75,15 +79,17 @@ function PianoShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
+  const { playing } = usePianoPlayback();
 
   // After idle, return to this piano's menu (unless already there).
+  // keepAlive=playing suppresses the timer while audio/video is actively playing.
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
     const home = `/piano/${pianoId}`;
     if (location.pathname !== home) {
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
       navigate(home);
     }
-  });
+  }, playing);
 
   // Screensaver: a MIDI note wakes the tablet screen; idle sleeps it. Guardrails
   // (playing video / quiet hours) live in the hook. Inert until a deviceId is
@@ -123,9 +129,11 @@ function ActivePiano() {
     <ActivePianoProvider pianoId={pianoId} config={config}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
-          <PianoWakeLockProvider>
-            <PianoShell />
-          </PianoWakeLockProvider>
+          <PianoPlaybackProvider>
+            <PianoWakeLockProvider>
+              <PianoShell />
+            </PianoWakeLockProvider>
+          </PianoPlaybackProvider>
         </ConnectGate>
       </PianoMidiProvider>
     </ActivePianoProvider>
