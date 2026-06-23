@@ -853,6 +853,14 @@
     background: var(--piano-accent); color: var(--piano-accent-ink); border: none;
     border-radius: var(--r-pill); padding: 0.35rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
   }
+
+  &__foot { flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border); }
+  &__reload {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
+    &:active { background: var(--piano-border); }
+  }
 }
 
 .piano-voicecard {
