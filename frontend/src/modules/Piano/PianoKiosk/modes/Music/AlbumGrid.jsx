@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import usePianoList from '../../usePianoList.js';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -43,7 +44,7 @@ export default function AlbumGrid({ music, onSelect }) {
   // Loading while albums is null (only when collection is set).
   const loading = !noConfig && albums === null && collection;
   const items = noConfig ? [] : [...(albums || []), ...pls];
-  const error = noConfig ? 'No music.collection configured.' : (albumError || null);
+  const error = noConfig ? null : (albumError || null);
 
   if (!noConfig && !loading) {
     // Log once when the combined list first resolves (info level only on initial load).
@@ -52,8 +53,8 @@ export default function AlbumGrid({ music, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--music">
-      {loading && <p className="piano-mode__placeholder">Loading…</p>}
-      {!loading && items.length === 0 && <p className="piano-mode__placeholder">{error || 'No music found.'}</p>}
+      {loading && <PianoEmpty loading />}
+      {!loading && items.length === 0 && <PianoEmpty message={error || (noConfig ? 'No music has been set up yet.' : 'No music found.')} />}
       {!loading && items.length > 0 && (
         <ul className="piano-video-grid piano-music-grid">
           {items.map((item) => (

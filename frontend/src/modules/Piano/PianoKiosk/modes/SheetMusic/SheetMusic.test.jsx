@@ -47,7 +47,7 @@ describe('SheetMusic mode', () => {
   it('shows a helpful message when unconfigured', async () => {
     renderSheet({ collection: null });
     await waitFor(() =>
-      expect(screen.getByText(/No sheetmusic.collection configured/i)).toBeTruthy()
+      expect(screen.getByText(/No sheet music has been set up yet/i)).toBeTruthy()
     );
   });
 

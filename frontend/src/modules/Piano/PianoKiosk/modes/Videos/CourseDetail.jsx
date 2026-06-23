@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { lectureStatus } from './lectureMeta.js';
 import PianoBack from '../../PianoBack.jsx';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -45,8 +46,8 @@ export default function CourseDetail({ course, onPlay, onBack }) {
           {items?.length > 0 && <p className="piano-video-detail__count">{items.length} lectures</p>}
         </div>
       </header>
-      {items === null && <p className="piano-mode__placeholder">Loading…</p>}
-      {items?.length === 0 && <p className="piano-mode__placeholder">{error || 'No lectures found.'}</p>}
+      {items === null && <PianoEmpty loading />}
+      {items?.length === 0 && <PianoEmpty message={error || 'No lectures found.'} />}
       {items?.length > 0 && (
         <ul className="piano-video-grid">
           {items.map((item) => {
