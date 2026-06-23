@@ -567,11 +567,116 @@ git commit -m "feat(piano): watch-log hook (resume + throttled play/log)"
 
 ---
 
+### Task 7B: Chord/note-name helper (pure) — play-along readout
+
+**Files:**
+- Create: `frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.js`
+- Test: `frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.test.js`
+
+Names the notes currently held (and the chord, when they form a known triad/
+seventh in any inversion). Uses `getNoteName` from `Piano/noteUtils.js`
+(C4 = MIDI 60). Powers the play-along note/chord readout.
+
+- [ ] **Step 1: Write the failing test**
+
+```js
+// chordName.test.js
+import { describe, it, expect } from 'vitest';
+import { describeChord } from './chordName.js';
+// MIDI: C4=60 D4=62 E4=64 F4=65 G4=67 A4=69 B4=71, C5=72, E5=76
+
+describe('describeChord', () => {
+  it('names a major triad in root position and inversion', () => {
+    expect(describeChord([60, 64, 67]).name).toBe('C major');
+    expect(describeChord([64, 67, 72]).name).toBe('C major'); // E G C (1st inv)
+  });
+  it('names a minor triad', () => {
+    expect(describeChord([69, 72, 76]).name).toBe('A minor'); // A C E
+  });
+  it('names a dominant seventh', () => {
+    expect(describeChord([67, 71, 74, 77]).name).toBe('G7'); // G B D F
+  });
+  it('lists note names low-to-high regardless of input order', () => {
+    expect(describeChord([67, 60, 64]).notes).toEqual(['C4', 'E4', 'G4']);
+  });
+  it('returns a null name for non-chords / too few notes', () => {
+    expect(describeChord([60, 62]).name).toBeNull();
+    expect(describeChord([]).name).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.test.js --config vitest.config.mjs`
+Expected: FAIL — cannot resolve `./chordName.js`.
+
+- [ ] **Step 3: Write the implementation**
+
+```js
+// chordName.js
+import { getNoteName } from '../../../noteUtils.js';
+
+const PC_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// interval set (semitones above root, sorted, joined) → quality label
+const TRIAD_QUALITY = { '0,4,7': 'major', '0,3,7': 'minor', '0,3,6': 'dim', '0,4,8': 'aug' };
+const SEVENTH_QUALITY = { '0,4,7,10': '7', '0,4,7,11': 'maj7', '0,3,7,10': 'm7', '0,3,6,10': 'm7b5', '0,3,6,9': 'dim7' };
+
+/**
+ * Describe the notes currently held.
+ * @param {Iterable<number>} midiNotes
+ * @returns {{ notes: string[], name: string|null }} notes low→high with octave;
+ *   name = chord name if a known triad/seventh in any inversion, else null.
+ */
+export function describeChord(midiNotes) {
+  const arr = Array.from(midiNotes || []).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const notes = arr.map((n) => getNoteName(n));
+  const pcs = Array.from(new Set(arr.map((n) => ((n % 12) + 12) % 12)));
+  let name = null;
+  if (pcs.length === 3 || pcs.length === 4) {
+    for (const root of pcs) {
+      const intervals = pcs.map((pc) => (((pc - root) % 12) + 12) % 12).sort((a, b) => a - b).join(',');
+      const quality = pcs.length === 3 ? TRIAD_QUALITY[intervals] : SEVENTH_QUALITY[intervals];
+      if (quality) {
+        const r = PC_NAMES_SHARP[root];
+        name = quality === 'major' ? `${r} major`
+          : quality === 'minor' ? `${r} minor`
+          : quality === 'dim' ? `${r} dim`
+          : quality === 'aug' ? `${r} aug`
+          : `${r}${quality}`;
+        break;
+      }
+    }
+  }
+  return { notes, name };
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.test.js --config vitest.config.mjs`
+Expected: PASS (5 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.js \
+        frontend/src/modules/Piano/PianoKiosk/modes/Videos/chordName.test.js
+git commit -m "feat(piano): chord/note-name helper for play-along readout"
+```
+
+---
+
 ### Task 8: Transport chrome component
 
 **Files:**
 - Create: `frontend/src/modules/Piano/PianoKiosk/modes/Videos/PianoVideoChrome.jsx`
 - Test: `frontend/src/modules/Piano/PianoKiosk/modes/Videos/PianoVideoChrome.test.jsx`
+
+> **Play-along addition:** the chrome also takes `playAlong` (bool) and
+> `onTogglePlayAlong` and renders a toggle button (`🎹`) that reflects/controls
+> play-along visibility. These are included in the code/test below.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -583,8 +688,10 @@ import PianoVideoChrome from './PianoVideoChrome.jsx';
 
 const baseProps = {
   isPlaying: true, currentTime: 30, duration: 120, rate: 1, loop: { a: null, b: null },
+  playAlong: true,
   onToggle: vi.fn(), onSkip: vi.fn(), onCycleRate: vi.fn(),
   onMarkA: vi.fn(), onMarkB: vi.fn(), onClearLoop: vi.fn(), onSeek: vi.fn(), onBack: vi.fn(),
+  onTogglePlayAlong: vi.fn(),
 };
 
 describe('PianoVideoChrome', () => {
@@ -593,6 +700,12 @@ describe('PianoVideoChrome', () => {
     render(<PianoVideoChrome {...baseProps} onToggle={onToggle} />);
     fireEvent.click(screen.getByLabelText('Pause'));
     expect(onToggle).toHaveBeenCalled();
+  });
+  it('toggles the play-along panel', () => {
+    const onTogglePlayAlong = vi.fn();
+    render(<PianoVideoChrome {...baseProps} onTogglePlayAlong={onTogglePlayAlong} />);
+    fireEvent.click(screen.getByLabelText('Hide play-along'));
+    expect(onTogglePlayAlong).toHaveBeenCalled();
   });
   it('skips by the labeled amounts', () => {
     const onSkip = vi.fn();
@@ -642,8 +755,8 @@ const fmt = (s) => {
  * no drag sliders (tap-to-seek bar, discrete speed cycle, A/B loop taps).
  */
 export default function PianoVideoChrome({
-  isPlaying, currentTime, duration, rate, loop,
-  onToggle, onSkip, onCycleRate, onMarkA, onMarkB, onClearLoop, onSeek, onBack,
+  isPlaying, currentTime, duration, rate, loop, playAlong,
+  onToggle, onSkip, onCycleRate, onMarkA, onMarkB, onClearLoop, onSeek, onBack, onTogglePlayAlong,
 }) {
   const barRef = useRef(null);
   const dur = duration > 0 ? duration : 0;
@@ -678,6 +791,8 @@ export default function PianoVideoChrome({
         <button type="button" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} onClick={onMarkA} aria-label="Mark loop start">A</button>
         <button type="button" className="piano-video-chrome__btn" onClick={onMarkB} aria-label="Mark loop end">B</button>
         <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={!hasLoop} aria-label="Clear loop">✕</button>
+        <div className="piano-video-chrome__spacer" />
+        <button type="button" className={`piano-video-chrome__btn${playAlong ? ' is-on' : ''}`} onClick={onTogglePlayAlong} aria-label={playAlong ? 'Hide play-along' : 'Show play-along'}>🎹</button>
       </div>
     </div>
   );
@@ -710,9 +825,13 @@ No unit test (mounts the heavy lazy `<Player>` which does network I/O — out of
 
 ```jsx
 // PianoVideoPlayer.jsx
-import { useRef, useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
+import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
@@ -720,25 +839,33 @@ import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
+import { describeChord } from './chordName.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
 
-/** Custom student video player for a single piano lecture. */
+const EMPTY_NOTES = new Map();
+
+/** Custom student video player for a single piano lecture, with MIDI play-along. */
 export default function PianoVideoPlayer({ lecture, onBack }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const mediaEl = useResolvedMediaEl(playerRef);
+  const { activeNotes, noteHistory } = usePianoMidi();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [rate, setRate] = useState(1);
+  const [playAlong, setPlayAlong] = useState(true);
 
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
   const resumeSeconds = deriveResumeSeconds(lecture);
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
+
+  const notes = activeNotes || EMPTY_NOTES;
+  const chord = useMemo(() => describeChord(notes.keys()), [notes]);
 
   useEffect(() => {
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.open', { contentId, resumeSeconds });
@@ -777,6 +904,14 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.rate', { rate: r });
   }, [rate]);
 
+  const togglePlayAlong = useCallback(() => {
+    setPlayAlong((v) => {
+      const next = !v;
+      getLogger().child({ component: 'piano-video-player' }).info('piano.video.playalong', { on: next });
+      return next;
+    });
+  }, []);
+
   if (!contentId) {
     return (
       <div className="piano-mode__placeholder">
@@ -786,18 +921,33 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   }
 
   return (
-    <div className="piano-video-player">
-      <PlayerBoundary onBack={onBack}>
-        <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
-          <Player ref={playerRef} play={{ contentId }} clear={onBack} />
-        </Suspense>
-      </PlayerBoundary>
+    <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
+      <div className="piano-video-player__stage">
+        <div className="piano-video-player__video">
+          <PlayerBoundary onBack={onBack}>
+            <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
+              <Player ref={playerRef} play={{ contentId }} clear={onBack} />
+            </Suspense>
+          </PlayerBoundary>
+        </div>
+        {playAlong && (
+          <aside className="piano-video-player__staff">
+            <div className="piano-video-player__readout">
+              {chord.notes.length ? chord.notes.join(' ') : 'Play along…'}
+              {chord.name ? ` — ${chord.name}` : ''}
+            </div>
+            <CurrentChordStaff activeNotes={notes} />
+          </aside>
+        )}
+      </div>
+
       <PianoVideoChrome
         isPlaying={isPlaying}
         currentTime={currentTime}
         duration={duration}
         rate={rate}
         loop={loop}
+        playAlong={playAlong}
         onToggle={ctrl.toggle}
         onSkip={handleSkip}
         onCycleRate={handleCycleRate}
@@ -806,11 +956,24 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
         onClearLoop={loop.clear}
         onSeek={ctrl.seek}
         onBack={onBack}
+        onTogglePlayAlong={togglePlayAlong}
       />
+
+      {playAlong && (
+        <div className="piano-video-player__keys">
+          <NoteWaterfall noteHistory={noteHistory || []} activeNotes={notes} />
+          <PianoKeyboard activeNotes={notes} />
+        </div>
+      )}
     </div>
   );
 }
 ```
+
+> **Note on `usePianoMidi`:** it requires a `PianoMidiProvider`, which wraps all
+> piano modes in `PianoApp.jsx` (so the live kiosk is fine). The Videos tests
+> never mount `PianoVideoPlayer` (they stop at the lecture list), so no provider
+> is needed there.
 
 - [ ] **Step 2: Verify it compiles (lint via vitest transform of a dependent suite)**
 
@@ -1179,15 +1342,35 @@ Add to the end of `frontend/src/Apps/PianoApp.scss`:
   span { display: block; height: 100%; background: #3c7; }
 }
 
-/* ---- Piano video: player + transport chrome ---- */
+/* ---- Piano video: player layout (stage + chrome + play-along strip) ---- */
 .piano-video-player {
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: #000;
+
+  &__stage { flex: 1 1 auto; min-height: 0; display: flex; }
+  &__video { flex: 1 1 auto; min-width: 0; position: relative; }
+  &__staff {
+    flex: 0 0 20rem; min-width: 0; background: #d9d0c1;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  &__readout {
+    flex: 0 0 auto; padding: 0.4rem 0.75rem; text-align: center;
+    color: #2a2a2a; font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums; font-size: 1.05rem; min-height: 1.6rem;
+  }
+  /* note waterfall + keyboard stacked; share width so they align */
+  &__keys {
+    flex: 0 0 auto; display: flex; flex-direction: column; background: #2a2a2a;
+    .note-waterfall { flex: 0 0 9rem; position: relative; }
+    .piano-keyboard { flex: 0 0 9rem; }
+  }
 }
+
+/* ---- Piano video: transport chrome (in-flow bar) ---- */
 .piano-video-chrome {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
-  background: linear-gradient(to top, rgba(14, 14, 18, 0.95), rgba(14, 14, 18, 0));
-  padding: 0.75rem 1rem 1rem;
+  flex: 0 0 auto; z-index: 5;
+  background: #0e0e12;
+  padding: 0.5rem 1rem;
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 
   &__bar {
@@ -1210,6 +1393,7 @@ Add to the end of `frontend/src/Apps/PianoApp.scss`:
     display: flex; align-items: center; justify-content: center;
     &:disabled { opacity: 0.4; cursor: default; }
     &.is-arming { border-color: #fd3; color: #fd3; }
+    &.is-on { border-color: #3c7; color: #3c7; }
   }
   &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
 }
@@ -1308,7 +1492,7 @@ Open the piano kiosk's Videos mode and confirm via logs (don't speculate):
 ```bash
 sudo docker logs --since 2m daylight-station 2>&1 | grep -E 'piano.course-open|piano.video.open|piano.video.resume|piano.video.rate|piano.video.log'
 ```
-Expected: course-open on tapping a course, `piano.video.open` on playing a lecture, `piano.video.rate` when changing speed, and periodic `piano.video.log` events. Manually confirm: big pause works, −30/−15/+15/+30 skip, speed cycles 0.5–2×, A then B marks loop and playback loops, resume returns to the saved spot.
+Expected: course-open on tapping a course, `piano.video.open` on playing a lecture, `piano.video.rate` when changing speed, `piano.video.playalong` when toggling the keyboard, and periodic `piano.video.log` events. Manually confirm: big pause works, −30/−15/+15/+30 skip, speed cycles 0.5–2×, A then B marks loop and playback loops, resume returns to the saved spot. Play-along: pressing keys on the connected MIDI piano lights the bottom keyboard, streams notes down the waterfall into the keys, renders them on the right grand staff, and the readout names the notes/chord; the 🎹 toggle hides/shows the whole play-along strip (video goes full-size when off).
 
 ---
 
@@ -1323,7 +1507,8 @@ Expected: course-open on tapping a course, `piano.video.open` on playing a lectu
 - No drag sliders, touch targets → Task 8 + Task 13 styles. ✓
 - Config `videos.plexCollection = plex:675686` → Task 14. ✓
 - Logging at lifecycle/transport/resume → Tasks 7, 9, 10, 11, 12. ✓
-- Tests (controller flow + pure helpers) → Tasks 1–4, 8, 12. ✓
+- Play-along (keyboard + waterfall + grand staff + note/chord readout + toggle) → Task 7B (chord helper), Task 8 (toggle button), Task 9 (usePianoMidi + PianoKeyboard + NoteWaterfall + CurrentChordStaff + readout + toggle state), Task 13 (layout). Reuses existing `PianoKeyboard`, `NoteWaterfall`, `CurrentChordStaff`. ✓
+- Tests (controller flow + pure helpers) → Tasks 1–4, 7B, 8, 12. ✓
 
 **Placeholder scan:** No TBD/TODO in code. Task 14 uses container-discovery commands (the YAML path is environment data, confirmed at runtime in Step 1) — an ops step, not a code placeholder.
 
