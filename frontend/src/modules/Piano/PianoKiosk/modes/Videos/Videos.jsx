@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
@@ -86,6 +86,10 @@ function LecturePlayerRoute() {
     [lectures, lectureId],
   );
 
+  // Stable so PianoVideoPlayer can memoize the heavy Player element on it
+  // (an unstable onBack would defeat the memo and remount the video).
+  const goBack = useCallback(() => navigate('..'), [navigate]);
+
   // Keep the tablet screen awake while a lecture is playing (passive playback
   // produces no MIDI/touch, which would otherwise trip the screensaver).
   useKeepScreenAwake('video', true);
@@ -95,11 +99,11 @@ function LecturePlayerRoute() {
     return (
       <div className="piano-mode__placeholder">
         This lecture can’t be played.{' '}
-        <button type="button" onClick={() => navigate('..')}>Back</button>
+        <button type="button" onClick={goBack}>Back</button>
       </div>
     );
   }
-  return <PianoVideoPlayer lecture={lecture} onBack={() => navigate('..')} />;
+  return <PianoVideoPlayer lecture={lecture} onBack={goBack} />;
 }
 
 export default Videos;
