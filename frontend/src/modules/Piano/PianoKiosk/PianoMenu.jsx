@@ -5,7 +5,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import PianoTile from './PianoTile.jsx';
 
 export const PIANO_MODES = [
-  { id: 'videos', label: 'Videos', blurb: 'Watch lessons & lectures', icon: 'video' },
+  { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
   { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
