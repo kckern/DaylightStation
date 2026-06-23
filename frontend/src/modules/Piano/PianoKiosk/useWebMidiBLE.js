@@ -210,6 +210,21 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  // Select a voice: optional Bank Select (MSB+LSB) then Program Change. Bank 0
+  // sends a plain PC (the 128 GM voices); a non-zero bank reaches the device's
+  // extra banks (e.g. the Suzuki Asian-folk voices).
+  const sendVoice = useCallback((program, bank = 0, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    if (bank) {
+      out.send([0xb0 | (channel & 0x0f), 0, bank & 0x7f]);  // Bank Select MSB
+      out.send([0xb0 | (channel & 0x0f), 32, 0]);           // Bank Select LSB
+    }
+    out.send([0xc0 | (channel & 0x0f), program & 0x7f]);    // Program Change
+    logger().info('midi.out.voice', { program, bank, channel });
+    return true;
+  }, []);
+
   // General Control Change out (used by the MIDI monitor's fireable outputs).
   const sendControlChange = useCallback((controller, value, channel = 0) => {
     const out = outputRef.current;
@@ -314,6 +329,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     isPlaying: activeNotes.size > 0,
     connect,
     sendProgramChange,
+    sendVoice,
     sendLocalControl,
     sendControlChange,
     sendPanic,
@@ -323,7 +339,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendLocalControl, sendControlChange, sendPanic, sendNote, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;

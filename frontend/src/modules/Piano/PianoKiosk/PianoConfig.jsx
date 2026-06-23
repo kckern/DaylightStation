@@ -59,6 +59,7 @@ export function resolvePianoConfig(raw, pianoId) {
   const p = pianos[pianoId] || (pianoId === 'default' ? shared : {});
   return {
     label: p.label || (pianoId === 'default' ? (shared.label || 'Piano') : pianoId),
+    device: p.device ?? shared.device ?? null,   // hardware profile id, e.g. 'suzuki-mdg-400'
     voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
     instruments: p.instruments || shared.instruments || PIANO_CONFIG_DEFAULTS.instruments,
     videos: { plexCollection: p.videos?.plexCollection ?? shared.videos?.plexCollection ?? null },

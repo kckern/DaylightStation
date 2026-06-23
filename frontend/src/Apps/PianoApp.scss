@@ -879,6 +879,52 @@
   &__val { width: 4rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
 }
 
+/* ---- Keyboard panel (device voice picker + reverb/chorus over MIDI) ---- */
+.piano-kbd {
+  display: flex; flex-direction: column; gap: 0.6rem;
+
+  &__voicebar { display: flex; align-items: center; gap: 0.6rem; }
+  &__family {
+    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+    padding: 0.35rem 0.75rem; font: inherit; cursor: pointer;
+  }
+  &__active {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--piano-accent-text); font-weight: 700;
+  }
+
+  &__voices {
+    list-style: none; margin: 0; padding: 0; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 0.4rem;
+    max-height: 16rem; overflow-y: auto;
+  }
+  &__voice {
+    width: 100%; text-align: left; background: var(--piano-surface-2); color: inherit;
+    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    padding: 0.45rem 0.6rem; font: inherit; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); font-weight: 700; }
+  }
+
+  &__fx { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+  &__fxrow { display: flex; align-items: center; gap: 0.5rem; }
+  &__fxtoggle {
+    flex: 0 0 5rem; background: var(--piano-surface-2); color: var(--piano-muted);
+    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+    padding: 0.35rem 0.6rem; font: inherit; cursor: pointer;
+    &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
+  }
+  &__fxtype {
+    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    padding: 0.3rem 0.5rem; font: inherit; cursor: pointer;
+    &:disabled { opacity: 0.4; }
+  }
+  &__fxrow input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent); &:disabled { opacity: 0.4; } }
+  &__fxval { flex: 0 0 2.6rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
+}
+
 /* ---- MIDI monitor ---- */
 .piano-midimon {
   display: flex; flex-direction: column; gap: 0.6rem; min-height: 0; flex: 1 1 auto;
