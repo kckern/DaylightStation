@@ -50,11 +50,10 @@ function ScoreGridRoute({ collection }) {
  * title/alt fall back to 'Score' which is acceptable on cold load.
  */
 function ScoreViewerRoute() {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const { scoreId } = useParams();
   const navigate = useNavigate();
   const score = useMemo(() => ({ id: scoreId }), [scoreId]);
-  logger.info('piano.score-open', { id: scoreId });
+  // ScoreViewer logs `piano.score-open` from its own effect — no duplicate here.
   return (
     <ScoreViewer
       score={score}
