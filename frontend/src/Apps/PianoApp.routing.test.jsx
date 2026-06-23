@@ -40,8 +40,8 @@ describe('PianoApp single-piano routing', () => {
     renderApp('/piano/videos');
     // Past the connect gate (no Web MIDI in jsdom) into the active piano.
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    // Videos mode mounted (CourseGrid renders an <h2>Videos</h2>).
-    expect(screen.getByRole('heading', { name: 'Videos' })).toBeTruthy();
+    // Videos mode mounted (the chrome shows the active mode label "Videos").
+    expect(screen.getByText('Videos')).toBeTruthy();
     // The single piano must NOT redirect to /piano/default/...
     expect(lastPath).toBe('/piano/videos');
     expect(lastPath).not.toContain('/default/');
@@ -59,7 +59,7 @@ describe('PianoApp single-piano routing', () => {
   it('home button (single piano) navigates to /piano, not /piano/default', async () => {
     renderApp('/piano/videos');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    fireEvent.click(screen.getByLabelText('Home'));
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }));
     expect(lastPath).toBe('/piano');
   });
 

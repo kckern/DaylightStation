@@ -41,7 +41,7 @@ export function PianoChrome({ voices = [], label, modeLabel, showVoice = true })
         onClick={() => navigate(basePath)}
         aria-label="Home"
       >
-        <Icon name="home" label="Home" />
+        <Icon name="home" />
       </button>
 
       {label && (multiPiano ? (
