@@ -338,12 +338,12 @@
 
 /* ---- Piano video: course detail ---- */
 .piano-video-detail {
-  &__head { display: flex; align-items: center; gap: 1rem; }
-  &__poster {
-    max-height: 9rem; border-radius: 10px; margin: 0.5rem 0;
-    object-fit: cover; align-self: flex-start;
-  }
-  &__summary { color: var(--piano-muted); max-width: 60ch; margin: 0 0 1rem; }
+  &__band { display: flex; gap: 1.25rem; align-items: flex-start; margin: 0.5rem 0 1rem; }
+  &__poster { max-height: 11rem; border-radius: 10px; flex: 0 0 auto; object-fit: cover; }
+  &__meta { flex: 1 1 auto; min-width: 0; }
+  &__title { margin: 0 0 0.4rem; }
+  &__summary { color: var(--piano-muted); max-width: 60ch; margin: 0; }
+  &__count { color: var(--piano-muted); margin: 0.4rem 0 0; }
 }
 
 /* lecture tile progress affordances (layered over .piano-video-grid__tile) */
@@ -358,6 +358,10 @@
   position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
   background: rgba(0, 0, 0, 0.15);
   span { display: block; height: 100%; background: var(--piano-accent); }
+}
+.piano-video-grid__desc {
+  font-size: 0.85rem; color: var(--piano-muted); line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 /* ---- Piano video: player layout (video + chrome + keyboard footer) ---- */

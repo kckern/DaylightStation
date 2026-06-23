@@ -33,14 +33,17 @@ export default function CourseDetail({ course, onPlay, onBack }) {
 
   return (
     <section className="piano-mode piano-mode--videos piano-video-detail">
-      <div className="piano-video-detail__head">
-        <button type="button" className="piano-game-fullscreen__back" onClick={onBack}>‹ Courses</button>
-        <h2>{course?.title || info.title || 'Course'}</h2>
-      </div>
-      {(info.image || course?.image) && (
-        <img className="piano-video-detail__poster" src={info.image || course.image} alt="" />
-      )}
-      {info.summary && <p className="piano-video-detail__summary">{info.summary}</p>}
+      <button type="button" className="piano-game-fullscreen__back" onClick={onBack}>‹ Courses</button>
+      <header className="piano-video-detail__band">
+        {(info.image || course?.image) && (
+          <img className="piano-video-detail__poster" src={info.image || course.image} alt="" />
+        )}
+        <div className="piano-video-detail__meta">
+          <h2 className="piano-video-detail__title">{course?.title || info.title || 'Course'}</h2>
+          {info.summary && <p className="piano-video-detail__summary">{info.summary}</p>}
+          {items?.length > 0 && <p className="piano-video-detail__count">{items.length} lectures</p>}
+        </div>
+      </header>
       {items === null && <p className="piano-mode__placeholder">Loading…</p>}
       {items?.length === 0 && <p className="piano-mode__placeholder">{error || 'No lectures found.'}</p>}
       {items?.length > 0 && (
@@ -56,6 +59,9 @@ export default function CourseDetail({ course, onPlay, onBack }) {
                     <span className="piano-video-grid__bar"><span style={{ width: `${st.percent}%` }} /></span>
                   )}
                   <span className="piano-video-grid__title">{item.label || item.title}</span>
+                  {(item.summary || item.description) && (
+                    <span className="piano-video-grid__desc">{item.summary || item.description}</span>
+                  )}
                 </button>
               </li>
             );
