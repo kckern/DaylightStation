@@ -56,8 +56,16 @@ kiosk out of LOCKED.
 ## The LOCKED state
 
 - Shows "LOCKED — Back at H:MM" and is inert to normal taps/navigation.
-- **Release early:** press-and-hold anywhere for **3 seconds**, then press an
-  admin fingerprint when prompted. Confirmed → returns to normal.
+- **Release early:** press-and-hold anywhere for **3 seconds**. The screen shows
+  "Scanning…" and **the backend actively re-arms the garage reader** for an admin
+  fingerprint (the detector is stood down during a lockdown, so without this the
+  reader would be idle and the press would do nothing). Press an admin finger;
+  a match → returns to normal. The arm window is the unlock service's capture
+  timeout (~15s); if it times out or a non-admin finger is read, the screen stays
+  LOCKED and you can hold again to retry.
+- The release re-arm is scoped to **emergency-admin candidates only** (the same
+  `buildAuthz().admin` set that may trigger the lockdown), so it can never match a
+  non-admin finger — re-opening the reader during LOCKED doesn't weaken the lock.
 - **Auto-release:** the lock clears itself once `duration_sec` elapses (the
   screen drops back to normal on its own).
 
@@ -115,7 +123,7 @@ the lock as expired once `now ≥ lockedUntil`.
 | `GET /emergency` | `{locked:false}` or `{locked:true, lockedUntil, lockedBy}` |
 | `POST /emergency/commit` | Finalize after the ceremony (409 if no recent detection) |
 | `POST /emergency/abort` | Confirm a cancel via admin scan → `{confirmed}` |
-| `POST /emergency/release` | Release an active lock via admin scan → `{released}` |
+| `POST /emergency/release` | Re-arm the reader + release an active lock via admin scan → `{released}`; `503 {error:'unlock-service-unavailable'}` if no reader is wired |
 
 WebSocket broadcasts: `fitness.emergency.detected`, `fitness.emergency.ceremony`
 (auto-trip → start ceremony), `fitness.emergency.locked`,
@@ -133,7 +141,9 @@ the frontend; module `fitness-emergency` on the backend).
 
 **Backend — routes/use cases:** `state_query`, `scan_start` / `scan_result` /
 `scan_unavailable`, `commit_accepted` / `commit_rejected` (reason) / `committed`,
-`cancelled` / `cancel_denied`, `released` / `release_denied`, `ha_fired`,
+`cancelled` / `cancel_denied`, `release_scan_start` (re-arm fired) /
+`release_scan_error`, `released` / `release_denied` (reason:
+`unlock-service-unavailable` | `no-admin-candidates` | `no-match`), `ha_fired`,
 `locked`.
 
 **Frontend — hook (`useEmergencyLockdown`):** `seam_forced`, `status_clear` /
@@ -159,6 +169,12 @@ so a state transition can always be traced to its cause.
   autoplay until a user gesture (see `CLAUDE.local.md`). The ceremony still
   commits via a fallback timer even when audio is blocked. To get audio, set
   `media.autoplay.default = 0` in the garage Firefox profile.
+- **Press-and-hold to release does nothing / reader feels dead while LOCKED.**
+  The detector stands down during a lockdown, so the reader is only armed for the
+  ~15s window the 3s hold opens. Press your admin finger *after* "Scanning…"
+  appears, and hold a beat — `release_scan_start` in the logs confirms the re-arm
+  fired. A `503 unlock-service-unavailable` means the garage unlock service isn't
+  wired (dev mode / bridge down) — there's no reader to arm.
 - **Commit returns 409 `no-pending-detection`.** Commit must follow a real
   detection within ~30s. If the ceremony ran long or the detection expired,
   re-press the fingerprint.
