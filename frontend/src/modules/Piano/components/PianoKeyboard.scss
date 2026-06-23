@@ -6,6 +6,14 @@
   justify-content: center;
   align-items: flex-start;
 
+  // Paint/layout containment: the keyboard is the one rich surface on an
+  // otherwise-flat menu, and its keys repaint on every played note (gradient +
+  // glow). Containing it keeps those repaints inside the keyboard's own box so a
+  // chord or fast passage never invalidates the chrome, tiles, or mode content
+  // around it — the difference between silky and stuttery while playing. (No
+  // `size` containment: the keyboard is sized by its children.)
+  contain: layout style paint;
+
   // Own the keyboard frame. Without this the surrounding theme (dark mode, a
   // charcoal panel, whatever) bleeds through the key gaps, the rounded key
   // bottoms, and the strip above the black keys — washing out the keys. A fixed
