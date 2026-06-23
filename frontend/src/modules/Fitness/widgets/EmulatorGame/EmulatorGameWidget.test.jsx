@@ -28,13 +28,14 @@ beforeEach(() => {
 afterEach(() => { delete window.__emulatorCapturingGamepad; });
 
 describe('EmulatorGameWidget', () => {
-  it('loads the library, builds controls + a credit gate, renders the console', async () => {
+  it('loads the library, builds controls + an open (ungoverned) gate, renders the console', async () => {
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByTestId('console')).toBeTruthy());
     const el = screen.getByTestId('console');
     expect(el.getAttribute('data-game')).toBe('pokemon-red');
     expect(el.getAttribute('data-haskbd')).toBe('true');
-    expect(el.getAttribute('data-gate')).toBe('credit');
+    // Governance is disabled: gate is always open regardless of the game's config.
+    expect(el.getAttribute('data-gate')).toBe('open');
     expect(api).toHaveBeenCalledWith('api/v1/emulator/library');
   });
 

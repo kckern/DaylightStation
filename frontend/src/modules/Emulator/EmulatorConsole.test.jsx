@@ -230,11 +230,11 @@ describe('EmulatorConsole', () => {
     const noPads = () => [];
     const onePad = () => [{ index: 0, id: 'Xbox', connected: true, buttons: [], axes: [] }];
 
-    it('auto-opens the panel on mount when no gamepads are connected', async () => {
+    it('does NOT nag: stays collapsed on mount even when no gamepads are connected', async () => {
       const { container } = renderConsole({ props: { getGamepads: noPads } });
       await act(async () => {});
-      expect(container.querySelector('.emulator-controller-panel')).toBeTruthy();
-      expect(container.querySelector('.emulator-controller-status')).toBeTruthy();
+      expect(container.querySelector('.emulator-controller-panel')).toBeNull();
+      expect(container.querySelector('.emulator-controller-toggle')).toBeTruthy();
     });
 
     it('starts collapsed when a gamepad is already connected', async () => {
@@ -261,6 +261,9 @@ describe('EmulatorConsole', () => {
         props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
       });
       await act(async () => {});
+
+      // Panel no longer auto-opens; open it via the toggle first.
+      act(() => container.querySelector('.emulator-controller-toggle').click());
 
       const button = container.querySelector('.ccs-pair-button');
       expect(button).toBeTruthy();
@@ -293,6 +296,7 @@ describe('EmulatorConsole', () => {
         props: { getGamepads: noPads, fetchImpl: () => fetchSpy },
       });
       await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
       await act(async () => {
         container.querySelector('.ccs-pair-button').click();
       });
@@ -311,6 +315,7 @@ describe('EmulatorConsole', () => {
         },
       });
       await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
       // Host says scanning even though no local pair was triggered.
       const button = container.querySelector('.ccs-pair-button');
       expect(button.disabled).toBe(true);
@@ -324,6 +329,7 @@ describe('EmulatorConsole', () => {
         props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
       });
       await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
       await act(async () => {
         container.querySelector('.ccs-pair-button').click();
       });
