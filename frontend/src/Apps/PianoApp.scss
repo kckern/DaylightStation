@@ -1,0 +1,280 @@
+// PianoApp — kiosk shell styles. Touch-first, dark, full-viewport.
+// Roboto Condensed is the canonical app font (do not introduce new display fonts).
+
+.piano-app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0e0e12;
+  color: #f2f2f2;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.piano-chrome {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: #16161d;
+  border-bottom: 1px solid #26262f;
+
+  &__home {
+    font-size: 1.5rem;
+    line-height: 1;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+  }
+
+  &__voice {
+    background: #22222c;
+    color: inherit;
+    border: 1px solid #34343f;
+    border-radius: 6px;
+    padding: 0.3rem 0.5rem;
+    font: inherit;
+  }
+
+  &__label {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+  }
+
+  &__status {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: 1px solid #34343f;
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  &__dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: #b33;
+  }
+
+  &__status--on &__dot,
+  &__status--on .piano-chrome__dot { background: #3c7; }
+}
+
+.piano-menu {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__tiles {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(12rem, 22rem));
+    gap: 1.5rem;
+  }
+
+  &__tile {
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #1c1c25;
+    border: 1px solid #2c2c38;
+    border-radius: 16px;
+    color: inherit;
+    cursor: pointer;
+    transition: transform 0.12s ease, background 0.12s ease;
+
+    &:active { transform: scale(0.97); background: #24242f; }
+  }
+
+  &__tile-icon { font-size: 3rem; }
+  &__tile-label { font-size: 1.6rem; font-weight: 700; }
+  &__tile-blurb { font-size: 1rem; color: #aaa; }
+}
+
+.piano-mode {
+  flex: 1 1 auto;
+  padding: 1.5rem;
+  overflow: auto;
+
+  &__placeholder { color: #999; font-style: italic; }
+
+  &__grid {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  &__tile {
+    background: #1c1c25;
+    border: 1px solid #2c2c38;
+    border-radius: 10px;
+    color: inherit;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+
+    &.is-selected { border-color: #3c7; }
+  }
+
+  &__staff { min-height: 12rem; background: #f7f3e8; border-radius: 10px; }
+}
+
+.piano-connect-gate {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: #0e0e12;
+  color: #f2f2f2;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+  text-align: center;
+
+  &__btn {
+    font-size: 1.3rem;
+    padding: 0.8rem 2rem;
+    border-radius: 999px;
+    border: none;
+    background: #3c7;
+    color: #06150c;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  &__skip {
+    background: none;
+    border: none;
+    color: #8a8a9a;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+}
+
+.piano-lessons__section { margin-bottom: 2rem; }
+
+.piano-studio {
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  &__rec {
+    background: #2a2a34;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 999px;
+    padding: 0.5rem 1.2rem;
+    font: inherit;
+    cursor: pointer;
+
+    &.is-recording { background: #b33; border-color: #d55; }
+  }
+
+  &__save {
+    background: #3c7;
+    color: #06150c;
+    border: none;
+    border-radius: 999px;
+    padding: 0.5rem 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  &__status { color: #aaa; }
+
+  &__waterfall { height: 14rem; margin: 1rem 0; background: #07070a; border-radius: 10px; overflow: hidden; }
+
+  &__takes {
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid #22222c; }
+    button { background: #22222c; color: inherit; border: 1px solid #34343f; border-radius: 6px; padding: 0.3rem 0.7rem; cursor: pointer; }
+  }
+
+  &__take-title { flex: 1 1 auto; }
+}
+
+.piano-video-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem;
+
+  &__tile {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: #1c1c25;
+    border: 1px solid #2c2c38;
+    border-radius: 10px;
+    color: inherit;
+    padding: 0.5rem;
+    cursor: pointer;
+    text-align: left;
+
+    img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
+    &:active { background: #24242f; }
+  }
+
+  &__title { font-size: 1rem; }
+}
+
+.piano-video-player {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  background: #000;
+}
+
+.piano-game-fullscreen {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+
+  &__back {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 999px;
+    padding: 0.4rem 1rem;
+    font: inherit;
+    cursor: pointer;
+  }
+}

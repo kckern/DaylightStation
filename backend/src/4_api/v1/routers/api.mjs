@@ -119,7 +119,8 @@ export function createApiRouter(config) {
     '/qrcode': 'qrcode',
     '/catalog': 'catalog',
     '/livestream': 'livestream',
-    '/camera': 'camera'
+    '/camera': 'camera',
+    '/piano': 'piano'
   };
 
   // Mount each router at its path
