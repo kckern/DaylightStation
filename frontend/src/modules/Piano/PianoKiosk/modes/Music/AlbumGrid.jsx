@@ -61,6 +61,7 @@ export default function AlbumGrid({ music, onSelect }) {
               <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
                 {(item.thumbnail || item.image) && <img src={item.thumbnail || item.image} alt={item.title} loading="eager" decoding="async" />}
                 {item.isPlaylist && <span className="piano-music-grid__badge">♫</span>}
+                <span className="piano-video-grid__title">{item.title}</span>
               </button>
             </li>
           ))}
