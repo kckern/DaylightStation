@@ -45,10 +45,21 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const playerEl = useMemo(() => (
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
-        <Player ref={playerRef} play={{ contentId }} clear={onBack} />
+        {/* focused = the minimal shader (Player suppresses its own overlays; the
+            piano chrome provides the controls). */}
+        <Player ref={playerRef} play={{ contentId, shader: 'focused' }} clear={onBack} />
       </Suspense>
     </PlayerBoundary>
   ), [contentId, onBack]);
+
+  // Tap the video to toggle browser fullscreen on the video surface.
+  const videoWrapRef = useRef(null);
+  const toggleFullscreen = useCallback(() => {
+    const el = videoWrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.().catch(() => {});
+  }, []);
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
@@ -123,7 +134,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
 
   return (
     <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
-      <div className="piano-video-player__video">
+      <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
         {playerEl}
       </div>
 
