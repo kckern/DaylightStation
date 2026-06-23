@@ -21,8 +21,8 @@ android {
         applicationId 'net.kckern.pianobridge'
         minSdk 29   // Samsung SM-T590 (the piano tablet) runs Android 10 / API 29
         targetSdk 29   // legacy storage so the synth can read /sdcard/piano-instruments (sideloaded kiosk app)
-        versionCode 2
-        versionName '1.1-blemidi'
+        versionCode 5
+        versionName "1.4-log"
 
         // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
         // real target (Samsung SM-T590, Snapdragon 450); arm64-v8a included for
