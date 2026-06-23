@@ -95,6 +95,43 @@ All under `frontend/src/modules/Piano/PianoKiosk/modes/Videos/`.
 
 All targets are large (kiosk is touch-first); no drag sliders.
 
+## Play-along (keyboard + grand staff)
+
+While a lecture plays, the student can play along on the connected MIDI piano and
+see live feedback. The player consumes `usePianoMidi()` (the same hook the Games
+mode uses; `PianoMidiProvider` wraps all piano modes in `PianoApp.jsx`), reading
+the live `activeNotes` Map.
+
+- **Bottom keyboard** — the existing `PianoKeyboard`
+  (`frontend/src/modules/Piano/components/PianoKeyboard.jsx`) in a fixed-height
+  strip, fed `activeNotes`, so keys light up as they are pressed.
+- **Note waterfall** — the existing `NoteWaterfall`
+  (`frontend/src/modules/Piano/components/NoteWaterfall.jsx`) directly above the
+  keyboard, fed `noteHistory` + `activeNotes`. It uses the same
+  `getNotePosition` mapping as `PianoKeyboard` (same `startNote`/`endNote`), so
+  played notes stream down and align to the keys (Synthesia-style). No `gameMode`
+  prop — plain play-along, not a game.
+- **Right grand staff** — the existing `CurrentChordStaff`
+  (`frontend/src/modules/Piano/components/CurrentChordStaff.jsx`), fed
+  `activeNotes`. It renders held notes on a treble+bass grand staff (abcjs) with
+  rolling key detection and note decay.
+- **Note/chord readout** — a small text line naming the notes currently held and,
+  when they form a known triad/seventh (any inversion), the chord name
+  (e.g. "C E G — C major"). Powered by a new pure helper `describeChord` over
+  `getNoteName` (`frontend/src/modules/Piano/noteUtils.js`).
+- **Toggle** — the transport bar has a play-along toggle. Play-along shows by
+  default; toggling it off hides the keyboard, staff, and readout so the video
+  fills the stage. State lives in `PianoVideoPlayer`.
+
+The feedback is a live mirror of the student's own playing — not graded against
+the lecture (the videos carry no note-level MIDI reference).
+
+Layout: a stage row (video on the left, grand staff on the right) above the
+transport bar, with the note waterfall + keyboard strip stacked across the
+bottom (waterfall above, keys below, sharing the same note range so they align).
+When play-along is off, the video occupies the full stage and the
+waterfall/keyboard strip and staff are hidden.
+
 ## Data flow
 
 ```
