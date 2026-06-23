@@ -278,3 +278,83 @@
     cursor: pointer;
   }
 }
+
+/* ---- Piano video: course detail ---- */
+.piano-video-detail {
+  &__head { display: flex; align-items: center; gap: 1rem; }
+  &__poster {
+    max-height: 9rem; border-radius: 10px; margin: 0.5rem 0;
+    object-fit: cover; align-self: flex-start;
+  }
+  &__summary { color: #aaa; max-width: 60ch; margin: 0 0 1rem; }
+}
+
+/* lecture tile progress affordances (layered over .piano-video-grid__tile) */
+.piano-video-grid__tile { position: relative; }
+.piano-video-grid__badge {
+  position: absolute; top: 6px; right: 6px;
+  background: #3c7; color: #0e0e12; font-weight: 700;
+  border-radius: 999px; width: 1.4rem; height: 1.4rem;
+  display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+}
+.piano-video-grid__bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  span { display: block; height: 100%; background: #3c7; }
+}
+
+/* ---- Piano video: player layout (stage + chrome + play-along strip) ---- */
+.piano-video-player {
+  position: relative; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; background: #000;
+
+  &__stage { flex: 1 1 auto; min-height: 0; display: flex; }
+  &__video { flex: 1 1 auto; min-width: 0; position: relative; }
+  &__staff {
+    flex: 0 0 20rem; min-width: 0; background: #d9d0c1;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  &__readout {
+    flex: 0 0 auto; padding: 0.4rem 0.75rem; text-align: center;
+    color: #2a2a2a; font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums; font-size: 1.05rem; min-height: 1.6rem;
+  }
+  /* note waterfall + keyboard stacked; share width so they align */
+  &__keys {
+    flex: 0 0 auto; display: flex; flex-direction: column; background: #2a2a2a;
+    .note-waterfall { flex: 0 0 9rem; position: relative; }
+    .piano-keyboard { flex: 0 0 9rem; }
+  }
+}
+
+/* ---- Piano video: transport chrome (in-flow bar) ---- */
+.piano-video-chrome {
+  flex: 0 0 auto; z-index: 5;
+  background: #0e0e12;
+  padding: 0.5rem 1rem;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+
+  &__bar {
+    position: relative; height: 10px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2); cursor: pointer; margin-bottom: 0.75rem;
+  }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #3c7; }
+  &__mark { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: 2px; }
+  &__mark--a { background: #fd3; }
+  &__mark--b { background: #f63; }
+
+  &__row { display: flex; align-items: center; gap: 0.5rem; }
+  &__spacer { flex: 1 1 auto; }
+  &__time { color: #ddd; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+
+  &__btn {
+    min-width: 3rem; height: 3rem; padding: 0 0.75rem;
+    background: #24242f; color: #f2f2f2; border: 1px solid #34343f;
+    border-radius: 10px; font-size: 1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    &:disabled { opacity: 0.4; cursor: default; }
+    &.is-arming { border-color: #fd3; color: #fd3; }
+    &.is-on { border-color: #3c7; color: #3c7; }
+  }
+  &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
+}
