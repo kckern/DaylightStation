@@ -2,14 +2,15 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
+import Icon from './icons/Icon.jsx';
 
 export const PIANO_MODES = [
-  { id: 'videos', label: 'Videos', blurb: 'Watch lessons & lectures', icon: '🎬' },
-  { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: '🎵' },
-  { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: '🎼' },
-  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: '🎮' },
-  { id: 'lessons', label: 'Lessons', blurb: 'Guided & theory lessons', icon: '🎓' },
-  { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: '🎹' },
+  { id: 'videos', label: 'Videos', blurb: 'Watch lessons & lectures', icon: 'video' },
+  { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
+  { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
+  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
+  { id: 'lessons', label: 'Lessons', blurb: 'Guided & theory lessons', icon: 'lessons' },
+  { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: 'studio' },
 ];
 
 /**
@@ -31,7 +32,7 @@ export function PianoMenu() {
         {PIANO_MODES.map((m) => (
           <li key={m.id}>
             <button type="button" className="piano-menu__tile" onClick={() => open(m.id)}>
-              <span className="piano-menu__tile-icon" aria-hidden>{m.icon}</span>
+              <Icon name={m.icon} className="piano-menu__tile-icon" />
               <span className="piano-menu__tile-label">{m.label}</span>
               <span className="piano-menu__tile-blurb">{m.blurb}</span>
             </button>

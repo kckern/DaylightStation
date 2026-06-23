@@ -7,6 +7,7 @@ import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
+import Icon from '../../icons/Icon.jsx';
 
 /**
  * Studio mode — freeform play with the falling-notes visual, plus record/playback.
@@ -89,7 +90,7 @@ export function Studio() {
           className={`piano-studio__rec${recording ? ' is-recording' : ''}`}
           onClick={onRecordToggle}
         >
-          {recording ? '■ Stop' : '● Record'}
+          {recording ? <><Icon name="stop" /> Stop</> : <><Icon name="record" /> Record</>}
         </button>
         {!recording && lastTake?.events?.length > 0 && (
           <button type="button" className="piano-studio__save" onClick={onSave} disabled={busy}>
@@ -124,8 +125,8 @@ export function Studio() {
             return (
               <li key={id}>
                 <span className="piano-studio__take-title">{title}</span>
-                <button type="button" onClick={() => onPlay(id)} disabled={!connected}>▶ Play</button>
-                <button type="button" onClick={() => onDelete(id)}>🗑</button>
+                <button type="button" onClick={() => onPlay(id)} disabled={!connected}><Icon name="play" /> Play</button>
+                <button type="button" onClick={() => onDelete(id)} aria-label="Delete take"><Icon name="trash" label="Delete take" /></button>
               </li>
             );
           })}
