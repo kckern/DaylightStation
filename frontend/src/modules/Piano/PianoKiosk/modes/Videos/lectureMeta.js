@@ -25,11 +25,17 @@ export function deriveResumeSeconds(item) {
   return 0;
 }
 
-/** Tile badge state: watched flag + integer percent [0..100]. */
+/**
+ * Tile badge state from media_memory signals: watched flag + integer percent.
+ * The backend `isWatched` flag is unreliable for generic Plex collections (it
+ * comes back true with playCount 0 / progress 0), so derive "watched" from the
+ * honest per-item history instead: a real completed view (playCount) or
+ * near-complete progress. Otherwise show the in-progress percent (or nothing).
+ */
 export function lectureStatus(item) {
   const pct = num(item?.watchProgress);
-  return {
-    watched: Boolean(item?.isWatched),
-    percent: pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0,
-  };
+  const plays = num(item?.playCount);
+  const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
+  const watched = (plays != null && plays > 0) || percent >= 90;
+  return { watched, percent };
 }
