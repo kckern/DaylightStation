@@ -1411,6 +1411,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         port: cfg.port || 9100,
         timeout: cfg.timeout ?? printerDefaults.timeout ?? 5000,
         encoding: cfg.encoding ?? printerDefaults.encoding ?? 'utf8',
+        codepage: cfg.codepage ?? printerDefaults.codepage ?? 'cp858',
         upsideDown: cfg.upsideDown ?? printerDefaults.upsideDown ?? true,
       },
       { logger: hardwareLogger }
