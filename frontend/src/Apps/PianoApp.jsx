@@ -21,6 +21,7 @@ import {
 } from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';
+import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
@@ -30,7 +31,7 @@ import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMu
 import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
 import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
-import { Instruments } from '../modules/Piano/PianoKiosk/modes/Instruments/Instruments.jsx';
+import { Decks } from '../modules/Piano/PianoKiosk/modes/Decks/Decks.jsx';
 import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
 import './PianoApp.scss';
 
@@ -105,33 +106,30 @@ function PianoShell() {
     quietHours: config.screensaver?.quietHours,
   });
 
-  const MODE_LABELS = { videos: 'Courses', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', instruments: 'Instruments', composers: 'Composers' };
+  const MODE_LABELS = { videos: 'Courses', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', decks: 'Decks', composers: 'Composers' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
-  // Passive-media modes plus Instruments (which has its own source surface) and the
-  // Composers placeholder hide the chrome voice/source controls.
-  const HIDE_VOICE_MODES = new Set(['videos', 'music', 'sheetmusic', 'instruments', 'composers']);
-  const showVoice = !modeKey || !HIDE_VOICE_MODES.has(modeKey);
-
   return (
-    <PianoBreadcrumbProvider>
-      <div className="piano-app">
-        <PianoChrome voices={config.voices} instruments={config.instruments} modeLabel={modeLabel} modeKey={modeKey} showVoice={showVoice} />
-        <Routes>
-          <Route index element={<PianoMenu />} />
-          <Route path="videos/*" element={<Videos />} />
-          <Route path="music/*" element={<Music />} />
-          <Route path="sheetmusic/*" element={<SheetMusic />} />
-          <Route path="games/*" element={<Games />} />
-          <Route path="lessons/*" element={<Lessons />} />
-          <Route path="studio" element={<Studio />} />
-          <Route path="instruments" element={<Instruments />} />
-          <Route path="composers" element={<Composers />} />
-          <Route path="*" element={<PianoMenu />} />
-        </Routes>
-      </div>
-    </PianoBreadcrumbProvider>
+    <PianoSoundProvider>
+      <PianoBreadcrumbProvider>
+        <div className="piano-app">
+          <PianoChrome modeLabel={modeLabel} modeKey={modeKey} />
+          <Routes>
+            <Route index element={<PianoMenu />} />
+            <Route path="videos/*" element={<Videos />} />
+            <Route path="music/*" element={<Music />} />
+            <Route path="sheetmusic/*" element={<SheetMusic />} />
+            <Route path="games/*" element={<Games />} />
+            <Route path="lessons/*" element={<Lessons />} />
+            <Route path="studio" element={<Studio />} />
+            <Route path="decks/*" element={<Decks />} />
+            <Route path="composers" element={<Composers />} />
+            <Route path="*" element={<PianoMenu />} />
+          </Routes>
+        </div>
+      </PianoBreadcrumbProvider>
+    </PianoSoundProvider>
   );
 }
 

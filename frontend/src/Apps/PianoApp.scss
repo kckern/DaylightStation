@@ -129,49 +129,24 @@
     cursor: default;
   }
 
-  /* right cluster: source select, voice cycle, connection status */
-  &__right {
+  /* right cluster: a single status chip (connection dot + active voice) → Settings */
+  &__chip {
     flex: 0 0 auto;
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 1rem;
-  }
-
-  &__source {
+    gap: 0.5rem;
     background: var(--piano-surface-2);
-    color: inherit;
     border: 1px solid var(--piano-border);
     border-radius: var(--r-pill);
-    padding: 0.4rem 0.9rem;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  &__voice {
-    background: var(--piano-surface-2);
-    color: inherit;
-    border: 1px solid var(--piano-border);
-    border-radius: var(--r-pill);
-    padding: 0.4rem 0.9rem;
-    font: inherit;
-    cursor: pointer;
-    &:active { background: var(--piano-border); }
-  }
-
-  &__status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: none;
-    border: 1px solid var(--piano-border);
-    border-radius: var(--r-pill);
-    padding: 0.3rem 0.8rem;
+    padding: 0.35rem 0.9rem;
     color: inherit;
     cursor: pointer;
     font: inherit;
     white-space: nowrap;
+    &:active { background: var(--piano-border); }
   }
+  &__chiplabel { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
 
   &__dot {
     width: 0.6rem;
@@ -179,9 +154,7 @@
     border-radius: 50%;
     background: var(--piano-danger);
   }
-
-  &__status--on &__dot,
-  &__status--on .piano-chrome__dot { background: var(--piano-accent); }
+  &__chip--on &__dot { background: var(--piano-accent); }
 }
 
 // Shared icon+label tile primitive — used by the home menu and the games picker.
@@ -828,6 +801,124 @@
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* ---- Settings sheet (consolidated voice / MIDI hardware / MIDI monitor) ---- */
+.piano-settings {
+  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
+
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+
+  &__sheet {
+    position: relative; width: min(30rem, 92vw); height: 100%;
+    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
+    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
+  }
+
+  &__head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
+  }
+  &__close {
+    background: none; border: none; color: var(--piano-muted); cursor: pointer;
+    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
+  }
+
+  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
+  &__section--grow { flex: 1 1 auto; min-height: 0; }
+  &__eyebrow {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--piano-muted); margin: 0;
+  }
+  &__link {
+    font-size: 0.7rem; text-transform: none; letter-spacing: 0; padding: 0.1rem 0.5rem;
+    border-radius: var(--r-pill); background: var(--piano-surface-2); color: var(--piano-muted);
+    &--connected { color: var(--piano-accent-text); }
+  }
+
+  &__voices { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  &__knobs { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+
+  &__hw { display: flex; align-items: center; gap: 0.6rem; }
+  &__hwdot {
+    width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--piano-muted);
+    &.is-on { background: var(--piano-accent); }
+    &.is-warn { background: var(--piano-warn); }
+    &.is-off { background: var(--piano-danger); }
+  }
+  &__hwlabel { font-weight: 700; }
+  &__hwname { color: var(--piano-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  &__connect {
+    background: var(--piano-accent); color: var(--piano-accent-ink); border: none;
+    border-radius: var(--r-pill); padding: 0.35rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
+  }
+}
+
+.piano-voicecard {
+  width: 100%; display: flex; flex-direction: column; gap: 0.2rem; text-align: left;
+  background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+  border-radius: var(--r-md); color: inherit; padding: 0.6rem 0.75rem; cursor: pointer;
+  &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); }
+  &__tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--piano-muted); }
+  &__name { font-weight: 700; }
+}
+
+.piano-knob {
+  display: flex; align-items: center; gap: 0.75rem; font-size: 0.95rem;
+  &__name { width: 4rem; color: var(--piano-muted); }
+  input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent); }
+  &__val { width: 4rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
+}
+
+/* ---- MIDI monitor ---- */
+.piano-midimon {
+  display: flex; flex-direction: column; gap: 0.6rem; min-height: 0; flex: 1 1 auto;
+
+  &__outs { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  &__pc { display: inline-flex; align-items: center; gap: 0.35rem; }
+  &__pcval { font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: center; }
+  &__btn {
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-sm); padding: 0.35rem 0.7rem; font: inherit; cursor: pointer;
+    &--go { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+    &--warn { border-color: var(--piano-danger); color: var(--piano-danger); }
+    &:active { background: var(--piano-border); }
+  }
+
+  &__log {
+    flex: 1 1 auto; min-height: 8rem; overflow-y: auto;
+    background: var(--piano-bg); border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    padding: 0.5rem; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.8rem;
+    display: flex; flex-direction: column; gap: 0.1rem;
+  }
+  &__empty { color: var(--piano-muted); font-style: italic; margin: 0.25rem; }
+  &__row { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.1rem 0.15rem; border-radius: 3px; }
+  &__row--note-on { color: var(--piano-accent-text); }
+  &__row--cc { color: var(--piano-warn); }
+  &__row--program { color: var(--piano-warn-2); }
+  &__ch { color: var(--piano-muted); font-size: 0.7rem; }
+  &__label { width: 6rem; flex: 0 0 auto; }
+  &__detail { color: var(--piano-fg); }
+}
+
+/* ---- Decks (placeholder; Phase 2 wires the engine) ---- */
+.piano-decks {
+  display: flex; align-items: center; justify-content: center;
+  &__placeholder { text-align: center; color: var(--piano-fg); max-width: 30rem; }
+  &__platter {
+    width: 9rem; height: 9rem; margin: 0 auto 1.5rem; border-radius: 50%;
+    background: radial-gradient(circle at center, #2a2a33 0 18%, #16161b 19% 100%);
+    border: 2px solid var(--piano-border); position: relative;
+    display: flex; align-items: center; justify-content: center;
+    animation: piano-decks-spin 4s linear infinite;
+  }
+  &__spindle { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--piano-accent); }
+  h2 { font-size: var(--t-display); font-weight: 700; margin: 0 0 0.5rem; }
+  p { color: var(--piano-muted); margin: 0.25rem 0; }
+  &__hint code { background: var(--piano-surface-2); padding: 0.1rem 0.35rem; border-radius: 4px; }
+}
+@keyframes piano-decks-spin { to { transform: rotate(360deg); } }
 
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
 @media (prefers-reduced-motion: reduce) {

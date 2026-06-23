@@ -66,6 +66,22 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return () => listenersRef.current.delete(fn);
   }, []);
 
+  // Raw-message tap for the MIDI monitor: every inbound message (note/CC/PC/…)
+  // as { data: Uint8Array, time }. Separate from the note-only `subscribe` above
+  // so the studio recorder never sees non-note traffic.
+  const rawListenersRef = useRef(new Set());
+  const emitRaw = useCallback((bytes) => {
+    if (rawListenersRef.current.size === 0) return;
+    const evt = { data: bytes, time: Date.now() };
+    for (const fn of rawListenersRef.current) {
+      try { fn(evt); } catch { /* a bad listener must not break input */ }
+    }
+  }, []);
+  const subscribeRaw = useCallback((fn) => {
+    rawListenersRef.current.add(fn);
+    return () => rawListenersRef.current.delete(fn);
+  }, []);
+
   const applyNoteOn = useCallback((note, velocity) => {
     const startTime = Date.now();
     setActiveNotes((prev) => new Map(prev).set(note, { velocity, timestamp: startTime }));
@@ -102,6 +118,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   }, [applyNoteOff]);
 
   const handleRawMidi = useCallback((event) => {
+    emitRaw(event.data); // feed the monitor everything, before note-only parsing
     const parsed = parseMidiMessage(event.data);
     if (!parsed) return;
     if (parsed.type === 'note_on') applyNoteOn(parsed.note, parsed.velocity);
@@ -109,7 +126,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     else if (parsed.type === 'control' && parsed.controller === SUSTAIN_CONTROLLER) {
       setSustainPedal(isSustainDown(parsed.value));
     }
-  }, [applyNoteOn, applyNoteOff]);
+  }, [applyNoteOn, applyNoteOff, emitRaw]);
 
   const pickInput = useCallback((access) => {
     const inputs = [...access.inputs.values()];
@@ -190,6 +207,25 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (!out) return false;
     out.send([0xb0 | (channel & 0x0f), 122, on ? 127 : 0]);
     logger().info('midi.out.local-control', { on, channel });
+    return true;
+  }, []);
+
+  // General Control Change out (used by the MIDI monitor's fireable outputs).
+  const sendControlChange = useCallback((controller, value, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f]);
+    logger().debug('midi.out.cc', { controller, value, channel });
+    return true;
+  }, []);
+
+  // Panic: silence stuck notes (All Sound Off + All Notes Off on channel 1).
+  const sendPanic = useCallback((channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0xb0 | (channel & 0x0f), 120, 0]); // All Sound Off
+    out.send([0xb0 | (channel & 0x0f), 123, 0]); // All Notes Off
+    logger().info('midi.out.panic', { channel });
     return true;
   }, []);
 
@@ -279,12 +315,15 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     connect,
     sendProgramChange,
     sendLocalControl,
+    sendControlChange,
+    sendPanic,
     sendNote,
     scheduleNotes,
     subscribe,
+    subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendLocalControl, sendNote, scheduleNotes, subscribe, pressNote, releaseNote]);
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendLocalControl, sendControlChange, sendPanic, sendNote, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
