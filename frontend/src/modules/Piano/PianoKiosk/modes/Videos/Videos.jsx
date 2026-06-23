@@ -4,6 +4,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
+import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 
 /**
  * Videos mode — passive lectures from a configured Plex collection.
@@ -17,6 +18,10 @@ export function Videos() {
   const collection = config.videos.plexCollection;
   const [course, setCourse] = useState(null);
   const [lecture, setLecture] = useState(null);
+
+  // Guardrail: keep the tablet screen awake while a lecture is playing (passive
+  // playback produces no MIDI/touch, which would otherwise trip the screensaver).
+  useKeepScreenAwake('video', !!lecture);
 
   if (lecture) {
     return (

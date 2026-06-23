@@ -707,6 +707,34 @@ export function createDeviceRouter(config) {
     res.json(result);
   }));
 
+  /**
+   * GET /device/:deviceId/screen/:state  (state = on | off)
+   * Display-only screen control via the content-control adapter (FKB
+   * screenOn/screenOff). Distinct from /on and /off, which drive display
+   * power. Used by the piano-kiosk screensaver.
+   */
+  router.get('/:deviceId/screen/:state', asyncHandler(async (req, res) => {
+    const { deviceId, state } = req.params;
+
+    if (state !== 'on' && state !== 'off') {
+      return res.status(400).json(buildErrorBody({
+        error: `Invalid screen state '${state}' (expected 'on' or 'off')`,
+      }));
+    }
+
+    const device = deviceService.get(deviceId);
+    if (!device) {
+      return res.status(404).json(buildErrorBody({
+        error: 'Device not found',
+        code: ERROR_CODES.DEVICE_NOT_FOUND,
+      }));
+    }
+
+    logger.info?.('device.router.setScreen', { deviceId, state });
+    const result = await device.setScreen(state === 'on');
+    res.json(result);
+  }));
+
   // ===========================================================================
   // Content Loading
   // ===========================================================================
