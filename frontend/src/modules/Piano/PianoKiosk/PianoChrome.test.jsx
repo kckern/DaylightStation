@@ -1,97 +1,37 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
-const bridge = vi.hoisted(() => ({
-  loadPreset: vi.fn(),
-  stop: vi.fn(),
-  setParam: vi.fn(),
-  panic: vi.fn(),
-  status: { link: 'connected', engine: 'stopped', preset: null },
-}));
-const midi = vi.hoisted(() => ({
-  connected: true,
-  status: 'connected',
-  inputName: 'Piano',
-  sendProgramChange: vi.fn(),
-  sendLocalControl: vi.fn(),
-  connect: vi.fn(),
-}));
+const midi = vi.hoisted(() => ({ connected: true }));
+const sound = vi.hoisted(() => ({ activeName: 'Grand Piano' }));
 
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
-vi.mock('./usePianoVoiceBridge.js', () => ({ usePianoVoiceBridge: () => bridge }));
-vi.mock('./PianoConfig.jsx', () => ({
-  usePianoKioskConfig: () => ({ pianoId: 'default', basePath: '/piano' }),
-  usePianoRoster: () => ({ pianos: [{ id: 'default', label: 'Piano' }] }),
-}));
+vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => sound }));
+vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano' }) }));
+vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => ({ crumbs: [] }) }));
+vi.mock('./PianoSettingsSheet.jsx', () => ({ default: ({ open }) => (open ? <div>SETTINGS-OPEN</div> : null) }));
 vi.mock('./icons/Icon.jsx', () => ({ default: () => null }));
 
 import { PianoChrome } from './PianoChrome.jsx';
 
-const voices = [
-  { label: 'Grand Piano', program: 0 },
-  { label: 'Electric Piano', program: 4 },
-];
-const instruments = [
-  { id: 'grand', name: 'Concert Grand', engine: 'sfizz', asset: 'g.sfz' },
-];
-
 const renderChrome = (props = {}) =>
-  render(
-    <MemoryRouter>
-      <PianoChrome pianoId="default" instruments={instruments} voices={voices} {...props} />
-    </MemoryRouter>,
-  );
+  render(<MemoryRouter><PianoChrome {...props} /></MemoryRouter>);
 
-describe('PianoChrome source selector', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('PianoChrome', () => {
+  it('shows the active voice in the status chip', () => {
+    renderChrome({ modeLabel: 'Courses', modeKey: 'videos' });
+    expect(screen.getByText('Grand Piano')).toBeTruthy();
   });
 
-  it('selecting an instrument loads it and disables local control', () => {
+  it('renders the mode breadcrumb crumb', () => {
+    renderChrome({ modeLabel: 'Courses', modeKey: 'videos' });
+    expect(screen.getByText('Courses')).toBeTruthy();
+  });
+
+  it('opens the settings sheet when the chip is tapped', () => {
     renderChrome();
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: 'grand' } });
-    expect(bridge.loadPreset).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'grand', engine: 'sfizz' }),
-    );
-    expect(midi.sendLocalControl).toHaveBeenCalledWith(false);
-  });
-
-  it('selecting Onboard stops the engine and restores local control', () => {
-    renderChrome();
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: 'grand' } });
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: '__onboard__' } });
-    expect(bridge.stop).toHaveBeenCalled();
-    expect(midi.sendLocalControl).toHaveBeenCalledWith(true);
-  });
-
-  it('selecting an unknown instrument id does nothing', () => {
-    renderChrome();
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: 'nope' } });
-    expect(bridge.loadPreset).not.toHaveBeenCalled();
-    expect(midi.sendLocalControl).not.toHaveBeenCalled();
-  });
-
-  it('hides the onboard voices picker when an instrument is active, shows it for Onboard', () => {
-    renderChrome();
-    // Onboard is the default source → voices picker is visible.
-    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: 'grand' } });
-    expect(screen.queryByLabelText('Change instrument voice')).toBeNull();
-
-    fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: '__onboard__' } });
-    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
-  });
-
-  it('does not render the source selector when instruments is empty', () => {
-    render(
-      <MemoryRouter>
-        <PianoChrome pianoId="default" instruments={[]} voices={voices} />
-      </MemoryRouter>,
-    );
-    expect(screen.queryByLabelText('Sound source')).toBeNull();
-    // The onboard voices picker still renders independently.
-    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
+    expect(screen.queryByText('SETTINGS-OPEN')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Settings'));
+    expect(screen.getByText('SETTINGS-OPEN')).toBeTruthy();
   });
 });
