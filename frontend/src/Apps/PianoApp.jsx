@@ -109,8 +109,8 @@ function PianoShell() {
         <Route index element={<PianoMenu />} />
         <Route path="videos/*" element={<Videos />} />
         <Route path="music/*" element={<Music />} />
-        <Route path="sheetmusic" element={<SheetMusic />} />
-        <Route path="games" element={<Games />} />
+        <Route path="sheetmusic/*" element={<SheetMusic />} />
+        <Route path="games/*" element={<Games />} />
         <Route path="lessons/*" element={<Lessons />} />
         <Route path="studio" element={<Studio />} />
         <Route path="*" element={<PianoMenu />} />

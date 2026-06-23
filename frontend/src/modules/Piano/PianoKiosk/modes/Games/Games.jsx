@@ -1,4 +1,5 @@
-import { useMemo, useState, Suspense } from 'react';
+import { useMemo, Suspense } from 'react';
+import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -15,49 +16,30 @@ const GAME_LABELS = {
 
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
- * shared Web-MIDI (BLE) stream from usePianoMidi(). Games receive the same
- * contract as the wall-display visualizer: activeNotes, noteHistory, gameConfig,
- * onDeactivate.
+ * shared Web-MIDI (BLE) stream from usePianoMidi().
+ *
+ * Routed so the game id lives in the URL (deep-linkable, survives reload,
+ * physical/browser Back becomes an "up" gesture):
+ *   index    → game picker grid
+ *   :gameId  → fullscreen game host
+ *
+ * All navigation is RELATIVE (navigate('subpath') / navigate('..')) so the mode
+ * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
  */
 export function Games() {
+  return (
+    <Routes>
+      <Route index element={<GamePicker />} />
+      <Route path=":gameId" element={<GameHost />} />
+    </Routes>
+  );
+}
+
+/** Game picker — grid of registered game tiles; tap to enter a game (relative nav). */
+function GamePicker() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
-  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
-  const { config } = usePianoKioskConfig();
-  const [selected, setSelected] = useState(null);
+  const navigate = useNavigate();
   const ids = getGameIds();
-  const gamesConfig = config.games; // from PianoConfig context — no office-tv HA coupling
-
-  const pick = (id) => {
-    setSelected(id);
-    logger.info('piano.game-enter', { game: id });
-  };
-
-  const exit = () => {
-    logger.info('piano.game-exit', { game: selected });
-    setSelected(null);
-  };
-
-  const entry = selected ? getGameEntry(selected) : null;
-
-  if (entry?.LazyComponent) {
-    return (
-      <div className="piano-game-fullscreen">
-        <button type="button" className="piano-game-fullscreen__back" onClick={exit}>
-          ‹ Games
-        </button>
-        <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
-          <entry.LazyComponent
-            activeNotes={activeNotes}
-            noteHistory={noteHistory}
-            gameConfig={gamesConfig?.[selected]}
-            onDeactivate={exit}
-            onNoteOn={pressNote}
-            onNoteOff={releaseNote}
-          />
-        </Suspense>
-      </div>
-    );
-  }
 
   return (
     <section className="piano-mode piano-mode--games">
@@ -65,13 +47,65 @@ export function Games() {
       <ul className="piano-mode__grid">
         {ids.map((id) => (
           <li key={id}>
-            <button type="button" className="piano-mode__tile" onClick={() => pick(id)}>
+            <button
+              type="button"
+              className="piano-mode__tile"
+              onClick={() => {
+                logger.info('piano.game-enter', { game: id });
+                navigate(id);
+              }}
+            >
               {GAME_LABELS[id] ?? id}
             </button>
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Game host — resolves the game entry from the URL param, wires MIDI, and
+ * renders the game fullscreen. Back navigates up (relative).
+ */
+function GameHost() {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
+  const { gameId } = useParams();
+  const navigate = useNavigate();
+  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
+  const { config } = usePianoKioskConfig();
+  const entry = getGameEntry(gameId);
+
+  const exit = () => {
+    logger.info('piano.game-exit', { game: gameId });
+    navigate('..');
+  };
+
+  if (!entry?.LazyComponent) {
+    return (
+      <div className="piano-mode__placeholder">
+        Game not found.{' '}
+        <button type="button" onClick={exit}>Back</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="piano-game-fullscreen">
+      <button type="button" className="piano-game-fullscreen__back" onClick={exit}>
+        ‹ Games
+      </button>
+      <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
+        <entry.LazyComponent
+          activeNotes={activeNotes}
+          noteHistory={noteHistory}
+          gameConfig={config.games?.[gameId]}
+          onDeactivate={exit}
+          onNoteOn={pressNote}
+          onNoteOff={releaseNote}
+        />
+      </Suspense>
+    </div>
   );
 }
 
