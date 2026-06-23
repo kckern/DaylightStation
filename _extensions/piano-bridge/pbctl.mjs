@@ -74,12 +74,41 @@ const cmds = {
     (r.log || []).forEach((l) => console.log(l));
   },
   async panic() { pretty(await req('POST', '/panic')); },
+
+  // --- ADB-replacement diagnostics (see CLAUDE.md for the SELinux ceiling) ---
+  async logcat([lines, tag]) {
+    const q = new URLSearchParams({ lines: lines || '200', ...(tag ? { tag } : {}) });
+    const r = await req('GET', `/logcat?${q}`);
+    process.stdout.write((r.stdout || r.stderr || JSON.stringify(r)) + '\n');
+  },
+  async exec(args) {
+    const cmd = args.join(' ');
+    if (!cmd) { console.error('usage: exec <shell command>'); process.exit(1); }
+    const r = await req('GET', `/exec?cmd=${encodeURIComponent(cmd)}`);
+    if (r.stdout) process.stdout.write(r.stdout);
+    if (r.stderr) process.stderr.write(r.stderr);
+    if (typeof r.exit === 'number' && r.exit !== 0) console.error(`[exit ${r.exit}]`);
+  },
+  async cpu([ms]) {
+    const r = await req('GET', `/cpu?ms=${ms || 600}`);
+    if (r.threads) {
+      console.log(`process ${r.processCpuPct}%  (${r.threadCount} threads, hz=${r.hz})`);
+      for (const t of r.threads.slice(0, 12)) console.log(`  ${String(t.cpuPct).padStart(5)}%  ${t.name} [${t.tid}]`);
+      if (r.note) console.log(`(${r.note})`);
+    } else pretty(r);
+  },
+  async info() { pretty(await req('GET', '/info')); },
+  async props([key]) {
+    const r = await req('GET', `/props${key ? `?key=${encodeURIComponent(key)}` : ''}`);
+    process.stdout.write((r.stdout || JSON.stringify(r)) + '\n');
+  },
 };
 
 const [, , name, ...args] = process.argv;
 if (!name || !cmds[name]) {
   console.log(`pbctl — Piano Bridge control (${BASE})\n`);
   console.log('  status | connect | forget | scan [ms] | config [set k v|push f] | log | panic');
+  console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');
   process.exit(name ? 1 : 0);
 }
 try { await cmds[name](args); } catch (e) { console.error('✗ ' + (e.message || e) + `  (is the bridge running + reachable at ${BASE}?)`); process.exit(1); }

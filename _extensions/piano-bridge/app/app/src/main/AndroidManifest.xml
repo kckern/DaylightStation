@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="net.kckern.pianobridge">
 
     <!-- FOREGROUND_SERVICE: declared for parity with audio-bridge, though the
@@ -13,6 +14,23 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Read SFZ/sample assets from /sdcard/piano-instruments (legacy storage, targetSdk 29). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <!-- ADB-replacement diagnostics (the /exec, /cpu, /logcat, /dumpsys control-plane
+         endpoints). All three are protectionLevel signature|privileged|DEVELOPMENT, so
+         they cannot be granted at install but CAN be granted once over USB with
+         `adb shell pm grant net.kckern.pianobridge <perm>` — the grant then persists
+         across reboots (lost only on uninstall). This is what lets the bridge expose,
+         over HTTP on the LAN, everything ADB-over-WiFi gave us that the Fully REST API
+         does not: per-process/-thread CPU (DUMP → dumpsys cpuinfo), other-app logs
+         (READ_LOGS → logcat), and secure-setting writes (WRITE_SECURE_SETTINGS, e.g.
+         keeping location on for BLE scans). Without the grant the endpoints still exist;
+         they just see only our own process/logs. -->
+    <uses-permission android:name="android.permission.READ_LOGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.DUMP"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Bluetooth LE: the bridge CONNECTS the BLE-MIDI piano itself via
          MidiManager.openBluetoothDevice() (the job the throwaway connect app did).
