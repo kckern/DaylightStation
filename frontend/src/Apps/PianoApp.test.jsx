@@ -33,7 +33,7 @@ describe('PianoApp', () => {
   it('reveals the mode menu after continuing without a piano', async () => {
     renderApp('/piano');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    for (const label of ['Videos', 'Games', 'Lessons', 'Studio']) {
+    for (const label of ['Courses', 'Games', 'Lessons', 'Studio']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });

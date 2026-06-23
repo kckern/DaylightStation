@@ -105,7 +105,7 @@ function PianoShell() {
     quietHours: config.screensaver?.quietHours,
   });
 
-  const MODE_LABELS = { videos: 'Videos', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', instruments: 'Instruments', composers: 'Composers' };
+  const MODE_LABELS = { videos: 'Courses', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', instruments: 'Instruments', composers: 'Composers' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
