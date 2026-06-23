@@ -11,6 +11,8 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | menu | game | `menu/game.svg` | solar:gamepad-bold |
 | menu | lessons | `menu/lessons.svg` | solar:square-academic-cap-2-bold |
 | menu | studio | `menu/studio.svg` | solar:microphone-bold |
+| menu | instruments | `menu/instruments.svg` | solar:tuning-2-bold (faders) |
+| menu | composers | `menu/composers.svg` | solar:book-2-bold (open book) |
 | chrome | home | `chrome/home.svg` | solar:home-2-bold |
 | chrome | connection | `chrome/connection.svg` | solar:bluetooth-square-bold |
 | transport | play | `transport/play.svg` | solar:play-bold |

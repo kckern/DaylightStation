@@ -41,7 +41,9 @@ describe('PianoApp', () => {
   it('routes directly to a mode (Studio) and mounts it — no /default/ segment', async () => {
     renderApp('/piano/studio');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    expect(screen.getByRole('heading', { name: 'Studio' })).toBeTruthy();
+    // Mode headings live in the chrome bar now; assert a Studio-specific element
+    // (the "Saved takes" section) to confirm the mode mounted.
+    expect(screen.getByRole('heading', { name: 'Saved takes' })).toBeTruthy();
   });
 
   it('serves the only piano directly at /piano (no redirect into /piano/default)', async () => {
