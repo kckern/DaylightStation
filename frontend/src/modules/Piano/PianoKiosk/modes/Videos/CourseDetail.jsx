@@ -8,7 +8,12 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
-/** A course's lecture list (FitnessShow-style). Tap a lecture to play it. */
+/**
+ * Course landing page — FitnessShow-style two-panel layout: a left show-info
+ * panel (poster + title + summary + lecture count) and a right scrollable grid
+ * of episode cards. Watch state (✓ / progress bar) rides on the thumbnail and
+ * comes from media_memory signals (see lectureStatus). Tap a card to play.
+ */
 export default function CourseDetail({ course, onPlay, onBack }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
   const [data, setData] = useState(null); // null = loading
@@ -32,44 +37,50 @@ export default function CourseDetail({ course, onPlay, onBack }) {
 
   const info = data?.info || {};
   const items = data ? (data.items || []) : null;
+  const poster = info.image || course?.image;
+  const title = course?.title || info.title || 'Course';
 
   return (
-    <section className="piano-mode piano-mode--videos piano-video-detail">
+    <section className="piano-mode--videos piano-course">
       <PianoBack onClick={onBack} label="Videos" />
-      <header className="piano-video-detail__band">
-        {(info.image || course?.image) && (
-          <img className="piano-video-detail__poster" src={info.image || course.image} alt="" />
-        )}
-        <div className="piano-video-detail__meta">
-          <h2 className="piano-video-detail__title">{course?.title || info.title || 'Course'}</h2>
-          {info.summary && <p className="piano-video-detail__summary">{info.summary}</p>}
-          {items?.length > 0 && <p className="piano-video-detail__count">{items.length} lectures</p>}
+      <div className="piano-course__content">
+        <aside className="piano-course__info">
+          {poster && <img className="piano-course__poster" src={poster} alt="" />}
+          <h2 className="piano-course__title">{title}</h2>
+          {items?.length > 0 && <div className="piano-course__count">{items.length} lectures</div>}
+          {info.summary && <p className="piano-course__summary">{info.summary}</p>}
+        </aside>
+
+        <div className="piano-course__episodes">
+          {items === null && <PianoEmpty loading />}
+          {items?.length === 0 && <PianoEmpty message={error || 'No lectures found.'} />}
+          {items?.length > 0 && (
+            <ul className="piano-episodes">
+              {items.map((item) => {
+                const st = lectureStatus(item);
+                const img = item.image || item.thumbnail;
+                return (
+                  <li key={item.plex || item.id}>
+                    <button type="button" className="piano-episode" onClick={() => onPlay(item)}>
+                      <div className="piano-episode__thumb">
+                        {img && <img src={img} alt="" loading="eager" decoding="async" />}
+                        {st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
+                        {!st.watched && st.percent > 0 && (
+                          <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
+                        )}
+                      </div>
+                      <div className="piano-episode__label">
+                        {item.itemIndex != null && <span className="piano-episode__num">E{item.itemIndex}</span>}
+                        <span className="piano-episode__title">{item.label || item.title}</span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
-      </header>
-      {items === null && <PianoEmpty loading />}
-      {items?.length === 0 && <PianoEmpty message={error || 'No lectures found.'} />}
-      {items?.length > 0 && (
-        <ul className="piano-video-grid">
-          {items.map((item) => {
-            const st = lectureStatus(item);
-            return (
-              <li key={item.plex || item.id}>
-                <button type="button" className="piano-video-grid__tile" onClick={() => onPlay(item)}>
-                  {(item.image || item.thumbnail) && <img src={item.image || item.thumbnail} alt="" loading="eager" decoding="async" />}
-                  {st.watched && <span className="piano-video-grid__badge">✓</span>}
-                  {!st.watched && st.percent > 0 && (
-                    <span className="piano-video-grid__bar"><span style={{ width: `${st.percent}%` }} /></span>
-                  )}
-                  <span className="piano-video-grid__title">{item.label || item.title}</span>
-                  {(item.summary || item.description) && (
-                    <span className="piano-video-grid__desc">{item.summary || item.description}</span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      </div>
     </section>
   );
 }

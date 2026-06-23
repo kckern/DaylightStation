@@ -39,4 +39,11 @@ describe('lectureStatus', () => {
   it('defaults to unwatched/0', () => {
     expect(lectureStatus({})).toEqual({ watched: false, percent: 0 });
   });
+  it('ignores a spurious isWatched flag when there is no real history', () => {
+    // Generic Plex collections return isWatched:true with playCount/progress 0.
+    expect(lectureStatus({ isWatched: true, playCount: 0, watchProgress: 0 })).toEqual({ watched: false, percent: 0 });
+  });
+  it('counts a real completed view via playCount', () => {
+    expect(lectureStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: true, percent: 0 });
+  });
 });
