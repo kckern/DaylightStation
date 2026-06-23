@@ -14,6 +14,7 @@ export const PIANO_CONFIG_DEFAULTS = {
     { label: 'Electric Piano', program: 4 },
     { label: 'Harpsichord', program: 6 },
   ],
+  instruments: [], // rendered-voice definitions (sfizz/dexed/…); [] = onboard-only
   videos: { plexCollection: null },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
@@ -56,6 +57,7 @@ export function resolvePianoConfig(raw, pianoId) {
   return {
     label: p.label || (pianoId === 'default' ? (shared.label || 'Piano') : pianoId),
     voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
+    instruments: p.instruments || shared.instruments || PIANO_CONFIG_DEFAULTS.instruments,
     videos: { plexCollection: p.videos?.plexCollection ?? shared.videos?.plexCollection ?? null },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
