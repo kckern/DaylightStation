@@ -17,12 +17,12 @@ export const PIANO_MODES = [
  */
 export function PianoMenu() {
   const navigate = useNavigate();
-  const { pianoId } = usePianoKioskConfig();
+  const { pianoId, basePath } = usePianoKioskConfig();
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
 
   const open = (id) => {
     logger.info('piano.mode-enter', { mode: id, pianoId });
-    navigate(`/piano/${pianoId}/${id}`);
+    navigate(`${basePath}/${id}`);
   };
 
   return (

@@ -26,27 +26,27 @@ beforeEach(() => {
 
 describe('PianoApp', () => {
   it('shows the connect gate when Web MIDI is unavailable', async () => {
-    renderApp('/piano/default');
+    renderApp('/piano');
     expect(await screen.findByText(/does not support Web MIDI/i)).toBeTruthy();
   });
 
   it('reveals the mode menu after continuing without a piano', async () => {
-    renderApp('/piano/default');
+    renderApp('/piano');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
     for (const label of ['Videos', 'Games', 'Lessons', 'Studio']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
 
-  it('routes directly to a mode (Studio) and mounts it', async () => {
-    renderApp('/piano/default/studio');
+  it('routes directly to a mode (Studio) and mounts it — no /default/ segment', async () => {
+    renderApp('/piano/studio');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
     expect(screen.getByRole('heading', { name: 'Studio' })).toBeTruthy();
   });
 
-  it('auto-enters the only piano from /piano', async () => {
+  it('serves the only piano directly at /piano (no redirect into /piano/default)', async () => {
     renderApp('/piano');
-    // Single (default) piano → redirect into it → connect gate.
+    // Single (default) piano → served in place → connect gate, no pianoId segment.
     expect(await screen.findByText(/Continue without piano/i)).toBeTruthy();
   });
 

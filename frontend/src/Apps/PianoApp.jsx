@@ -74,7 +74,7 @@ function ConnectGate({ children }) {
 }
 
 function PianoShell() {
-  const { config, pianoId } = usePianoKioskConfig();
+  const { config, pianoId, basePath } = usePianoKioskConfig();
   const { activeNotes, noteHistory } = usePianoMidi();
   const navigate = useNavigate();
   const location = useLocation();
@@ -84,7 +84,7 @@ function PianoShell() {
   // After idle, return to this piano's menu (unless already there).
   // keepAlive=playing suppresses the timer while audio/video is actively playing.
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
-    const home = `/piano/${pianoId}`;
+    const home = basePath;
     if (location.pathname !== home) {
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
       navigate(home);
@@ -104,7 +104,7 @@ function PianoShell() {
 
   return (
     <div className="piano-app">
-      <PianoChrome voices={config.voices} label={config.label} pianoId={pianoId} />
+      <PianoChrome voices={config.voices} label={config.label} />
       <Routes>
         <Route index element={<PianoMenu />} />
         <Route path="videos" element={<Videos />} />
@@ -120,13 +120,15 @@ function PianoShell() {
 }
 
 /** Resolves the active piano from the route + roster, then wires MIDI + shell. */
-function ActivePiano() {
-  const { pianoId } = useParams();
+function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
+  const params = useParams();
+  const pianoId = pianoIdProp ?? params.pianoId;
+  const basePath = basePathProp ?? `/piano/${pianoId}`;
   const { raw } = usePianoRoster();
   const config = useMemo(() => resolvePianoConfig(raw, pianoId), [raw, pianoId]);
 
   return (
-    <ActivePianoProvider pianoId={pianoId} config={config}>
+    <ActivePianoProvider pianoId={pianoId} basePath={basePath} config={config}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
           <PianoPlaybackProvider>
@@ -141,9 +143,30 @@ function ActivePiano() {
 }
 
 /**
- * PianoApp — dedicated always-on kiosk app for piano-mounted tablets. Supports
- * multiple pianos per household (one kiosk each) via /piano/:pianoId. Sibling of
- * FitnessApp; NOT a screen-framework screen.
+ * Branches on roster size (must run inside PianoConfigProvider so usePianoRoster
+ * works). A single/default piano serves directly under /piano (no :pianoId URL
+ * segment). 2+ pianos keep the chooser at /piano and a per-piano /piano/:pianoId.
+ */
+function PianoRoutes() {
+  const { loading, pianos } = usePianoRoster();
+  if (loading) return null;
+  const single = pianos.length === 1;
+  return single ? (
+    <Routes>
+      <Route path="/*" element={<ActivePiano pianoId={pianos[0].id} basePath="/piano" />} />
+    </Routes>
+  ) : (
+    <Routes>
+      <Route index element={<PianoPicker />} />
+      <Route path=":pianoId/*" element={<ActivePiano />} />
+    </Routes>
+  );
+}
+
+/**
+ * PianoApp — dedicated always-on kiosk app for piano-mounted tablets. A single
+ * (default) piano serves at /piano; multi-piano households use /piano/:pianoId
+ * (one kiosk each). Sibling of FitnessApp; NOT a screen-framework screen.
  */
 export default function PianoApp() {
   useDocumentTitle('Piano');
@@ -153,10 +176,7 @@ export default function PianoApp() {
 
   return (
     <PianoConfigProvider>
-      <Routes>
-        <Route index element={<PianoPicker />} />
-        <Route path=":pianoId/*" element={<ActivePiano />} />
-      </Routes>
+      <PianoRoutes />
     </PianoConfigProvider>
   );
 }
