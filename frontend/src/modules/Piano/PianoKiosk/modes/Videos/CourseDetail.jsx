@@ -50,7 +50,7 @@ export default function CourseDetail({ course, onPlay, onBack }) {
             return (
               <li key={item.plex || item.id}>
                 <button type="button" className="piano-video-grid__tile" onClick={() => onPlay(item)}>
-                  {(item.image || item.thumbnail) && <img src={item.image || item.thumbnail} alt="" loading="lazy" />}
+                  {(item.image || item.thumbnail) && <img src={item.image || item.thumbnail} alt="" loading="eager" decoding="async" />}
                   {st.watched && <span className="piano-video-grid__badge">✓</span>}
                   {!st.watched && st.percent > 0 && (
                     <span className="piano-video-grid__bar"><span style={{ width: `${st.percent}%` }} /></span>

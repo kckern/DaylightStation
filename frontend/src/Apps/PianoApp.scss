@@ -535,3 +535,10 @@
     background: #fff; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   }
 }
+
+/* Task 8: skeleton tiles so posters don't flash empty rectangles on a fixed kiosk */
+.piano-video-grid__tile img { background: var(--piano-surface-2); }
+.piano-video-grid--posters .piano-video-grid__tile,
+.piano-music-grid .piano-video-grid__tile { background: var(--piano-surface-2); }
+.piano-video-grid--posters .piano-video-grid__tile { aspect-ratio: 2 / 3; border-radius: 8px; }
+.piano-music-grid .piano-video-grid__tile { aspect-ratio: 1 / 1; border-radius: 8px; }
