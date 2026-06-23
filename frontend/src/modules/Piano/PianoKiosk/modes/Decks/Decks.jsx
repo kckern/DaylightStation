@@ -108,6 +108,7 @@ export function Decks() {
           activeNotes={activeNotes}
           startNote={kb.startNote}
           endNote={kb.endNote}
+          splitNote={splitNote}
           onNoteOn={onNoteOn}
           onNoteOff={onNoteOff}
         />
