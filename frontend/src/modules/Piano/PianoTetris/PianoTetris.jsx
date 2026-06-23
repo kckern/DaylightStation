@@ -19,7 +19,7 @@ import './PianoTetris.scss';
  * @param {Object|null} props.gameConfig - from piano.yml { levels: [...], activation: {...} }
  * @param {function} props.onDeactivate - Called when game should exit
  */
-export function PianoTetris({ activeNotes, gameConfig, onDeactivate }) {
+export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-tetris-layout' }), []);
 
   const game = useTetrisGame(activeNotes, gameConfig);
@@ -146,6 +146,8 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate }) {
           endNote={endNote}
           showLabels={true}
           targetNotes={keyboardTargets}
+          onNoteOn={onNoteOn}
+          onNoteOff={onNoteOff}
         />
       </div>
 

@@ -11,6 +11,8 @@ import './PianoKeyboard.scss';
  * @param {number} props.endNote - Last note to display (default: 108 = C8)
  * @param {boolean} props.showLabels - Show note labels on white keys
  * @param {Map<number, { destroyedAt: number, cooldownMs: number }>} [props.destroyedKeys] - Destroyed keys with cooldown
+ * @param {(note: number, velocity: number) => void} [props.onNoteOn] - When provided, keys become touch/clickable (press)
+ * @param {(note: number) => void} [props.onNoteOff] - Release handler paired with onNoteOn
  */
 export function PianoKeyboard({
   activeNotes = new Map(),
@@ -20,7 +22,10 @@ export function PianoKeyboard({
   targetNotes = null,
   wrongNotes = null,
   destroyedKeys = null,
+  onNoteOn = null,
+  onNoteOff = null,
 }) {
+  const interactive = typeof onNoteOn === 'function';
   // Tick for animating rebuild progress bars
   const [rebuildTick, setRebuildTick] = useState(0);
   useEffect(() => {
@@ -58,6 +63,13 @@ export function PianoKeyboard({
           }}
           data-note={note}
           data-label={getNoteName(note)}
+          onPointerDown={interactive ? (e) => {
+            e.preventDefault();
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* no-op */ }
+            onNoteOn(note, 90);
+          } : undefined}
+          onPointerUp={interactive ? (e) => { e.preventDefault(); onNoteOff?.(note); } : undefined}
+          onPointerCancel={interactive ? () => onNoteOff?.(note) : undefined}
         >
           {showLabels && isWhite && note % 12 === 0 && (
             <span className="note-label">{getNoteName(note)}</span>
@@ -70,7 +82,7 @@ export function PianoKeyboard({
     }
 
     return result;
-  }, [activeNotes, startNote, endNote, showLabels, targetNotes, wrongNotes, destroyedKeys, rebuildTick]);
+  }, [activeNotes, startNote, endNote, showLabels, targetNotes, wrongNotes, destroyedKeys, rebuildTick, interactive, onNoteOn, onNoteOff]);
 
   // Count white keys for sizing
   const whiteKeyCount = useMemo(() => {
@@ -83,7 +95,7 @@ export function PianoKeyboard({
 
   return (
     <div
-      className="piano-keyboard"
+      className={`piano-keyboard${interactive ? ' interactive' : ''}`}
       style={{ '--white-key-count': whiteKeyCount }}
     >
       {keys}
