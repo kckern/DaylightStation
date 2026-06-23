@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoRoster } from './PianoConfig.jsx';
+import Icon from './icons/Icon.jsx';
 
 /**
  * PianoPicker — household has multiple piano kiosks; pick which one this is.
@@ -27,7 +28,7 @@ export function PianoPicker() {
         {pianos.map((p) => (
           <li key={p.id}>
             <button type="button" className="piano-menu__tile" onClick={() => open(p.id)}>
-              <span className="piano-menu__tile-icon" aria-hidden>🎹</span>
+              <Icon name="music" className="piano-menu__tile-icon" />
               <span className="piano-menu__tile-label">{p.label}</span>
             </button>
           </li>

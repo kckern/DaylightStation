@@ -40,6 +40,10 @@
   --piano-viz-bg: #07070a;      // note-waterfall canvas
 }
 
+// Inline SVG icon — sizes to the host's font-size via 1em, color via currentColor.
+.piano-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.piano-icon svg { width: 1em; height: 1em; display: block; }
+
 .piano-app {
   width: 100vw;
   height: 100vh;

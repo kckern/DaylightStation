@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoKioskConfig, usePianoRoster } from './PianoConfig.jsx';
+import Icon from './icons/Icon.jsx';
 
 /**
  * PianoChrome — always-on bar across every mode: home, piano label (tap to switch
@@ -34,7 +35,7 @@ export function PianoChrome({ voices = [], label, modeLabel }) {
         onClick={() => navigate(basePath)}
         aria-label="Home"
       >
-        ⌂
+        <Icon name="home" label="Home" />
       </button>
 
       {label && (multiPiano ? (
