@@ -2765,6 +2765,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           // index.html must never be cached so location.reload() always gets fresh script tags
           if (filePath.endsWith('index.html')) {
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            // Enable the JS Self-Profiling API (window.Profiler) for on-device
+            // renderer CPU profiling on the kiosk tablets (no DevTools/adb needed).
+            res.setHeader('Document-Policy', 'js-profiling');
           }
         }
       }));
@@ -2782,6 +2785,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
         // SPA route - serve index.html with no-cache so deploys take effect on reload
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        // Enable window.Profiler (JS Self-Profiling API) for on-device renderer profiling.
+        res.setHeader('Document-Policy', 'js-profiling');
         res.sendFile(join(frontendPath, 'index.html'));
       });
       rootLogger.info('frontend.static.mounted', { path: frontendPath });
