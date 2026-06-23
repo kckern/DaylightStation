@@ -11,8 +11,6 @@ import { TheoryLessons } from './theory/TheoryLessons.jsx';
 export function Lessons() {
   return (
     <section className="piano-mode piano-mode--lessons">
-      <h2>Lessons</h2>
-
       <div className="piano-lessons__section">
         <h3>Songs (notation)</h3>
         {/* Seam for MusicXML notation lessons — renders via the MusicNotation

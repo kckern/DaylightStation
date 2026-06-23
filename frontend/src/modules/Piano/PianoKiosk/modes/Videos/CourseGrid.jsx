@@ -8,7 +8,6 @@ export default function CourseGrid({ collection, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--videos">
-      <h2>Videos</h2>
       {items === null && <p className="piano-mode__placeholder">Loading…</p>}
       {items?.length === 0 && <p className="piano-mode__placeholder">{error || (collection ? 'No videos found.' : 'No videos.plexCollection configured.')}</p>}
       {items?.length > 0 && (

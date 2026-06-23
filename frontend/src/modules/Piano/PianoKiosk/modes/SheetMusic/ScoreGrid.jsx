@@ -11,7 +11,6 @@ export default function ScoreGrid({ collection, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--sheetmusic">
-      <h2>Sheet Music</h2>
       {items === null && <p className="piano-mode__placeholder">Loading…</p>}
       {items?.length === 0 && <p className="piano-mode__placeholder">{error || (collection ? 'No scores found.' : 'No sheetmusic.collection configured.')}</p>}
       {items?.length > 0 && (

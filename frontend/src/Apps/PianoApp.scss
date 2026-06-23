@@ -87,6 +87,13 @@
     padding: 0.25rem 0.5rem;
   }
 
+  &__mode {
+    margin-left: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--piano-muted);
+  }
+
   &__status {
     margin-left: auto;
     display: inline-flex;

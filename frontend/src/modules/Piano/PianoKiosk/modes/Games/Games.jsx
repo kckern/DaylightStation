@@ -43,7 +43,6 @@ function GamePicker() {
 
   return (
     <section className="piano-mode piano-mode--games">
-      <h2>Games</h2>
       <ul className="piano-mode__grid">
         {ids.map((id) => (
           <li key={id}>
