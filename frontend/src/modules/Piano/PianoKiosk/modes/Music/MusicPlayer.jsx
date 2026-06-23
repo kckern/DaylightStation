@@ -12,16 +12,17 @@ import Icon from '../../icons/Icon.jsx';
  * hero; the transport row, header and volume fade after a few idle seconds and
  * return on any tap. Plain <audio> engine; queue order honors shuffle/repeat.
  */
-export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
+export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: shuffleInit = false, onBack }) {
   const audioRef = useRef(null);
   const barRef = useRef(null);
   const logger = useRef(null);
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-music-player' });
 
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
-  const [shuffle, setShuffle] = useState(false);
+  // Play All starts shuffled by default (shuffleInit); a tapped track plays in order.
+  const [shuffle, setShuffle] = useState(shuffleInit);
   const [repeat, setRepeat] = useState(false);
-  const [order, setOrder] = useState(() => buildOrder(tracks.length, false));
+  const [order, setOrder] = useState(() => buildOrder(tracks.length, shuffleInit));
   const [pos, setPos] = useState(startIndex);
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);

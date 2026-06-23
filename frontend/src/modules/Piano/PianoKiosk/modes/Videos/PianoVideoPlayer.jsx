@@ -1,5 +1,5 @@
 // PianoVideoPlayer.jsx
-import { useRef, useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -32,6 +32,29 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
   const [duration, setDuration] = useState(0);
   const [rate, setRate] = useState(1);
   const [playAlong, setPlayAlong] = useState(true);
+  const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
+  const bodyRef = useRef(null);
+  const [stackW, setStackW] = useState(null);   // px width of the video+controls column
+
+  // Size the left column to exactly the video's aspect at the available height, so
+  // the contained video fills it edge-to-edge (no pillar bars) and the staff gets
+  // ALL the remaining width. Recomputed on aspect change and on resize.
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return undefined;
+    const compute = () => {
+      const chrome = body.querySelector('.piano-video-chrome');
+      const H = body.clientHeight;
+      const C = chrome ? chrome.offsetHeight : 0;
+      const vidH = Math.max(0, H - C);
+      const maxW = body.clientWidth - 200; // keep a usable minimum staff width
+      setStackW(Math.round(Math.min(vidH * aspect, maxW)));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(body);
+    return () => ro.disconnect();
+  }, [aspect]);
 
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
@@ -88,7 +111,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
     const onTime = () => setCurrentTime(mediaEl.currentTime || 0);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onMeta = () => setDuration(mediaEl.duration || 0);
+    const onMeta = () => {
+      setDuration(mediaEl.duration || 0);
+      if (mediaEl.videoWidth && mediaEl.videoHeight) setAspect(mediaEl.videoWidth / mediaEl.videoHeight);
+    };
     mediaEl.addEventListener('timeupdate', onTime);
     mediaEl.addEventListener('play', onPlay);
     mediaEl.addEventListener('pause', onPause);
@@ -142,9 +168,10 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
 
   return (
     <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
-      {/* Upper row: video + transport (left) and the live staff (right of them only). */}
-      <div className="piano-video-player__body">
-        <div className="piano-video-player__stack">
+      {/* Upper row: video + transport (left, sized to the video aspect) and the
+          live staff (fills all leftover width to the right). */}
+      <div className="piano-video-player__body" ref={bodyRef}>
+        <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
             {playerEl}
           </div>

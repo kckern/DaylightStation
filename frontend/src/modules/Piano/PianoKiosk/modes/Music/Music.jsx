@@ -58,9 +58,9 @@ function AlbumDetailRoute() {
   return (
     <AlbumDetail
       album={album}
-      onPlay={(tracks, startIndex) => {
-        logger.info('piano.music-play', { album: albumId, startIndex });
-        navigate(`play?track=${startIndex}`);
+      onPlay={(tracks, startIndex, shuffle = false) => {
+        logger.info('piano.music-play', { album: albumId, startIndex, shuffle });
+        navigate(`play?track=${startIndex}${shuffle ? '&shuffle=1' : ''}`);
       }}
     />
   );
@@ -82,6 +82,7 @@ function MusicPlayerRoute() {
     (r) => toMusicTracks(r),
   );
   const startIndex = Math.max(0, parseInt(sp.get('track') || '0', 10) || 0);
+  const shuffle = sp.get('shuffle') === '1';
 
   if (tracks === null) return <div className="piano-mode__placeholder">Loading…</div>;
   if (!tracks.length) {
@@ -92,7 +93,7 @@ function MusicPlayerRoute() {
       </div>
     );
   }
-  return <MusicPlayer album={{ id: albumId }} tracks={tracks} startIndex={startIndex} onBack={() => navigate('..', { relative: 'path' })} />;
+  return <MusicPlayer album={{ id: albumId }} tracks={tracks} startIndex={startIndex} shuffle={shuffle} onBack={() => navigate('..', { relative: 'path' })} />;
 }
 
 export default Music;
