@@ -63,7 +63,7 @@ function CourseDetailRoute() {
         logger.info('piano.video-play', { contentId });
         navigate(`${contentId}`);
       }}
-      onBack={() => navigate('..')}
+      onBack={() => navigate('..', { relative: 'path' })}
     />
   );
 }
@@ -88,7 +88,7 @@ function LecturePlayerRoute() {
 
   // Stable so PianoVideoPlayer can memoize the heavy Player element on it
   // (an unstable onBack would defeat the memo and remount the video).
-  const goBack = useCallback(() => navigate('..'), [navigate]);
+  const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
 
   // Keep the tablet screen awake while a lecture is playing (passive playback
   // produces no MIDI/touch, which would otherwise trip the screensaver).
