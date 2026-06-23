@@ -355,3 +355,105 @@
   }
   &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
 }
+
+/* ---- Music mode: album grid (square covers, titles in alt) ---- */
+.piano-music-grid {
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+
+  .piano-video-grid__tile { padding: 0; background: transparent; border: none; gap: 0; }
+  .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; }
+  &__badge {
+    position: absolute; top: 6px; left: 6px;
+    background: rgba(14, 14, 18, 0.8); color: #3c7;
+    border-radius: 999px; width: 1.5rem; height: 1.5rem;
+    display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+  }
+}
+
+/* ---- Music mode: album detail ---- */
+.piano-album-detail {
+  &__head { display: flex; align-items: center; gap: 1rem; }
+  &__body { display: flex; gap: 1.5rem; min-height: 0; flex: 1 1 auto; }
+  &__cover { width: 16rem; height: 16rem; object-fit: cover; border-radius: 12px; align-self: flex-start; }
+  &__tracks { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
+  &__playall {
+    background: #3c7; color: #0e0e12; border: none; border-radius: 999px;
+    padding: 0.6rem 1.5rem; font: inherit; font-weight: 700; cursor: pointer; margin-bottom: 0.75rem;
+  }
+}
+
+.piano-track-list {
+  list-style: none; margin: 0; padding: 0;
+  &__row {
+    width: 100%; display: flex; align-items: center; gap: 0.75rem;
+    background: transparent; border: none; color: #f2f2f2;
+    padding: 0.6rem 0.5rem; font: inherit; text-align: left; cursor: pointer;
+    border-bottom: 1px solid #2c2c38;
+    &:active { background: #24242f; }
+    &.is-current { color: #3c7; }
+  }
+  &__num { width: 1.6rem; text-align: right; color: #999; font-variant-numeric: tabular-nums; }
+  &__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__dur { color: #999; font-variant-numeric: tabular-nums; }
+}
+
+/* ---- Music mode: Plexamp-style now-playing ---- */
+.piano-music-player {
+  position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #0b0b0f;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+
+  /* blurred cover wash behind the art */
+  &::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: var(--cover); background-size: cover; background-position: center;
+    filter: blur(40px) brightness(0.4); transform: scale(1.2); z-index: 0;
+  }
+
+  &__art {
+    position: relative; z-index: 1;
+    width: min(60vh, 80vw); height: min(60vh, 80vw);
+    img { width: 100%; height: 100%; object-fit: cover; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+  }
+
+  &__chrome {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    transition: opacity 0.35s ease;
+    background: linear-gradient(to bottom, rgba(11,11,15,0.7), rgba(11,11,15,0) 25%, rgba(11,11,15,0) 60%, rgba(11,11,15,0.85));
+  }
+
+  &__top { display: flex; align-items: center; gap: 1rem; }
+  &__meta { flex: 1 1 auto; min-width: 0; text-align: center; }
+  &__title { font-size: 1.4rem; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__sub { color: #bbb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  &__bottom { display: flex; flex-direction: column; gap: 0.75rem; }
+  &__bar { position: relative; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.25); cursor: pointer; }
+  &__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #3c7; }
+  &__times { display: flex; justify-content: space-between; color: #bbb; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+  &__transport { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  &__volume { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  &__vol-val { color: #bbb; min-width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+
+  &.chrome-hidden .piano-music-player__chrome { opacity: 0; pointer-events: none; }
+}
+
+.piano-music-btn {
+  min-width: 3rem; height: 3rem; padding: 0 0.6rem;
+  background: rgba(36,36,47,0.6); color: #f2f2f2; border: 1px solid #34343f;
+  border-radius: 12px; font-size: 1.1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  &.is-on { border-color: #3c7; color: #3c7; }
+  &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
+}
+
+.piano-music-queue {
+  position: absolute; right: 0; top: 0; bottom: 0; z-index: 3;
+  width: min(28rem, 90vw); background: #14141b; border-left: 1px solid #2c2c38;
+  display: flex; flex-direction: column; padding: 1rem;
+  &__head { display: flex; align-items: center; justify-content: space-between; color: #f2f2f2; margin-bottom: 0.5rem; font-weight: 700; }
+  .piano-track-list { overflow-y: auto; }
+}

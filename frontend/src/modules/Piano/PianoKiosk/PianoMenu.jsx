@@ -5,6 +5,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 
 export const PIANO_MODES = [
   { id: 'videos', label: 'Videos', blurb: 'Watch lessons & lectures', icon: '🎬' },
+  { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: '🎵' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: '🎮' },
   { id: 'lessons', label: 'Lessons', blurb: 'Guided & theory lessons', icon: '🎓' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: '🎹' },

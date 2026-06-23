@@ -15,6 +15,7 @@ export const PIANO_CONFIG_DEFAULTS = {
     { label: 'Harpsichord', program: 6 },
   ],
   videos: { plexCollection: null },
+  music: { collection: null, playlists: [] },
   games: null,
   midi: { preferredInputName: null },
   inactivityMinutes: 10,
@@ -55,6 +56,10 @@ export function resolvePianoConfig(raw, pianoId) {
     label: p.label || (pianoId === 'default' ? (shared.label || 'Piano') : pianoId),
     voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
     videos: { plexCollection: p.videos?.plexCollection ?? shared.videos?.plexCollection ?? null },
+    music: {
+      collection: p.music?.collection ?? shared.music?.collection ?? null,
+      playlists: p.music?.playlists ?? shared.music?.playlists ?? [],
+    },
     midi: { preferredInputName: p.midi?.preferredInputName ?? shared.midi?.preferredInputName ?? null },
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
     games: p.games ?? shared.games ?? null,
