@@ -61,6 +61,43 @@ export function startApplication(packageName, activityName) {
 }
 
 /**
+ * Open an Android target (settings screen / app) via FKB, from a config object.
+ * Prefers an intent ACTION (reliable across OEMs — e.g.
+ * 'android.settings.BLUETOOTH_SETTINGS'), launched as an intent: URI through
+ * fully.startIntent. Falls back to component launch only if no action is given.
+ *
+ * NOTE: fully.startApplication(pkg, x) treats x as an intent ACTION, not an
+ * activity class — so a component must go through startIntent, not the 2-arg
+ * startApplication form (which silently no-ops for a class string).
+ *
+ * @param {{action?: string, package?: string, activity?: string}} target
+ * @returns {boolean} true if a launch was attempted
+ */
+export function launchAndroidTarget(target = {}) {
+  const { action, package: pkg, activity } = target;
+  if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
+    logger().warn('fkb.launchTarget.unavailable', { action, pkg, activity });
+    return false;
+  }
+  let uri;
+  if (action) {
+    uri = `intent:#Intent;action=${action};end`;
+  } else if (pkg && activity) {
+    uri = `intent:#Intent;component=${pkg}/${activity};end`;
+  } else if (pkg) {
+    logger().info('fkb.launchTarget.app', { pkg });
+    fully.startApplication(pkg);
+    return true;
+  } else {
+    logger().warn('fkb.launchTarget.empty', { target });
+    return false;
+  }
+  logger().info('fkb.launchTarget.intent', { action, pkg, activity, uri });
+  fully.startIntent(uri);
+  return true;
+}
+
+/**
  * Launch an Android intent with extras via FKB's startIntent API.
  * Uses Android intent URI format: intent:#Intent;component=pkg/act;S.key=val;end
  *

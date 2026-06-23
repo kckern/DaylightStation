@@ -3,7 +3,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
-import { startApplication } from '../../../lib/fkb.js';
+import { launchAndroidTarget } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
 import Icon from './icons/Icon.jsx';
@@ -105,7 +105,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
               <button
                 type="button"
                 className="piano-settings__connect piano-settings__connect--ghost"
-                onClick={() => { logger.info('piano.settings.bluetooth', {}); startApplication(bluetooth.package, bluetooth.activity); }}
+                onClick={() => { logger.info('piano.settings.bluetooth', {}); launchAndroidTarget(bluetooth); }}
               >
                 Bluetooth settings
               </button>

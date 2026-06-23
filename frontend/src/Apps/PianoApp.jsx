@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
-import { startApplication } from '../lib/fkb.js';
+import { launchAndroidTarget } from '../lib/fkb.js';
 import {
   PianoConfigProvider,
   ActivePianoProvider,
@@ -73,7 +73,7 @@ function ConnectGate({ children }) {
         <button
           type="button"
           className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
-          onClick={() => startApplication(config.bluetooth.package, config.bluetooth.activity)}
+          onClick={() => launchAndroidTarget(config.bluetooth)}
         >
           Open Bluetooth settings
         </button>
