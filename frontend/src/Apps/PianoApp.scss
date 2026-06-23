@@ -304,15 +304,15 @@
   }
 }
 
-/* Course grid: poster-shaped tiles, titles live in img alt (no caption). */
+/* Course grid: poster-shaped tiles with visible caption below the cover. */
 .piano-video-grid--posters {
   grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
 
   .piano-video-grid__tile {
-    padding: 0;
+    padding: 0 0 0.25rem;
     background: transparent;
     border: none;
-    gap: 0;
+    gap: 0.35rem;
   }
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
@@ -421,11 +421,11 @@
 
 .piano-video-player.chrome-hidden .piano-video-chrome { opacity: 0; pointer-events: none; }
 
-/* ---- Music mode: album grid (square covers, titles in alt) ---- */
+/* ---- Music mode: album grid (square covers with visible caption below) ---- */
 .piano-music-grid {
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
 
-  .piano-video-grid__tile { padding: 0; background: transparent; border: none; gap: 0; }
+  .piano-video-grid__tile { padding: 0 0 0.25rem; background: transparent; border: none; gap: 0.35rem; }
   .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; }
   // chip rides over album art (varies) — keep a dark translucent chip for legibility
   &__badge {
@@ -551,9 +551,12 @@
   }
 }
 
-/* Task 8: skeleton tiles so posters don't flash empty rectangles on a fixed kiosk */
+/* Task 8: skeleton tiles so posters don't flash empty rectangles on a fixed kiosk.
+   aspect-ratio lives on the IMG (not the tile) so the caption below isn't clipped. */
 .piano-video-grid__tile img { background: var(--piano-surface-2); }
-.piano-video-grid--posters .piano-video-grid__tile,
-.piano-music-grid .piano-video-grid__tile { background: var(--piano-surface-2); }
-.piano-video-grid--posters .piano-video-grid__tile { aspect-ratio: 2 / 3; border-radius: 8px; }
-.piano-music-grid .piano-video-grid__tile { aspect-ratio: 1 / 1; border-radius: 8px; }
+.piano-video-grid--posters .piano-video-grid__tile img { aspect-ratio: 2 / 3; border-radius: 8px; background: var(--piano-surface-2); }
+.piano-music-grid .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; background: var(--piano-surface-2); }
+
+/* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
+.piano-video-grid--posters .piano-video-grid__title,
+.piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
