@@ -95,3 +95,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-22 | feat/piano-video-player | 9b0cf3aad | Piano course browser + student video player + MIDI play-along |
 | 2026-06-22 | feat/piano-clickable-keyboard | 7eb10087c | Clickable on-screen keyboard + trimmed piano video player |
 | 2026-06-22 | feat/piano-music-mode | 92c3dff91 | Piano Music jukebox + Sheet Music shell |
+| 2026-06-22 | feat/piano-kiosk-remediation | c963e082c | Piano kiosk remediation: light mode, never-lose-state, caching, routing, media reliability, design system (merged to main) |
