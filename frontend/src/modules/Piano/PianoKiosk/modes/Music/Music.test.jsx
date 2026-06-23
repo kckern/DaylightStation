@@ -1,25 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const api = vi.fn();
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
+import { __clearPianoListCache } from '../../usePianoList.js';
 import { Music } from './Music.jsx';
 
-const renderMusic = (music) => render(
-  <ActivePianoProvider
-    pianoId="test"
-    config={{ videos: { plexCollection: null }, music, voices: [], midi: {}, inactivityMinutes: 10 }}
-  >
-    <Music />
-  </ActivePianoProvider>
+// Music renders its own <Routes>, so mount it under a "music/*" route inside a
+// MemoryRouter — mirroring how PianoShell mounts it (path="music/*"). The
+// album/playlist id and starting track live in the URL; assertions check the
+// right view per path.
+const renderMusic = (music, initialEntry = '/music') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
+    <ActivePianoProvider
+      pianoId="test"
+      config={{ videos: { plexCollection: null }, music, voices: [], midi: {}, inactivityMinutes: 10 }}
+    >
+      <Routes>
+        <Route path="music/*" element={<Music />} />
+      </Routes>
+    </ActivePianoProvider>
+  </MemoryRouter>
 );
 
-beforeEach(() => api.mockReset());
+beforeEach(() => { api.mockReset(); __clearPianoListCache(); });
 
 describe('Music mode', () => {
-  it('lists collection albums plus playlists as tiles', async () => {
+  it('lists collection albums plus playlists as tiles (index route)', async () => {
     api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/359812') {
         return Promise.resolve({ items: [{ id: 'plex:80962', title: 'Der Ring', image: '/a' }] });
@@ -35,7 +45,14 @@ describe('Music mode', () => {
     expect(screen.getByTitle('Relaxing Classical')).toBeTruthy();
   });
 
-  it('opens an album and lists its tracks with Play All', async () => {
+  it('shows a helpful message when nothing is configured', async () => {
+    renderMusic({ collection: null, playlists: [] });
+    await waitFor(() =>
+      expect(screen.getByText(/No music has been set up yet/i)).toBeTruthy()
+    );
+  });
+
+  it('drills into an album via relative nav, lists its tracks with Play All, and goes back', async () => {
     api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/359812') {
         return Promise.resolve({ items: [{ id: 'plex:80962', title: 'Der Ring', image: '/a' }] });
@@ -51,16 +68,30 @@ describe('Music mode', () => {
 
     renderMusic({ collection: 'plex:359812', playlists: [] });
     fireEvent.click(await screen.findByTitle('Der Ring'));
+    // Now on /music/80962 — AlbumDetail with the track list.
     expect(await screen.findByText('Scene 1')).toBeTruthy();
     expect(screen.getByText('Scene 2')).toBeTruthy();
-    expect(screen.getByText('▶ Play All')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /play all/i })).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/queue/plex:80962');
+
+    fireEvent.click(screen.getByRole('button', { name: /back to music/i }));
+    // Back up to the index grid.
+    expect(await screen.findByTitle('Der Ring')).toBeTruthy();
   });
 
-  it('shows a helpful message when nothing is configured', async () => {
-    renderMusic({ collection: null, playlists: [] });
-    await waitFor(() =>
-      expect(screen.getByText(/No music.collection configured/i)).toBeTruthy()
-    );
+  it('renders AlbumDetail directly from a deep-link to /music/:albumId', async () => {
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/queue/plex:80962') {
+        return Promise.resolve({ items: [
+          { contentId: 'plex:1', title: 'Scene 1', mediaUrl: '/u1', grandparentTitle: 'Wagner', duration: 1450 },
+        ] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderMusic({ collection: 'plex:359812', playlists: [] }, '/music/80962');
+    // Cold deep-link straight into the album detail (no grid click).
+    expect(await screen.findByText('Scene 1')).toBeTruthy();
+    expect(api).toHaveBeenCalledWith('api/v1/queue/plex:80962');
   });
 });

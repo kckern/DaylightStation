@@ -15,9 +15,14 @@ import {
   PianoWakeLockProvider,
   usePianoScreensaver,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
+import {
+  PianoPlaybackProvider,
+  usePianoPlayback,
+} from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
+import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
 import { SheetMusic } from '../modules/Piano/PianoKiosk/modes/SheetMusic/SheetMusic.jsx';
@@ -71,20 +76,22 @@ function ConnectGate({ children }) {
 }
 
 function PianoShell() {
-  const { config, pianoId } = usePianoKioskConfig();
+  const { config, pianoId, basePath } = usePianoKioskConfig();
   const { activeNotes, noteHistory } = usePianoMidi();
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
+  const { playing } = usePianoPlayback();
 
   // After idle, return to this piano's menu (unless already there).
+  // keepAlive=playing suppresses the timer while audio/video is actively playing.
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
-    const home = `/piano/${pianoId}`;
+    const home = basePath;
     if (location.pathname !== home) {
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
       navigate(home);
     }
-  });
+  }, playing);
 
   // Screensaver: a MIDI note wakes the tablet screen; idle sleeps it. Guardrails
   // (playing video / quiet hours) live in the hook. Inert until a deviceId is
@@ -97,15 +104,24 @@ function PianoShell() {
     quietHours: config.screensaver?.quietHours,
   });
 
+  const MODE_LABELS = { videos: 'Videos', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', instruments: 'Instruments', composers: 'Composers' };
+  const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
+  const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
+
+  // Passive-media modes plus Instruments (which has its own source surface) and the
+  // Composers placeholder hide the chrome voice/source controls.
+  const HIDE_VOICE_MODES = new Set(['videos', 'music', 'sheetmusic', 'instruments', 'composers']);
+  const showVoice = !modeKey || !HIDE_VOICE_MODES.has(modeKey);
+
   return (
     <div className="piano-app">
-      <PianoChrome voices={config.voices} instruments={config.instruments} label={config.label} pianoId={pianoId} />
+      <PianoChrome voices={config.voices} instruments={config.instruments} label={config.label} modeLabel={modeLabel} showVoice={showVoice} />
       <Routes>
         <Route index element={<PianoMenu />} />
-        <Route path="videos" element={<Videos />} />
-        <Route path="music" element={<Music />} />
-        <Route path="sheetmusic" element={<SheetMusic />} />
-        <Route path="games" element={<Games />} />
+        <Route path="videos/*" element={<Videos />} />
+        <Route path="music/*" element={<Music />} />
+        <Route path="sheetmusic/*" element={<SheetMusic />} />
+        <Route path="games/*" element={<Games />} />
         <Route path="lessons/*" element={<Lessons />} />
         <Route path="studio" element={<Studio />} />
         <Route path="instruments" element={<Instruments />} />
@@ -117,18 +133,22 @@ function PianoShell() {
 }
 
 /** Resolves the active piano from the route + roster, then wires MIDI + shell. */
-function ActivePiano() {
-  const { pianoId } = useParams();
+function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
+  const params = useParams();
+  const pianoId = pianoIdProp ?? params.pianoId;
+  const basePath = basePathProp ?? `/piano/${pianoId}`;
   const { raw } = usePianoRoster();
   const config = useMemo(() => resolvePianoConfig(raw, pianoId), [raw, pianoId]);
 
   return (
-    <ActivePianoProvider pianoId={pianoId} config={config}>
+    <ActivePianoProvider pianoId={pianoId} basePath={basePath} config={config}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
-          <PianoWakeLockProvider>
-            <PianoShell />
-          </PianoWakeLockProvider>
+          <PianoPlaybackProvider>
+            <PianoWakeLockProvider>
+              <PianoShell />
+            </PianoWakeLockProvider>
+          </PianoPlaybackProvider>
         </ConnectGate>
       </PianoMidiProvider>
     </ActivePianoProvider>
@@ -136,21 +156,40 @@ function ActivePiano() {
 }
 
 /**
- * PianoApp — dedicated always-on kiosk app for piano-mounted tablets. Supports
- * multiple pianos per household (one kiosk each) via /piano/:pianoId. Sibling of
- * FitnessApp; NOT a screen-framework screen.
+ * Branches on roster size (must run inside PianoConfigProvider so usePianoRoster
+ * works). A single/default piano serves directly under /piano (no :pianoId URL
+ * segment). 2+ pianos keep the chooser at /piano and a per-piano /piano/:pianoId.
+ */
+function PianoRoutes() {
+  const { loading, pianos } = usePianoRoster();
+  if (loading) return null;
+  const single = pianos.length === 1;
+  return single ? (
+    <Routes>
+      <Route path="/*" element={<ActivePiano pianoId={pianos[0].id} basePath="/piano" />} />
+    </Routes>
+  ) : (
+    <Routes>
+      <Route index element={<PianoPicker />} />
+      <Route path=":pianoId/*" element={<ActivePiano />} />
+    </Routes>
+  );
+}
+
+/**
+ * PianoApp — dedicated always-on kiosk app for piano-mounted tablets. A single
+ * (default) piano serves at /piano; multi-piano households use /piano/:pianoId
+ * (one kiosk each). Sibling of FitnessApp; NOT a screen-framework screen.
  */
 export default function PianoApp() {
   useDocumentTitle('Piano');
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   useEffect(() => { logger.info('piano-app.mount', {}); }, [logger]);
+  useEffect(() => applyPianoBodyTheme(), []);
 
   return (
     <PianoConfigProvider>
-      <Routes>
-        <Route index element={<PianoPicker />} />
-        <Route path=":pianoId/*" element={<ActivePiano />} />
-      </Routes>
+      <PianoRoutes />
     </PianoConfigProvider>
   );
 }

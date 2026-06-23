@@ -7,6 +7,7 @@ import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
+import Icon from '../../icons/Icon.jsx';
 
 /**
  * Studio mode — freeform play with the falling-notes visual, plus record/playback.
@@ -20,6 +21,7 @@ export function Studio() {
   const { recording, lastTake, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
   const studioBase = `api/v1/piano/${pianoId}/studio`;
 
@@ -83,14 +85,13 @@ export function Studio() {
 
   return (
     <section className="piano-mode piano-mode--studio">
-      <h2>Studio</h2>
       <div className="piano-studio__toolbar">
         <button
           type="button"
           className={`piano-studio__rec${recording ? ' is-recording' : ''}`}
           onClick={onRecordToggle}
         >
-          {recording ? '■ Stop' : '● Record'}
+          {recording ? <><Icon name="stop" /> Stop</> : <><Icon name="record" /> Record</>}
         </button>
         {!recording && lastTake?.events?.length > 0 && (
           <button type="button" className="piano-studio__save" onClick={onSave} disabled={busy}>
@@ -125,8 +126,16 @@ export function Studio() {
             return (
               <li key={id}>
                 <span className="piano-studio__take-title">{title}</span>
-                <button type="button" onClick={() => onPlay(id)} disabled={!connected}>▶ Play</button>
-                <button type="button" onClick={() => onDelete(id)}>🗑</button>
+                <button type="button" onClick={() => onPlay(id)} disabled={!connected}><Icon name="play" /> Play</button>
+                {confirmId === id ? (
+                  <span className="piano-studio__confirm">
+                    Delete?
+                    <button type="button" onClick={() => { setConfirmId(null); onDelete(id); }} aria-label="Confirm delete"><Icon name="trash" /></button>
+                    <button type="button" onClick={() => setConfirmId(null)} aria-label="Cancel delete"><Icon name="close" /></button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => setConfirmId(id)} aria-label="Delete take"><Icon name="trash" /></button>
+                )}
               </li>
             );
           })}

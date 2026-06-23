@@ -2,6 +2,9 @@ import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { toMusicTracks, formatTime } from './musicTracks.js';
+import PianoBack from '../../PianoBack.jsx';
+import Icon from '../../icons/Icon.jsx';
+import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -35,18 +38,18 @@ export default function AlbumDetail({ album, onPlay, onBack }) {
   return (
     <section className="piano-mode piano-mode--music piano-album-detail">
       <div className="piano-album-detail__head">
-        <button type="button" className="piano-game-fullscreen__back" onClick={onBack}>‹ Music</button>
+        <PianoBack onClick={onBack} label="Music" />
         <h2>{album?.title || 'Album'}</h2>
       </div>
       <div className="piano-album-detail__body">
         {cover && <img className="piano-album-detail__cover" src={cover} alt={album?.title || ''} />}
         <div className="piano-album-detail__tracks">
-          {tracks === null && <p className="piano-mode__placeholder">Loading…</p>}
-          {tracks?.length === 0 && <p className="piano-mode__placeholder">{error || 'No tracks found.'}</p>}
+          {tracks === null && <PianoEmpty loading />}
+          {tracks?.length === 0 && <PianoEmpty message={error || 'No tracks found.'} />}
           {tracks?.length > 0 && (
             <>
               <button type="button" className="piano-album-detail__playall" onClick={() => onPlay(tracks, 0)}>
-                ▶ Play All
+                <Icon name="play" />{' '}Play All
               </button>
               <ol className="piano-track-list">
                 {tracks.map((t, i) => (

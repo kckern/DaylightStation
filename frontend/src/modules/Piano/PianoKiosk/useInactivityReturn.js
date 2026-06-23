@@ -9,8 +9,10 @@ import { useEffect, useRef } from 'react';
  * @param {number} historyLen - noteHistory length (grows on each note = activity)
  * @param {number} minutes - idle threshold; <= 0 disables
  * @param {() => void} onIdle
+ * @param {boolean} [keepAlive=false] - when true, active playback continuously
+ *   resets the idle clock so the kiosk never navigates away mid-media.
  */
-export function useInactivityReturn(activeNotes, historyLen, minutes, onIdle) {
+export function useInactivityReturn(activeNotes, historyLen, minutes, onIdle, keepAlive = false) {
   const lastActivityRef = useRef(Date.now());
   const onIdleRef = useRef(onIdle);
   onIdleRef.current = onIdle;
@@ -19,6 +21,14 @@ export function useInactivityReturn(activeNotes, historyLen, minutes, onIdle) {
   useEffect(() => {
     lastActivityRef.current = Date.now();
   }, [activeNotes, historyLen]);
+
+  // Active playback continuously counts as activity.
+  useEffect(() => {
+    if (!keepAlive) return undefined;
+    lastActivityRef.current = Date.now();
+    const id = setInterval(() => { lastActivityRef.current = Date.now(); }, 5_000);
+    return () => clearInterval(id);
+  }, [keepAlive]);
 
   // Touch/pointer activity bumps the timer.
   useEffect(() => {

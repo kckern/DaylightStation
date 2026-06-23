@@ -1,15 +1,69 @@
-// PianoApp — kiosk shell styles. Touch-first, dark, full-viewport.
+// PianoApp — kiosk shell styles. Touch-first, full-viewport, LIGHT by default.
 // Roboto Condensed is the canonical app font (do not introduce new display fonts).
+//
+// Theme model: light is the unconditional default (no param, no prefers-color-scheme).
+// Browse chrome (menu, top bar, grids, lists, studio, transport) renders LIGHT.
+// Immersive *media stages* (video letterbox, fullscreen games, now-playing music,
+// the note-waterfall viz) stay DARK on purpose — a white video letterbox is a
+// defect, and idle now-playing dims to an ambient level so it doesn't glow in a
+// dark room. Every color below is a token so a future dark theme is an explicit
+// opt-in, never the default.
+
+:root {
+  // --- light defaults (unconditional) ---
+  --piano-bg: #ffffff;          // page background
+  --piano-fg: #1a1a1a;          // primary text (AA on white)
+  --piano-surface: #f4f4f6;     // cards / tiles / bars
+  --piano-surface-2: #e7e7ea;   // nested / hover / pressed
+  --piano-border: #d6d6dc;      // hairlines
+  --piano-muted: #5a5a64;       // secondary text (~7:1 on white — AA)
+  --piano-accent: #1f9d57;      // accent fill (buttons, progress)
+  --piano-accent-ink: #ffffff;  // text/icon on an accent fill
+  --piano-accent-text: #137a3e; // accent used AS text on a light surface (AA)
+  --piano-danger: #c0392b;      // record / delete / disconnected
+  --piano-warn: #b07400;        // loop-arming / mark A
+  --piano-warn-2: #d2561a;      // mark B
+
+  // --- type scale ---
+  --t-cap: 0.85rem;
+  --t-body: 1rem;
+  --t-h: 1.25rem;
+  --t-title: 1.6rem;
+  --t-display: 2.2rem;
+
+  // --- radius scale ---
+  --r-sm: 8px;    // thumbnails, small chips, score pages
+  --r-md: 12px;   // cards, tiles, bars, buttons
+  --r-lg: 16px;   // hero tiles, album art
+  --r-pill: 999px;
+
+  // --- media stages (dark, theme-independent) ---
+  --piano-stage: #000000;       // video letterbox / game canvas
+  --piano-stage-2: #0b0b0f;     // now-playing music backdrop
+  --piano-stage-panel: #14141b; // panels inside a media stage (queue)
+  --piano-stage-fg: #f2f2f2;    // text on a media stage
+  --piano-stage-muted: #bbbbbb; // secondary text on a media stage
+  --piano-stage-border: #2c2c38;
+  --piano-viz-bg: #07070a;      // note-waterfall canvas
+}
+
+// Inline SVG icon — sizes to the host's font-size via 1em, color via currentColor.
+.piano-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.piano-icon svg { width: 1em; height: 1em; display: block; }
 
 .piano-app {
   width: 100vw;
   height: 100vh;
+  position: relative;            // now-playing overlay anchors here
   display: flex;
   flex-direction: column;
-  background: #0e0e12;
-  color: #f2f2f2;
+  background: var(--piano-bg);
+  color: var(--piano-fg);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
   overflow: hidden;
+  // Kiosk-fixity: kill pull-to-refresh and double-tap/pinch zoom at the source.
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .piano-chrome {
@@ -18,8 +72,8 @@
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 1rem;
-  background: #16161d;
-  border-bottom: 1px solid #26262f;
+  background: var(--piano-surface);
+  border-bottom: 1px solid var(--piano-border);
 
   &__home {
     font-size: 1.5rem;
@@ -32,12 +86,15 @@
   }
 
   &__voice {
-    background: #22222c;
+    background: var(--piano-surface-2);
     color: inherit;
-    border: 1px solid #34343f;
-    border-radius: 6px;
-    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-pill);
+    padding: 0.4rem 0.9rem;
     font: inherit;
+    cursor: pointer;
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+    &:active { background: var(--piano-border); }
   }
 
   &__label {
@@ -50,14 +107,21 @@
     padding: 0.25rem 0.5rem;
   }
 
+  &__mode {
+    margin-left: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--piano-muted);
+  }
+
   &__status {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     background: none;
-    border: 1px solid #34343f;
-    border-radius: 999px;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-pill);
     padding: 0.3rem 0.8rem;
     color: inherit;
     cursor: pointer;
@@ -68,11 +132,36 @@
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
-    background: #b33;
+    background: var(--piano-danger);
   }
 
   &__status--on &__dot,
-  &__status--on .piano-chrome__dot { background: #3c7; }
+  &__status--on .piano-chrome__dot { background: var(--piano-accent); }
+}
+
+// Shared icon+label tile primitive — used by the home menu and the games picker.
+.piano-tile {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--piano-surface);
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg);
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+
+  &:active { transform: scale(0.97); background: var(--piano-surface-2); }
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  &.is-selected { border-color: var(--piano-accent); }
+
+  &__icon { font-size: 3rem; }
+  &__label { font-size: 1.6rem; font-weight: 700; }
+  &__blurb { font-size: 1rem; color: var(--piano-muted); }
 }
 
 .piano-menu {
@@ -89,28 +178,23 @@
     grid-template-columns: repeat(4, minmax(10rem, 16rem));
     gap: 1.5rem;
   }
+}
 
-  &__tile {
-    width: 100%;
-    aspect-ratio: 3 / 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: #1c1c25;
-    border: 1px solid #2c2c38;
-    border-radius: 16px;
-    color: inherit;
-    cursor: pointer;
-    transition: transform 0.12s ease, background 0.12s ease;
-
-    &:active { transform: scale(0.97); background: #24242f; }
+@media (orientation: portrait) {
+  .piano-menu__tiles {
+    grid-template-columns: repeat(2, minmax(9rem, 16rem));
   }
 
-  &__tile-icon { font-size: 3rem; }
-  &__tile-label { font-size: 1.6rem; font-weight: 700; }
-  &__tile-blurb { font-size: 1rem; color: #aaa; }
+  .piano-album-detail__body {
+    flex-direction: column;
+  }
+
+  .piano-album-detail__cover {
+    width: 100%;
+    max-width: 20rem;
+    height: auto;
+    aspect-ratio: 1 / 1;
+  }
 }
 
 .piano-mode {
@@ -118,7 +202,10 @@
   padding: 1.5rem;
   overflow: auto;
 
-  &__placeholder { color: #999; font-style: italic; }
+  h2 { font-size: var(--t-display); font-weight: 700; margin: 0 0 1rem; }
+  h3 { font-size: var(--t-h); font-weight: 700; margin: 0 0 0.5rem; }
+
+  &__placeholder { color: var(--piano-muted); font-style: italic; }
 
   &__grid {
     list-style: none;
@@ -129,17 +216,17 @@
   }
 
   &__tile {
-    background: #1c1c25;
-    border: 1px solid #2c2c38;
-    border-radius: 10px;
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
     color: inherit;
     padding: 1rem 1.5rem;
     cursor: pointer;
 
-    &.is-selected { border-color: #3c7; }
+    &.is-selected { border-color: var(--piano-accent); }
   }
 
-  &__staff { min-height: 12rem; background: #f7f3e8; border-radius: 10px; }
+  &__staff { min-height: 12rem; background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-md); }
 }
 
 .piano-connect-gate {
@@ -150,18 +237,20 @@
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  background: #0e0e12;
-  color: #f2f2f2;
+  background: var(--piano-bg);
+  color: var(--piano-fg);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
   text-align: center;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 
   &__btn {
     font-size: 1.3rem;
     padding: 0.8rem 2rem;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     border: none;
-    background: #3c7;
-    color: #06150c;
+    background: var(--piano-accent);
+    color: var(--piano-accent-ink);
     font-weight: 700;
     cursor: pointer;
   }
@@ -169,7 +258,7 @@
   &__skip {
     background: none;
     border: none;
-    color: #8a8a9a;
+    color: var(--piano-muted);
     text-decoration: underline;
     cursor: pointer;
   }
@@ -186,38 +275,41 @@
   }
 
   &__rec {
-    background: #2a2a34;
-    color: #fff;
-    border: 1px solid #444;
-    border-radius: 999px;
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-pill);
     padding: 0.5rem 1.2rem;
     font: inherit;
     cursor: pointer;
 
-    &.is-recording { background: #b33; border-color: #d55; }
+    &.is-recording { background: var(--piano-danger); border-color: var(--piano-danger); color: #fff; }
   }
 
   &__save {
-    background: #3c7;
-    color: #06150c;
+    background: var(--piano-accent);
+    color: var(--piano-accent-ink);
     border: none;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.5rem 1.2rem;
     font-weight: 700;
     cursor: pointer;
   }
 
-  &__status { color: #aaa; }
+  &__status { color: var(--piano-muted); }
 
-  &__waterfall { height: 14rem; margin: 1rem 0; background: #07070a; border-radius: 10px; overflow: hidden; }
+  // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
+  &__waterfall { height: 14rem; margin: 1rem 0; background: var(--piano-viz-bg); border-radius: var(--r-md); overflow: hidden; }
 
   &__takes {
     ul { list-style: none; padding: 0; margin: 0; }
-    li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid #22222c; }
-    button { background: #22222c; color: inherit; border: 1px solid #34343f; border-radius: 6px; padding: 0.3rem 0.7rem; cursor: pointer; }
+    li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--piano-border); }
+    button { background: var(--piano-surface-2); color: inherit; border: 1px solid var(--piano-border); border-radius: var(--r-sm); padding: 0.3rem 0.7rem; cursor: pointer; }
   }
 
   &__take-title { flex: 1 1 auto; }
+
+  &__confirm { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--piano-danger); }
 }
 
 .piano-video-grid {
@@ -233,34 +325,43 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    background: #1c1c25;
-    border: 1px solid #2c2c38;
-    border-radius: 10px;
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
     color: inherit;
     padding: 0.5rem;
     cursor: pointer;
     text-align: left;
 
-    img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
-    &:active { background: #24242f; }
+    img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm); }
+    &:active { background: var(--piano-surface-2); }
   }
 
-  &__title { font-size: 1rem; }
+  // Reserve a fixed two-line slot so variable-length titles don't ragged the board.
+  &__title {
+    font-size: 1rem;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 2.4em;
+  }
 }
 
-/* Course grid: poster-shaped tiles, titles live in img alt (no caption). */
+/* Course grid: poster-shaped tiles with visible caption below the cover. */
 .piano-video-grid--posters {
   grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
 
   .piano-video-grid__tile {
-    padding: 0;
+    padding: 0 0 0.25rem;
     background: transparent;
     border: none;
-    gap: 0;
+    gap: 0.35rem;
   }
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
-    border-radius: 8px;
+    border-radius: var(--r-sm);
   }
 }
 
@@ -270,7 +371,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #000;
+  background: var(--piano-stage);   // game canvas stage — dark
 
   &__back {
     position: absolute;
@@ -280,7 +381,7 @@
     background: rgba(0, 0, 0, 0.55);
     color: #fff;
     border: 1px solid #444;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     padding: 0.4rem 1rem;
     font: inherit;
     cursor: pointer;
@@ -289,83 +390,93 @@
 
 /* ---- Piano video: course detail ---- */
 .piano-video-detail {
-  &__head { display: flex; align-items: center; gap: 1rem; }
-  &__poster {
-    max-height: 9rem; border-radius: 10px; margin: 0.5rem 0;
-    object-fit: cover; align-self: flex-start;
-  }
-  &__summary { color: #aaa; max-width: 60ch; margin: 0 0 1rem; }
+  &__band { display: flex; gap: 1.25rem; align-items: flex-start; margin: 0.5rem 0 1rem; }
+  &__poster { max-height: 11rem; border-radius: var(--r-md); flex: 0 0 auto; object-fit: cover; }
+  &__meta { flex: 1 1 auto; min-width: 0; }
+  &__title { margin: 0 0 0.4rem; font-size: var(--t-display); font-weight: 700; }
+  &__summary { color: var(--piano-muted); max-width: 60ch; margin: 0; }
+  &__count { color: var(--piano-muted); margin: 0.4rem 0 0; }
 }
 
 /* lecture tile progress affordances (layered over .piano-video-grid__tile) */
 .piano-video-grid__tile { position: relative; }
 .piano-video-grid__badge {
   position: absolute; top: 6px; right: 6px;
-  background: #3c7; color: #0e0e12; font-weight: 700;
-  border-radius: 999px; width: 1.4rem; height: 1.4rem;
+  background: var(--piano-accent); color: var(--piano-accent-ink); font-weight: 700;
+  border-radius: var(--r-pill); width: 1.4rem; height: 1.4rem;
   display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
 }
 .piano-video-grid__bar {
   position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  span { display: block; height: 100%; background: #3c7; }
+  background: rgba(0, 0, 0, 0.15);
+  span { display: block; height: 100%; background: var(--piano-accent); }
+}
+.piano-video-grid__desc {
+  font-size: 0.85rem; color: var(--piano-muted); line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 /* ---- Piano video: player layout (video + chrome + keyboard footer) ---- */
 .piano-video-player {
   position: relative; flex: 1 1 auto; min-height: 0;
-  display: flex; flex-direction: column; background: #000;
+  display: flex; flex-direction: column; background: var(--piano-stage);
 
   &__video { flex: 1 1 auto; min-height: 0; position: relative; }
   /* playable keyboard footer — touch/click simulates keypresses */
   &__keys {
-    flex: 0 0 auto; background: #2a2a2a;
+    flex: 0 0 auto; background: var(--piano-surface-2);
     .piano-keyboard { height: 9rem; }
   }
 }
 
-/* ---- Piano video: transport chrome (in-flow bar) ---- */
+/* ---- Piano video: transport chrome (in-flow bar) — light ---- */
 .piano-video-chrome {
   flex: 0 0 auto; z-index: 5;
-  background: #0e0e12;
+  background: var(--piano-surface);
+  border-top: 1px solid var(--piano-border);
   padding: 0.5rem 1rem;
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 
   &__bar {
-    position: relative; height: 10px; border-radius: 999px;
-    background: rgba(255, 255, 255, 0.2); cursor: pointer; margin-bottom: 0.75rem;
+    position: relative; height: 10px; border-radius: var(--r-pill);
+    background: rgba(0, 0, 0, 0.15); cursor: pointer; margin-bottom: 0.75rem;
   }
-  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #3c7; }
-  &__mark { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: 2px; }
-  &__mark--a { background: #fd3; }
-  &__mark--b { background: #f63; }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-pill); background: var(--piano-accent); }
+  &__mark { position: absolute; top: -3px; width: 3px; height: 16px; border-radius: var(--r-sm); }
+  &__mark--a { background: var(--piano-warn); }
+  &__mark--b { background: var(--piano-warn-2); }
 
-  &__row { display: flex; align-items: center; gap: 0.5rem; }
+  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.4rem; }
   &__spacer { flex: 1 1 auto; }
-  &__time { color: #ddd; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
   &__btn {
     min-width: 3rem; height: 3rem; padding: 0 0.75rem;
-    background: #24242f; color: #f2f2f2; border: 1px solid #34343f;
-    border-radius: 10px; font-size: 1rem; cursor: pointer;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); font-size: 1rem; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     &:disabled { opacity: 0.4; cursor: default; }
-    &.is-arming { border-color: #fd3; color: #fd3; }
-    &.is-on { border-color: #3c7; color: #3c7; }
+    &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
+    &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); }
   }
-  &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
+  &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+
+  transition: opacity 0.35s ease;
 }
 
-/* ---- Music mode: album grid (square covers, titles in alt) ---- */
+.piano-video-player.chrome-hidden .piano-video-chrome { opacity: 0; pointer-events: none; }
+
+/* ---- Music mode: album grid (square covers with visible caption below) ---- */
 .piano-music-grid {
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
 
-  .piano-video-grid__tile { padding: 0; background: transparent; border: none; gap: 0; }
-  .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: 8px; }
+  .piano-video-grid__tile { padding: 0 0 0.25rem; background: transparent; border: none; gap: 0.35rem; }
+  .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: var(--r-sm); }
+  // chip rides over album art (varies) — keep a dark translucent chip for legibility
   &__badge {
     position: absolute; top: 6px; left: 6px;
-    background: rgba(14, 14, 18, 0.8); color: #3c7;
-    border-radius: 999px; width: 1.5rem; height: 1.5rem;
+    background: rgba(14, 14, 18, 0.8); color: #6cf0a0;
+    border-radius: var(--r-pill); width: 1.5rem; height: 1.5rem;
     display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
   }
 }
@@ -374,10 +485,10 @@
 .piano-album-detail {
   &__head { display: flex; align-items: center; gap: 1rem; }
   &__body { display: flex; gap: 1.5rem; min-height: 0; flex: 1 1 auto; }
-  &__cover { width: 16rem; height: 16rem; object-fit: cover; border-radius: 12px; align-self: flex-start; }
+  &__cover { width: 16rem; height: 16rem; object-fit: cover; border-radius: var(--r-md); align-self: flex-start; }
   &__tracks { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
   &__playall {
-    background: #3c7; color: #0e0e12; border: none; border-radius: 999px;
+    background: var(--piano-accent); color: var(--piano-accent-ink); border: none; border-radius: var(--r-pill);
     padding: 0.6rem 1.5rem; font: inherit; font-weight: 700; cursor: pointer; margin-bottom: 0.75rem;
   }
 }
@@ -386,23 +497,28 @@
   list-style: none; margin: 0; padding: 0;
   &__row {
     width: 100%; display: flex; align-items: center; gap: 0.75rem;
-    background: transparent; border: none; color: #f2f2f2;
+    background: transparent; border: none; color: var(--piano-fg);
     padding: 0.6rem 0.5rem; font: inherit; text-align: left; cursor: pointer;
-    border-bottom: 1px solid #2c2c38;
-    &:active { background: #24242f; }
-    &.is-current { color: #3c7; }
+    border-bottom: 1px solid var(--piano-border);
+    &:active { background: var(--piano-surface-2); }
+    &.is-current { color: var(--piano-accent-text); }
   }
-  &__num { width: 1.6rem; text-align: right; color: #999; font-variant-numeric: tabular-nums; }
+  &__num { width: 1.6rem; text-align: right; color: var(--piano-muted); font-variant-numeric: tabular-nums; }
   &__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__dur { color: #999; font-variant-numeric: tabular-nums; }
+  &__dur { color: var(--piano-muted); font-variant-numeric: tabular-nums; }
 }
 
-/* ---- Music mode: Plexamp-style now-playing ---- */
+/* ---- Music mode: Plexamp-style now-playing — immersive DARK media stage ----
+   Full-cover overlay: it sits over the app header (which therefore hides in
+   now-playing). When idle/chromeless it dims to an ambient level so it doesn't
+   glow in a dark room; any tap reveals + restores full brightness. */
 .piano-music-player {
-  position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;
+  position: absolute; inset: 0; z-index: 40; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  background: #0b0b0f;
+  background: var(--piano-stage-2);
+  color: var(--piano-stage-fg);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
+  transition: filter 0.6s ease;
 
   /* blurred cover wash behind the art */
   &::before {
@@ -414,7 +530,7 @@
   &__art {
     position: relative; z-index: 1;
     width: min(60vh, 80vw); height: min(60vh, 80vw);
-    img { width: 100%; height: 100%; object-fit: cover; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+    img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--r-lg); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
   }
 
   &__chrome {
@@ -428,40 +544,46 @@
   &__top { display: flex; align-items: center; gap: 1rem; }
   &__meta { flex: 1 1 auto; min-width: 0; text-align: center; }
   &__title { font-size: 1.4rem; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__sub { color: #bbb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__sub { color: var(--piano-stage-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   &__bottom { display: flex; flex-direction: column; gap: 0.75rem; }
-  &__bar { position: relative; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.25); cursor: pointer; }
-  &__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #3c7; }
-  &__times { display: flex; justify-content: space-between; color: #bbb; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+  &__bar { position: relative; height: 8px; border-radius: var(--r-pill); background: rgba(255,255,255,0.25); cursor: pointer; }
+  &__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-pill); background: var(--piano-accent); }
+  &__times { display: flex; justify-content: space-between; color: var(--piano-stage-muted); font-variant-numeric: tabular-nums; font-size: 0.9rem; }
   &__transport { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
   &__volume { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
-  &__vol-val { color: #bbb; min-width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+  &__vol-val { color: var(--piano-stage-muted); min-width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
 
   &.chrome-hidden .piano-music-player__chrome { opacity: 0; pointer-events: none; }
+  // Ambient dim when idle so the screen doesn't glow in a dark room. Tap wakes it.
+  &.chrome-hidden { filter: brightness(0.15); }
 }
 
 .piano-music-btn {
   min-width: 3rem; height: 3rem; padding: 0 0.6rem;
-  background: rgba(36,36,47,0.6); color: #f2f2f2; border: 1px solid #34343f;
-  border-radius: 12px; font-size: 1.1rem; cursor: pointer;
+  background: rgba(36,36,47,0.6); color: var(--piano-stage-fg); border: 1px solid var(--piano-stage-border);
+  border-radius: var(--r-md); font-size: 1.1rem; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  &.is-on { border-color: #3c7; color: #3c7; }
-  &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: #3c7; color: #0e0e12; border-color: #3c7; }
+  &.is-on { border-color: var(--piano-accent); color: #6cf0a0; }
+  &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
 .piano-music-queue {
   position: absolute; right: 0; top: 0; bottom: 0; z-index: 3;
-  width: min(28rem, 90vw); background: #14141b; border-left: 1px solid #2c2c38;
+  width: min(28rem, 90vw); background: var(--piano-stage-panel); border-left: 1px solid var(--piano-stage-border);
   display: flex; flex-direction: column; padding: 1rem;
-  &__head { display: flex; align-items: center; justify-content: space-between; color: #f2f2f2; margin-bottom: 0.5rem; font-weight: 700; }
+  &__head { display: flex; align-items: center; justify-content: space-between; color: var(--piano-stage-fg); margin-bottom: 0.5rem; font-weight: 700; }
   .piano-track-list { overflow-y: auto; }
+  // track list inside the dark stage needs stage colors, not the light page colors
+  .piano-track-list__row { color: var(--piano-stage-fg); border-bottom-color: var(--piano-stage-border); }
+  .piano-track-list__row.is-current { color: #6cf0a0; }
+  .piano-track-list__num, .piano-track-list__dur { color: var(--piano-stage-muted); }
 }
 
-/* ---- Sheet Music mode: score viewer ---- */
+/* ---- Sheet Music mode: score viewer (light mat, white pages) ---- */
 .piano-score-viewer {
   position: relative; flex: 1 1 auto; min-height: 0;
-  display: flex; flex-direction: column; background: #2a2a2a;
+  display: flex; flex-direction: column; background: var(--piano-surface-2);
 
   &__pages {
     flex: 1 1 auto; min-height: 0; overflow-y: auto;
@@ -470,6 +592,50 @@
   }
   &__page {
     width: min(60rem, 100%); height: auto;
-    background: #fff; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    background: #fff; border-radius: var(--r-sm); box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+}
+
+/* Task 8: skeleton tiles so posters don't flash empty rectangles on a fixed kiosk.
+   aspect-ratio lives on the IMG (not the tile) so the caption below isn't clipped. */
+.piano-video-grid__tile img { background: var(--piano-surface-2); }
+.piano-video-grid--posters .piano-video-grid__tile img { aspect-ratio: 2 / 3; border-radius: var(--r-sm); background: var(--piano-surface-2); }
+.piano-music-grid .piano-video-grid__tile img { aspect-ratio: 1 / 1; border-radius: var(--r-sm); background: var(--piano-surface-2); }
+
+/* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
+.piano-video-grid--posters .piano-video-grid__title,
+.piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
+
+/* ---- PianoBack — shared in-flow back control ---- */
+.piano-back {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: var(--piano-surface); color: var(--piano-fg);
+  border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+  padding: 0.4rem 0.9rem; font: inherit; cursor: pointer;
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  &:active { background: var(--piano-surface-2); }
+  .piano-icon { font-size: 1.1rem; }
+}
+
+/* ---- Task 30: Focus-visible rings for remaining interactive controls ---- */
+.piano-music-btn:focus-visible,
+.piano-video-chrome__btn:focus-visible,
+.piano-track-list__row:focus-visible,
+.piano-chrome__home:focus-visible,
+.piano-chrome__status:focus-visible,
+.piano-album-detail__playall:focus-visible,
+.piano-studio__rec:focus-visible,
+.piano-studio__save:focus-visible,
+.piano-connect-gate__btn:focus-visible,
+.piano-game-fullscreen__back:focus-visible {
+  outline: 3px solid var(--piano-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
+@media (prefers-reduced-motion: reduce) {
+  .piano-app *, .piano-app *::before, .piano-app *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }

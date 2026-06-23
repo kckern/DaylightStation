@@ -2,7 +2,10 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
-import useVanishingControls from './useVanishingControls.js';
+import useVanishingControls from '../../useVanishingControls.js';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import useReloadGuard from '../../useReloadGuard.js';
+import Icon from '../../icons/Icon.jsx';
 
 /**
  * Plexamp-style now-playing for the Music mode. Album art + progress are the
@@ -15,6 +18,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
   const logger = useRef(null);
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-music-player' });
 
+  const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [order, setOrder] = useState(() => buildOrder(tracks.length, false));
@@ -29,6 +33,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
   const track = tracks[trackIndex] || null;
   const cover = track?.image || album?.image || album?.thumbnail || null;
   const { visible, reveal } = useVanishingControls({ active: playing && !showQueue });
+  useReloadGuard(playing);
 
   // Load + autoplay the current track whenever it changes.
   useEffect(() => {
@@ -41,6 +46,12 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
 
   // Apply volume to the element.
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
+
+  // Report active playback to the kiosk context so the inactivity timer stays alive.
+  useEffect(() => {
+    setGlobalPlaying(playing);
+    return () => setGlobalPlaying(false);
+  }, [playing, setGlobalPlaying]);
 
   const goNext = useCallback((auto = false) => {
     setPos((p) => {
@@ -117,12 +128,12 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
 
       <div className="piano-music-player__chrome">
         <div className="piano-music-player__top">
-          <button type="button" className="piano-music-btn" onClick={onBack} aria-label="Back to music">‹</button>
+          <button type="button" className="piano-music-btn" onClick={onBack} aria-label="Back to music"><Icon name="back" /></button>
           <div className="piano-music-player__meta">
             <div className="piano-music-player__title">{track?.title || ''}</div>
             <div className="piano-music-player__sub">{[track?.artist, track?.album].filter(Boolean).join(' — ')}</div>
           </div>
-          <button type="button" className="piano-music-btn" onClick={() => setShowQueue((q) => !q)} aria-label="Queue">≡</button>
+          <button type="button" className="piano-music-btn" onClick={() => setShowQueue((q) => !q)} aria-label="Queue"><Icon name="queue" /></button>
         </div>
 
         <div className="piano-music-player__bottom">
@@ -133,16 +144,16 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
             <span>{formatTime(time)}</span><span>{formatTime(dur)}</span>
           </div>
           <div className="piano-music-player__transport">
-            <button type="button" className={`piano-music-btn${shuffle ? ' is-on' : ''}`} onClick={toggleShuffle} aria-label="Shuffle">🔀</button>
-            <button type="button" className="piano-music-btn" onClick={goPrev} aria-label="Previous">⏮</button>
-            <button type="button" className="piano-music-btn piano-music-btn--play" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button>
-            <button type="button" className="piano-music-btn" onClick={() => goNext(false)} aria-label="Next">⏭</button>
-            <button type="button" className={`piano-music-btn${repeat ? ' is-on' : ''}`} onClick={toggleRepeat} aria-label="Repeat">🔁</button>
+            <button type="button" className={`piano-music-btn${shuffle ? ' is-on' : ''}`} onClick={toggleShuffle} aria-label="Shuffle"><Icon name="shuffle" /></button>
+            <button type="button" className="piano-music-btn" onClick={goPrev} aria-label="Previous"><Icon name="previous" /></button>
+            <button type="button" className="piano-music-btn piano-music-btn--play" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <Icon name="pause" /> : <Icon name="play" />}</button>
+            <button type="button" className="piano-music-btn" onClick={() => goNext(false)} aria-label="Next"><Icon name="next" /></button>
+            <button type="button" className={`piano-music-btn${repeat ? ' is-on' : ''}`} onClick={toggleRepeat} aria-label="Repeat"><Icon name="repeat" /></button>
           </div>
           <div className="piano-music-player__volume">
-            <button type="button" className="piano-music-btn" onClick={() => changeVol(-0.1)} aria-label="Volume down">🔉</button>
+            <button type="button" className="piano-music-btn" onClick={() => changeVol(-0.1)} aria-label="Volume down"><Icon name="volume-down" /></button>
             <span className="piano-music-player__vol-val">{Math.round(vol * 100)}</span>
-            <button type="button" className="piano-music-btn" onClick={() => changeVol(0.1)} aria-label="Volume up">🔊</button>
+            <button type="button" className="piano-music-btn" onClick={() => changeVol(0.1)} aria-label="Volume up"><Icon name="volume-up" /></button>
           </div>
         </div>
       </div>
@@ -151,7 +162,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
         <div className="piano-music-queue">
           <div className="piano-music-queue__head">
             <span>Up Next</span>
-            <button type="button" className="piano-music-btn" onClick={() => setShowQueue(false)} aria-label="Close queue">✕</button>
+            <button type="button" className="piano-music-btn" onClick={() => setShowQueue(false)} aria-label="Close queue"><Icon name="close" /></button>
           </div>
           <ol className="piano-track-list">
             {order.map((ti, i) => {
@@ -159,7 +170,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, onBack }) {
               return (
                 <li key={t?.contentId || ti}>
                   <button type="button" className={`piano-track-list__row${i === pos ? ' is-current' : ''}`} onClick={() => jumpTo(ti)}>
-                    <span className="piano-track-list__num">{i === pos ? '▶' : t?.index}</span>
+                    <span className="piano-track-list__num">{i === pos ? <Icon name="play" /> : t?.index}</span>
                     <span className="piano-track-list__title">{t?.title}</span>
                     <span className="piano-track-list__dur">{t?.duration ? formatTime(t.duration) : ''}</span>
                   </button>
