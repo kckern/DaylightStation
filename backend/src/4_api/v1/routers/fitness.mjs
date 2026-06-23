@@ -42,7 +42,7 @@ import { SessionLockService } from '#apps/fitness/services/SessionLockService.mj
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
-import { buildFingerprintIdentityIndex } from '#apps/fitness/identityRelay.mjs';
+import { buildFingerprintIdentityIndex, buildAuthz } from '#apps/fitness/identityRelay.mjs';
 
 // Commit (locking down) is the safe direction, so the admin-press pending may be
 // consumed within a generous window that covers the on-screen ceremony. Un-locking
@@ -1413,18 +1413,77 @@ export function createFitnessRouter(config) {
   }));
 
   /**
+   * Fingerprint candidate gallery for an emergency release: every admin's enrolled
+   * prints, deduped by uuid. Gated on buildAuthz().admin — the same authority that
+   * stamps an emergency `pending` detection — so exactly the people who can trigger
+   * the lockdown can release it, and re-arming the reader during LOCKED can never
+   * match a non-admin finger (the whole point of the lockdown).
+   */
+  function emergencyAdminGallery(req) {
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
+    const profiles = userService?.getAllProfiles?.() || {};
+    const entries = profiles instanceof Map ? [...profiles.entries()] : Object.entries(profiles);
+    const seen = new Set();
+    const gallery = [];
+    for (const [username, profile] of entries) {
+      if (!buildAuthz(username, fitnessConfig).admin) continue;
+      for (const fp of profile?.identities?.fingerprints || []) {
+        if (!fp?.id || seen.has(fp.id)) continue;
+        seen.add(fp.id);
+        gallery.push({ uuid: fp.id, username });
+      }
+    }
+    return gallery;
+  }
+
+  /**
    * POST /api/fitness/emergency/release — release an active lockdown with an
    * admin scan.
    *
+   * Unlike commit/abort (which ride the ceremony's just-stamped detection), the
+   * LOCKED screen sits idle: nothing keeps the garage reader armed during a
+   * lockdown (the detector stands down on `lockdown-active`), so a passive consume
+   * would always miss and the press-and-hold would be useless. This endpoint
+   * therefore ACTIVELY re-arms the reader for an admin fingerprint, scoped to
+   * emergency-admin candidates only, then releases on a match.
+   *
    * - 200 { released:boolean }
+   * - 503 { error:'unlock-service-unavailable', released:false } — no reader wired
    */
   router.post('/emergency/release', asyncHandler(async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
-    const pending = identityRelay?.consumePendingDetection?.(Date.now());
+
+    // Fast path: an admin scan already left a fresh pending detection (e.g. the
+    // abuse detector's arm window was briefly open). Honor it without re-arming.
+    let pending = identityRelay?.consumePendingDetection?.(Date.now());
+
     if (!pending) {
-      logger?.info?.('emergency.release_denied', { reason: 'no-pending-detection' });
-      return res.json({ released: false });
+      const unlockService = resolveUnlockService?.();
+      if (!unlockService) {
+        logger?.warn?.('emergency.release_denied', { reason: 'unlock-service-unavailable' });
+        return res.status(503).json({ error: 'unlock-service-unavailable', released: false });
+      }
+      const gallery = emergencyAdminGallery(req);
+      if (gallery.length === 0) {
+        logger?.warn?.('emergency.release_denied', { reason: 'no-admin-candidates' });
+        return res.json({ released: false });
+      }
+      logger?.info?.('emergency.release_scan_start', { candidates: gallery.length });
+      let verdict;
+      try {
+        verdict = await unlockService.requestUnlock('emergency:release', gallery);
+      } catch (err) {
+        logger?.error?.('emergency.release_scan_error', { message: err?.message ?? null });
+        return res.status(500).json({ error: 'release-scan-failed', released: false });
+      }
+      if (!verdict?.matched) {
+        logger?.info?.('emergency.release_denied', { reason: verdict?.reason || 'no-match' });
+        return res.json({ released: false });
+      }
+      pending = { userId: verdict.userId, at: Date.now() };
     }
+
     if (releaseEmergencyLockdown) await releaseEmergencyLockdown.execute({ by: pending.userId, now });
     logger?.info?.('emergency.released', { userId: pending.userId });
     res.json({ released: true });
