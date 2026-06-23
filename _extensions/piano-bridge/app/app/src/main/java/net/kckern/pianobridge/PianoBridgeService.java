@@ -53,6 +53,9 @@ public class PianoBridgeService extends Service {
     private MidiOutputPort openMidiPort;
     private MidiReceiver midiReceiver;
 
+    private DeviceConfig config;
+    private BleMidiConnector bleConnector;
+
     private volatile boolean engineRunning = false;
 
     @Override
@@ -92,7 +95,7 @@ public class PianoBridgeService extends Service {
             }
         }
 
-        openMidi();
+        startBleMidi();
 
         // Regular service: do not auto-restart with a sticky intent; the kiosk
         // (and BootReceiver / MainActivity) re-launch us explicitly.
@@ -102,6 +105,7 @@ public class PianoBridgeService extends Service {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
+        if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         closeMidi();
         if (controlServer != null) {
             controlServer.stop();
@@ -172,60 +176,66 @@ public class PianoBridgeService extends Service {
         startForeground(NOTIFICATION_ID, notification);
     }
 
-    // --- MIDI input via MidiManager ---
+    // --- BLE-MIDI input via BleMidiConnector ---
 
-    private void openMidi() {
+    /**
+     * Start the BLE-MIDI connector: it scans for the configured piano BY MAC,
+     * opens it via MidiManager.openBluetoothDevice() (which also registers it so
+     * the browser's Web MIDI sees it), connects its output port to our receiver,
+     * and auto-reconnects on drop. Replaces the old getDevices() approach, which
+     * could only read a device some OTHER app had already paired.
+     */
+    private void startBleMidi() {
+        if (config == null) config = DeviceConfig.load(this);
         midiManager = (MidiManager) getSystemService(Context.MIDI_SERVICE);
         if (midiManager == null) {
             Log.e(TAG, "MidiManager unavailable on this device");
             return;
         }
-
-        MidiDeviceInfo[] infos = midiManager.getDevices();
-        Log.i(TAG, "MidiManager reports " + infos.length + " device(s)");
-
-        MidiDeviceInfo chosen = null;
-        for (MidiDeviceInfo info : infos) {
-            // Must have at least one output port (device -> us).
-            if (info.getOutputPortCount() <= 0) continue;
-            String name = info.getProperties().getString(MidiDeviceInfo.PROPERTY_NAME, "");
-            Log.i(TAG, "  MIDI device: '" + name + "' outputs=" + info.getOutputPortCount());
-            if (midiNameFilter == null || midiNameFilter.isEmpty()
-                    || (name != null && name.toLowerCase().contains(midiNameFilter.toLowerCase()))) {
-                chosen = info;
-                if (midiNameFilter != null && !midiNameFilter.isEmpty()) break; // exact-ish match wins
-            }
-        }
-
-        if (chosen == null) {
-            Log.w(TAG, "No matching MIDI input device found (filter='" + midiNameFilter
-                    + "'). Relay mode (WS note.on/off) still available.");
-            return;
-        }
-
-        final MidiDeviceInfo target = chosen;
-        midiManager.openDevice(target, new MidiManager.OnDeviceOpenedListener() {
-            @Override
-            public void onDeviceOpened(MidiDevice device) {
-                if (device == null) {
-                    Log.e(TAG, "Failed to open MIDI device");
-                    return;
+        if (bleConnector == null) {
+            bleConnector = new BleMidiConnector(this, config, new BleMidiConnector.Listener() {
+                @Override public void onMidiDeviceOpened(MidiDevice device, String name, String mac) {
+                    connectPort(device);
                 }
-                openMidiDevice = device;
-                openMidiPort = device.openOutputPort(0);
-                if (openMidiPort == null) {
-                    Log.e(TAG, "Failed to open MIDI output port 0");
-                    return;
+                @Override public void onMidiDeviceClosed() {
+                    closeMidi();
                 }
-                midiReceiver = new PianoMidiReceiver();
-                openMidiPort.connect(midiReceiver);
-                String name = target.getProperties().getString(MidiDeviceInfo.PROPERTY_NAME, "");
-                Log.i(TAG, "MIDI input connected: '" + name + "'");
-            }
-        }, new Handler(Looper.getMainLooper()));
+            });
+            bleConnector.start();
+        } else {
+            bleConnector.connectNow();
+        }
     }
 
-    private void closeMidi() {
+    /** Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver. */
+    private synchronized void connectPort(MidiDevice device) {
+        closeMidi(); // tear down any previous port first
+        openMidiDevice = device;
+        openMidiPort = device.openOutputPort(0);
+        if (openMidiPort == null) {
+            Log.e(TAG, "Failed to open MIDI output port 0");
+            return;
+        }
+        midiReceiver = new PianoMidiReceiver();
+        openMidiPort.connect(midiReceiver);
+        Log.i(TAG, "MIDI output port connected");
+    }
+
+    // --- accessors / control used by ControlServer ---
+
+    public BleMidiConnector getBleConnector() { return bleConnector; }
+
+    public DeviceConfig getConfig() { return config; }
+
+    /** Re-read the device config (after a pbctl /config edit) and reconnect. */
+    public synchronized void reloadConfigAndReconnect() {
+        config = DeviceConfig.load(this);
+        if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
+        closeMidi();
+        startBleMidi();
+    }
+
+    private synchronized void closeMidi() {
         try {
             if (openMidiPort != null) {
                 if (midiReceiver != null) openMidiPort.disconnect(midiReceiver);

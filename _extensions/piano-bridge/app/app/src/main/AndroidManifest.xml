@@ -8,14 +8,27 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- INTERNET: required for the localhost WebSocket control server. -->
+    <!-- INTERNET: the WebSocket + HTTP control server (localhost for the kiosk,
+         LAN for the external pbctl CLI — NanoHTTPD binds all interfaces). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Read SFZ/sample assets from /sdcard/piano-instruments (legacy storage, targetSdk 29). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
+    <!-- Bluetooth LE: the bridge CONNECTS the BLE-MIDI piano itself via
+         MidiManager.openBluetoothDevice() (the job the throwaway connect app did).
+         On Android 10 (API 29) a BLE scan needs BLUETOOTH_ADMIN +
+         ACCESS_FINE_LOCATION (granted at runtime by MainActivity). The Android-12+
+         BLUETOOTH_SCAN/CONNECT split does not apply at targetSdk 29. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <!-- The bridge reads the BLE-MIDI piano directly via Android MidiManager. -->
     <uses-feature
         android:name="android.software.midi"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
     <application
