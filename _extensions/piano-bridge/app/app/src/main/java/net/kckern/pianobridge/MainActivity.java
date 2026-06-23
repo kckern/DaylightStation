@@ -1,7 +1,9 @@
 package net.kckern.pianobridge;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
@@ -18,6 +20,7 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
 
     private static final String TAG = "PianoBridge";
+    private static final int REQ_LOCATION = 1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,8 +51,27 @@ public class MainActivity extends Activity {
 
         setContentView(root);
 
-        // Auto-start the service on launch (e.g. after first install).
-        startBridgeService(false);
+        // BLE scanning on Android 10 requires ACCESS_FINE_LOCATION granted at
+        // runtime. Request it before the service tries to scan; the grant
+        // persists, so this is a one-time setup tap. Then start the service.
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            status.setText("Piano Bridge — grant Location to connect the BLE piano");
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQ_LOCATION);
+        } else {
+            startBridgeService(false);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_LOCATION) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            Log.i(TAG, "Location permission granted=" + granted);
+            // Start regardless; the connector reports NO_LOCATION over /status if denied.
+            startBridgeService(false);
+        }
     }
 
     private void startBridgeService(boolean restart) {
