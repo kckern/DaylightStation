@@ -57,10 +57,13 @@ public class MainActivity extends Activity {
         if (restart) {
             stopService(serviceIntent);
         }
-        // Regular started service (NOT startForegroundService): the bridge does
-        // not need foreground-service privileges. It posts a persistent
-        // notification via NotificationManager.notify() instead.
-        startService(serviceIntent);
+        // Foreground service so it's legal to start even when Fully Kiosk has
+        // already pulled us to the background, and so the kiosk won't kill it.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
         Log.i(TAG, "PianoBridgeService start requested (restart=" + restart + ")");
     }
 }

@@ -36,8 +36,8 @@ public class PianoBridgeService extends Service {
     private static final String CHANNEL_ID = "piano_bridge_channel";
     private static final int NOTIFICATION_ID = 1;
 
-    /** Where instrument assets (SFZ samples, DX7 .syx banks) are pushed via adb. */
-    public static final String INSTRUMENTS_DIR = "/sdcard/piano-instruments";
+    /** Subdir (under the app's external files dir) where instrument assets live. */
+    public static final String INSTRUMENTS_SUBDIR = "piano-instruments";
 
     /**
      * BLE-MIDI input device name substring used to pick the piano. Override-able
@@ -127,7 +127,13 @@ public class PianoBridgeService extends Service {
 
     public boolean isEngineRunning() { return engineRunning; }
 
-    public File getInstrumentsDir() { return new File(INSTRUMENTS_DIR); }
+    /**
+     * App-specific external files dir (no storage permission needed, always
+     * readable by native code): /sdcard/Android/data/net.kckern.pianobridge/files/piano-instruments.
+     * Avoids the Android-10 scoped-storage / restricted-READ_EXTERNAL_STORAGE trap
+     * that blocks native fopen() on arbitrary /sdcard paths.
+     */
+    public File getInstrumentsDir() { return new File(getExternalFilesDir(null), INSTRUMENTS_SUBDIR); }
 
     public synchronized void engineStart() {
         if (engine == null) { Log.w(TAG, "engineStart: no engine"); return; }
@@ -159,8 +165,11 @@ public class PianoBridgeService extends Service {
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setOngoing(true)
                 .build();
-        // notify(), NOT startForeground() — regular started service.
-        getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification);
+        // Foreground service: legal to (re)start from a background/kiosk context and
+        // not killed when Fully Kiosk reclaims the foreground. Unlike the sibling
+        // audio-bridge, this app has NO mic, so the Android-11 foreground-service mic
+        // restriction that forced audio-bridge to avoid startForeground() does not apply.
+        startForeground(NOTIFICATION_ID, notification);
     }
 
     // --- MIDI input via MidiManager ---

@@ -100,11 +100,19 @@ void SfizzEngine::render(float* out, int frames) {
     float left[frames];
     float right[frames];
     float* chans[2] = { left, right };
-    synth_->renderBlock(chans, frames, 2);
+    // sfizz: 3rd arg is the number of STEREO output pairs (not channels). One
+    // stereo output writes exactly these 2 L/R buffers; passing 2 made sfizz
+    // write to 4 buffers (chans[2]/[3] don't exist) -> SIGSEGV.
+    synth_->renderBlock(chans, frames, 1);
+    float peak = 0.0f;
     for (int i = 0; i < frames; ++i) {
         out[2 * i]     = left[i]  * gainLinear_;
         out[2 * i + 1] = right[i] * gainLinear_;
+        float a = std::fabs(left[i]); if (a > peak) peak = a;
     }
+    // Sampled signal-present log (proves non-silence; throttled to ~1/100 blocks).
+    static int rc = 0;
+    if (peak > 0.001f && (++rc % 100 == 0)) LOGI("render signal peak=%.3f", peak);
     // reverbMix_ would feed a shared reverb send here.
 #else
     std::memset(out, 0, sizeof(float) * frames * 2); // silence
