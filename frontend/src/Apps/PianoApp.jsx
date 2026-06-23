@@ -106,9 +106,12 @@ function PianoShell() {
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
+  const HIDE_VOICE_MODES = new Set(['videos', 'music', 'sheetmusic']);
+  const showVoice = !modeKey || !HIDE_VOICE_MODES.has(modeKey);
+
   return (
     <div className="piano-app">
-      <PianoChrome voices={config.voices} label={config.label} modeLabel={modeLabel} />
+      <PianoChrome voices={config.voices} label={config.label} modeLabel={modeLabel} showVoice={showVoice} />
       <Routes>
         <Route index element={<PianoMenu />} />
         <Route path="videos/*" element={<Videos />} />
