@@ -172,6 +172,9 @@
   color: inherit;
   cursor: pointer;
   transition: transform 0.12s ease, background 0.12s ease;
+  // Isolate each tile's paint so a press (scale + background) never invalidates
+  // its grid neighbours.
+  contain: layout paint;
 
   &:active { transform: scale(0.97); background: var(--piano-surface-2); }
   &.is-selected { border-color: var(--piano-accent); }
