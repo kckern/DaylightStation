@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="net.kckern.pianobridge">
+
+    <!-- FOREGROUND_SERVICE: declared for parity with audio-bridge, though the
+         service runs as a REGULAR started service with NotificationManager.notify()
+         (NOT startForeground) — see DESIGN.md "Service Lifecycle". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- INTERNET: required for the localhost WebSocket control server. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The bridge reads the BLE-MIDI piano directly via Android MidiManager. -->
+    <uses-feature
+        android:name="android.software.midi"
+        android:required="true" />
+
+    <application
+        android:label="Piano Bridge"
+        android:allowBackup="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="Piano Bridge">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- LEANBACK so it is launchable on TV-style devices too. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Regular started service (no foregroundServiceType): the synth host +
+             MIDI reader + WS control server. -->
+        <service
+            android:name=".PianoBridgeService"
+            android:exported="false" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>
