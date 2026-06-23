@@ -93,3 +93,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-18 | worktree-fitness-per-user-rotations | d5b93b696 | Per-user pedal-rotation attribution (4 commits, 2 wks stale). Superseded: feature already in main — TreasureBox.js (30 refs) + TimelineRecorder.js carry per-user/rotation tracking. Only stale test files were unique. |
 | 2026-06-19 | fitness/scanner-abuse-lockdown | bc77e4655 | Scanner-abuse auto-lockdown (3 failed scans/30s → DEFCON ceremony) |
 | 2026-06-22 | feat/piano-video-player | 9b0cf3aad | Piano course browser + student video player + MIDI play-along |
+| 2026-06-22 | feat/piano-clickable-keyboard | 7eb10087c | Clickable on-screen keyboard + trimmed piano video player |
