@@ -3,7 +3,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
-import Icon from '../../icons/Icon.jsx';
+import CoverFlow from './CoverFlow.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -53,20 +53,10 @@ export default function AlbumGrid({ music, onSelect }) {
   }
 
   return (
-    <section className="piano-mode piano-mode--music">
+    <section className="piano-mode piano-mode--music piano-music-flow">
       {loading && <PianoEmpty loading />}
       {!loading && items.length === 0 && <PianoEmpty message={error || (noConfig ? 'No music has been set up yet.' : 'No music found.')} />}
-      {!loading && items.length > 0 && (
-        <ul className="piano-video-grid piano-music-grid">
-          {items.map((item) => (
-            <li key={item.id}>
-              <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
-                {(item.thumbnail || item.image) && <img src={item.thumbnail || item.image} alt={item.title} loading="eager" decoding="async" />}
-                {item.isPlaylist && <span className="piano-music-grid__badge"><Icon name="music" /></span>}              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {!loading && items.length > 0 && <CoverFlow items={items} onOpen={onSelect} />}
     </section>
   );
 }
