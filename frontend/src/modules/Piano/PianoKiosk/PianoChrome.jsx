@@ -76,7 +76,7 @@ export function PianoChrome({ voices = [], instruments = [], modeLabel, modeKey,
           onClick={() => navigate(basePath)}
           aria-label="Home"
         >
-          <Icon name="home" />
+          <Icon name="piano" />
         </button>
 
         {trail.map((c, i) => {
