@@ -36,7 +36,7 @@ export default function PianoVideoChrome({
         {markPos(loop?.b) && <span className="piano-video-chrome__mark piano-video-chrome__mark--b" style={{ left: markPos(loop.b) }} />}
       </div>
       <div className="piano-video-chrome__row">
-        <button type="button" className="piano-video-chrome__btn" onClick={onBack}>‹ Lessons</button>
+        <button type="button" className="piano-video-chrome__btn" onClick={onBack}>‹ Course</button>
         <span className="piano-video-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
         <div className="piano-video-chrome__spacer" />
         <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-30)} aria-label="Back 30 seconds">«30</button>
