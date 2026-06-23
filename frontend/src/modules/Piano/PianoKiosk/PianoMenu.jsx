@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
-import Icon from './icons/Icon.jsx';
+import PianoTile from './PianoTile.jsx';
 
 export const PIANO_MODES = [
   { id: 'videos', label: 'Videos', blurb: 'Watch lessons & lectures', icon: 'video' },
@@ -31,11 +31,7 @@ export function PianoMenu() {
       <ul className="piano-menu__tiles">
         {PIANO_MODES.map((m) => (
           <li key={m.id}>
-            <button type="button" className="piano-menu__tile" onClick={() => open(m.id)}>
-              <Icon name={m.icon} className="piano-menu__tile-icon" />
-              <span className="piano-menu__tile-label">{m.label}</span>
-              <span className="piano-menu__tile-blurb">{m.blurb}</span>
-            </button>
+            <PianoTile icon={m.icon} label={m.label} blurb={m.blurb} onClick={() => open(m.id)} />
           </li>
         ))}
       </ul>

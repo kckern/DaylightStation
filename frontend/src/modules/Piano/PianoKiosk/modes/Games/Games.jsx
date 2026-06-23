@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import PianoTile from '../../PianoTile.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
@@ -43,19 +44,17 @@ function GamePicker() {
 
   return (
     <section className="piano-mode piano-mode--games">
-      <ul className="piano-mode__grid">
+      <ul className="piano-menu__tiles">
         {ids.map((id) => (
           <li key={id}>
-            <button
-              type="button"
-              className="piano-mode__tile"
+            <PianoTile
+              icon="game"
+              label={GAME_LABELS[id] ?? id}
               onClick={() => {
                 logger.info('piano.game-enter', { game: id });
                 navigate(id);
               }}
-            >
-              {GAME_LABELS[id] ?? id}
-            </button>
+            />
           </li>
         ))}
       </ul>

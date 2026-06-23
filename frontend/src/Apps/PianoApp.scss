@@ -129,6 +129,31 @@
   &__status--on .piano-chrome__dot { background: var(--piano-accent); }
 }
 
+// Shared icon+label tile primitive — used by the home menu and the games picker.
+.piano-tile {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--piano-surface);
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-lg);
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+
+  &:active { transform: scale(0.97); background: var(--piano-surface-2); }
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  &.is-selected { border-color: var(--piano-accent); }
+
+  &__icon { font-size: 3rem; }
+  &__label { font-size: 1.6rem; font-weight: 700; }
+  &__blurb { font-size: 1rem; color: var(--piano-muted); }
+}
+
 .piano-menu {
   flex: 1 1 auto;
   display: flex;
@@ -143,28 +168,6 @@
     grid-template-columns: repeat(3, minmax(11rem, 18rem));
     gap: 1.5rem;
   }
-
-  &__tile {
-    width: 100%;
-    aspect-ratio: 3 / 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: var(--piano-surface);
-    border: 1px solid var(--piano-border);
-    border-radius: var(--r-lg);
-    color: inherit;
-    cursor: pointer;
-    transition: transform 0.12s ease, background 0.12s ease;
-
-    &:active { transform: scale(0.97); background: var(--piano-surface-2); }
-  }
-
-  &__tile-icon { font-size: 3rem; }
-  &__tile-label { font-size: 1.6rem; font-weight: 700; }
-  &__tile-blurb { font-size: 1rem; color: var(--piano-muted); }
 }
 
 .piano-mode {
