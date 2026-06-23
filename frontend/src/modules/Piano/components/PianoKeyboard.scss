@@ -6,6 +6,14 @@
   justify-content: center;
   align-items: flex-start;
 
+  // Touch/click playable keyboard: keys take pointer events directly and must
+  // not trigger scroll/zoom gestures on the tablet.
+  &.interactive .piano-key {
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+  }
+
   .piano-key {
     position: relative;
     transition: background-color 0.05s ease-out;

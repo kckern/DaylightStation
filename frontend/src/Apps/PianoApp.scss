@@ -248,12 +248,20 @@
   &__title { font-size: 1rem; }
 }
 
-.piano-video-player {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  background: #000;
+/* Course grid: poster-shaped tiles, titles live in img alt (no caption). */
+.piano-video-grid--posters {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+
+  .piano-video-grid__tile {
+    padding: 0;
+    background: transparent;
+    border: none;
+    gap: 0;
+  }
+  .piano-video-grid__tile img {
+    aspect-ratio: 2 / 3;
+    border-radius: 8px;
+  }
 }
 
 .piano-game-fullscreen {
@@ -303,27 +311,16 @@
   span { display: block; height: 100%; background: #3c7; }
 }
 
-/* ---- Piano video: player layout (stage + chrome + play-along strip) ---- */
+/* ---- Piano video: player layout (video + chrome + keyboard footer) ---- */
 .piano-video-player {
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: #000;
 
-  &__stage { flex: 1 1 auto; min-height: 0; display: flex; }
-  &__video { flex: 1 1 auto; min-width: 0; position: relative; }
-  &__staff {
-    flex: 0 0 20rem; min-width: 0; background: #d9d0c1;
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  &__readout {
-    flex: 0 0 auto; padding: 0.4rem 0.75rem; text-align: center;
-    color: #2a2a2a; font-family: 'Roboto Condensed', system-ui, sans-serif;
-    font-variant-numeric: tabular-nums; font-size: 1.05rem; min-height: 1.6rem;
-  }
-  /* note waterfall + keyboard stacked; share width so they align */
+  &__video { flex: 1 1 auto; min-height: 0; position: relative; }
+  /* playable keyboard footer — touch/click simulates keypresses */
   &__keys {
-    flex: 0 0 auto; display: flex; flex-direction: column; background: #2a2a2a;
-    .note-waterfall { flex: 0 0 9rem; position: relative; }
-    .piano-keyboard { flex: 0 0 9rem; }
+    flex: 0 0 auto; background: #2a2a2a;
+    .piano-keyboard { height: 9rem; }
   }
 }
 

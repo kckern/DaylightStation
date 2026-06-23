@@ -1,11 +1,9 @@
 // PianoVideoPlayer.jsx
-import { useRef, useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { useRef, useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
-import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
@@ -13,7 +11,6 @@ import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
-import { describeChord } from './chordName.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -25,7 +22,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const mediaEl = useResolvedMediaEl(playerRef);
-  const { activeNotes, noteHistory } = usePianoMidi();
+  const { activeNotes, pressNote, releaseNote } = usePianoMidi();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -39,7 +36,6 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
 
   const notes = activeNotes || EMPTY_NOTES;
-  const chord = useMemo(() => describeChord(notes.keys()), [notes]);
 
   useEffect(() => {
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.open', { contentId, resumeSeconds });
@@ -96,23 +92,12 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
 
   return (
     <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
-      <div className="piano-video-player__stage">
-        <div className="piano-video-player__video">
-          <PlayerBoundary onBack={onBack}>
-            <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
-              <Player ref={playerRef} play={{ contentId }} clear={onBack} />
-            </Suspense>
-          </PlayerBoundary>
-        </div>
-        {playAlong && (
-          <aside className="piano-video-player__staff">
-            <div className="piano-video-player__readout">
-              {chord.notes.length ? chord.notes.join(' ') : 'Play along…'}
-              {chord.name ? ` — ${chord.name}` : ''}
-            </div>
-            <CurrentChordStaff activeNotes={notes} />
-          </aside>
-        )}
+      <div className="piano-video-player__video">
+        <PlayerBoundary onBack={onBack}>
+          <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
+            <Player ref={playerRef} play={{ contentId }} clear={onBack} />
+          </Suspense>
+        </PlayerBoundary>
       </div>
 
       <PianoVideoChrome
@@ -135,8 +120,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
 
       {playAlong && (
         <div className="piano-video-player__keys">
-          <NoteWaterfall noteHistory={noteHistory || []} activeNotes={notes} />
-          <PianoKeyboard activeNotes={notes} />
+          <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
         </div>
       )}
     </div>
