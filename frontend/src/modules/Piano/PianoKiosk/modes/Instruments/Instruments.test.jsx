@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const bridge = vi.hoisted(() => ({
   loadPreset: vi.fn(),
@@ -9,9 +9,7 @@ const bridge = vi.hoisted(() => ({
   status: { link: 'connected', engine: 'stopped', preset: null },
 }));
 
-const midiState = vi.hoisted(() => ({ captured: null }));
 const midi = vi.hoisted(() => ({
-  subscribe: vi.fn(),
   sendLocalControl: vi.fn(),
   activeNotes: new Map(),
 }));
@@ -26,8 +24,6 @@ const config = vi.hoisted(() => ({
   },
 }));
 
-// Stub the scss import: vitest has no sass-embedded, and the styles are irrelevant
-// to behaviour. (The shipped component imports the real .scss for the kiosk build.)
 vi.mock('./Instruments.scss', () => ({}));
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('../../usePianoVoiceBridge.js', () => ({ usePianoVoiceBridge: () => bridge }));
@@ -37,105 +33,80 @@ import { Instruments } from './Instruments.jsx';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  midiState.captured = null;
-  // Capture the MIDI subscription listener so tests can drive physical-key nav.
-  midi.subscribe.mockImplementation((fn) => { midiState.captured = fn; return () => {}; });
+  midi.activeNotes = new Map();
 });
 
-// The entry list is a <ul>; scope queries there so the transport "active name"
-// label (which can also read "Onboard") doesn't create ambiguous matches.
-const list = () => screen.getByRole('list');
-const entryBtn = (name) => within(list()).getByText(name).closest('button');
+// Voice cards live in the rack <ul>; scope queries there so the controls label
+// (which repeats the active instrument's name) doesn't create ambiguous matches.
+const rack = () => screen.getByRole('list');
+const card = (name) => within(rack()).getByText(name).closest('button');
 
-describe('Instruments mode', () => {
-  it('renders Onboard plus the two configured instruments', () => {
+describe('Instruments voice rack', () => {
+  it('renders Onboard plus the two configured voices', () => {
     render(<Instruments />);
-    expect(entryBtn('Onboard')).toBeTruthy();
-    expect(entryBtn('Concert Grand')).toBeTruthy();
-    expect(entryBtn('DX7 EP')).toBeTruthy();
+    expect(card('Onboard')).toBeTruthy();
+    expect(card('Concert Grand')).toBeTruthy();
+    expect(card('DX7 EP')).toBeTruthy();
   });
 
-  it('clicking an instrument entry loads it and disables local control', () => {
+  it('Onboard is the active voice by default', () => {
     render(<Instruments />);
-    fireEvent.click(entryBtn('Concert Grand'));
+    expect(card('Onboard').className).toContain('is-active');
+    expect(card('Concert Grand').className).not.toContain('is-active');
+  });
+
+  it('tapping a voice loads it, mutes onboard, and marks it active', () => {
+    render(<Instruments />);
+    fireEvent.click(card('Concert Grand'));
     expect(bridge.loadPreset).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'grand', engine: 'sfizz' }),
     );
     expect(midi.sendLocalControl).toHaveBeenCalledWith(false);
+    expect(card('Concert Grand').className).toContain('is-active');
   });
 
-  it('clicking Onboard after an instrument stops the engine and restores local control', () => {
+  it('tapping Onboard after a voice stops the engine and restores onboard sound', () => {
     render(<Instruments />);
-    fireEvent.click(entryBtn('Concert Grand'));
-    fireEvent.click(entryBtn('Onboard'));
+    fireEvent.click(card('Concert Grand'));
+    fireEvent.click(card('Onboard'));
     expect(bridge.stop).toHaveBeenCalled();
     expect(midi.sendLocalControl).toHaveBeenLastCalledWith(true);
   });
 
-  it('on-screen Next advances selection, Select activates, Panic fires panic', () => {
+  it('gain slider on the active voice calls setParam with a number', () => {
     render(<Instruments />);
-    // Onboard is selected by default (index 0). Next → index 1 (Concert Grand).
-    fireEvent.click(screen.getByText('Next'));
-    expect(entryBtn('Concert Grand').className).toContain('is-selected');
-
-    fireEvent.click(screen.getByText('Select'));
-    expect(bridge.loadPreset).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'grand' }),
-    );
-
-    fireEvent.click(screen.getByText('Panic'));
-    expect(bridge.panic).toHaveBeenCalled();
-  });
-
-  it('physical key nav (note_on 38 then 40) moves selection and activates', () => {
-    render(<Instruments />);
-    expect(midiState.captured).toBeTypeOf('function');
-    // 38 = Next → index 1 (Concert Grand). Raw listener calls aren't auto-wrapped
-    // in act(), so wrap them to flush state updates.
-    act(() => midiState.captured({ type: 'note_on', note: 38, velocity: 100, time: 0 }));
-    expect(entryBtn('Concert Grand').className).toContain('is-selected');
-    // 40 = Select → activate
-    act(() => midiState.captured({ type: 'note_on', note: 40, velocity: 100, time: 0 }));
-    expect(bridge.loadPreset).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'grand' }),
-    );
-  });
-
-  it('a non-nav note (note_on 60) does not navigate or activate', () => {
-    render(<Instruments />);
-    act(() => midiState.captured({ type: 'note_on', note: 60, velocity: 100, time: 0 }));
-    expect(bridge.loadPreset).not.toHaveBeenCalled();
-    expect(entryBtn('Onboard').className).toContain('is-selected');
-  });
-
-  it('gain_db slider change calls bridge.setParam with a number', () => {
-    render(<Instruments />);
-    fireEvent.click(entryBtn('Concert Grand')); // active → params panel appears
-    const gainInput = screen.getByDisplayValue('-3');
-    fireEvent.change(gainInput, { target: { value: '0' } });
+    fireEvent.click(card('Concert Grand'));
+    fireEvent.change(screen.getByDisplayValue('-3'), { target: { value: '0' } });
     expect(bridge.setParam).toHaveBeenCalledWith('gain_db', 0);
   });
 
-  it('reverb slider appears for an instrument with reverb and calls setParam', () => {
+  it('reverb slider appears only for a voice with reverb and calls setParam', () => {
     render(<Instruments />);
-    fireEvent.click(entryBtn('Concert Grand'));
-    const reverbInput = screen.getByDisplayValue('0.4');
-    fireEvent.change(reverbInput, { target: { value: '0.6' } });
+    fireEvent.click(card('Concert Grand'));
+    fireEvent.change(screen.getByDisplayValue('0.4'), { target: { value: '0.6' } });
     expect(bridge.setParam).toHaveBeenCalledWith('reverb.mix', 0.6);
+  });
+
+  it('no controls/params for the Onboard voice', () => {
+    render(<Instruments />);
+    // Onboard active by default → no sliders.
+    expect(screen.queryByDisplayValue('-3')).toBeNull();
   });
 });
 
-describe('Instruments mode with no configured instruments', () => {
-  it('shows only Onboard plus the configuration hint', () => {
-    config.config.instruments = [];
-    render(<Instruments />);
-    expect(entryBtn('Onboard')).toBeTruthy();
-    expect(screen.getByText(/No rendered instruments configured/)).toBeTruthy();
-    expect(screen.queryByText('Concert Grand')).toBeNull();
-    // restore for any later runs
+describe('Instruments voice rack with no rendered instruments', () => {
+  beforeEach(() => { config.config.instruments = []; });
+  afterEach(() => {
     config.config.instruments = [
       { id: 'grand', name: 'Concert Grand', engine: 'sfizz', asset: 'g.sfz', gain_db: -3, reverb: { mix: 0.4 } },
       { id: 'dx7', name: 'DX7 EP', engine: 'dexed', asset: 'd.syx' },
     ];
+  });
+
+  it('shows only Onboard plus an inviting empty message', () => {
+    render(<Instruments />);
+    expect(card('Onboard')).toBeTruthy();
+    expect(screen.queryByText('Concert Grand')).toBeNull();
+    expect(screen.getByText(/Only the onboard voice is here for now/)).toBeTruthy();
   });
 });
