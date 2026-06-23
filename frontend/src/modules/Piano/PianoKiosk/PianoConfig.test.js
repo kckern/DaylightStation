@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { derivePianos, resolvePianoConfig, PIANO_CONFIG_DEFAULTS } from './PianoConfig.jsx';
+import { derivePianos, resolvePianoConfig, resolveScreensaver, PIANO_CONFIG_DEFAULTS } from './PianoConfig.jsx';
 
 describe('derivePianos', () => {
   it('lists the configured pianos', () => {
@@ -42,5 +42,36 @@ describe('resolvePianoConfig', () => {
     const cfg = resolvePianoConfig({}, 'ghost');
     expect(cfg.voices).toEqual(PIANO_CONFIG_DEFAULTS.voices);
     expect(cfg.videos.plexCollection).toBeNull();
+  });
+  it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
+    const raw = {
+      screensaver: { timeoutMinutes: 30, quietHours: { start: '22:00', end: '06:00' } },
+      pianos: { 'yellow-room': { screensaver: { deviceId: 'yellow-room-tablet' } } },
+    };
+    const cfg = resolvePianoConfig(raw, 'yellow-room');
+    expect(cfg.screensaver).toEqual({
+      deviceId: 'yellow-room-tablet',           // per-piano
+      timeoutMinutes: 30,                        // shared
+      quietHours: { start: '22:00', end: '06:00' },
+    });
+  });
+});
+
+describe('resolveScreensaver', () => {
+  it('disables screen control by default (no deviceId)', () => {
+    expect(resolveScreensaver({}, {})).toEqual({
+      deviceId: null,
+      timeoutMinutes: PIANO_CONFIG_DEFAULTS.screensaver.timeoutMinutes,
+      quietHours: null,
+    });
+  });
+  it('lets a per-piano value override a shared value', () => {
+    const shared = { screensaver: { deviceId: 'shared-tablet', timeoutMinutes: 20 } };
+    const p = { screensaver: { timeoutMinutes: 5 } };
+    expect(resolveScreensaver(shared, p)).toEqual({
+      deviceId: 'shared-tablet',
+      timeoutMinutes: 5,
+      quietHours: null,
+    });
   });
 });
