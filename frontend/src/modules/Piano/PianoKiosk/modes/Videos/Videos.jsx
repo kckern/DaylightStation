@@ -77,10 +77,10 @@ function CourseDetailRoute() {
 function LecturePlayerRoute() {
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
-  const { data: lectures } = usePianoList(
-    `api/v1/fitness/show/${idOf(courseId)}/playable`,
-    (r) => r?.items ?? [],
-  );
+  // Keep the whole response so we can read the show/source title for the breadcrumb.
+  const { data } = usePianoList(`api/v1/fitness/show/${idOf(courseId)}/playable`, (r) => r);
+  const lectures = data ? (data.items ?? []) : null;
+  const source = data?.info?.title || '';
   const lecture = useMemo(
     () => (lectures || []).find((l) => String(lectureContentId(l)) === String(lectureId)) || null,
     [lectures, lectureId],
@@ -103,7 +103,7 @@ function LecturePlayerRoute() {
       </div>
     );
   }
-  return <PianoVideoPlayer lecture={lecture} onBack={goBack} />;
+  return <PianoVideoPlayer lecture={lecture} source={source} onBack={goBack} />;
 }
 
 export default Videos;

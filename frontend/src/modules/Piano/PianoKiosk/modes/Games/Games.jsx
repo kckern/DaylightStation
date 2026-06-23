@@ -16,6 +16,15 @@ const GAME_LABELS = {
   'side-scroller': 'Side Scroller',
 };
 
+// Per-game tile icons (currentColor SVGs in ../../icons/svg).
+const GAME_ICONS = {
+  'space-invaders': 'game-space-invaders',
+  tetris: 'game-tetris',
+  flashcards: 'game-flashcards',
+  hero: 'game-hero',
+  'side-scroller': 'game-side-scroller',
+};
+
 /**
  * Games mode — picks a registered piano game and mounts it fullscreen, fed by the
  * shared Web-MIDI (BLE) stream from usePianoMidi().
@@ -49,7 +58,7 @@ function GamePicker() {
         {ids.map((id) => (
           <li key={id}>
             <PianoTile
-              icon="game"
+              icon={GAME_ICONS[id] || 'game'}
               label={GAME_LABELS[id] ?? id}
               onClick={() => {
                 logger.info('piano.game-enter', { game: id });

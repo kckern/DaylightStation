@@ -20,7 +20,7 @@ const Player = lazy(() => import('../../../../Player/Player.jsx'));
 const EMPTY_NOTES = new Map();
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, onBack }) {
+export default function PianoVideoPlayer({ lecture, source, onBack }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -134,6 +134,13 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
 
   return (
     <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
+      {(source || title) && (
+        <div className="piano-video-player__crumbs">
+          {source && <span className="piano-video-player__crumb-src">{source}</span>}
+          {source && title && <span className="piano-video-player__crumb-sep" aria-hidden>›</span>}
+          {title && <span className="piano-video-player__crumb-cur">{title}</span>}
+        </div>
+      )}
       <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
         {playerEl}
       </div>
@@ -150,6 +157,7 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
         onCycleRate={handleCycleRate}
         onMarkA={loop.markA}
         onMarkB={loop.markB}
+        onToggleLoop={loop.toggle}
         onClearLoop={loop.clear}
         onSeek={ctrl.seek}
         onBack={onBack}
