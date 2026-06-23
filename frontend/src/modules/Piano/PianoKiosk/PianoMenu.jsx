@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
+import { usePianoMidi } from './PianoMidiContext.jsx';
 import PianoTile from './PianoTile.jsx';
+import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
@@ -20,7 +22,9 @@ export const PIANO_MODES = [
  */
 export function PianoMenu() {
   const navigate = useNavigate();
-  const { pianoId, basePath } = usePianoKioskConfig();
+  const { pianoId, basePath, config } = usePianoKioskConfig();
+  const { activeNotes, pressNote, releaseNote } = usePianoMidi();
+  const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
 
   const open = (id) => {
@@ -29,14 +33,27 @@ export function PianoMenu() {
   };
 
   return (
-    <main className="piano-menu">
-      <ul className="piano-menu__tiles">
-        {PIANO_MODES.map((m) => (
-          <li key={m.id}>
-            <PianoTile icon={m.icon} label={m.label} blurb={m.blurb} onClick={() => open(m.id)} />
-          </li>
-        ))}
-      </ul>
+    <main className="piano-home">
+      <div className="piano-home__body">
+        <ul className="piano-menu__tiles">
+          {PIANO_MODES.map((m) => (
+            <li key={m.id}>
+              <PianoTile icon={m.icon} label={m.label} blurb={m.blurb} onClick={() => open(m.id)} />
+            </li>
+          ))}
+        </ul>
+      </div>
+      {/* Live keyboard at the foot of the home screen: lights up to the played
+          notes (and is touch-playable). No waterfall, no staff — just feedback. */}
+      <div className="piano-home__keyboard">
+        <PianoKeyboard
+          activeNotes={activeNotes}
+          startNote={kb.startNote}
+          endNote={kb.endNote}
+          onNoteOn={pressNote}
+          onNoteOff={releaseNote}
+        />
+      </div>
     </main>
   );
 }

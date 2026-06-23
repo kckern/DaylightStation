@@ -20,6 +20,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   sheetmusic: { collection: null },
   games: null,
   midi: { preferredInputName: null },
+  // Physical key range of this piano. 88 keys = A0(21)..C8(108); a 61-key board
+  // would be 36..96, a 49-key 36..84. MIDI note numbers.
+  keyboard: { startNote: 21, endNote: 108 },
   inactivityMinutes: 10,
   // Screensaver disabled until a deviceId is configured (null = no screen control).
   screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
@@ -65,6 +68,10 @@ export function resolvePianoConfig(raw, pianoId) {
     },
     sheetmusic: { collection: p.sheetmusic?.collection ?? shared.sheetmusic?.collection ?? null },
     midi: { preferredInputName: p.midi?.preferredInputName ?? shared.midi?.preferredInputName ?? null },
+    keyboard: {
+      startNote: p.keyboard?.startNote ?? shared.keyboard?.startNote ?? PIANO_CONFIG_DEFAULTS.keyboard.startNote,
+      endNote: p.keyboard?.endNote ?? shared.keyboard?.endNote ?? PIANO_CONFIG_DEFAULTS.keyboard.endNote,
+    },
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
