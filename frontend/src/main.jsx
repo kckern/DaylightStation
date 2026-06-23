@@ -16,6 +16,7 @@ import AdminApp from './Apps/AdminApp.jsx';
 import CallApp from './Apps/CallApp.jsx';
 import MediaApp from './Apps/MediaApp.jsx';
 import LiveStreamApp from './Apps/LiveStreamApp.jsx';
+import PianoApp from './Apps/PianoApp.jsx';
 import AppContainer from './modules/AppContainer/AppContainer.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
@@ -155,6 +156,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />
         <Route path="/fitness/*" element={<FitnessApp />} />
+        <Route path="/piano/*" element={<PianoApp />} />
         <Route path="/life/*" element={<LifeApp />} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
