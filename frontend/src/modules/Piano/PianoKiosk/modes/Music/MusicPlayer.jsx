@@ -4,7 +4,10 @@ import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
 import useVanishingControls from '../../useVanishingControls.js';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
+import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import Icon from '../../icons/Icon.jsx';
 
 /**
@@ -19,6 +22,29 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-music-player' });
 
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
+  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
+  const { config } = usePianoKioskConfig();
+  const kb = config?.keyboard || { startNote: 21, endNote: 108 };
+
+  // Third now-playing state: PLAY-ALONG. Entered by MIDI (not touch) — the user
+  // is playing the piano along to the track. The keyboard slides up, the cover
+  // dim eases, and the title/artist show — but the transport chrome stays hidden.
+  // Auto-exits after a few seconds of no notes.
+  const [playAlong, setPlayAlong] = useState(false);
+  const paTimer = useRef(null);
+  const lastNoteLen = useRef(noteHistory?.length || 0);
+  useEffect(() => {
+    const len = noteHistory?.length || 0;
+    const activity = len > lastNoteLen.current || (activeNotes && activeNotes.size > 0);
+    lastNoteLen.current = len;
+    if (!activity) return undefined;
+    setPlayAlong(true);
+    if (paTimer.current) clearTimeout(paTimer.current);
+    paTimer.current = setTimeout(() => setPlayAlong(false), 6000);
+    return undefined;
+  }, [activeNotes, noteHistory?.length]);
+  useEffect(() => () => { if (paTimer.current) clearTimeout(paTimer.current); }, []);
+
   // Play All starts shuffled by default (shuffleInit); a tapped track plays in order.
   const [shuffle, setShuffle] = useState(shuffleInit);
   const [repeat, setRepeat] = useState(false);
@@ -119,7 +145,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
 
   return (
     <div
-      className={`piano-music-player${visible ? '' : ' chrome-hidden'}`}
+      className={`piano-music-player${visible ? '' : ' chrome-hidden'}${playAlong ? ' is-playalong' : ''}`}
       onPointerDown={reveal}
       style={cover ? { '--cover': `url(${cover})` } : undefined}
     >
@@ -157,6 +183,23 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
             <button type="button" className="piano-music-btn" onClick={() => changeVol(0.1)} aria-label="Volume up"><Icon name="volume-up" /></button>
           </div>
         </div>
+      </div>
+
+      {/* Play-along: minimal title/artist (no transport) while playing the piano. */}
+      <div className="piano-music-player__pa-meta">
+        <div className="piano-music-player__title">{track?.title || ''}</div>
+        <div className="piano-music-player__sub">{[track?.artist, track?.album].filter(Boolean).join(' — ')}</div>
+      </div>
+
+      {/* Play-along: live keyboard slides up from the bottom for feedback. */}
+      <div className="piano-music-player__keys" onPointerDown={(e) => e.stopPropagation()}>
+        <PianoKeyboard
+          activeNotes={activeNotes}
+          startNote={kb.startNote}
+          endNote={kb.endNote}
+          onNoteOn={pressNote}
+          onNoteOff={releaseNote}
+        />
       </div>
 
       {showQueue && (

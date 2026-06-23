@@ -743,8 +743,35 @@
   &__vol-val { color: var(--piano-stage-muted); min-width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
 
   &.chrome-hidden .piano-music-player__chrome { opacity: 0; pointer-events: none; }
-  // Ambient dim when idle so the screen doesn't glow in a dark room. Tap wakes it.
-  &.chrome-hidden { filter: brightness(0.15); }
+
+  // Dim the COVER (not the overlays) when chrome is hidden, so the keyboard and
+  // play-along meta stay bright. Passive = deep ambient dim (doesn't glow in a
+  // dark room); play-along (MIDI active) eases the dim to acknowledge you.
+  &__art { transition: filter 0.5s ease; }
+  &::before { transition: filter 0.5s ease; }
+  &.chrome-hidden &__art { filter: brightness(0.15); }
+  &.chrome-hidden::before { filter: blur(40px) brightness(0.1); }
+  &.chrome-hidden.is-playalong &__art { filter: brightness(0.62); }
+  &.chrome-hidden.is-playalong::before { filter: blur(40px) brightness(0.3); }
+
+  // Play-along: minimal title/artist (no transport), over the dimmed cover.
+  &__pa-meta {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+    padding: 1.25rem 1.5rem; text-align: center;
+    background: linear-gradient(to bottom, rgba(11, 11, 15, 0.8), rgba(11, 11, 15, 0));
+    opacity: 0; transition: opacity 0.4s ease; pointer-events: none;
+  }
+  &.chrome-hidden.is-playalong &__pa-meta { opacity: 1; }
+
+  // Play-along: live keyboard slides up from the bottom for feedback.
+  &__keys {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+    height: 8.5rem; transform: translateY(110%);
+    transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+    pointer-events: none;
+    box-shadow: 0 -1rem 2rem rgba(0, 0, 0, 0.5);
+  }
+  &.is-playalong &__keys { transform: translateY(0); pointer-events: auto; }
 }
 
 .piano-music-btn {
