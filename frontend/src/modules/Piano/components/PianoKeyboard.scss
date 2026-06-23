@@ -103,6 +103,13 @@
         border-color: #cc3333;
       }
 
+      // Percussion zone (Decks split): warm amber wash so the perc keys read
+      // distinctly from the melodic side. Active playing still overrides.
+      &.perc:not(.active) {
+        background: linear-gradient(to bottom, #f0d49a 0%, #f8e6c2 100%);
+        border-color: #c9a86a;
+      }
+
       .note-label {
         position: absolute;
         bottom: 8px;
@@ -141,6 +148,19 @@
         background: linear-gradient(to bottom, #8b2222 0%, #aa3333 100%);
         box-shadow: 0 0 20px rgba(255, 50, 50, 0.6), inset 0 0 8px rgba(255, 50, 50, 0.3);
       }
+
+      // Darker amber for black keys in the percussion zone.
+      &.perc:not(.active) {
+        background: linear-gradient(to bottom, #5a4516 0%, #6e571f 100%);
+      }
+    }
+
+    // Divider at the perc → melodic boundary: a bright accent edge on the first
+    // melodic white key so the split point is unmistakable.
+    &.white.split-start {
+      border-left: 3px solid #2ec46f;
+      box-shadow: -3px 0 8px rgba(46, 196, 111, 0.45);
+      z-index: 3;
     }
   }
 }
