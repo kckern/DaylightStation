@@ -132,6 +132,12 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       logger().warn('midi.no-input', {});
       return;
     }
+    // Idempotent: a chattery BLE link fires repeated statechange events for the
+    // same, still-present port. Re-binding each one storms re-renders on the
+    // tablet, so bail when already bound to this exact input with this handler.
+    if (inputRef.current === input && input.onmidimessage === handleRawMidi) {
+      return;
+    }
     if (inputRef.current && inputRef.current !== input) {
       inputRef.current.onmidimessage = null;
     }
