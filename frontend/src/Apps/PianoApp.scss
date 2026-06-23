@@ -421,6 +421,17 @@
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-stage);
 
+  /* breadcrumb header: source show › episode title */
+  &__crumbs {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.45rem 1rem; background: var(--piano-surface); color: var(--piano-fg);
+    border-bottom: 1px solid var(--piano-border);
+    font-size: 0.95rem; white-space: nowrap; overflow: hidden;
+  }
+  &__crumb-src { color: var(--piano-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  &__crumb-sep { color: var(--piano-muted); flex: 0 0 auto; }
+  &__crumb-cur { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
   &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
   /* tap-to-fullscreen: fill the screen and let the Player stretch into it */
   &__video:fullscreen { width: 100vw; height: 100vh; background: #000; display: flex; }

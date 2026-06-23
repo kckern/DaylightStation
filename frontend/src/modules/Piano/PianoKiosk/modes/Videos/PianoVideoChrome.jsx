@@ -15,7 +15,7 @@ const fmt = (s) => {
  */
 export default function PianoVideoChrome({
   isPlaying, currentTime, duration, rate, loop, playAlong,
-  onToggle, onSkip, onCycleRate, onMarkA, onMarkB, onClearLoop, onSeek, onBack, onTogglePlayAlong,
+  onToggle, onSkip, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onBack, onTogglePlayAlong,
 }) {
   const barRef = useRef(null);
   const dur = duration > 0 ? duration : 0;
@@ -28,6 +28,8 @@ export default function PianoVideoChrome({
     onSeek(Math.max(0, Math.min(dur, (x / rect.width) * dur)));
   };
   const hasLoop = loop?.a != null || loop?.b != null;
+  const bothMarks = loop?.a != null && loop?.b != null;
+  const loopActive = !!loop?.active;
 
   return (
     <div className="piano-video-chrome" data-testid="piano-video-chrome">
@@ -49,6 +51,7 @@ export default function PianoVideoChrome({
         <button type="button" className="piano-video-chrome__btn" onClick={onCycleRate} aria-label="Playback speed">{rate}×</button>
         <button type="button" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} onClick={onMarkA} aria-label="Mark loop start">A</button>
         <button type="button" className="piano-video-chrome__btn" onClick={onMarkB} aria-label="Mark loop end">B</button>
+        <button type="button" className={`piano-video-chrome__btn${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={!bothMarks} aria-label="Toggle A-B loop"><Icon name="repeat" /></button>
         <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={!hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
         <div className="piano-video-chrome__spacer" />
         <button type="button" className={`piano-video-chrome__btn${playAlong ? ' is-on' : ''}`} onClick={onTogglePlayAlong} aria-label={playAlong ? 'Hide play-along' : 'Show play-along'}><Icon name="play-along" /></button>
