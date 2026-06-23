@@ -53,7 +53,10 @@ describe('Videos mode', () => {
     );
   });
 
-  it('drills into a course via relative nav, lists its lectures, and goes back', async () => {
+  it('drills into a course via relative nav and lists its lectures', async () => {
+    // Back-to-grid navigation now lives in the shared breadcrumb chrome (the
+    // "Videos" mode crumb), not in CourseDetail — so this isolated mode test
+    // only covers the drill-in.
     api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/440630') {
         return Promise.resolve({ items: [{ id: 'plex:1', title: 'Beethoven Sonatas' }] });
@@ -73,10 +76,6 @@ describe('Videos mode', () => {
     expect(await screen.findByText('Lecture 1')).toBeTruthy();
     expect(screen.getByText('Lecture 2')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/fitness/show/1/playable');
-
-    fireEvent.click(screen.getByRole('button', { name: /back to videos/i }));
-    // Back up to the index grid.
-    expect(await screen.findByTitle('Beethoven Sonatas')).toBeTruthy();
   });
 
   it('renders CourseDetail directly from a deep-link to /videos/:courseId', async () => {

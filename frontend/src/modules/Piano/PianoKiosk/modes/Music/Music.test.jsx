@@ -52,7 +52,10 @@ describe('Music mode', () => {
     );
   });
 
-  it('drills into an album via relative nav, lists its tracks with Play All, and goes back', async () => {
+  it('drills into an album via relative nav and lists its tracks with Play All', async () => {
+    // Back-to-grid navigation now lives in the shared breadcrumb chrome (the
+    // "Music" mode crumb), not in AlbumDetail — so this isolated mode test only
+    // covers the drill-in.
     api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/359812') {
         return Promise.resolve({ items: [{ id: 'plex:80962', title: 'Der Ring', image: '/a' }] });
@@ -73,10 +76,6 @@ describe('Music mode', () => {
     expect(screen.getByText('Scene 2')).toBeTruthy();
     expect(screen.getByRole('button', { name: /play all/i })).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/queue/plex:80962');
-
-    fireEvent.click(screen.getByRole('button', { name: /back to music/i }));
-    // Back up to the index grid.
-    expect(await screen.findByTitle('Der Ring')).toBeTruthy();
   });
 
   it('renders AlbumDetail directly from a deep-link to /music/:albumId', async () => {

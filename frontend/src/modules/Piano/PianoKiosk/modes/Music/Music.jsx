@@ -62,7 +62,6 @@ function AlbumDetailRoute() {
         logger.info('piano.music-play', { album: albumId, startIndex });
         navigate(`play?track=${startIndex}`);
       }}
-      onBack={() => navigate('..', { relative: 'path' })}
     />
   );
 }

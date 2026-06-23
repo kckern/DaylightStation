@@ -51,15 +51,9 @@ function ScoreGridRoute({ collection }) {
  */
 function ScoreViewerRoute() {
   const { scoreId } = useParams();
-  const navigate = useNavigate();
   const score = useMemo(() => ({ id: scoreId }), [scoreId]);
   // ScoreViewer logs `piano.score-open` from its own effect — no duplicate here.
-  return (
-    <ScoreViewer
-      score={score}
-      onBack={() => navigate('..', { relative: 'path' })}
-    />
-  );
+  return <ScoreViewer score={score} />;
 }
 
 export default SheetMusic;

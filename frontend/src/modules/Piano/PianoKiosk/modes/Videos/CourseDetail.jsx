@@ -3,7 +3,7 @@ import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { lectureStatus } from './lectureMeta.js';
-import PianoBack from '../../PianoBack.jsx';
+import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
@@ -14,7 +14,7 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  * of episode cards. Watch state (✓ / progress bar) rides on the thumbnail and
  * comes from media_memory signals (see lectureStatus). Tap a card to play.
  */
-export default function CourseDetail({ course, onPlay, onBack }) {
+export default function CourseDetail({ course, onPlay }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
   const [data, setData] = useState(null); // null = loading
   const [error, setError] = useState(null);
@@ -40,9 +40,11 @@ export default function CourseDetail({ course, onPlay, onBack }) {
   const poster = info.image || course?.image;
   const title = course?.title || info.title || 'Course';
 
+  // Current location in the header breadcrumb (Videos › this course).
+  usePianoBreadcrumb(useMemo(() => [{ label: title }], [title]));
+
   return (
     <section className="piano-mode--videos piano-course">
-      <PianoBack onClick={onBack} label="Videos" />
       <div className="piano-course__content">
         <aside className="piano-course__info">
           {poster && <img className="piano-course__poster" src={poster} alt="" />}

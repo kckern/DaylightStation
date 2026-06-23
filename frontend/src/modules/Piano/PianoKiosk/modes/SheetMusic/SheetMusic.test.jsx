@@ -52,6 +52,9 @@ describe('SheetMusic mode', () => {
   });
 
   it('navigates to a score viewer via relative nav and shows page images', async () => {
+    // Back-to-grid navigation now lives in the shared breadcrumb chrome (the
+    // "Sheet Music" mode crumb), not in ScoreViewer — so this isolated mode test
+    // only covers the drill-in and the rendered pages.
     api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/700100') {
         return Promise.resolve({ items: [{ id: 'plex:1', title: 'Für Elise', image: '/a' }] });
@@ -64,15 +67,9 @@ describe('SheetMusic mode', () => {
 
     renderSheet({ collection: 'plex:700100' });
     fireEvent.click(await screen.findByTitle('Für Elise'));
-    // Now on /sheetmusic/1 — ScoreViewer with back button.
-    expect(await screen.findByRole('button', { name: /back to sheet music/i })).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByAltText('Score — page 1')).toBeTruthy()
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /back to sheet music/i }));
-    // Back up to the index grid.
-    expect(await screen.findByTitle('Für Elise')).toBeTruthy();
+    // Now on /sheetmusic/1 — ScoreViewer renders the page images.
+    expect(await screen.findByAltText('Score — page 1')).toBeTruthy();
+    expect(screen.getByAltText('Score — page 2')).toBeTruthy();
   });
 
   it('renders ScoreViewer directly from a deep-link to /sheetmusic/:scoreId', async () => {
@@ -85,10 +82,7 @@ describe('SheetMusic mode', () => {
 
     renderSheet({ collection: 'plex:700100' }, '/sheetmusic/1');
     // Cold deep-link — ScoreViewer fetches pages from the id in the URL.
-    expect(await screen.findByRole('button', { name: /back to sheet music/i })).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByAltText('Score — page 1')).toBeTruthy()
-    );
+    expect(await screen.findByAltText('Score — page 1')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/list/plex/1');
   });
 });

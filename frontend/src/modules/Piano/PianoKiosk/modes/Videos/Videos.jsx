@@ -63,7 +63,6 @@ function CourseDetailRoute() {
         logger.info('piano.video-play', { contentId });
         navigate(`${contentId}`);
       }}
-      onBack={() => navigate('..', { relative: 'path' })}
     />
   );
 }

@@ -7,12 +7,20 @@ import CoverFlow from './CoverFlow.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
+const VIEW_KEY = 'piano.music.view'; // 'flow' | 'grid'
+const readView = () => {
+  try { return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'flow'; } catch { return 'flow'; }
+};
+
 /**
- * Album grid for the Music mode: the configured collection's albums plus the
- * configured playlists (shown as album tiles). Tap a tile to open its tracks.
+ * Album browser for the Music mode: the configured collection's albums plus the
+ * configured playlists (shown as album tiles). Two interchangeable views — the
+ * 3D Cover Flow (default) and a flat poster grid — toggled from the top bar and
+ * remembered in localStorage. Tap a cover/tile to open its tracks.
  */
 export default function AlbumGrid({ music, onSelect }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-music-grid' }), []);
+  const [view, setView] = useState(readView);
 
   const collection = music?.collection;
   const playlists = Array.isArray(music?.playlists) ? music.playlists : [];
@@ -47,16 +55,59 @@ export default function AlbumGrid({ music, onSelect }) {
   const items = noConfig ? [] : [...(albums || []), ...pls];
   const error = noConfig ? null : (albumError || null);
 
-  if (!noConfig && !loading) {
-    // Log once when the combined list first resolves (info level only on initial load).
-    // (usePianoList covers fetch failures internally.)
-  }
+  const pickView = (next) => {
+    setView(next);
+    try { localStorage.setItem(VIEW_KEY, next); } catch { /* private mode */ }
+    logger.info('piano.music-view', { view: next });
+  };
 
   return (
-    <section className="piano-mode piano-mode--music piano-music-flow">
+    <section className={`piano-mode piano-mode--music piano-music-flow piano-music-flow--${view}`}>
       {loading && <PianoEmpty loading />}
       {!loading && items.length === 0 && <PianoEmpty message={error || (noConfig ? 'No music has been set up yet.' : 'No music found.')} />}
-      {!loading && items.length > 0 && <CoverFlow items={items} onOpen={onSelect} />}
+      {!loading && items.length > 0 && (
+        <>
+          <div className="piano-music-viewtoggle" role="group" aria-label="Music view">
+            <button
+              type="button"
+              className={`piano-music-viewtoggle__btn${view === 'flow' ? ' is-on' : ''}`}
+              onClick={() => pickView('flow')}
+              aria-pressed={view === 'flow'}
+            >
+              Cover Flow
+            </button>
+            <button
+              type="button"
+              className={`piano-music-viewtoggle__btn${view === 'grid' ? ' is-on' : ''}`}
+              onClick={() => pickView('grid')}
+              aria-pressed={view === 'grid'}
+            >
+              Grid
+            </button>
+          </div>
+
+          {view === 'flow' ? (
+            <CoverFlow items={items} onOpen={onSelect} />
+          ) : (
+            <div className="piano-music-gridwrap">
+              <ul className="piano-video-grid piano-music-grid">
+                {items.map((item) => {
+                  const src = item.thumbnail || item.image;
+                  return (
+                    <li key={item.id}>
+                      <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
+                        {src && <img src={src} alt={item.title} loading="eager" decoding="async" />}
+                        {item.isPlaylist && <span className="piano-music-grid__badge">♫</span>}
+                        <span className="piano-video-grid__title">{item.title}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }

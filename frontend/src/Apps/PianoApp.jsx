@@ -20,6 +20,7 @@ import {
   usePianoPlayback,
 } from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
+import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
@@ -114,21 +115,23 @@ function PianoShell() {
   const showVoice = !modeKey || !HIDE_VOICE_MODES.has(modeKey);
 
   return (
-    <div className="piano-app">
-      <PianoChrome voices={config.voices} instruments={config.instruments} label={config.label} modeLabel={modeLabel} showVoice={showVoice} />
-      <Routes>
-        <Route index element={<PianoMenu />} />
-        <Route path="videos/*" element={<Videos />} />
-        <Route path="music/*" element={<Music />} />
-        <Route path="sheetmusic/*" element={<SheetMusic />} />
-        <Route path="games/*" element={<Games />} />
-        <Route path="lessons/*" element={<Lessons />} />
-        <Route path="studio" element={<Studio />} />
-        <Route path="instruments" element={<Instruments />} />
-        <Route path="composers" element={<Composers />} />
-        <Route path="*" element={<PianoMenu />} />
-      </Routes>
-    </div>
+    <PianoBreadcrumbProvider>
+      <div className="piano-app">
+        <PianoChrome voices={config.voices} instruments={config.instruments} modeLabel={modeLabel} modeKey={modeKey} showVoice={showVoice} />
+        <Routes>
+          <Route index element={<PianoMenu />} />
+          <Route path="videos/*" element={<Videos />} />
+          <Route path="music/*" element={<Music />} />
+          <Route path="sheetmusic/*" element={<SheetMusic />} />
+          <Route path="games/*" element={<Games />} />
+          <Route path="lessons/*" element={<Lessons />} />
+          <Route path="studio" element={<Studio />} />
+          <Route path="instruments" element={<Instruments />} />
+          <Route path="composers" element={<Composers />} />
+          <Route path="*" element={<PianoMenu />} />
+        </Routes>
+      </div>
+    </PianoBreadcrumbProvider>
   );
 }
 
