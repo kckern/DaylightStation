@@ -224,6 +224,28 @@
   }
 }
 
+// Home screen: centered tiles above a live keyboard pinned to the foot.
+.piano-home {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  &__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__keyboard {
+    flex: 0 0 auto;
+    background: #2a2a2a;
+    .piano-keyboard { height: 8rem; }
+  }
+}
+
 @media (orientation: portrait) {
   .piano-menu__tiles {
     grid-template-columns: repeat(2, minmax(9rem, 16rem));
