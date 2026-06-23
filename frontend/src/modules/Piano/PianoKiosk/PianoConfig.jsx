@@ -18,7 +18,21 @@ export const PIANO_CONFIG_DEFAULTS = {
   games: null,
   midi: { preferredInputName: null },
   inactivityMinutes: 10,
+  // Screensaver disabled until a deviceId is configured (null = no screen control).
+  screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
 };
+
+/** Resolve screensaver config: per-piano values override shared, over defaults. */
+export function resolveScreensaver(shared, p) {
+  const s = shared.screensaver || {};
+  const ps = p.screensaver || {};
+  const d = PIANO_CONFIG_DEFAULTS.screensaver;
+  return {
+    deviceId: ps.deviceId ?? s.deviceId ?? d.deviceId,
+    timeoutMinutes: ps.timeoutMinutes ?? s.timeoutMinutes ?? d.timeoutMinutes,
+    quietHours: ps.quietHours ?? s.quietHours ?? d.quietHours,
+  };
+}
 
 /** Derive the list of pianos from raw config; falls back to a single default piano. */
 export function derivePianos(raw) {
@@ -44,6 +58,7 @@ export function resolvePianoConfig(raw, pianoId) {
     midi: { preferredInputName: p.midi?.preferredInputName ?? shared.midi?.preferredInputName ?? null },
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
     games: p.games ?? shared.games ?? null,
+    screensaver: resolveScreensaver(shared, p),
   };
 }
 

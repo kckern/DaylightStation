@@ -173,6 +173,30 @@ export class Device {
   }
 
   /**
+   * Turn the device's display on or off via the content-control adapter.
+   *
+   * Display-only (FKB screenOn/screenOff) — distinct from powerOn/powerOff,
+   * which drive device_control display power (e.g. HA TV scripts). Used by the
+   * piano-kiosk screensaver where the tablet IS the display and FKB controls
+   * its backlight. Optional capability — returns an error result when the
+   * content control does not implement screen control.
+   *
+   * @param {boolean} on - true = screenOn, false = screenOff
+   * @returns {Promise<Object>}
+   */
+  async setScreen(on) {
+    if (!this.#contentControl) {
+      return { ok: false, error: 'No content control configured' };
+    }
+    const method = on ? 'screenOn' : 'screenOff';
+    if (typeof this.#contentControl[method] !== 'function') {
+      return { ok: false, error: 'Screen control not supported for this device' };
+    }
+    this.#logger.info?.('device.setScreen', { id: this.#id, on });
+    return this.#contentControl[method]();
+  }
+
+  /**
    * Set volume level
    * @param {number|string} level - Volume level (0-100, '+', '-', 'mute', 'unmute')
    * @returns {Promise<Object>}
