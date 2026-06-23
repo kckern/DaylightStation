@@ -6,6 +6,14 @@
   justify-content: center;
   align-items: flex-start;
 
+  // Own the keyboard frame. Without this the surrounding theme (dark mode, a
+  // charcoal panel, whatever) bleeds through the key gaps, the rounded key
+  // bottoms, and the strip above the black keys — washing out the keys. A fixed
+  // near-black frame keeps white-on-black reading correctly anywhere it's placed.
+  background: #1a1a1a;
+  box-sizing: border-box;
+  padding: 4px 4px 0;
+
   // Touch/click playable keyboard: keys take pointer events directly and must
   // not trigger scroll/zoom gestures on the tablet.
   &.interactive .piano-key {
