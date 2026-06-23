@@ -107,7 +107,7 @@ function PianoShell() {
       <PianoChrome voices={config.voices} label={config.label} />
       <Routes>
         <Route index element={<PianoMenu />} />
-        <Route path="videos" element={<Videos />} />
+        <Route path="videos/*" element={<Videos />} />
         <Route path="music" element={<Music />} />
         <Route path="sheetmusic" element={<SheetMusic />} />
         <Route path="games" element={<Games />} />
