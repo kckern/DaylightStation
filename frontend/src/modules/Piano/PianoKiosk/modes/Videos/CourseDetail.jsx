@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { lectureStatus } from './lectureMeta.js';
+import PianoBack from '../../PianoBack.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -33,7 +34,7 @@ export default function CourseDetail({ course, onPlay, onBack }) {
 
   return (
     <section className="piano-mode piano-mode--videos piano-video-detail">
-      <button type="button" className="piano-game-fullscreen__back" onClick={onBack}>‹ Courses</button>
+      <PianoBack onClick={onBack} label="Videos" />
       <header className="piano-video-detail__band">
         {(info.image || course?.image) && (
           <img className="piano-video-detail__poster" src={info.image || course.image} alt="" />

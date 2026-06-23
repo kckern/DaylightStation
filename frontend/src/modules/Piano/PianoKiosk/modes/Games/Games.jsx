@@ -5,6 +5,7 @@ import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import PianoTile from '../../PianoTile.jsx';
+import Icon from '../../icons/Icon.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
@@ -91,7 +92,7 @@ function GameHost() {
   return (
     <div className="piano-game-fullscreen">
       <button type="button" className="piano-game-fullscreen__back" onClick={exit}>
-        ‹ Games
+        <Icon name="back" /> Games
       </button>
       <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
         <entry.LazyComponent

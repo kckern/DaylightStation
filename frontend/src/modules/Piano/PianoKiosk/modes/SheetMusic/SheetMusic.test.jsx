@@ -65,12 +65,12 @@ describe('SheetMusic mode', () => {
     renderSheet({ collection: 'plex:700100' });
     fireEvent.click(await screen.findByTitle('Für Elise'));
     // Now on /sheetmusic/1 — ScoreViewer with back button.
-    expect(await screen.findByText('‹ Sheet Music')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /back to sheet music/i })).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByAltText('Score — page 1')).toBeTruthy()
     );
 
-    fireEvent.click(screen.getByText('‹ Sheet Music'));
+    fireEvent.click(screen.getByRole('button', { name: /back to sheet music/i }));
     // Back up to the index grid.
     expect(await screen.findByTitle('Für Elise')).toBeTruthy();
   });
@@ -85,7 +85,7 @@ describe('SheetMusic mode', () => {
 
     renderSheet({ collection: 'plex:700100' }, '/sheetmusic/1');
     // Cold deep-link — ScoreViewer fetches pages from the id in the URL.
-    expect(await screen.findByText('‹ Sheet Music')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /back to sheet music/i })).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByAltText('Score — page 1')).toBeTruthy()
     );

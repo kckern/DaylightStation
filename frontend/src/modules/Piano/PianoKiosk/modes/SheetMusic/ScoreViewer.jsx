@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
+import PianoBack from '../../PianoBack.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -35,7 +36,7 @@ export default function ScoreViewer({ score, onBack }) {
 
   return (
     <div className="piano-score-viewer">
-      <button type="button" className="piano-game-fullscreen__back" onClick={onBack}>‹ Sheet Music</button>
+      <PianoBack onClick={onBack} label="Sheet Music" />
       <div className="piano-score-viewer__pages">
         {pages === null && <p className="piano-mode__placeholder">Loading…</p>}
         {pages?.length === 0 && <p className="piano-mode__placeholder">This score has no viewable pages.</p>}
