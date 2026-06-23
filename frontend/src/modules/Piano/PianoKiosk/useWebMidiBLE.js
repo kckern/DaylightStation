@@ -177,6 +177,16 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  // Local Control (CC 122): false silences the piano's onboard voice so a
+  // rendered instrument (APK) is the only sound; true restores onboard sound.
+  const sendLocalControl = useCallback((on, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0xb0 | (channel & 0x0f), 122, on ? 127 : 0]);
+    logger().info('midi.out.local-control', { on, channel });
+    return true;
+  }, []);
+
   const sendNote = useCallback((note, velocity = 80, channel = 0, durationMs = null) => {
     const out = outputRef.current;
     if (!out) return false;
@@ -262,12 +272,13 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     isPlaying: activeNotes.size > 0,
     connect,
     sendProgramChange,
+    sendLocalControl,
     sendNote,
     scheduleNotes,
     subscribe,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendNote, scheduleNotes, subscribe, pressNote, releaseNote]);
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendLocalControl, sendNote, scheduleNotes, subscribe, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
