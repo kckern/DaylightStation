@@ -57,6 +57,29 @@ describe('resolvePianoConfig', () => {
   });
 });
 
+describe('instruments config', () => {
+  it('defaults instruments to an empty list when unset', () => {
+    const cfg = resolvePianoConfig({}, 'default');
+    expect(cfg.instruments).toEqual([]);
+  });
+
+  it('passes through per-piano instruments over shared', () => {
+    const raw = {
+      instruments: [{ id: 'shared_grand', name: 'Shared', engine: 'sfizz', asset: 'a.sfz' }],
+      pianos: {
+        upstairs: {
+          instruments: [{ id: 'dx7', name: 'DX7', engine: 'dexed', asset: 'b.syx', patch: 3 }],
+        },
+      },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').instruments[0].id).toBe('dx7');
+    // 'default' inherits straight from shared top-level instruments.
+    expect(resolvePianoConfig(raw, 'default').instruments).toEqual([
+      { id: 'shared_grand', name: 'Shared', engine: 'sfizz', asset: 'a.sfz' },
+    ]);
+  });
+});
+
 describe('resolveScreensaver', () => {
   it('disables screen control by default (no deviceId)', () => {
     expect(resolveScreensaver({}, {})).toEqual({
