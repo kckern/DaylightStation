@@ -1,0 +1,62 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'net.kckern.pianobridge'
+    compileSdk 33
+
+    // NOTE: placeholder NDK version. Set this to an NDK actually installed under
+    // $sdk.dir/ndk/<version>/. Install with:
+    //   sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+    // See README — there is NO NDK/cmake on the authoring machine, so this is unverified.
+    ndkVersion '26.1.10909125'
+
+    defaultConfig {
+        applicationId 'net.kckern.pianobridge'
+        minSdk 30
+        targetSdk 33
+        versionCode 1
+        versionName '1.0'
+
+        // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
+        // real target (Samsung SM-T590, Snapdragon 450); arm64-v8a included for
+        // emulators / newer hardware. See README perf caveat.
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                // C++17, no exceptions/rtti in the audio path keeps the .so lean.
+                cppFlags '-std=c++17'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            // Keep in sync with the cmake you install via sdkmanager.
+            version '3.22.1'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    // Oboe — low-latency audio output for the native synth host.
+    implementation 'com.google.oboe:oboe:1.8.1'
+    // NanoHTTPD WebSocket server — control channel from the browser kiosk.
+    implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+}
