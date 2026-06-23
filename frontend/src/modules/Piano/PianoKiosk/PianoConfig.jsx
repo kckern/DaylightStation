@@ -106,17 +106,23 @@ export function usePianoRoster() {
 /**
  * Provides the active piano's resolved config + id to the modes/chrome.
  * Accepts an explicit `config` (used by tests) or derives it from the roster.
+ *
+ * `basePath` is the route prefix this piano lives under: `/piano` for the lone
+ * single/default piano, `/piano/:pianoId` for a named one in a multi-piano
+ * household. Chrome/menu build navigation from it (never hardcode the id).
+ * Defaults to `/piano/${pianoId}` so tests that omit it keep working.
  */
-export function ActivePianoProvider({ pianoId, config, children }) {
+export function ActivePianoProvider({ pianoId, basePath, config, children }) {
   const roster = useContext(RosterContext);
   const value = useMemo(() => ({
     pianoId,
+    basePath: basePath ?? `/piano/${pianoId}`,
     config: config || resolvePianoConfig(roster?.raw, pianoId),
-  }), [pianoId, config, roster?.raw]);
+  }), [pianoId, basePath, config, roster?.raw]);
   return <ActivePianoContext.Provider value={value}>{children}</ActivePianoContext.Provider>;
 }
 
-/** Active piano: { pianoId, config }. */
+/** Active piano: { pianoId, basePath, config }. */
 export function usePianoKioskConfig() {
   const ctx = useContext(ActivePianoContext);
   if (!ctx) throw new Error('usePianoKioskConfig must be used within an ActivePianoProvider');

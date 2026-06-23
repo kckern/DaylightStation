@@ -3,6 +3,7 @@ import { useRef, useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
@@ -11,6 +12,8 @@ import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
+import useReloadGuard from '../../useReloadGuard.js';
+import useVanishingControls from '../../useVanishingControls.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -21,7 +24,7 @@ const EMPTY_NOTES = new Map();
 export default function PianoVideoPlayer({ lecture, onBack }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
-  const mediaEl = useResolvedMediaEl(playerRef);
+  const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
   const { activeNotes, pressNote, releaseNote } = usePianoMidi();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -34,6 +37,15 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   const resumeSeconds = deriveResumeSeconds(lecture);
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
+  useReloadGuard(isPlaying);
+  const { visible, reveal } = useVanishingControls({ active: isPlaying });
+
+  // Report active playback to the kiosk context so the inactivity timer stays alive.
+  const { setPlaying: setGlobalPlaying } = usePianoPlayback();
+  useEffect(() => {
+    setGlobalPlaying(isPlaying);
+    return () => setGlobalPlaying(false);
+  }, [isPlaying, setGlobalPlaying]);
 
   const notes = activeNotes || EMPTY_NOTES;
 
@@ -85,13 +97,25 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   if (!contentId) {
     return (
       <div className="piano-mode__placeholder">
-        This lecture can’t be played. <button type="button" onClick={onBack}>Back</button>
+        This lecture can't be played. <button type="button" onClick={onBack}>Back</button>
+      </div>
+    );
+  }
+
+  if (timedOut && !mediaEl) {
+    getLogger().child({ component: 'piano-video-player' }).warn('piano.video.mount-timeout', { contentId });
+    return (
+      <div className="piano-mode__placeholder">
+        This video didn't start. <button type="button" onClick={onBack}>Back to course</button>
       </div>
     );
   }
 
   return (
-    <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
+    <div
+      className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}${visible ? '' : ' chrome-hidden'}`}
+      onPointerDown={reveal}
+    >
       <div className="piano-video-player__video">
         <PlayerBoundary onBack={onBack}>
           <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>

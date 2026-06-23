@@ -20,6 +20,11 @@ const midi = vi.hoisted(() => ({
 
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('./usePianoVoiceBridge.js', () => ({ usePianoVoiceBridge: () => bridge }));
+vi.mock('./PianoConfig.jsx', () => ({
+  usePianoKioskConfig: () => ({ pianoId: 'default', basePath: '/piano' }),
+  usePianoRoster: () => ({ pianos: [{ id: 'default', label: 'Piano' }] }),
+}));
+vi.mock('./icons/Icon.jsx', () => ({ default: () => null }));
 
 import { PianoChrome } from './PianoChrome.jsx';
 
@@ -70,13 +75,13 @@ describe('PianoChrome source selector', () => {
   it('hides the onboard voices picker when an instrument is active, shows it for Onboard', () => {
     renderChrome();
     // Onboard is the default source → voices picker is visible.
-    expect(screen.getByLabelText('Instrument voice')).toBeTruthy();
+    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: 'grand' } });
-    expect(screen.queryByLabelText('Instrument voice')).toBeNull();
+    expect(screen.queryByLabelText('Change instrument voice')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Sound source'), { target: { value: '__onboard__' } });
-    expect(screen.getByLabelText('Instrument voice')).toBeTruthy();
+    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
   });
 
   it('does not render the source selector when instruments is empty', () => {
@@ -87,6 +92,6 @@ describe('PianoChrome source selector', () => {
     );
     expect(screen.queryByLabelText('Sound source')).toBeNull();
     // The onboard voices picker still renders independently.
-    expect(screen.getByLabelText('Instrument voice')).toBeTruthy();
+    expect(screen.getByLabelText('Change instrument voice')).toBeTruthy();
   });
 });
