@@ -1,10 +1,14 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useWebSocketSubscription } from '../../hooks/useWebSocket';
 import { getChildLogger } from '../../lib/logging/singleton.js';
-
-const MAX_HISTORY_SIZE = 500;
-const STALE_NOTE_MS = 10000;
-const DISPLAY_DURATION = 8000;
+import {
+  STALE_NOTE_MS,
+  findLastActive,
+  closeNote,
+  trimHistory,
+  handleNoteOn,
+  handleNoteOff,
+} from './noteHistory.js';
 
 // Dev keyboard mapping: number row keys to MIDI notes (C4-G5)
 const DEV_KEY_MAP = {
@@ -12,58 +16,6 @@ const DEV_KEY_MAP = {
   '6': 69, '7': 71, '8': 72, '9': 74, '0': 76,
   '-': 77, '=': 79
 };
-
-/**
- * Find the last entry in history matching a note number with no endTime.
- * Scans backward for O(1) typical case (most recent match is near the end).
- */
-function findLastActive(history, noteNum) {
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].note === noteNum && !history[i].endTime) return i;
-  }
-  return -1;
-}
-
-/**
- * Close an active note in-place by index, returning a new array.
- */
-function closeNote(history, idx, endTime) {
-  const next = [...history];
-  next[idx] = { ...next[idx], endTime };
-  return next;
-}
-
-/**
- * Trim history: drop expired completed notes, keep all active + recent completed.
- */
-function trimHistory(history, now) {
-  const cutoff = now - DISPLAY_DURATION;
-  const trimmed = history.filter(n => !n.endTime || n.endTime > cutoff);
-  if (trimmed.length > MAX_HISTORY_SIZE) {
-    // Keep active notes + most recent completed
-    const active = trimmed.filter(n => !n.endTime);
-    const completed = trimmed.filter(n => n.endTime);
-    return [...completed.slice(-(MAX_HISTORY_SIZE - active.length)), ...active];
-  }
-  return trimmed;
-}
-
-/**
- * Core note event handler — pure function on history array.
- * Returns new history array. No refs, no side-channel state.
- */
-function handleNoteOn(history, note, velocity, startTime) {
-  // Close any existing active entry for this pitch (retrigger)
-  const activeIdx = findLastActive(history, note);
-  let next = activeIdx >= 0 ? closeNote(history, activeIdx, startTime) : history;
-  return [...next, { note, velocity, startTime, endTime: null }];
-}
-
-function handleNoteOff(history, note, endTime) {
-  const activeIdx = findLastActive(history, note);
-  if (activeIdx < 0) return history; // No matching active note — ignore
-  return closeNote(history, activeIdx, endTime);
-}
 
 /**
  * React hook to subscribe to MIDI events from the piano recorder.
