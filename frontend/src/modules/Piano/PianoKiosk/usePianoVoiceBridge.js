@@ -38,8 +38,9 @@ export function usePianoVoiceBridge({ url = DEFAULT_URL, enabled = true } = {}) 
         } catch { /* ignore malformed */ }
       };
       ws.onclose = () => {
-        setStatus((s) => ({ ...s, link: 'closed' }));
-        if (closed) return;
+        wsRef.current = null;
+        if (closed) { setStatus((s) => ({ ...s, link: 'closed' })); return; }
+        setStatus((s) => ({ ...s, link: 'reconnecting' }));
         const delay = Math.min(5000, 250 * 2 ** retryRef.current++);
         timer = setTimeout(open, delay);
       };
