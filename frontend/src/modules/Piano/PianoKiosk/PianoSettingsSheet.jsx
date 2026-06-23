@@ -94,6 +94,17 @@ export default function PianoSettingsSheet({ open, onClose }) {
           <h3 className="piano-settings__eyebrow">MIDI monitor</h3>
           <PianoMidiMonitor />
         </section>
+
+        {/* ── App ── */}
+        <footer className="piano-settings__foot">
+          <button
+            type="button"
+            className="piano-settings__reload"
+            onClick={() => { logger.info('piano.settings.reload', {}); window.location.reload(); }}
+          >
+            <Icon name="repeat" /> Reload app
+          </button>
+        </footer>
       </aside>
     </div>
   );
