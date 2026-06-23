@@ -2,17 +2,23 @@ package net.kckern.pianobridge;
 
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 
+import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoWSD;
 
 /**
@@ -82,6 +88,115 @@ public class ControlServer extends NanoWSD {
     protected WebSocket openWebSocket(IHTTPSession handshake) {
         Log.i(TAG, "Handshake from " + handshake.getRemoteIpAddress());
         return new ControlSocket(handshake);
+    }
+
+    // --- HTTP control plane (pbctl CLI) ----------------------------------
+    //
+    // NanoWSD routes non-WebSocket requests here. Same :8770 socket; NanoHTTPD
+    // binds all interfaces, so this is reachable on the LAN (10.0.0.245:8770)
+    // for the external pbctl CLI as well as localhost for the kiosk. No auth —
+    // LAN kiosk, same trust model as the Fully REST endpoint.
+
+    @Override
+    protected NanoHTTPD.Response serveHttp(IHTTPSession session) {
+        String uri = session.getUri();
+        NanoHTTPD.Method method = session.getMethod();
+        try {
+            BleMidiConnector ble = service.getBleConnector();
+            switch (uri) {
+                case "/":
+                case "/help":
+                    return json(ok().put("routes", new JSONArray()
+                            .put("GET /status").put("POST /connect").put("POST /forget")
+                            .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
+                            .put("GET /log").put("POST /panic")));
+                case "/status": {
+                    JSONObject o = ok();
+                    o.put("ble", ble != null ? ble.status() : JSONObject.NULL);
+                    o.put("engine", service.isEngineRunning() ? "running" : "stopped");
+                    o.put("wsClients", clients.size());
+                    o.put("preset", currentPresetId == null ? JSONObject.NULL : currentPresetId);
+                    return json(o);
+                }
+                case "/connect":
+                    if (ble == null) return json(err("no_connector"));
+                    ble.connectNow();
+                    return json(ok().put("action", "connect"));
+                case "/forget":
+                    if (ble == null) return json(err("no_connector"));
+                    ble.forget();
+                    return json(ok().put("action", "forget"));
+                case "/scan": {
+                    if (ble == null) return json(err("no_connector"));
+                    int ms = parseIntParam(session, "ms", 4000);
+                    return json(ok().put("devices", ble.scanForDevices(ms)));
+                }
+                case "/config":
+                    if (method == NanoHTTPD.Method.POST) {
+                        String body = readBody(session);
+                        if (body == null || body.trim().isEmpty()) return json(err("empty_body"));
+                        DeviceConfig.writeOverride(service, body);
+                        service.reloadConfigAndReconnect();
+                        return json(ok().put("action", "config_saved"));
+                    } else {
+                        JSONObject o = ok();
+                        DeviceConfig cfg = service.getConfig();
+                        JSONObject vals = new JSONObject();
+                        if (cfg != null) for (Map.Entry<String, String> e : cfg.asMap().entrySet()) vals.put(e.getKey(), e.getValue());
+                        o.put("values", vals);
+                        o.put("overridePath", DeviceConfig.overrideFile(service).getAbsolutePath());
+                        o.put("hasOverride", DeviceConfig.overrideFile(service).exists());
+                        return json(o);
+                    }
+                case "/log":
+                    return json(ok().put("log", Diag.recent()));
+                case "/panic": {
+                    PianoEngine e = service.getEngine();
+                    if (e != null) e.panic();
+                    return json(ok().put("action", "panic"));
+                }
+                default:
+                    return json(NanoHTTPD.Response.Status.NOT_FOUND, err("not_found").put("uri", uri));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "HTTP handler error on " + uri, e);
+            return json(NanoHTTPD.Response.Status.INTERNAL_ERROR, err(e.getMessage()));
+        }
+    }
+
+    private JSONObject ok() { try { return new JSONObject().put("ok", true); } catch (JSONException e) { return new JSONObject(); } }
+    private JSONObject err(String msg) { try { return new JSONObject().put("ok", false).put("error", msg == null ? "" : msg); } catch (JSONException e) { return new JSONObject(); } }
+
+    private NanoHTTPD.Response json(JSONObject o) { return json(NanoHTTPD.Response.Status.OK, o); }
+    private NanoHTTPD.Response json(NanoHTTPD.Response.Status status, JSONObject o) {
+        NanoHTTPD.Response r = NanoHTTPD.newFixedLengthResponse(status, "application/json", o.toString());
+        r.addHeader("Access-Control-Allow-Origin", "*");
+        return r;
+    }
+
+    private int parseIntParam(IHTTPSession s, String key, int def) {
+        Map<String, java.util.List<String>> p = s.getParameters();
+        if (p != null && p.containsKey(key) && !p.get(key).isEmpty()) {
+            try { return Integer.parseInt(p.get(key).get(0)); } catch (NumberFormatException ignored) { }
+        }
+        return def;
+    }
+
+    private String readBody(IHTTPSession session) throws IOException {
+        int len = 0;
+        String cl = session.getHeaders().get("content-length");
+        if (cl != null) { try { len = Integer.parseInt(cl.trim()); } catch (NumberFormatException ignored) { } }
+        InputStream in = session.getInputStream();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[2048];
+        int remaining = len > 0 ? len : Integer.MAX_VALUE;
+        int n;
+        while (remaining > 0 && (n = in.read(buf, 0, Math.min(buf.length, remaining))) > 0) {
+            bos.write(buf, 0, n);
+            remaining -= n;
+            if (len <= 0 && bos.size() > 65536) break; // safety cap when no content-length
+        }
+        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
     }
 
     // --- live MIDI fan-out (called by PianoBridgeService's MidiReceiver) ---
