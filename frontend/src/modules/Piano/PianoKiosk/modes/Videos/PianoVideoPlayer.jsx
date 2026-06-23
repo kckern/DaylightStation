@@ -23,7 +23,7 @@ const EMPTY_NOTES = new Map();
 export default function PianoVideoPlayer({ lecture, onBack }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
-  const mediaEl = useResolvedMediaEl(playerRef);
+  const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
   const { activeNotes, pressNote, releaseNote } = usePianoMidi();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -95,7 +95,16 @@ export default function PianoVideoPlayer({ lecture, onBack }) {
   if (!contentId) {
     return (
       <div className="piano-mode__placeholder">
-        This lecture can’t be played. <button type="button" onClick={onBack}>Back</button>
+        This lecture can't be played. <button type="button" onClick={onBack}>Back</button>
+      </div>
+    );
+  }
+
+  if (timedOut && !mediaEl) {
+    getLogger().child({ component: 'piano-video-player' }).warn('piano.video.mount-timeout', { contentId });
+    return (
+      <div className="piano-mode__placeholder">
+        This video didn't start. <button type="button" onClick={onBack}>Back to course</button>
       </div>
     );
   }
