@@ -209,6 +209,7 @@ import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_sy
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
+import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
@@ -1296,6 +1297,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     artAdapter,
     dataPath: dataBasePath,
     logger: rootLogger.child({ module: 'art-api' })
+  });
+
+  // Piano kiosk API (studio take persistence). No MIDI here — the browser owns
+  // Web-MIDI; this is CRUD over data/household/apps/piano/studio.
+  v1Routers.piano = createPianoRouter({
+    configService,
+    logger: rootLogger.child({ module: 'piano-api' })
   });
 
   // Emulator console (games on the media mount). Addresses media by safe
