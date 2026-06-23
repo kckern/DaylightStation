@@ -3,6 +3,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
+import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
 import Icon from './icons/Icon.jsx';
 
 const ENGINE_TAG = { sfizz: 'SFZ', dexed: 'FM' };
@@ -25,7 +26,7 @@ const HW_STATE = {
 export default function PianoSettingsSheet({ open, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-settings' }), []);
   const { connected, inputName, status, connect } = usePianoMidi();
-  const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink } = usePianoSound();
+  const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -41,9 +42,18 @@ export default function PianoSettingsSheet({ open, onClose }) {
           <button type="button" className="piano-settings__close" onClick={onClose} aria-label="Close settings"><Icon name="close" /></button>
         </header>
 
-        {/* ── Sound ── */}
+        {/* ── Keyboard (onboard hardware voices + effects, over MIDI) ── */}
+        {device && (
+          <section className="piano-settings__section">
+            <h3 className="piano-settings__eyebrow">Keyboard — {device.name}</h3>
+            <PianoKeyboardPanel />
+          </section>
+        )}
+
+        {/* ── Sound (rendered voice-bridge instruments / simple onboard timbres) ── */}
+        {sources.length > 0 && (
         <section className="piano-settings__section">
-          <h3 className="piano-settings__eyebrow">Sound{hasInstruments && bridgeLink && <span className={`piano-settings__link piano-settings__link--${bridgeLink}`}>{bridgeLink}</span>}</h3>
+          <h3 className="piano-settings__eyebrow">{device ? 'Rendered voices' : 'Sound'}{hasInstruments && bridgeLink && <span className={`piano-settings__link piano-settings__link--${bridgeLink}`}>{bridgeLink}</span>}</h3>
           <ul className="piano-settings__voices">
             {sources.map((s) => {
               const on = s.id === activeId;
@@ -75,6 +85,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
             </div>
           )}
         </section>
+        )}
 
         {/* ── MIDI hardware ── */}
         <section className="piano-settings__section">
