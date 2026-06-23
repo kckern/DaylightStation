@@ -5,6 +5,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
@@ -141,34 +142,43 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
           {title && <span className="piano-video-player__crumb-cur">{title}</span>}
         </div>
       )}
-      <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
-        {playerEl}
-      </div>
+      <div className="piano-video-player__body">
+        <div className="piano-video-player__stack">
+          <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
+            {playerEl}
+          </div>
 
-      <PianoVideoChrome
-        isPlaying={isPlaying}
-        currentTime={currentTime}
-        duration={duration}
-        rate={rate}
-        loop={loop}
-        playAlong={playAlong}
-        onToggle={ctrl.toggle}
-        onSkip={handleSkip}
-        onCycleRate={handleCycleRate}
-        onMarkA={loop.markA}
-        onMarkB={loop.markB}
-        onToggleLoop={loop.toggle}
-        onClearLoop={loop.clear}
-        onSeek={ctrl.seek}
-        onBack={onBack}
-        onTogglePlayAlong={togglePlayAlong}
-      />
+          <PianoVideoChrome
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            rate={rate}
+            loop={loop}
+            playAlong={playAlong}
+            onToggle={ctrl.toggle}
+            onSkip={handleSkip}
+            onCycleRate={handleCycleRate}
+            onMarkA={loop.markA}
+            onMarkB={loop.markB}
+            onToggleLoop={loop.toggle}
+            onClearLoop={loop.clear}
+            onSeek={ctrl.seek}
+            onBack={onBack}
+            onTogglePlayAlong={togglePlayAlong}
+          />
 
-      {playAlong && (
-        <div className="piano-video-player__keys">
-          <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
+          {playAlong && (
+            <div className="piano-video-player__keys">
+              <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Live grand-staff (treble + bass) of the notes being played along. */}
+        <aside className="piano-video-player__staff">
+          <CurrentChordStaff activeNotes={notes} />
+        </aside>
+      </div>
     </div>
   );
 }
