@@ -271,7 +271,13 @@
   }
 
   // Music notation always reads on white paper, even in the charcoal theme.
-  &__staff { min-height: 12rem; background: #fff; border: 1px solid var(--piano-border); border-radius: var(--r-md); }
+  // The shared chord-staff is 50%-wide by default (sized for a fullscreen
+  // visualizer); fill the panel here so it isn't lost in empty white.
+  &__staff {
+    min-height: 12rem; background: #fff; border: 1px solid var(--piano-border); border-radius: var(--r-md);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    .current-chord-staff-wrapper { width: 100%; padding: 1rem 0; }
+  }
 }
 
 .piano-connect-gate {
@@ -516,7 +522,7 @@
     box-sizing: border-box; padding: 1.25rem 1.5rem;
     background: #fff; border-left: 1px solid var(--piano-border);
     display: flex; align-items: center; justify-content: center;
-    .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+    .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 1rem 0; }
   }
 
   &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
