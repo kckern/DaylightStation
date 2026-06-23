@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 
 /**
@@ -19,6 +19,19 @@ import getLogger from '../../../lib/logging/Logger.js';
  */
 
 export const WATCHDOG_DEFAULTS = { minFps: 12, sustainSeconds: 4, graceMs: 8000 };
+
+/**
+ * Self-heal restart is DISABLED pending root-cause of the SM-T590 frame-clock
+ * stall. Field evidence (2026-06): restarting the WebView did NOT recover fps —
+ * it stayed ~10fps across restarts, even on a near-empty screen with hardware
+ * acceleration on and ~1.5GB RAM free. The restart loop only thrashed the UI
+ * (full app remount every ~40s) and polluted telemetry. So the watchdog now
+ * runs purely as a passive jank *sensor*: it measures fps and logs episodes
+ * (`piano.watchdog.jank-start` / `jank-end`) without touching the WebView.
+ * Re-enable — with a restart cap + backoff, and only after a restart is proven
+ * to actually recover frame presentation — by flipping this flag.
+ */
+export const SELF_HEAL_RESTART = false;
 
 /**
  * Pure decision step. Given prior state and the fps observed over the last
@@ -48,23 +61,25 @@ export function useRenderWatchdog({
   graceMs = WATCHDOG_DEFAULTS.graceMs,
   onRestart,
 } = {}) {
-  const stateRef = useRef({ jankSeconds: 0, fired: false });
-
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return undefined;
-    // Only run where we can actually self-heal: Fully's JS Interface, or an
-    // injected action (tests). Otherwise the rAF loop would cost us for nothing.
+    // The self-heal restart is gated (see SELF_HEAL_RESTART). When enabled it
+    // uses Fully's JS Interface or an injected action (tests). When disabled the
+    // loop still runs as a passive fps sensor — measuring is cheap and the
+    // episode telemetry is how we diagnose the stall.
     const restart = onRestart
-      || (window.fully && typeof window.fully.restartApp === 'function'
+      || (SELF_HEAL_RESTART && window.fully && typeof window.fully.restartApp === 'function'
         ? () => { try { window.fully.restartApp(); } catch { /* not fatal */ } }
         : null);
-    if (!restart) return undefined;
 
     const logger = getLogger().child({ component: 'piano-watchdog' });
     const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
     const startedAt = now();
     let frames = 0;
     let windowStart = startedAt;
+    let jankSeconds = 0;
+    let inEpisode = false;
+    let worstFps = Infinity;
     let rafId;
 
     const loop = () => {
@@ -75,11 +90,25 @@ export function useRenderWatchdog({
         frames = 0;
         windowStart = t;
         if (t - startedAt >= graceMs) {
-          const next = tickWatchdog(stateRef.current, fps, { minFps, sustainSeconds });
-          stateRef.current = next;
-          if (next.shouldFire) {
-            logger.warn('piano.watchdog.restart', { fps: Math.round(fps), minFps, sustainSeconds });
-            restart();
+          if (fps < minFps) {
+            jankSeconds += 1;
+            worstFps = Math.min(worstFps, fps);
+            // Episode begins once jank is sustained — log once, optionally self-heal.
+            if (!inEpisode && jankSeconds >= sustainSeconds) {
+              inEpisode = true;
+              logger.warn('piano.watchdog.jank-start', { fps: Math.round(fps), minFps, sustainSeconds });
+              if (restart) {
+                logger.warn('piano.watchdog.restart', { fps: Math.round(fps), minFps, sustainSeconds });
+                restart();
+              }
+            }
+          } else {
+            if (inEpisode) {
+              logger.info('piano.watchdog.jank-end', { fps: Math.round(fps), worstFps: Math.round(worstFps) });
+            }
+            jankSeconds = 0;
+            inEpisode = false;
+            worstFps = Infinity;
           }
         }
       }
