@@ -24,6 +24,7 @@ import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadc
 import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
+import { useRenderWatchdog } from '../modules/Piano/PianoKiosk/useRenderWatchdog.js';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
@@ -187,6 +188,10 @@ export default function PianoApp() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   useEffect(() => { logger.info('piano-app.mount', {}); }, [logger]);
   useEffect(() => applyPianoBodyTheme(), []);
+  // Self-heal: if the Fully WebView's compositor gets stuck (renderer pegs, fps
+  // collapses, a reload won't clear it), restart the WebView via the Fully JS
+  // Interface. No-op outside the kiosk. See useRenderWatchdog.js.
+  useRenderWatchdog();
 
   return (
     <PianoConfigProvider>
