@@ -436,6 +436,51 @@ Keep the render branches (`items === null` loading, `items?.length === 0` empty 
 
 ## Phase 4 — A route per view (Plex IDs in the URL)
 
+> **Routing requirement (user):** the single/default piano must NOT carry a `pianoId`
+> segment. URLs are `/piano`, `/piano/videos`, `/piano/music/:albumId`, … — never
+> `/piano/default/videos`. The `:pianoId` segment is used ONLY when the household has
+> more than one piano. Task 8B establishes this; Tasks 9–11 nest under whichever
+> parent applies.
+
+### Task 8B: Serve the single/default piano without a pianoId URL segment
+
+**Files:**
+- Modify: `frontend/src/Apps/PianoApp.jsx` (route table + `ActivePiano`/`PianoPicker` wiring)
+- Modify: `frontend/src/modules/Piano/PianoKiosk/PianoChrome.jsx` (home/label navigation), `PianoMenu.jsx`, `PianoPicker.jsx` (any absolute `/piano/${pianoId}` builders)
+- Test: `frontend/src/Apps/PianoApp.routing.test.jsx` (create)
+
+When `derivePianos(raw)` yields exactly one piano, mount the active-piano subtree at `/piano/*` (resolving `pianoId` internally to that one piano) so mode URLs are `/piano/videos` etc. When there are 2+ pianos, keep `/piano/:pianoId/*` and the picker at `/piano`.
+
+- [ ] **Step 1: Write the failing test** — render `PianoApp` in a `MemoryRouter` with a roster of one piano at `/piano/videos`; assert the Videos mode renders (no redirect to `/piano/default/...`). Mock `usePianoRoster`/config as the existing piano tests do (read `PianoConfig.test.js` first for the established mocking pattern — do not invent helpers).
+
+- [ ] **Step 2:** In `PianoApp.jsx`, branch the route table on roster size:
+
+```jsx
+// inside the component that has the roster:
+const { pianos } = usePianoRoster();
+const single = pianos.length === 1;
+return single ? (
+  <Routes>
+    <Route path="/*" element={<ActivePiano pianoId={pianos[0].id} />} />
+  </Routes>
+) : (
+  <Routes>
+    <Route index element={<PianoPicker />} />
+    <Route path=":pianoId/*" element={<ActivePiano />} />
+  </Routes>
+);
+```
+
+`ActivePiano` must accept an optional `pianoId` prop (falling back to `useParams().pianoId`). Build a `basePath` = `single ? '/piano' : '/piano/' + pianoId` and thread it (via the existing `ActivePianoProvider` value, add a `basePath` field) so chrome/menu navigation uses it instead of hardcoding `/piano/${pianoId}`.
+
+- [ ] **Step 3:** Update `PianoChrome.jsx` home button → `navigate(basePath)`; the label "switch piano" button → only render when multi-piano (a single-piano kiosk has nothing to switch to); `PianoMenu.open()` → `navigate(\`${basePath}/${id}\`)`. Pull `basePath` from `usePianoKioskConfig()`.
+
+- [ ] **Step 4:** `PianoPicker` keeps its multi-piano list at `/piano`; its single-piano auto-enter effect is no longer needed (the route branch handles it) — remove that redirect to avoid a double-navigation.
+
+- [ ] **Step 5:** Run the routing test (PASS) and the existing `PianoConfig.test.js` (no regression). Manual: load `/piano` on a one-piano household → menu; tap Videos → URL is `/piano/videos` (no `default`).
+
+- [ ] **Step 6: Commit** `feat(piano): single piano serves without a pianoId URL segment`
+
 ### Task 9: Route the Videos mode (grid → course → lecture)
 
 **Files:**
