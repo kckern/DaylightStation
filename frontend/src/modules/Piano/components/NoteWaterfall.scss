@@ -26,13 +26,11 @@
     border-radius: 4px 4px 0 0;
     pointer-events: none;
 
-    background: linear-gradient(
-      to top,
-      hsla(var(--hue), 100%, calc(60% + 20% * var(--velocity)), 1) 0%,
-      hsla(var(--hue), 100%, calc(70% + 15% * var(--velocity)), 0.8) 30%,
-      hsla(var(--hue), 100%, calc(75% + 10% * var(--velocity)), 0.4) 70%,
-      hsla(var(--hue), 100%, 80%, 0.1) 100%
-    );
+    // Flat fill (was a 4-stop linear-gradient). A gradient re-rasterizes per frame
+    // on each note as it grows/rises; across ~100+ concurrent notes that is a major
+    // GPU draw cost. A solid velocity-mapped color reads near-identically and is
+    // free — same lesson as the keyboard keys. (webview-paint-performance.md)
+    background: hsla(var(--hue), 100%, calc(58% + 16% * var(--velocity)), 0.95);
 
     // NO box-shadow. Each note animates its height/position EVERY frame, so a
     // blurred box-shadow (here 3 stacked, up to 50px*velocity) re-rasterizes the
@@ -44,23 +42,8 @@
     // Active notes: anchored at bottom, height grows via CSS animation
     &.active {
       animation: noteGrow 8000ms linear forwards;
-
-      &::after {
-        content: '';
-        position: absolute;
-        bottom: -5px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 120%;
-        height: 10px;
-        background: radial-gradient(
-          ellipse at center,
-          hsla(var(--hue), 100%, 70%, 0.8) 0%,
-          hsla(var(--hue), 100%, 60%, 0) 70%
-        );
-        // (was filter: blur(3px)) — blur on a per-frame-animated note re-rasterizes
-        // every frame; the radial gradient is already soft enough without it.
-      }
+      // (Removed the ::after base flare — it added an extra radial-gradient draw per
+      // active note every frame. The flat fill is the play feedback.)
     }
 
     // Released notes: fixed height, rise + fade via CSS animation
