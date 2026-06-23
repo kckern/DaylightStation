@@ -1,25 +1,13 @@
-import { Notation } from '../../../../MusicNotation/Notation.jsx';
-import { TheoryLessons } from './theory/TheoryLessons.jsx';
-
 /**
- * Lessons mode — two families:
- *   1. Notation-driven song lessons (MusicXML → notation + scoring). SHELL only;
- *      the MusicXmlRenderer (OSMD) + scoring loop are future work.
- *   2. Music-theory lessons (tonal-backed): chord ID, intervals, scales,
- *      progressions. Catalog wired (TheoryLessons); runners are skeletons.
+ * Lessons mode — guided song lessons and music-theory drills.
+ * The notation renderer (OSMD/MusicXML) and theory runners are future work;
+ * render an honest coming-soon state rather than a broken shell.
  */
 export function Lessons() {
   return (
     <section className="piano-mode piano-mode--lessons">
-      <div className="piano-lessons__section">
-        <h3>Songs (notation)</h3>
-        {/* Seam for MusicXML notation lessons — renders via the MusicNotation
-            facade so the OSMD renderer drops in here without restructuring. */}
-        <Notation renderer="musicxml" />
-      </div>
-
-      <div className="piano-lessons__section">
-        <TheoryLessons />
+      <div className="piano-mode__placeholder">
+        Lessons are coming soon — guided songs and music-theory drills will live here.
       </div>
     </section>
   );

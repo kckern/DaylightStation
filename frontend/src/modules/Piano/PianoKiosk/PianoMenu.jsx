@@ -9,7 +9,7 @@ export const PIANO_MODES = [
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
   { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
-  { id: 'lessons', label: 'Lessons', blurb: 'Guided & theory lessons', icon: 'lessons' },
+  { id: 'lessons', label: 'Lessons', blurb: 'Coming soon', icon: 'lessons' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: 'studio' },
 ];
 

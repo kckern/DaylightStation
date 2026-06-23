@@ -21,6 +21,7 @@ export function Studio() {
   const { recording, lastTake, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
   const studioBase = `api/v1/piano/${pianoId}/studio`;
 
@@ -126,7 +127,15 @@ export function Studio() {
               <li key={id}>
                 <span className="piano-studio__take-title">{title}</span>
                 <button type="button" onClick={() => onPlay(id)} disabled={!connected}><Icon name="play" /> Play</button>
-                <button type="button" onClick={() => onDelete(id)} aria-label="Delete take"><Icon name="trash" label="Delete take" /></button>
+                {confirmId === id ? (
+                  <span className="piano-studio__confirm">
+                    Delete?
+                    <button type="button" onClick={() => { setConfirmId(null); onDelete(id); }} aria-label="Confirm delete"><Icon name="trash" /></button>
+                    <button type="button" onClick={() => setConfirmId(null)} aria-label="Cancel delete"><Icon name="close" /></button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => setConfirmId(id)} aria-label="Delete take"><Icon name="trash" /></button>
+                )}
               </li>
             );
           })}
