@@ -876,7 +876,10 @@ export class PlexAdapter {
       return {
         key: localId,
         title: item.title,
-        image: (item.thumb || item.composite) ? `${this.proxyPath}${item.thumb || item.composite}` : null,
+        // composite first: playlists serve art at /playlists/:id/composite (the
+        // /library/metadata/:id/thumb path 404s for them); non-playlists have no
+        // composite so they fall through to thumb. Matches the rest of the adapter.
+        image: (item.composite || item.thumb) ? `${this.proxyPath}${item.composite || item.thumb}` : null,
         summary: item.summary || null,
         tagline: item.tagline || null,
         year: item.year || null,
