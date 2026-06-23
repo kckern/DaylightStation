@@ -476,6 +476,15 @@
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-stage);
 
+  /* body splits into the video stack (left) and the live staff sidebar (right) */
+  &__body { flex: 1 1 auto; min-height: 0; display: flex; }
+  &__stack { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  &__staff {
+    flex: 0 0 16rem; width: 16rem; min-height: 0; overflow: hidden;
+    background: #fff; border-left: 1px solid var(--piano-border);
+    display: flex; align-items: stretch; justify-content: center;
+  }
+
   /* breadcrumb header: source show › episode title */
   &__crumbs {
     flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem;
