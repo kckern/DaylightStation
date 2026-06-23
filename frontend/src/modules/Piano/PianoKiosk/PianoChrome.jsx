@@ -2,18 +2,22 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
+import { usePianoKioskConfig, usePianoRoster } from './PianoConfig.jsx';
 
 /**
  * PianoChrome — always-on bar across every mode: home, piano label (tap to switch
- * pianos), the timbre/voice picker (Program Change out), and connection status.
+ * pianos, only when 2+ pianos), the timbre/voice picker (Program Change out), and
+ * connection status. Home + switch navigation come from `basePath` in context.
  *
  * @param {Array<{label:string, program:number}>} [voices] - timbre options
  * @param {string} [label] - this piano's display name
- * @param {string} [pianoId] - active piano id (home routes to its menu)
  */
-export function PianoChrome({ voices = [], label, pianoId }) {
+export function PianoChrome({ voices = [], label }) {
   const navigate = useNavigate();
   const { connected, inputName, status, sendProgramChange, connect } = usePianoMidi();
+  const { pianoId, basePath } = usePianoKioskConfig();
+  const { pianos } = usePianoRoster();
+  const multiPiano = pianos.length > 1;
   const logger = useMemo(() => getLogger().child({ component: 'piano-chrome' }), []);
 
   const onVoice = (program) => {
@@ -26,13 +30,13 @@ export function PianoChrome({ voices = [], label, pianoId }) {
       <button
         type="button"
         className="piano-chrome__home"
-        onClick={() => navigate(`/piano/${pianoId}`)}
+        onClick={() => navigate(basePath)}
         aria-label="Home"
       >
         ⌂
       </button>
 
-      {label && (
+      {label && (multiPiano ? (
         <button
           type="button"
           className="piano-chrome__label"
@@ -41,7 +45,9 @@ export function PianoChrome({ voices = [], label, pianoId }) {
         >
           {label}
         </button>
-      )}
+      ) : (
+        <span className="piano-chrome__label piano-chrome__label--static">{label}</span>
+      ))}
 
       {voices.length > 0 && (
         <select
