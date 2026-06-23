@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// pbctl.mjs — Piano Bridge control CLI (HTTP control plane on :8770).
+// pianobridge.cli.mjs — Piano Bridge control CLI (HTTP control plane on :8770).
+// (Canonical copy for DaylightStation devs; mirrors _extensions/piano-bridge/pbctl.mjs.)
 //
-// The bridge APK serves a REST control plane on the same NanoHTTPD socket as its
-// WebSocket. NanoHTTPD binds all interfaces, so this works over the LAN — no ADB.
+// The PianoBridge APK (source: _extensions/piano-bridge/app) serves a REST control
+// plane on the same NanoHTTPD socket as its WebSocket. NanoHTTPD binds all
+// interfaces, so this works over the LAN — no ADB. It is also the ADB-replacement
+// diagnostic channel for the piano tablet (logcat/exec/cpu, see the diag subcommands).
 // Host: PB_HOST env or default 10.0.0.245:8770.
 //
 //   node pbctl.mjs status            # BLE/MIDI connection state (diagnose)
