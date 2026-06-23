@@ -421,7 +421,10 @@
   position: relative; flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; background: var(--piano-stage);
 
-  &__video { flex: 1 1 auto; min-height: 0; position: relative; }
+  &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
+  /* tap-to-fullscreen: fill the screen and let the Player stretch into it */
+  &__video:fullscreen { width: 100vw; height: 100vh; background: #000; display: flex; }
+  &__video:fullscreen > * { flex: 1 1 auto; min-height: 0; }
   /* playable keyboard footer — touch/click simulates keypresses */
   &__keys {
     flex: 0 0 auto; background: var(--piano-surface-2);
@@ -461,10 +464,7 @@
   }
   &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 
-  transition: opacity 0.35s ease;
 }
-
-.piano-video-player.chrome-hidden .piano-video-chrome { opacity: 0; pointer-events: none; }
 
 /* ---- Music mode: album grid (square covers with visible caption below) ---- */
 .piano-music-grid {
