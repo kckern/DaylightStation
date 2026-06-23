@@ -573,3 +573,14 @@
 /* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
 .piano-video-grid--posters .piano-video-grid__title,
 .piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
+
+/* ---- PianoBack — shared in-flow back control ---- */
+.piano-back {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: var(--piano-surface); color: var(--piano-fg);
+  border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+  padding: 0.4rem 0.9rem; font: inherit; cursor: pointer;
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  &:active { background: var(--piano-surface-2); }
+  .piano-icon { font-size: 1.1rem; }
+}

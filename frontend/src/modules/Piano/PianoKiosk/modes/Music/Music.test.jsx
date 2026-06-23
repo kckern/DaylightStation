@@ -71,10 +71,10 @@ describe('Music mode', () => {
     // Now on /music/80962 — AlbumDetail with the track list.
     expect(await screen.findByText('Scene 1')).toBeTruthy();
     expect(screen.getByText('Scene 2')).toBeTruthy();
-    expect(screen.getByText('▶ Play All')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /play all/i })).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/queue/plex:80962');
 
-    fireEvent.click(screen.getByText('‹ Music'));
+    fireEvent.click(screen.getByRole('button', { name: /back to music/i }));
     // Back up to the index grid.
     expect(await screen.findByTitle('Der Ring')).toBeTruthy();
   });

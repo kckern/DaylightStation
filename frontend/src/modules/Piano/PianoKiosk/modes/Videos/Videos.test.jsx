@@ -74,7 +74,7 @@ describe('Videos mode', () => {
     expect(screen.getByText('Lecture 2')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/fitness/show/1/playable');
 
-    fireEvent.click(screen.getByText('‹ Courses'));
+    fireEvent.click(screen.getByRole('button', { name: /back to videos/i }));
     // Back up to the index grid.
     expect(await screen.findByTitle('Beethoven Sonatas')).toBeTruthy();
   });
