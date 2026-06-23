@@ -32,18 +32,18 @@ export function PianoChrome({ voices = [], instruments = [], label, pianoId }) {
 
   const onSource = (value) => {
     if (value === ONBOARD) {
-      bridge.stop();
-      sendLocalControl(true);
+      const stopped = bridge.stop();
+      const restored = sendLocalControl(true);
       setSource(ONBOARD);
-      logger.info('piano.source.onboard', { pianoId });
+      logger.info('piano.source.onboard', { pianoId, stopped, restored, link: bridge.status?.link });
       return;
     }
     const inst = instruments.find((i) => i.id === value);
     if (!inst) return;
-    bridge.loadPreset(resolveInstrumentSpec(inst));
-    sendLocalControl(false);
+    const loaded = bridge.loadPreset(resolveInstrumentSpec(inst));
+    const muted = sendLocalControl(false);
     setSource(value);
-    logger.info('piano.source.instrument', { pianoId, id: inst.id, engine: inst.engine });
+    logger.info('piano.source.instrument', { pianoId, id: inst.id, engine: inst.engine, loaded, muted, link: bridge.status?.link });
   };
 
   return (
