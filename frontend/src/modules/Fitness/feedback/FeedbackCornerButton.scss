@@ -1,0 +1,49 @@
+// Unobtrusive corner mic button for the Fitness home/menu view. Quiet by
+// default, brightens on press. Generous tap target for the touchscreen TV.
+.fitness-feedback-trigger {
+  position: absolute;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 50;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.25rem;
+  height: 4.25rem;
+  padding: 0;
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  background: rgba(20, 26, 38, 0.55);
+  color: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, transform 120ms ease, opacity 150ms ease;
+  opacity: 0.7;
+
+  &:hover {
+    opacity: 1;
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(28, 36, 52, 0.75);
+  }
+
+  &:active {
+    transform: scale(0.94);
+    color: var(--app-action-primary, #4fc3f7);
+    border-color: rgba(79, 195, 247, 0.5);
+  }
+
+  &__icon {
+    display: flex;
+    font-size: 2rem;
+    line-height: 1;
+  }
+}
+
+// On the touchscreen kiosk the cursor is hidden globally.
+.kiosk-ui .fitness-feedback-trigger {
+  cursor: none;
+}

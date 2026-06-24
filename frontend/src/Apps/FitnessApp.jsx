@@ -33,6 +33,7 @@ import '../modules/Fitness/index.js';
 import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
 import MenuMusicController from '../modules/Fitness/nav/MenuMusicController.jsx';
 import EmergencyPlaybackController from '../modules/Fitness/player/EmergencyPlaybackController.jsx';
+import { FitnessFeedback, FeedbackCornerButton } from '../modules/Fitness/feedback';
 
 registerBuiltinWidgets();
 
@@ -63,6 +64,7 @@ const FitnessApp = () => {
   // rather than blasting at the old 0.15. useMenuMusic re-applies the real value
   // live once it arrives.
   const [menuMusicVolume, setMenuMusicVolume] = useState(0.05);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Mirror the active play queue to sessionStorage so an F5 reload can resume it.
   useEffect(() => {
@@ -704,6 +706,13 @@ const FitnessApp = () => {
     return root?.content_source || 'plex';
   }, [fitnessConfiguration]);
 
+  // Best-effort primary user id for feedback context (don't over-couple — null is fine).
+  const primaryUserId = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const primary = root?.users?.primary?.[0];
+    return primary?.id || primary?.profileId || null;
+  }, [fitnessConfiguration]);
+
   // Powerdown audio for the emergency-lockdown ceremony (config-driven).
   const emergencyAudioPath = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
@@ -1287,6 +1296,13 @@ const FitnessApp = () => {
         >
           <IdentityProvider>
           <GlobalOverlays />
+          {feedbackOpen && (
+            <FitnessFeedback
+              onClose={() => setFeedbackOpen(false)}
+              view={currentView}
+              userId={primaryUserId}
+            />
+          )}
           <EmergencyLockdownOverlay audioPath={emergencyAudioPath} />
           <MenuMusicController
             isActive={menuMusicActive}
@@ -1444,10 +1460,16 @@ const FitnessApp = () => {
                   />
                 )}
                 {currentView === 'menu' && (
-                  <FitnessMenu 
-                    activeCollection={activeCollection} 
-                    onContentSelect={handleNavigate}
-                  />
+                  <>
+                    <FitnessMenu
+                      activeCollection={activeCollection}
+                      onContentSelect={handleNavigate}
+                    />
+                    {/* Unobtrusive corner mic — opens the voice-feedback overlay.
+                        Only on the home/menu view so it never overlaps player or
+                        screen controls. */}
+                    <FeedbackCornerButton onOpen={() => setFeedbackOpen(true)} />
+                  </>
                 )}
                 {currentView === 'module' && activeModule && (
                   <FitnessModuleContainer
