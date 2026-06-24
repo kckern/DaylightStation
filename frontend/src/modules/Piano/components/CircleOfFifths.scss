@@ -1,0 +1,36 @@
+// Circle-of-fifths wheel. Sits on the WHITE Studio top-pane card, so colors are
+// dark-on-white (not the dark-theme piano vars, which assume a charcoal surface).
+.piano-circle-of-fifths {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+
+  .cof-ring {
+    fill: none;
+    stroke: #d9d4c8;
+    stroke-width: 2;
+  }
+
+  .cof-slot {
+    .cof-bubble {
+      fill: #fff;
+      stroke: #cfcabd;
+      stroke-width: 1.5;
+      transition: fill 120ms ease, stroke 120ms ease;
+    }
+    .cof-label {
+      fill: #2b2b2b;
+      font-size: 0.85rem;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    &.in-key .cof-bubble { stroke: var(--piano-accent, #2ec46f); }
+
+    &.is-active .cof-bubble {
+      fill: var(--piano-accent, #2ec46f);
+      stroke: var(--piano-accent, #2ec46f);
+    }
+    &.is-active .cof-label { fill: var(--piano-accent-ink, #07210f); }
+  }
+}
