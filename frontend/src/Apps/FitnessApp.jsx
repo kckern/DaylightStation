@@ -713,6 +713,20 @@ const FitnessApp = () => {
     return primary?.id || primary?.profileId || null;
   }, [fitnessConfiguration]);
 
+  // Roster + household label for the Momentum widget (same config object the
+  // primaryUserId memo reads `users.primary` from, honoring the optional `.fitness` wrapper).
+  const momentumRoster = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const primary = root?.users?.primary;
+    return Array.isArray(primary)
+      ? primary.map((u) => ({ id: u.id, name: u.name || u.display_name || u.id }))
+      : [];
+  }, [fitnessConfiguration]);
+  const householdLabel = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    return root?.household_label || '';
+  }, [fitnessConfiguration]);
+
   // Powerdown audio for the emergency-lockdown ceremony (config-driven).
   const emergencyAudioPath = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
@@ -1432,6 +1446,8 @@ const FitnessApp = () => {
                       onCtaAction={(cta) => logger.info('fitness-cta-action', { action: cta.action })}
                       initialSelectedSessionId={pendingSelectedSessionId}
                       onSelectedSessionConsumed={() => setPendingSelectedSessionId(null)}
+                      roster={momentumRoster}
+                      householdLabel={householdLabel}
                     >
                       <ScreenDataProvider sources={screenSources}>
                         <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>
