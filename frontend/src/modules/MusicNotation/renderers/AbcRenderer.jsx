@@ -48,9 +48,11 @@ export function collectStaffNotes(tune) {
  * @param {string} keySignature - e.g. 'C', 'G', 'F'
  * @param {number} [scale=1.5] - abcjs render scale
  * @param {string} [className='abc-renderer'] - class on the render container
+ * @param {boolean} [singleLine=false] - render the whole voice on one horizontal
+ *   line (no wrapping) for a teleprompter-style scrolling follow-along
  * @param {(tune:object, staffNotes:Array)=>void} [onRender] - post-paint hook
  */
-export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', onRender }) {
+export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, onRender }) {
   const containerRef = useRef(null);
   const onRenderRef = useRef(onRender);
   onRenderRef.current = onRender;
@@ -66,8 +68,16 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       const tune = abc ?? generateAbc(notes, keySignature);
       const containerWidth = containerRef.current.parentElement?.offsetWidth || 600;
       const sidePad = 12;
+      // singleLine: force one long horizontal staff line (no wrapping) so a
+      // follow-along cursor can scroll it like a teleprompter. A very wide
+      // staffwidth makes abcjs lay the whole voice on one line; the parent
+      // container scrolls horizontally to reveal it.
+      const staffwidth = singleLine
+        ? 100000
+        : Math.max(120, containerWidth - sidePad * 2);
       const result = abcjs.renderAbc(containerRef.current, tune, {
-        staffwidth: Math.max(120, containerWidth - sidePad * 2),
+        staffwidth,
+        wrap: singleLine ? { minSpacing: 1, maxSpacing: 1.4, preferredMeasuresPerLine: 1000 } : undefined,
         paddingtop: 0,
         paddingbottom: 0,
         paddingleft: sidePad,
@@ -84,7 +94,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       setError(e.message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notesKey, keySignature, scale]);
+  }, [notesKey, keySignature, scale, singleLine]);
 
   if (error) {
     return <span style={{ color: 'red', fontSize: '12px' }}>{error}</span>;
