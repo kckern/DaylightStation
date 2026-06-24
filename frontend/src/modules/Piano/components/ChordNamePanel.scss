@@ -1,0 +1,21 @@
+// Live chord-name read-out. Sits on the WHITE Studio top-pane card → dark-on-white.
+.piano-chord-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  text-align: center;
+
+  &__value {
+    font-size: clamp(1.1rem, 2.4vw, 1.9rem);
+    font-weight: 800;
+    line-height: 1.15;
+    color: #2b2b2b;
+
+    &.is-empty {
+      color: #9b958a;
+      font-weight: 600;
+    }
+  }
+}
