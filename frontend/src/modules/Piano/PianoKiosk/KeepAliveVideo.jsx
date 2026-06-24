@@ -2,20 +2,28 @@ import { useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 
 /**
- * Keep-alive video — the fix for the SM-T590 WebView frame-clock stall.
+ * Keep-alive driver — the fix for the SM-T590 WebView frame-clock stall.
  *
- * On this device the Chromium WebView's BeginFrame/vsync delivery intermittently
- * starves, throttling rAF AND compositor animations to ~7-10fps while GPU/CPU sit
- * idle (a near-empty screen stalls too). A *playing* <video> forces the compositor
- * to present a new frame every vsync via the media path, which breaks the
- * starvation loop and keeps the whole page rendering at full speed.
+ * On this device the Chromium WebView's BeginFrame/vsync delivery starves:
+ * unless *something* on the page is continuously presenting compositor frames,
+ * rAF AND every CSS/JS animation throttle to ~6fps while CPU/GPU sit idle. A
+ * near-empty screen stalls too. The whole page — waterfall, cover-flow, menus,
+ * games — janks, regardless of how cheap the animation is. It is NOT a paint or
+ * layout cost in any one component; it is global frame starvation.
  *
- * Measured (2026-06-23): keep-alive OFF → 7fps, GPU 0%; keep-alive ON → no jank,
- * GPU ~57% (real frames). See docs/_wip/bugs/2026-06-23-piano-kiosk-jank-paint-bound.md.
+ * The cure is to keep one element animating on the compositor every vsync.
  *
- * The element must be technically visible (not display:none / opacity:0) to be
- * composited. It's 6px, ~invisible, bottom-right, non-interactive. The asset is a
- * tiny 64x64 60fps muted loop (frontend/public/keepalive.mp4).
+ * Earlier this was a tiny muted <video> (the media path presents a frame per
+ * vsync). Measured on-device (2026-06): that video is unreliable — at 6px /
+ * opacity 0.02 the WebView culls/throttles it so it does NOT drive vsync, and it
+ * needs a user gesture to start (muted-autoplay gate). With the video "playing"
+ * the waterfall still sat at 6fps. Dropping in ANY live CSS transform animation
+ * instead lifted the whole page 6fps → ~28fps immediately, no gesture needed.
+ *
+ * So the primary driver is now a CSS `transform` animation on a tiny element
+ * (`.piano-vsync-driver`): it composites on the GPU, presents a frame every
+ * vsync, can't be culled the way the video was, and needs no user activation.
+ * The muted <video> is kept as a secondary belt-and-suspenders driver.
  */
 export default function KeepAliveVideo() {
   const ref = useRef(null);
@@ -26,35 +34,35 @@ export default function KeepAliveVideo() {
     v.muted = true;
     const play = () => v.play().catch(() => {});
     play();
-    // Autoplay is gesture-gated on this WebView (muted autoplay is blocked until the
-    // first user interaction), so (re)assert play on the first touch/key anywhere —
-    // a touch kiosk gets one almost immediately, then the video persists.
     const onGesture = () => play();
     const opts = { capture: true, passive: true };
     document.addEventListener('pointerdown', onGesture, opts);
     document.addEventListener('keydown', onGesture, opts);
     document.addEventListener('touchstart', onGesture, opts);
-    // Re-assert if the WebView ever pauses it (backgrounding, focus loss).
-    const onPause = () => { logger.warn('keepalive.paused-replay', {}); play(); };
-    v.addEventListener('pause', onPause);
     logger.info('keepalive.mounted', {});
     return () => {
       document.removeEventListener('pointerdown', onGesture, opts);
       document.removeEventListener('keydown', onGesture, opts);
       document.removeEventListener('touchstart', onGesture, opts);
-      v.removeEventListener('pause', onPause);
     };
   }, []);
   return (
-    <video
-      ref={ref}
-      src="/keepalive.mp4"
-      autoPlay
-      loop
-      muted
-      playsInline
-      aria-hidden="true"
-      style={{ position: 'fixed', bottom: 0, right: 0, width: 6, height: 6, opacity: 0.02, pointerEvents: 'none', zIndex: 0 }}
-    />
+    <>
+      {/* Primary vsync driver: a tiny always-animating compositor layer. This is
+          what actually keeps the WebView presenting frames. */}
+      <div className="piano-vsync-driver" aria-hidden="true" />
+      {/* Secondary driver: muted looping video (media-path vsync). Unreliable on
+          its own — kept as backup only. */}
+      <video
+        ref={ref}
+        src="/keepalive.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+        aria-hidden="true"
+        style={{ position: 'fixed', bottom: 0, right: 0, width: 6, height: 6, opacity: 0.02, pointerEvents: 'none', zIndex: 2147483646 }}
+      />
+    </>
   );
 }

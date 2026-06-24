@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
 import { SideScrollerGame } from '../../../SideScrollerGame/SideScrollerGame.jsx';
 import { isWhiteKey } from '../../../noteUtils.js';
+import { handleNoteOn, trimHistory } from '../../../noteHistory.js';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
@@ -19,6 +21,10 @@ import { createSimState, stepSim, TEST_DEFAULTS } from './pianoTestStream.js';
  *   scroller                   — run the real SideScrollerGame, drive a white-key
  *       scale sweep (triggers jumps/ducks as it passes the target pitches), and
  *       count FPS via gfxinfo. Logs `piano.test.scroller`.
+ *   waterfall/<sweepMs>        — render the real NoteWaterfall under a dense
+ *       self-driven note stream and count main-thread FPS with an rAF counter
+ *       (gfxinfo can't see the WebView under graphicsAccelerationMode=0). Logs
+ *       `piano.test.waterfall` with the live fps every 2s.
  */
 const pct = (arr, p) => {
   if (!arr.length) return 0;
@@ -62,6 +68,81 @@ function KeepAlive() {
       autoPlay loop muted playsInline
       style={{ position: 'fixed', bottom: 0, right: 0, width: 6, height: 6, opacity: 0.02, pointerEvents: 'none', zIndex: 1 }}
     />
+  );
+}
+
+/**
+ * Waterfall stress scene — mounts the real NoteWaterfall (which runs its own
+ * per-frame rAF re-render) and floods it with a dense, self-driving note stream
+ * so the screen stays full of falling notes. A second rAF counts presented frames
+ * and logs the effective FPS every 2s as `piano.test.waterfall` — the direct
+ * answer to "is the waterfall janky", independent of gfxinfo.
+ */
+function WaterfallScene({ sweepMs, holdMs, lo, hi }) {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-test' }), []);
+  const startNote = 21;
+  const endNote = 108;
+  const [history, setHistory] = useState([]);
+  const histRef = useRef([]);
+
+  // Dense stream: add a note every sweepMs, spread across the range, auto-closing
+  // notes once they exceed holdMs so the on-screen population stays high but bounded.
+  useEffect(() => {
+    let i = 0;
+    const span = Math.max(1, hi - lo);
+    const id = setInterval(() => {
+      const now = Date.now();
+      const note = lo + ((i * 7) % (span + 1));
+      i += 1;
+      let h = handleNoteOn(histRef.current, note, 70 + (i % 50), now);
+      h = h.map((n) => (!n.endTime && now - n.startTime > holdMs ? { ...n, endTime: n.startTime + holdMs } : n));
+      h = trimHistory(h, now);
+      histRef.current = h;
+      setHistory(h);
+    }, sweepMs);
+    return () => clearInterval(id);
+  }, [sweepMs, holdMs, lo, hi]);
+
+  const activeNotes = useMemo(() => {
+    const m = new Map();
+    for (const n of history) if (!n.endTime) m.set(n.note, { velocity: n.velocity, timestamp: n.startTime });
+    return m;
+  }, [history]);
+
+  // rAF FPS counter — frames presented per 2s window → effective FPS.
+  const [fps, setFps] = useState(0);
+  useEffect(() => {
+    let frames = 0;
+    let last = performance.now();
+    let raf = 0;
+    let mounted = true;
+    const tick = () => {
+      frames += 1;
+      const t = performance.now();
+      if (t - last >= 2000) {
+        const v = Math.round((frames / (t - last)) * 1000 * 10) / 10;
+        setFps(v);
+        logger.info('piano.test.waterfall', { fps: v, notes: histRef.current.length, active: activeNotes.size, sweepMs });
+        frames = 0;
+        last = t;
+      }
+      if (mounted) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { mounted = false; cancelAnimationFrame(raf); };
+  }, [logger, activeNotes.size, sweepMs]);
+
+  return (
+    <div className="piano-test piano-test--waterfall" data-testid="piano-test">
+      <div className="piano-test-hud" data-testid="piano-test-hud">
+        <div><b>NOTE-WATERFALL FPS TEST</b></div>
+        <div>stream every {sweepMs}ms · notes={history.length} · active={activeNotes.size}</div>
+        <div>FPS (rAF, last 2s): <b>{fps}</b></div>
+      </div>
+      <div className="piano-test__waterfall-stage" style={{ position: 'fixed', inset: 0, background: 'var(--piano-viz-bg, #07080f)' }}>
+        <NoteWaterfall noteHistory={history} activeNotes={activeNotes} startNote={startNote} endNote={endNote} />
+      </div>
+    </div>
   );
 }
 
@@ -170,6 +251,15 @@ export default function PianoTest() {
   // workaround for the WebView BeginFrame/rAF stall. Must be technically visible
   // (not display:none / opacity:0) to force compositing.
   const keepEl = params.keepalive ? <KeepAlive /> : null;
+
+  if (params.scene === 'waterfall') {
+    return (
+      <>
+        {keepEl}
+        <WaterfallScene sweepMs={params.sweepMs} holdMs={params.holdMs} lo={params.lo} hi={params.hi} />
+      </>
+    );
+  }
 
   if (params.scene === 'scroller') {
     return (

@@ -1,28 +1,30 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
+import { Routes, Route, NavLink } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
-import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
-import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
-import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
-import Icon from '../../icons/Icon.jsx';
+import StudioPlay from './StudioPlay.jsx';
+import StudioRecordings from './StudioRecordings.jsx';
 
 /**
- * Studio mode — freeform play with the falling-notes visual, plus record/playback.
- * Recording captures the live BLE-MIDI stream; playback schedules the take back
- * out the MIDI port so the piano itself sounds it. Takes persist to the backend.
+ * Studio mode — a freeform play surface with two tabs:
+ *   • Play (index)      — staff + falling-notes waterfall + a touch keyboard.
+ *   • Recordings        — capture the live MIDI stream, save takes, and play them
+ *                         back out the port so the piano sounds them.
+ *
+ * The recorder and take list live here in the container, not in the Recordings
+ * view, so a recording keeps capturing while the user flips back to the Play tab.
  */
 export function Studio() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio' }), []);
-  const { activeNotes, noteHistory, isPlaying, subscribe, scheduleNotes, connected } = usePianoMidi();
+  const { isPlaying, subscribe, scheduleNotes, connected } = usePianoMidi();
   const { pianoId } = usePianoKioskConfig();
   const { recording, lastTake, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
-  const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
   const studioBase = `api/v1/piano/${pianoId}/studio`;
 
   const loadTakes = useCallback(async () => {
@@ -36,7 +38,7 @@ export function Studio() {
 
   useEffect(() => { loadTakes(); }, [loadTakes]);
 
-  const onRecordToggle = () => {
+  const onRecordToggle = useCallback(() => {
     if (recording) {
       const take = stop();
       logger.info('studio.record-stop', { events: take.events.length, durMs: take.durationMs });
@@ -44,9 +46,9 @@ export function Studio() {
       logger.info('studio.record-start', {});
       start();
     }
-  };
+  }, [recording, start, stop, logger]);
 
-  const onSave = async () => {
+  const onSave = useCallback(async () => {
     if (!lastTake?.events?.length) return;
     setBusy(true);
     try {
@@ -61,9 +63,9 @@ export function Studio() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [lastTake, studioBase, logger, loadTakes]);
 
-  const onPlay = async (id) => {
+  const onPlay = useCallback(async (id) => {
     try {
       const take = await DaylightAPI(`${studioBase}/${id}`);
       const ok = scheduleNotes(take?.events ?? []);
@@ -71,9 +73,9 @@ export function Studio() {
     } catch (err) {
       logger.error('studio.playback-failed', { id, error: err.message });
     }
-  };
+  }, [studioBase, scheduleNotes, logger]);
 
-  const onDelete = async (id) => {
+  const onDelete = useCallback(async (id) => {
     try {
       await DaylightAPI(`${studioBase}/${id}`, {}, 'DELETE');
       logger.info('studio.delete', { id });
@@ -81,66 +83,44 @@ export function Studio() {
     } catch (err) {
       logger.warn('studio.delete-failed', { id, error: err.message });
     }
-  };
+  }, [studioBase, logger, loadTakes]);
+
+  const status = recording ? 'Recording…' : isPlaying ? 'Playing' : connected ? 'Ready' : 'Piano not connected';
 
   return (
     <section className="piano-mode piano-mode--studio">
-      <div className="piano-studio__toolbar">
-        <button
-          type="button"
-          className={`piano-studio__rec${recording ? ' is-recording' : ''}`}
-          onClick={onRecordToggle}
-        >
-          {recording ? <><Icon name="stop" /> Stop</> : <><Icon name="record" /> Record</>}
-        </button>
-        {!recording && lastTake?.events?.length > 0 && (
-          <button type="button" className="piano-studio__save" onClick={onSave} disabled={busy}>
-            Save take
-          </button>
-        )}
-        <span className="piano-studio__status">
-          {recording ? 'Recording…' : isPlaying ? 'Playing' : connected ? 'Ready' : 'Piano not connected'}
-        </span>
-      </div>
+      <nav className="piano-studio__tabs">
+        <NavLink to="" end className={({ isActive }) => `piano-studio__tab${isActive ? ' is-active' : ''}`}>
+          Play
+        </NavLink>
+        <NavLink to="recordings" className={({ isActive }) => `piano-studio__tab${isActive ? ' is-active' : ''}`}>
+          Recordings
+          {recording && <span className="piano-studio__rec-dot" aria-label="recording" />}
+        </NavLink>
+      </nav>
 
-      <div className="piano-mode__staff">
-        <CurrentChordStaff activeNotes={activeNotes} />
-      </div>
-
-      <div className="piano-studio__waterfall">
-        <NoteWaterfall
-          noteHistory={noteHistory}
-          activeNotes={activeNotes}
-          startNote={startNote}
-          endNote={endNote}
+      <Routes>
+        <Route index element={<StudioPlay />} />
+        <Route
+          path="recordings"
+          element={(
+            <StudioRecordings
+              recording={recording}
+              lastTake={lastTake}
+              busy={busy}
+              status={status}
+              connected={connected}
+              takes={takes}
+              confirmId={confirmId}
+              setConfirmId={setConfirmId}
+              onRecordToggle={onRecordToggle}
+              onSave={onSave}
+              onPlay={onPlay}
+              onDelete={onDelete}
+            />
+          )}
         />
-      </div>
-
-      <div className="piano-studio__takes">
-        <h3>Saved takes</h3>
-        {takes.length === 0 && <p className="piano-mode__placeholder">No takes yet.</p>}
-        <ul>
-          {takes.map((t) => {
-            const id = typeof t === 'string' ? t : t.id;
-            const title = typeof t === 'string' ? t : (t.title || t.id);
-            return (
-              <li key={id}>
-                <span className="piano-studio__take-title">{title}</span>
-                <button type="button" onClick={() => onPlay(id)} disabled={!connected}><Icon name="play" /> Play</button>
-                {confirmId === id ? (
-                  <span className="piano-studio__confirm">
-                    Delete?
-                    <button type="button" onClick={() => { setConfirmId(null); onDelete(id); }} aria-label="Confirm delete"><Icon name="trash" /></button>
-                    <button type="button" onClick={() => setConfirmId(null)} aria-label="Cancel delete"><Icon name="close" /></button>
-                  </span>
-                ) : (
-                  <button type="button" onClick={() => setConfirmId(id)} aria-label="Delete take"><Icon name="trash" /></button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      </Routes>
     </section>
   );
 }

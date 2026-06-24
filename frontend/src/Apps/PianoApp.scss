@@ -51,6 +51,35 @@
 .piano-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
 .piano-icon svg { width: 1em; height: 1em; display: block; }
 
+// Vsync driver — a tiny element that animates a compositor transform forever, so
+// the SM-T590 WebView keeps presenting a frame every vsync. Without a continuous
+// compositor animation present, the WebView's BeginFrame delivery starves and
+// EVERY animation on the page throttles to ~6fps (CPU/GPU idle). This keeps the
+// whole UI at full frame rate. See KeepAliveVideo.jsx for the on-device evidence.
+@keyframes piano-vsync-drive {
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(40px, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.piano-vsync-driver {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  // Size matters: a 6px element is too small for the WebView to treat as "moving",
+  // and vsync starves anyway on sparse pages (measured: 6px → intermittent 0fps;
+  // 64px → steady ~50fps). 64px sweeping 40px each frame forces a real pixel delta.
+  width: 64px;
+  height: 64px;
+  // Imperceptible, but a real (non-zero, non-occluded) layer so it is never culled.
+  opacity: 0.012;
+  pointer-events: none;
+  // MUST be the topmost layer — a fully-occluded element gets occlusion-culled by
+  // the WebView (which is exactly why the old z-index:0 keep-alive never worked).
+  z-index: 2147483647;
+  will-change: transform;
+  animation: piano-vsync-drive 0.9s linear infinite;
+}
+
 .piano-app {
   width: 100vw;
   height: 100vh;
@@ -453,7 +482,53 @@
   &__focus { margin: 0; color: var(--piano-muted); max-width: 70ch; }
 }
 
+// Studio fills the mode and manages its own vertical layout (keyboard pinned at
+// the foot of the Play tab), so drop the shared padding/scroll of .piano-mode.
+.piano-mode--studio {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .piano-studio {
+  &__tabs {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem 0;
+    border-bottom: 1px solid var(--piano-border);
+  }
+
+  &__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: var(--r-md) var(--r-md) 0 0;
+    color: var(--piano-muted);
+    text-decoration: none;
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-bottom: none;
+
+    &.is-active {
+      color: var(--piano-fg);
+      background: var(--piano-surface);
+      border-color: var(--piano-border);
+    }
+  }
+
+  // Pulsing dot on the Recordings tab while a take is capturing.
+  &__rec-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--piano-danger);
+    animation: piano-studio-rec-pulse 1s ease-in-out infinite;
+  }
+
   &__toolbar {
     display: flex;
     align-items: center;
@@ -497,6 +572,59 @@
   &__take-title { flex: 1 1 auto; }
 
   &__confirm { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--piano-danger); }
+}
+
+@keyframes piano-studio-rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+// Play tab: staff (auto) → waterfall (grows) → keyboard (pinned at foot).
+.piano-studio-play {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  // Music notation always reads on white paper, even in the charcoal theme.
+  &__staff {
+    flex: 0 0 auto;
+    margin: 0.75rem 1.5rem;
+    background: #fff;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    .current-chord-staff-wrapper { width: 100%; padding: 0.5rem 0; }
+  }
+
+  // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
+  &__waterfall {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 1.5rem;
+    background: var(--piano-viz-bg);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+
+  &__keys {
+    flex: 0 0 auto;
+    width: 100%;
+    background: var(--piano-surface-2);
+    // .piano-keyboard is height:100%, so the foot pane needs an explicit height.
+    .piano-keyboard { height: 9rem; }
+  }
+}
+
+// Recordings tab: scrolls within the fixed-height studio shell.
+.piano-studio-recordings {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem;
 }
 
 .piano-video-grid {
