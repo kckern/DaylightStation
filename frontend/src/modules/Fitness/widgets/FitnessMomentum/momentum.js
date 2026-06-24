@@ -35,15 +35,19 @@ function addCredited(bucket, zoneMinutes, fallbackMin) {
   }
 }
 
-/** Round a zones accumulator and total it into a { effortMinutes, zones } week. */
-function finalizeWeek(bucket, current) {
-  const zones = {
-    active: Math.round(bucket.zones.active),
-    warm: Math.round(bucket.zones.warm),
-    hot: Math.round(bucket.zones.hot),
-    fire: Math.round(bucket.zones.fire),
+/**
+ * Total a zones accumulator into a week. Zone minutes are kept RAW (unrounded) so
+ * the renderer can give small high-intensity zones (a fraction of a minute of
+ * hot/fire) a fair, log-scaled shake; only the displayed total is rounded.
+ */
+function finalizeWeek(bucket, current, startMs) {
+  const zones = { ...bucket.zones };
+  return {
+    effortMinutes: Math.round(zones.active + zones.warm + zones.hot + zones.fire),
+    zones,
+    current,
+    startMs,
   };
-  return { effortMinutes: zones.active + zones.warm + zones.hot + zones.fire, zones, current };
 }
 
 /**
@@ -84,9 +88,12 @@ export function computeMomentum(sessions, roster, opts = {}) {
     }
   }
 
+  // Window start for the oldest-first bucket at array index `i`.
+  const weekStartMs = (i) => now - ((compareWeeks - 1) - i + 1) * windowMs;
+
   const memberRows = members.map((m) => {
     const buckets = bucketsByUser.get(m.id) || emptyBuckets();
-    const weeks = buckets.map((b, i) => finalizeWeek(b, i === compareWeeks - 1));
+    const weeks = buckets.map((b, i) => finalizeWeek(b, i === compareWeeks - 1, weekStartMs(i)));
     return {
       id: m.id,
       name: m.name || m.id,
@@ -101,6 +108,7 @@ export function computeMomentum(sessions, roster, opts = {}) {
     effortMinutes: 0,
     zones: blankZones(),
     current: i === compareWeeks - 1,
+    startMs: weekStartMs(i),
   }));
   for (const r of memberRows) {
     r.weeks.forEach((w, i) => {

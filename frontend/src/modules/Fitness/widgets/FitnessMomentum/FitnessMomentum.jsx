@@ -22,26 +22,48 @@ const ZONE_VAR = {
   fire: 'var(--zone-fire)',
 };
 
-/** One vertical, zone-stacked weekly bar. Height = effort relative to `maxMinutes`. */
+/** 'M/d' label from an epoch-ms window start (local date). */
+function mdLabel(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/**
+ * Log-scaled segment heights within a bar. Active minutes usually dwarf the
+ * higher zones; a ln(1+m) weighting compresses the big chunks so a little hot/
+ * fire still earns a visible band. Heights are fractions of the bar fill, so
+ * they always sum to the full fill (the fill height itself stays linear in
+ * effort for honest week-over-week comparison).
+ */
+function zoneFractions(zones) {
+  const weights = ZONE_STACK.map((z) => ({ z, w: zones[z] > 0 ? Math.log1p(zones[z]) : 0 }));
+  const sum = weights.reduce((s, x) => s + x.w, 0);
+  if (sum <= 0) return [];
+  return weights.filter((x) => x.w > 0).map((x) => ({ z: x.z, frac: x.w / sum }));
+}
+
+/** One vertical, log-stacked weekly bar with an M/d label. Height = effort vs `maxMinutes`. */
 function WeekBar({ week, maxMinutes }) {
   const fillPct = maxMinutes > 0 ? (week.effortMinutes / maxMinutes) * 100 : 0;
-  const total = week.effortMinutes || 1;
+  const fracs = zoneFractions(week.zones);
   return (
-    <span
-      className={`fitness-momentum__weekbar${week.current ? ' is-current' : ''}`}
-      title={`${week.effortMinutes} min`}
-    >
-      <span className="fitness-momentum__weekfill" style={{ height: `${fillPct.toFixed(1)}%` }}>
-        {ZONE_STACK.map((z) => (
-          week.zones[z] > 0 ? (
+    <span className="fitness-momentum__weekcol">
+      <span
+        className={`fitness-momentum__weekbar${week.current ? ' is-current' : ''}`}
+        title={`${week.effortMinutes} min`}
+      >
+        <span className="fitness-momentum__weekfill" style={{ height: `${fillPct.toFixed(1)}%` }}>
+          {fracs.map(({ z, frac }) => (
             <span
               key={z}
               className="fitness-momentum__weekseg"
-              style={{ height: `${((week.zones[z] / total) * 100).toFixed(1)}%`, background: ZONE_VAR[z] }}
+              style={{ height: `${(frac * 100).toFixed(1)}%`, background: ZONE_VAR[z] }}
             />
-          ) : null
-        ))}
+          ))}
+        </span>
       </span>
+      <span className={`fitness-momentum__weeklabel${week.current ? ' is-current' : ''}`}>{mdLabel(week.startMs)}</span>
     </span>
   );
 }
