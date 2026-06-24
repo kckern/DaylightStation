@@ -8,6 +8,7 @@
 export { WHITE_KEYS, NOTE_TO_DIATONIC, isBlackKey, spellAccidental, getStaffPosition } from './model/pitch.js';
 export { KEY_SIGNATURES, NATURAL_NOTES, PITCH_TO_NATURAL, detectKey } from './model/keySignature.js';
 export { splitByHand, getOttavaInfo } from './model/handSplit.js';
+export { diatonicTranspose, expandDrill, handMidiSequence } from './model/drillTranspose.js';
 
 // Renderers
 export { AbcRenderer } from './renderers/AbcRenderer.jsx';
