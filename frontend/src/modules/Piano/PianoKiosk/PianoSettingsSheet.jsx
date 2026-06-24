@@ -6,6 +6,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
+import FeedbackPanel from '../../Feedback/FeedbackPanel.jsx';
 import Icon from './icons/Icon.jsx';
 
 const ENGINE_TAG = { sfizz: 'SFZ', dexed: 'FM' };
@@ -29,7 +30,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-settings' }), []);
   const { connected, inputName, status, connect } = usePianoMidi();
   const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
-  const { config } = usePianoKioskConfig();
+  const { config, pianoId } = usePianoKioskConfig();
   const bluetooth = config?.bluetooth || null;
   const [tab, setTab] = useState('sound');
 
@@ -50,6 +51,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
         <nav className="piano-settings__tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'sound'} className={`piano-settings__tab${tab === 'sound' ? ' is-active' : ''}`} onClick={() => setTab('sound')}>Sound</button>
           <button type="button" role="tab" aria-selected={tab === 'midi'} className={`piano-settings__tab${tab === 'midi' ? ' is-active' : ''}`} onClick={() => setTab('midi')}>MIDI</button>
+          <button type="button" role="tab" aria-selected={tab === 'feedback'} className={`piano-settings__tab${tab === 'feedback' ? ' is-active' : ''}`} onClick={() => setTab('feedback')}>Feedback</button>
         </nav>
 
         {/* ── Sound tab: onboard keyboard voices + rendered voices ── */}
@@ -133,6 +135,14 @@ export default function PianoSettingsSheet({ open, onClose }) {
           <PianoMidiMonitor />
         </section>
         </>
+        )}
+
+        {/* ── Feedback tab: voice-record a bug / quirk / idea ── */}
+        {tab === 'feedback' && (
+          <section className="piano-settings__section piano-settings__section--grow">
+            <h3 className="piano-settings__eyebrow">Feedback</h3>
+            <FeedbackPanel app="piano" context={{ pianoId, surface: 'settings' }} />
+          </section>
         )}
 
         {/* ── App ── */}

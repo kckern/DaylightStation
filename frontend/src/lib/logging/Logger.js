@@ -74,6 +74,20 @@ const ensureTransport = () => {
   return wsTransport;
 };
 
+// Recent-events ring buffer — an in-memory tail of the last RECENT_MAX emitted
+// events, so a feature (e.g. voice feedback) can snapshot what just happened
+// before those logs rotate out of the backend session file. Kept slim (no deep
+// data clones) to stay cheap.
+const RECENT_MAX = 300;
+const recentEvents = [];
+
+/**
+ * Snapshot the most recent emitted log events (newest last).
+ * @param {number} [n=150] - how many trailing events to return
+ * @returns {Array<{ts,level,event,data,context}>}
+ */
+export const getRecentEvents = (n = 150) => recentEvents.slice(-Math.max(0, n));
+
 /**
  * Emit a log event
  */
@@ -90,6 +104,10 @@ const emit = (level, eventName, data = {}, options = {}) => {
     context: { ...config.context, ...(options.context || {}) },
     tags: options.tags || []
   };
+
+  // Tail into the ring buffer (slim copy; bounded).
+  recentEvents.push({ ts: event.ts, level, event: eventName, data: event.data, context: event.context });
+  if (recentEvents.length > RECENT_MAX) recentEvents.splice(0, recentEvents.length - RECENT_MAX);
 
   // Console output (immediate)
   if (config.consoleEnabled) {

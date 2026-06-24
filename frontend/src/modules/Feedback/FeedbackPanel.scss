@@ -1,0 +1,106 @@
+// App-wide voice feedback panel. Neutral, theme-agnostic — inherits text color
+// from its host so it reads in any app's settings surface.
+.feedback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: flex-start;
+
+  &__prompt {
+    margin: 0;
+    color: var(--piano-muted, #8a8f98);
+    max-width: 48ch;
+  }
+
+  &__record {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 1.4rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #333);
+    background: var(--piano-surface-2, #2a2d33);
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+
+    &.is-recording {
+      background: var(--piano-danger, #e5484d);
+      border-color: var(--piano-danger, #e5484d);
+      color: #fff;
+    }
+  }
+
+  &__dot {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    background: var(--piano-danger, #e5484d);
+
+    .is-recording & {
+      background: #fff;
+      animation: feedback-rec-pulse 1s ease-in-out infinite;
+    }
+  }
+
+  &__meter {
+    width: 100%;
+    max-width: 22rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: var(--piano-surface-2, #2a2d33);
+    overflow: hidden;
+  }
+  &__meter-fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform-origin: left center;
+    transform: scaleX(0.02);
+    background: linear-gradient(90deg, #3ddc84, #ffd23c, #e5484d);
+    will-change: transform;
+  }
+
+  &__review,
+  &__done {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  &__took { color: var(--piano-muted, #8a8f98); }
+  &__preview { width: 100%; max-width: 24rem; height: 2.25rem; }
+
+  &__actions { display: flex; gap: 0.75rem; }
+
+  &__save,
+  &__again {
+    padding: 0.55rem 1.3rem;
+    border-radius: 999px;
+    border: none;
+    background: var(--piano-accent, #3ddc84);
+    color: var(--piano-accent-ink, #07140c);
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  &__discard {
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #333);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  &__status { margin: 0; color: var(--piano-muted, #8a8f98); }
+  &__error { margin: 0; color: var(--piano-danger, #e5484d); }
+}
+
+@keyframes feedback-rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}

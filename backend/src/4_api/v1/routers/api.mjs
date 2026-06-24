@@ -120,7 +120,8 @@ export function createApiRouter(config) {
     '/catalog': 'catalog',
     '/livestream': 'livestream',
     '/camera': 'camera',
-    '/piano': 'piano'
+    '/piano': 'piano',
+    '/feedback': 'feedback'
   };
 
   // Mount each router at its path
