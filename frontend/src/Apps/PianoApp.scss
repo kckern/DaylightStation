@@ -444,6 +444,16 @@
     padding: 1rem;
     margin-bottom: 1.25rem;
     overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;            // keep the single engraved line on one row
+    touch-action: pan-x;           // let our pointer-drag own horizontal panning
+    user-select: none;             // dragging shouldn't select the SVG/text
+    -webkit-user-select: none;
+    overscroll-behavior-x: contain;
+    cursor: grab;
+    &:active { cursor: grabbing; }
+    // abcjs emits a block-level <svg>; keep it inline so white-space:nowrap holds.
+    svg { display: inline-block; }
 
     svg { color: #111; }
     svg path { fill: #111; stroke: #111; }
