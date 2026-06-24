@@ -132,7 +132,6 @@ export default function FitnessMomentum() {
             <Avatar id={m.avatarId} name={m.name} />
             <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
             <WeekBars weeks={m.weeks} />
-            <span className="fitness-momentum__min">{m.effortMinutes} min</span>
           </div>
         ))}
       </div>

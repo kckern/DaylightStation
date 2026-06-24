@@ -58,7 +58,6 @@
     &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
   }
   &__name { font-weight: 700; font-size: 1.1rem; }
-  &__min { font-variant-numeric: tabular-nums; opacity: 0.78; font-size: 0.95rem; }
 
   // Weekly bar chart: same-scale vertical bars, oldest → newest, each with an
   // M/d x-axis label. The newest (current) bar is highlighted; earlier weeks
@@ -66,7 +65,7 @@
   &__weeks {
     flex: 1 1 auto;
     width: 100%;
-    min-height: 3.5rem;
+    min-height: 5.5rem;
     display: flex;
     align-items: stretch;
     justify-content: center;
