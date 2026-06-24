@@ -150,6 +150,9 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
       onPointerDown={reveal}
       style={cover ? { '--cover': `url(${cover})` } : undefined}
     >
+      {/* Stage: album art + transport chrome live here and flex-shrink to make
+          room when the keyboard pushes up from below (it never slides over). */}
+      <div className="piano-music-player__stage">
       <div className="piano-music-player__art">
         {cover && <img src={cover} alt={track?.album || ''} />}
       </div>
@@ -188,13 +191,16 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
         </div>
       </div>
 
-      {/* Play-along: minimal title/artist (no transport) while playing the piano. */}
+      {/* While dimmed, the transport fades but the track title/artist persist
+          here (its own gradient keeps them legible over the dark cover). */}
       <div className="piano-music-player__pa-meta">
         <div className="piano-music-player__title">{track?.title || ''}</div>
         <div className="piano-music-player__sub">{[track?.artist, track?.album].filter(Boolean).join(' — ')}</div>
       </div>
+      </div>
 
-      {/* Play-along: live keyboard slides up from the bottom for feedback. */}
+      {/* Play-along: live keyboard. In-flow at the bottom edge — when it opens it
+          PUSHES the stage up (art + chrome resize) instead of covering them. */}
       <div className="piano-music-player__keys" onPointerDown={(e) => e.stopPropagation()}>
         <PianoKeyboard
           activeNotes={activeNotes}
