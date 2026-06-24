@@ -18,6 +18,7 @@ vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
     roster: [{ id: 'kckern', name: 'KC Kern', group_label: 'Dad' }, { id: 'felix', name: 'Felix' }],
     householdLabel: 'Kern Family',
     windowDays: 7,
+    compareWeeks: 4,
   }),
 }));
 
@@ -38,9 +39,17 @@ describe('FitnessMomentum', () => {
     expect(getByText('Felix')).toBeTruthy();
   });
 
-  it('unwraps the wrapped sessions source and credits zone minutes (cool omitted)', () => {
-    const { getByText } = render(<FitnessMomentum />);
-    // 20 active + 10 warm = 30 credited (the 5 cool minutes earn no credit); no baseline → 30/0.
-    expect(getByText('30 / 0 min')).toBeTruthy();
+  it('draws compareWeeks bars per person with the current week highlighted', () => {
+    const { container } = render(<FitnessMomentum />);
+    // 2 members × 4 weeks = 8 bars; one current bar per member.
+    expect(container.querySelectorAll('.fitness-momentum__weekbar').length).toBe(8);
+    expect(container.querySelectorAll('.fitness-momentum__weekbar.is-current').length).toBe(2);
+  });
+
+  it('shows the credited current-week minutes (cool omitted) and no percentage', () => {
+    const { getByText, container } = render(<FitnessMomentum />);
+    // 20 active + 10 warm = 30 credited (the 5 cool minutes earn no credit).
+    expect(getByText('30 min')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/%/);
   });
 });

@@ -1,7 +1,8 @@
 // FitnessMomentum.jsx — one flat glass panel: a household momentum headline plus
-// a per-person row. "Effort" is HR-zone-weighted (cool omitted); the bar compares
-// this window against each person's trailing 4-window average. Names resolve
-// through DisplayNameResolver (group label → "Dad").
+// a per-person row. "Effort" is HR-zone-weighted (cool omitted). Under each
+// person sit `compareWeeks` same-scale bars (one per 7-day window, oldest→newest)
+// so this week visibly stacks up against recent weeks. Names resolve through
+// DisplayNameResolver (group label → "Dad").
 import React, { useMemo } from 'react';
 import { useScreenData } from '@/screen-framework/data/ScreenDataProvider.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
@@ -12,8 +13,8 @@ import './FitnessMomentum.scss';
 
 const logger = getLogger().child({ component: 'fitness-momentum' });
 
-// Active → fire, low → high intensity. Drives both the legend and stack order.
-const ZONE_ORDER = ['active', 'warm', 'hot', 'fire'];
+// Low → high intensity, stacked bottom → top within a bar.
+const ZONE_STACK = ['fire', 'hot', 'warm', 'active']; // DOM order = top → bottom
 const ZONE_VAR = {
   active: 'var(--zone-active)',
   warm: 'var(--zone-warm)',
@@ -21,33 +22,36 @@ const ZONE_VAR = {
   fire: 'var(--zone-fire)',
 };
 
-/**
- * Segment widths for the stacked zone bar. The full bar represents the baseline
- * (recent norm); segments fill toward it by zone. When effort exceeds the
- * baseline the segments are scaled to fit the bar (distribution preserved) and
- * the real ratio is shown as a number alongside.
- */
-function zoneSegments(zones, baselineMinutes, effortMinutes) {
-  const denom = baselineMinutes > 0 ? baselineMinutes : (effortMinutes || 1);
-  let segs = ZONE_ORDER.map((z) => ({ zone: z, w: (zones[z] || 0) / denom }));
-  const total = segs.reduce((s, x) => s + x.w, 0);
-  if (total > 1) segs = segs.map((x) => ({ ...x, w: x.w / total })); // cap to bar, keep proportions
-  return segs;
+/** One vertical, zone-stacked weekly bar. Height = effort relative to `maxMinutes`. */
+function WeekBar({ week, maxMinutes }) {
+  const fillPct = maxMinutes > 0 ? (week.effortMinutes / maxMinutes) * 100 : 0;
+  const total = week.effortMinutes || 1;
+  return (
+    <span
+      className={`fitness-momentum__weekbar${week.current ? ' is-current' : ''}`}
+      title={`${week.effortMinutes} min`}
+    >
+      <span className="fitness-momentum__weekfill" style={{ height: `${fillPct.toFixed(1)}%` }}>
+        {ZONE_STACK.map((z) => (
+          week.zones[z] > 0 ? (
+            <span
+              key={z}
+              className="fitness-momentum__weekseg"
+              style={{ height: `${((week.zones[z] / total) * 100).toFixed(1)}%`, background: ZONE_VAR[z] }}
+            />
+          ) : null
+        ))}
+      </span>
+    </span>
+  );
 }
 
-function ZoneBar({ zones, baselineMinutes, effortMinutes }) {
-  const segs = zoneSegments(zones, baselineMinutes, effortMinutes);
+/** A person's (or the household's) same-scale weekly bar chart. */
+function WeekBars({ weeks }) {
+  const maxMinutes = Math.max(1, ...weeks.map((w) => w.effortMinutes));
   return (
-    <span className="fitness-momentum__bar">
-      {segs.map((s) => (
-        s.w > 0 ? (
-          <span
-            key={s.zone}
-            className={`fitness-momentum__seg fitness-momentum__seg--${s.zone}`}
-            style={{ width: `${(s.w * 100).toFixed(2)}%`, background: ZONE_VAR[s.zone] }}
-          />
-        ) : null
-      ))}
+    <span className="fitness-momentum__weeks">
+      {weeks.map((w, i) => <WeekBar key={i} week={w} maxMinutes={maxMinutes} />)}
     </span>
   );
 }
@@ -64,7 +68,7 @@ export default function FitnessMomentum() {
   // not a bare array (see FitnessSessionsWidget) — unwrap before computing.
   const rawSessions = useScreenData('sessions');
   const sessions = Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []);
-  const { roster, householdLabel, windowDays } = useFitnessScreen();
+  const { roster, householdLabel, windowDays, compareWeeks } = useFitnessScreen();
 
   // Short, family-friendly names via the device-agnostic resolver ("Dad" etc.).
   const nameById = useMemo(() => {
@@ -76,15 +80,15 @@ export default function FitnessMomentum() {
   }, [roster]);
 
   const data = useMemo(
-    () => computeMomentum(sessions, roster, { householdLabel, windowDays }),
-    [sessions, roster, householdLabel, windowDays],
+    () => computeMomentum(sessions, roster, { householdLabel, windowDays, compareWeeks }),
+    [sessions, roster, householdLabel, windowDays, compareWeeks],
   );
 
   logger.sampled('momentum.render', { members: data.members.length, householdMin: data.household.effortMinutes },
     { maxPerMinute: 12, aggregate: true });
 
   const { household, members } = data;
-  const anyActive = household.effortMinutes > 0;
+  const anyActive = household.weeks.some((w) => w.effortMinutes > 0);
 
   return (
     <div className="fitness-momentum">
@@ -92,25 +96,20 @@ export default function FitnessMomentum() {
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>
         <span className="fitness-momentum__window">· last {household.windowDays} days</span>
-        <span className="fitness-momentum__house-min">
-          {household.effortMinutes} min · {household.ratioPct}% of avg
-        </span>
+        <span className="fitness-momentum__house-min">{household.effortMinutes} min this week</span>
       </div>
 
       {!anyActive && (
-        <div className="fitness-momentum__zero">Let’s get moving — no credited minutes yet this week.</div>
+        <div className="fitness-momentum__zero">Let’s get moving — no credited minutes yet.</div>
       )}
 
       <div className="fitness-momentum__cards">
         {members.map((m) => (
-          <div key={m.id} className={`fitness-momentum__card${m.ahead ? ' is-ahead' : ''}`}>
+          <div key={m.id} className="fitness-momentum__card">
             <Avatar id={m.avatarId} name={m.name} />
             <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
-            <span className={`fitness-momentum__ratio${m.ahead ? ' is-ahead' : ''}`}>
-              {m.ratioPct}%
-            </span>
-            <ZoneBar zones={m.zones} baselineMinutes={m.baselineMinutes} effortMinutes={m.effortMinutes} />
-            <span className="fitness-momentum__min">{m.effortMinutes} / {m.baselineMinutes} min</span>
+            <WeekBars weeks={m.weeks} />
+            <span className="fitness-momentum__min">{m.effortMinutes} min</span>
           </div>
         ))}
       </div>
