@@ -419,6 +419,13 @@
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
     border-radius: var(--r-sm);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .piano-cover {
+    opacity: 1;
+    filter: blur(0);
+    transition: opacity 240ms ease, filter 240ms ease;
+    &.is-loading { opacity: 0.35; filter: blur(8px); }
   }
 }
 
