@@ -16,15 +16,15 @@
 
   &__headline {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
+    align-items: baseline;
+    gap: 0.5rem;
     font-size: 1.5rem;
     font-weight: 700;
   }
   &__flame { font-size: 1.6rem; }
   &__house { letter-spacing: 0.01em; }
-  &__roll { color: #ffb44c; font-weight: 700; }
-  &__house-min { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.9; }
+  &__window { color: #ffb44c; font-weight: 700; font-size: 1.15rem; }
+  &__house-min { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.92; font-size: 1.15rem; }
 
   &__zero { opacity: 0.75; font-size: 1.1rem; }
 
@@ -41,13 +41,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
     padding: 0.9rem 0.6rem;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.05);
     border: 2px solid transparent;
 
-    &.is-met { border-color: #3ddc84; box-shadow: 0 0 14px rgba(61, 220, 132, 0.35); }
+    &.is-ahead { border-color: #ff922b; box-shadow: 0 0 16px rgba(255, 146, 43, 0.4); }
   }
 
   &__avatar {
@@ -61,22 +61,31 @@
     &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
   }
   &__name { font-weight: 700; font-size: 1.1rem; }
-  &__streak { color: #ffb44c; font-weight: 700; }
-  &__min { font-variant-numeric: tabular-nums; opacity: 0.9; }
 
+  &__ratio {
+    font-weight: 800;
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    opacity: 0.92;
+    &.is-ahead { color: #ffb44c; }
+  }
+
+  &__min { font-variant-numeric: tabular-nums; opacity: 0.7; font-size: 0.95rem; }
+
+  // Stacked zone bar: the full track is the baseline; colored segments fill it.
   &__bar {
     width: 100%;
-    height: 0.5rem;
+    height: 0.7rem;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);
     overflow: hidden;
-    &--house { max-width: 16rem; }
+    display: flex;
+    align-items: stretch;
   }
-  &__bar-fill {
-    display: block;
+  &__seg {
     height: 100%;
-    width: 100%;
-    transform-origin: left center;
-    background: linear-gradient(90deg, #3ddc84, #7be0a3);
+    display: block;
+    &:first-child { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
   }
 }

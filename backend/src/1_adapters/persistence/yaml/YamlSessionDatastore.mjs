@@ -34,7 +34,7 @@ import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
 const INDEX_DIR_NAME = '_index';
 // Bump when the cached summary shape changes — a mismatch is treated as empty
 // (rebuilt on demand), so old shards never serve stale-shaped data.
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2; // v2: list participants now carry zoneMinutes
 
 /**
  * Derive session date from sessionId
@@ -318,11 +318,13 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
       const summary = data.summary;
 
-      // Build participants — list view only needs displayName
+      // Build participants — displayName + per-zone minutes (the momentum widget
+      // credits active/warm/hot/fire and omits cool, so it needs the breakdown).
       const participants = {};
       for (const [slug, info] of Object.entries(data.participants || {})) {
         participants[slug] = {
           displayName: info.display_name || slug,
+          zoneMinutes: summary?.participants?.[slug]?.zone_minutes || null,
         };
       }
 

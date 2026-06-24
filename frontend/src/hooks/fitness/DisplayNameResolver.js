@@ -211,6 +211,41 @@ export function resolveAllDisplayNames(deviceIds, context) {
 }
 
 /**
+ * Device-agnostic resolution — resolve a display name directly from a user /
+ * profile object, with no device/ownership/assignment indirection.
+ *
+ * The device-centric path above resolves names for a *device id* by walking
+ * ownership → assignment → profile. But callers that already hold a hydrated
+ * user record (e.g. the Momentum widget's `users.primary` roster, keyed by user
+ * slug) have no device to key on. This applies the SAME precedence semantics —
+ * group label (when preferred) → name → id — straight off the user object.
+ *
+ * Accepts either snake_case (`group_label`, config shape) or camelCase
+ * (`groupLabel`, `displayName`) field names.
+ *
+ * @param {Object} user - { id|profileId, name|displayName, group_label|groupLabel }
+ * @param {Object} [opts]
+ * @param {boolean} [opts.preferGroupLabels=false] - prefer the short group/role label (e.g. "Dad")
+ * @returns {DisplayNameResult} - { displayName, source, preferredGroupLabel }
+ */
+export function resolveUserDisplayName(user, { preferGroupLabels = false } = {}) {
+  const groupLabel = (user?.group_label || user?.groupLabel || '').toString().trim();
+  const name = (user?.name || user?.displayName || '').toString().trim();
+  const id = (user?.id || user?.profileId || '').toString().trim();
+
+  if (preferGroupLabels && groupLabel) {
+    return { displayName: groupLabel, source: 'groupLabel', preferredGroupLabel: true };
+  }
+  if (name) {
+    return { displayName: name, source: 'profile', preferredGroupLabel: preferGroupLabels };
+  }
+  if (groupLabel) {
+    return { displayName: groupLabel, source: 'groupLabel', preferredGroupLabel: preferGroupLabels };
+  }
+  return { displayName: id || 'Unknown', source: 'fallback', preferredGroupLabel: preferGroupLabels };
+}
+
+/**
  * Get the priority chain for debugging/testing.
  *
  * @returns {Array} Copy of the priority chain

@@ -6,14 +6,13 @@ const roster = [
   { id: 'felix', name: 'Felix' },
   { id: 'kckern', name: 'KC Kern' },
 ];
-// "today" anchor used across tests
-const TODAY = '2026-06-24';
 const NOW = Date.UTC(2026, 5, 24, 18, 0, 0); // 2026-06-24T18:00Z
 
-// helper to build a session
-const sess = (date, durationMs, users, startTime) => ({
-  date, durationMs, startTime: startTime ?? Date.parse(`${date}T12:00:00Z`),
-  participants: Object.fromEntries(users.map((u) => [u, { displayName: u }])),
+// Session with per-zone minutes. Default window is 7 days; baseline = prior 4 windows.
+const zsess = (date, zoneMinutes, users = ['felix'], durationMs = 0) => ({
+  startTime: Date.parse(`${date}T12:00:00Z`),
+  durationMs,
+  participants: Object.fromEntries(users.map((u) => [u, { displayName: u, zoneMinutes }])),
 });
 
 describe('addDays', () => {
@@ -23,76 +22,104 @@ describe('addDays', () => {
   });
 });
 
-describe('computeMomentum', () => {
-  it('sums active minutes per participant over the rolling 7 days only', () => {
-    const sessions = [
-      sess('2026-06-24', 30 * 60000, ['felix']),          // in week
-      sess('2026-06-20', 20 * 60000, ['felix', 'kckern']), // in week (both)
-      sess('2026-06-10', 99 * 60000, ['felix']),          // OUTSIDE 7d window
-    ];
-    const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150 });
+describe('computeMomentum — zone-weighted effort', () => {
+  it('credits active/warm/hot/fire and OMITS cool', () => {
+    const sessions = [zsess('2026-06-24', { active: 16, warm: 8, cool: 9, hot: 1, fire: 0 })];
+    const { members } = computeMomentum(sessions, roster, { now: NOW });
     const felix = members.find((m) => m.id === 'felix');
-    const kc = members.find((m) => m.id === 'kckern');
-    expect(felix.activeMinutes).toBe(50);   // 30 + 20, NOT the 99 from 14d ago
-    expect(kc.activeMinutes).toBe(20);
-    expect(felix.goalMinutes).toBe(150);
-    expect(felix.pct).toBeCloseTo(50 / 150, 5);
-    expect(felix.met).toBe(false);
+    expect(felix.zones).toEqual({ active: 16, warm: 8, hot: 1, fire: 0 });
+    expect(felix.effortMinutes).toBe(25); // 16+8+1, the 9 cool minutes earn no credit
   });
 
-  it('counts a live streak through today or yesterday and stops at the first gap', () => {
+  it('only counts sessions inside the current window', () => {
     const sessions = [
-      sess('2026-06-24', 10 * 60000, ['felix']),
-      sess('2026-06-23', 10 * 60000, ['felix']),
-      sess('2026-06-22', 10 * 60000, ['felix']),
-      // gap on 06-21
-      sess('2026-06-20', 10 * 60000, ['felix']),
+      zsess('2026-06-24', { active: 30 }),  // in window
+      zsess('2026-06-10', { active: 99 }),  // 14d ago — outside default 7d window
     ];
-    const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY });
-    expect(members.find((m) => m.id === 'felix').streakDays).toBe(3);
+    const { members } = computeMomentum(sessions, roster, { now: NOW });
+    expect(members.find((m) => m.id === 'felix').effortMinutes).toBe(30);
   });
 
-  it('keeps a streak alive when today is empty but yesterday is active', () => {
+  it('respects a configurable window length', () => {
+    const sessions = [zsess('2026-06-12', { active: 30 })]; // 12 days ago
+    expect(computeMomentum(sessions, roster, { now: NOW }).members[0].effortMinutes).toBe(0);
+    expect(computeMomentum(sessions, roster, { now: NOW, windowDays: 14 }).members[0].effortMinutes).toBe(30);
+  });
+
+  it('falls back to raw duration when a session has no zone breakdown', () => {
+    const sessions = [zsess('2026-06-24', null, ['felix'], 30 * 60000)];
+    const felix = computeMomentum(sessions, roster, { now: NOW }).members.find((m) => m.id === 'felix');
+    expect(felix.effortMinutes).toBe(30);
+    expect(felix.zones.active).toBe(30); // attributed to active so it still renders
+  });
+});
+
+describe('computeMomentum — baseline comparison', () => {
+  it('denominator is the average effort over the prior 4 windows', () => {
     const sessions = [
-      sess('2026-06-23', 10 * 60000, ['felix']),
-      sess('2026-06-22', 10 * 60000, ['felix']),
+      // baseline span (prior 4 weeks): 40 credited min each → total 160 → avg 40
+      zsess('2026-05-25', { active: 40 }),
+      zsess('2026-06-01', { active: 40 }),
+      zsess('2026-06-08', { active: 40 }),
+      zsess('2026-06-15', { active: 40 }),
+      // current window: 20 min
+      zsess('2026-06-20', { active: 20 }),
     ];
-    const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY });
-    expect(members.find((m) => m.id === 'felix').streakDays).toBe(2);
+    const felix = computeMomentum(sessions, roster, { now: NOW }).members.find((m) => m.id === 'felix');
+    expect(felix.baselineMinutes).toBe(40);
+    expect(felix.effortMinutes).toBe(20);
+    expect(felix.pct).toBeCloseTo(0.5, 5);
+    expect(felix.ratioPct).toBe(50);
+    expect(felix.ahead).toBe(false);
   });
 
-  it('reports zero for a roster member with no sessions, but still lists them', () => {
-    const { members } = computeMomentum([], roster, { now: NOW, todayStr: TODAY });
-    expect(members.map((m) => m.id)).toEqual(['felix', 'kckern']); // roster order preserved
-    expect(members[0].activeMinutes).toBe(0);
-    expect(members[0].streakDays).toBe(0);
-  });
-
-  it('aggregates the household: minutes = sum of members, goal = members*goal, streak = any-member days', () => {
+  it('flags ahead and reports a >100% ratio when beating the baseline', () => {
     const sessions = [
-      sess('2026-06-24', 30 * 60000, ['felix']),
-      sess('2026-06-23', 40 * 60000, ['kckern']),
+      zsess('2026-05-25', { active: 10 }),
+      zsess('2026-06-01', { active: 10 }),
+      zsess('2026-06-08', { active: 10 }),
+      zsess('2026-06-15', { active: 10 }),
+      zsess('2026-06-20', { active: 25 }),
     ];
-    const { household } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150, householdLabel: 'Kern Family' });
-    expect(household.label).toBe('Kern Family');
-    expect(household.activeMinutes).toBe(70);     // 30 + 40
-    expect(household.goalMinutes).toBe(300);      // 2 members * 150
-    expect(household.streakDays).toBe(2);         // 06-24 + 06-23, any member
+    const felix = computeMomentum(sessions, roster, { now: NOW }).members.find((m) => m.id === 'felix');
+    expect(felix.baselineMinutes).toBe(10);
+    expect(felix.ratioPct).toBe(250);
+    expect(felix.ahead).toBe(true);
   });
 
-  it('caps pct at 1 but keeps real minutes; flags met', () => {
-    const sessions = [sess('2026-06-24', 200 * 60000, ['felix'])];
-    const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150 });
-    const felix = members.find((m) => m.id === 'felix');
-    expect(felix.activeMinutes).toBe(200);
+  it('with no baseline history, any effort reads as 100% (new momentum)', () => {
+    const felix = computeMomentum([zsess('2026-06-24', { active: 25 })], roster, { now: NOW })
+      .members.find((m) => m.id === 'felix');
+    expect(felix.baselineMinutes).toBe(0);
     expect(felix.pct).toBe(1);
-    expect(felix.met).toBe(true);
+    expect(felix.ahead).toBe(true);
+  });
+});
+
+describe('computeMomentum — household + edges', () => {
+  it('aggregates members into a household total and label', () => {
+    const sessions = [
+      zsess('2026-06-24', { active: 30 }, ['felix']),
+      zsess('2026-06-23', { active: 40, warm: 10 }, ['kckern']),
+    ];
+    const { household } = computeMomentum(sessions, roster, { now: NOW, householdLabel: 'Kern Family' });
+    expect(household.label).toBe('Kern Family');
+    expect(household.effortMinutes).toBe(80);            // 30 + 50
+    expect(household.zones).toEqual({ active: 70, warm: 10, hot: 0, fire: 0 });
+    expect(household.windowDays).toBe(7);
+  });
+
+  it('lists roster members with no sessions at zero, in order', () => {
+    const { members } = computeMomentum([], roster, { now: NOW });
+    expect(members.map((m) => m.id)).toEqual(['felix', 'kckern']);
+    expect(members[0].effortMinutes).toBe(0);
+    expect(members[0].zones).toEqual({ active: 0, warm: 0, hot: 0, fire: 0 });
   });
 
   it('falls back to a generic household label and empty roster safely', () => {
-    const { household, members } = computeMomentum([], [], { now: NOW, todayStr: TODAY });
+    const { household, members } = computeMomentum([], [], { now: NOW });
     expect(household.label).toBe('Your household');
     expect(members).toEqual([]);
-    expect(household.streakDays).toBe(0);
+    expect(household.effortMinutes).toBe(0);
   });
 });
