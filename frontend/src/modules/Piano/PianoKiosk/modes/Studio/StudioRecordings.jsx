@@ -1,62 +1,79 @@
+import { useMemo } from 'react';
 import Icon from '../../icons/Icon.jsx';
 
+/** ms → M:SS for a take's length. */
+function mmss(ms) {
+  const total = Math.round((ms || 0) / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 /**
- * Studio recordings view — the record/playback workbench. Presentational: the
- * recorder state and persistence live in the Studio container (so a take keeps
- * capturing while the user flips to the Play tab) and are passed in here. Capture
- * the live BLE-MIDI stream, save a take, then play one back out the MIDI port so
- * the piano itself sounds it.
+ * Studio recordings view — review, play back, favourite, and curate saved takes.
+ * Recording itself happens on the Play tab; this tab is pure management. Takes
+ * are presentational props from the Studio container. Favourites sort to the top.
  */
 export default function StudioRecordings({
-  recording, lastTake, busy, status, connected,
-  takes, confirmId, setConfirmId,
-  onRecordToggle, onSave, onPlay, onDelete,
+  isPlaying, connected, takes, confirmId, setConfirmId,
+  onPlay, onToggleFavorite, onDelete,
 }) {
-  const canSave = !recording && lastTake?.events?.length > 0;
+  const sorted = useMemo(() => {
+    const list = takes.map((t) => (typeof t === 'string' ? { id: t, title: t } : t));
+    // Favourites first; otherwise newest first (created desc, falling back to title).
+    return list.sort((a, b) => {
+      if (!!b.favorite !== !!a.favorite) return b.favorite ? 1 : -1;
+      return String(b.created || b.id || '').localeCompare(String(a.created || a.id || ''));
+    });
+  }, [takes]);
+
+  const status = isPlaying ? 'Playing' : connected ? 'Ready' : 'Piano not connected';
 
   return (
     <div className="piano-studio-recordings">
-      <div className="piano-studio__toolbar">
-        <button
-          type="button"
-          className={`piano-studio__rec${recording ? ' is-recording' : ''}`}
-          onClick={onRecordToggle}
-        >
-          {recording ? <><Icon name="stop" /> Stop</> : <><Icon name="record" /> Record</>}
-        </button>
-        {canSave && (
-          <button type="button" className="piano-studio__save" onClick={onSave} disabled={busy}>
-            Save take
-          </button>
-        )}
+      <div className="piano-studio__head">
+        <h3>Recordings</h3>
         <span className="piano-studio__status">{status}</span>
       </div>
 
-      <div className="piano-studio__takes">
-        <h3>Saved takes</h3>
-        {takes.length === 0 && <p className="piano-mode__placeholder">No takes yet.</p>}
-        <ul>
-          {takes.map((t) => {
-            const id = typeof t === 'string' ? t : t.id;
-            const title = typeof t === 'string' ? t : (t.title || t.id);
-            return (
-              <li key={id}>
-                <span className="piano-studio__take-title">{title}</span>
-                <button type="button" onClick={() => onPlay(id)} disabled={!connected}><Icon name="play" /> Play</button>
-                {confirmId === id ? (
-                  <span className="piano-studio__confirm">
-                    Delete?
-                    <button type="button" onClick={() => { setConfirmId(null); onDelete(id); }} aria-label="Confirm delete"><Icon name="trash" /></button>
-                    <button type="button" onClick={() => setConfirmId(null)} aria-label="Cancel delete"><Icon name="close" /></button>
-                  </span>
-                ) : (
-                  <button type="button" onClick={() => setConfirmId(id)} aria-label="Delete take"><Icon name="trash" /></button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      {sorted.length === 0 && (
+        <p className="piano-mode__placeholder">
+          No takes yet. Hit Record on the Play tab to capture one.
+        </p>
+      )}
+
+      <ul className="piano-studio__takes">
+        {sorted.map((t) => (
+          <li key={t.id} className={t.favorite ? 'is-favorite' : ''}>
+            <button
+              type="button"
+              className={`piano-studio__fav${t.favorite ? ' is-on' : ''}`}
+              onClick={() => onToggleFavorite(t.id, !t.favorite)}
+              aria-label={t.favorite ? 'Unfavourite' : 'Favourite'}
+              aria-pressed={!!t.favorite}
+            >
+              <span aria-hidden="true">{t.favorite ? '★' : '☆'}</span>
+            </button>
+
+            <span className="piano-studio__take-title">{t.title || t.id}</span>
+            {t.durationMs ? <span className="piano-studio__take-dur">{mmss(t.durationMs)}</span> : null}
+
+            <button type="button" className="piano-studio__play" onClick={() => onPlay(t.id)} disabled={!connected}>
+              <Icon name="play" /> Play
+            </button>
+
+            {confirmId === t.id ? (
+              <span className="piano-studio__confirm">
+                Delete?
+                <button type="button" onClick={() => { setConfirmId(null); onDelete(t.id); }} aria-label="Confirm delete"><Icon name="trash" /></button>
+                <button type="button" onClick={() => setConfirmId(null)} aria-label="Cancel delete"><Icon name="close" /></button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setConfirmId(t.id)} aria-label="Delete take"><Icon name="trash" /></button>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

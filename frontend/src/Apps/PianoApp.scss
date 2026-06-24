@@ -529,47 +529,58 @@
     animation: piano-studio-rec-pulse 1s ease-in-out infinite;
   }
 
-  &__toolbar {
+  &__head {
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  &__rec {
-    background: var(--piano-surface-2);
-    color: var(--piano-fg);
-    border: 1px solid var(--piano-border);
-    border-radius: var(--r-pill);
-    padding: 0.5rem 1.2rem;
-    font: inherit;
-    cursor: pointer;
-
-    &.is-recording { background: var(--piano-danger); border-color: var(--piano-danger); color: #fff; }
-  }
-
-  &__save {
-    background: var(--piano-accent);
-    color: var(--piano-accent-ink);
-    border: none;
-    border-radius: var(--r-pill);
-    padding: 0.5rem 1.2rem;
-    font-weight: 700;
-    cursor: pointer;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    h3 { margin: 0; }
   }
 
   &__status { color: var(--piano-muted); }
 
-  // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
-  &__waterfall { height: 14rem; margin: 1rem 0; background: var(--piano-viz-bg); border-radius: var(--r-md); overflow: hidden; }
-
+  // Recordings list (review / favourite / curate).
   &__takes {
-    ul { list-style: none; padding: 0; margin: 0; }
-    li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px solid var(--piano-border); }
-    button { background: var(--piano-surface-2); color: inherit; border: 1px solid var(--piano-border); border-radius: var(--r-sm); padding: 0.3rem 0.7rem; cursor: pointer; }
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0.5rem;
+      border-bottom: 1px solid var(--piano-border);
+      border-radius: var(--r-sm);
+
+      &.is-favorite { background: rgba(255, 200, 60, 0.06); }
+    }
+
+    button {
+      background: var(--piano-surface-2);
+      color: inherit;
+      border: 1px solid var(--piano-border);
+      border-radius: var(--r-sm);
+      padding: 0.35rem 0.75rem;
+      cursor: pointer;
+      &:disabled { opacity: 0.4; cursor: default; }
+    }
   }
 
-  &__take-title { flex: 1 1 auto; }
+  // Favourite star — borderless icon button; gold when on.
+  &__fav {
+    background: none !important;
+    border: none !important;
+    padding: 0.2rem 0.4rem !important;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--piano-muted);
+    &.is-on { color: #ffc83c; }
+  }
+
+  &__take-title { flex: 1 1 auto; font-weight: 600; }
+  &__take-dur { color: var(--piano-muted); font-variant-numeric: tabular-nums; }
+  &__play { font-weight: 700; }
 
   &__confirm { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--piano-danger); }
 }
@@ -581,10 +592,51 @@
 
 // Play tab: staff (auto) → waterfall (grows) → keyboard (pinned at foot).
 .piano-studio-play {
+  position: relative; // anchors the floating Record button
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+
+  // Single Record button — floats top-right over the staff. Idle = "● Record";
+  // recording = blinking red dot + count-up timer + stop glyph.
+  &__record {
+    position: absolute;
+    top: 0.75rem;
+    right: 1.5rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    font: inherit;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+
+    &.is-recording {
+      background: var(--piano-danger);
+      border-color: var(--piano-danger);
+      color: #fff;
+    }
+  }
+
+  &__record-dot {
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    background: var(--piano-danger);
+    .is-recording & {
+      background: #fff;
+      animation: piano-studio-rec-pulse 1s ease-in-out infinite;
+    }
+  }
+
+  &__record-label { min-width: 3.5ch; text-align: center; }
 
   // Music notation always reads on white paper, even in the charcoal theme.
   &__staff {
