@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
-import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
+import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -163,9 +163,7 @@ export default function StudioPlayback() {
 
   return (
     <div className="piano-playback">
-      <div className="piano-playback__staff">
-        <CurrentChordStaff activeNotes={activeNotes} />
-      </div>
+      <StudioTopPane activeNotes={activeNotes} />
 
       <div className="piano-playback__waterfall">
         <NoteWaterfall noteHistory={noteHistory} activeNotes={activeNotes} startNote={startNote} endNote={endNote} />
