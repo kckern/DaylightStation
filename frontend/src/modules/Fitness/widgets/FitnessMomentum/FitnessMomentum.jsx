@@ -49,6 +49,7 @@ function WeekBar({ week, maxMinutes }) {
   const fracs = zoneFractions(week.zones);
   return (
     <span className="fitness-momentum__weekcol">
+      <span className={`fitness-momentum__weektop${week.current ? ' is-current' : ''}`}>{week.effortMinutes}</span>
       <span
         className={`fitness-momentum__weekbar${week.current ? ' is-current' : ''}`}
         title={`${week.effortMinutes} min`}
