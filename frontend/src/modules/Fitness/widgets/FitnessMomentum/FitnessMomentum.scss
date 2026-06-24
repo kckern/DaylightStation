@@ -1,0 +1,82 @@
+// FitnessMomentum.scss — one flat glass panel, sized for a TV, high-contrast.
+.fitness-momentum {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100%;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: #e8e8ea;
+  font-family: "Roboto Condensed", sans-serif;
+
+  &__headline {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  &__flame { font-size: 1.6rem; }
+  &__house { letter-spacing: 0.01em; }
+  &__roll { color: #ffb44c; font-weight: 700; }
+  &__house-min { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.9; }
+
+  &__zero { opacity: 0.75; font-size: 1.1rem; }
+
+  &__cards {
+    flex: 1 1 auto;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 0.75rem;
+    min-height: 0;
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.9rem 0.6rem;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid transparent;
+
+    &.is-met { border-color: #3ddc84; box-shadow: 0 0 14px rgba(61, 220, 132, 0.35); }
+  }
+
+  &__avatar {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    object-fit: cover;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
+  }
+  &__name { font-weight: 700; font-size: 1.1rem; }
+  &__streak { color: #ffb44c; font-weight: 700; }
+  &__min { font-variant-numeric: tabular-nums; opacity: 0.9; }
+
+  &__bar {
+    width: 100%;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    &--house { max-width: 16rem; }
+  }
+  &__bar-fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform-origin: left center;
+    background: linear-gradient(90deg, #3ddc84, #7be0a3);
+  }
+}
