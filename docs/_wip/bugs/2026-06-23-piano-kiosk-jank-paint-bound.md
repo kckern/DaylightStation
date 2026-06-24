@@ -169,3 +169,14 @@ gestureless start, configure WebView/FKB to truly drop the user-gesture media re
 
 Commits: `a48bea921` (global mount), `284379978` (first-gesture replay). graphicsAccelerationMode
 unchanged (0). Paint cuts (`4fbf65ebe`, `88744c2bc`) kept as independent headroom wins.
+
+## A3 follow-up (2026-06-24): keep-alive now engages gesturelessly
+
+After the keep-alive shipped and the WebView accumulated media engagement on the origin (any
+earlier touch/play), muted autoplay is allowed WITHOUT a fresh gesture. Verified post-deploy
+(build 2940fba54): `/piano/test/scroller?keepalive=1` with NO tap → GPU busy 45–52%; real `/piano`
+with no interaction → `keepalive.mounted`, no `jank-start`. So the keep-alive engages from load in
+normal operation. `useReloadGuard` is only a `beforeunload` guard (does not cause reloads); the
+earlier double-mount was test `loadURL`s, not an app reload loop. Caveat: media engagement can
+reset if FKB clears WebView data — if a cold profile ever stalls until first touch, that is the
+known gesture-gating, and one screen touch fixes it for the session.
