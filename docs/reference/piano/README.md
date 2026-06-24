@@ -152,7 +152,7 @@ own data source; the chrome and the live keyboard are the only things they share
 | **Producer** | A beat-and-loop launcher: keys below a split fire drum one-shots, keys above play melodically over a looping bed. | Local audio kits |
 | **Games** | A full-screen picker and host for note-driven games. | The MIDI stream + game engines |
 | **Composers** | A study reference for the masters. *(Planned.)* | — |
-| **Lessons** | Guided songs and theory drills. *(Planned.)* | A theory engine |
+| **Lessons** | Content-driven technique-drill browser. A drill stores a short seed figure + a transpose rule; the kiosk expands it to the full exercise (the figure climbing the scale and back), engraves it, and runs a MIDI follow-along — the right hand drives a cursor that lights the current notehead green and advances as you play it, with the next key lit on a live keyboard. | A media folder of drill collections (`media/docs/piano-lessons/{collection}/`), e.g. the bundled Hanon set |
 
 Games deserve their own note: they plug in through a registry and can be launched either
 by tapping a tile or by playing a configured chord combination on the keys, so a player can

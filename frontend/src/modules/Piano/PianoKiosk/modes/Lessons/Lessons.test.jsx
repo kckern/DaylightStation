@@ -6,11 +6,19 @@ const api = vi.fn();
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
 
 // Stub the notation renderer so a drill's ABC engraving doesn't pull abcjs here —
-// we only assert the drill's content (title/metadata) reaches the view.
-vi.mock('../../../../MusicNotation/index.js', () => ({
-  AbcRenderer: () => <div data-testid="abc" />,
-  generateMelodyAbc: () => 'X:1',
+// we only assert the drill's content (title/metadata) reaches the view. Keep the
+// real expander/sequence helpers (pure) so the drill computes its follow targets.
+vi.mock('../../../../MusicNotation/index.js', async (orig) => {
+  const actual = await orig();
+  return { ...actual, AbcRenderer: () => <div data-testid="abc" />, generateMelodyAbc: () => 'X:1' };
+});
+
+// The drill view subscribes to MIDI and renders a keyboard; stub both so the
+// test stays focused on routing + content (no Web MIDI in jsdom).
+vi.mock('../../PianoMidiContext.jsx', () => ({
+  usePianoMidi: () => ({ activeNotes: new Map(), subscribe: () => () => {} }),
 }));
+vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
