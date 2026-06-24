@@ -51,6 +51,7 @@ describe('FitnessMomentum', () => {
     // 20 active + 10 warm = 30 credited (the 5 cool minutes earn no credit).
     expect(getByText('30')).toBeTruthy();
     expect(container.textContent).not.toMatch(/%/);
-    expect(container.textContent).not.toMatch(/min/); // no bottom total label anymore
+    // The per-card bottom total label is gone (the household headline keeps "min this week").
+    expect(container.querySelectorAll('.fitness-momentum__min').length).toBe(0);
   });
 });
