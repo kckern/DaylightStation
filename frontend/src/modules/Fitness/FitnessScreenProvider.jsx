@@ -19,6 +19,7 @@ export function FitnessScreenProvider({
   onSelectedSessionConsumed,
   roster = [],
   householdLabel = '',
+  windowDays = 7,
   children,
 }) {
   const [scrollToDate, setScrollToDate] = useState(null);
@@ -43,8 +44,8 @@ export function FitnessScreenProvider({
     selectedSessionId, setSelectedSessionId,
     longitudinalSelection, setLongitudinalSelection,
     lastPlayedContentId, setLastPlayedContentId,
-    roster, householdLabel,
-  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection, lastPlayedContentId, roster, householdLabel]);
+    roster, householdLabel, windowDays,
+  }), [onPlay, onNavigate, onCtaAction, scrollToDate, selectedSessionId, longitudinalSelection, lastPlayedContentId, roster, householdLabel, windowDays]);
 
   return (
     <FitnessScreenContext.Provider value={value}>
@@ -65,7 +66,7 @@ export function useFitnessScreen() {
       selectedSessionId: null, setSelectedSessionId: () => {},
       longitudinalSelection: null, setLongitudinalSelection: () => {},
       lastPlayedContentId: null, setLastPlayedContentId: () => {},
-      roster: [], householdLabel: '',
+      roster: [], householdLabel: '', windowDays: 7,
     };
   }
   return ctx;

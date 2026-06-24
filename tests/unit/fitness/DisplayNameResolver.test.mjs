@@ -13,7 +13,30 @@ import {
   resolveDisplayName,
   resolveAllDisplayNames,
   getPriorityChain,
+  resolveUserDisplayName,
 } from '../../../frontend/src/hooks/fitness/DisplayNameResolver.js';
+
+describe('resolveUserDisplayName (device-agnostic)', () => {
+  it('prefers the group label when requested (User_1 → Dad)', () => {
+    const user = { id: 'kckern', name: 'User_1', group_label: 'Dad' };
+    expect(resolveUserDisplayName(user, { preferGroupLabels: true }).displayName).toBe('Dad');
+  });
+
+  it('uses the full name when group labels are not preferred', () => {
+    const user = { id: 'kckern', name: 'User_1', group_label: 'Dad' };
+    expect(resolveUserDisplayName(user, { preferGroupLabels: false }).displayName).toBe('User_1');
+  });
+
+  it('falls back to the name when there is no group label', () => {
+    expect(resolveUserDisplayName({ id: 'user_2', name: 'User_2' }, { preferGroupLabels: true }).displayName).toBe('User_2');
+  });
+
+  it('accepts camelCase fields and falls back to id, then Unknown', () => {
+    expect(resolveUserDisplayName({ profileId: 'x', displayName: 'Mom' }).displayName).toBe('Mom');
+    expect(resolveUserDisplayName({ id: 'user_5' }).displayName).toBe('user_5');
+    expect(resolveUserDisplayName(null).displayName).toBe('Unknown');
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEST DATA FACTORIES
