@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { usePianoUser } from './PianoUserContext.jsx';
+import { useState, useContext } from 'react';
+import PianoUserContext from './PianoUserContext.jsx';
 
 /** Round avatar — user image, falling back to initials on a colour from the id. */
 function Avatar({ id, name }) {
@@ -24,8 +24,12 @@ function Avatar({ id, name }) {
  * lesson progress, and preferences to them.
  */
 export default function PianoUserChip() {
-  const { users, currentProfile, currentUser, setCurrentUser } = usePianoUser();
+  // Read the context directly (not the throwing usePianoUser) so the chip simply
+  // renders nothing when there's no PianoUserProvider (e.g. isolated chrome tests).
+  const ctx = useContext(PianoUserContext);
   const [open, setOpen] = useState(false);
+  if (!ctx) return null;
+  const { users, currentProfile, currentUser, setCurrentUser } = ctx;
 
   if (!currentProfile && !users.length) return null;
   const label = currentProfile?.group_label || currentProfile?.name || 'Choose player';
