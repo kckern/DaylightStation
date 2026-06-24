@@ -1,25 +1,56 @@
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { parseMusicXml } from '../parseMusicXml.js';
+import { vexflowRender } from './vexflowRender.js';
+
 /**
- * MusicXmlRenderer — renders a MusicXML score as engraved notation.
+ * MusicXmlRenderer — engraves a MusicXML score as SVG via VexFlow.
  *
- * SHELL/SEAM: notation-driven song lessons will render MusicXML here. The
- * intended backend is OpenSheetMusicDisplay (OSMD), which engraves MusicXML to
- * SVG and exposes a cursor for follow-along scoring; alternatively MusicXML can
- * be converted to ABC and reuse AbcRenderer. That choice is deferred — for now
- * this is a placeholder so the Notation facade ('musicxml') and the Lessons shell
- * can reference the seam without restructuring later.
+ * Renders the static notation and reports the on-screen position of every melody
+ * note through `onLayout({ width, height, events })`, so an overlay (cursor /
+ * play-along) can light notes up without touching the renderer internals.
  *
- * Future prop contract (proposed):
- *   @param {string} musicXml - raw MusicXML document
- *   @param {number} [cursorBeat] - playhead position for follow-along
- *   @param {object} [scoring] - per-note correct/incorrect overlay
+ * @param {string} [musicXml] - raw MusicXML document
+ * @param {object} [score] - a pre-parsed Score (skips parsing)
+ * @param {number} [width] - render width (defaults to the parent's width)
+ * @param {(res:{width,height,events}) => void} [onLayout]
+ * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml }) {
+export function MusicXmlRenderer({ musicXml, score: scoreProp, width, onLayout, children }) {
+  const hostRef = useRef(null);
+  const [dims, setDims] = useState({ width: 0, height: 0 });
+
+  const score = useMemo(() => {
+    if (scoreProp) return scoreProp;
+    if (!musicXml) return null;
+    try { return parseMusicXml(musicXml); } catch { return null; }
+  }, [scoreProp, musicXml]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !score) return;
+    const w = width || host.parentElement?.clientWidth || 1000;
+    try {
+      const res = vexflowRender(host, score, { width: w });
+      setDims({ width: res.width, height: res.height });
+      onLayout?.(res);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('MusicXmlRenderer: render failed', err?.message);
+    }
+  }, [score, width, onLayout]);
+
+  if (!score) {
+    return (
+      <div className="musicxml-renderer musicxml-renderer--placeholder">
+        <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="musicxml-renderer musicxml-renderer--placeholder">
-      <p>
-        MusicXML notation rendering is not implemented yet
-        {musicXml ? ' (score provided).' : '.'} Planned via OpenSheetMusicDisplay (OSMD).
-      </p>
+    <div className="musicxml-renderer" style={{ position: 'relative', width: dims.width || '100%' }}>
+      <div ref={hostRef} className="musicxml-renderer__svg" />
+      {children}
     </div>
   );
 }
