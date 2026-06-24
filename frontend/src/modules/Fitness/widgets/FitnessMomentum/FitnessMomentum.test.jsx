@@ -46,10 +46,11 @@ describe('FitnessMomentum', () => {
     expect(container.querySelectorAll('.fitness-momentum__weekbar.is-current').length).toBe(2);
   });
 
-  it('shows the credited current-week minutes (cool omitted) and no percentage', () => {
+  it('shows the credited current-week minutes (cool omitted) on the top axis, no percentage', () => {
     const { getByText, container } = render(<FitnessMomentum />);
     // 20 active + 10 warm = 30 credited (the 5 cool minutes earn no credit).
-    expect(getByText('30 min')).toBeTruthy();
+    expect(getByText('30')).toBeTruthy();
     expect(container.textContent).not.toMatch(/%/);
+    expect(container.textContent).not.toMatch(/min/); // no bottom total label anymore
   });
 });
