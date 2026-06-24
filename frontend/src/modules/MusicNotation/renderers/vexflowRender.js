@@ -6,7 +6,7 @@
 // treble+bass stave pair per measure → clean barlines). Two flows:
 //   'wrapped'    — measures wrap to systems across the container width (scroll ↓)
 //   'horizontal' — all measures in one long row (infinite scroll →)
-import { Renderer, Stave, StaveNote, Voice, Formatter, StaveConnector, Accidental, Dot } from 'vexflow';
+import { Renderer, Stave, StaveNote, Voice, Formatter, StaveConnector, Accidental, Dot, Barline } from 'vexflow';
 
 const TYPE_DUR = { whole: 'w', half: 'h', quarter: 'q', eighth: '8', '16th': '16', '32nd': '32', '64th': '64' };
 const STEP_ALTER_GLYPH = { 1: '#', 2: '##', '-1': 'b', '-2': 'bb' };
@@ -98,6 +98,7 @@ export function vexflowRender(host, score, opts = {}) {
 
   for (let m = 0; m < part.measures.length; m++) {
     const box = boxes[m];
+    const isLast = m === part.measures.length - 1;
     try {
       const treble = new Stave(box.x, box.y, box.w);
       const bass = new Stave(box.x, box.y + STAFF_GAP, box.w);
@@ -105,13 +106,17 @@ export function vexflowRender(host, score, opts = {}) {
         treble.addClef(trebleClef); bass.addClef(bassClef);
         if (m === 0) { treble.addTimeSignature(timeSig); bass.addTimeSignature(timeSig); }
       }
+      // Standard practice: the final measure ends with a final (thin + thick) barline.
+      if (isLast) { treble.setEndBarType(Barline.type.END); bass.setEndBarType(Barline.type.END); }
       treble.setContext(ctx).draw();
       bass.setContext(ctx).draw();
       if (box.isFirst) {
         new StaveConnector(treble, bass).setType(StaveConnector.type.BRACE).setContext(ctx).draw();
         new StaveConnector(treble, bass).setType(StaveConnector.type.SINGLE_LEFT).setContext(ctx).draw();
       }
-      new StaveConnector(treble, bass).setType(StaveConnector.type.SINGLE_RIGHT).setContext(ctx).draw();
+      new StaveConnector(treble, bass)
+        .setType(isLast ? StaveConnector.type.BOLD_DOUBLE_RIGHT : StaveConnector.type.SINGLE_RIGHT)
+        .setContext(ctx).draw();
 
       const mn = part.measures[m].notes;
       const trebleSrc = mn.filter((n) => n.staff === 1);
