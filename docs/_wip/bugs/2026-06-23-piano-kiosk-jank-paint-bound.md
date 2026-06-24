@@ -118,3 +118,33 @@ reboot, WebView restart, BT-off. Bistable.
 2. **App-level keep-alive frame driver**: a perpetual muted looping `<video>` (own present path)
    to force BeginFrame at 60fps even when rAF/compositor are starved — a known WebView workaround.
 3. Re-enable the watchdog self-heal with a recovery action that actually works (TBD by #1/#2).
+
+## More eliminations + final verdict (this session)
+
+| Suspect | Result |
+|---|---|
+| WebView `WebViewSurfaceControl` flag (set Disabled via DevTools, FKB restarted) | ❌ still 9 fps |
+| FKB crash-loop | ❌ pid stable across 10s |
+| Battery saver / power-save | ❌ `low_power=0`, plugged in |
+| Animation/transition scales | ❌ all 1× (normal) |
+
+**Verdict:** This is a **defect in the Chromium WebView (149.0.7827.91) frame scheduler on this
+exact device** (Samsung SM-T590, Snapdragon 450 / Adreno 506, Android 10), not our app. A
+near-empty page stalls to ~7–10 fps with a 60 Hz panel and idle GPU/CPU; it survives every reset
+we tried. Our rendering work (paint-cost cuts, 105ms→27ms per frame) is a real win for headroom but
+cannot fix a stall that lives below the page.
+
+### Recommended fixes (in order of leverage), for when there's energy
+1. **Replace the renderer**: the bug is WebView-specific. Run the piano kiosk in **real Chrome**
+   (or a different browser/kiosk shell) instead of the Android System WebView, OR try a different
+   WebView channel (Beta/Dev/Canary, or a different version) — the frame scheduler differs.
+2. **App-level keep-alive `<video>`**: a tiny invisible muted looping video forces the compositor to
+   produce frames at 60 fps via the media path, bypassing the BeginFrame stall. Lowest-effort code
+   fix; ~1 build to validate. (Not yet tested.)
+3. **Replace the tablet** — it's a weak 2018 SoC on a draining USB charger; even fixed, it's marginal.
+
+### What shipped this session (kept — real improvements, independent of the stall)
+- `4fbf65ebe`, `88744c2bc`: NoteWaterfall per-frame paint cut (blurred shadows/gradients → flat).
+- `c7e23d1e8`: self-driving test harness at `/piano/test/<scene>` (keyboard-latency + scroller-fps).
+- `measure.cjs` / `measure_ts.cjs` in-container benches (gfxinfo + Adreno kgsl + CPU telemetry).
+- NOTE: gfxinfo "fps" UNDER-counts WebView frames; trust `useRenderWatchdog` rAF fps + SurfaceFlinger.
