@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
@@ -10,22 +10,33 @@ import StudioRecordings from './StudioRecordings.jsx';
 
 /**
  * Studio mode — a freeform play surface with two tabs:
- *   • Play (index)      — staff + falling-notes waterfall + a touch keyboard.
- *   • Recordings        — capture the live MIDI stream, save takes, and play them
- *                         back out the port so the piano sounds them.
+ *   • Play (index)  — staff + falling-notes waterfall + a touch keyboard, with a
+ *                     single stateful Record button (count-up + red blink). Stop
+ *                     auto-saves the take.
+ *   • Recordings    — review/playback, favourite, and curate saved takes.
  *
- * The recorder and take list live here in the container, not in the Recordings
- * view, so a recording keeps capturing while the user flips back to the Play tab.
+ * The recorder and take list live here in the container, not in the views, so a
+ * recording keeps capturing while the user flips between tabs.
  */
 export function Studio() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio' }), []);
   const { isPlaying, subscribe, scheduleNotes, connected } = usePianoMidi();
   const { pianoId } = usePianoKioskConfig();
-  const { recording, lastTake, start, stop } = useStudioRecorder(subscribe);
+  const { recording, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
-  const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
   const studioBase = `api/v1/piano/${pianoId}/studio`;
+
+  // Count-up timer while recording (drives the Record button's MM:SS readout).
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const recStartRef = useRef(0);
+  useEffect(() => {
+    if (!recording) { setElapsedMs(0); return undefined; }
+    recStartRef.current = Date.now();
+    setElapsedMs(0);
+    const id = setInterval(() => setElapsedMs(Date.now() - recStartRef.current), 250);
+    return () => clearInterval(id);
+  }, [recording]);
 
   const loadTakes = useCallback(async () => {
     try {
@@ -38,32 +49,30 @@ export function Studio() {
 
   useEffect(() => { loadTakes(); }, [loadTakes]);
 
-  const onRecordToggle = useCallback(() => {
+  const saveTake = useCallback(async (take) => {
+    try {
+      const title = `Take ${new Date().toLocaleString()}`;
+      const res = await DaylightAPI(studioBase, {
+        title, durationMs: take.durationMs, events: take.events,
+      }, 'POST');
+      logger.info('studio.save', { id: res?.id, events: take.events.length });
+      await loadTakes();
+    } catch (err) {
+      logger.error('studio.save-failed', { error: err.message });
+    }
+  }, [studioBase, logger, loadTakes]);
+
+  // Single Record toggle: stop auto-saves whatever was captured (if anything).
+  const onRecordToggle = useCallback(async () => {
     if (recording) {
       const take = stop();
       logger.info('studio.record-stop', { events: take.events.length, durMs: take.durationMs });
+      if (take.events.length > 0) await saveTake(take);
     } else {
       logger.info('studio.record-start', {});
       start();
     }
-  }, [recording, start, stop, logger]);
-
-  const onSave = useCallback(async () => {
-    if (!lastTake?.events?.length) return;
-    setBusy(true);
-    try {
-      const title = `Take ${new Date().toLocaleString()}`;
-      const res = await DaylightAPI(studioBase, {
-        title, durationMs: lastTake.durationMs, events: lastTake.events,
-      }, 'POST');
-      logger.info('studio.save', { id: res?.id, events: lastTake.events.length });
-      await loadTakes();
-    } catch (err) {
-      logger.error('studio.save-failed', { error: err.message });
-    } finally {
-      setBusy(false);
-    }
-  }, [lastTake, studioBase, logger, loadTakes]);
+  }, [recording, start, stop, saveTake, logger]);
 
   const onPlay = useCallback(async (id) => {
     try {
@@ -75,6 +84,16 @@ export function Studio() {
     }
   }, [studioBase, scheduleNotes, logger]);
 
+  const onToggleFavorite = useCallback(async (id, favorite) => {
+    try {
+      await DaylightAPI(`${studioBase}/${id}`, { favorite }, 'PATCH');
+      logger.info('studio.favorite', { id, favorite });
+      await loadTakes();
+    } catch (err) {
+      logger.warn('studio.favorite-failed', { id, error: err.message });
+    }
+  }, [studioBase, loadTakes, logger]);
+
   const onDelete = useCallback(async (id) => {
     try {
       await DaylightAPI(`${studioBase}/${id}`, {}, 'DELETE');
@@ -83,9 +102,7 @@ export function Studio() {
     } catch (err) {
       logger.warn('studio.delete-failed', { id, error: err.message });
     }
-  }, [studioBase, logger, loadTakes]);
-
-  const status = recording ? 'Recording…' : isPlaying ? 'Playing' : connected ? 'Ready' : 'Piano not connected';
+  }, [studioBase, loadTakes, logger]);
 
   return (
     <section className="piano-mode piano-mode--studio">
@@ -100,22 +117,27 @@ export function Studio() {
       </nav>
 
       <Routes>
-        <Route index element={<StudioPlay />} />
+        <Route
+          index
+          element={(
+            <StudioPlay
+              recording={recording}
+              elapsedMs={elapsedMs}
+              onRecordToggle={onRecordToggle}
+            />
+          )}
+        />
         <Route
           path="recordings"
           element={(
             <StudioRecordings
-              recording={recording}
-              lastTake={lastTake}
-              busy={busy}
-              status={status}
+              isPlaying={isPlaying}
               connected={connected}
               takes={takes}
               confirmId={confirmId}
               setConfirmId={setConfirmId}
-              onRecordToggle={onRecordToggle}
-              onSave={onSave}
               onPlay={onPlay}
+              onToggleFavorite={onToggleFavorite}
               onDelete={onDelete}
             />
           )}

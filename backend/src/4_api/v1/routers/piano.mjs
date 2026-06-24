@@ -19,6 +19,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
  *   GET    /:pianoId/studio        → { takes: [{id,title,created,durationMs,eventCount}] }
  *   GET    /:pianoId/studio/:id    → { id, title, created, durationMs, events }
  *   POST   /:pianoId/studio        → { id, ... }  (body: { title, durationMs, events })
+ *   PATCH  /:pianoId/studio/:id    → { id, title, favorite }  (body: { title?, favorite? })
  *   DELETE /:pianoId/studio/:id    → { ok, id }
  */
 export function createPianoRouter({ configService, logger = console }) {
@@ -88,6 +89,7 @@ export function createPianoRouter({ configService, logger = console }) {
           created: data.created || null,
           durationMs: data.durationMs || 0,
           eventCount: Array.isArray(data.events) ? data.events.length : 0,
+          favorite: !!data.favorite,
         };
       });
       res.json({ takes });
@@ -132,6 +134,25 @@ export function createPianoRouter({ configService, logger = console }) {
       res.status(201).json(data);
     } catch (err) {
       logger.error?.('piano.studio.create.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Curate a take: rename and/or (un)favorite. Merges into the stored YAML.
+  router.patch('/:pianoId/studio/:id', (req, res) => {
+    try {
+      const dir = pianoDir(req.params.pianoId);
+      if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+      const data = loadYaml(path.join(dir, req.params.id));
+      if (!data) return res.status(404).json({ error: 'Take not found' });
+      const { title, favorite } = req.body || {};
+      if (typeof title === 'string' && title.trim()) data.title = title.trim();
+      if (typeof favorite === 'boolean') data.favorite = favorite;
+      saveYaml(path.join(dir, req.params.id), data);
+      logger.info?.('piano.studio.update', { pianoId: req.params.pianoId, id: req.params.id, favorite: !!data.favorite });
+      res.json({ id: req.params.id, title: data.title, favorite: !!data.favorite });
+    } catch (err) {
+      logger.error?.('piano.studio.update.error', { id: req.params.id, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
