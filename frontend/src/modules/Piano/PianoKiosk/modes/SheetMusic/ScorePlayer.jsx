@@ -68,6 +68,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [wrong, setWrong] = useState(false);
   const [metaOpen, setMetaOpen] = useState(false);
   const scrollRef = useRef(null);
+  const cursorRef = useRef(null);
   const wrongTimer = useRef(null);
   const stepRef = useRef(0);
   stepRef.current = step;
@@ -86,13 +87,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
 
-  // Auto-scroll the cursor into view (vertical for wrapped, horizontal for infinite).
+  // Auto-scroll the cursor into view (horizontal-only in scroll mode, vertical in wrap).
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !current || mode === 'manual') return;
-    if (flow === 'horizontal') el.scrollTo({ left: Math.max(0, current.x - el.clientWidth * 0.4), behavior: 'smooth' });
-    else el.scrollTo({ top: Math.max(0, current.top - el.clientHeight * 0.35), behavior: 'smooth' });
-  }, [current?.x, current?.system, step, flow, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (mode === 'manual' || !current) return;
+    const c = cursorRef.current;
+    if (c) c.scrollIntoView({
+      behavior: 'smooth',
+      block: flow === 'horizontal' ? 'nearest' : 'center',
+      inline: flow === 'horizontal' ? 'center' : 'nearest',
+    });
+  }, [step, flow, mode, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Follow mode: advance on the correct note, flash on a plausible wrong one.
   useEffect(() => {
@@ -153,14 +157,29 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const cursorColor = mode === 'follow' ? '#2ec46f' : '#6cf';
   const pct = Math.round(scale * 100);
 
+  // Title lives in the body (not the header): fixed at top in scroll mode, at the
+  // top of the page (scrolls out of view) in wrap mode. Tap it for metadata.
+  const titleBlock = (
+    <div className="piano-score-bodytitle">
+      <button type="button" className="piano-score-bodytitle__name" onClick={() => setMetaOpen((o) => !o)} aria-expanded={metaOpen}>
+        {meta.title} <span className="piano-score-bodytitle__caret">{metaOpen ? '▴' : '▾'}</span>
+      </button>
+      {metaOpen && (
+        <div className="piano-score-bodytitle__meta">
+          {meta.composer && <span><b>Composer</b> {meta.composer}</span>}
+          <span><b>Key</b> {meta.key || '—'}</span>
+          <span><b>Time</b> {meta.time || '—'}</span>
+          <span><b>Tempo</b> {meta.tempo} bpm</span>
+          <span><b>Measures</b> {meta.measures}</span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="piano-score-player">
       <div className="piano-score-player__bar">
         <button type="button" className="piano-score-mode piano-score-player__back" onClick={() => navigate('..', { relative: 'path' })} aria-label="Back to sheet music">‹ Back</button>
-
-        <button type="button" className="piano-score-player__title" onClick={() => setMetaOpen((o) => !o)} aria-expanded={metaOpen}>
-          {meta.title} <span className="piano-score-player__caret">{metaOpen ? '▴' : '▾'}</span>
-        </button>
 
         <div className="piano-score-player__modes" role="tablist">
           {MODES.map((m) => (
@@ -185,22 +204,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </div>
       </div>
 
-      {metaOpen && (
-        <div className="piano-score-player__meta">
-          {meta.composer && <span><b>Composer</b> {meta.composer}</span>}
-          <span><b>Key</b> {meta.key || '—'}</span>
-          <span><b>Time</b> {meta.time || '—'}</span>
-          <span><b>Tempo</b> {meta.tempo} bpm</span>
-          <span><b>Measures</b> {meta.measures}</span>
-        </div>
-      )}
-
-      {flow === 'horizontal' && <div className="piano-score-player__scrolltitle">{meta.title}</div>}
+      {flow === 'horizontal' && <div className="piano-score-bodytitle-slot">{titleBlock}</div>}
 
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
+        {flow === 'wrapped' && titleBlock}
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} onLayout={onLayout}>
           {current && mode !== 'manual' && (
             <div
+              ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}`}
               style={{ left: current.x - 9, top: current.top, height: Math.max(40, current.bottom - current.top), '--cursor-color': cursorColor }}
             />
