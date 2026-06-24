@@ -108,6 +108,23 @@
   background: var(--piano-surface);
   border-bottom: 1px solid var(--piano-border);
 
+  &__right { flex: 0 0 auto; display: flex; align-items: center; gap: 0.75rem; }
+
+  // Current-player chip (avatar + name) — opens the roster picker.
+  &__user {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.75rem 0.3rem 0.3rem;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  &__username { font-weight: 700; }
+
   /* breadcrumb trail (left): home › mode › …deeper crumbs. Grows + ellipsizes. */
   &__crumbs {
     flex: 1 1 auto;
@@ -1702,3 +1719,78 @@
   b { color: #2a2620; font-weight: 600; margin-right: 0.25rem; text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.04em; }
 }
 .piano-score-bodytitle-slot { flex: 0 0 auto; }
+
+// ── Player roster: avatars, chip, and "Who's playing?" picker ────────────────
+.piano-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  background: var(--piano-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &--fallback {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--piano-accent-ink);
+    background: var(--piano-accent);
+  }
+}
+
+.piano-userpicker {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
+
+  &__sheet {
+    position: relative;
+    z-index: 1;
+    width: min(46rem, 92vw);
+    max-height: 86vh;
+    overflow: auto;
+    padding: 1.5rem 2rem 2rem;
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-lg, 1rem);
+  }
+
+  &__title { margin: 0 0 1.25rem; font-size: var(--t-display); font-weight: 800; }
+
+  &__grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 1rem;
+  }
+}
+
+.piano-usercard {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.25rem 0.75rem;
+  border-radius: var(--r-md);
+  border: 2px solid var(--piano-border);
+  background: var(--piano-surface-2);
+  color: inherit;
+  cursor: pointer;
+
+  .piano-avatar { width: 4.5rem; height: 4.5rem; font-size: 1.5rem; }
+
+  &__name { font-weight: 700; }
+  &__label { color: var(--piano-muted); font-size: 0.85rem; }
+
+  &.is-active { border-color: var(--piano-accent); }
+}

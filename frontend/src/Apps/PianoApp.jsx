@@ -11,6 +11,7 @@ import {
   resolvePianoConfig,
 } from '../modules/Piano/PianoKiosk/PianoConfig.jsx';
 import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
+import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import {
   PianoWakeLockProvider,
@@ -163,6 +164,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
           SM-T590 kiosk. Outside ConnectGate so it runs on every piano screen,
           including the connect/menu screens. See KeepAliveVideo.jsx. */}
       <KeepAliveVideo />
+      <PianoUserProvider pianoId={pianoId}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
           <PianoPlaybackProvider>
@@ -174,6 +176,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
           </PianoPlaybackProvider>
         </ConnectGate>
       </PianoMidiProvider>
+      </PianoUserProvider>
     </ActivePianoProvider>
   );
 }
