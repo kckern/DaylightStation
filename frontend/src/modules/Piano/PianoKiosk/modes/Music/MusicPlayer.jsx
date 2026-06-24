@@ -9,6 +9,8 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import Icon from '../../icons/Icon.jsx';
+import { usePianoMix } from '../../PianoMixContext.jsx';
+import MixControls from '../../MixControls.jsx';
 
 /**
  * Plexamp-style now-playing for the Music mode. Album art + progress are the
@@ -25,6 +27,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
+  const { mediaLevel, setMediaLevel, pianoLevel, setPianoLevel } = usePianoMix();
 
   // Third now-playing state: PLAY-ALONG. Entered by MIDI (not touch) — the user
   // is playing the piano along to the track. The keyboard slides up, the cover
@@ -53,7 +56,6 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   const [playing, setPlaying] = useState(true);
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
-  const [vol, setVol] = useState(1);
   const [showQueue, setShowQueue] = useState(false);
 
   const trackIndex = order[pos] ?? 0;
@@ -72,7 +74,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   }, [track?.mediaUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply volume to the element.
-  useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol]);
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = mediaLevel; }, [mediaLevel]);
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
   useEffect(() => {
@@ -125,7 +127,6 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
     a.currentTime = Math.max(0, Math.min(dur, ((e.clientX - r.left) / r.width) * dur));
     reveal();
   };
-  const changeVol = (d) => { setVol((v) => Math.max(0, Math.min(1, Math.round((v + d) * 10) / 10))); reveal(); };
   const toggleShuffle = () => {
     setShuffle((s) => {
       const ns = !s;
@@ -177,11 +178,13 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
             <button type="button" className="piano-music-btn" onClick={() => goNext(false)} aria-label="Next"><Icon name="next" /></button>
             <button type="button" className={`piano-music-btn${repeat ? ' is-on' : ''}`} onClick={toggleRepeat} aria-label="Repeat"><Icon name="repeat" /></button>
           </div>
-          <div className="piano-music-player__volume">
-            <button type="button" className="piano-music-btn" onClick={() => changeVol(-0.1)} aria-label="Volume down"><Icon name="volume-down" /></button>
-            <span className="piano-music-player__vol-val">{Math.round(vol * 100)}</span>
-            <button type="button" className="piano-music-btn" onClick={() => changeVol(0.1)} aria-label="Volume up"><Icon name="volume-up" /></button>
-          </div>
+          <MixControls
+            pianoLevel={pianoLevel}
+            mediaLevel={mediaLevel}
+            onPiano={(d) => { setPianoLevel(pianoLevel + d); reveal(); }}
+            onMedia={(d) => { setMediaLevel(mediaLevel + d); reveal(); }}
+            btnClass="piano-music-btn"
+          />
         </div>
       </div>
 
