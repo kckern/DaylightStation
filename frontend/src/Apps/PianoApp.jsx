@@ -36,6 +36,7 @@ import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
 import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
+import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import './PianoApp.scss';
 
 /**
@@ -157,6 +158,10 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
 
   return (
     <ActivePianoProvider pianoId={pianoId} basePath={basePath} config={config}>
+      {/* Always-on keep-alive video — fixes the WebView frame-clock stall on the
+          SM-T590 kiosk. Outside ConnectGate so it runs on every piano screen,
+          including the connect/menu screens. See KeepAliveVideo.jsx. */}
+      <KeepAliveVideo />
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
           <PianoPlaybackProvider>
