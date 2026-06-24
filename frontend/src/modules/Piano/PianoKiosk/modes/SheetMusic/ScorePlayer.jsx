@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
+import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -39,8 +41,10 @@ function nearestEvent(events, x, y) {
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
   const navigate = useNavigate();
-  const { subscribe, subscribeRaw } = usePianoMidi();
+  const { activeNotes, subscribe, subscribeRaw } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
+  const { config } = usePianoKioskConfig();
+  const kb = config?.keyboard || { startNote: 21, endNote: 108 };
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
@@ -203,6 +207,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
         </MusicXmlRenderer>
       </div>
+
+      {flow === 'horizontal' && (
+        <div className="piano-score-player__keys">
+          <PianoKeyboard
+            activeNotes={activeNotes}
+            targetNotes={mode === 'follow' && current ? new Set([current.midi]) : null}
+            startNote={kb.startNote}
+            endNote={kb.endNote}
+          />
+        </div>
+      )}
     </div>
   );
 }

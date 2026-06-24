@@ -1207,3 +1207,11 @@
   display: flex; align-items: center;
   .musicxml-renderer { margin-top: auto; margin-bottom: auto; }
 }
+
+// Scroll mode: live keyboard fills the vertical space below the single-row staff.
+.piano-score-player__keys {
+  flex: 0 0 auto; height: 24%; min-height: 130px;
+  background: #15151c; padding: 0.4rem 0.5rem 0.6rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.piano-score-player__keys .piano-keyboard { height: 100%; }
