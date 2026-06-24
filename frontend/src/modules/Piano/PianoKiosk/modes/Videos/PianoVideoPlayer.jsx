@@ -4,6 +4,7 @@ import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
+import { usePianoMix } from '../../PianoMixContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
@@ -27,6 +28,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
   const { activeNotes, pressNote, releaseNote } = usePianoMidi();
+  const { mediaLevel } = usePianoMix();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -127,6 +129,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
       mediaEl.removeEventListener('loadedmetadata', onMeta);
     };
   }, [mediaEl]);
+
+  // Apply the shared media level to the resolved element (mirrors MusicPlayer).
+  useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
 
   const handleSkip = useCallback((delta) => {
     const cur = ctrl.getCurrentTime() || 0;
