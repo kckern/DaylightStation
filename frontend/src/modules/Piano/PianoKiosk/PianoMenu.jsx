@@ -11,7 +11,7 @@ import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 //   Composers  Music   Games       Producer    ← far-left = Composers, far-right = Producer
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
-  { id: 'lessons', label: 'Lessons', blurb: 'Coming soon', icon: 'lessons' },
+  { id: 'lessons', label: 'Lessons', blurb: 'Note Hero — play in time', icon: 'lessons' },
   { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: 'studio' },
   { id: 'composers', label: 'Composers', blurb: 'Study the masters', icon: 'quill' },
