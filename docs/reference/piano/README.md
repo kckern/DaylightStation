@@ -147,7 +147,7 @@ own data source; the chrome and the live keyboard are the only things they share
 |------|------------|--------|
 | **Courses** (Videos) | Watch piano lessons and lectures — a grid of courses, a lecture list, then a player with A/B looping, variable speed, a watch log, and a live staff sidebar showing the chord under the keys. | A Plex collection of video courses |
 | **Music** | A jukebox: browse albums and playlists in a cover-flow carousel, then a now-playing screen that can dim to a glow and slide up a play-along keyboard. | Plex albums and playlists |
-| **Sheet Music** | Browse and view scores page by page. | A Plex collection of scores |
+| **Sheet Music** | Browse a folder of scores; MusicXML files are engraved live and played along with (follow/metronome/manual modes, tap-to-seek, a moving cursor). Scanned page-image scores fall back to a page viewer. | A media folder of `.musicxml`/`.mxl` files (e.g. `media/docs/sheet-music/`), listed by the generic content API; a Plex collection still works for page-image scores |
 | **Studio** | Free play that records the MIDI stream to a take and replays it back out the instrument; takes persist on the backend. | The live MIDI stream + saved takes |
 | **Producer** | A beat-and-loop launcher: keys below a split fire drum one-shots, keys above play melodically over a looping bed. | Local audio kits |
 | **Games** | A full-screen picker and host for note-driven games. | The MIDI stream + game engines |
@@ -210,8 +210,9 @@ recover from the rough edges of an aging WebView.
 ## Backend involvement
 
 The backend is the piano's quartermaster, not its brain. It serves the **piano
-configuration** the app loads on startup; it proxies **Plex** for the courses, music, and
-sheet-music collections; it exposes **local media** for Producer kits; it offers **screen
+configuration** the app loads on startup; it proxies **Plex** for the courses and music
+collections; it exposes **local media** for Producer kits and for Sheet Music (MusicXML
+scores listed from a folder and streamed verbatim); it offers **screen
 control** for the screensaver and **device profiles** for hardware metadata; and it
 persists **studio takes** under the piano so recordings survive reloads and redeploys.
 Everything the modes fetch goes through the shared API helper, which handles auth and error

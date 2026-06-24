@@ -3,11 +3,21 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const api = vi.fn();
-vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
+const apiText = vi.fn();
+vi.mock('../../../../../lib/api.mjs', () => ({
+  DaylightAPI: (...a) => api(...a),
+  DaylightAPIText: (...a) => apiText(...a),
+}));
+
+// Stub the engraver so the notation path doesn't pull in VexFlow/MIDI here — we
+// only assert the right view mounts and the raw XML reaches it.
+vi.mock('./ScorePlayer.jsx', () => ({
+  default: ({ score }) => <div data-testid="score-player">player:{score?.musicXml}</div>,
+}));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
-import { SheetMusic } from './SheetMusic.jsx';
+import { SheetMusic, collectionListPath } from './SheetMusic.jsx';
 
 // SheetMusic renders its own <Routes>, so mount it under a "sheetmusic/*" route
 // inside a MemoryRouter — mirroring how PianoShell mounts it (path="sheetmusic/*").
@@ -25,64 +35,88 @@ const renderSheet = (sheetmusic, initialEntry = '/sheetmusic') => render(
   </MemoryRouter>
 );
 
-beforeEach(() => { api.mockReset(); __clearPianoListCache(); });
+beforeEach(() => { api.mockReset(); apiText.mockReset(); __clearPianoListCache(); });
+
+describe('collectionListPath', () => {
+  it('maps a files: ref to a generic list path', () => {
+    expect(collectionListPath('files:docs/sheet-music')).toBe('api/v1/list/files/docs/sheet-music');
+  });
+  it('maps a plex: ref and a bare (legacy) id to a plex list path', () => {
+    expect(collectionListPath('plex:359812')).toBe('api/v1/list/plex/359812');
+    expect(collectionListPath('700100')).toBe('api/v1/list/plex/700100');
+  });
+  it('returns null when no collection is configured', () => {
+    expect(collectionListPath(null)).toBe(null);
+  });
+});
 
 describe('SheetMusic mode', () => {
-  it('lists scores from the configured collection (index route)', async () => {
+  it('lists notation files from the configured folder (index route)', async () => {
     api.mockImplementation((path) => {
-      if (path === 'api/v1/list/plex/700100') {
+      if (path === 'api/v1/list/files/docs/sheet-music') {
         return Promise.resolve({ items: [
-          { id: 'plex:1', title: 'Für Elise', image: '/a' },
-          { id: 'plex:2', title: 'Clair de Lune', image: '/b' },
+          { id: 'files:docs/sheet-music/fur-elise-super-easy.musicxml', title: 'fur-elise-super-easy', type: 'notation' },
+          { id: 'files:docs/sheet-music/clair-de-lune.musicxml', title: 'clair-de-lune', type: 'notation' },
         ] });
       }
       return Promise.resolve({});
     });
 
-    renderSheet({ collection: 'plex:700100' });
-    expect(await screen.findByTitle('Für Elise')).toBeTruthy();
-    expect(screen.getByTitle('Clair de Lune')).toBeTruthy();
+    renderSheet({ collection: 'files:docs/sheet-music' });
+    // Filename-derived titles are prettified for the grid.
+    expect(await screen.findByTitle('Fur Elise Super Easy')).toBeTruthy();
+    expect(screen.getByTitle('Clair De Lune')).toBeTruthy();
   });
 
-  it('always offers the built-in Mary score, even when no Plex collection is configured', async () => {
+  it('shows an empty-state when no collection is configured', async () => {
     renderSheet({ collection: null });
     await waitFor(() =>
-      expect(screen.getByText('Mary Had a Little Lamb')).toBeTruthy()
+      expect(screen.getByText('No sheet music has been set up yet.')).toBeTruthy()
     );
   });
 
-  it('navigates to a score viewer via relative nav and shows page images', async () => {
-    // Back-to-grid navigation now lives in the shared breadcrumb chrome (the
-    // "Sheet Music" mode crumb), not in ScoreViewer — so this isolated mode test
-    // only covers the drill-in and the rendered pages.
+  it('opens a MusicXML score in the engraved player, fetching its raw XML', async () => {
     api.mockImplementation((path) => {
-      if (path === 'api/v1/list/plex/700100') {
-        return Promise.resolve({ items: [{ id: 'plex:1', title: 'Für Elise', image: '/a' }] });
+      if (path === 'api/v1/list/files/docs/sheet-music') {
+        return Promise.resolve({ items: [
+          { id: 'files:docs/sheet-music/fur-elise-super-easy.musicxml', title: 'fur-elise-super-easy', type: 'notation' },
+        ] });
       }
+      return Promise.resolve({});
+    });
+    apiText.mockResolvedValue('<score-partwise/>');
+
+    renderSheet({ collection: 'files:docs/sheet-music' });
+    fireEvent.click(await screen.findByTitle('Fur Elise Super Easy'));
+
+    // Raw XML is fetched from the media stream endpoint and handed to ScorePlayer.
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+    expect(apiText).toHaveBeenCalledWith(
+      'api/v1/proxy/media/stream/docs%2Fsheet-music%2Ffur-elise-super-easy.musicxml'
+    );
+  });
+
+  it('renders the engraved player directly from a deep-link to a notation id', async () => {
+    apiText.mockResolvedValue('<score-partwise/>');
+    renderSheet(
+      { collection: 'files:docs/sheet-music' },
+      '/sheetmusic/view/files:docs/sheet-music/fur-elise-super-easy.musicxml'
+    );
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+  });
+
+  it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {
+    api.mockImplementation((path) => {
       if (path === 'api/v1/list/plex/1') {
         return Promise.resolve({ items: [{ id: 'plex:1a', image: '/p1' }, { id: 'plex:1b', image: '/p2' }] });
       }
       return Promise.resolve({});
     });
 
-    renderSheet({ collection: 'plex:700100' });
-    fireEvent.click(await screen.findByTitle('Für Elise'));
-    // Now on /sheetmusic/1 — ScoreViewer renders the page images.
+    renderSheet({ collection: 'plex:700100' }, '/sheetmusic/view/plex:1');
+    // ScoreViewer fetches the page list from the id in the URL.
     expect(await screen.findByAltText('Score — page 1')).toBeTruthy();
     expect(screen.getByAltText('Score — page 2')).toBeTruthy();
-  });
-
-  it('renders ScoreViewer directly from a deep-link to /sheetmusic/:scoreId', async () => {
-    api.mockImplementation((path) => {
-      if (path === 'api/v1/list/plex/1') {
-        return Promise.resolve({ items: [{ id: 'plex:1a', image: '/p1' }] });
-      }
-      return Promise.resolve({});
-    });
-
-    renderSheet({ collection: 'plex:700100' }, '/sheetmusic/1');
-    // Cold deep-link — ScoreViewer fetches pages from the id in the URL.
-    expect(await screen.findByAltText('Score — page 1')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/list/plex/1');
   });
 });

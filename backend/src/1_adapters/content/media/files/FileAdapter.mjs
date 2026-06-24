@@ -32,12 +32,21 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
-  '.webp': 'image/webp'
+  '.webp': 'image/webp',
+  // Document/notation types — served raw to the frontend (engraved scores, lesson PDFs).
+  '.musicxml': 'application/vnd.recordare.musicxml+xml',
+  '.mxl': 'application/vnd.recordare.musicxml',
+  '.pdf': 'application/pdf'
 };
 
 const AUDIO_EXTS = ['.mp3', '.m4a', '.wav', '.flac', '.ogg'];
 const VIDEO_EXTS = ['.mp4', '.webm', '.mkv', '.avi', '.mov'];
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
+// Engraved-notation sources (MusicXML) and other documents (PDF). Listed and
+// streamed by the same generic file machinery as A/V — they just carry a
+// non-playable mediaType so the frontend picks the right viewer.
+const NOTATION_EXTS = ['.musicxml', '.mxl'];
+const DOC_EXTS = ['.pdf'];
 
 const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
@@ -260,13 +269,15 @@ export class FileAdapter {
   /**
    * Get media type category for extension
    * @param {string} ext - File extension
-   * @returns {'audio'|'video'|'image'|'unknown'}
+   * @returns {'audio'|'video'|'image'|'notation'|'document'|'unknown'}
    */
   getMediaType(ext) {
     ext = ext.toLowerCase();
     if (AUDIO_EXTS.includes(ext)) return 'audio';
     if (VIDEO_EXTS.includes(ext)) return 'video';
     if (IMAGE_EXTS.includes(ext)) return 'image';
+    if (NOTATION_EXTS.includes(ext)) return 'notation';
+    if (DOC_EXTS.includes(ext)) return 'document';
     return 'unknown';
   }
 
@@ -277,7 +288,8 @@ export class FileAdapter {
    */
   isMediaFile(ext) {
     ext = ext.toLowerCase();
-    return AUDIO_EXTS.includes(ext) || VIDEO_EXTS.includes(ext) || IMAGE_EXTS.includes(ext);
+    return AUDIO_EXTS.includes(ext) || VIDEO_EXTS.includes(ext) || IMAGE_EXTS.includes(ext)
+      || NOTATION_EXTS.includes(ext) || DOC_EXTS.includes(ext);
   }
 
   /**
@@ -509,9 +521,13 @@ export class FileAdapter {
       // Build thumbnail URL -- video uses ffmpeg-generated thumbnail, audio uses cover art
       // Use resolved path relative to mediaBasePath (includes prefix + extension)
       const relativeMediaPath = path.relative(this.mediaBasePath, resolved.path);
+      // Video → ffmpeg frame thumbnail; audio → embedded cover art; notation/
+      // document/unknown have no inherent thumbnail (the frontend labels them).
       const thumbnail = mediaType === 'video'
         ? `/api/v1/local/thumbnail/${encodeURIComponent(relativeMediaPath)}`
-        : `/api/v1/local-content/cover/${encodeURIComponent(localId)}`;
+        : mediaType === 'audio'
+          ? `/api/v1/local-content/cover/${encodeURIComponent(localId)}`
+          : null;
 
       // Use ID3 title if available, otherwise filename
       const title = audioMetadata.title || path.basename(localId, ext);

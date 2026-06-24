@@ -48,6 +48,25 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     return response_data;
 };
 
+/**
+ * Fetch a resource as raw text (not JSON). Use for documents the backend serves
+ * verbatim — e.g. MusicXML scores streamed from /api/v1/proxy/media/stream/*.
+ * @param {string} path - API path (leading/trailing slashes stripped)
+ * @returns {Promise<string>} the response body as text
+ */
+export const DaylightAPIText = async (path) => {
+    path = path.replace(/^\/|\/$/g, '');
+    const baseUrl = getBaseUrl();
+    const token = localStorage.getItem('ds_token');
+    const response = await fetch(`${baseUrl}/${path}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.text();
+};
+
 export const DaylightWebsocketUnsubscribe = (path) => {
     const baseUrl = getWsBaseUrl();
     const ws = new WebSocket(`${baseUrl}/ws/${path}`);
