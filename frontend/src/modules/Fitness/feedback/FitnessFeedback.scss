@@ -1,0 +1,180 @@
+// Fitness-styled voice feedback overlay. Centered modal over a dimmed backdrop,
+// matching the dark glass language of the other fitness overlays (VoiceMemo etc).
+.fitness-feedback {
+  position: fixed;
+  inset: 0;
+  z-index: 2100; // above player (1000) and voice-memo (2000)
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--app-font-family, system-ui, sans-serif);
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+  }
+
+  &__panel {
+    position: relative;
+    box-sizing: border-box;
+    width: 460px;
+    max-width: 92vw;
+    background: rgba(13, 18, 28, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 1.5rem;
+    padding: 1.5rem 1.75rem 1.75rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(20px);
+    color: #f3f4f6;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  &__close {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 1.25rem;
+    line-height: 1;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease;
+
+    &:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+    &:active { transform: scale(0.92); }
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  &__prompt {
+    margin: 0;
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.4;
+  }
+
+  // Big circular record target — generous for a touchscreen TV.
+  &__record {
+    width: 6.5rem;
+    height: 6.5rem;
+    border-radius: 9999px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    background: radial-gradient(circle at 50% 35%, #2a3346, #161d2b);
+    color: rgba(255, 255, 255, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 150ms ease, box-shadow 150ms ease;
+
+    &:active { transform: scale(0.95); }
+
+    &.is-recording {
+      border-color: var(--app-action-danger, #ff6b6b);
+      box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.55);
+      animation: fitness-feedback-pulse 1.4s infinite;
+      color: var(--app-action-danger, #ff6b6b);
+    }
+  }
+
+  &__record-glyph {
+    font-size: 2.75rem;
+    line-height: 1;
+    display: flex;
+  }
+
+  &__stop-square {
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 0.25rem;
+    background: var(--app-action-danger, #ff6b6b);
+  }
+
+  &__meter-row {
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  &__timer {
+    font-family: var(--app-font-mono, monospace);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  &__took,
+  &__status {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  &__substatus {
+    margin: 0;
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  &__preview {
+    width: 100%;
+    margin-top: 0.25rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--app-action-danger, #ff6b6b);
+    font-size: 0.95rem;
+  }
+}
+
+@keyframes fitness-feedback-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.5); }
+  70%  { box-shadow: 0 0 0 18px rgba(255, 107, 107, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
+}
+
+// Kiosk: cursor is hidden globally on the touchscreen.
+.kiosk-ui .fitness-feedback {
+  cursor: none;
+  * { cursor: none; }
+}
