@@ -44,10 +44,10 @@ describe('SheetMusic mode', () => {
     expect(screen.getByTitle('Clair de Lune')).toBeTruthy();
   });
 
-  it('shows a helpful message when unconfigured', async () => {
+  it('always offers the built-in Mary score, even when no Plex collection is configured', async () => {
     renderSheet({ collection: null });
     await waitFor(() =>
-      expect(screen.getByText(/No sheet music has been set up yet/i)).toBeTruthy()
+      expect(screen.getByText('Mary Had a Little Lamb')).toBeTruthy()
     );
   });
 

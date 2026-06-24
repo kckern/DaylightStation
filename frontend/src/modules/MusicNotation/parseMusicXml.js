@@ -36,6 +36,9 @@ export function parseMusicXml(xml) {
   }
 
   const score = { divisions: 1, tempo: 100, timeSig: { beats: 4, beatType: 4 }, key: { fifths: 0 }, parts: [] };
+  score.title = text(doc, 'work work-title', null) || text(doc, 'movement-title', null);
+  score.composer = doc.querySelector('identification creator[type="composer"]')?.textContent?.trim()
+    || doc.querySelector('creator')?.textContent?.trim() || null;
 
   for (const partEl of doc.querySelectorAll('part')) {
     const id = partEl.getAttribute('id');
