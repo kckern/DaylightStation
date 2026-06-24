@@ -1090,3 +1090,9 @@
   pointer-events: none;
   white-space: nowrap;
 }
+
+// Keyboard test fills a taller strip; scroller test is full-bleed for the game.
+.piano-test__keys--full { height: 42%; }
+.piano-test--scroller {
+  .side-scroller { position: absolute; inset: 0; }
+}
