@@ -65,6 +65,7 @@ import FitnessSessionDetailWidget from './widgets/FitnessSessionDetailWidget/ind
 import FitnessCalendarWidget from './widgets/FitnessCalendarWidget/index.jsx';
 import FitnessLongitudinalWidget from './widgets/FitnessLongitudinalWidget/index.jsx';
 import FitnessSuggestionsWidget from './widgets/FitnessSuggestionsWidget/index.jsx';
+import FitnessMomentumWidget from './widgets/FitnessMomentum/index.jsx';
 
 registry.register('fitness:sessions', FitnessSessionsWidget);
 registry.register('fitness:weight', FitnessWeightWidget);
@@ -75,6 +76,7 @@ registry.register('fitness:session-detail', FitnessSessionDetailWidget);
 registry.register('fitness:calendar', FitnessCalendarWidget);
 registry.register('fitness:longitudinal', FitnessLongitudinalWidget);
 registry.register('fitness:suggestions', FitnessSuggestionsWidget);
+registry.register('fitness:momentum', FitnessMomentumWidget);
 
 // --- Bridge functions for existing consumers ---
 // These accept old manifest IDs (e.g. 'fitness_chart') and resolve
