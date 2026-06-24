@@ -148,3 +148,24 @@ cannot fix a stall that lives below the page.
 - `c7e23d1e8`: self-driving test harness at `/piano/test/<scene>` (keyboard-latency + scroller-fps).
 - `measure.cjs` / `measure_ts.cjs` in-container benches (gfxinfo + Adreno kgsl + CPU telemetry).
 - NOTE: gfxinfo "fps" UNDER-counts WebView frames; trust `useRenderWatchdog` rAF fps + SurfaceFlinger.
+
+## ✅ SOLVED — keep-alive video
+
+**Fix:** an always-on tiny (6px) muted looping `<video>` (`frontend/public/keepalive.mp4`, 64×64
+60fps) mounted in the piano app shell (`KeepAliveVideo.jsx`, rendered in `PianoApp` ActivePiano,
+outside ConnectGate). A *playing* video forces the WebView compositor to present a frame every
+vsync via the media path, breaking the BeginFrame starvation that throttled rAF+CSS to ~7fps.
+
+**Verified A/B (scroller, then global /piano):**
+| | GPU busy | watchdog |
+|---|---|---|
+| keep-alive OFF | 0–7% | `jank-start fps:7` (stalled) |
+| keep-alive ON (after 1 gesture) | **71–82% sustained** | no jank — recovered |
+
+**Caveat:** WebView gates muted autoplay until the first user interaction, so the video starts on
+the first touch/key (KeepAliveVideo also (re)plays on `pointerdown`/`keydown`/`touchstart`). On a
+touch kiosk that first touch is immediate; the only stall is the brief pre-touch window. For
+gestureless start, configure WebView/FKB to truly drop the user-gesture media requirement.
+
+Commits: `a48bea921` (global mount), `284379978` (first-gesture replay). graphicsAccelerationMode
+unchanged (0). Paint cuts (`4fbf65ebe`, `88744c2bc`) kept as independent headroom wins.
