@@ -5,8 +5,6 @@ import { StudioTriptych } from '../../../components/StudioTriptych.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
-import { usePianoKioskConfig } from '../../PianoConfig.jsx';
-import { usePianoPreferences } from '../../usePianoPreferences.js';
 import Icon from '../../icons/Icon.jsx';
 
 /** ms → M:SS for the recording read-out. */
@@ -29,29 +27,8 @@ export default function StudioPlay({ recording, elapsedMs, onRecordToggle }) {
   const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
 
-  // Top-pane layout preference. Precedence: saved user pref → piano.yml
-  // (studio.topPaneLayout household default) → hardcoded 'staff'. Default stays
-  // staff-only; the theory triptych is strictly opt-in.
-  const { config } = usePianoKioskConfig();
-  const configDefault = config?.studio?.topPaneLayout || 'staff';
-  const { getPref, setPref, loaded } = usePianoPreferences();
-  const layout = loaded ? getPref('topPaneLayout', configDefault) : configDefault;
-  const isTriptych = layout === 'triptych';
-  const toggleLayout = () => setPref('topPaneLayout', isTriptych ? 'staff' : 'triptych');
-
   return (
     <div className="piano-studio-play">
-      <button
-        type="button"
-        className="piano-studio-play__layout-toggle"
-        onClick={toggleLayout}
-        aria-pressed={isTriptych}
-        aria-label={isTriptych ? 'Show staff only' : 'Show theory triptych'}
-        title={isTriptych ? 'Staff only' : 'Theory triptych'}
-      >
-        {isTriptych ? 'Staff' : 'Theory'}
-      </button>
-
       <button
         type="button"
         className={`piano-studio-play__record${recording ? ' is-recording' : ''}`}
@@ -66,13 +43,10 @@ export default function StudioPlay({ recording, elapsedMs, onRecordToggle }) {
         {recording && <Icon name="stop" />}
       </button>
 
-      {isTriptych ? (
-        <StudioTopPane align="stretch">
-          <StudioTriptych activeNotes={activeNotes} />
-        </StudioTopPane>
-      ) : (
-        <StudioTopPane activeNotes={activeNotes} />
-      )}
+      {/* Theory triptych is the default top pane — circle of fifths · staff · chord. */}
+      <StudioTopPane align="stretch">
+        <StudioTriptych activeNotes={activeNotes} />
+      </StudioTopPane>
 
       <div className="piano-studio-play__waterfall">
         <NoteWaterfall

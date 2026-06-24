@@ -26,7 +26,7 @@ export function StudioTriptych({ activeNotes }) {
   return (
     <div className="piano-triptych">
       <div className="piano-triptych__side piano-triptych__circle">
-        <CircleOfFifths pitchClasses={pitchClasses} detectedKey={detectedKey} />
+        <CircleOfFifths pitchClasses={pitchClasses} detectedKey={detectedKey} size={184} />
       </div>
       <div className="piano-triptych__center">
         <CurrentChordStaff activeNotes={activeNotes} />

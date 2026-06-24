@@ -1,20 +1,48 @@
-// Live chord-name read-out. Sits on the WHITE Studio top-pane card → dark-on-white.
+// Live chord-name read-out. A distinctive dark plaque on the WHITE Studio
+// top-pane card — framed, with an eyebrow label, so the named chord reads as a
+// deliberate "now playing" display rather than floating text.
 .piano-chord-name {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   width: 100%;
-  text-align: center;
+
+  &__plaque {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    max-width: 13rem;
+    min-height: 6.5rem;
+    justify-content: center;
+    padding: 1rem 1.1rem;
+    border-radius: 0.9rem;
+    background: linear-gradient(160deg, #2c2f36 0%, #16181c 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    color: #fff;
+
+    &.is-empty { opacity: 0.85; }
+  }
+
+  &__eyebrow {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--piano-accent, #3ddc84);
+  }
 
   &__value {
-    font-size: clamp(1.1rem, 2.4vw, 1.9rem);
+    font-size: clamp(1.2rem, 2.2vw, 2rem);
     font-weight: 800;
-    line-height: 1.15;
-    color: #2b2b2b;
+    line-height: 1.12;
+    text-align: center;
 
-    &.is-empty {
-      color: #9b958a;
+    .is-empty & {
+      color: #8a8f98;
       font-weight: 600;
     }
   }

@@ -20,8 +20,9 @@ export function ChordNamePanel({ midiNotes = [] }) {
   const hasName = !!chord.displayName;
   return (
     <div className="piano-chord-name" aria-live="polite">
-      <div className={`piano-chord-name__value${hasName ? '' : ' is-empty'}`}>
-        {hasName ? chord.displayName : '—'}
+      <div className={`piano-chord-name__plaque${hasName ? '' : ' is-empty'}`}>
+        <span className="piano-chord-name__eyebrow">Chord</span>
+        <span className="piano-chord-name__value">{hasName ? chord.displayName : '—'}</span>
       </div>
     </div>
   );

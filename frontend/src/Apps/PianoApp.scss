@@ -664,9 +664,11 @@
 // v1 column proportions: 1 : 2 : 1.
 .piano-triptych {
   display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
+  // Fixed-width sides so the circle and chord plaque never resize/reflow ("no rug
+  // pull") when the chord name changes width — only the center staff flexes.
+  grid-template-columns: 14rem 1fr 14rem;
   align-items: center;
-  gap: 1rem;
+  gap: 1.25rem;
   width: 100%;
   height: 100%;
 
@@ -676,7 +678,6 @@
     justify-content: center;
     height: 100%;
     min-width: 0;
-    overflow: hidden;
   }
 
   &__center {
@@ -740,27 +741,6 @@
   // Top-pane layout toggle — floats top-left, opposite the Record button. A single
   // discrete tap target (no slider) that flips staff ↔ theory triptych and persists
   // the choice as a per-user preference.
-  &__layout-toggle {
-    position: absolute;
-    top: 0.75rem;
-    left: 1.5rem;
-    z-index: 5;
-    padding: 0.5rem 1.1rem;
-    border-radius: var(--r-pill);
-    border: 1px solid var(--piano-border);
-    background: var(--piano-surface-2);
-    color: var(--piano-fg);
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-
-    &[aria-pressed='true'] {
-      background: var(--piano-accent);
-      border-color: var(--piano-accent);
-      color: var(--piano-accent-ink);
-    }
-  }
-
   // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
   &__waterfall {
     flex: 1 1 auto;
