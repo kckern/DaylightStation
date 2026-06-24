@@ -3,6 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 
+const mix = vi.hoisted(() => ({
+  pianoLevel: 0.8, mediaLevel: 0.5, setPianoLevel: vi.fn(), setMediaLevel: vi.fn(),
+}));
+vi.mock('../../PianoMixContext.jsx', () => ({ usePianoMix: () => mix }));
+
 const baseProps = {
   isPlaying: true, currentTime: 30, duration: 120, rate: 1, loop: { a: null, b: null },
   playAlong: true,
@@ -45,5 +50,22 @@ describe('PianoVideoChrome', () => {
     fireEvent.click(screen.getByLabelText('Mark loop end'));
     expect(onMarkA).toHaveBeenCalled();
     expect(onMarkB).toHaveBeenCalled();
+  });
+});
+
+describe('PianoVideoChrome — mix balance', () => {
+  it('drives the piano level down/up from the mix context', () => {
+    mix.setPianoLevel.mockReset();
+    render(<PianoVideoChrome {...baseProps} />);
+    fireEvent.click(screen.getByLabelText('Piano volume down'));
+    fireEvent.click(screen.getByLabelText('Piano volume up'));
+    expect(mix.setPianoLevel).toHaveBeenCalledTimes(2);
+  });
+  it('drives the media level down/up from the mix context', () => {
+    mix.setMediaLevel.mockReset();
+    render(<PianoVideoChrome {...baseProps} />);
+    fireEvent.click(screen.getByLabelText('Media volume down'));
+    fireEvent.click(screen.getByLabelText('Media volume up'));
+    expect(mix.setMediaLevel).toHaveBeenCalledTimes(2);
   });
 });

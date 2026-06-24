@@ -1,6 +1,8 @@
 // PianoVideoChrome.jsx
 import { useRef } from 'react';
 import Icon from '../../icons/Icon.jsx';
+import { usePianoMix } from '../../PianoMixContext.jsx';
+import MixControls from '../../MixControls.jsx';
 
 const fmt = (s) => {
   let v = Number.isFinite(s) && s > 0 ? Math.floor(s) : 0;
@@ -18,6 +20,7 @@ export default function PianoVideoChrome({
   onToggle, onSkip, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onTogglePlayAlong,
 }) {
   const barRef = useRef(null);
+  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel } = usePianoMix();
   const dur = duration > 0 ? duration : 0;
   const pct = dur ? Math.min(100, (currentTime / dur) * 100) : 0;
   const markPos = (v) => (dur && Number.isFinite(v) ? `${Math.min(100, (v / dur) * 100)}%` : null);
@@ -52,6 +55,13 @@ export default function PianoVideoChrome({
         <button type="button" className="piano-video-chrome__btn" onClick={onMarkB} aria-label="Mark loop end">B</button>
         <button type="button" className={`piano-video-chrome__btn${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={!bothMarks} aria-label="Toggle A-B loop"><Icon name="repeat" /></button>
         <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={!hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
+        <MixControls
+          pianoLevel={pianoLevel}
+          mediaLevel={mediaLevel}
+          onPiano={(d) => setPianoLevel(pianoLevel + d)}
+          onMedia={(d) => setMediaLevel(mediaLevel + d)}
+          btnClass="piano-video-chrome__btn"
+        />
         <div className="piano-video-chrome__spacer" />
         <button type="button" className={`piano-video-chrome__btn${playAlong ? ' is-on' : ''}`} onClick={onTogglePlayAlong} aria-label={playAlong ? 'Hide play-along' : 'Show play-along'}><Icon name="play-along" /></button>
       </div>
