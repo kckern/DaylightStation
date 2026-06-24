@@ -7,6 +7,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
 import StudioPlay from './StudioPlay.jsx';
 import StudioRecordings from './StudioRecordings.jsx';
+import StudioPlayback from './StudioPlayback.jsx';
 
 /**
  * Studio mode — a freeform play surface with two tabs:
@@ -20,7 +21,7 @@ import StudioRecordings from './StudioRecordings.jsx';
  */
 export function Studio() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio' }), []);
-  const { isPlaying, subscribe, scheduleNotes, connected } = usePianoMidi();
+  const { isPlaying, subscribe, connected } = usePianoMidi();
   const { pianoId } = usePianoKioskConfig();
   const { recording, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
@@ -74,16 +75,6 @@ export function Studio() {
     }
   }, [recording, start, stop, saveTake, logger]);
 
-  const onPlay = useCallback(async (id) => {
-    try {
-      const take = await DaylightAPI(`${studioBase}/${id}`);
-      const ok = scheduleNotes(take?.events ?? []);
-      logger.info('studio.playback-start', { id, sent: ok, events: take?.events?.length ?? 0 });
-    } catch (err) {
-      logger.error('studio.playback-failed', { id, error: err.message });
-    }
-  }, [studioBase, scheduleNotes, logger]);
-
   const onToggleFavorite = useCallback(async (id, favorite) => {
     try {
       await DaylightAPI(`${studioBase}/${id}`, { favorite }, 'PATCH');
@@ -136,12 +127,12 @@ export function Studio() {
               takes={takes}
               confirmId={confirmId}
               setConfirmId={setConfirmId}
-              onPlay={onPlay}
               onToggleFavorite={onToggleFavorite}
               onDelete={onDelete}
             />
           )}
         />
+        <Route path="recordings/:id" element={<StudioPlayback />} />
       </Routes>
     </section>
   );

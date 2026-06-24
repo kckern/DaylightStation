@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Icon from '../../icons/Icon.jsx';
 
 /** ms → M:SS for a take's length. */
@@ -16,8 +17,12 @@ function mmss(ms) {
  */
 export default function StudioRecordings({
   isPlaying, connected, takes, confirmId, setConfirmId,
-  onPlay, onToggleFavorite, onDelete,
+  onToggleFavorite, onDelete,
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Current path is .../studio/recordings; the player lives at .../studio/recordings/:id.
+  const open = (id) => navigate(`${location.pathname.replace(/\/+$/, '')}/${id}`);
   const sorted = useMemo(() => {
     const list = takes.map((t) => (typeof t === 'string' ? { id: t, title: t } : t));
     // Favourites first; otherwise newest first (created desc, falling back to title).
@@ -55,11 +60,10 @@ export default function StudioRecordings({
               <span aria-hidden="true">{t.favorite ? '★' : '☆'}</span>
             </button>
 
-            <span className="piano-studio__take-title">{t.title || t.id}</span>
-            {t.durationMs ? <span className="piano-studio__take-dur">{mmss(t.durationMs)}</span> : null}
-
-            <button type="button" className="piano-studio__play" onClick={() => onPlay(t.id)} disabled={!connected}>
-              <Icon name="play" /> Play
+            <button type="button" className="piano-studio__open" onClick={() => open(t.id)}>
+              <Icon name="play" />
+              <span className="piano-studio__take-title">{t.title || t.id}</span>
+              {t.durationMs ? <span className="piano-studio__take-dur">{mmss(t.durationMs)}</span> : null}
             </button>
 
             {confirmId === t.id ? (

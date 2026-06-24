@@ -578,9 +578,18 @@
     &.is-on { color: #ffc83c; }
   }
 
+  // Row body — tap to open the take in the playback view.
+  &__open {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: left;
+    padding: 0.5rem 0.9rem !important;
+    .piano-icon { color: var(--piano-accent); flex: 0 0 auto; }
+  }
   &__take-title { flex: 1 1 auto; font-weight: 600; }
   &__take-dur { color: var(--piano-muted); font-variant-numeric: tabular-nums; }
-  &__play { font-weight: 700; }
 
   &__confirm { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--piano-danger); }
 }
@@ -677,6 +686,142 @@
   min-height: 0;
   overflow: auto;
   padding: 1.5rem;
+}
+
+// ── Studio playback ("now playing" for a saved take) ──────────────────────────
+// Same staff → waterfall → keyboard stack as the Play tab, lit by the take, with
+// a transport bar pinned at the foot.
+.piano-playback {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  &__staff {
+    flex: 0 0 auto;
+    margin: 0.75rem 1.5rem;
+    background: #fff;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    .current-chord-staff-wrapper { width: 100%; padding: 0.5rem 0; }
+  }
+
+  &__waterfall {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 1.5rem;
+    background: var(--piano-viz-bg);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+
+  &__keys {
+    flex: 0 0 auto;
+    width: 100%;
+    background: var(--piano-surface-2);
+    .piano-keyboard { height: 8rem; }
+  }
+
+  &__hint { margin: 0.35rem 1.5rem 0; color: var(--piano-muted); font-size: 0.85rem; }
+
+  &__transport {
+    flex: 0 0 auto;
+    padding: 0.75rem 1.5rem 1rem;
+    background: var(--piano-surface);
+    border-top: 1px solid var(--piano-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  &__row { display: flex; align-items: center; gap: 0.75rem; }
+
+  &__play {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    border: none;
+    background: var(--piano-accent);
+    color: var(--piano-accent-ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    cursor: pointer;
+  }
+
+  &__skip,
+  &__exit {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  &__time { font-variant-numeric: tabular-nums; color: var(--piano-muted); min-width: 10ch; }
+
+  &__speeds { margin-left: auto; display: inline-flex; gap: 0.35rem; }
+  &__speed {
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    &.is-active { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+  }
+
+  // Scrub track — tap or drag anywhere to seek.
+  &__track {
+    position: relative;
+    height: 1.6rem;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    touch-action: none;
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      height: 0.45rem;
+      border-radius: 999px;
+      background: var(--piano-surface-2);
+    }
+  }
+  &__track-fill {
+    position: absolute;
+    left: 0;
+    height: 0.45rem;
+    width: 100%;
+    border-radius: 999px;
+    transform-origin: left center;
+    transform: scaleX(0);
+    background: var(--piano-accent);
+    will-change: transform;
+  }
+  &__track-head {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 1.1rem;
+    height: 1.1rem;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 3px var(--piano-accent);
+    will-change: left;
+  }
 }
 
 .piano-video-grid {
