@@ -3,9 +3,11 @@ import { render } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 const sessions = [
-  { date: '2026-06-24', durationMs: 30 * 60000, startTime: Date.parse('2026-06-24T12:00:00Z'), participants: { user_2: { displayName: 'User_2' } } },
+  { date: '2026-06-24', durationMs: 30 * 60000, startTime: Date.now() - 3600000, participants: { user_2: { displayName: 'User_2' } } },
 ];
-vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => sessions }));
+// The real 'sessions' source returns a WRAPPED object, not a bare array — the
+// widget must unwrap rawSessions.sessions for minutes to flow through.
+vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => ({ sessions, total: 1 }) }));
 vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
   useFitnessScreen: () => ({ roster: [{ id: 'user_2', name: 'User_2' }, { id: 'kckern', name: 'User_1' }], householdLabel: 'Kern Family' }),
 }));
@@ -21,10 +23,9 @@ describe('FitnessMomentum', () => {
     expect(getByText('User_1')).toBeTruthy();
   });
 
-  it('shows a warm zero-state when nobody is active', () => {
-    // override sessions to empty for this render via a fresh mock module is overkill;
-    // instead assert the component tolerates empty members gracefully:
-    const { container } = render(<FitnessMomentum />);
-    expect(container.querySelector('.fitness-momentum')).toBeTruthy();
+  it('unwraps the wrapped sessions source so minutes flow through', () => {
+    const { getByText } = render(<FitnessMomentum />);
+    // User_2 has a 30-min session in the last 7d → his card shows 30 / 150.
+    expect(getByText('30 / 150')).toBeTruthy();
   });
 });

@@ -16,7 +16,10 @@ function Avatar({ id, name }) {
 }
 
 export default function FitnessMomentum() {
-  const sessions = useScreenData('sessions');
+  // The 'sessions' source returns a wrapped object ({ sessions, total, ... }),
+  // not a bare array (see FitnessSessionsWidget) — unwrap before computing.
+  const rawSessions = useScreenData('sessions');
+  const sessions = Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []);
   const { roster, householdLabel } = useFitnessScreen();
 
   const data = useMemo(
