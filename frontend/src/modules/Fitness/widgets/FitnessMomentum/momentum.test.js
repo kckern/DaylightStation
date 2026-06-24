@@ -50,6 +50,13 @@ describe('computeMomentum — weekly buckets', () => {
     expect(felix.weeks.every((w) => w.effortMinutes === 0)).toBe(true);
   });
 
+  it('stamps each week with its window start (for M/d x-axis labels)', () => {
+    const WEEK = 7 * 86_400_000;
+    const felix = computeMomentum([], roster, { now: NOW, compareWeeks: 4 }).members.find((m) => m.id === 'felix');
+    expect(felix.weeks[3].startMs).toBe(NOW - WEEK);      // current window starts 7d ago
+    expect(felix.weeks[0].startMs).toBe(NOW - 4 * WEEK);  // oldest of 4 windows
+  });
+
   it('buckets effort into the correct week by age', () => {
     const sessions = [
       zsess('2026-06-24', { active: 20 }), // 0 days ago  → current week (idx 3)
