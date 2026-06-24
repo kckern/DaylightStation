@@ -4,6 +4,11 @@ import { DaylightAPI } from '../../../../../lib/api.mjs';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import CoverFlow from './CoverFlow.jsx';
+import { shuffleOrder } from '../../../../../lib/Player/playlist.js';
+
+// Open Cover Flow a few covers in so albums flow off BOTH sides on arrival
+// (rather than starting flush-left). Clamped to the collection size.
+const FLOW_START = 5;
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -52,8 +57,17 @@ export default function AlbumGrid({ music, onSelect }) {
   const noConfig = !collection && playlists.length === 0;
   // Loading while albums is null (only when collection is set).
   const loading = !noConfig && albums === null && collection;
-  const items = noConfig ? [] : [...(albums || []), ...pls];
+  const rawItems = noConfig ? [] : [...(albums || []), ...pls];
   const error = noConfig ? null : (albumError || null);
+
+  // The library loads SHUFFLED — a fresh random album order each visit. Stable
+  // within a visit (keyed on the resolved id set) so the Cover Flow / grid don't
+  // reshuffle on unrelated re-renders. Track play order is shuffled separately.
+  const itemsSig = rawItems.map((it) => it.id).join(',');
+  const items = useMemo(
+    () => shuffleOrder(rawItems.length).map((i) => rawItems[i]),
+    [itemsSig], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const pickView = (next) => {
     setView(next);
@@ -87,7 +101,7 @@ export default function AlbumGrid({ music, onSelect }) {
           </div>
 
           {view === 'flow' ? (
-            <CoverFlow items={items} onOpen={onSelect} />
+            <CoverFlow items={items} onOpen={onSelect} startIndex={Math.min(FLOW_START, items.length - 1)} />
           ) : (
             <div className="piano-music-gridwrap">
               <ul className="piano-video-grid piano-music-grid">
