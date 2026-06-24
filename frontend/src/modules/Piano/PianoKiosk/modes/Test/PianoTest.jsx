@@ -56,6 +56,7 @@ export default function PianoTest() {
       probeMs: numAt(null, 'probeMs', 200),
       probeNote: numAt(null, 'note', 60),
       sweepMs: numAt(null, 'sweepMs', 140),
+      keepalive: numAt(null, 'keepalive', 0),
       holdMs: numAt(null, 'hold', TEST_DEFAULTS.holdMs),
       lo: numAt(null, 'lo', TEST_DEFAULTS.lo),
       hi: numAt(null, 'hi', TEST_DEFAULTS.hi),
@@ -133,9 +134,22 @@ export default function PianoTest() {
     return () => clearInterval(id);
   }, [params, logger]);
 
+  // Keep-alive: a tiny visible muted looping video. A playing <video> drives the
+  // compositor to present a new frame every vsync via the media path, a known
+  // workaround for the WebView BeginFrame/rAF stall. Must be technically visible
+  // (not display:none / opacity:0) to force compositing.
+  const keepEl = params.keepalive ? (
+    <video
+      src="/keepalive.mp4"
+      autoPlay loop muted playsInline
+      style={{ position: 'fixed', bottom: 0, right: 0, width: 3, height: 3, opacity: 0.02, pointerEvents: 'none', zIndex: 1 }}
+    />
+  ) : null;
+
   if (params.scene === 'scroller') {
     return (
       <div className="piano-test piano-test--scroller" data-testid="piano-test">
+        {keepEl}
         <div className="piano-test-hud" data-testid="piano-test-hud">
           <div><b>SIDE-SCROLLER FPS TEST</b></div>
           <div>white-key sweep every {params.sweepMs}ms · active={active.size}</div>
@@ -148,6 +162,7 @@ export default function PianoTest() {
 
   return (
     <div className="piano-test" data-testid="piano-test">
+      {keepEl}
       <div className="piano-test-hud" data-testid="piano-test-hud">
         <div><b>{params.scene === 'latency' ? 'KEYBOARD LATENCY TEST' : 'KEYBOARD PAINT TEST'}</b> — scene={params.scene}</div>
         <div>bg load={params.bgNps}nps/{params.bgPoly} · {params.scene === 'latency' ? `probe ${params.probeMs}ms · ` : ''}active={active.size}</div>
