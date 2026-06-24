@@ -1196,3 +1196,14 @@
   .musicxml-renderer { margin: 0; }
 }
 .piano-score-player__scroll { -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+
+// Horizontal scroll mode: plain centered title above, vertically-centered staff.
+.piano-score-player__scrolltitle {
+  flex: 0 0 auto; text-align: center; font-weight: 800; font-size: 1.4rem;
+  color: #2a2620; background: #fcfaf4; padding: 0.6rem 1rem 0.2rem;
+  position: sticky; top: 0; left: 0; right: 0; z-index: 4;
+}
+.piano-score-player__scroll--horizontal {
+  display: flex; align-items: center;
+  .musicxml-renderer { margin-top: auto; margin-bottom: auto; }
+}

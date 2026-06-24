@@ -191,6 +191,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </div>
       )}
 
+      {flow === 'horizontal' && <div className="piano-score-player__scrolltitle">{meta.title}</div>}
+
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} onLayout={onLayout}>
           {current && mode !== 'manual' && (
