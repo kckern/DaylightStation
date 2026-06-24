@@ -1103,3 +1103,20 @@
 .piano-test--scroller {
   .side-scroller { position: absolute; inset: 0; }
 }
+
+// Shared piano/media balance control (MixControls). Buttons inherit the host
+// chrome's button style via `btnClass`; these rules only lay out the clusters.
+.piano-mix {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+
+  &__cluster { display: flex; align-items: center; gap: 0.25rem; }
+  &__lead { opacity: 0.7; }
+  &__val {
+    min-width: 2.5rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--piano-stage-muted);
+  }
+}
