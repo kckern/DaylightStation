@@ -21,6 +21,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   }),
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 
