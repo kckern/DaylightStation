@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
@@ -24,6 +25,7 @@ const MODES = [
  */
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
+  const navigate = useNavigate();
   const { activeNotes, subscribe, subscribeRaw } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
 
@@ -115,6 +117,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   return (
     <div className="piano-score-player">
       <div className="piano-score-player__bar">
+        <button
+          type="button"
+          className="piano-score-mode piano-score-player__back"
+          onClick={() => navigate('..', { relative: 'path' })}
+          aria-label="Back to sheet music"
+        >‹ Back</button>
         <div className="piano-score-player__modes" role="tablist">
           {MODES.map((m) => (
             <button
