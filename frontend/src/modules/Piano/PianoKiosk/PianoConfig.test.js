@@ -80,6 +80,25 @@ describe('instruments config', () => {
   });
 });
 
+describe('studio config', () => {
+  it('defaults the top-pane layout to staff', () => {
+    expect(resolvePianoConfig({}, 'default').studio.topPaneLayout).toBe('staff');
+  });
+
+  it('passes through a household studio.topPaneLayout default', () => {
+    const raw = { studio: { topPaneLayout: 'triptych' } };
+    expect(resolvePianoConfig(raw, 'default').studio.topPaneLayout).toBe('triptych');
+  });
+
+  it('lets a per-piano studio default override the shared one', () => {
+    const raw = {
+      studio: { topPaneLayout: 'staff' },
+      pianos: { upstairs: { studio: { topPaneLayout: 'triptych' } } },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').studio.topPaneLayout).toBe('triptych');
+  });
+});
+
 describe('resolveScreensaver', () => {
   it('disables screen control by default (no deviceId)', () => {
     expect(resolveScreensaver({}, {})).toEqual({

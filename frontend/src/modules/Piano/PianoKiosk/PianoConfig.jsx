@@ -34,6 +34,10 @@ export const PIANO_CONFIG_DEFAULTS = {
   inactivityMinutes: 10,
   // Screensaver disabled until a deviceId is configured (null = no screen control).
   screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
+  // Studio mode defaults. topPaneLayout: 'staff' (centered grand staff, default) |
+  // 'triptych' (circle-of-fifths | staff | live chord name). Household default; a
+  // per-user preference (preferences.yml → topPaneLayout) overrides it.
+  studio: { topPaneLayout: 'staff' },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -86,6 +90,11 @@ export function resolvePianoConfig(raw, pianoId) {
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
+    studio: {
+      topPaneLayout: p.studio?.topPaneLayout
+        ?? shared.studio?.topPaneLayout
+        ?? PIANO_CONFIG_DEFAULTS.studio.topPaneLayout,
+    },
   };
 }
 
