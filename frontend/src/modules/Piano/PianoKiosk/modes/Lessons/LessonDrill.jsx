@@ -6,6 +6,7 @@ import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { AbcRenderer, generateMelodyAbc, expandDrill, handMidiSequence } from '../../../../MusicNotation/index.js';
+import { computeTargetScrollLeft } from './lessonScroll.js';
 
 /** Render a drill's tempo object as text, whatever shape it takes. */
 function tempoText(tempo) {
@@ -29,6 +30,8 @@ export default function LessonDrill({ collection, drillId }) {
   const { activeNotes, subscribe, pressNote, releaseNote } = usePianoMidi();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
+  const REST_FRACTION = 0.10; // active note rests ~10% from the left edge
+  const SNAP_BACK_MS = 1500;  // idle delay after a scrub before returning to the cursor
   const [drill, setDrill] = useState(undefined); // undefined = loading, null = not found
 
   useEffect(() => {
@@ -62,6 +65,11 @@ export default function LessonDrill({ collection, drillId }) {
   stepRef.current = step;
   const staffNotesRef = useRef([]); // [staffIdx] → [{ midi, els }] from AbcRenderer
   const wrongTimer = useRef(null);
+  const scrollRef = useRef(null);          // .lesson-drill__staff (overflow-x scroll container)
+  const userScrubbingRef = useRef(false);  // true while the player drags / within the snap-back window
+  const snapBackTimer = useRef(null);
+  const dragRef = useRef({ active: false, startX: 0, startScroll: 0, pointerId: null });
+  useEffect(() => () => clearTimeout(snapBackTimer.current), []);
 
   // Reset progress whenever the engraved exercise changes.
   useEffect(() => { setStep(0); setWrong(false); }, [abc]);
@@ -77,9 +85,69 @@ export default function LessonDrill({ collection, drillId }) {
         else if (i === s) el.classList.add(isWrong ? 'note-wrong' : 'note-current');
       }
     }
-    const cur = rh[s]?.els?.[0];
-    if (cur?.scrollIntoView) cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
+
+  // Scroll the staff so the active notehead rests ~REST_FRACTION from the left.
+  // Reads geometry once (not per frame); the actual motion is a CSS-smooth
+  // scrollLeft assignment (compositor-friendly — see webview-paint-performance.md).
+  const scrollCursorToRest = useCallback((s) => {
+    const container = scrollRef.current;
+    const note = staffNotesRef.current?.[0]?.[s]?.els?.[0];
+    if (!container || !note?.getBoundingClientRect) return;
+    const cRect = container.getBoundingClientRect();
+    const nRect = note.getBoundingClientRect();
+    // note's left edge in content coordinates = its viewport-left minus the
+    // container's viewport-left, plus how far we're already scrolled.
+    const noteLeft = (nRect.left - cRect.left) + container.scrollLeft;
+    const target = computeTargetScrollLeft({
+      noteLeft,
+      viewportWidth: container.clientWidth,
+      contentWidth: container.scrollWidth,
+      restFraction: REST_FRACTION,
+    });
+    logger.debug('piano.drill-scroll', { step: s, target, viewport: container.clientWidth, content: container.scrollWidth });
+    container.scrollTo({ left: target, behavior: 'smooth' });
+  }, [logger]);
+
+  // Pointer-drag scrubbing: lets the player swipe back through played notes (and
+  // a little ahead). Adjusts scrollLeft directly (no React state per move → no
+  // re-render storm); releasing arms an idle snap-back to the cursor.
+  const onScrubStart = useCallback((e) => {
+    const container = scrollRef.current;
+    if (!container) return;
+    userScrubbingRef.current = true;
+    clearTimeout(snapBackTimer.current);
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startScroll: container.scrollLeft,
+      pointerId: e.pointerId,
+    };
+    container.setPointerCapture?.(e.pointerId);
+  }, []);
+
+  const onScrubMove = useCallback((e) => {
+    const d = dragRef.current;
+    const container = scrollRef.current;
+    if (!d.active || !container) return;
+    // Direct, non-animated scrollLeft tracking: instantly follows the finger.
+    container.scrollLeft = d.startScroll - (e.clientX - d.startX);
+  }, []);
+
+  const onScrubEnd = useCallback((e) => {
+    const d = dragRef.current;
+    const container = scrollRef.current;
+    if (!d.active) return;
+    d.active = false;
+    container?.releasePointerCapture?.(d.pointerId);
+    // Arm the snap-back: after SNAP_BACK_MS idle, smooth-scroll back to the cursor.
+    clearTimeout(snapBackTimer.current);
+    snapBackTimer.current = setTimeout(() => {
+      userScrubbingRef.current = false;
+      scrollCursorToRest(stepRef.current);
+      logger.debug('piano.drill-snap-back', { step: stepRef.current });
+    }, SNAP_BACK_MS);
+  }, [scrollCursorToRest, logger]);
 
   const onRender = useCallback((_tune, staffNotes) => {
     staffNotesRef.current = staffNotes;
@@ -87,9 +155,19 @@ export default function LessonDrill({ collection, drillId }) {
       logger.warn('piano.drill-highlight-mismatch', { staffNotes: staffNotes[0].length, sequence: rhSeq.length });
     }
     applyHighlight(stepRef.current, false);
-  }, [applyHighlight, rhSeq.length, logger]);
+    scrollCursorToRest(stepRef.current);
+  }, [applyHighlight, scrollCursorToRest, rhSeq.length, logger]);
 
+  // Repaint notehead classes on every step / wrong change.
   useEffect(() => { applyHighlight(step, wrong); }, [step, wrong, applyHighlight]);
+
+  // Teleprompter scroll on advance — playing a note overrides an in-progress scrub.
+  useEffect(() => {
+    if (dragRef.current.active) return; // mid-drag: don't fight the finger
+    userScrubbingRef.current = false;   // a new step means resume following
+    clearTimeout(snapBackTimer.current);
+    scrollCursorToRest(step);
+  }, [step, scrollCursorToRest]);
 
   const flashWrong = useCallback(() => {
     setWrong(true);
@@ -124,8 +202,15 @@ export default function LessonDrill({ collection, drillId }) {
         {drill.subtitle && <p className="lesson-drill__subtitle">{drill.subtitle}</p>}
       </header>
 
-      <div className="lesson-drill__staff">
-        {abc && <AbcRenderer abc={abc} scale={1.5} className="abc-renderer lesson-drill__abc" onRender={onRender} />}
+      <div
+        className="lesson-drill__staff"
+        ref={scrollRef}
+        onPointerDown={onScrubStart}
+        onPointerMove={onScrubMove}
+        onPointerUp={onScrubEnd}
+        onPointerCancel={onScrubEnd}
+      >
+        {abc && <AbcRenderer abc={abc} scale={1.5} singleLine className="abc-renderer lesson-drill__abc" onRender={onRender} />}
       </div>
 
       <div className="lesson-drill__transport">
