@@ -17,19 +17,21 @@ import { generateAbc } from './abc.js';
  * @param {string} [className='abc-renderer'] - class on the render container
  *   (lets callers keep their existing abcjs styling hooks)
  */
-export function AbcRenderer({ notes, keySignature = 'C', scale = 1.5, className = 'abc-renderer' }) {
+export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer' }) {
   const containerRef = useRef(null);
   const [error, setError] = useState(null);
 
-  const notesKey = Array.from(notes.keys()).sort((a, b) => a - b).join(',');
+  // `abc` (a pre-built tune string, e.g. a Hanon melodic figure) takes precedence
+  // over `notes` (a Map rendered as a single chord).
+  const notesKey = abc ?? (notes ? Array.from(notes.keys()).sort((a, b) => a - b).join(',') : '');
 
   useEffect(() => {
     if (!containerRef.current) return;
     try {
-      const abc = generateAbc(notes, keySignature);
+      const tune = abc ?? generateAbc(notes, keySignature);
       const containerWidth = containerRef.current.parentElement?.offsetWidth || 600;
       const sidePad = 12;
-      abcjs.renderAbc(containerRef.current, abc, {
+      abcjs.renderAbc(containerRef.current, tune, {
         staffwidth: Math.max(120, containerWidth - sidePad * 2),
         paddingtop: 0,
         paddingbottom: 0,

@@ -35,6 +35,46 @@ export function createPianoRouter({ configService, logger = console }) {
     return dir.startsWith(studioRoot + path.sep) ? dir : null;
   };
 
+  // ── Lesson drills (read-only, content-driven) ────────────────────────────
+  // A lesson "collection" is a folder of YAML drill modules under
+  // media/docs/piano-lessons/{collection}/, with an index.yml catalog. All
+  // content (titles, section labels, notes, fingering) lives in the YAML — the
+  // kiosk renderer is generic. e.g. collection 'hannon' → exercises {01..30}.yml.
+  const lessonsRoot = path.join(configService.getMediaDir(), 'docs', 'piano-lessons');
+  const lessonDir = (collection) => {
+    if (!safeSegment(collection)) return null;
+    const dir = path.join(lessonsRoot, collection);
+    return dir.startsWith(lessonsRoot + path.sep) ? dir : null;
+  };
+  // Drill ids are simple slugs (e.g. zero-padded numbers); 'index' is the catalog.
+  const safeDrillId = (id) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
+
+  router.get('/lessons/:collection', (req, res) => {
+    try {
+      const dir = lessonDir(req.params.collection);
+      if (!dir) return res.status(400).json({ error: 'Invalid collection' });
+      const data = loadYaml(path.join(dir, 'index'));
+      if (!data) return res.status(404).json({ error: 'Lesson collection not found' });
+      res.json(data);
+    } catch (err) {
+      logger.error?.('piano.lessons.index.error', { collection: req.params.collection, error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/lessons/:collection/:id', (req, res) => {
+    try {
+      const dir = lessonDir(req.params.collection);
+      if (!dir || !safeDrillId(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+      const data = loadYaml(path.join(dir, req.params.id));
+      if (!data) return res.status(404).json({ error: 'Drill not found' });
+      res.json(data);
+    } catch (err) {
+      logger.error?.('piano.lessons.read.error', { collection: req.params.collection, id: req.params.id, error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.get('/:pianoId/studio', (req, res) => {
     try {
       const dir = pianoDir(req.params.pianoId);
