@@ -69,15 +69,17 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       const containerWidth = containerRef.current.parentElement?.offsetWidth || 600;
       const sidePad = 12;
       // singleLine: force one long horizontal staff line (no wrapping) so a
-      // follow-along cursor can scroll it like a teleprompter. A very wide
-      // staffwidth makes abcjs lay the whole voice on one line; the parent
-      // container scrolls horizontally to reveal it.
-      const staffwidth = singleLine
-        ? 100000
-        : Math.max(120, containerWidth - sidePad * 2);
+      // follow-along cursor can scroll it like a teleprompter. A staffwidth wider
+      // than the content keeps abcjs from wrapping; the parent scrolls to reveal
+      // it. Must stay UNDER the browser/WebView max SVG dimension (~32767px on the
+      // SM-T590 — 100000 rendered blank), so size it to the note count and cap it.
+      let staffwidth = Math.max(120, containerWidth - sidePad * 2);
+      if (singleLine) {
+        const noteCount = typeof tune === 'string' ? (tune.match(/[A-Ga-gz]/g) || []).length : 0;
+        staffwidth = Math.min(30000, Math.max(800, noteCount * 22));
+      }
       const result = abcjs.renderAbc(containerRef.current, tune, {
         staffwidth,
-        wrap: singleLine ? { minSpacing: 1, maxSpacing: 1.4, preferredMeasuresPerLine: 1000 } : undefined,
         paddingtop: 0,
         paddingbottom: 0,
         paddingleft: sidePad,
