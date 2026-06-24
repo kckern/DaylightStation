@@ -50,7 +50,9 @@ export function Games() {
 function GamePicker() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const navigate = useNavigate();
-  const ids = getGameIds();
+  // Note Hero now lives under Lessons (it's a timing/learning game), so it is
+  // excluded from the arcade Games picker.
+  const ids = getGameIds().filter((id) => id !== 'hero');
 
   return (
     <section className="piano-menu piano-mode--games">
