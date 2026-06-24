@@ -18,6 +18,25 @@ import { vexflowRender } from './vexflowRender.js';
 export function MusicXmlRenderer({ musicXml, score: scoreProp, width, flow = 'wrapped', scale = 1, onLayout, children }) {
   const hostRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
+  const [resizeKey, setResizeKey] = useState(0);
+
+  // Resize watchdog: re-fit when the container width changes (wrapped mode reflows
+  // its measures-per-line to the new width). Debounced; ignores sub-pixel jitter.
+  useEffect(() => {
+    const parent = hostRef.current?.parentElement;
+    if (!parent || typeof ResizeObserver === 'undefined') return undefined;
+    let lastW = parent.clientWidth;
+    let t;
+    const ro = new ResizeObserver(() => {
+      const w = parent.clientWidth;
+      if (Math.abs(w - lastW) < 2) return;
+      lastW = w;
+      clearTimeout(t);
+      t = setTimeout(() => setResizeKey((k) => k + 1), 120);
+    });
+    ro.observe(parent);
+    return () => { clearTimeout(t); ro.disconnect(); };
+  }, []);
 
   const score = useMemo(() => {
     if (scoreProp) return scoreProp;
@@ -37,7 +56,7 @@ export function MusicXmlRenderer({ musicXml, score: scoreProp, width, flow = 'wr
       // eslint-disable-next-line no-console
       console.warn('MusicXmlRenderer: render failed', err?.message);
     }
-  }, [score, width, flow, scale, onLayout]);
+  }, [score, width, flow, scale, onLayout, resizeKey]);
 
   if (!score) {
     return (
