@@ -137,7 +137,7 @@ function PianoShell() {
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />
             <Route path="lessons/*" element={<Lessons />} />
-            <Route path="studio" element={<Studio />} />
+            <Route path="studio/*" element={<Studio />} />
             <Route path="producer/*" element={<Producer />} />
             <Route path="composers" element={<Composers />} />
             <Route path="test/*" element={<PianoTest />} />
