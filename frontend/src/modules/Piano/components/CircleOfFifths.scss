@@ -2,8 +2,9 @@
 // dark-on-white (not the dark-theme piano vars, which assume a charcoal surface).
 .piano-circle-of-fifths {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  // Fixed radius — never scale to the container (no "rug pull" when the chord
+  // name or layout reflows). The SVG keeps its intrinsic width/height attributes.
+  flex: 0 0 auto;
 
   .cof-ring {
     fill: none;

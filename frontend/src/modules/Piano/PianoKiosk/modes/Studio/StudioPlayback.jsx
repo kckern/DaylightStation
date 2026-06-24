@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
 import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
+import { StudioTriptych } from '../../../components/StudioTriptych.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -163,7 +164,9 @@ export default function StudioPlayback() {
 
   return (
     <div className="piano-playback">
-      <StudioTopPane activeNotes={activeNotes} />
+      <StudioTopPane align="stretch">
+        <StudioTriptych activeNotes={activeNotes} />
+      </StudioTopPane>
 
       <div className="piano-playback__waterfall">
         <NoteWaterfall noteHistory={noteHistory} activeNotes={activeNotes} startNote={startNote} endNote={endNote} />
