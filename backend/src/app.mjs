@@ -210,6 +210,8 @@ import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_sy
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
+import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
+import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
@@ -1304,6 +1306,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.piano = createPianoRouter({
     configService,
     logger: rootLogger.child({ module: 'piano-api' })
+  });
+
+  // App-wide voice-feedback capture + inbox. Background-transcribes via the shared
+  // OpenAI gateway (null-safe: items still save when transcription isn't configured).
+  v1Routers.feedback = createFeedbackRouter({
+    feedbackService: new FeedbackService({
+      configService,
+      transcriptionService: sharedAiGateway || null,
+      logger: rootLogger.child({ module: 'feedback' }),
+    }),
+    logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
   // Emulator console (games on the media mount). Addresses media by safe
