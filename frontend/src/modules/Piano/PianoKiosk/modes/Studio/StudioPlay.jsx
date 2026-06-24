@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
-import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
+import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -42,9 +42,7 @@ export default function StudioPlay({ recording, elapsedMs, onRecordToggle }) {
         {recording && <Icon name="stop" />}
       </button>
 
-      <div className="piano-studio-play__staff">
-        <CurrentChordStaff activeNotes={activeNotes} />
-      </div>
+      <StudioTopPane activeNotes={activeNotes} />
 
       <div className="piano-studio-play__waterfall">
         <NoteWaterfall
