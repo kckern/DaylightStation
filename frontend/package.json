@@ -66,6 +66,7 @@
     "shaka-player": "^4.16.12",
     "three": "^0.169.0",
     "tonal": "^6.4.3",
+    "vexflow": "^4.2.5",
     "video.js": "^8.22.0",
     "videojs-hotkeys": "^0.2.30",
     "vimond-replay": "^4.0.0"

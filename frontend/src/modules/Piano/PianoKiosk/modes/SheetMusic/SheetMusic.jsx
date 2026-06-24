@@ -4,6 +4,8 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import ScoreGrid from './ScoreGrid.jsx';
 import ScoreViewer from './ScoreViewer.jsx';
+import ScorePlayer from './ScorePlayer.jsx';
+import { BUILTIN_SCORES, getBuiltinScore } from './builtinScores.js';
 
 /**
  * Sheet Music mode — browse a Plex collection of scores and view them.
@@ -36,9 +38,10 @@ function ScoreGridRoute({ collection }) {
   return (
     <ScoreGrid
       collection={collection}
+      builtin={BUILTIN_SCORES}
       onSelect={(item) => {
         logger.info('piano.score-select', { id: item.id });
-        navigate(idOf(item.id));
+        navigate(item.builtin ? item.id : idOf(item.id));
       }}
     />
   );
@@ -51,8 +54,10 @@ function ScoreGridRoute({ collection }) {
  */
 function ScoreViewerRoute() {
   const { scoreId } = useParams();
+  const builtin = getBuiltinScore(scoreId);
   const score = useMemo(() => ({ id: scoreId }), [scoreId]);
-  // ScoreViewer logs `piano.score-open` from its own effect — no duplicate here.
+  // Built-in scores are interactive (engraved + play-along); Plex scores are page images.
+  if (builtin) return <ScorePlayer score={builtin} />;
   return <ScoreViewer score={score} />;
 }
 
