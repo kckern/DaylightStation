@@ -89,11 +89,15 @@ export function createDisplayRouter(config) {
     if (!thumbnailUrl) {
       const svg = generatePlaceholderSvg({ type: resolvedSource, title: itemTitle || localId });
       res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.send(svg);
     }
 
-    // Redirect through proxy (replace external host with proxy path)
+    // Redirect through proxy (replace external host with proxy path). Covers are
+    // immutable per ratingKey, so let the browser cache the mapping — a cold reload
+    // otherwise re-resolves every cover (the "no caching" the kiosk felt).
     const proxyUrl = thumbnailUrl.replace(/https?:\/\/[^\/]+/, `/api/v1/proxy/${resolvedSource}`);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.redirect(proxyUrl);
   });
 

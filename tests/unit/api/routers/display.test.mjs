@@ -43,6 +43,7 @@ describe('GET /display/:source/*', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('/proxy/plex');
+    expect(res.headers['cache-control']).toMatch(/max-age=\d+/);
   });
 
   it('handles compound ID /display/plex:12345', async () => {
