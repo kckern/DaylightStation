@@ -24,13 +24,26 @@ export default function KeepAliveVideo() {
     if (!v) return undefined;
     const logger = getLogger().child({ component: 'piano-keepalive' });
     v.muted = true;
-    const play = () => v.play().catch((e) => logger.warn('keepalive.play-rejected', { err: e?.name }));
+    const play = () => v.play().catch(() => {});
     play();
-    // Re-assert if the WebView ever pauses it (tab backgrounding, focus loss).
+    // Autoplay is gesture-gated on this WebView (muted autoplay is blocked until the
+    // first user interaction), so (re)assert play on the first touch/key anywhere —
+    // a touch kiosk gets one almost immediately, then the video persists.
+    const onGesture = () => play();
+    const opts = { capture: true, passive: true };
+    document.addEventListener('pointerdown', onGesture, opts);
+    document.addEventListener('keydown', onGesture, opts);
+    document.addEventListener('touchstart', onGesture, opts);
+    // Re-assert if the WebView ever pauses it (backgrounding, focus loss).
     const onPause = () => { logger.warn('keepalive.paused-replay', {}); play(); };
     v.addEventListener('pause', onPause);
     logger.info('keepalive.mounted', {});
-    return () => v.removeEventListener('pause', onPause);
+    return () => {
+      document.removeEventListener('pointerdown', onGesture, opts);
+      document.removeEventListener('keydown', onGesture, opts);
+      document.removeEventListener('touchstart', onGesture, opts);
+      v.removeEventListener('pause', onPause);
+    };
   }, []);
   return (
     <video
