@@ -13,7 +13,7 @@ export { splitByHand, getOttavaInfo } from './model/handSplit.js';
 export { AbcRenderer } from './renderers/AbcRenderer.jsx';
 export { SvgStaffRenderer } from './renderers/SvgStaffRenderer.jsx';
 export { MusicXmlRenderer } from './renderers/MusicXmlRenderer.jsx';
-export { midiToAbc, generateAbc } from './renderers/abc.js';
+export { midiToAbc, generateAbc, generateMelodyAbc } from './renderers/abc.js';
 
 // Facade
 export { Notation } from './Notation.jsx';

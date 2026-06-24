@@ -317,7 +317,102 @@
   }
 }
 
-.piano-lessons__section { margin-bottom: 2rem; }
+// ── Lessons mode — generic drill collection browser + drill viewer ──────────
+.lesson-collection {
+  overflow-y: auto;
+
+  &__header { margin: 0 0 1.5rem; }
+  &__title { margin: 0; font-size: 2rem; font-weight: 700; }
+  &__subtitle { margin: 0.25rem 0 0; color: var(--piano-muted); }
+
+  &__section { margin-bottom: 2rem; }
+  &__section-title {
+    margin: 0 0 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--piano-accent);
+  }
+
+  &__grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+  }
+
+  &__tile {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    text-align: left;
+    padding: 0.85rem 1rem;
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease;
+
+    &:hover,
+    &:focus-visible { border-color: var(--piano-accent); }
+  }
+
+  &__tile-num {
+    flex: 0 0 auto;
+    min-width: 2.2rem;
+    height: 2.2rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-sm);
+    background: var(--piano-accent);
+    color: var(--piano-accent-ink);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tile-body { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  &__tile-title { font-weight: 700; }
+  &__tile-sub { font-size: 0.85rem; color: var(--piano-muted); line-height: 1.3; }
+}
+
+.lesson-drill {
+  overflow-y: auto;
+
+  &__header { margin: 0 0 1.25rem; }
+  &__title { margin: 0; font-size: 1.8rem; font-weight: 700; }
+  &__subtitle { margin: 0.35rem 0 0; color: var(--piano-muted); max-width: 60ch; }
+
+  // The staff is a notation block on white; give abcjs room to breathe and
+  // force crisp black noteheads/staff/fingering for kiosk legibility (abcjs's
+  // default ink can render faint against the page theme).
+  &__staff {
+    background: #fff;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+    overflow-x: auto;
+
+    svg { color: #111; }
+    svg path { fill: #111; stroke: #111; }
+    svg text { fill: #111; stroke: none; }
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.3rem 1.25rem;
+    margin: 0 0 1rem;
+
+    dt { color: var(--piano-muted); font-size: 0.85rem; align-self: center; }
+    dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+  }
+
+  &__focus { margin: 0; color: var(--piano-muted); max-width: 70ch; }
+}
 
 .piano-studio {
   &__toolbar {

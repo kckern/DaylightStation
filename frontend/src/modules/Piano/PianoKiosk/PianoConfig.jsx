@@ -18,6 +18,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   videos: { plexCollection: null },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
+  // Technique-drill collection slug → media/docs/piano-lessons/{collection}/.
+  // All lesson content lives in that folder's YAML; this is just the pointer.
+  lessons: { collection: 'hannon' },
   games: null,
   midi: { preferredInputName: null },
   // Physical key range of this piano. 88 keys = A0(21)..C8(108); a 61-key board
@@ -73,6 +76,7 @@ export function resolvePianoConfig(raw, pianoId) {
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],
     },
     sheetmusic: { collection: p.sheetmusic?.collection ?? shared.sheetmusic?.collection ?? null },
+    lessons: { collection: p.lessons?.collection ?? shared.lessons?.collection ?? PIANO_CONFIG_DEFAULTS.lessons.collection },
     midi: { preferredInputName: p.midi?.preferredInputName ?? shared.midi?.preferredInputName ?? null },
     keyboard: {
       startNote: p.keyboard?.startNote ?? shared.keyboard?.startNote ?? PIANO_CONFIG_DEFAULTS.keyboard.startNote,
