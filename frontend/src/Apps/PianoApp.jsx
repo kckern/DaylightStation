@@ -37,6 +37,7 @@ import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.js
 import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
+import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import './PianoApp.scss';
 
 /**
@@ -165,9 +166,11 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <ConnectGate>
           <PianoPlaybackProvider>
-            <PianoWakeLockProvider>
-              <PianoShell />
-            </PianoWakeLockProvider>
+            <PianoMixProvider>
+              <PianoWakeLockProvider>
+                <PianoShell />
+              </PianoWakeLockProvider>
+            </PianoMixProvider>
           </PianoPlaybackProvider>
         </ConnectGate>
       </PianoMidiProvider>
