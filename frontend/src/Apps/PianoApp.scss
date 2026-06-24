@@ -1215,3 +1215,20 @@
   border-top: 1px solid rgba(255,255,255,0.08);
 }
 .piano-score-player__keys .piano-keyboard { height: 100%; }
+
+// Title moved into the body (centered). Scroll mode: fixed slot above the score,
+// no vertical scroll. Wrap mode: at the top of the page, scrolls out of view.
+.piano-score-player__scroll--horizontal { overflow-y: hidden; }
+.piano-score-bodytitle { text-align: center; padding: 0.5rem 1rem 0.4rem; background: #fcfaf4; }
+.piano-score-bodytitle__name {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  color: #2a2620; font: inherit; font-weight: 800; font-size: 1.5rem;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.piano-score-bodytitle__caret { opacity: 0.5; font-size: 0.7em; }
+.piano-score-bodytitle__meta {
+  display: flex; flex-wrap: wrap; gap: 1.1rem; justify-content: center;
+  margin-top: 0.3rem; color: #6a6256; font-size: 0.92rem;
+  b { color: #2a2620; font-weight: 600; margin-right: 0.25rem; text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.04em; }
+}
+.piano-score-bodytitle-slot { flex: 0 0 auto; }
