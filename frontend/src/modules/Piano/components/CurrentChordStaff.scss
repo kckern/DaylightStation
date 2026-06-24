@@ -15,6 +15,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  // abcjs paints the brace and the system/connecting barline with
+  // fill/stroke="currentColor". Pin the container colour to black so those
+  // inherited-colour elements read solid black on the white-paper card,
+  // instead of inheriting the near-white --piano-fg theme foreground.
+  color: #1a1a1a;
 
   // Black notes and staff on cream background
   .abcjs-note,
