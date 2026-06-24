@@ -141,3 +141,49 @@ V:LH clef=bass
 
   return abc;
 };
+
+/**
+ * Generate ABC for a melodic drill — a played figure (not a chord) on a grand
+ * staff, with fingering numbers. Content-agnostic: drives any lesson drill whose
+ * data shape is { meter, hands: { right:[cell], left:[cell] } }.
+ *
+ * Unlike generateAbc (which stacks simultaneous notes into one chord), this lays
+ * notes out horizontally as a played sequence. Each `hand` is an array of cells
+ * (e.g. ascending then descending), and each cell is one measure. Notes carry an
+ * optional `finger` (1–5), rendered via abcjs `!n!` fingering decorations.
+ *
+ * @param {object} drill - { meter, hands: { right:[{notes}], left:[{notes}] } }
+ * @param {string} [keySignature='C']
+ * @returns {string} ABC tune string
+ */
+export const generateMelodyAbc = (drill, keySignature = 'C') => {
+  const meter = drill?.meter || '4/4';
+  const noteToken = (n) => {
+    if (!n || n.rest) return 'x';
+    const finger = n.finger != null ? `!${n.finger}!` : '';
+    return finger + midiToAbc(n.midi, keySignature);
+  };
+  // One cell → one measure of space-separated note tokens.
+  const cellToMeasure = (cell) => (cell?.notes || []).map(noteToken).join(' ') || 'x';
+  // Join a hand's cells (ascending | descending) into a barred voice line.
+  const handLine = (hand) => {
+    const cells = Array.isArray(hand) ? hand : [];
+    if (cells.length === 0) return 'x |]';
+    return cells.map(cellToMeasure).join(' | ') + ' |]';
+  };
+
+  const rh = handLine(drill?.hands?.right);
+  const lh = handLine(drill?.hands?.left);
+
+  return `X:1
+L:1/16
+M:${meter}
+K:${keySignature}
+%%staffsep 70
+%%sysstaffsep 50
+%%staves {(RH) (LH)}
+V:RH clef=treble
+V:LH clef=bass
+[V:RH] ${rh}
+[V:LH] ${lh}`;
+};
