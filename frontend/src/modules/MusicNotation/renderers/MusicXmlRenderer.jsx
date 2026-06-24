@@ -15,7 +15,7 @@ import { vexflowRender } from './vexflowRender.js';
  * @param {(res:{width,height,events}) => void} [onLayout]
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, score: scoreProp, width, onLayout, children }) {
+export function MusicXmlRenderer({ musicXml, score: scoreProp, width, flow = 'wrapped', scale = 1, onLayout, children }) {
   const hostRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
 
@@ -30,14 +30,14 @@ export function MusicXmlRenderer({ musicXml, score: scoreProp, width, onLayout, 
     if (!host || !score) return;
     const w = width || host.parentElement?.clientWidth || 1000;
     try {
-      const res = vexflowRender(host, score, { width: w });
+      const res = vexflowRender(host, score, { width: w, flow, scale });
       setDims({ width: res.width, height: res.height });
       onLayout?.(res);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('MusicXmlRenderer: render failed', err?.message);
     }
-  }, [score, width, onLayout]);
+  }, [score, width, flow, scale, onLayout]);
 
   if (!score) {
     return (

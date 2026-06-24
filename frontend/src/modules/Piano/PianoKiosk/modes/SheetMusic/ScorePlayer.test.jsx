@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
@@ -37,12 +38,14 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
 import ScorePlayer from './ScorePlayer.jsx';
 
 const play = (note) => act(() => { h.noteCb?.({ type: 'note_on', note, velocity: 80 }); });
+const renderPlayer = () =>
+  render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
   beforeEach(() => { h.noteCb = null; });
 
   it('advances on the correct note and ignores wrong notes', () => {
-    render(<ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} />);
+    renderPlayer();
 
     // Layout reported 4 melody events; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -65,7 +68,7 @@ describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
   });
 
   it('does not advance past the end on extra notes', () => {
-    render(<ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} />);
+    renderPlayer();
     for (const n of [64, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
   });
