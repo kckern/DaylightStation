@@ -5,6 +5,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { usePianoBreadcrumbBar } from './PianoBreadcrumbContext.jsx';
 import PianoSettingsSheet from './PianoSettingsSheet.jsx';
+import PianoUserChip from './PianoUserChip.jsx';
 import Icon from './icons/Icon.jsx';
 
 /**
@@ -63,16 +64,19 @@ export function PianoChrome({ modeLabel, modeKey }) {
         })}
       </nav>
 
-      <button
-        type="button"
-        className={`piano-chrome__chip piano-chrome__chip--${connected ? 'on' : 'off'}`}
-        onClick={() => setSettingsOpen(true)}
-        aria-label="Settings"
-        title="Settings"
-      >
-        <span className="piano-chrome__dot" />
-        <span className="piano-chrome__chiplabel">{activeName}</span>
-      </button>
+      <div className="piano-chrome__right">
+        <PianoUserChip />
+        <button
+          type="button"
+          className={`piano-chrome__chip piano-chrome__chip--${connected ? 'on' : 'off'}`}
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <span className="piano-chrome__dot" />
+          <span className="piano-chrome__chiplabel">{activeName}</span>
+        </button>
+      </div>
 
       <PianoSettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>

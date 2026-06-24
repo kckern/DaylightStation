@@ -3,7 +3,7 @@ import { Routes, Route, NavLink } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
-import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
 import StudioPlay from './StudioPlay.jsx';
 import StudioRecordings from './StudioRecordings.jsx';
@@ -22,11 +22,11 @@ import StudioPlayback from './StudioPlayback.jsx';
 export function Studio() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio' }), []);
   const { isPlaying, subscribe, connected } = usePianoMidi();
-  const { pianoId } = usePianoKioskConfig();
+  const { currentUser } = usePianoUser();
   const { recording, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
   const [confirmId, setConfirmId] = useState(null);
-  const studioBase = `api/v1/piano/${pianoId}/studio`;
+  const studioBase = currentUser ? `api/v1/piano/users/${currentUser}/studio` : null;
 
   // Count-up timer while recording (drives the Record button's MM:SS readout).
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -40,6 +40,7 @@ export function Studio() {
   }, [recording]);
 
   const loadTakes = useCallback(async () => {
+    if (!studioBase) { setTakes([]); return; }
     try {
       const res = await DaylightAPI(studioBase);
       setTakes(res?.takes ?? []);
@@ -51,6 +52,7 @@ export function Studio() {
   useEffect(() => { loadTakes(); }, [loadTakes]);
 
   const saveTake = useCallback(async (take) => {
+    if (!studioBase) return;
     try {
       const title = `Take ${new Date().toLocaleString()}`;
       const res = await DaylightAPI(studioBase, {

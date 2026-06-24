@@ -7,7 +7,7 @@ import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
-import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { useStudioPlayback } from './useStudioPlayback.js';
 import Icon from '../../icons/Icon.jsx';
@@ -123,16 +123,17 @@ export default function StudioPlayback() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio-playback' }), []);
   const { id } = useParams();
   const navigate = useNavigate();
-  const { pianoId } = usePianoKioskConfig();
+  const { currentUser } = usePianoUser();
   const { activeNotes, noteHistory, pressNote, releaseNote, connected } = usePianoMidi();
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
   const [take, setTake] = useState(undefined); // undefined=loading, null=missing
 
   useEffect(() => {
+    if (!currentUser) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const data = await DaylightAPI(`api/v1/piano/${pianoId}/studio/${id}`);
+        const data = await DaylightAPI(`api/v1/piano/users/${currentUser}/studio/${id}`);
         if (!cancelled) setTake(data || null);
       } catch (err) {
         if (!cancelled) setTake(null);
@@ -140,7 +141,7 @@ export default function StudioPlayback() {
       }
     })();
     return () => { cancelled = true; };
-  }, [pianoId, id, logger]);
+  }, [currentUser, id, logger]);
 
   const pb = useStudioPlayback({ events: take?.events, pressNote, releaseNote });
   usePianoBreadcrumb(useMemo(() => [{ label: 'Recordings' }, { label: take?.title || 'Take' }], [take?.title]));

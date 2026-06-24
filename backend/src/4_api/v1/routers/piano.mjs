@@ -7,47 +7,205 @@ import {
   deleteYaml,
 } from '#system/utils/FileIO.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
+import { userService } from '#system/config/UserService.mjs';
 
 /**
- * Piano kiosk API — studio take persistence.
+ * Piano kiosk API.
  *
- * A household can have multiple piano kiosks (one per instrument), so takes are
- * scoped by pianoId: data/household[-{id}]/apps/piano/studio/{pianoId}/{id}.yml.
- * No MIDI happens here — the browser owns Web-MIDI; this is plain CRUD.
+ * Per-user, not per-device: the piano has a roster (piano.yml → users.primary,
+ * mirroring fitness) and each player gets their own recordings, lesson progress,
+ * and preferences under data/users/{id}/apps/piano/. The browser owns Web-MIDI;
+ * this layer is plain CRUD.
  *
  * Routes (mounted at /api/v1/piano):
- *   GET    /:pianoId/studio        → { takes: [{id,title,created,durationMs,eventCount}] }
- *   GET    /:pianoId/studio/:id    → { id, title, created, durationMs, events }
- *   POST   /:pianoId/studio        → { id, ... }  (body: { title, durationMs, events })
- *   PATCH  /:pianoId/studio/:id    → { id, title, favorite }  (body: { title?, favorite? })
- *   DELETE /:pianoId/studio/:id    → { ok, id }
+ *   GET    /users                          → [{ id, name, group_label }]  (roster)
+ *
+ *   Studio takes (recordings), scoped to a user:
+ *   GET    /users/:userId/studio           → { takes: [{id,title,created,durationMs,eventCount,favorite}] }
+ *   GET    /users/:userId/studio/:id        → full take (events)
+ *   POST   /users/:userId/studio            → { id, ... }  (body: { title, durationMs, events })
+ *   PATCH  /users/:userId/studio/:id        → curate (body: { title?, favorite? })
+ *   DELETE /users/:userId/studio/:id        → { ok, id }
+ *
+ *   Preferences (voice, shaders, etc.) — opaque per-user blob:
+ *   GET    /users/:userId/preferences       → { ...prefs }
+ *   PUT    /users/:userId/preferences        → { ...prefs }  (body merged)
+ *
+ *   Lesson progress / history:
+ *   GET    /users/:userId/progress           → { collections: { [collection]: { [drillId]: {...} } } }
+ *   PUT    /users/:userId/progress/:collection/:drillId → record an attempt (body merged)
+ *
+ *   Lesson drills (content, read-only):
+ *   GET    /lessons/:collection              → index
+ *   GET    /lessons/:collection/:id          → drill module
  */
 export function createPianoRouter({ configService, logger = console }) {
   const router = express.Router();
-  const studioRoot = configService.getHouseholdPath('apps/piano/studio');
 
-  // Reject ids/segments that could escape their directory.
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
+  // A userId must be a real, known user (guards arbitrary dir creation).
+  const knownUser = (userId) => safeSegment(userId) && !!configService.getUserProfile(userId);
+  const userPianoDir = (userId, ...sub) => (knownUser(userId) ? path.join(configService.getUserDir(userId), 'apps', 'piano', ...sub) : null);
 
-  // Per-piano studio dir, with containment check.
-  const pianoDir = (pianoId) => {
-    if (!safeSegment(pianoId)) return null;
-    const dir = path.join(studioRoot, pianoId);
-    return dir.startsWith(studioRoot + path.sep) ? dir : null;
-  };
+  // ── Roster ────────────────────────────────────────────────────────────────
+  router.get('/users', (req, res) => {
+    try {
+      const cfg = configService.getHouseholdAppConfig(null, 'piano') || {};
+      const primary = Array.isArray(cfg.users?.primary) ? cfg.users.primary : [];
+      const users = userService.hydrateUsers(primary).map((u) => ({
+        id: u.id,
+        name: u.name,
+        group_label: u.group_label || null,
+      }));
+      res.json({ users });
+    } catch (err) {
+      logger.error?.('piano.users.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
 
-  // ── Lesson drills (read-only, content-driven) ────────────────────────────
-  // A lesson "collection" is a folder of YAML drill modules under
-  // media/docs/piano-lessons/{collection}/, with an index.yml catalog. All
-  // content (titles, section labels, notes, fingering) lives in the YAML — the
-  // kiosk renderer is generic. e.g. collection 'hannon' → exercises {01..30}.yml.
+  // ── Studio takes (per-user) ─────────────────────────────────────────────────
+  router.get('/users/:userId/studio', (req, res) => {
+    try {
+      const dir = userPianoDir(req.params.userId, 'studio');
+      if (!dir) return res.status(400).json({ error: 'Invalid user' });
+      const takes = listYamlFiles(dir).map((id) => {
+        const data = loadYaml(path.join(dir, id)) || {};
+        return {
+          id,
+          title: data.title || id,
+          created: data.created || null,
+          durationMs: data.durationMs || 0,
+          eventCount: Array.isArray(data.events) ? data.events.length : 0,
+          favorite: !!data.favorite,
+        };
+      });
+      res.json({ takes });
+    } catch (err) {
+      logger.error?.('piano.studio.list.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/users/:userId/studio/:id', (req, res) => {
+    const dir = userPianoDir(req.params.userId, 'studio');
+    if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+    const data = loadYaml(path.join(dir, req.params.id));
+    if (!data) return res.status(404).json({ error: 'Take not found' });
+    res.json(data);
+  });
+
+  router.post('/users/:userId/studio', (req, res) => {
+    try {
+      const dir = userPianoDir(req.params.userId, 'studio');
+      if (!dir) return res.status(400).json({ error: 'Invalid user' });
+      const { title, durationMs, events } = req.body || {};
+      if (!Array.isArray(events) || events.length === 0) {
+        return res.status(400).json({ error: 'events (non-empty array) required' });
+      }
+      const id = shortId();
+      const data = {
+        id,
+        userId: req.params.userId,
+        title: title || `Take ${id}`,
+        created: new Date().toISOString(),
+        durationMs: Number(durationMs) || 0,
+        events,
+      };
+      saveYaml(path.join(dir, id), data);
+      logger.info?.('piano.studio.save', { userId: req.params.userId, id, events: events.length });
+      res.status(201).json(data);
+    } catch (err) {
+      logger.error?.('piano.studio.create.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.patch('/users/:userId/studio/:id', (req, res) => {
+    try {
+      const dir = userPianoDir(req.params.userId, 'studio');
+      if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+      const data = loadYaml(path.join(dir, req.params.id));
+      if (!data) return res.status(404).json({ error: 'Take not found' });
+      const { title, favorite } = req.body || {};
+      if (typeof title === 'string' && title.trim()) data.title = title.trim();
+      if (typeof favorite === 'boolean') data.favorite = favorite;
+      saveYaml(path.join(dir, req.params.id), data);
+      res.json({ id: req.params.id, title: data.title, favorite: !!data.favorite });
+    } catch (err) {
+      logger.error?.('piano.studio.update.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.delete('/users/:userId/studio/:id', (req, res) => {
+    const dir = userPianoDir(req.params.userId, 'studio');
+    if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+    const deleted = deleteYaml(path.join(dir, req.params.id));
+    if (!deleted) return res.status(404).json({ error: 'Take not found' });
+    res.json({ ok: true, id: req.params.id });
+  });
+
+  // ── Preferences (per-user opaque blob) ──────────────────────────────────────
+  router.get('/users/:userId/preferences', (req, res) => {
+    const dir = userPianoDir(req.params.userId);
+    if (!dir) return res.status(400).json({ error: 'Invalid user' });
+    res.json(loadYaml(path.join(dir, 'preferences')) || {});
+  });
+
+  router.put('/users/:userId/preferences', (req, res) => {
+    try {
+      const dir = userPianoDir(req.params.userId);
+      if (!dir) return res.status(400).json({ error: 'Invalid user' });
+      const current = loadYaml(path.join(dir, 'preferences')) || {};
+      const merged = { ...current, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+      saveYaml(path.join(dir, 'preferences'), merged);
+      res.json(merged);
+    } catch (err) {
+      logger.error?.('piano.preferences.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Lesson progress / history (per-user) ────────────────────────────────────
+  router.get('/users/:userId/progress', (req, res) => {
+    const dir = userPianoDir(req.params.userId);
+    if (!dir) return res.status(400).json({ error: 'Invalid user' });
+    res.json(loadYaml(path.join(dir, 'progress')) || { collections: {} });
+  });
+
+  router.put('/users/:userId/progress/:collection/:drillId', (req, res) => {
+    try {
+      const dir = userPianoDir(req.params.userId);
+      if (!dir || !safeSegment(req.params.collection) || !safeSegment(req.params.drillId)) {
+        return res.status(400).json({ error: 'Invalid params' });
+      }
+      const progress = loadYaml(path.join(dir, 'progress')) || { collections: {} };
+      if (!progress.collections) progress.collections = {};
+      const col = progress.collections[req.params.collection] || (progress.collections[req.params.collection] = {});
+      const prev = col[req.params.drillId] || {};
+      col[req.params.drillId] = {
+        ...prev,
+        ...(req.body && typeof req.body === 'object' ? req.body : {}),
+        lastPlayed: new Date().toISOString(),
+        plays: (prev.plays || 0) + 1,
+      };
+      saveYaml(path.join(dir, 'progress'), progress);
+      logger.info?.('piano.progress.record', { userId: req.params.userId, collection: req.params.collection, drillId: req.params.drillId });
+      res.json(col[req.params.drillId]);
+    } catch (err) {
+      logger.error?.('piano.progress.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Lesson drills (content, read-only) ──────────────────────────────────────
   const lessonsRoot = path.join(configService.getMediaDir(), 'docs', 'piano-lessons');
   const lessonDir = (collection) => {
     if (!safeSegment(collection)) return null;
     const dir = path.join(lessonsRoot, collection);
     return dir.startsWith(lessonsRoot + path.sep) ? dir : null;
   };
-  // Drill ids are simple slugs (e.g. zero-padded numbers); 'index' is the catalog.
   const safeDrillId = (id) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
 
   router.get('/lessons/:collection', (req, res) => {
@@ -72,100 +230,6 @@ export function createPianoRouter({ configService, logger = console }) {
       res.json(data);
     } catch (err) {
       logger.error?.('piano.lessons.read.error', { collection: req.params.collection, id: req.params.id, error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.get('/:pianoId/studio', (req, res) => {
-    try {
-      const dir = pianoDir(req.params.pianoId);
-      if (!dir) return res.status(400).json({ error: 'Invalid piano id' });
-      const ids = listYamlFiles(dir); // [] if dir missing
-      const takes = ids.map((id) => {
-        const data = loadYaml(path.join(dir, id)) || {};
-        return {
-          id,
-          title: data.title || id,
-          created: data.created || null,
-          durationMs: data.durationMs || 0,
-          eventCount: Array.isArray(data.events) ? data.events.length : 0,
-          favorite: !!data.favorite,
-        };
-      });
-      res.json({ takes });
-    } catch (err) {
-      logger.error?.('piano.studio.list.error', { error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.get('/:pianoId/studio/:id', (req, res) => {
-    try {
-      const dir = pianoDir(req.params.pianoId);
-      if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
-      const data = loadYaml(path.join(dir, req.params.id));
-      if (!data) return res.status(404).json({ error: 'Take not found' });
-      res.json(data);
-    } catch (err) {
-      logger.error?.('piano.studio.read.error', { id: req.params.id, error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.post('/:pianoId/studio', (req, res) => {
-    try {
-      const dir = pianoDir(req.params.pianoId);
-      if (!dir) return res.status(400).json({ error: 'Invalid piano id' });
-      const { title, durationMs, events } = req.body || {};
-      if (!Array.isArray(events) || events.length === 0) {
-        return res.status(400).json({ error: 'events (non-empty array) required' });
-      }
-      const id = shortId();
-      const data = {
-        id,
-        pianoId: req.params.pianoId,
-        title: title || `Take ${id}`,
-        created: new Date().toISOString(),
-        durationMs: Number(durationMs) || 0,
-        events,
-      };
-      saveYaml(path.join(dir, id), data);
-      logger.info?.('piano.studio.save', { pianoId: req.params.pianoId, id, events: events.length });
-      res.status(201).json(data);
-    } catch (err) {
-      logger.error?.('piano.studio.create.error', { error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Curate a take: rename and/or (un)favorite. Merges into the stored YAML.
-  router.patch('/:pianoId/studio/:id', (req, res) => {
-    try {
-      const dir = pianoDir(req.params.pianoId);
-      if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
-      const data = loadYaml(path.join(dir, req.params.id));
-      if (!data) return res.status(404).json({ error: 'Take not found' });
-      const { title, favorite } = req.body || {};
-      if (typeof title === 'string' && title.trim()) data.title = title.trim();
-      if (typeof favorite === 'boolean') data.favorite = favorite;
-      saveYaml(path.join(dir, req.params.id), data);
-      logger.info?.('piano.studio.update', { pianoId: req.params.pianoId, id: req.params.id, favorite: !!data.favorite });
-      res.json({ id: req.params.id, title: data.title, favorite: !!data.favorite });
-    } catch (err) {
-      logger.error?.('piano.studio.update.error', { id: req.params.id, error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  router.delete('/:pianoId/studio/:id', (req, res) => {
-    try {
-      const dir = pianoDir(req.params.pianoId);
-      if (!dir || !safeSegment(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
-      const deleted = deleteYaml(path.join(dir, req.params.id));
-      if (!deleted) return res.status(404).json({ error: 'Take not found' });
-      res.json({ ok: true, id: req.params.id });
-    } catch (err) {
-      logger.error?.('piano.studio.delete.error', { id: req.params.id, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
