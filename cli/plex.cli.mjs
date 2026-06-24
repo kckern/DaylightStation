@@ -48,34 +48,47 @@ function dockerRead(filePath) {
 }
 
 function loadConfig() {
-    // Token from household auth
-    const authRaw = dockerRead('data/household/auth/plex.yml');
-    if (!authRaw) {
-        console.error('Error: cannot read data/household/auth/plex.yml from the daylight-station container.');
-        console.error('Ensure the container is running.');
-        process.exit(1);
-    }
-    const auth = yaml.load(authRaw) || {};
-    const token = auth.token;
-    if (!token) {
-        console.error('Error: data/household/auth/plex.yml has no `token` field.');
-        process.exit(1);
+    // Env overrides let the CLI run anywhere (e.g. a workstation that is not the
+    // Docker host) without `docker exec`. If both are set we skip Docker entirely.
+    const envToken = process.env.PLEX_TOKEN;
+    const envHost = process.env.PLEX_HOST;
+    if (envToken && envHost) {
+        return { token: envToken, host: envHost };
     }
 
-    // Host from services.yml — keyed by current hostname
-    const servicesRaw = dockerRead('data/system/config/services.yml');
-    if (!servicesRaw) {
-        console.error('Error: cannot read data/system/config/services.yml from the container.');
-        process.exit(1);
+    // Token from household auth (env override wins)
+    let token = envToken;
+    if (!token) {
+        const authRaw = dockerRead('data/household/auth/plex.yml');
+        if (!authRaw) {
+            console.error('Error: cannot read data/household/auth/plex.yml from the daylight-station container.');
+            console.error('Ensure the container is running, or set PLEX_TOKEN (and PLEX_HOST) to run off-host.');
+            process.exit(1);
+        }
+        token = (yaml.load(authRaw) || {}).token;
+        if (!token) {
+            console.error('Error: data/household/auth/plex.yml has no `token` field.');
+            process.exit(1);
+        }
     }
-    const services = yaml.load(servicesRaw) || {};
-    const plexHosts = services.plex || {};
-    const host = process.env.PLEX_HOST || plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
+
+    // Host from services.yml — keyed by current hostname (env override wins)
+    let host = envHost;
     if (!host) {
-        console.error('Error: no plex host found in services.yml for the current host.');
-        console.error(`Tried hostname=${hostname()}, fallback kckern-server, fallback docker.`);
-        console.error('Set PLEX_HOST env var to override.');
-        process.exit(1);
+        const servicesRaw = dockerRead('data/system/config/services.yml');
+        if (!servicesRaw) {
+            console.error('Error: cannot read data/system/config/services.yml from the container.');
+            console.error('Set PLEX_HOST env var to override.');
+            process.exit(1);
+        }
+        const plexHosts = (yaml.load(servicesRaw) || {}).plex || {};
+        host = plexHosts[hostname()] || plexHosts['kckern-server'] || plexHosts.docker;
+        if (!host) {
+            console.error('Error: no plex host found in services.yml for the current host.');
+            console.error(`Tried hostname=${hostname()}, fallback kckern-server, fallback docker.`);
+            console.error('Set PLEX_HOST env var to override.');
+            process.exit(1);
+        }
     }
 
     return { token, host };
@@ -94,7 +107,8 @@ const flags = {
     summary: null,
     titleSort: null,
     tagline: null,
-    fromYaml: null
+    fromYaml: null,
+    ids: null
 };
 
 // Flags that consume the next argument as their value
@@ -104,7 +118,8 @@ const valueFlags = {
     '--summary': 'summary',
     '--titleSort': 'titleSort',
     '--tagline': 'tagline',
-    '--from-yaml': 'fromYaml'
+    '--from-yaml': 'fromYaml',
+    '--ids': 'ids'
 };
 
 // Track indices of flag-values so we can exclude them from positional args
@@ -124,6 +139,15 @@ const positionalArgs = args.filter((arg, i) =>
 
 const command = positionalArgs[0];
 const commandArgs = positionalArgs.slice(1);
+
+/**
+ * Map Plex content-type strings to the numeric `type` codes the API expects
+ * when creating/editing collections.
+ */
+const PLEX_TYPE_NUM = {
+    movie: 1, show: 2, season: 3, episode: 4, trailer: 5,
+    artist: 8, album: 9, track: 10, photo: 13, collection: 18
+};
 
 /**
  * Plex API client for CLI operations
@@ -251,6 +275,125 @@ class PlexCLI {
             headers: { Accept: 'application/json' }
         });
         return response.data;
+    }
+
+    /**
+     * Authenticated POST request to Plex API (used for creating collections).
+     */
+    async post(endpoint, params = {}) {
+        const url = `${this.baseUrl}/${endpoint}`;
+        const separator = url.includes('?') ? '&' : '?';
+        const searchParams = new URLSearchParams(params);
+        const fullUrl = `${url}${separator}X-Plex-Token=${this.token}&${searchParams.toString()}`;
+        const response = await axios.post(fullUrl, null, { headers: { Accept: 'application/json' } });
+        return response.data;
+    }
+
+    /**
+     * Authenticated DELETE request to Plex API (used for removing collection items / collections).
+     */
+    async del(endpoint, params = {}) {
+        const url = `${this.baseUrl}/${endpoint}`;
+        const separator = url.includes('?') ? '&' : '?';
+        const qs = new URLSearchParams(params).toString();
+        const fullUrl = `${url}${separator}X-Plex-Token=${this.token}${qs ? `&${qs}` : ''}`;
+        const response = await axios.delete(fullUrl, { headers: { Accept: 'application/json' } });
+        return response.data;
+    }
+
+    /**
+     * Resolve (and cache) the server's machineIdentifier — required to build the
+     * `server://...` URIs that collection create/add operations expect.
+     */
+    async getMachineIdentifier() {
+        if (this._machineId) return this._machineId;
+        const data = await this.fetch('');
+        this._machineId = data?.MediaContainer?.machineIdentifier;
+        if (!this._machineId) throw new Error('Could not resolve server machineIdentifier');
+        return this._machineId;
+    }
+
+    /**
+     * List collections — in one section, or across all sections when sectionKey is null.
+     */
+    async getCollections(sectionKey = null) {
+        const sections = sectionKey
+            ? [{ key: sectionKey, title: null }]
+            : await this.getLibraries();
+        const out = [];
+        for (const lib of sections) {
+            const data = await this.fetch(`library/sections/${lib.key}/collections`);
+            const items = data?.MediaContainer?.Metadata || [];
+            out.push(...items.map(c => ({
+                id: c.ratingKey, title: c.title, childCount: c.childCount,
+                subtype: c.subtype, section: lib.key, sectionTitle: lib.title
+            })));
+        }
+        return out;
+    }
+
+    /**
+     * Get the child items of a collection.
+     */
+    async getCollectionChildren(id) {
+        const data = await this.fetch(`library/collections/${id}/children`);
+        return data?.MediaContainer?.Metadata || [];
+    }
+
+    /**
+     * Create a collection seeded with the given item IDs. Section and content
+     * type are inferred from the first item unless sectionId is supplied.
+     */
+    async createCollection(name, ids, { sectionId = null } = {}) {
+        if (!ids.length) throw new Error('createCollection requires at least one item id');
+        const first = await this.getMetadata(ids[0]);
+        if (!first) throw new Error(`First item ${ids[0]} not found`);
+        const typeNum = PLEX_TYPE_NUM[first.type];
+        if (!typeNum) throw new Error(`Unsupported item type "${first.type}" for a collection`);
+        const section = sectionId || first.librarySectionID;
+        if (!section) throw new Error('Could not resolve sectionId; pass --section');
+        const machine = await this.getMachineIdentifier();
+        const uri = `server://${machine}/com.plexapp.plugins.library/library/metadata/${ids.join(',')}`;
+        const data = await this.post('library/collections', {
+            type: String(typeNum), title: name, smart: '0', sectionId: String(section), uri
+        });
+        return data?.MediaContainer?.Metadata?.[0] || null;
+    }
+
+    /**
+     * Rename a collection. Pass lock=true to also set title.locked so a Plex
+     * agent refresh won't overwrite it.
+     */
+    async renameCollection(id, name, { lock = false } = {}) {
+        const meta = await this.getMetadata(id);
+        if (!meta) throw new Error(`Collection ${id} not found`);
+        const params = { type: '18', id: String(id), 'title.value': name };
+        if (lock) params['title.locked'] = '1';
+        await this.put(`library/sections/${meta.librarySectionID}/all`, params);
+        return this.getMetadata(id);
+    }
+
+    /**
+     * Add item(s) to a collection.
+     */
+    async addToCollection(id, itemIds) {
+        const machine = await this.getMachineIdentifier();
+        const uri = `server://${machine}/com.plexapp.plugins.library/library/metadata/${itemIds.join(',')}`;
+        return this.put(`library/collections/${id}/items`, { uri });
+    }
+
+    /**
+     * Remove a single item from a collection.
+     */
+    async removeFromCollection(id, itemId) {
+        return this.del(`library/collections/${id}/items/${itemId}`);
+    }
+
+    /**
+     * Delete an entire collection (does not delete the underlying media).
+     */
+    async deleteCollection(id) {
+        return this.del(`library/collections/${id}`);
     }
 
     /**
@@ -563,6 +706,128 @@ async function cmdSetFromYaml(plex, yamlPath) {
     if (errors.length > 0) process.exit(1);
 }
 
+function parseIdList(...sources) {
+    const ids = [];
+    for (const s of sources) {
+        if (!s) continue;
+        for (const part of String(s).split(',')) {
+            const id = part.trim();
+            if (id) ids.push(id);
+        }
+    }
+    return ids;
+}
+
+async function cmdCollection(plex, sub, rest) {
+    switch (sub) {
+        case 'list':
+        case 'ls': {
+            const cols = await plex.getCollections(flags.section);
+            if (flags.json) { console.log(JSON.stringify(cols, null, 2)); return; }
+            if (cols.length === 0) { console.log('\nNo collections found.'); return; }
+            console.log(`\nCollections${flags.section ? ` in section ${flags.section}` : ''}:`);
+            console.log('='.repeat(60));
+            for (const c of cols) {
+                console.log(`\n  [${c.id}] ${c.title}`);
+                console.log(`      Items: ${c.childCount ?? '?'}${c.subtype ? `  (${c.subtype})` : ''}`);
+                if (c.sectionTitle) console.log(`      Library: ${c.sectionTitle} [${c.section}]`);
+            }
+            console.log();
+            break;
+        }
+
+        case 'items':
+        case 'children': {
+            const id = rest[0];
+            if (!id) { console.error('Usage: plex collection items <id>'); process.exit(1); }
+            const kids = await plex.getCollectionChildren(id);
+            if (flags.json) { console.log(JSON.stringify(kids, null, 2)); return; }
+            console.log(`\n${kids.length} item(s) in collection ${id}:`);
+            console.log('='.repeat(60));
+            for (const k of kids) console.log(`  [${k.ratingKey}] ${k.title}${k.year ? ` (${k.year})` : ''}`);
+            console.log();
+            break;
+        }
+
+        case 'create': {
+            const name = flags.title || rest[0];
+            const ids = parseIdList(flags.ids, ...rest.slice(name === rest[0] ? 1 : 0));
+            if (!name) { console.error('Usage: plex collection create "<name>" --ids <id1,id2,...> [--section <id>]'); process.exit(1); }
+            if (!ids.length) { console.error('Error: provide item IDs via --ids <id1,id2,...> or as positional args'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would create "${name}" with ${ids.length} item(s): ${ids.join(', ')}`);
+                return;
+            }
+            const meta = await plex.createCollection(name, ids, { sectionId: flags.section });
+            console.log(`\n✓ Created collection [${meta?.ratingKey}] ${meta?.title} (childCount=${meta?.childCount})`);
+            break;
+        }
+
+        case 'rename': {
+            const id = rest[0];
+            const newName = flags.title || rest.slice(1).join(' ');
+            if (!id || !newName) { console.error('Usage: plex collection rename <id> "<newName>" [--lock]'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would rename ${id} → "${newName}"${flags.lock ? ' (locked)' : ''}`);
+                return;
+            }
+            const meta = await plex.renameCollection(id, newName, { lock: flags.lock });
+            console.log(`\n✓ Renamed [${id}] → ${meta?.title}${flags.lock ? ' (locked)' : ''}`);
+            break;
+        }
+
+        case 'add': {
+            const id = rest[0];
+            const itemIds = parseIdList(flags.ids, ...rest.slice(1));
+            if (!id || !itemIds.length) { console.error('Usage: plex collection add <id> <itemId> [itemId...]'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would add ${itemIds.length} item(s) to ${id}: ${itemIds.join(', ')}`);
+                return;
+            }
+            await plex.addToCollection(id, itemIds);
+            console.log(`\n✓ Added ${itemIds.length} item(s) to collection ${id}`);
+            break;
+        }
+
+        case 'remove':
+        case 'rm': {
+            const id = rest[0];
+            const itemIds = parseIdList(flags.ids, ...rest.slice(1));
+            if (!id || !itemIds.length) { console.error('Usage: plex collection remove <id> <itemId> [itemId...]'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would remove ${itemIds.length} item(s) from ${id}: ${itemIds.join(', ')}`);
+                return;
+            }
+            for (const itemId of itemIds) await plex.removeFromCollection(id, itemId);
+            console.log(`\n✓ Removed ${itemIds.length} item(s) from collection ${id}`);
+            break;
+        }
+
+        case 'delete': {
+            const id = rest[0];
+            if (!id) { console.error('Usage: plex collection delete <id>'); process.exit(1); }
+            const meta = await plex.getMetadata(id);
+            if (!meta) { console.error(`No item found with ID: ${id}`); process.exit(1); }
+            if (meta.type !== 'collection') {
+                console.error(`ID ${id} is a ${meta.type}, not a collection. Aborting.`);
+                process.exit(1);
+            }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would delete collection [${id}] ${meta.title}`);
+                return;
+            }
+            await plex.deleteCollection(id);
+            console.log(`\n✓ Deleted collection [${id}] ${meta.title}`);
+            break;
+        }
+
+        default:
+            console.error(`Unknown collection subcommand: ${sub || '(none)'}`);
+            console.error('Valid: list, items, create, rename, add, remove, delete');
+            process.exit(1);
+    }
+}
+
 function showHelp() {
     console.log(`
 Plex CLI - Search, verify, and edit Plex library items
@@ -577,16 +842,27 @@ Commands:
   verify <id> [...]        Check if ID(s) exist in Plex
   set <id>                 Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
+  collection <subcommand>  Manage collections (see below)
+
+Collection subcommands:
+  collection list [--section <id>]        List collections (all sections, or one)
+  collection items <id>                   List items in a collection
+  collection create "<name>" --ids a,b,c  Create a collection (section/type inferred from first item)
+  collection rename <id> "<name>" [--lock] Rename a collection
+  collection add <id> <itemId> [...]      Add item(s) to a collection
+  collection remove <id> <itemId> [...]   Remove item(s) from a collection
+  collection delete <id>                  Delete a collection (media is untouched)
 
 Options:
   --json                   Output as JSON
   --ids-only               Output only Plex IDs (search command)
   --deep                   Use hub search (finds episodes, tracks, etc.)
   --section <id>           Limit search to specific library section
-  --title "..."            (set) New title.value
+  --title "..."            (set/collection) New title.value
   --summary "..."          (set) New summary.value
   --titleSort "..."        (set) New titleSort.value
   --tagline "..."          (set) New tagline.value
+  --ids <a,b,c>            (collection) Comma-separated item IDs for create/add/remove
   --from-yaml <file>       (alt to positional) Manifest path for set-from-yaml
   --lock                   Also send .locked=1 (prevents agent overwrite — recommended for seasons)
   --dry-run                Show what would be sent without making the request
@@ -600,6 +876,13 @@ Examples:
   node plex.cli.mjs set 603856 --title "LIIFT MORE Super Block" --lock
   node plex.cli.mjs set 603856 --summary "..." --dry-run
   node plex.cli.mjs set-from-yaml data/_drafts/super-blocks-seasons.yml --lock
+  node plex.cli.mjs collection list --section 17
+  node plex.cli.mjs collection items 675687
+  node plex.cli.mjs collection create "Music Appreciation" --ids 412096,648969,243200
+  node plex.cli.mjs collection rename 675686 "Music Lessons" --lock
+  node plex.cli.mjs collection add 675686 379729 376471
+  node plex.cli.mjs collection remove 675686 243200
+  node plex.cli.mjs collection delete 675687
 `);
 }
 
@@ -644,6 +927,12 @@ async function main() {
             case 'set-from-yaml':
             case 'yaml':
                 await cmdSetFromYaml(plex, commandArgs[0] || flags.fromYaml);
+                break;
+
+            case 'collection':
+            case 'col':
+            case 'coll':
+                await cmdCollection(plex, commandArgs[0], commandArgs.slice(1));
                 break;
 
             default:
