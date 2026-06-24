@@ -736,6 +736,12 @@ const FitnessApp = () => {
     const n = Number(root?.momentum?.window_days);
     return Number.isFinite(n) && n > 0 ? n : 7;
   }, [fitnessConfiguration]);
+  // Number of weekly bars to compare (one per window). Config-driven; defaults to 4.
+  const momentumCompareWeeks = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const n = Number(root?.momentum?.compare_weeks);
+    return Number.isFinite(n) && n > 0 ? n : 4;
+  }, [fitnessConfiguration]);
 
   // Powerdown audio for the emergency-lockdown ceremony (config-driven).
   const emergencyAudioPath = useMemo(() => {
@@ -1459,6 +1465,7 @@ const FitnessApp = () => {
                       roster={momentumRoster}
                       householdLabel={householdLabel}
                       windowDays={momentumWindowDays}
+                      compareWeeks={momentumCompareWeeks}
                     >
                       <ScreenDataProvider sources={screenSources}>
                         <ScreenProvider config={{ ...screensConfig[activeScreen].layout, theme: screensConfig[activeScreen].theme }}>

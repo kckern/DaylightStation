@@ -41,13 +41,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.5rem;
     padding: 0.9rem 0.6rem;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.05);
-    border: 2px solid transparent;
-
-    &.is-ahead { border-color: #ff922b; box-shadow: 0 0 16px rgba(255, 146, 43, 0.4); }
   }
 
   &__avatar {
@@ -61,31 +58,42 @@
     &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
   }
   &__name { font-weight: 700; font-size: 1.1rem; }
+  &__min { font-variant-numeric: tabular-nums; opacity: 0.78; font-size: 0.95rem; }
 
-  &__ratio {
-    font-weight: 800;
-    font-size: 1.4rem;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    opacity: 0.92;
-    &.is-ahead { color: #ffb44c; }
-  }
-
-  &__min { font-variant-numeric: tabular-nums; opacity: 0.7; font-size: 0.95rem; }
-
-  // Stacked zone bar: the full track is the baseline; colored segments fill it.
-  &__bar {
+  // Weekly bar chart: same-scale vertical bars, oldest → newest. The newest
+  // (current) bar is highlighted; earlier weeks are muted for contrast.
+  &__weeks {
+    flex: 1 1 auto;
     width: 100%;
-    height: 0.7rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-    overflow: hidden;
+    min-height: 3.5rem;
     display: flex;
-    align-items: stretch;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.35rem;
   }
-  &__seg {
+  &__weekbar {
+    width: 1.5rem;
     height: 100%;
-    display: block;
-    &:first-child { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 4px 4px 0 0;
+    opacity: 0.55;
+
+    &.is-current {
+      opacity: 1;
+      box-shadow: 0 0 0 2px #ffb44c;
+      background: rgba(255, 180, 76, 0.12);
+    }
   }
+  &__weekfill {
+    width: 100%;
+    display: flex;
+    flex-direction: column; // fire (top) → active (bottom)
+    border-radius: 4px 4px 0 0;
+    overflow: hidden;
+    min-height: 2px;
+  }
+  &__weekseg { width: 100%; display: block; }
 }
