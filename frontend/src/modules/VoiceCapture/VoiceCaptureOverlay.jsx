@@ -72,7 +72,9 @@ export function VoiceCaptureOverlay({
             <div className="voice-capture-overlay__transcript">
               {transcript || (transcriptStatus === 'failed'
                 ? 'Transcription failed — your note was still saved.'
-                : 'Saved — your note will appear in the inbox shortly.')}
+                : error
+                  ? '' // an error is shown below; don't also claim it saved
+                  : 'Saved — your note will appear in the inbox shortly.')}
             </div>
             {error && <p className="voice-capture-overlay__error">{error}</p>}
             <div className="voice-capture-overlay__actions">
