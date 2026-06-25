@@ -137,6 +137,82 @@
     }
   }
 
+  // Settings gear — round, bottom-right on the bezel, just left of the exit.
+  .emulator-settings-toggle {
+    position: absolute;
+    bottom: 1rem;
+    right: 4rem;
+    z-index: 6;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.4);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.2rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.15s ease, background 0.15s ease;
+
+    &:hover, &:focus-visible { opacity: 1; background: rgba(0, 0, 0, 0.65); }
+  }
+
+  // Settings sheet (volume + future hooks).
+  .emulator-settings-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+
+    &__backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+    &__sheet {
+      position: absolute;
+      left: 50%;
+      bottom: 4.5rem;
+      transform: translateX(-50%);
+      width: min(520px, 92%);
+      padding: 1rem;
+      border-radius: 12px;
+      background: rgba(12, 16, 12, 0.94);
+      border: 1px solid rgba(132, 165, 42, 0.4);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-family: "Roboto Condensed", sans-serif;
+    }
+    &__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      button { background: none; border: none; color: #fff; font-size: 1rem; cursor: pointer; padding: 0.25rem 0.5rem; }
+    }
+    .touch-volume {
+      display: grid;
+      grid-template-columns: repeat(11, minmax(0, 1fr));
+      gap: 4px;
+      width: 100%;
+      touch-action: none;
+      .touch-volume-button {
+        height: 44px;
+        padding: 0;
+        cursor: pointer;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.12);
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .touch-volume-button.on { background: linear-gradient(180deg, #b6d94a, #6f9a1e); border-color: rgba(255, 255, 255, 0.5); }
+      .touch-volume-button.active { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6); }
+      .touch-volume-button:first-child.off { background: rgba(120, 49, 56, 0.8); border-color: rgba(220, 53, 69, 0.5); }
+      .touch-volume-button:first-child.on { background: linear-gradient(180deg, rgba(220, 53, 69, 0.95), rgba(185, 43, 58, 0.95)); }
+    }
+  }
+
   // Controller-panel toggle — a small 🎮 chip in the bottom-left corner. It
   // accepts clicks; everything else in this corner stays out of the way of the
   // emulator mount when the panel is collapsed.
