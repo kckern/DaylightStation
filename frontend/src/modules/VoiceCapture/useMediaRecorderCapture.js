@@ -3,7 +3,7 @@ import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
 function logger() {
-  if (!_logger) _logger = getLogger().child({ component: 'feedback-recorder' });
+  if (!_logger) _logger = getLogger().child({ component: 'voice-capture-recorder' });
   return _logger;
 }
 
@@ -41,7 +41,7 @@ async function preferBuiltInMic() {
   } catch { return null; }
 }
 
-export function useFeedbackRecorder() {
+export function useMediaRecorderCapture() {
   const [isRecording, setIsRecording] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
   const [error, setError] = useState(null);
@@ -90,7 +90,7 @@ export function useFeedbackRecorder() {
       };
       rafRef.current = requestAnimationFrame(sample);
     } catch (err) {
-      logger().warn('feedback.level-monitor-failed', { error: err.message });
+      logger().warn('voice.capture.level-monitor-failed', { error: err.message });
     }
   }, []);
 
@@ -107,13 +107,13 @@ export function useFeedbackRecorder() {
         autoGainControl: false,
         ...(builtInId ? { deviceId: { exact: builtInId } } : {}),
       };
-      logger().info('feedback.mic-select', { pinnedBuiltIn: !!builtInId });
+      logger().info('voice.capture.mic-select', { pinnedBuiltIn: !!builtInId });
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       } catch (constraintErr) {
         // Exact-device constraint can fail (device vanished); retry permissively.
-        logger().warn('feedback.mic-constraint-fallback', { error: constraintErr.name });
+        logger().warn('voice.capture.mic-constraint-fallback', { error: constraintErr.name });
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
@@ -129,12 +129,12 @@ export function useFeedbackRecorder() {
         const dur = Date.now() - startRef.current;
         teardown();
         setIsRecording(false);
-        logger().info('feedback.recorded', { durationMs: dur, bytes: blob.size, mimeType: mimeRef.current });
+        logger().info('voice.capture.recorded', { durationMs: dur, bytes: blob.size, mimeType: mimeRef.current });
         const resolve = resolveRef.current;
         resolveRef.current = null;
         if (resolve) resolve({ blob, durationMs: dur, mimeType: mimeRef.current });
       };
-      mr.onerror = (e) => { logger().error('feedback.recorder-error', { error: e.error?.message || 'unknown' }); };
+      mr.onerror = (e) => { logger().error('voice.capture.recorder-error', { error: e.error?.message || 'unknown' }); };
 
       monitorLevel(stream);
       startRef.current = Date.now();
@@ -142,9 +142,9 @@ export function useFeedbackRecorder() {
       mr.start();
       setIsRecording(true);
       timerRef.current = setInterval(() => setDurationMs(Date.now() - startRef.current), 200);
-      logger().info('feedback.record-start', { mimeType });
+      logger().info('voice.capture.record-start', { mimeType });
     } catch (err) {
-      logger().error('feedback.record-start-failed', { error: err.message, name: err.name });
+      logger().error('voice.capture.record-start-failed', { error: err.message, name: err.name });
       setError(err.name === 'NotAllowedError' ? 'Microphone permission denied.' : `Mic error: ${err.message}`);
       teardown();
       setIsRecording(false);
@@ -163,4 +163,4 @@ export function useFeedbackRecorder() {
   return { isRecording, durationMs, levelRef, error, start, stop };
 }
 
-export default useFeedbackRecorder;
+export default useMediaRecorderCapture;
