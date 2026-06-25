@@ -39,4 +39,23 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
     // numeric rule clamps to subject count.
     expect(eng._normalizeRequiredCount(3, 4, ['felix', 'milo', 'mom', 'g1'])).toBe(2);
   });
+
+  it('steady-state: a guest in-zone does NOT satisfy and is never missing', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    eng._latestInputs.zoneRankMap = { cold: 0, warm: 1, hot: 2 };
+    eng._latestInputs.zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
+    eng._captureLatestInputs({
+      activeParticipants: ['felix', 'g1'], guestIds: ['g1'],
+      zoneRankMap: { cold: 0, warm: 1, hot: 2 },
+      zoneInfoMap: { hot: { id: 'hot', name: 'Hot' } },
+    });
+    // require all in HOT; felix is cold (subject, fails), guest is hot.
+    const userZoneMap = { felix: 'cold', g1: 'hot' };
+    const res = eng._evaluateZoneRequirement('hot', 'all', ['felix', 'g1'], userZoneMap,
+      eng._latestInputs.zoneRankMap, eng._latestInputs.zoneInfoMap, 2);
+    expect(res.satisfied).toBe(false);                 // guest can't satisfy steady-state
+    expect(res.missingUsers).toEqual(['felix']);       // only the subject is blamed
+    expect(res.missingUsers).not.toContain('g1');      // guest never blamed
+  });
 });
