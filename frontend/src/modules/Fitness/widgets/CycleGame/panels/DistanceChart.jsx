@@ -121,8 +121,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // within the window, with hysteresis so it doesn't flap.
   const lastDists = riderIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
   const leaderM = lastDists.length ? Math.max(...lastDists) : 0;
-  const trailM = lastDists.length ? Math.min(...lastDists) : 0;
   const K_GAP = 4; // metres at which front-cluster expansion sets in
+  const K_GAP_FRAC = 0.5;  // log compression metre-scale as a fraction of the leader's
+                           // distance — keeps the scale's SHAPE constant across race
+                           // lengths (a fixed small k crushes the field as distances grow)
   const logRef = useRef(false);
   if (riderIds.length >= 2) {
     const sorted = [...lastDists].sort((a, b) => a - b);
@@ -134,13 +136,18 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     logRef.current = false;
   }
   const useLog = logRef.current;
-  // When leaders bunch (useLog), switch the vertical mapping to a leader-anchored
-  // gap log: the leader is pinned at the top and the first few metres behind it are
-  // magnified, so neck-and-neck riders separate on their own. When not crowded, the
-  // plain linear absolute-distance mapping is used.
+  // When leaders bunch (useLog), switch the vertical mapping to a gap log: the leader
+  // is pinned at the top and the first few metres behind it are magnified, so
+  // neck-and-neck riders separate on their own. When not crowded, the plain linear
+  // absolute-distance mapping is used.
+  // Zero-anchored log: the bottom of the scale is the START LINE (0 m), never the
+  // trailing rider — so the slowest rider shows their true progress up from zero
+  // instead of being pinned to the axis. k scales with the leader so the curve keeps
+  // its shape regardless of race length.
+  const kGap = Math.max(K_GAP, leaderM * K_GAP_FRAC);
   const yFor = (d) => {
     const frac = useLog
-      ? gapFrac(d, leaderM, trailM, K_GAP)
+      ? gapFrac(d, leaderM, 0, kGap)
       : Math.min(1, (d || 0) / D);
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
