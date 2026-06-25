@@ -180,6 +180,22 @@ export function createEmulatorSession({
     childLog.info('emulator.session.destroy', {});
   }
 
+  // Dispatch an ad-hoc `do:` action map through the SAME handler table the
+  // bindings use. This lets bezel hotspots (and any other UI affordance) emit
+  // music/chime/ha_scene/animation/governance/toast actions identically to a
+  // state-driven binding. Tolerant: unknown actions route to handlers.log.
+  function runActions(doMap = {}, context = {}) {
+    if (!doMap || typeof doMap !== 'object') return;
+    for (const [action, payload] of Object.entries(doMap)) {
+      const handler = handlers[action] || handlers.log;
+      try {
+        handler(payload, context);
+      } catch (err) {
+        childLog.warn('emulator.runActions.failed', { action, error: err && err.message });
+      }
+    }
+  }
+
   function getGameState() {
     return stateMap?.getState() ?? {};
   }
@@ -192,6 +208,7 @@ export function createEmulatorSession({
     start,
     stop,
     destroy,
+    runActions,
     getGameState,
     getWramBase,
     get _started() {

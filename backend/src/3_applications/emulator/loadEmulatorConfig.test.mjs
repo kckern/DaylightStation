@@ -153,3 +153,44 @@ describe('loadEmulatorConfig', () => {
     expect(rules.shader).toBe('dotmatrix');
   });
 });
+
+describe('presentation passthrough (bezel hotspots + overlays)', () => {
+  const withPresentation = {
+    ...gameboyManifest,
+    presentation: {
+      shader: 'dotmatrix',
+      chrome: 'gb-bezel',
+      screen: { x: 29, y: 10, width: 41, height: 66 },
+      hotspots: [{ id: 'speaker', action: 'volume', region: { x: 79, y: 64, width: 12, height: 22 } }],
+      overlays: [{ id: 'hr', source: 'fitness.heart_rate', format: 'bpm', region: { x: 15, y: 43, width: 12, height: 16 } }],
+    },
+    games: [
+      {
+        id: 'pokemon-red',
+        title: 'Pokémon Red',
+        rom: 'roms/red.gb',
+        governance: { mode: 'credit' },
+        // per-game override: add a badge overlay
+        presentation: {
+          overlays: [{ id: 'badges', source: 'state.badges', format: 'badge_meter', region: { x: 71, y: 33, width: 12, height: 10 } }],
+        },
+      },
+    ],
+  };
+
+  it('attaches the system presentation (screen/hotspots/overlays) to each game, game-merged', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: withPresentation }]);
+    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    expect(game.presentation.screen).toEqual({ x: 29, y: 10, width: 41, height: 66 });
+    expect(game.presentation.hotspots.map((h) => h.id)).toEqual(['speaker']);
+    // system 'hr' overlay + game 'badges' overlay both present
+    expect(game.presentation.overlays.map((o) => o.id).sort()).toEqual(['badges', 'hr']);
+  });
+
+  it('resolveGameRules exposes the merged presentation to the browser catalog', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: withPresentation }]);
+    const resolved = resolveGameRules(cfg, 'pokemon-red', null);
+    expect(resolved.presentation.hotspots[0].id).toBe('speaker');
+    expect(resolved.presentation.overlays.map((o) => o.id).sort()).toEqual(['badges', 'hr']);
+  });
+});

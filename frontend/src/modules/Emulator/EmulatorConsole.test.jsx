@@ -12,16 +12,25 @@ function makeFactories() {
 
   const engine = {
     setVolume: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
     boot: vi.fn(() => Promise.resolve()),
     destroy: vi.fn(),
   };
 
-  const mixer = { playMusic: vi.fn(), stopMusic: vi.fn(), playCue: vi.fn() };
+  const mixer = {
+    playMusic: vi.fn(),
+    stopMusic: vi.fn(),
+    playCue: vi.fn(),
+    setBusVolume: vi.fn(),
+    muteBus: vi.fn(),
+  };
 
   const session = {
     start: vi.fn(() => Promise.resolve({ wramBase: 0xc000 })),
     stop: vi.fn(),
     destroy: vi.fn(),
+    runActions: vi.fn(),
     getGameState: vi.fn(() => ({})),
   };
 
@@ -83,7 +92,9 @@ const baseGame = {
   bindings: [],
   chrome: 'gameboy',
   shader: 'lcd',
-  onscreenControls: true, // controller panel is config-gated; tests exercise it
+  // Controller panel is config-gated via the merged bezel presentation block
+  // (origin's model); tests exercise it by enabling onscreen_controls there.
+  presentation: { onscreen_controls: true },
 };
 
 const baseEngineConfig = { pathtodata: '/data', core: 'gb' };
@@ -225,6 +236,72 @@ describe('EmulatorConsole', () => {
     expect(gate._hasSub()).toBe(false);
     // no pending timers should fire into a torn-down tree
     expect(() => act(() => vi.advanceTimersByTime(2000))).not.toThrow();
+  });
+
+  describe('bezel hotspots + overlays', () => {
+    const presentation = {
+      hotspots: [
+        { id: 'speaker', action: 'volume', label: 'Volume', region: { x: 79, y: 64, width: 12, height: 22 } },
+        { id: 'logo', action: 'exit', region: { x: 20, y: 88, width: 32, height: 5 } },
+        { id: 'battery_led', do: { toast: 'Credit' }, region: { x: 19, y: 31, width: 2, height: 4 } },
+      ],
+      overlays: [
+        { id: 'hr', source: 'fitness.heart_rate', format: 'bpm', region: { x: 15, y: 43, width: 12, height: 16 } },
+        { id: 'badges', source: 'state.badges', format: 'badge_meter', region: { x: 71, y: 33, width: 12, height: 10 } },
+      ],
+    };
+    const gameWithPresentation = { ...baseGame, presentation };
+
+    it('renders hotspot buttons from presentation and steps volume on click', async () => {
+      const { container, mixer } = renderConsole({ props: { game: gameWithPresentation } });
+      await act(async () => {});
+      const speaker = container.querySelector('[data-hotspot-id="speaker"]');
+      expect(speaker).toBeTruthy();
+      act(() => speaker.click());
+      expect(mixer.setBusVolume).toHaveBeenLastCalledWith('game', 0.75);
+    });
+
+    it('routes an exit hotspot to onExit', async () => {
+      const onExit = vi.fn();
+      const { container } = renderConsole({ props: { game: gameWithPresentation, onExit } });
+      await act(async () => {});
+      act(() => container.querySelector('[data-hotspot-id="logo"]').click());
+      expect(onExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispatches a do: hotspot through session.runActions', async () => {
+      const { container, session } = renderConsole({ props: { game: gameWithPresentation } });
+      await act(async () => {});
+      act(() => container.querySelector('[data-hotspot-id="battery_led"]').click());
+      expect(session.runActions).toHaveBeenCalledWith({ toast: 'Credit' }, { hotspot: 'battery_led' });
+    });
+
+    it('renders overlays and shows injected overlayData values', async () => {
+      const { container } = renderConsole({
+        props: { game: gameWithPresentation, overlayData: { 'fitness.heart_rate': 142 } },
+      });
+      await act(async () => {});
+      const hr = container.querySelector('[data-overlay-id="hr"]');
+      expect(hr).toBeTruthy();
+      expect(hr.textContent).toContain('142');
+      expect(hr.textContent).toContain('BPM');
+    });
+
+    it('renders game-state-driven overlays from session.getGameState()', async () => {
+      const { container, session } = renderConsole({ props: { game: gameWithPresentation } });
+      session.getGameState.mockReturnValue({ badges: 5 });
+      await act(async () => {});
+      act(() => vi.advanceTimersByTime(600)); // status/state poll
+      const badges = container.querySelector('[data-overlay-id="badges"]');
+      expect(badges.textContent).toContain('5');
+    });
+
+    it('renders no hotspot/overlay layers when presentation is absent', async () => {
+      const { container } = renderConsole();
+      await act(async () => {});
+      expect(container.querySelector('.emu-hotspot-layer')).toBeNull();
+      expect(container.querySelector('.emu-overlay-layer')).toBeNull();
+    });
   });
 
   describe('controller panel', () => {

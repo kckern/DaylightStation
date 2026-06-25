@@ -388,3 +388,21 @@ describe('getGameState without state layer', () => {
     expect(session.getGameState()).toEqual({});
   });
 });
+
+describe('runActions (hotspot do: blocks reuse the binding handler map)', () => {
+  it('dispatches each action through the same handlers bindings use', () => {
+    const { session, mixer, actionHandlers, resolveMediaUrl } = setup();
+    session.runActions(
+      { chime: 'apps/fitness/emu/coin.mp3', toast: 'Credit: 8' },
+      { hotspot: 'battery_led' },
+    );
+    expect(mixer.playCue).toHaveBeenCalledWith(resolveMediaUrl('apps/fitness/emu/coin.mp3'));
+    expect(actionHandlers.toast).toHaveBeenCalledWith('Credit: 8', { hotspot: 'battery_led' });
+  });
+
+  it('is tolerant of an empty/missing do map', () => {
+    const { session } = setup();
+    expect(() => session.runActions()).not.toThrow();
+    expect(() => session.runActions({})).not.toThrow();
+  });
+});

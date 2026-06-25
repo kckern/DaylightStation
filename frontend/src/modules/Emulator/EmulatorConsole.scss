@@ -95,6 +95,88 @@
     .ejs_popup_container { display: none !important; }
   }
 
+  // Bezel control surface — environmental overlays + interactive hotspots.
+  // Both are full-bleed layers positioned in %-space (matching the manifest
+  // `screen`/`hotspots`/`overlays` regions) over the chrome art.
+  .emu-overlay-layer,
+  .emu-hotspot-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none; // container passes clicks; only hotspot buttons capture
+  }
+
+  .emu-overlay-layer {
+    z-index: 3;
+  }
+
+  .emu-hotspot-layer {
+    z-index: 4;
+  }
+
+  // A hotspot is an invisible click target over a bezel engraving; it reveals a
+  // subtle affordance only on hover/focus so the bezel art stays clean.
+  .emu-hotspot {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 0 2px rgba(120, 200, 255, 0.6);
+    }
+  }
+
+  // An overlay is a read-only info chip staged in the bezel margins.
+  .emu-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25em;
+    overflow: hidden;
+    font-family: 'Roboto Condensed', sans-serif;
+    color: #f4f4f4;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+
+    &.is-empty {
+      opacity: 0;
+    }
+
+    .emu-overlay__value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .emu-overlay__unit {
+      font-size: 0.7rem;
+      opacity: 0.8;
+      align-self: flex-end;
+    }
+
+    .emu-overlay__name {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .emu-overlay__avatar {
+      height: 58%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    &.emu-overlay--player {
+      flex-direction: column;
+      gap: 0.15em;
+    }
+  }
+
   // Governance overlay covers the mount with a translucent dim.
   .emulator-governance-overlay {
     position: absolute;

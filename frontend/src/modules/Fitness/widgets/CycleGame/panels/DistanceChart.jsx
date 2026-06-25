@@ -121,8 +121,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // within the window, with hysteresis so it doesn't flap.
   const lastDists = riderIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
   const leaderM = lastDists.length ? Math.max(...lastDists) : 0;
-  const trailM = lastDists.length ? Math.min(...lastDists) : 0;
   const K_GAP = 4; // metres at which front-cluster expansion sets in
+  const K_GAP_FRAC = 0.5;  // log compression metre-scale as a fraction of the leader's
+                           // distance — keeps the scale's SHAPE constant across race
+                           // lengths (a fixed small k crushes the field as distances grow)
   const logRef = useRef(false);
   if (riderIds.length >= 2) {
     const sorted = [...lastDists].sort((a, b) => a - b);
@@ -134,15 +136,38 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     logRef.current = false;
   }
   const useLog = logRef.current;
-  // When leaders bunch (useLog), switch the vertical mapping to a leader-anchored
-  // gap log: the leader is pinned at the top and the first few metres behind it are
-  // magnified, so neck-and-neck riders separate on their own. When not crowded, the
-  // plain linear absolute-distance mapping is used.
+  // When leaders bunch (useLog), switch the vertical mapping to a gap log: the leader
+  // is pinned at the top and the first few metres behind it are magnified, so
+  // neck-and-neck riders separate on their own. When not crowded, the plain linear
+  // absolute-distance mapping is used.
+  // Zero-anchored log: the bottom of the scale is the START LINE (0 m), never the
+  // trailing rider — so the slowest rider shows their true progress up from zero
+  // instead of being pinned to the axis. k scales with the leader so the curve keeps
+  // its shape regardless of race length.
+  const kGap = Math.max(K_GAP, leaderM * K_GAP_FRAC);
   const yFor = (d) => {
     const frac = useLog
-      ? gapFrac(d, leaderM, trailM, K_GAP)
+      ? gapFrac(d, leaderM, 0, kGap)
       : Math.min(1, (d || 0) / D);
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
+  };
+
+  // A finished rider's lane freezes at the sample where they crossed the goal: the
+  // race is over for them, so their terminus stops advancing along the time axis (it
+  // would otherwise crawl right at the goal line every tick until the last rider
+  // finishes). Unfinished riders — and every rider in a time race (finishTimeS null) —
+  // plot their whole series.
+  const plottedLen = (id) => {
+    const series = riders[id].distanceSeries || [];
+    if (riders[id].finishTimeS == null) return series.length;
+    // Post-finish samples are stored as Math.round(goalM); compare against the same
+    // rounded goal so a fractional goalM still matches the clamped finish sample.
+    const fin = series.findIndex((d) => d >= Math.round(goalM));
+    if (fin >= 0) return fin + 1;
+    // finishTimeS is set, so the rider HAS finished — never plot the full series (that
+    // would let the lane crawl). Freeze at the sample nearest the finish time instead.
+    const idx = stepS > 0 ? Math.round(riders[id].finishTimeS / stepS) : series.length - 1;
+    return Math.max(1, Math.min(series.length, idx + 1));
   };
 
   // ── Smooth leading edge ────────────────────────────────────────────────────
@@ -159,7 +184,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const curTips = {};
   riderIds.forEach((id) => {
     const series = riders[id].distanceSeries || [];
-    const last = series.length - 1;
+    const last = plottedLen(id) - 1;
     if (last < 0) return;
     curTips[id] = { x: xFor(last), y: yFor(series[last]) };
   });
@@ -194,8 +219,9 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const lineCoordsFor = (id) => {
     const series = riders[id].distanceSeries || [];
     const start = plotStartIndex(series);
-    if (start < 0) return null;
-    const coords = series.slice(start).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
+    const end = plottedLen(id);
+    if (start < 0 || start >= end) return null;
+    const coords = series.slice(start, end).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
     const tip = tipFor(id);
     if (tip && coords.length) coords[coords.length - 1] = tip;
     return { coords, start };
@@ -214,12 +240,13 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const tagLayout = (() => {
     const raw = riderIds.map((id, idx) => {
       const series = riders[id].distanceSeries || [];
-      if (!series.length) return null;
+      const last = plottedLen(id) - 1;
+      if (last < 0) return null;
       return {
         id,
         idx,
-        leftPct: (xFor(series.length - 1) / W) * 100,
-        rawTopPct: (yFor(series[series.length - 1]) / H) * 100,
+        leftPct: (xFor(last) / W) * 100,
+        rawTopPct: (yFor(series[last]) / H) * 100,
         color: LINE_COLORS[idx % LINE_COLORS.length],
         isGhost: !!riders[id].isGhost,
         live: riderLive[id] || {},
