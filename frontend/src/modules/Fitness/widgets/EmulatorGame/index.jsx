@@ -6,4 +6,6 @@ export const manifest = {
   name: 'Game Boy',
   icon: '🎮',
   description: 'Retro games — keep moving to keep playing.',
+  // Renders as a full app-viewport overlay (like the player), not inside the frame.
+  fullscreen: true,
 };

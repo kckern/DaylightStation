@@ -10,6 +10,7 @@ import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
 import HRSimTrigger from '../modules/Fitness/nav/HRSimTrigger.jsx';
 import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
+import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
@@ -742,6 +743,12 @@ const FitnessApp = () => {
     const n = Number(root?.momentum?.compare_weeks);
     return Number.isFinite(n) && n > 0 ? n : 4;
   }, [fitnessConfiguration]);
+  // Fullscreen modules (e.g. the Game Boy emulator) render as a full app-viewport
+  // overlay — like the player — instead of inside the frame.
+  const activeModuleFullscreen = useMemo(() => {
+    if (currentView !== 'module' || !activeModule?.id) return false;
+    return !!getModuleManifest(activeModule.id)?.fullscreen;
+  }, [currentView, activeModule]);
 
   // Powerdown audio for the emergency-lockdown ceremony (config-driven).
   const emergencyAudioPath = useMemo(() => {
@@ -1505,7 +1512,7 @@ const FitnessApp = () => {
                     <FeedbackCornerButton onOpen={() => setFeedbackOpen(true)} />
                   </>
                 )}
-                {currentView === 'module' && activeModule && (
+                {currentView === 'module' && activeModule && !activeModuleFullscreen && (
                   <FitnessModuleContainer
                     moduleId={activeModule.id}
                     mode="standalone"
@@ -1517,7 +1524,22 @@ const FitnessApp = () => {
                 )}
               </div>
             </FitnessFrame>
-            
+
+            {/* Fullscreen module overlay (e.g. the Game Boy emulator) — fills the
+                whole .fitness-app-viewport over the nav, mirroring the player. */}
+            {currentView === 'module' && activeModule && activeModuleFullscreen && (
+              <div className="fitness-module-fullscreen-overlay" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 }}>
+                <FitnessModuleContainer
+                  moduleId={activeModule.id}
+                  mode="standalone"
+                  onClose={() => {
+                    setActiveModule(null);
+                    setCurrentView('menu');
+                  }}
+                />
+              </div>
+            )}
+
             {/* Player overlay - only rendered when needed */}
             {fitnessPlayQueue.length > 0 && (
               <div style={{
