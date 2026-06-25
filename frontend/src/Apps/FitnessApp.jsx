@@ -56,6 +56,7 @@ const FitnessApp = () => {
   const [selectedShow, setSelectedShow] = useState(null);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
   const [activeModule, setActiveModule] = useState(null); // { id, ...manifest }
+  const [moduleReturnTo, setModuleReturnTo] = useState(null); // collection/menu a module was launched from
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
@@ -937,7 +938,9 @@ const FitnessApp = () => {
         break;
 
       case 'module':
-        // Launched from FitnessModuleMenu
+        // Launched from FitnessModuleMenu — remember the menu we came from so the
+        // module's exit returns there (e.g. app_menu1), not the default home.
+        setModuleReturnTo(target.return_to ?? activeCollection ?? null);
         setActiveModule({
           id: target.id,
           ...(target || {})
@@ -1025,6 +1028,22 @@ const FitnessApp = () => {
     } else {
       navigate('/fitness', { replace: true });
     }
+  };
+
+  // Close an active module and return to the menu it was launched from (e.g. the
+  // Game Boy emulator's exit goes back to app_menu1), falling back to home.
+  const handleModuleClose = () => {
+    setActiveModule(null);
+    setSelectedShow(null);
+    setCurrentView('menu');
+    if (moduleReturnTo) {
+      setActiveCollection(moduleReturnTo);
+      const colId = Array.isArray(moduleReturnTo) ? moduleReturnTo.join(',') : moduleReturnTo;
+      navigate(`/fitness/menu/${colId}`, { replace: true });
+    } else {
+      navigate('/fitness', { replace: true });
+    }
+    setModuleReturnTo(null);
   };
 
   useEffect(() => {
@@ -1516,10 +1535,7 @@ const FitnessApp = () => {
                   <FitnessModuleContainer
                     moduleId={activeModule.id}
                     mode="standalone"
-                    onClose={() => {
-                      setActiveModule(null);
-                      setCurrentView('menu');
-                    }}
+                    onClose={handleModuleClose}
                   />
                 )}
               </div>
@@ -1532,10 +1548,7 @@ const FitnessApp = () => {
                 <FitnessModuleContainer
                   moduleId={activeModule.id}
                   mode="standalone"
-                  onClose={() => {
-                    setActiveModule(null);
-                    setCurrentView('menu');
-                  }}
+                  onClose={handleModuleClose}
                 />
               </div>
             )}
