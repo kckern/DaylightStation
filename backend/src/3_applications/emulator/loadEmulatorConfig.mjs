@@ -64,6 +64,9 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         // Bezel screen cutout (where the emulator video sits within the chrome),
         // as percentages of the bezel frame: { x, y, width, height }.
         screen: game.screen ?? presentation.screen ?? null,
+        // On-screen emulator controls (native EmulatorJS menu/virtual-gamepad +
+        // our controller panel). Default OFF — driven by hooks/api instead.
+        onscreenControls: game.onscreen_controls ?? presentation.onscreen_controls ?? false,
       });
     }
   }

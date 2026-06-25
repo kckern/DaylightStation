@@ -195,6 +195,7 @@ export function createEmulatorRouter({
             shader: rules.shader ?? null,
             chrome: rules.chrome ?? null,
             screen: rules.screen ?? null,
+            onscreenControls: rules.onscreenControls ?? false,
             romUrl: `/api/v1/emulator/rom/${g.system}/${g.id}`,
             coverUrl: `/api/v1/emulator/art/${g.system}/${g.id}/cover`,
             bezelUrl: `/api/v1/emulator/art/${g.system}/${g.id}/bezel`,

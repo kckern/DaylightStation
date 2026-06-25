@@ -61,6 +61,29 @@
     z-index: 2;
   }
 
+  // Game Boy dot-matrix LCD shader: a fine pixel grid that multiplies onto the
+  // screen, plus a faint inner shadow, approximating the handheld LCD's visible
+  // pixel gaps. Scoped to the screen cutout via the inline screenStyle.
+  .emulator-shader.shader-dotmatrix {
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+    background-size: 3px 3px;
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.35);
+  }
+
+  // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
+  // input + hooks/api, not its menu bar / virtual gamepad / context menu.
+  &--no-osd {
+    .ejs_menu_bar,
+    .ejs_menu_bar_hidden,
+    .ejs_virtualGamepad_parent,
+    .ejs_context_menu,
+    .ejs_popup_container { display: none !important; }
+  }
+
   // Governance overlay covers the mount with a translucent dim.
   .emulator-governance-overlay {
     position: absolute;
