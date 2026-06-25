@@ -25,6 +25,7 @@ export function resolveGameRules(cfg, gameId, userId) {
     shader: cfg?.defaults?.shader ?? null,
     chrome: cfg?.defaults?.chrome ?? null,
     screen: cfg?.defaults?.screen ?? null,
+    onscreenControls: cfg?.defaults?.onscreenControls ?? false,
   };
 
   merged = deepMerge(merged, {
@@ -32,6 +33,7 @@ export function resolveGameRules(cfg, gameId, userId) {
     shader: game.shader,
     chrome: game.chrome,
     screen: game.screen,
+    onscreenControls: game.onscreenControls,
   });
 
   if (userId && cfg?.users?.[userId]) {
@@ -41,6 +43,7 @@ export function resolveGameRules(cfg, gameId, userId) {
       shader: u.shader,
       chrome: u.chrome,
       screen: u.screen,
+      onscreenControls: u.onscreenControls,
     });
   }
 
@@ -56,6 +59,7 @@ export function resolveGameRules(cfg, gameId, userId) {
     shader: merged.shader,
     chrome: merged.chrome,
     screen: merged.screen,
+    onscreenControls: merged.onscreenControls ?? false,
   };
 }
 

@@ -83,6 +83,7 @@ const baseGame = {
   bindings: [],
   chrome: 'gameboy',
   shader: 'lcd',
+  onscreenControls: true, // controller panel is config-gated; tests exercise it
 };
 
 const baseEngineConfig = { pathtodata: '/data', core: 'gb' };

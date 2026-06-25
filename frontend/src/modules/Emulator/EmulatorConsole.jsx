@@ -231,9 +231,13 @@ export function EmulatorConsole({
     ? { inset: 'auto', left: `${sc.x}%`, top: `${sc.y}%`, width: `${sc.width}%`, height: `${sc.height}%` }
     : undefined;
 
+  // On-screen controls (native EmulatorJS menu/virtual-gamepad + our controller
+  // panel) are config-gated and OFF by default — driven by hooks/api instead.
+  const osd = !!game?.onscreenControls;
+
   return (
     <div
-      className={`emulator-console${filled ? ' emulator-console--filled' : ''}`}
+      className={`emulator-console${filled ? ' emulator-console--filled' : ''}${osd ? '' : ' emulator-console--no-osd'}`}
       data-state={status.state}
       data-chrome={game?.chrome || 'none'}
       onPointerDown={handleScreenPress}
@@ -262,6 +266,7 @@ export function EmulatorConsole({
         />
       )}
 
+      {osd && (
       <button
         type="button"
         className={`emulator-controller-toggle${panelOpen ? ' is-open' : ''}`}
@@ -271,7 +276,8 @@ export function EmulatorConsole({
       >
         🎮
       </button>
-      {panelOpen && (
+      )}
+      {osd && panelOpen && (
         <div className="emulator-controller-panel" role="dialog" aria-label="Controllers">
           <ControllerStatus
             controllers={controllers}
