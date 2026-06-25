@@ -91,6 +91,26 @@ describe('DistanceChart panel', () => {
     expect(g).toBeTruthy();
     expect(g.getAttribute('class')).toContain('cycle-race-screen__zoomable');
   });
+  it('anchors the vertical scale at the start line so the slowest rider is not pinned to the floor', () => {
+    // Two riders bunched near the front (triggers log mode) + one far-back rider.
+    // Old behaviour anchored the bottom of the scale to the trailing rider, so the
+    // slowest rider mapped to frac 0 (the bottom axis). Zero-anchored, they sit well
+    // above the floor, reflecting their true ~20% progress.
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },
+      second: { displayName: 'S', cumulativeDistanceM: 2480, distanceSeries: [2480] },
+      slow:   { displayName: 'W', cumulativeDistanceM: 500,  distanceSeries: [500]  },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['lead', 'second', 'slow']} riders={riders}
+        riderLive={{ lead: {}, second: {}, slow: {} }}
+        winCondition="distance" goalM={5000} elapsedS={1} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const slowY = parseFloat(lines[2].getAttribute('points').trim().split(',')[1]);
+    const floorY = 200 - 22; // H - PAD_B = the bottom axis
+    expect(slowY).toBeLessThan(floorY - 12); // clearly off the bottom, not flat-lined
+  });
   it('renders a header strip with the clock and goal label', () => {
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}
