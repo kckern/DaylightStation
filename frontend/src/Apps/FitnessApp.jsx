@@ -1458,7 +1458,11 @@ const FitnessApp = () => {
                 />
               }
               hideNav={fitnessPlayQueue.length > 0 || loading || activeModuleFullscreen}
-              className={fitnessPlayQueue.length > 0 || loading || activeModuleFullscreen ? 'fitness-frame--hidden' : ''}
+              {/* NB: do NOT add activeModuleFullscreen to fitness-frame--hidden —
+                  that sets visibility:hidden on the whole frame, and a fullscreen
+                  module renders INSIDE the frame (unlike the player). Hiding the
+                  nav via hideNav is enough. */}
+              className={fitnessPlayQueue.length > 0 || loading ? 'fitness-frame--hidden' : ''}
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
                 {currentView === 'screen' && activeScreen && screensConfig[activeScreen] && (
