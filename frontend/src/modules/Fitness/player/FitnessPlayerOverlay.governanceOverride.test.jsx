@@ -10,6 +10,7 @@ vi.mock('@/hooks/fitness/useRenderProfiler.js', () => ({ __esModule: true, useRe
 vi.mock('@/lib/api.mjs', () => ({
   __esModule: true,
   DaylightMediaPath: (p) => p,
+  DaylightImagePath: (p) => `/api/v1/static/img/${p}`,
   DaylightAPI: vi.fn().mockResolvedValue({})
 }));
 // Logger init touches a shared WebSocket transport; stub it so a mount-time

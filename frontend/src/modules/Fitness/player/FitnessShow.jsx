@@ -9,6 +9,7 @@ import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
+import { isKioskEnv } from '@/lib/kioskEnv.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { isGovernedContainer } from '@/hooks/fitness/governedContent.js';
 
@@ -261,8 +262,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     const cfg = fitnessContext.fitnessConfiguration || {};
     return cfg.locks || cfg.fitness?.locks || {};
   }, [fitnessContext.fitnessConfiguration]);
+  // Kiosk-bound: locks only apply on the garage kiosk (unlocked in dev/test).
   const isLockActive = useCallback(
-    (lockName) => Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
+    (lockName) => isKioskEnv() && Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
     [locks]
   );
 

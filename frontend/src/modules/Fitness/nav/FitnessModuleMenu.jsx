@@ -6,6 +6,7 @@ import { useFitness } from '@/context/FitnessContext.jsx';
 import { useIdentity } from '../identity/IdentityProvider';
 import UnlockPrompt from '../player/overlays/UnlockPrompt.jsx';
 import LockIcon from '../player/overlays/LockIcon.jsx';
+import { isKioskEnv } from '@/lib/kioskEnv.js';
 import './FitnessModuleMenu.scss';
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -45,8 +46,11 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
     const cfg = fitnessConfiguration || {};
     return cfg.locks || cfg.fitness?.locks || {};
   }, [fitnessConfiguration]);
+  // Locks are kiosk-bound: off-kiosk (dev/test) nothing is gated, so a developer
+  // can open any module (e.g. the Game Boy emulator) without a fingerprint. The
+  // garage kiosk still enforces locks; pass ?kiosk=1 to test them in dev.
   const isLocked = useCallback(
-    (moduleId) => Array.isArray(locks?.[moduleId]) && locks[moduleId].length > 0,
+    (moduleId) => isKioskEnv() && Array.isArray(locks?.[moduleId]) && locks[moduleId].length > 0,
     [locks]
   );
 

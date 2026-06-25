@@ -26,6 +26,7 @@ import GovernanceWarningScrim from '@/modules/Fitness/player/overlays/Governance
 import UnlockPrompt from '@/modules/Fitness/player/overlays/UnlockPrompt.jsx';
 import { useIdentity } from '../identity/IdentityProvider';
 import { shouldBypassGovernance } from './governanceBypass.js';
+import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import usePlayerFrameCapture from '@/hooks/fitness/usePlayerFrameCapture.js';
 import SessionCameraCapture from './SessionCameraCapture.jsx';
@@ -269,8 +270,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     const cfg = fitnessConfiguration || {};
     return cfg.locks || cfg.fitness?.locks || {};
   }, [fitnessConfiguration]);
+  // Kiosk-bound: locks only apply on the garage kiosk (unlocked in dev/test).
   const isLockActive = useCallback(
-    (lockName) => Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
+    (lockName) => isKioskEnv() && Array.isArray(locks?.[lockName]) && locks[lockName].length > 0,
     [locks]
   );
 
