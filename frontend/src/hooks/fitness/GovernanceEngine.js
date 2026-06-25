@@ -1961,7 +1961,7 @@ export class GovernanceEngine {
    * @param {number} params.totalCount - Total number of active participants
    * @param {Object.<string, {rpm: number, connected: boolean}>} input.equipmentCadenceMap - Latest cadence reading per equipment id. Default: {}.
    */
-  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, equipmentCadenceMap, equipmentRiderMap } = {}) {
+  evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, hrInactiveUsers, guestIds, equipmentCadenceMap, equipmentRiderMap } = {}) {
     // Tag which code path triggered this evaluation (for prod log diagnostics)
     this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
 
@@ -1988,6 +1988,12 @@ export class GovernanceEngine {
       // stale snapshot value from _latestInputs.
       if (hrInactiveUsers === undefined && Array.isArray(state.hrInactiveUsers)) {
         hrInactiveUsers = state.hrInactiveUsers;
+      }
+      // Pulse path: carry guest ids from the same canonical state so the engine
+      // keeps guests out of the subject set (never required, never blamed),
+      // consistent with the snapshot path's guestIds payload.
+      if (guestIds === undefined && Array.isArray(state.guestIds)) {
+        guestIds = state.guestIds;
       }
     }
 
@@ -2383,10 +2389,11 @@ export class GovernanceEngine {
       zoneInfoMap,
       totalCount,
       hrInactiveUsers,
+      guestIds,
       equipmentCadenceMap,
       equipmentRiderMap
     });
-    
+
     // Invalidate state cache after evaluation completes
     this._invalidateStateCache();
   }
