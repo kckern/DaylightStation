@@ -58,7 +58,7 @@
   // shows through it via multiply, like tinted LCD glass) plus the dot grid. This
   // is a uniform colour cast — NOT a per-channel hue shift of the image.
   .emulator-shader.shader-dotmatrix {
-    background-color: #9bbc2a; // classic GB olive-green LCD tint
+    background-color: #c6d2a2; // subtle olive-green LCD tint (pale → gentle multiply cast)
     background-image:
       repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
       repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
