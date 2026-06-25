@@ -54,20 +54,18 @@
   // Game Boy dot-matrix LCD shader: a fine pixel grid that multiplies onto the
   // screen, plus a faint inner shadow, approximating the handheld LCD's visible
   // pixel gaps. Scoped to the screen cutout via the inline screenStyle.
+  // Green Game Boy LCD: an olive-green wash laid over the whole screen (the game
+  // shows through it via multiply, like tinted LCD glass) plus the dot grid. This
+  // is a uniform colour cast — NOT a per-channel hue shift of the image.
   .emulator-shader.shader-dotmatrix {
+    background-color: #9bbc2a; // classic GB olive-green LCD tint
     background-image:
       repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
       repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
     background-size: 3px 3px;
     mix-blend-mode: multiply;
-    opacity: 0.55;
+    opacity: 1;
     box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.35);
-  }
-
-  // Green Game Boy LCD: tint the actual game image (DMG renders monochrome) to the
-  // classic olive-green. grayscale → sepia → hue-rotate maps the grays to green.
-  &[data-shader='dotmatrix'] .emulator-screen-window {
-    filter: grayscale(1) brightness(1.08) sepia(1) saturate(2.4) hue-rotate(45deg);
   }
 
   // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
@@ -141,11 +139,11 @@
     }
   }
 
-  // Settings gear — round, bottom-right on the bezel, just left of the exit.
+  // Volume / settings — round, bottom-left on the bezel.
   .emulator-settings-toggle {
     position: absolute;
     bottom: 1rem;
-    right: 4rem;
+    left: 1rem;
     z-index: 6;
     width: 2.4rem;
     height: 2.4rem;
