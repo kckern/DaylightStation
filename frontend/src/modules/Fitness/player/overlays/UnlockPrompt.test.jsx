@@ -1,6 +1,11 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+
+// The prompt is kiosk-bound (suppressed off-kiosk); these tests exercise its
+// on-kiosk behavior, so force the kiosk environment.
+vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
+
 import UnlockPrompt from './UnlockPrompt.jsx';
 
 describe('UnlockPrompt', () => {
