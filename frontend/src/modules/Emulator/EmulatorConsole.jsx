@@ -224,15 +224,26 @@ export function EmulatorConsole({
     setFilled((v) => !v);
   }, []);
 
+  // Bezel screen cutout (config-driven, % of frame): position the emulator video
+  // and shader pass into the bezel's window. Absent ⇒ full-bleed (CSS default).
+  const sc = game?.screen;
+  const screenStyle = sc && Number.isFinite(sc.x)
+    ? { inset: 'auto', left: `${sc.x}%`, top: `${sc.y}%`, width: `${sc.width}%`, height: `${sc.height}%` }
+    : undefined;
+
   return (
     <div
       className={`emulator-console${filled ? ' emulator-console--filled' : ''}`}
       data-state={status.state}
+      data-chrome={game?.chrome || 'none'}
       onPointerDown={handleScreenPress}
     >
-      <div className={`emulator-chrome chrome-${game?.chrome || 'none'}`} />
-      <div className="emulator-mount" ref={mountRef} />
-      <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} />
+      <div
+        className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
+        style={game?.bezelUrl ? { backgroundImage: `url("${game.bezelUrl}")` } : undefined}
+      />
+      <div className="emulator-mount" ref={mountRef} style={screenStyle} />
+      <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} style={screenStyle} />
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
           <span>{overlayText(status)}</span>

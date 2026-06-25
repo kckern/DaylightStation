@@ -61,6 +61,9 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         governance: deepMerge(sysDefaults.governance ?? {}, game.governance ?? {}),
         shader: game.shader ?? presentation.shader ?? null,
         chrome: game.chrome ?? presentation.chrome ?? null,
+        // Bezel screen cutout (where the emulator video sits within the chrome),
+        // as percentages of the bezel frame: { x, y, width, height }.
+        screen: game.screen ?? presentation.screen ?? null,
       });
     }
   }

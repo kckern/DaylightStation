@@ -36,6 +36,17 @@
     transition: filter 0.25s ease;
   }
 
+  // Bezel chrome: a full-bleed PNG (1920×1080) with a transparent screen cutout.
+  // Stretched to the console with background-size 100% 100% so the cutout stays
+  // at fixed percentages regardless of container aspect. The screen cutout
+  // rectangle itself is config-driven (presentation.screen in the system YAML)
+  // and applied to .emulator-mount / .emulator-shader as inline styles.
+  .emulator-chrome.chrome-gb-bezel {
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
   .emulator-shader {
     z-index: 2;
   }
