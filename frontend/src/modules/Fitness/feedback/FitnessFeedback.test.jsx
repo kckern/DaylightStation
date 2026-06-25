@@ -8,8 +8,8 @@ let mockRecorderState;
 const startMock = vi.fn(async () => { mockRecorderState.isRecording = true; });
 const stopMock = vi.fn(async () => ({ blob: new Blob(['x'], { type: 'audio/webm' }), durationMs: 4200, mimeType: 'audio/webm' }));
 
-vi.mock('@/modules/Feedback/useFeedbackRecorder.js', () => ({
-  useFeedbackRecorder: () => mockRecorderState,
+vi.mock('@/modules/VoiceCapture/useMediaRecorderCapture.js', () => ({
+  useMediaRecorderCapture: () => mockRecorderState,
   default: () => mockRecorderState,
 }));
 

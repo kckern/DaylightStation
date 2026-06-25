@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { useFeedbackRecorder } from '@/modules/Feedback/useFeedbackRecorder.js';
+import { useMediaRecorderCapture } from '@/modules/VoiceCapture/useMediaRecorderCapture.js';
 import { submitFeedback } from '@/modules/Feedback/feedbackApi.js';
 import { AppButton, MicLevelIndicator } from '@/modules/Fitness/shared/primitives';
 import getLogger from '@/lib/logging/Logger.js';
@@ -35,7 +35,7 @@ const MicGlyph = () => (
  */
 export default function FitnessFeedback({ onClose, view = null, userId = null }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-feedback', app: 'fitness' }), []);
-  const { isRecording, durationMs, levelRef, error, start, stop } = useFeedbackRecorder();
+  const { isRecording, durationMs, levelRef, error, start, stop } = useMediaRecorderCapture();
   const [phase, setPhase] = useState('idle'); // idle | review | saving | saved | error
   const [take, setTake] = useState(null); // { blob, durationMs }
   const [previewUrl, setPreviewUrl] = useState(null);
