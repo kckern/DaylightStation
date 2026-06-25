@@ -2512,6 +2512,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,
     setSelectedPlaylistId,
+    // Music transport for voice-capture coordination (voice memo + feedback
+    // overlays pause music while recording). Defined above but must be exposed
+    // here or consumers get undefined and the pause/resume becomes a no-op.
+    pauseMusicPlayer,
+    resumeMusicPlayer,
     governance: governanceState.status,
     zones: zoneConfig || [],
     userCurrentZones,
