@@ -11,6 +11,27 @@ import { buildFitnessGameGate } from './fitnessGameGate.js';
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const GATE_TICK_MS = 1000;
 
+/**
+ * Resolve the per-controller gamepad value2 override (special mappings live in
+ * input.yml under each controller). Prefer a controller whose `match` regex hits
+ * a currently-connected pad; otherwise fall back to the first controller that
+ * defines an override (covers the single-controller kiosk where the pad may not
+ * be awake at boot). Returns a semantic→value2 map (or {} for stock mapping).
+ */
+function resolveControllerGamepad(controllers) {
+  const list = Array.isArray(controllers) ? controllers : [];
+  const pads = (typeof navigator !== 'undefined' && navigator.getGamepads)
+    ? Array.from(navigator.getGamepads()).filter(Boolean)
+    : [];
+  for (const c of list) {
+    if (!c?.gamepad) continue;
+    let re = null;
+    try { re = c.match ? new RegExp(c.match, 'i') : null; } catch { re = null; }
+    if (re && pads.some((p) => re.test(p.id))) return c.gamepad;
+  }
+  return list.find((c) => c?.gamepad)?.gamepad || {};
+}
+
 // Fitness binding for the host-agnostic EmulatorConsole: library → game/controls/
 // gate/identity → governed console. Locked-launch is handled by the menu (locks).
 export default function EmulatorGameWidget({ fitnessContext, onClose, config, onMount }) {
@@ -36,7 +57,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
       const games = lib?.games || [];
       const chosen = (config?.gameId && games.find((g) => g.id === config.gameId)) || games[0];
       if (!chosen) { setError('No games'); onMount?.(); return; }
-      const controls = buildEjsControls(lib?.input?.keyboard || {}, lib?.input?.gamepad || {});
+      const controls = buildEjsControls(lib?.input?.keyboard || {}, resolveControllerGamepad(lib?.input?.controllers));
       const gate = buildFitnessGameGate({ game: chosen, zonesOrder, getActivePlayerId, getUserVitals });
       gateRef.current = gate;
       setGame({ id: chosen.id, system: chosen.system, romUrl: chosen.romUrl, chrome: chosen.chrome, shader: chosen.shader, bezelUrl: chosen.bezelUrl, screen: chosen.screen, onscreenControls: chosen.onscreenControls });
