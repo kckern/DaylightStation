@@ -1,6 +1,21 @@
 import { resolveDisplayLabel, deepClone } from './types.js';
 import getLogger from '../../lib/logging/Logger.js';
 
+/**
+ * Authoritative ANT+ profile → fitness device type. The strap's broadcast
+ * profile is the source of truth for what kind of device it is, present even
+ * when the current reading is missing (e.g. backend stripped an out-of-range
+ * 0 bpm to null). Without this, a HR strap reading 0 bpm degrades to 'unknown'
+ * equipment and becomes un-assignable. Profile strings observed in the garage
+ * backend broadcasts: 'HR', 'CAD', 'PWR'.
+ * See docs/_wip/plans/2026-06-25-fitness-hr-profile-classification.md
+ */
+const PROFILE_TYPE_MAP = {
+  HR: 'heart_rate',
+  CAD: 'cadence',
+  PWR: 'power',
+};
+
 export class Device {
   constructor(data = {}) {
     // Device ID must be explicitly provided - usually from ANT+ device ID
@@ -149,11 +164,18 @@ export class DeviceManager {
       connectionState: 'connected'
     };
 
+    // Authoritative ANT+ profile is the primary type signal (SSoT). A strap
+    // broadcasting the HR profile is a heart-rate device even when the current
+    // reading is null (backend stripped an out-of-range 0 bpm). Data-field
+    // inference below only refines the type when the profile is unknown/absent.
+    const profileType = PROFILE_TYPE_MAP[profile] || null;
+    if (profileType) normalized.type = profileType;
+
     // Map ANT+ fields to normalized fields
     if (rawData) {
       if (Number.isFinite(rawData.ComputedHeartRate)) {
         normalized.heartRate = rawData.ComputedHeartRate;
-        normalized.type = 'heart_rate';
+        normalized.type = normalized.type || 'heart_rate';
       }
       if (Number.isFinite(rawData.CalculatedCadence)) {
         normalized.cadence = rawData.CalculatedCadence;
@@ -161,7 +183,7 @@ export class DeviceManager {
       }
       if (Number.isFinite(rawData.InstantaneousPower)) {
         normalized.power = rawData.InstantaneousPower;
-        normalized.type = 'power';
+        normalized.type = normalized.type || 'power';
       }
       if (Number.isFinite(rawData.CumulativeCadenceRevolutionCount)) {
         normalized.revolutionCount = rawData.CumulativeCadenceRevolutionCount;
