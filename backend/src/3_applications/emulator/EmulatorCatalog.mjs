@@ -52,6 +52,9 @@ export function resolveGameRules(cfg, gameId, userId) {
     governance: merged.governance,
     shader: merged.shader,
     chrome: merged.chrome,
+    // Bezel control surface (screen cutout, hotspots, overlays). Already merged
+    // system-under-game in loadEmulatorConfig; passed through to the browser.
+    presentation: game.presentation ?? null,
   };
 }
 

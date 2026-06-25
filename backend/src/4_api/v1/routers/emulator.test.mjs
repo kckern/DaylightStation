@@ -23,6 +23,11 @@ function makeCfg() {
         governance: { mode: 'credit', required_zone: 'warm', grace_seconds: 20, earn_rate: 1.5 },
         shader: 'dotmatrix',
         chrome: 'gb-bezel',
+        presentation: {
+          screen: { x: 29, y: 10, width: 41, height: 66 },
+          hotspots: [{ id: 'speaker', action: 'volume', region: { x: 79, y: 64, width: 12, height: 22 } }],
+          overlays: [{ id: 'hr', source: 'fitness.heart_rate', format: 'bpm', region: { x: 15, y: 43, width: 12, height: 16 } }],
+        },
         watches: [{ id: 'in_battle', addr: 0xd057, size: 1 }],
         hooks: [{ on: 'in_battle', do: {} }],
       },
@@ -110,6 +115,15 @@ describe('createEmulatorRouter', () => {
       expect(g.bezelUrl).toBe('/api/v1/emulator/art/gb/pokemon-red/bezel');
       // No-user governance: game value
       expect(g.governance.required_zone).toBe('warm');
+    });
+
+    it('includes the bezel presentation (screen/hotspots/overlays)', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/library');
+      const g = res.body.games[0];
+      expect(g.presentation.screen).toEqual({ x: 29, y: 10, width: 41, height: 66 });
+      expect(g.presentation.hotspots[0].id).toBe('speaker');
+      expect(g.presentation.overlays[0].source).toBe('fitness.heart_rate');
     });
 
     it('includes the input config (keyboard + controllers)', async () => {

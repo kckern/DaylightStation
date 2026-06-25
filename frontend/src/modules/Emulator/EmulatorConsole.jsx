@@ -17,6 +17,10 @@ import { createAudioMixer } from './audio/AudioMixer.js';
 import { createEmulatorSession } from './core/EmulatorSession.js';
 import { createHtmlAudioClip } from './audio/htmlAudioClip.js';
 import { ControllerStatus } from './input/ControllerStatus.jsx';
+import { createHotspotController } from './core/hotspotController.js';
+import { resolveOverlayValue, formatOverlayValue } from './core/resolveOverlayValue.js';
+import { HotspotLayer } from './ui/HotspotLayer.jsx';
+import { OverlayLayer } from './ui/OverlayLayer.jsx';
 import './EmulatorConsole.scss';
 
 const STATUS_POLL_MS = 500;
@@ -49,6 +53,12 @@ export function EmulatorConsole({
   actionHandlers = {},
   resolveMediaUrl = (p) => p,
   onExit,
+  // Bezel control surface: hotspots (clickable engravings) + overlays
+  // (environmental UI). Defaults to the game's own `presentation` block; a
+  // host may override. `overlayData` is the injected data bag overlays read
+  // (e.g. { 'fitness.heart_rate': 142, 'session.current_player': {...} }).
+  presentation: presentationProp,
+  overlayData = {},
   factories,
   // Controller panel
   controllers = [],
@@ -63,8 +73,17 @@ export function EmulatorConsole({
 
   const mountRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
+  const controllerRef = useRef(null); // hotspot controller
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
+
+  const presentation = presentationProp || game?.presentation || {};
+  const hotspots = presentation.hotspots || [];
+  const overlays = presentation.overlays || [];
 
   const [status, setStatus] = useState(() => governanceGate?.getStatus?.() || { state: 'playing' });
+  const [gameState, setGameState] = useState({});
+  const [, setHotspotState] = useState({ volume: 1, muted: false, paused: false });
   const [animClass, setAnimClass] = useState('');
   const [, setError] = useState(null);
   const animTimerRef = useRef(null);
@@ -150,6 +169,20 @@ export function EmulatorConsole({
 
     runtimeRef.current = { engine, mixer, session };
 
+    // Bezel hotspot controller: built-in player verbs (volume/mute/pause/
+    // save_state/exit) drive engine+mixer here; `do:` blocks reuse the
+    // session's binding handler map via runActions.
+    controllerRef.current = createHotspotController({
+      mixer,
+      engine,
+      onExit: () => onExitRef.current?.(),
+      runActions: (doMap, ctx) => session.runActions?.(doMap, ctx),
+      saveState: actionHandlers.saveState,
+      onChange: (s) => setHotspotState(s),
+      logger,
+    });
+    setHotspotState(controllerRef.current.getState());
+
     // Kick off boot/start asynchronously; never block render.
     Promise.resolve()
       .then(() => session.start({ mount: mountRef.current }))
@@ -169,6 +202,14 @@ export function EmulatorConsole({
         setStatus(governanceGate.getStatus());
       } catch (err) {
         logger.warn('emulator.console.status-error', { error: err && err.message });
+      }
+      // Poll the live semantic state map so game-state-driven overlays
+      // (e.g. badge meters) stay current.
+      try {
+        const gs = runtimeRef.current?.session?.getGameState?.();
+        if (gs) setGameState(gs);
+      } catch (err) {
+        logger.warn('emulator.console.gamestate-error', { error: err && err.message });
       }
     };
     refresh();
@@ -214,11 +255,24 @@ export function EmulatorConsole({
 
   const showOverlay = status.state !== 'playing';
 
+  // Resolve + format a single overlay against the live data context. Kept inline
+  // so it always reads the latest gameState/status/overlayData on re-render.
+  const resolveOverlay = useCallback(
+    (o) =>
+      formatOverlayValue(
+        o.format,
+        resolveOverlayValue(o.source, { gameState, governance: status, overlayData }),
+      ),
+    [gameState, status, overlayData],
+  );
+
   return (
     <div className="emulator-console" data-state={status.state}>
       <div className={`emulator-chrome chrome-${game?.chrome || 'none'}`} />
       <div className="emulator-mount" ref={mountRef} />
       <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} />
+      <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
+      <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
           <span>{overlayText(status)}</span>
