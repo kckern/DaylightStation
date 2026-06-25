@@ -22,6 +22,17 @@ import './EmulatorConsole.scss';
 
 const STATUS_POLL_MS = 500;
 const DEFAULT_VOLUME_LEVEL = 70; // log curve: ~25% output — audible default (not muted)
+
+// LCD shade tints (multiplied over the screen). Subtle, pale colours so the game
+// reads through them like tinted glass. Cycled from the settings sheet.
+const LCD_SHADES = [
+  { name: 'Green', color: '#c6d2a2' },
+  { name: 'Olive', color: '#bcc88a' },
+  { name: 'Amber', color: '#d8c8a0' },
+  { name: 'Blue', color: '#aebfd0' },
+  { name: 'Gray', color: '#cfcfcf' },
+];
+const SHADE_STORAGE_KEY = 'emulator:lcd-shade';
 const ANIM_DURATION_MS = 1000;
 const PAIR_DURATION_MS = 30000;
 const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
@@ -76,9 +87,23 @@ export function EmulatorConsole({
   const [localPairing, setLocalPairing] = useState(null);
   const pairTimerRef = useRef(null);
 
-  // Settings modal (volume + future hooks) — the gear button on the bezel.
+  // Settings modal (volume + LCD shade) — the speaker button on the bezel.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(DEFAULT_VOLUME_LEVEL);
+  const [shadeIndex, setShadeIndex] = useState(() => {
+    try {
+      const saved = Number(window.localStorage?.getItem(SHADE_STORAGE_KEY));
+      return Number.isInteger(saved) && saved >= 0 && saved < LCD_SHADES.length ? saved : 0;
+    } catch { return 0; }
+  });
+  const shade = LCD_SHADES[shadeIndex] || LCD_SHADES[0];
+  const cycleShade = useCallback(() => {
+    setShadeIndex((i) => {
+      const next = (i + 1) % LCD_SHADES.length;
+      try { window.localStorage?.setItem(SHADE_STORAGE_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   // Apply a touch-volume level (0..100, log curve) to the emulator's game bus.
   // Also resumes the audio engine, since browsers gate autoplay until a gesture.
@@ -259,7 +284,10 @@ export function EmulatorConsole({
       <div className="emulator-screen-window" style={screenStyle}>
         <div className="emulator-mount" ref={mountRef} />
       </div>
-      <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} style={screenStyle} />
+      <div
+        className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
+        style={game?.shader === 'dotmatrix' ? { ...screenStyle, backgroundColor: shade.color } : screenStyle}
+      />
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
           <span>{overlayText(status)}</span>
@@ -327,6 +355,13 @@ export function EmulatorConsole({
               currentLevel={volumeLevel}
               onSelect={applyVolume}
             />
+            <div className="emulator-settings-modal__row">
+              <span>Screen shade</span>
+              <button type="button" className="emulator-shade-cycle" onClick={cycleShade}>
+                <span className="emulator-shade-swatch" style={{ background: shade.color }} aria-hidden="true" />
+                {shade.name}
+              </button>
+            </div>
           </div>
         </div>
       )}
