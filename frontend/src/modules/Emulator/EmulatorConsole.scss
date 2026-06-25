@@ -53,18 +53,21 @@
 
   // Game Boy dot-matrix LCD shader: a fine pixel grid that multiplies onto the
   // screen, plus a faint inner shadow, approximating the handheld LCD's visible
-  // Game Boy LCD: a flat colour-shade wash (background-color, set inline by the
-  // shade cycler) multiplied over the game. NO CSS pixel-grid — a fixed-period CSS
-  // grid moirés against the DISPLAY's pixels at some resolutions/DPIs (not fixable
-  // by alignment). The dot-matrix instead comes from the game's own CRISP pixels
-  // (nearest-neighbour WebGL, see forceNearestFiltering), which can't moiré.
+  // Game Boy dot-matrix LCD: colour-shade wash (set inline by the shade cycler) +
+  // the per-pixel grid (the LCD cell gaps), sized to the GB's native 160×144 so
+  // each cell lands on one game pixel. Pixel-perfect (no moiré) ONLY when the
+  // screen renders at an INTEGER device-pixel ratio so the 800px cutout = 5×160
+  // exact (the garage must run devPixelsPerPx = 1.0, not 1.05). The game itself
+  // renders crisp via the WebGL NEAREST patch + image-rendering below.
   .emulator-shader.shader-dotmatrix {
     background-color: #c6d2a2;
+    background-image:
+      linear-gradient(to right, rgba(0, 0, 0, 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 1px, transparent 1px);
+    background-size: calc(100% / 160) calc(100% / 144);
     mix-blend-mode: multiply;
     opacity: 1;
   }
-
-  // Crisp pixels (belt-and-suspenders with the WebGL NEAREST patch).
   .emulator-mount canvas { image-rendering: pixelated; }
 
   // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
