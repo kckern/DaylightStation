@@ -5,7 +5,10 @@ import { EmulatorConsole } from '../../../Emulator/EmulatorConsole.jsx';
 import { buildEjsControls } from '../../../Emulator/input/buildEjsControls.js';
 import { buildFitnessGameGate } from './fitnessGameGate.js';
 
-const ENGINE_PATH = 'api/v1/emulator/engine/';
+// Absolute (leading slash): EmulatorJS sets `script.src = `${pathtodata}loader.js``,
+// which must resolve from the origin root — a relative path resolves against the
+// SPA route (/fitness/module/...) and 404/504s.
+const ENGINE_PATH = '/api/v1/emulator/engine/';
 const GATE_TICK_MS = 1000;
 
 // Fitness binding for the host-agnostic EmulatorConsole: library → game/controls/
