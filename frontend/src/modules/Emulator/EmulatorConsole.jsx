@@ -242,7 +242,11 @@ export function EmulatorConsole({
         className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
         style={game?.bezelUrl ? { backgroundImage: `url("${game.bezelUrl}")` } : undefined}
       />
-      <div className="emulator-mount" ref={mountRef} style={screenStyle} />
+      {/* The cutout is positioned on this WRAPPER, not the mount — EmulatorJS owns
+          the mount element's inline styles, so it must fill an already-positioned box. */}
+      <div className="emulator-screen-window" style={screenStyle}>
+        <div className="emulator-mount" ref={mountRef} />
+      </div>
       <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} style={screenStyle} />
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
