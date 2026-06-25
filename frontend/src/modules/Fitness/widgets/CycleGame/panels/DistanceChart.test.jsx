@@ -91,6 +91,64 @@ describe('DistanceChart panel', () => {
     expect(g).toBeTruthy();
     expect(g.getAttribute('class')).toContain('cycle-race-screen__zoomable');
   });
+  it('anchors the vertical scale at the start line so the slowest rider is not pinned to the floor', () => {
+    // Two riders bunched near the front (triggers log mode) + one far-back rider.
+    // Old behaviour anchored the bottom of the scale to the trailing rider, so the
+    // slowest rider mapped to frac 0 (the bottom axis). Zero-anchored, they sit well
+    // above the floor, reflecting their true ~20% progress.
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },
+      second: { displayName: 'S', cumulativeDistanceM: 2480, distanceSeries: [2480] },
+      slow:   { displayName: 'W', cumulativeDistanceM: 500,  distanceSeries: [500]  },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['lead', 'second', 'slow']} riders={riders}
+        riderLive={{ lead: {}, second: {}, slow: {} }}
+        winCondition="distance" goalM={5000} elapsedS={1} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const slowY = parseFloat(lines[2].getAttribute('points').trim().split(',')[1]);
+    const floorY = 200 - 22; // H - PAD_B = the bottom axis
+    expect(slowY).toBeLessThan(floorY - 12); // clearly off the bottom, not flat-lined
+  });
+  it('freezes a finished rider’s lane at the goal-crossing time (does not crawl right)', () => {
+    // Rider A crosses the 1000 m goal at sample index 3, then the engine keeps pushing
+    // goal-clamped samples while rider B (still racing) plays on. A's lane must stop at
+    // index 3's x; B's lane extends to the latest sample.
+    const aSeries = [400, 700, 950, 1000, 1000, 1000, 1000];
+    const bSeries = [200, 350, 480, 540, 580, 600, 600];
+    const riders = {
+      a: { displayName: 'A', cumulativeDistanceM: 1000, finishTimeS: 3, distanceSeries: aSeries },
+      b: { displayName: 'B', cumulativeDistanceM: 600, distanceSeries: bSeries },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders}
+        riderLive={{ a: {}, b: {} }} winCondition="distance" goalM={1000} elapsedS={6} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const aXs = lines[0].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    const bXs = lines[1].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    // A plots exactly 4 points (indices 0..3) and stops left of still-racing B.
+    expect(aXs.length).toBe(4);
+    expect(Math.max(...aXs)).toBeLessThan(Math.max(...bXs));
+  });
+  it('freezes a finished rider even when the goal distance is fractional (rounded sample match)', () => {
+    // 1-mile-ish goal: stored finish sample is Math.round(1609.34) = 1609, which must
+    // still register as "finished" so the lane freezes at index 3 rather than crawling.
+    const aSeries = [600, 1100, 1450, 1609, 1609, 1609, 1609];
+    const bSeries = [300, 550, 760, 900, 980, 1040, 1090];
+    const riders = {
+      a: { displayName: 'A', cumulativeDistanceM: 1609, finishTimeS: 3, distanceSeries: aSeries },
+      b: { displayName: 'B', cumulativeDistanceM: 1090, distanceSeries: bSeries },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders}
+        riderLive={{ a: {}, b: {} }} winCondition="distance" goalM={1609.34} elapsedS={6} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const aXs = lines[0].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    expect(aXs.length).toBe(4); // frozen at index 3, NOT crawling to 7 samples
+  });
   it('renders a header strip with the clock and goal label', () => {
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}
