@@ -29,4 +29,14 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
     expect(eng._latestInputs.guestIds).toEqual([]);
     expect(eng._buildSubjectFilter()('a')).toBe(true);
   });
+
+  it('requiredCount denominator counts only subjects (drops guests + exempt)', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['felix', 'milo', 'mom', 'g1'], guestIds: ['g1'] });
+    // 'all' over [felix, milo, mom(exempt), g1(guest)] = 2 subjects.
+    expect(eng._normalizeRequiredCount('all', 4, ['felix', 'milo', 'mom', 'g1'])).toBe(2);
+    // numeric rule clamps to subject count.
+    expect(eng._normalizeRequiredCount(3, 4, ['felix', 'milo', 'mom', 'g1'])).toBe(2);
+  });
 });

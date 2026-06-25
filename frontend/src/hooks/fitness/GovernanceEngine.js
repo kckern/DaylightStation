@@ -2557,13 +2557,12 @@ export class GovernanceEngine {
   }
 
   _normalizeRequiredCount(rule, totalCount, activeParticipants = []) {
-    // If exemptions are configured, filter the active participants (who are subject to counts)
+    // Only subjects (registered, non-exempt, non-guest) count toward the
+    // denominator — guests/exempt never raise the bar.
     let effectiveCount = totalCount;
-    if (this.config.exemptions && Array.isArray(this.config.exemptions) && activeParticipants.length > 0) {
-      // Exempt users do not count towards the denominator (total number of people required)
-      const exemptUsers = this.config.exemptions.map(u => normalizeName(u));
-      const subjectParticipants = activeParticipants.filter(p => !exemptUsers.includes(normalizeName(p)));
-      effectiveCount = subjectParticipants.length;
+    if (Array.isArray(activeParticipants) && activeParticipants.length > 0) {
+      const isSubject = this._buildSubjectFilter();
+      effectiveCount = activeParticipants.filter(isSubject).length;
     }
 
     if (typeof rule === 'number' && Number.isFinite(rule)) {
