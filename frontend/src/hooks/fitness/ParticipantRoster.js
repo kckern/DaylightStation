@@ -288,17 +288,17 @@ export class ParticipantRoster {
    * path would let a user whose strap just dropped to zero appear on the lock
    * screen for a tick or two before the next snapshot eval cleared them.
    *
-   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number, hrInactiveUsers: string[] }}
+   * @returns {{ participants: string[], zoneMap: Object<string, string>, totalCount: number, hrInactiveUsers: string[], guestIds: string[] }}
    */
   getActiveParticipantState() {
     const roster = this.getRoster();
     const participants = [];
     const hrInactiveUsers = [];
+    const guestIds = [];
     const zoneMap = {};
 
     for (const entry of roster) {
       if (!entry.isActive) continue;
-      if (entry.isGuest) continue;
       const id = entry.id || entry.profileId;
       if (!id) continue;
       if (entry.hrInactive) {
@@ -306,6 +306,7 @@ export class ParticipantRoster {
         continue;
       }
       participants.push(id);
+      if (entry.isGuest) guestIds.push(id);   // eligible, but flagged non-subject
       const zoneId = entry.zoneId;
       if (zoneId) {
         zoneMap[id] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
@@ -336,7 +337,7 @@ export class ParticipantRoster {
       }, { maxPerMinute: 6, aggregate: false });
     }
 
-    return { participants, zoneMap, totalCount: participants.length, hrInactiveUsers };
+    return { participants, zoneMap, totalCount: participants.length, hrInactiveUsers, guestIds };
   }
 
   /**
