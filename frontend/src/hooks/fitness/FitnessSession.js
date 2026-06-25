@@ -2051,6 +2051,12 @@ export class FitnessSession {
         .filter(entry => entry.hrInactive && (entry.id || entry.profileId))
         .map(entry => entry.id || entry.profileId);
 
+    // Guests are eligible (challenge credit + coins) but never governed as
+    // subjects — flag them so the engine keeps them out of required/missing.
+    const guestIds = effectiveRoster
+        .filter(entry => entry.isGuest && (entry.id || entry.profileId))
+        .map(entry => entry.id || entry.profileId);
+
     // Key by userId/entityId (stable, no case issues)
     const userZoneMap = {};
     effectiveRoster.forEach(entry => {
@@ -2095,6 +2101,7 @@ export class FitnessSession {
         zoneInfoMap,
         totalCount: activeParticipants.length,
         hrInactiveUsers,
+        guestIds,
         equipmentCadenceMap,
         equipmentRiderMap
     });
