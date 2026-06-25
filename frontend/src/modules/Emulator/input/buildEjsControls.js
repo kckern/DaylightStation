@@ -85,7 +85,7 @@ export function normalizeKeyName(friendly) {
  * @param {Record<string,string>} keyboardMap  semantic -> friendly key name.
  * @returns {{0: object, 1: object, 2: object, 3: object}}
  */
-export function buildEjsControls(keyboardMap = {}) {
+export function buildEjsControls(keyboardMap = {}, gamepadMap = {}) {
   const player0 = {};
 
   // Seed every index with its gamepad default + empty keyboard value.
@@ -93,11 +93,20 @@ export function buildEjsControls(keyboardMap = {}) {
     player0[index] = { value: '', value2: GAMEPAD_DEFAULT[index] };
   }
 
-  // Overlay keyboard bindings for recognized semantic names.
+  // Overlay gamepad (value2) overrides for recognized semantic names. Lets config
+  // remap a control to a stick axis instead of a button — e.g. controllers whose
+  // D-pad reports on the left stick axes (LEFT_STICK_X/Y:±1), like the 8BitDo SFC30.
+  for (const [semantic, value2] of Object.entries(gamepadMap || {})) {
+    const index = SEMANTIC_INDEX[semantic];
+    if (index === undefined || !value2) continue;
+    player0[index].value2 = String(value2);
+  }
+
+  // Overlay keyboard bindings for recognized semantic names (keep value2 as set).
   for (const [semantic, key] of Object.entries(keyboardMap)) {
     const index = SEMANTIC_INDEX[semantic];
     if (index === undefined) continue;
-    player0[index] = { value: normalizeKeyName(key), value2: GAMEPAD_DEFAULT[index] };
+    player0[index].value = normalizeKeyName(key);
   }
 
   return { 0: player0, 1: {}, 2: {}, 3: {} };

@@ -36,7 +36,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
       const games = lib?.games || [];
       const chosen = (config?.gameId && games.find((g) => g.id === config.gameId)) || games[0];
       if (!chosen) { setError('No games'); onMount?.(); return; }
-      const controls = buildEjsControls(lib?.input?.keyboard || {});
+      const controls = buildEjsControls(lib?.input?.keyboard || {}, lib?.input?.gamepad || {});
       const gate = buildFitnessGameGate({ game: chosen, zonesOrder, getActivePlayerId, getUserVitals });
       gateRef.current = gate;
       setGame({ id: chosen.id, system: chosen.system, romUrl: chosen.romUrl, chrome: chosen.chrome, shader: chosen.shader, bezelUrl: chosen.bezelUrl, screen: chosen.screen, onscreenControls: chosen.onscreenControls });
