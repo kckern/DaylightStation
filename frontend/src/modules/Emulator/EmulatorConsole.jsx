@@ -10,7 +10,7 @@
  * props. It must NOT import from modules/Fitness or context/FitnessContext.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { createEmulatorEngine } from './core/EmulatorEngine.js';
 import { createAudioMixer } from './audio/AudioMixer.js';
@@ -76,6 +76,7 @@ export function EmulatorConsole({
   const logger = useMemo(() => getLogger().child({ component: 'emulator-console' }), []);
 
   const mountRef = useRef(null);
+  const consoleRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
   const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
 
@@ -111,6 +112,54 @@ export function EmulatorConsole({
       return next;
     });
   }, []);
+
+  // ── Integer-locked LCD geometry ──────────────────────────────────────────
+  // The dot-matrix grid is only uniform AND aligned with the game's pixels when
+  // the screen box is an EXACT integer multiple of the GB's 160×144 framebuffer
+  // measured in *device* pixels, and the grid period equals that integer scale.
+  // Anything fractional — a `%` cutout (41.667% → 800.006px) or the SCSS
+  // `calc(100%/160)` per-cell size — accumulates sub-pixel rounding across 160
+  // cells, so some grid lines land 1 device px thicker than others (uneven
+  // thickness) and the grid drifts off the game pixels (the offset/moiré the
+  // user sees). Fix: measure the console, pick the largest integer scale that
+  // fits the cutout, and pin an exact box — pillar/letterboxing the slack inside
+  // the bezel. The box origin is snapped to a whole device pixel too (a
+  // fractional left/top re-blurs the 1px lines).
+  const [screenBox, setScreenBox] = useState(null);
+  useLayoutEffect(() => {
+    const root = consoleRef.current;
+    if (!root) return undefined;
+    const compute = () => {
+      const rect = root.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr = window.devicePixelRatio || 1;
+      const sc = game?.screen;
+      const hasCut = sc && Number.isFinite(sc.x);
+      const cutLeft = hasCut ? (sc.x / 100) * rect.width : 0;
+      const cutTop = hasCut ? (sc.y / 100) * rect.height : 0;
+      const cutW = hasCut ? (sc.width / 100) * rect.width : rect.width;
+      const cutH = hasCut ? (sc.height / 100) * rect.height : rect.height;
+      // Largest integer scale N with an N×160 × N×144 device-px box fitting the cutout.
+      const scale = Math.max(1, Math.min(
+        Math.floor((cutW * dpr) / 160),
+        Math.floor((cutH * dpr) / 144),
+      ));
+      const width = (scale * 160) / dpr;
+      const height = (scale * 144) / dpr;
+      const left = Math.round((cutLeft + (cutW - width) / 2) * dpr) / dpr;
+      const top = Math.round((cutTop + (cutH - height) / 2) * dpr) / dpr;
+      const cell = scale / dpr; // grid period: exactly one N×-scaled game pixel
+      setScreenBox((prev) => (prev && prev.scale === scale && prev.left === left
+        && prev.top === top && prev.width === width && prev.height === height
+        ? prev
+        : { left, top, width, height, cell, scale }));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(root);
+    window.addEventListener('resize', compute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
+  }, [game]);
 
   // Diagnostic: log live gamepad input (pressed button indices + active axes)
   // exactly as the browser reports it — the source of truth for EmulatorJS
@@ -303,12 +352,25 @@ export function EmulatorConsole({
     ? { inset: 'auto', left: `${sc.x}%`, top: `${sc.y}%`, width: `${sc.width}%`, height: `${sc.height}%` }
     : undefined;
 
+  // Once measured, use the exact integer-pixel box; until then fall back to the
+  // % cutout so first paint isn't empty. The shader gets the same box plus the
+  // integer grid period (background-size) and the shade tint.
+  const pixelBox = screenBox
+    ? { inset: 'auto', left: `${screenBox.left}px`, top: `${screenBox.top}px`, width: `${screenBox.width}px`, height: `${screenBox.height}px` }
+    : screenStyle;
+  const isDotmatrix = game?.shader === 'dotmatrix';
+  const shaderStyle = {
+    ...(isDotmatrix ? { ...pixelBox, backgroundColor: shade.color } : pixelBox),
+    ...(isDotmatrix && screenBox ? { backgroundSize: `${screenBox.cell}px ${screenBox.cell}px` } : null),
+  };
+
   // On-screen controls (native EmulatorJS menu/virtual-gamepad + our controller
   // panel) are config-gated and OFF by default — driven by hooks/api instead.
   const osd = !!game?.onscreenControls;
 
   return (
     <div
+      ref={consoleRef}
       className={`emulator-console${osd ? '' : ' emulator-console--no-osd'}`}
       data-state={status.state}
       data-chrome={game?.chrome || 'none'}
@@ -320,12 +382,12 @@ export function EmulatorConsole({
       />
       {/* The cutout is positioned on this WRAPPER, not the mount — EmulatorJS owns
           the mount element's inline styles, so it must fill an already-positioned box. */}
-      <div className="emulator-screen-window" style={screenStyle}>
+      <div className="emulator-screen-window" style={pixelBox}>
         <div className="emulator-mount" ref={mountRef} />
       </div>
       <div
         className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
-        style={game?.shader === 'dotmatrix' ? { ...screenStyle, backgroundColor: shade.color } : screenStyle}
+        style={shaderStyle}
       />
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
