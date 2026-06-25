@@ -58,4 +58,38 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
     expect(res.missingUsers).toEqual(['felix']);       // only the subject is blamed
     expect(res.missingUsers).not.toContain('g1');      // guest never blamed
   });
+
+  it('challenge: a guest in-zone counts toward achievement (group tally)', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    const zoneRankMap = { cold: 0, warm: 1, hot: 2 };
+    const zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
+    eng._captureLatestInputs({
+      activeParticipants: ['felix', 'g1'], guestIds: ['g1'], zoneRankMap, zoneInfoMap,
+    });
+    eng._latestInputs.zoneRankMap = zoneRankMap;
+    eng._latestInputs.zoneInfoMap = zoneInfoMap;
+    // Helper mirrors the challenge numerator semantics via the public evaluator
+    // added in Step 3 (evaluateChallengeZone) — see implementation.
+    const res = eng.evaluateChallengeZone(
+      { zone: 'hot', rule: 2 },
+      ['felix', 'g1'],
+      { felix: 'hot', g1: 'hot' },
+      2
+    );
+    expect(res.satisfied).toBe(true);            // 1 subject + 1 guest meet "2 in hot"
+    expect(res.actualCount).toBe(2);             // eligible numerator counts the guest
+    expect(res.missingUsers).toEqual([]);        // nobody blamed
+  });
+
+  it('challenge: a slacking guest is never blamed', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    const zoneRankMap = { cold: 0, hot: 2 };
+    eng._captureLatestInputs({ activeParticipants: ['felix', 'g1'], guestIds: ['g1'], zoneRankMap });
+    eng._latestInputs.zoneRankMap = zoneRankMap;
+    const res = eng.evaluateChallengeZone({ zone: 'hot', rule: 1 }, ['felix', 'g1'], { felix: 'hot', g1: 'cold' }, 2);
+    expect(res.satisfied).toBe(true);            // felix (subject) meets required 1
+    expect(res.missingUsers).toEqual([]);        // guest cold but NOT blamed
+  });
 });

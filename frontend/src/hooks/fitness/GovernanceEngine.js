@@ -2538,6 +2538,40 @@ export class GovernanceEngine {
   }
 
   /**
+   * Challenge zone scoring. Unlike steady-state, the numerator counts EVERY
+   * eligible participant who met the zone (subjects + guests + exempt) — a guest
+   * can fill the group tally. requiredCount + missingUsers stay subjects-only,
+   * so guests/exempt are never required and never blamed.
+   */
+  evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount) {
+    const zoneId = challenge.zone;
+    const zoneInfo = this._getZoneInfo(zoneId);
+    const requiredRank = this._getZoneRank(zoneId) ?? 0;
+    const isSubject = this._buildSubjectFilter();
+
+    const metUsers = [];
+    activeParticipants.forEach((participantId) => {
+      const pRank = this._getZoneRank(userZoneMap[participantId]) ?? 0;
+      if (pRank >= requiredRank) metUsers.push(participantId);
+    });
+
+    const requiredCount = this._normalizeRequiredCount(challenge.rule, totalCount, activeParticipants);
+    const satisfied = metUsers.length >= requiredCount; // eligible numerator
+    const missingUsers = activeParticipants.filter((participantId) =>
+      !metUsers.includes(participantId) && isSubject(participantId)
+    );
+
+    return {
+      satisfied,
+      metUsers,
+      missingUsers,
+      actualCount: metUsers.length,
+      requiredCount,
+      zoneLabel: zoneInfo?.name || zoneId
+    };
+  }
+
+  /**
    * A "subject" is a participant who is governed: registered, NOT in
    * config.exemptions, and NOT a guest. Only subjects can be required
    * (denominator) or blamed (missingUsers). Guests/exempt are eligible for
@@ -3521,48 +3555,7 @@ export class GovernanceEngine {
         }
 
         // Existing zone-based logic follows unchanged...
-        const zoneId = challenge.zone;
-        const zoneInfo = this._getZoneInfo(zoneId);
-        const requiredRank = this._getZoneRank(zoneId) ?? 0;
-
-        const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
-        const metUsers = [];
-        let nonExemptMetCount = 0;
-        activeParticipants.forEach((participantId) => {
-          const pZone = userZoneMap[participantId];
-          if (!pZone) {
-            getLogger().warn('participant.zone.lookup_failed', {
-              key: participantId,
-              availableKeys: Object.keys(userZoneMap),
-              caller: 'GovernanceEngine.buildChallengeSummary'
-            });
-          }
-          const pRank = this._getZoneRank(pZone) ?? 0;
-          if (pRank >= requiredRank) {
-            metUsers.push(participantId);
-            if (!exemptUsers.includes(normalizeName(participantId))) {
-              nonExemptMetCount++;
-            }
-          }
-        });
-
-        // Recompute requiredCount from current roster (not frozen value)
-        const liveRequiredCount = this._normalizeRequiredCount(challenge.rule, totalCount, activeParticipants);
-        // Only non-exempt users count toward satisfying challenges
-        const satisfied = nonExemptMetCount >= liveRequiredCount;
-
-        const missingUsers = activeParticipants.filter((participantId) =>
-          !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
-        );
-
-        return {
-            satisfied,
-            metUsers,
-            missingUsers,
-            actualCount: nonExemptMetCount,
-            requiredCount: liveRequiredCount,
-            zoneLabel: zoneInfo?.name || zoneId
-        };
+        return this.evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount);
     };
 
     // --- Main Logic ---
