@@ -34,9 +34,13 @@ vi.mock('@/context/FitnessContext.jsx', () => ({
 vi.mock('@/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(),
   DaylightMediaPath: (p) => p,
+  DaylightImagePath: (p) => `/api/v1/static/img/${p}`,
   ContentDisplayUrl: (id) => `display:${id}`,
   normalizeImageUrl: (u) => u || ''
 }));
+
+// Locks are kiosk-bound; this suite exercises the locked/governed flow, so force kiosk.
+vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
 
 // Control the unlock surface from each test (via the identity provider).
 const registerUnlock = vi.fn();
