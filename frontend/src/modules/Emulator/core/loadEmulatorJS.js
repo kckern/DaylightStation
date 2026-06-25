@@ -77,6 +77,32 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
 let _loadPromise = null;
 
 /**
+ * Force NEAREST-neighbour texture filtering on the emulator's WebGL context so
+ * the upscaled game is CRISP (sharp pixels) instead of bilinear-smoothed. Crisp
+ * pixels are the authentic Game Boy dot-matrix and — crucially — avoid the moiré
+ * that a separate fixed CSS pixel-grid produces against the display at certain
+ * resolutions/DPIs. Patches the GL prototypes before EmulatorJS creates its
+ * context + textures. Idempotent.
+ *
+ * GL constants (avoid needing a context): TEXTURE_MAG_FILTER=0x2800,
+ * TEXTURE_MIN_FILTER=0x2801, LINEAR=0x2601, NEAREST=0x2600.
+ */
+export function forceNearestFiltering(win = window) {
+  const protos = [win.WebGLRenderingContext?.prototype, win.WebGL2RenderingContext?.prototype];
+  for (const proto of protos) {
+    if (!proto || proto.__ejsNearestPatched) continue;
+    const orig = proto.texParameteri;
+    proto.texParameteri = function patchedTexParameteri(target, pname, param) {
+      if ((pname === 0x2800 || pname === 0x2801) && param === 0x2601) {
+        param = 0x2600; // LINEAR -> NEAREST
+      }
+      return orig.call(this, target, pname, param);
+    };
+    proto.__ejsNearestPatched = true;
+  }
+}
+
+/**
  * Lazily load and boot EmulatorJS. Returns a promise that resolves with the
  * running `EJS_emulator` instance once the game starts.
  *
@@ -134,6 +160,11 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
       fail(err);
       return;
     }
+
+    // Crisp (nearest-neighbour) game rendering — must be patched before EmulatorJS
+    // creates its WebGL context. Makes the GB pixels sharp (the real dot-matrix)
+    // and avoids CSS-grid moiré.
+    forceNearestFiltering(win);
 
     // Assign EJS_* globals onto the window before injecting the loader.
     for (const [key, value] of Object.entries(globals)) {
