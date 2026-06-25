@@ -1299,12 +1299,20 @@ export class GovernanceEngine {
       // Enhanced production logging for specific transitions
       if (newPhase === 'warning' && oldPhase !== 'warning') {
         const participantsBelowThreshold = this._getParticipantsBelowThreshold(evalContext);
+        // Classify so we can confirm a guest/exempt was NEVER the cause of the
+        // warning (they must never appear in a requirement's missingUsers).
+        const warnCls = this._classifyParticipants(
+          evalContext?.activeParticipants ?? this._latestInputs.activeParticipants ?? []
+        );
         logger.info('governance.warning_started', {
           contentId: this.media?.id,
           deadline: this.meta?.deadline,
           gracePeriodTotal: this.meta?.gracePeriodTotal,
           participantsBelowThreshold,
           participantCount: evalContext?.activeParticipants?.length ?? this._latestInputs.activeParticipants?.length ?? 0,
+          subjects: warnCls.subjects,
+          guests: warnCls.guests,   // expected: never the reason for a warning
+          exempt: warnCls.exempt,   // expected: never the reason for a warning
           requirements: this.requirementSummary?.requirements?.slice(0, 5) // Limit for log size
         });
       }
@@ -1313,11 +1321,17 @@ export class GovernanceEngine {
         const timeSinceWarning = oldPhase === 'warning' && savedWarningStartTime
           ? now - savedWarningStartTime
           : null;
+        const lockCls = this._classifyParticipants(
+          evalContext?.activeParticipants ?? this._latestInputs.activeParticipants ?? []
+        );
         logger.info('governance.lock_triggered', {
           contentId: this.media?.id,
           reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
           timeSinceWarningMs: timeSinceWarning,
           participantStates: this._getParticipantStates(evalContext),
+          subjects: lockCls.subjects,
+          guests: lockCls.guests,   // expected: never the reason for a lock
+          exempt: lockCls.exempt,   // expected: never the reason for a lock
           challengeActive: !!this.challengeState?.activeChallenge,
           challengeId: this.challengeState?.activeChallenge?.id || null
         });
@@ -2528,6 +2542,25 @@ export class GovernanceEngine {
     );
     const zoneInfo = this._getZoneInfo(zoneId);
 
+    // Diagnostic: steady-state is satisfied/blamed by SUBJECTS only. Log the
+    // classification whenever a non-subject is present or the requirement is
+    // unmet (the interesting cases), so a real session can verify guests/exempt
+    // neither satisfy nor get blamed here. Rate-limited (runs ~5-10Hz).
+    const cls = this._classifyParticipants(activeParticipants);
+    if (cls.guests.length || cls.exempt.length || !satisfied) {
+      getLogger().sampled('governance.steadystate_eval', {
+        zone: zoneId,
+        rule,
+        requiredCount,
+        subjectMetCount,
+        satisfied,
+        subjects: cls.subjects,
+        guests: cls.guests,     // never blamed; do NOT satisfy steady-state
+        exempt: cls.exempt,     // never blamed; do NOT satisfy steady-state
+        missingUsers            // subjects-only
+      }, { maxPerMinute: 12, aggregate: true });
+    }
+
     return {
       zone: zoneId,
       zoneLabel: zoneInfo?.name || zoneId,
@@ -2568,6 +2601,30 @@ export class GovernanceEngine {
       !metUsers.includes(participantId) && isSubject(participantId)
     );
 
+    // Diagnostic: challenges count EVERY eligible met participant (group tally),
+    // so log which non-subjects (guests/exempt) fed the count, plus the
+    // subjects-only missingUsers, whenever a non-subject is present or it's unmet.
+    // Lets a real session confirm a guest's contribution counts but never blames.
+    const cls = this._classifyParticipants(activeParticipants);
+    const nonSubjectContributors = metUsers.filter(
+      (id) => cls.guests.includes(id) || cls.exempt.includes(id)
+    );
+    if (cls.guests.length || cls.exempt.length || !satisfied) {
+      getLogger().sampled('governance.challenge_eval', {
+        zone: zoneId,
+        rule: challenge.rule,
+        requiredCount,
+        actualCount: metUsers.length,   // eligible numerator
+        satisfied,
+        metUsers,
+        nonSubjectContributors,         // guests/exempt whose in-zone HR fed the tally
+        missingUsers,                   // subjects-only
+        subjects: cls.subjects,
+        guests: cls.guests,
+        exempt: cls.exempt
+      }, { maxPerMinute: 12, aggregate: true });
+    }
+
     return {
       satisfied,
       metUsers,
@@ -2593,6 +2650,27 @@ export class GovernanceEngine {
     return (participantId) =>
       !guestIds.has(participantId) &&
       !exemptUsers.includes(normalizeName(participantId));
+  }
+
+  /**
+   * Split active participants into subjects / guests / exempt for diagnostic
+   * logging. Mirrors _buildSubjectFilter's rules so the logs explain exactly WHY
+   * a participant was (not) counted/blamed. Guests match by id (guestIds);
+   * exempt match by normalized username (config.exemptions).
+   * @returns {{ subjects: string[], guests: string[], exempt: string[] }}
+   */
+  _classifyParticipants(activeParticipants = []) {
+    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
+    const guestSet = new Set(this._latestInputs?.guestIds || []);
+    const subjects = [];
+    const guests = [];
+    const exempt = [];
+    for (const id of activeParticipants) {
+      if (guestSet.has(id)) guests.push(id);
+      else if (exemptUsers.includes(normalizeName(id))) exempt.push(id);
+      else subjects.push(id);
+    }
+    return { subjects, guests, exempt };
   }
 
   _normalizeRequiredCount(rule, totalCount, activeParticipants = []) {

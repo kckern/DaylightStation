@@ -30,6 +30,16 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
     expect(eng._buildSubjectFilter()('a')).toBe(true);
   });
 
+  it('_classifyParticipants splits subjects / guests / exempt for diagnostics', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['user_2', 'mom', 'g1'], guestIds: ['g1'] });
+    const cls = eng._classifyParticipants(['user_2', 'mom', 'g1']);
+    expect(cls.subjects).toEqual(['user_2']);
+    expect(cls.guests).toEqual(['g1']);
+    expect(cls.exempt).toEqual(['mom']);
+  });
+
   it('requiredCount denominator counts only subjects (drops guests + exempt)', () => {
     const eng = new GovernanceEngine();
     eng.config = { exemptions: ['mom'] };
