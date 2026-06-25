@@ -111,6 +111,27 @@ describe('DistanceChart panel', () => {
     const floorY = 200 - 22; // H - PAD_B = the bottom axis
     expect(slowY).toBeLessThan(floorY - 12); // clearly off the bottom, not flat-lined
   });
+  it('freezes a finished rider’s lane at the goal-crossing time (does not crawl right)', () => {
+    // Rider A crosses the 1000 m goal at sample index 3, then the engine keeps pushing
+    // goal-clamped samples while rider B (still racing) plays on. A's lane must stop at
+    // index 3's x; B's lane extends to the latest sample.
+    const aSeries = [400, 700, 950, 1000, 1000, 1000, 1000];
+    const bSeries = [200, 350, 480, 540, 580, 600, 600];
+    const riders = {
+      a: { displayName: 'A', cumulativeDistanceM: 1000, finishTimeS: 3, distanceSeries: aSeries },
+      b: { displayName: 'B', cumulativeDistanceM: 600, distanceSeries: bSeries },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders}
+        riderLive={{ a: {}, b: {} }} winCondition="distance" goalM={1000} elapsedS={6} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const aXs = lines[0].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    const bXs = lines[1].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    // A plots exactly 4 points (indices 0..3) and stops left of still-racing B.
+    expect(aXs.length).toBe(4);
+    expect(Math.max(...aXs)).toBeLessThan(Math.max(...bXs));
+  });
   it('renders a header strip with the clock and goal label', () => {
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}

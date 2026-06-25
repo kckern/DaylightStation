@@ -152,6 +152,18 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return (H - PAD_B) - Math.max(0, Math.min(1, frac)) * PLOT_H;
   };
 
+  // A finished rider's lane freezes at the sample where they crossed the goal: the
+  // race is over for them, so their terminus stops advancing along the time axis (it
+  // would otherwise crawl right at the goal line every tick until the last rider
+  // finishes). Unfinished riders — and every rider in a time race (finishTimeS null) —
+  // plot their whole series.
+  const plottedLen = (id) => {
+    const series = riders[id].distanceSeries || [];
+    if (riders[id].finishTimeS == null) return series.length;
+    const fin = series.findIndex((d) => d >= goalM);
+    return fin >= 0 ? fin + 1 : series.length;
+  };
+
   // ── Smooth leading edge ────────────────────────────────────────────────────
   // The engine ticks at 1 Hz, so each line's newest point jumps once per second
   // while its terminus node glides (CSS transition). Glide the line tip too: lerp
@@ -166,7 +178,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const curTips = {};
   riderIds.forEach((id) => {
     const series = riders[id].distanceSeries || [];
-    const last = series.length - 1;
+    const last = plottedLen(id) - 1;
     if (last < 0) return;
     curTips[id] = { x: xFor(last), y: yFor(series[last]) };
   });
@@ -201,8 +213,9 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const lineCoordsFor = (id) => {
     const series = riders[id].distanceSeries || [];
     const start = plotStartIndex(series);
-    if (start < 0) return null;
-    const coords = series.slice(start).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
+    const end = plottedLen(id);
+    if (start < 0 || start >= end) return null;
+    const coords = series.slice(start, end).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
     const tip = tipFor(id);
     if (tip && coords.length) coords[coords.length - 1] = tip;
     return { coords, start };
@@ -221,12 +234,13 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const tagLayout = (() => {
     const raw = riderIds.map((id, idx) => {
       const series = riders[id].distanceSeries || [];
-      if (!series.length) return null;
+      const last = plottedLen(id) - 1;
+      if (last < 0) return null;
       return {
         id,
         idx,
-        leftPct: (xFor(series.length - 1) / W) * 100,
-        rawTopPct: (yFor(series[series.length - 1]) / H) * 100,
+        leftPct: (xFor(last) / W) * 100,
+        rawTopPct: (yFor(series[last]) / H) * 100,
         color: LINE_COLORS[idx % LINE_COLORS.length],
         isGhost: !!riders[id].isGhost,
         live: riderLive[id] || {},
