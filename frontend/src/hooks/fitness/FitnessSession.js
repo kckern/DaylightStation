@@ -517,6 +517,9 @@ export class FitnessSession {
 
   setKioskMode(isKiosk) {
     this._kioskMode = !!isKiosk;
+    // Governance is kiosk-bound: only the garage kiosk locks content off behind
+    // HR challenges. Off-kiosk (dev/test) the engine stays unlocked.
+    this.governanceEngine?.setGovernanceEnabled(!!isKiosk);
   }
 
   _log(type, payload = {}) {

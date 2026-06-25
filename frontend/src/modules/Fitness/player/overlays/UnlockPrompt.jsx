@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import FingerprintIcon from '@/modules/Fitness/widgets/FingerprintManager/FingerprintIcon.jsx';
 import { DaylightImagePath } from '@/lib/api.mjs';
+import { isKioskEnv } from '@/lib/kioskEnv.js';
 import './UnlockPrompt.scss';
 
 // "Access denied" avatar shown when a fingerprint isn't recognized — the Sonic
@@ -86,7 +87,11 @@ export default function UnlockPrompt({ open, state, lockLabel, onCancel, timeout
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, logger]);
 
-  if (!open) return null;
+  // Kiosk-bound: the fingerprint unlock is a garage-kiosk affordance. Off-kiosk
+  // (dev/test) it's suppressed so a developer is never gated — pass ?kiosk=1 to
+  // force it on for testing. (Governance also stays unlocked off-kiosk, so this
+  // is belt-and-suspenders; it equally suppresses any non-governance gate.)
+  if (!open || !isKioskEnv()) return null;
 
   const handleCancel = () => {
     logger.info('unlock_prompt.cancel', { lock: lockLabel, state });

@@ -235,6 +235,11 @@ export class GovernanceEngine {
     // screen. A suspended engine goes idle every evaluate() WITHOUT dropping
     // this.media, so governance resumes cleanly when the takeover unmounts.
     this._suspended = false;
+    // Kiosk-bound: governance only locks content on the garage fitness kiosk.
+    // Defaults ON (so unit tests and the engine-in-isolation still govern); the
+    // app flips it off in dev/test via setGovernanceEnabled() (wired from the
+    // session's kiosk mode). See frontend/src/lib/kioskEnv.js.
+    this._governanceEnabled = true;
     this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
     this._zoneChangeDebounceTimer = null;
@@ -1208,6 +1213,25 @@ export class GovernanceEngine {
     }
   }
 
+  /**
+   * Bind governance to the kiosk. When disabled (dev/test, off-kiosk), evaluate()
+   * stays idle and never locks content — so a developer is never locked out.
+   * Enabling re-pulses; disabling drops to idle immediately.
+   */
+  setGovernanceEnabled(enabled) {
+    const next = enabled !== false;
+    if (this._governanceEnabled === next) return;
+    this._governanceEnabled = next;
+    this._invalidateStateCache?.();
+    getLogger().info('governance.enabled_changed', { enabled: next });
+    if (next) {
+      this._triggerPulse?.();
+    } else {
+      this._resetToIdle();
+      this._updateGlobalState?.();
+    }
+  }
+
   setCallbacks({ onPhaseChange, onPulse, onStateChange }) {
     this.callbacks.onPhaseChange = onPhaseChange;
     this.callbacks.onPulse = onPulse;
@@ -2121,6 +2145,17 @@ export class GovernanceEngine {
       }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       tickManualCycle();
+      return;
+    }
+
+    // Kiosk-bound governance: off-kiosk (dev/test) we never lock — go idle and
+    // bail so content always plays freely while developing. this.media is left
+    // intact so re-enabling on the kiosk re-engages cleanly.
+    if (!this._governanceEnabled) {
+      getLogger().sampled('governance.evaluate.disabled_non_kiosk', {
+        contentId: this.media?.id
+      }, { maxPerMinute: 1, aggregate: true });
+      this._resetToIdle();
       return;
     }
 

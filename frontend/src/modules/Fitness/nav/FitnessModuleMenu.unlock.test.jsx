@@ -7,6 +7,9 @@ vi.mock('@/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => logSpy })
 }));
 
+// The unlock prompt is kiosk-bound; force kiosk so it renders in this suite.
+vi.mock('@/lib/kioskEnv.js', () => ({ isKioskEnv: () => true }));
+
 // Fitness config carries the locks map; both context aliases resolve to it.
 let mockCtx;
 vi.mock('@/context/FitnessContext.jsx', () => ({
@@ -27,6 +30,7 @@ vi.mock('@/lib/api.mjs', () => ({
   })),
   // UnlockPrompt (imported by the menu) resolves a denied-avatar via this helper.
   DaylightMediaPath: (p) => p,
+  DaylightImagePath: (p) => `/api/v1/static/img/${p}`,
   ContentDisplayUrl: (id) => `display:${id}`,
   normalizeImageUrl: (u) => u || ''
 }));
