@@ -33,6 +33,7 @@ const LCD_SHADES = [
   { name: 'Gray', color: '#cfcfcf' },
 ];
 const SHADE_STORAGE_KEY = 'emulator:lcd-shade';
+const VOLUME_STORAGE_KEY = 'emulator:volume-level';
 const ANIM_DURATION_MS = 1000;
 const PAIR_DURATION_MS = 30000;
 const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
@@ -76,6 +77,7 @@ export function EmulatorConsole({
 
   const mountRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
+  const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
 
   const [status, setStatus] = useState(() => governanceGate?.getStatus?.() || { state: 'playing' });
   const [animClass, setAnimClass] = useState('');
@@ -89,7 +91,12 @@ export function EmulatorConsole({
 
   // Settings modal (volume + LCD shade) — the speaker button on the bezel.
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [volumeLevel, setVolumeLevel] = useState(DEFAULT_VOLUME_LEVEL);
+  const [volumeLevel, setVolumeLevel] = useState(() => {
+    try {
+      const saved = Number(window.localStorage?.getItem(VOLUME_STORAGE_KEY));
+      return Number.isFinite(saved) && saved >= 0 && saved <= 100 ? saved : DEFAULT_VOLUME_LEVEL;
+    } catch { return DEFAULT_VOLUME_LEVEL; }
+  });
   const [shadeIndex, setShadeIndex] = useState(() => {
     try {
       const saved = Number(window.localStorage?.getItem(SHADE_STORAGE_KEY));
@@ -105,10 +112,42 @@ export function EmulatorConsole({
     });
   }, []);
 
+  // Diagnostic: log live gamepad input (pressed button indices + active axes)
+  // exactly as the browser reports it — the source of truth for EmulatorJS
+  // mappings (e.g. D-pad on buttons 12-15 vs axes). Logs only on state change.
+  useEffect(() => {
+    let raf;
+    let lastSig = '';
+    const read = () => {
+      const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : [];
+      for (const gp of pads) {
+        if (!gp) continue;
+        const buttons = [];
+        (gp.buttons || []).forEach((btn, i) => { if (btn && btn.pressed) buttons.push(i); });
+        const axes = (gp.axes || [])
+          .map((a, i) => (Math.abs(a) > 0.5 ? `${i}:${a > 0 ? '+' : '-'}` : null))
+          .filter(Boolean);
+        if (buttons.length || axes.length) {
+          const sig = `${gp.index}|${buttons.join(',')}|${axes.join(',')}`;
+          if (sig !== lastSig) {
+            lastSig = sig;
+            logger.info('emulator.gamepad.input', { slot: gp.index, id: gp.id, mapping: gp.mapping, buttons, axes });
+          }
+        }
+      }
+      raf = requestAnimationFrame(read);
+    };
+    raf = requestAnimationFrame(read);
+    return () => cancelAnimationFrame(raf);
+  }, [logger]);
+
   // Apply a touch-volume level (0..100, log curve) to the emulator's game bus.
   // Also resumes the audio engine, since browsers gate autoplay until a gesture.
+  volumeLevelRef.current = volumeLevel;
   const applyVolume = useCallback((level) => {
     setVolumeLevel(level);
+    volumeLevelRef.current = level;
+    try { window.localStorage?.setItem(VOLUME_STORAGE_KEY, String(level)); } catch { /* ignore */ }
     const v = logVolumeFromLevel(level);
     runtimeRef.current?.mixer?.setBusVolume?.('game', v);
     runtimeRef.current?.engine?.resume?.();
@@ -196,8 +235,8 @@ export function EmulatorConsole({
       .then(() => session.start({ mount: mountRef.current }))
       .then((res) => {
         if (cancelled) return;
-        // Push a sane (non-muted) default volume to the game bus on boot.
-        mixer.setBusVolume?.('game', logVolumeFromLevel(DEFAULT_VOLUME_LEVEL));
+        // Apply the persisted (or default) volume to the game bus on boot.
+        mixer.setBusVolume?.('game', logVolumeFromLevel(volumeLevelRef.current));
         logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
       })
       .catch((err) => {
