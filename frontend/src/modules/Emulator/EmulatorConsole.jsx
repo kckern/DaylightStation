@@ -248,6 +248,7 @@ export function EmulatorConsole({
       className={`emulator-console${osd ? '' : ' emulator-console--no-osd'}`}
       data-state={status.state}
       data-chrome={game?.chrome || 'none'}
+      data-shader={game?.shader || 'none'}
     >
       <div
         className={`emulator-chrome chrome-${game?.chrome || 'none'}`}
