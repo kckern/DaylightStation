@@ -54,19 +54,14 @@
   // Game Boy dot-matrix LCD shader: a fine pixel grid that multiplies onto the
   // screen, plus a faint inner shadow, approximating the handheld LCD's visible
   // pixel gaps. Scoped to the screen cutout via the inline screenStyle.
-  // Game Boy dot-matrix LCD: the colour-shade wash (background-color, set inline by
-  // the shade cycler) PLUS the dot-matrix pixel grid (faint cell lines). Both
-  // multiply onto the game like tinted LCD glass. The grid is the dot-matrix
-  // structure — keep it subtle so it reads as pixels, not a heavy crosshatch.
+  // Flat Game Boy LCD: a single uniform colour-shade wash (background-color, set
+  // inline by the shade cycler) multiplied over the game like tinted glass. NO
+  // pixel grid — a fixed-px CSS grid moirés against the game's own pixel scale
+  // and reads as a shimmering double-grid. Keep it clean and flat.
   .emulator-shader.shader-dotmatrix {
     background-color: #c6d2a2;
-    background-image:
-      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px),
-      repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
-    background-size: 3px 3px;
     mix-blend-mode: multiply;
     opacity: 1;
-    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.35);
   }
 
   // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
