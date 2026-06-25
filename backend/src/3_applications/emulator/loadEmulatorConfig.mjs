@@ -1,4 +1,5 @@
 import { deepMerge } from './lib/deepMerge.mjs';
+import { mergePresentation } from './mergePresentation.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 
@@ -61,6 +62,9 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         governance: deepMerge(sysDefaults.governance ?? {}, game.governance ?? {}),
         shader: game.shader ?? presentation.shader ?? null,
         chrome: game.chrome ?? presentation.chrome ?? null,
+        // Bezel control surface: system presentation (screen cutout, hotspots,
+        // overlays) merged under the game's own presentation override (by id).
+        presentation: mergePresentation(presentation, game.presentation),
       });
     }
   }
