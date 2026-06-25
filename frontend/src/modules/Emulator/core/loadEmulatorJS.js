@@ -61,6 +61,9 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
     EJS_pathtodata: normalizedPath,
     EJS_startOnLoaded: true,
     EJS_threads: false,
+    // Non-muted default; the console's AudioMixer pushes the real game-bus level
+    // on boot and on volume changes. Without this EmulatorJS can start silent.
+    EJS_volume: 0.5,
     // NOTE: deliberately NOT setting EJS_DEBUG_XX — it forces unminified
     // src/* loads that 404 on the self-hosted bundle.
   };

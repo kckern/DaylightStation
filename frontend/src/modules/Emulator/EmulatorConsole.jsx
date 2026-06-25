@@ -17,9 +17,11 @@ import { createAudioMixer } from './audio/AudioMixer.js';
 import { createEmulatorSession } from './core/EmulatorSession.js';
 import { createHtmlAudioClip } from './audio/htmlAudioClip.js';
 import { ControllerStatus } from './input/ControllerStatus.jsx';
+import { TouchVolumeButtons, logVolumeFromLevel } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
 import './EmulatorConsole.scss';
 
 const STATUS_POLL_MS = 500;
+const DEFAULT_VOLUME_LEVEL = 70; // log curve: ~25% output — audible default (not muted)
 const ANIM_DURATION_MS = 1000;
 const PAIR_DURATION_MS = 30000;
 const PAIR_ENDPOINT = '/api/v1/emulator/bt/pair';
@@ -73,6 +75,20 @@ export function EmulatorConsole({
   const [panelOpen, setPanelOpen] = useState(false);
   const [localPairing, setLocalPairing] = useState(null);
   const pairTimerRef = useRef(null);
+
+  // Settings modal (volume + future hooks) — the gear button on the bezel.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [volumeLevel, setVolumeLevel] = useState(DEFAULT_VOLUME_LEVEL);
+
+  // Apply a touch-volume level (0..100, log curve) to the emulator's game bus.
+  // Also resumes the audio engine, since browsers gate autoplay until a gesture.
+  const applyVolume = useCallback((level) => {
+    setVolumeLevel(level);
+    const v = logVolumeFromLevel(level);
+    runtimeRef.current?.mixer?.setBusVolume?.('game', v);
+    runtimeRef.current?.engine?.resume?.();
+    logger.debug('emulator.console.volume', { level, volume: v });
+  }, [logger]);
 
   // Internal default pairing trigger: POST to this app's own backend, then flip
   // local pairing to scanning → done (or error). Host can override via
@@ -155,6 +171,8 @@ export function EmulatorConsole({
       .then(() => session.start({ mount: mountRef.current }))
       .then((res) => {
         if (cancelled) return;
+        // Push a sane (non-muted) default volume to the game bus on boot.
+        mixer.setBusVolume?.('game', logVolumeFromLevel(DEFAULT_VOLUME_LEVEL));
         logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
       })
       .catch((err) => {
@@ -277,6 +295,33 @@ export function EmulatorConsole({
             pairing={effectivePairing}
             onPair={effectiveOnPair}
           />
+        </div>
+      )}
+
+      {/* Settings gear — round, bottom-right on the bezel. Opens the controls sheet. */}
+      <button
+        type="button"
+        className="emulator-settings-toggle"
+        aria-label="Emulator settings"
+        aria-expanded={settingsOpen}
+        onClick={() => { applyVolume(volumeLevel); setSettingsOpen((v) => !v); }}
+      >
+        ⚙
+      </button>
+      {settingsOpen && (
+        <div className="emulator-settings-modal" role="dialog" aria-modal="true" aria-label="Emulator settings">
+          <div className="emulator-settings-modal__backdrop" onPointerDown={() => setSettingsOpen(false)} />
+          <div className="emulator-settings-modal__sheet">
+            <div className="emulator-settings-modal__header">
+              <span id="emulator-volume-label">Sound · {volumeLevel}%</span>
+              <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>✕</button>
+            </div>
+            <TouchVolumeButtons
+              controlId="emulator-volume"
+              currentLevel={volumeLevel}
+              onSelect={applyVolume}
+            />
+          </div>
         </div>
       )}
     </div>
