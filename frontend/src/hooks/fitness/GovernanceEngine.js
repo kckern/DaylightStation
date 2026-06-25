@@ -295,7 +295,8 @@ export class GovernanceEngine {
       zoneInfoMap: {},
       totalCount: 0,
       equipmentCadenceMap: {},
-      equipmentRiderMap: {}
+      equipmentRiderMap: {},
+      guestIds: []
     };
     this._lastEvaluationTs = null;
 
@@ -871,7 +872,8 @@ export class GovernanceEngine {
         : {},
       equipmentRiderMap: payload.equipmentRiderMap && typeof payload.equipmentRiderMap === 'object'
         ? { ...payload.equipmentRiderMap }
-        : (this._latestInputs?.equipmentRiderMap || {})
+        : (this._latestInputs?.equipmentRiderMap || {}),
+      guestIds: Array.isArray(payload.guestIds) ? [...payload.guestIds] : []
     };
     this._lastEvaluationTs = this._now();
 
@@ -2535,6 +2537,23 @@ export class GovernanceEngine {
       missingUsers,
       satisfied
     };
+  }
+
+  /**
+   * A "subject" is a participant who is governed: registered, NOT in
+   * config.exemptions, and NOT a guest. Only subjects can be required
+   * (denominator) or blamed (missingUsers). Guests/exempt are eligible for
+   * challenge credit but never carry a negative consequence.
+   * Exempt match is by normalized name (exemptions are usernames); guest match
+   * is by participant id (the ids that arrive in activeParticipants).
+   * @returns {(participantId: string) => boolean}
+   */
+  _buildSubjectFilter() {
+    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    return (participantId) =>
+      !guestIds.has(participantId) &&
+      !exemptUsers.includes(normalizeName(participantId));
   }
 
   _normalizeRequiredCount(rule, totalCount, activeParticipants = []) {
