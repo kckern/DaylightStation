@@ -2493,9 +2493,9 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId);
     if (!Number.isFinite(requiredRank)) return null;
 
-    const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
+    const isSubject = this._buildSubjectFilter();
     const metUsers = [];
-    let nonExemptMetCount = 0;
+    let subjectMetCount = 0;
     activeParticipants.forEach((participantId) => {
       const participantZoneId = userZoneMap[participantId];
       if (!participantZoneId) {
@@ -2508,18 +2508,16 @@ export class GovernanceEngine {
       const participantRank = this._getZoneRank(participantZoneId) ?? 0;
       if (participantRank >= requiredRank) {
         metUsers.push(participantId);
-        if (!exemptUsers.includes(normalizeName(participantId))) {
-          nonExemptMetCount++;
-        }
+        if (isSubject(participantId)) subjectMetCount++;
       }
     });
 
     const requiredCount = this._normalizeRequiredCount(rule, totalCount, activeParticipants);
-    // Only non-exempt users count toward satisfying the requirement.
-    // Exempt users get a free pass — their zone status doesn't affect governance.
-    const satisfied = nonExemptMetCount >= requiredCount;
+    // Steady-state: only SUBJECTS satisfy it (guests/exempt can't clear the
+    // always-on requirement — anti-cheat). They are also never blamed.
+    const satisfied = subjectMetCount >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
-      !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
+      !metUsers.includes(participantId) && isSubject(participantId)
     );
     const zoneInfo = this._getZoneInfo(zoneId);
 
@@ -2532,7 +2530,7 @@ export class GovernanceEngine {
       rule,
       ruleLabel: this._describeRule(rule, requiredCount),
       requiredCount,
-      actualCount: nonExemptMetCount,
+      actualCount: subjectMetCount,
       metUsers,
       missingUsers,
       satisfied
