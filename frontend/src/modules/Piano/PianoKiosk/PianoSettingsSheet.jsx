@@ -6,7 +6,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
-import FeedbackPanel from '../../Feedback/FeedbackPanel.jsx';
+import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import Icon from './icons/Icon.jsx';
 
 const ENGINE_TAG = { sfizz: 'SFZ', dexed: 'FM' };
@@ -33,6 +33,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const { config, pianoId } = usePianoKioskConfig();
   const bluetooth = config?.bluetooth || null;
   const [tab, setTab] = useState('sound');
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -141,7 +142,15 @@ export default function PianoSettingsSheet({ open, onClose }) {
         {tab === 'feedback' && (
           <section className="piano-settings__section piano-settings__section--grow">
             <h3 className="piano-settings__eyebrow">Feedback</h3>
-            <FeedbackPanel app="piano" context={{ pianoId, surface: 'settings' }} />
+            <button type="button" className="piano-settings__feedback-open" onClick={() => setFeedbackOpen(true)}>
+              Record feedback
+            </button>
+            <FeedbackOverlay
+              open={feedbackOpen}
+              app="piano"
+              context={{ pianoId, surface: 'settings' }}
+              onClose={() => setFeedbackOpen(false)}
+            />
           </section>
         )}
 

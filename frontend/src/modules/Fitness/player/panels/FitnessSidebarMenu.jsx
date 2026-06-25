@@ -5,6 +5,7 @@ import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLeve
 import DebugMicButton from './DebugMicButton.jsx';
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
 import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
+import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -45,6 +46,9 @@ const FitnessSidebarMenu = ({
   onEndSession = null
 }) => {
   const fitnessContext = useFitnessContext();
+  const pauseMusicPlayer = fitnessContext?.pauseMusicPlayer;
+  const resumeMusicPlayer = fitnessContext?.resumeMusicPlayer;
+  const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
   const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
   const activeHeartRateParticipants = fitnessContext?.activeHeartRateParticipants || [];
@@ -312,6 +316,24 @@ const FitnessSidebarMenu = ({
         {!hasMusicPlaylists && (
           <div className="menu-item-subtext">Add a fitness playlist to enable music.</div>
         )}
+      </div>
+
+      <div className="menu-section">
+        <button
+          type="button"
+          className="menu-item"
+          aria-label="Send feedback"
+          onClick={() => setFeedbackOpen(true)}
+        >
+          💬 Send feedback
+        </button>
+        <FeedbackOverlay
+          open={feedbackOpen}
+          app="fitness"
+          onClose={() => setFeedbackOpen(false)}
+          onPauseMusic={pauseMusicPlayer}
+          onResumeMusic={resumeMusicPlayer}
+        />
       </div>
 
       {activeSessionId && onEndSession && (

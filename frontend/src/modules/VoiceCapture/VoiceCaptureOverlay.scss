@@ -1,0 +1,43 @@
+.voice-capture-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+
+  &__panel {
+    width: min(92vw, 460px); max-height: 80vh; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: #15181d; color: #f2f4f7; border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  &__header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  &__title { font-size: 1.05rem; font-weight: 600; }
+  &__close { background: none; border: none; color: inherit; font-size: 1.1rem; cursor: pointer; opacity: 0.7; &:hover { opacity: 1; } }
+
+  &__content { padding: 22px 20px; }
+  &__content--centered { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  &__content--review { display: flex; flex-direction: column; gap: 16px; }
+
+  &__prompt { margin: 0; text-align: center; opacity: 0.82; }
+
+  &__record {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 22px; border-radius: 999px; border: none; cursor: pointer;
+    background: #e23b3b; color: #fff; font-size: 1rem; font-weight: 600;
+    &.is-recording { background: #2b2f36; }
+  }
+  &__dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+  &__record.is-recording &__dot { background: #e23b3b; animation: vc-pulse 1s infinite; }
+  @keyframes vc-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  &__meter { width: 80%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
+  &__meter-fill { display: block; height: 100%; width: 100%; transform-origin: left center; transform: scaleX(0.02); background: #4ade80; }
+
+  &__processing { font-size: 1.05rem; opacity: 0.85; }
+  &__transcript { font-size: 1.1rem; line-height: 1.5; white-space: pre-wrap; }
+  &__error { color: #ff8585; margin: 0; }
+
+  &__actions { display: flex; gap: 12px; justify-content: flex-end; }
+  &__keep, &__redo { padding: 10px 20px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; }
+  &__keep { background: #2f9e57; color: #fff; }
+  &__redo { background: #2b2f36; color: #f2f4f7; }
+}
