@@ -1,4 +1,5 @@
 import { deepMerge } from './lib/deepMerge.mjs';
+import { mergePresentation } from './mergePresentation.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 
@@ -61,12 +62,10 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         governance: deepMerge(sysDefaults.governance ?? {}, game.governance ?? {}),
         shader: game.shader ?? presentation.shader ?? null,
         chrome: game.chrome ?? presentation.chrome ?? null,
-        // Bezel screen cutout (where the emulator video sits within the chrome),
-        // as percentages of the bezel frame: { x, y, width, height }.
-        screen: game.screen ?? presentation.screen ?? null,
-        // On-screen emulator controls (native EmulatorJS menu/virtual-gamepad +
-        // our controller panel). Default OFF — driven by hooks/api instead.
-        onscreenControls: game.onscreen_controls ?? presentation.onscreen_controls ?? false,
+        // Bezel control surface: system presentation (screen cutout, hotspots,
+        // overlays, onscreen controls) merged under the game's own presentation
+        // override (by id). The browser reads screen/onscreen_controls from here.
+        presentation: mergePresentation(presentation, game.presentation),
       });
     }
   }
