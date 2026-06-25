@@ -214,8 +214,22 @@ export function EmulatorConsole({
 
   const showOverlay = status.state !== 'playing';
 
+  // Tap the screen area to toggle "filled" — the console breaks out to cover the
+  // whole app surface (.fitness-app-viewport) rather than just its in-frame box.
+  // NOT the browser Fullscreen API; just a CSS takeover. Taps on the on-screen
+  // buttons / controller panel are ignored so they keep their own behavior.
+  const [filled, setFilled] = useState(false);
+  const handleScreenPress = useCallback((e) => {
+    if (e?.target?.closest?.('button, .emulator-controller-panel')) return;
+    setFilled((v) => !v);
+  }, []);
+
   return (
-    <div className="emulator-console" data-state={status.state}>
+    <div
+      className={`emulator-console${filled ? ' emulator-console--filled' : ''}`}
+      data-state={status.state}
+      onPointerDown={handleScreenPress}
+    >
       <div className={`emulator-chrome chrome-${game?.chrome || 'none'}`} />
       <div className="emulator-mount" ref={mountRef} />
       <div className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()} />

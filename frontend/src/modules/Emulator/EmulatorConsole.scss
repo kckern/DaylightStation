@@ -7,6 +7,16 @@
   overflow: hidden;
   background: #000;
 
+  // Tap-to-fill: break out of the in-frame box to cover the whole app surface
+  // (.fitness-app-viewport). Not the browser Fullscreen API — a CSS takeover.
+  &--filled {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2000;
+  }
+
   // Full-bleed layers; chrome & shader sit above the mount but pass clicks.
   .emulator-chrome,
   .emulator-shader {

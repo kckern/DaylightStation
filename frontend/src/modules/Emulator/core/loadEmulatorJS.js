@@ -39,8 +39,23 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
 
   const normalizedPath = pathtodata.endsWith('/') ? pathtodata : `${pathtodata}/`;
 
+  // EmulatorJS does `document.querySelector(EJS_player)`, so the player MUST be a
+  // selector string — an element coerces to "[object HTMLDivElement]" and throws
+  // a SyntaxError, halting boot. Accept an element by giving it an id and passing
+  // the `#id` selector.
+  let playerSelector = player;
+  if (player && typeof player !== 'string') {
+    if (!player.id) {
+      const rnd = globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID().replace(/[^a-z0-9]/gi, '').slice(0, 8)
+        : `${Date.now().toString(36)}`;
+      player.id = `ejs-mount-${rnd}`;
+    }
+    playerSelector = `#${player.id}`;
+  }
+
   const globals = {
-    EJS_player: player,
+    EJS_player: playerSelector,
     EJS_core: core,
     EJS_gameUrl: romUrl,
     EJS_pathtodata: normalizedPath,
