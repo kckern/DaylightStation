@@ -64,11 +64,26 @@
     background-image:
       linear-gradient(to right, rgba(0, 0, 0, 0.18) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 1px, transparent 1px);
+    // background-size is set INLINE by EmulatorConsole to an exact integer
+    // device-pixel period (one N×-scaled game pixel) so the grid is uniform and
+    // pixel-aligned. The calc() below is only a fallback before the box is
+    // measured (first paint) — a fractional period that the JS box replaces.
     background-size: calc(100% / 160) calc(100% / 144);
     mix-blend-mode: multiply;
     opacity: 1;
   }
-  .emulator-mount canvas { image-rendering: pixelated; }
+  // Pin the EmulatorJS canvas to fill its (integer-sized, exact-160:144-aspect)
+  // mount with NO internal letterbox or centering margin. EmulatorJS otherwise
+  // computes its own integer scale and centres the picture, insetting it from the
+  // box edge — which shifts the game pixels off the CSS grid (the "offset grid").
+  // Filling exactly makes each game pixel = N device px, matching the grid period.
+  .emulator-mount canvas {
+    image-rendering: pixelated;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    display: block !important;
+  }
 
   // Hide EmulatorJS's native on-screen UI — the emulator is driven by gamepad
   // input + hooks/api, not its menu bar / virtual gamepad / context menu.
