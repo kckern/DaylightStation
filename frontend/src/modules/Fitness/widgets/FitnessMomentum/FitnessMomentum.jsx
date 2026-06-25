@@ -43,18 +43,29 @@ function zoneFractions(zones) {
   return weights.filter((x) => x.w > 0).map((x) => ({ z: x.z, frac: x.w / sum }));
 }
 
+// Stable per-bar skeleton heights (deterministic so it doesn't twitch each frame).
+const SKELETON_HEIGHTS = [42, 64, 38, 72, 50, 60, 46, 68];
+
 /** One vertical, log-stacked weekly bar with an M/d label. Height = effort vs `maxMinutes`. */
-function WeekBar({ week, maxMinutes }) {
-  const fillPct = maxMinutes > 0 ? (week.effortMinutes / maxMinutes) * 100 : 0;
-  const fracs = zoneFractions(week.zones);
+function WeekBar({ week, maxMinutes, index, loading }) {
+  const fillPct = loading
+    ? SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length]
+    : (maxMinutes > 0 ? (week.effortMinutes / maxMinutes) * 100 : 0);
+  const fracs = loading ? [] : zoneFractions(week.zones);
   return (
     <span className="fitness-momentum__weekcol">
-      <span className={`fitness-momentum__weektop${week.current ? ' is-current' : ''}`}>{week.effortMinutes}</span>
+      {/* reserve the top-axis height during load so nothing reflows on hydrate */}
+      <span className={`fitness-momentum__weektop${week.current ? ' is-current' : ''}`}>
+        {loading ? ' ' : week.effortMinutes}
+      </span>
       <span
-        className={`fitness-momentum__weekbar${week.current ? ' is-current' : ''}`}
-        title={`${week.effortMinutes} min`}
+        className={`fitness-momentum__weekbar${week.current && !loading ? ' is-current' : ''}`}
+        title={loading ? '' : `${week.effortMinutes} min`}
       >
-        <span className="fitness-momentum__weekfill" style={{ height: `${fillPct.toFixed(1)}%` }}>
+        <span
+          className={`fitness-momentum__weekfill${loading ? ' skeleton shimmer' : ''}`}
+          style={{ height: `${fillPct.toFixed(1)}%` }}
+        >
           {fracs.map(({ z, frac }) => (
             <span
               key={z}
@@ -70,11 +81,11 @@ function WeekBar({ week, maxMinutes }) {
 }
 
 /** A person's (or the household's) same-scale weekly bar chart. */
-function WeekBars({ weeks }) {
+function WeekBars({ weeks, loading }) {
   const maxMinutes = Math.max(1, ...weeks.map((w) => w.effortMinutes));
   return (
     <span className="fitness-momentum__weeks">
-      {weeks.map((w, i) => <WeekBar key={i} week={w} maxMinutes={maxMinutes} />)}
+      {weeks.map((w, i) => <WeekBar key={i} week={w} index={i} maxMinutes={maxMinutes} loading={loading} />)}
     </span>
   );
 }
@@ -89,7 +100,10 @@ function Avatar({ id, name }) {
 export default function FitnessMomentum() {
   // The 'sessions' source returns a wrapped object ({ sessions, total, ... }),
   // not a bare array (see FitnessSessionsWidget) — unwrap before computing.
+  // Before the first fetch resolves it is null/undefined → render a right-sized
+  // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
+  const loading = rawSessions == null;
   const sessions = Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []);
   const { roster, householdLabel, windowDays, compareWeeks } = useFitnessScreen();
 
@@ -119,10 +133,13 @@ export default function FitnessMomentum() {
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>
         <span className="fitness-momentum__window">· last {household.windowDays} days</span>
-        <span className="fitness-momentum__house-min">{household.effortMinutes} min this week</span>
+        {loading
+          ? <span className="fitness-momentum__house-min fitness-momentum__house-min--skel skeleton shimmer" aria-hidden="true" />
+          : <span className="fitness-momentum__house-min">{household.effortMinutes} min this week</span>}
       </div>
 
-      {!anyActive && (
+      {/* Only show the empty-state once we KNOW there's no data — never during load. */}
+      {!loading && !anyActive && (
         <div className="fitness-momentum__zero">Let’s get moving — no credited minutes yet.</div>
       )}
 
@@ -131,7 +148,7 @@ export default function FitnessMomentum() {
           <div key={m.id} className="fitness-momentum__card">
             <Avatar id={m.avatarId} name={m.name} />
             <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
-            <WeekBars weeks={m.weeks} />
+            <WeekBars weeks={m.weeks} loading={loading} />
           </div>
         ))}
       </div>

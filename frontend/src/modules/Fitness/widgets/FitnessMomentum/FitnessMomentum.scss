@@ -25,6 +25,9 @@
   &__house { letter-spacing: 0.01em; }
   &__window { color: #ffb44c; font-weight: 700; font-size: 1.15rem; }
   &__house-min { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.92; font-size: 1.15rem; }
+  // Right-sized placeholder matching the "NNN min this week" footprint, so the
+  // headline doesn't reflow when the real total hydrates in.
+  &__house-min--skel { align-self: center; width: 9rem; height: 1.1rem; border-radius: 5px; }
 
   &__zero { opacity: 0.75; font-size: 1.1rem; }
 
