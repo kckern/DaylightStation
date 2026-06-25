@@ -160,8 +160,14 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const plottedLen = (id) => {
     const series = riders[id].distanceSeries || [];
     if (riders[id].finishTimeS == null) return series.length;
-    const fin = series.findIndex((d) => d >= goalM);
-    return fin >= 0 ? fin + 1 : series.length;
+    // Post-finish samples are stored as Math.round(goalM); compare against the same
+    // rounded goal so a fractional goalM still matches the clamped finish sample.
+    const fin = series.findIndex((d) => d >= Math.round(goalM));
+    if (fin >= 0) return fin + 1;
+    // finishTimeS is set, so the rider HAS finished — never plot the full series (that
+    // would let the lane crawl). Freeze at the sample nearest the finish time instead.
+    const idx = stepS > 0 ? Math.round(riders[id].finishTimeS / stepS) : series.length - 1;
+    return Math.max(1, Math.min(series.length, idx + 1));
   };
 
   // ── Smooth leading edge ────────────────────────────────────────────────────

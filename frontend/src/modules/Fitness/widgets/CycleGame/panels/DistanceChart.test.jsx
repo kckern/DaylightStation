@@ -132,6 +132,23 @@ describe('DistanceChart panel', () => {
     expect(aXs.length).toBe(4);
     expect(Math.max(...aXs)).toBeLessThan(Math.max(...bXs));
   });
+  it('freezes a finished rider even when the goal distance is fractional (rounded sample match)', () => {
+    // 1-mile-ish goal: stored finish sample is Math.round(1609.34) = 1609, which must
+    // still register as "finished" so the lane freezes at index 3 rather than crawling.
+    const aSeries = [600, 1100, 1450, 1609, 1609, 1609, 1609];
+    const bSeries = [300, 550, 760, 900, 980, 1040, 1090];
+    const riders = {
+      a: { displayName: 'A', cumulativeDistanceM: 1609, finishTimeS: 3, distanceSeries: aSeries },
+      b: { displayName: 'B', cumulativeDistanceM: 1090, distanceSeries: bSeries },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders}
+        riderLive={{ a: {}, b: {} }} winCondition="distance" goalM={1609.34} elapsedS={6} />
+    );
+    const lines = container.querySelectorAll('[data-testid="race-line"]');
+    const aXs = lines[0].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
+    expect(aXs.length).toBe(4); // frozen at index 3, NOT crawling to 7 samples
+  });
   it('renders a header strip with the clock and goal label', () => {
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}
