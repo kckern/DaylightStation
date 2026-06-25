@@ -10,7 +10,6 @@ import FitnessShow from '../modules/Fitness/player/FitnessShow.jsx';
 import FitnessPlayer from '../modules/Fitness/player/FitnessPlayer.jsx';
 import HRSimTrigger from '../modules/Fitness/nav/HRSimTrigger.jsx';
 import FitnessModuleContainer from '../modules/Fitness/player/FitnessModuleContainer.jsx';
-import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
@@ -743,12 +742,6 @@ const FitnessApp = () => {
     const n = Number(root?.momentum?.compare_weeks);
     return Number.isFinite(n) && n > 0 ? n : 4;
   }, [fitnessConfiguration]);
-  // Fullscreen modules (e.g. the Game Boy emulator) hide the left nav rail and
-  // fill the app surface. Driven by the module manifest's `fullscreen` flag.
-  const activeModuleFullscreen = useMemo(() => {
-    if (currentView !== 'module' || !activeModule?.id) return false;
-    return !!getModuleManifest(activeModule.id)?.fullscreen;
-  }, [currentView, activeModule]);
 
   // Powerdown audio for the emergency-lockdown ceremony (config-driven).
   const emergencyAudioPath = useMemo(() => {
@@ -1457,7 +1450,7 @@ const FitnessApp = () => {
                   onNavigate={handleNavigate}
                 />
               }
-              hideNav={fitnessPlayQueue.length > 0 || loading || activeModuleFullscreen}
+              hideNav={fitnessPlayQueue.length > 0 || loading}
               className={fitnessPlayQueue.length > 0 || loading ? 'fitness-frame--hidden' : ''}
             >
               <div className={`fitness-main-content ${currentView === 'users' ? 'fitness-cam-active' : ''}`}>
