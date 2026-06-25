@@ -155,7 +155,22 @@ export function createEmulatorRouter({
       if (result.stream) result.stream.pipe(res);
       else res.end(result.buffer);
     } catch (err) {
-      if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+      if (err.code === 'ENOENT') {
+        // EmulatorJS requests localization/<locale>.json (e.g. en-US.json from the
+        // browser locale); our self-hosted bundle only ships en.json. Fall back so
+        // a missing locale doesn't 404 (which logs a console error and can stall UI).
+        if (/^localization\/[\w-]+\.json$/.test(relPath) && relPath !== 'localization/en.json') {
+          try {
+            const fb = readEngineFile('localization/en.json');
+            const headers = { 'Content-Type': engineContentTypeFor('localization/en.json'), 'Cache-Control': MODERATE_CACHE };
+            if (typeof fb.size === 'number') headers['Content-Length'] = String(fb.size);
+            res.writeHead(200, headers);
+            if (fb.stream) return fb.stream.pipe(res);
+            return res.end(fb.buffer);
+          } catch { /* fall through to 404 */ }
+        }
+        return res.status(404).json({ error: 'not found' });
+      }
       logger.error('emulator.engine.error', { relPath, error: err.message });
       res.status(500).json({ error: 'internal error' });
     }
