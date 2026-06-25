@@ -299,15 +299,20 @@ export function EmulatorConsole({
         </div>
       )}
 
-      {/* Settings gear — round, bottom-right on the bezel. Opens the controls sheet. */}
+      {/* Volume — round, bottom-left on the bezel. Opens the controls sheet. */}
       <button
         type="button"
         className="emulator-settings-toggle"
-        aria-label="Emulator settings"
+        aria-label="Emulator volume & settings"
         aria-expanded={settingsOpen}
         onClick={() => { applyVolume(volumeLevel); setSettingsOpen((v) => !v); }}
       >
-        ⚙
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" stroke="none" />
+          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+          <path d="M18.5 6a9 9 0 0 1 0 12" />
+        </svg>
       </button>
       {settingsOpen && (
         <div className="emulator-settings-modal" role="dialog" aria-modal="true" aria-label="Emulator settings">
