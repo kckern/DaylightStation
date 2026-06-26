@@ -28,6 +28,14 @@ describe('buildRaceConfigFromCourse', () => {
     expect(cfg.courseId).toBeNull();
     expect(cfg.intervalMs).toBe(1000);
   });
+  it('passes through the distance-race mercy-kill window (issue 2)', () => {
+    const cfg = buildRaceConfigFromCourse({}, { raceMercyAfterWinnerS: 45 });
+    expect(cfg.raceMercyAfterWinnerS).toBe(45);
+  });
+  it('defaults the mercy-kill window to 0 (off) when not provided', () => {
+    const cfg = buildRaceConfigFromCourse({}, {});
+    expect(cfg.raceMercyAfterWinnerS).toBe(0);
+  });
 });
 
 describe('formatClock', () => {

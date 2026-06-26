@@ -86,7 +86,7 @@ export default function FitnessToast({ toast, onDone }) {
 
   if (!toast) return null;
 
-  const { avatarUrl, icon, title, subtitle, contributors, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
+  const { avatarUrl, icon, title, subtitle, contributors, zone, variant = 'info', durationMs = DEFAULT_TOAST_DURATION_MS } = toast;
   const hasContributors = Array.isArray(contributors) && contributors.length > 0;
   const className = [
     'fitness-toast',
@@ -109,6 +109,14 @@ export default function FitnessToast({ toast, onDone }) {
         ) : null}
         <div className="fitness-toast__text">
           <div className="fitness-toast__title">{title}</div>
+          {zone ? (
+            <span
+              className={`fitness-toast__zone-pill zone-${zone.id}`}
+              style={{ borderColor: zone.color, color: zone.color }}
+            >
+              {zone.label}
+            </span>
+          ) : null}
           {subtitle ? <div className="fitness-toast__subtitle">{subtitle}</div> : null}
           {hasContributors ? (
             <div className="fitness-toast__contributors">
@@ -143,6 +151,11 @@ FitnessToast.propTypes = {
       name: PropTypes.string,
       avatarUrl: PropTypes.string,
     })),
+    zone: PropTypes.shape({
+      id: PropTypes.string,
+      label: PropTypes.string,
+      color: PropTypes.string,
+    }),
     variant: PropTypes.string,
     durationMs: PropTypes.number,
   }),

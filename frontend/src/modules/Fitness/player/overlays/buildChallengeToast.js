@@ -9,14 +9,27 @@
  * @param {Object} challenge - governanceState.challenge snapshot
  * @param {Object} [opts]
  * @param {(userId:string)=>string|null} [opts.resolveUserName] - resolve a display name
- * @returns {{ icon?: string, title: string, subtitle?: string, variant: string, contributors?: Array<{id:string,name:string,avatarUrl:string}> }}
+ * @param {(zoneKey:string)=>string|null} [opts.resolveZoneColor] - resolve a zone hex color
+ * @returns {{ icon?: string, title: string, subtitle?: string, variant: string, contributors?: Array<{id:string,name:string,avatarUrl:string}>, zone?: {id:string,label:string,color:string} }}
  */
-export function buildChallengeToast(event, challenge, { resolveUserName } = {}) {
+export function buildChallengeToast(event, challenge, { resolveUserName, resolveZoneColor } = {}) {
   const c = challenge || {};
   const zoneLabel = c.zoneLabel || c.selectionLabel || null;
   const requiredCount = Number.isFinite(c.requiredCount) ? c.requiredCount : null;
   const actualCount = Number.isFinite(c.actualCount) ? c.actualCount : null;
   const peopleWord = (n) => (n === 1 ? 'person' : 'people');
+
+  // Attach a colored zone descriptor so the toast can render a zone-hued pill
+  // (issue 3). HR challenges only — cycle challenges carry no HR zone. Omitted
+  // entirely unless a color resolves, so we never show an uncolored pill.
+  const attachZone = (toast) => {
+    if (c.type === 'cycle' || !zoneLabel || typeof resolveZoneColor !== 'function') return toast;
+    const id = zoneKey(c.zone || c.zoneLabel || c.selectionLabel);
+    const color = (id && resolveZoneColor(id)) || resolveZoneColor(zoneKey(zoneLabel)) || null;
+    if (!color) return toast;
+    toast.zone = { id, label: zoneLabel, color };
+    return toast;
+  };
 
   if (event === 'start') {
     if (c.type === 'cycle') {
@@ -25,7 +38,7 @@ export function buildChallengeToast(event, challenge, { resolveUserName } = {}) 
     const subtitle = (requiredCount != null && zoneLabel)
       ? `Get ${requiredCount} ${peopleWord(requiredCount)} to ${zoneLabel}`
       : undefined;
-    return { icon: '🏆', title: 'Challenge started', subtitle, variant: 'info' };
+    return attachZone({ icon: '🏆', title: 'Challenge started', subtitle, variant: 'info' });
   }
 
   // event === 'end' (success)
@@ -50,7 +63,12 @@ export function buildChallengeToast(event, challenge, { resolveUserName } = {}) 
 
   const contributors = buildContributors(c, resolveUserName);
   if (contributors.length) toast.contributors = contributors;
-  return toast;
+  return attachZone(toast);
+}
+
+/** Normalize a zone id/label to a lowercase lookup key (e.g. "Warm" → "warm"). */
+function zoneKey(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
 /**

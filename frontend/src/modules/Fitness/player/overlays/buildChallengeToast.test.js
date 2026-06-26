@@ -110,6 +110,56 @@ describe('buildChallengeToast', () => {
   });
 });
 
+describe('buildChallengeToast — zone pill (issue 3)', () => {
+  it('attaches a colored zone descriptor on HR success when a color resolves', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 2, actualCount: 2 },
+      { resolveZoneColor: (id) => (id === 'warm' ? '#facc15' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'warm', label: 'Warm', color: '#facc15' });
+  });
+
+  it('attaches the zone descriptor on HR start too', () => {
+    const toast = buildChallengeToast(
+      'start',
+      { zoneLabel: 'Hot', zone: 'hot', requiredCount: 1 },
+      { resolveZoneColor: (id) => (id === 'hot' ? '#f97316' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'hot', label: 'Hot', color: '#f97316' });
+  });
+
+  it('resolves color by normalized label when the zone id is absent', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { zoneLabel: 'Fire', requiredCount: 1, actualCount: 1 },
+      { resolveZoneColor: (key) => (key === 'fire' ? '#ef4444' : null) }
+    );
+    expect(toast.zone).toEqual({ id: 'fire', label: 'Fire', color: '#ef4444' });
+  });
+
+  it('omits the zone key for cycle challenges (no HR zone pill)', () => {
+    const toast = buildChallengeToast(
+      'end',
+      { type: 'cycle', rider: { id: 'felix', name: 'Felix' } },
+      { resolveZoneColor: () => '#facc15' }
+    );
+    expect('zone' in toast).toBe(false);
+  });
+
+  it('omits the zone key when no color resolves (no uncolored pill)', () => {
+    expect('zone' in buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 1, actualCount: 1 }
+    )).toBe(false);
+    expect('zone' in buildChallengeToast(
+      'end',
+      { zoneLabel: 'Warm', zone: 'warm', requiredCount: 1, actualCount: 1 },
+      { resolveZoneColor: () => null }
+    )).toBe(false);
+  });
+});
+
 describe('buildChallengeToast — cycle success', () => {
   it('uses a phase-count subtitle and the rider as contributor', () => {
     const toast = buildChallengeToast('end', {

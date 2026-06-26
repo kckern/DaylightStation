@@ -249,3 +249,50 @@ describe('CycleRaceController — finishNow (forfeit)', () => {
     expect(c.finishNow().phase).toBe('staged');
   });
 });
+
+describe('CycleRaceController — distance-race mercy-kill (issue 2)', () => {
+  // 'a' (wheel 2.1, hot zone, rpm 60) crosses the 21m line on the first 5s tick;
+  // 'b' crawls at rpm 1 and never reaches the line.
+  const crossFast = (c) => c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 1 } });
+
+  it('ends the race the configured seconds after the first finisher, DNFing stragglers', () => {
+    const c = new CycleRaceController(distConfig({ startCountdownS: 0, raceMercyAfterWinnerS: 10 }));
+    c.startCountdown();
+    crossFast(c); // elapsed 5s: 'a' finishes
+    expect(c.getState().engineState.riders.a.finishTimeS).toBe(5);
+    expect(c.phase).toBe('racing'); // 'b' still going — race continues
+    c.tick({ b: { rpm: 1 } }); // elapsed 10s — only 5s since winner (< 10)
+    expect(c.phase).toBe('racing');
+    c.tick({ b: { rpm: 1 } }); // elapsed 15s — 10s since winner → mercy fires
+    expect(c.phase).toBe('finished');
+    expect(c.getState().dnf).toContain('b');
+  });
+
+  it('does not mercy-end before the configured grace elapses', () => {
+    const c = new CycleRaceController(distConfig({ startCountdownS: 0, raceMercyAfterWinnerS: 30 }));
+    c.startCountdown();
+    crossFast(c);
+    c.tick({ b: { rpm: 1 } });
+    c.tick({ b: { rpm: 1 } });
+    expect(c.phase).toBe('racing');
+  });
+
+  it('is off by default — a distance race waits for all riders when unset', () => {
+    const c = new CycleRaceController(distConfig({ startCountdownS: 0 }));
+    c.startCountdown();
+    crossFast(c);
+    for (let i = 0; i < 20; i += 1) c.tick({ b: { rpm: 1 } });
+    expect(c.phase).toBe('racing');
+  });
+
+  it('does not apply to time races', () => {
+    const c = new CycleRaceController(distConfig({
+      winCondition: 'time', timeCapS: 9999, startCountdownS: 0, raceMercyAfterWinnerS: 5
+    }));
+    c.startCountdown();
+    crossFast(c);
+    c.tick({ b: { rpm: 1 } });
+    c.tick({ b: { rpm: 1 } });
+    expect(c.phase).toBe('racing');
+  });
+});

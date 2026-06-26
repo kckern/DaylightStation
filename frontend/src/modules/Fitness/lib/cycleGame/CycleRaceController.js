@@ -27,6 +27,14 @@ export class CycleRaceController {
     // BOTH the configured timer has elapsed AND they have returned to RPM 0 — so
     // someone who keeps pedalling stays boxed indefinitely. 0 = off.
     this.hotStartPenaltyS = Number.isFinite(config.hotStartPenaltyS) ? config.hotStartPenaltyS : 0;
+    // Distance-race mercy-kill (issue 2): once the first rider crosses the line,
+    // end the race this many seconds later, forfeiting (DNF) anyone still going —
+    // a distance race otherwise waits forever for the slowest rider. 0 = off.
+    // The product default lives at the container/config layer (race_mercy_after_winner_s);
+    // the pure controller defaults OFF so existing race fixtures are unaffected.
+    this.raceMercyAfterWinnerS = Number.isFinite(config.raceMercyAfterWinnerS) && config.raceMercyAfterWinnerS > 0
+      ? config.raceMercyAfterWinnerS
+      : 0;
     this._penalty = new Map(); // userId -> remaining penalty seconds (0 = time served, awaiting RPM 0)
     this._firstTick = true;
     // Ghost riders replay a recording — they are exempt from idle/DNF and the
@@ -127,8 +135,28 @@ export class CycleRaceController {
         : input;
     }
     this.engine.tick(filtered);
+    this._applyMercyKill();
     if (this._isFinished()) this.phase = 'finished';
     return this.getState();
+  }
+
+  // Distance-race mercy-kill: once the first rider has finished, forfeit (DNF)
+  // every still-racing non-ghost rider after raceMercyAfterWinnerS seconds. The
+  // subsequent _isFinished() check then ends the race. No-op when disabled, for
+  // time races, or before anyone has crossed the line.
+  _applyMercyKill() {
+    if (this.raceMercyAfterWinnerS <= 0 || this.config.winCondition === 'time') return;
+    const s = this.engine.getState();
+    const finishTimes = Object.values(s.riders)
+      .map((r) => r.finishTimeS)
+      .filter((t) => t != null);
+    if (!finishTimes.length) return;
+    const firstFinish = Math.min(...finishTimes);
+    if (s.elapsedS - firstFinish < this.raceMercyAfterWinnerS) return;
+    Object.values(s.riders).forEach((r) => {
+      if (this.ghosts.has(r.userId)) return;
+      if (r.finishTimeS == null) this.dnf.add(r.userId);
+    });
   }
 
   // Operator-driven end: mark every non-ghost rider who hasn't crossed the line

@@ -74,6 +74,28 @@ describe('FitnessToast', () => {
     expect(avatars[0].getAttribute('src')).toBe('/api/v1/static/img/users/felix');
   });
 
+  it('renders a zone pill with the zone label and color when toast.zone is set (issue 3)', () => {
+    render(
+      <FitnessToast
+        toast={{
+          id: 11,
+          title: 'Challenge complete!',
+          zone: { id: 'warm', label: 'Warm', color: '#facc15' },
+          durationMs: 4000,
+        }}
+        onDone={() => {}}
+      />
+    );
+    const pill = screen.getByText('Warm');
+    expect(pill.className).toContain('fitness-toast__zone-pill');
+    expect(pill.className).toContain('zone-warm');
+  });
+
+  it('renders no zone pill when toast.zone is absent (issue 3)', () => {
+    render(<FitnessToast toast={{ id: 12, title: 'Challenge complete!', durationMs: 4000 }} onDone={() => {}} />);
+    expect(document.querySelector('.fitness-toast__zone-pill')).toBeNull();
+  });
+
   it('dismisses on click: fires onDone(id) once after the exit animation', () => {
     const onDone = vi.fn();
     const { container } = render(<FitnessToast toast={{ id: 9, title: 'Tap me', durationMs: 4000 }} onDone={onDone} />);
