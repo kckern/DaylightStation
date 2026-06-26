@@ -39,6 +39,9 @@ import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
+import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
+import { useWhoIsPlaying } from '../modules/Piano/PianoKiosk/useWhoIsPlaying.js';
+import WhoIsPlayingPrompt from '../modules/Piano/PianoKiosk/WhoIsPlayingPrompt.jsx';
 import './PianoApp.scss';
 
 /**
@@ -100,6 +103,14 @@ function PianoShell() {
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   const { playing } = usePianoPlayback();
+  const { users, setCurrentUser } = usePianoUser();
+  const [whoOpen, setWhoOpen] = useState(false);
+
+  // Re-prompt "who's playing?" after an idle gap so the next player is credited.
+  useWhoIsPlaying(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
+    logger.info('piano.who-is-playing.prompt', { pianoId });
+    setWhoOpen(true);
+  });
 
   // After idle, return to this piano's menu (unless already there).
   // keepAlive=playing suppresses the timer while audio/video is actively playing.
@@ -130,6 +141,12 @@ function PianoShell() {
     <PianoSoundProvider>
       <PianoBreadcrumbProvider>
         <div className="piano-app">
+          <WhoIsPlayingPrompt
+            open={whoOpen}
+            users={users}
+            onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}
+            onDismiss={() => { setCurrentUser('guest'); setWhoOpen(false); }}
+          />
           <PianoChrome modeLabel={modeLabel} modeKey={modeKey} />
           <Routes>
             <Route index element={<PianoMenu />} />
