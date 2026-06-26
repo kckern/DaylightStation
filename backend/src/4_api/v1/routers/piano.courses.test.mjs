@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
@@ -55,11 +57,55 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     expect(res.body.items).toHaveLength(2);
   });
 
-  it('adds userPercent/userWatched fields when valid userId provided', async () => {
+  const PROGRESS_FILE = '/tmp/piano-test-user/apps/piano/video-progress.yml';
+
+  afterEach(() => {
+    if (fs.existsSync(PROGRESS_FILE)) fs.unlinkSync(PROGRESS_FILE);
+  });
+
+  it('adds all 5 user-progress fields with null/false defaults when no progress file exists', async () => {
+    // Ensure no stale fixture from a previous run
+    if (fs.existsSync(PROGRESS_FILE)) fs.unlinkSync(PROGRESS_FILE);
+
     const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
     expect(res.status).toBe(200);
-    expect(res.body.items[0]).toHaveProperty('userPercent');
-    expect(res.body.items[0]).toHaveProperty('userWatched');
+    const item = res.body.items[0];
+    expect(item).toHaveProperty('userPercent', null);
+    expect(item).toHaveProperty('userPlayhead', null);
+    expect(item).toHaveProperty('userWatched', false);
+    expect(item).toHaveProperty('userEngaged', false);
+    expect(item).toHaveProperty('userCompletedAt', null);
+  });
+
+  it('merges actual progress values and marks userWatched:true for a completed item', async () => {
+    // Write a fixture for item plex:100 (percent >= 90 and engagementCount > 0)
+    fs.mkdirSync(path.dirname(PROGRESS_FILE), { recursive: true });
+    fs.writeFileSync(PROGRESS_FILE, [
+      '"plex:100":',
+      '  percent: 92',
+      '  playhead: 480',
+      '  duration: 520',
+      '  engagementCount: 2',
+      '  completedAt: "2026-06-26T10:00:00.000Z"',
+      '  lastPlayed: "2026-06-26T10:00:00.000Z"',
+    ].join('\n'), 'utf8');
+
+    const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+
+    const completed = res.body.items[0]; // plex:100
+    expect(completed.userPercent).toBe(92);
+    expect(completed.userPlayhead).toBe(480);
+    expect(completed.userWatched).toBe(true);
+    expect(completed.userEngaged).toBe(true);
+    expect(completed.userCompletedAt).toBe('2026-06-26T10:00:00.000Z');
+
+    const untouched = res.body.items[1]; // plex:101 — no entry in fixture
+    expect(untouched.userPercent).toBeNull();
+    expect(untouched.userPlayhead).toBeNull();
+    expect(untouched.userWatched).toBe(false);
+    expect(untouched.userEngaged).toBe(false);
+    expect(untouched.userCompletedAt).toBeNull();
   });
 
   it('returns 400 when userId is unknown', async () => {
