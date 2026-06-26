@@ -640,7 +640,7 @@ export class FitnessSession {
         } else if (ledgerEntry) {
           // Already assigned
         } else {
-          getLogger().debug('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry });
+          getLogger().sampled('fitness.auto_assign_skip', { deviceId: device.id, hasUser: !!user, hasUserId: !!userId, hasLedgerEntry: !!ledgerEntry }, { maxPerMinute: 6, aggregate: true });
         }
         
         if (ledgerEntry) {
