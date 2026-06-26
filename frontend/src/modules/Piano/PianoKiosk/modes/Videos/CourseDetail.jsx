@@ -2,12 +2,24 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { lectureUserStatus } from './lectureMeta.js';
+import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
+
+// Lecture length for the thumb corner badge. `duration` arrives in seconds;
+// render M:SS (or H:MM:SS for the rare hour-plus lecture). Null when unknown.
+function fmtDuration(sec) {
+  const s = Math.round(Number(sec));
+  if (!Number.isFinite(s) || s <= 0) return null;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
 
 // Best-effort ascending C-E-G chime when a new unit unlocks. Silent if no AudioContext.
 function playUnlockChime() {
@@ -150,6 +162,7 @@ export default function CourseDetail({ course, onPlay }) {
     const key = item.plex || item.id;
     const isLocked = lockedIds.has(key);
     const isCurrent = key === currentId;
+    const duration = fmtDuration(item.duration);
     return (
       <li key={key}>
         <button
@@ -162,11 +175,12 @@ export default function CourseDetail({ course, onPlay }) {
         >
           <div className="piano-episode__thumb">
             {img && <img src={img} alt="" loading="eager" decoding="async" />}
-            {isLocked && <span className="piano-episode__lock" aria-label="Locked">🔒</span>}
+            {isLocked && <span className="piano-episode__lock" aria-label="Locked"><LockIcon /></span>}
             {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
             {!isLocked && !st.watched && st.percent > 0 && (
               <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
             )}
+            {duration && <span className="piano-episode__duration">{duration}</span>}
           </div>
           <div className="piano-episode__label">
             {item.itemIndex != null && <span className="piano-episode__num">E{item.itemIndex}</span>}
