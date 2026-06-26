@@ -98,6 +98,22 @@ export default function CourseDetail({ course, onPlay }) {
     return locked;
   }, [isSequential, items, seasons]);
 
+  // The "current" lesson: in a sequential course, the first not-yet-watched
+  // episode (linear order) — i.e. the one the gate sits at and the student should
+  // play next. It's the only unwatched episode that is NOT locked. Highlighted in
+  // goldenrod. Null for non-sequential courses.
+  const currentId = useMemo(() => {
+    if (!isSequential || !items) return null;
+    const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
+    const sorted = [...items].sort((a, b) => {
+      const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
+      if (si !== 0) return si;
+      return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
+    });
+    const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
+    return next ? (next.plex || next.id) : null;
+  }, [isSequential, items, seasons]);
+
   // Unlock ceremony: when the complete-season set grows, toast + chime the newly
   // revealed next season. Skips the first render (no "prev" to compare against).
   const [unlockedToast, setUnlockedToast] = useState(null);
@@ -131,15 +147,18 @@ export default function CourseDetail({ course, onPlay }) {
   const renderEpisode = (item) => {
     const st = lectureUserStatus(item);
     const img = item.image || item.thumbnail;
-    const isLocked = lockedIds.has(item.plex || item.id);
+    const key = item.plex || item.id;
+    const isLocked = lockedIds.has(key);
+    const isCurrent = key === currentId;
     return (
-      <li key={item.plex || item.id}>
+      <li key={key}>
         <button
           type="button"
-          className={`piano-episode${isLocked ? ' piano-episode--locked' : ''}`}
+          className={`piano-episode${isLocked ? ' piano-episode--locked' : ''}${isCurrent ? ' piano-episode--current' : ''}`}
           onClick={() => { if (!isLocked) onPlay(item); }}
           disabled={isLocked}
           aria-disabled={isLocked}
+          aria-current={isCurrent ? 'true' : undefined}
         >
           <div className="piano-episode__thumb">
             {img && <img src={img} alt="" loading="eager" decoding="async" />}
