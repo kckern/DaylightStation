@@ -124,6 +124,27 @@ describe('loadEmulatorJS', () => {
     expect(scripts).toHaveLength(1);
   });
 
+  // LINCHPIN: the bug that made the second game silently never appear. A
+  // different ROM requested against a live instance must NOT receive the stale
+  // memoized promise — it must force a fresh load of the new ROM.
+  it('a DIFFERENT game forces a fresh load (no stale-instance reuse)', async () => {
+    const win = makeFakeWin();
+    const pA = loadEmulatorJS({ player: '#m', romUrl: 'http://x/A.gb', pathtodata: 'd', win });
+    const instA = { id: 'A' };
+    win.EJS_emulator = instA;
+    win.EJS_onGameStart();
+    await expect(pA).resolves.toBe(instA);
+
+    const pB = loadEmulatorJS({ player: '#m', romUrl: 'http://x/B.gb', pathtodata: 'd', win });
+    expect(pB).not.toBe(pA); // not the stale memo
+
+    const instB = { id: 'B' };
+    win.EJS_emulator = instB;
+    win.EJS_onGameStart();
+    await expect(pB).resolves.toBe(instB);
+    expect(win.EJS_gameUrl).toBe('http://x/B.gb'); // window reflects B, not A
+  });
+
   it('rejects on script error', async () => {
     const win = makeFakeWin();
     const p = loadEmulatorJS({ player: '#m', romUrl: 'r', pathtodata: 'd', win });

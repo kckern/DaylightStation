@@ -7,15 +7,14 @@
  * against a fake instance.
  */
 
-import { loadEmulatorJS } from './loadEmulatorJS.js';
+import { loadEmulatorJS, resetEmulatorJSLoader } from './loadEmulatorJS.js';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _log;
-const log = () => (_log ??= getLogger().child({ component: 'emulator-engine' }));
+const moduleLog = () => (_log ??= getLogger().child({ component: 'emulator-engine' }));
 
 const FRAME_INTERVAL_MS = 16;
 const WAIT_FRAMES_CAP_MS = 3000;
-const LOADER_SCRIPT_ID = 'ejs-loader';
 
 function clamp01(v) {
   if (typeof v !== 'number' || Number.isNaN(v)) return 0;
@@ -28,7 +27,11 @@ function clamp01(v) {
  * @param {Window} [opts.win=window]
  * @returns engine object
  */
-export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {}) {
+export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logger } = {}) {
+  // Inherit the console's child logger (carries the per-play correlation id) when
+  // provided, so engine events join the same play session in the logs.
+  const _engineLog = logger ? logger.child({ component: 'emulator-engine' }) : null;
+  const log = () => _engineLog || moduleLog();
   let instance = null;
   let ready = false;
   let bootPromise = null;
@@ -59,6 +62,47 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
 
   function isReady() {
     return ready;
+  }
+
+  /**
+   * Confirm the game actually RENDERED, not just that the boot promise resolved.
+   * Polls the frame counter until it advances. Resolves `true` on a confirmed
+   * frame, `false` on timeout (→ `boot.no-frames`, a real "booted but blank"
+   * signal the caller turns into an error/retry state). Cores without a frame
+   * counter can't be confirmed; we treat that as inconclusive-OK to avoid false
+   * negatives, and say so in the event.
+   */
+  function confirmFirstFrame({ timeoutMs = WAIT_FRAMES_CAP_MS, core = null } = {}) {
+    if (!ready) {
+      log().warn('boot.no-frames', { core, reason: 'not-ready' });
+      return Promise.resolve(false);
+    }
+    const start = readFrameNum();
+    if (start === null) {
+      log().info('boot.first-frame', { core, frames: null, confirmed: false });
+      return Promise.resolve(true);
+    }
+    const startTime = Date.now();
+    return new Promise((resolve) => {
+      const tick = win.requestAnimationFrame
+        ? (cb) => win.requestAnimationFrame(cb)
+        : (cb) => setTimeout(cb, FRAME_INTERVAL_MS);
+      const poll = () => {
+        const current = readFrameNum();
+        if (current !== null && current > start) {
+          log().info('boot.first-frame', { core, frames: current });
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startTime >= timeoutMs) {
+          log().warn('boot.no-frames', { core, lastFrame: current });
+          resolve(false);
+          return;
+        }
+        tick(poll);
+      };
+      tick(poll);
+    });
   }
 
   function pause() {
@@ -243,10 +287,12 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
       log().warn('destroy.pause-failed', { error: err?.message });
     }
     try {
-      const script = win.document.getElementById(LOADER_SCRIPT_ID);
-      if (script?.remove) script.remove();
+      // Full single-instance teardown: removes the loader script AND resets the
+      // module-level load memo, so the NEXT game boots clean instead of being
+      // handed this game's stale instance.
+      resetEmulatorJSLoader(win);
     } catch (err) {
-      log().warn('destroy.script-remove-failed', { error: err?.message });
+      log().warn('destroy.loader-reset-failed', { error: err?.message });
     }
     instance = null;
     ready = false;
@@ -257,6 +303,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
   return {
     boot,
     isReady,
+    confirmFirstFrame,
     pause,
     resume,
     setVolume,
