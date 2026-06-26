@@ -27,6 +27,29 @@ function logger() {
   return _logger;
 }
 
+// Monotonic counter across ALL outbound control messages, so logs reveal the
+// exact send ORDER + timing — the key signal for the "settings respond one turn
+// late" bug (a control sent at seq N only taking audible effect when seq N+1 is
+// sent). See docs/_wip/bugs/2026-06-26-piano-midi-settings-one-turn-late.md.
+let _outSeq = 0;
+const hex = (bytes) => bytes.map((b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');
+
+/**
+ * Transmit an outbound control message AND log it uniformly at info with a
+ * sequence number, hi-res timestamp, raw bytes, and the output port's live
+ * connection/state. Web MIDI send() is fire-and-forget (no completion event),
+ * so conn/state at send time is the best proxy we have for "did the BLE link
+ * actually flush this, or buffer it?". Notes are intentionally NOT routed here
+ * (too high-frequency); this is for low-rate control sends only.
+ */
+function emitOut(out, bytes, event, extra = {}) {
+  const seq = ++_outSeq;
+  const t = (typeof performance !== 'undefined' && performance.now) ? Math.round(performance.now()) : Date.now();
+  out.send(bytes);
+  logger().info(event, { seq, t, bytes: hex(bytes), conn: out.connection, state: out.state, ...extra });
+  return true;
+}
+
 /**
  * useWebMidiBLE — the piano kiosk's single MIDI authority over Web MIDI (BLE).
  *
@@ -195,9 +218,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   const sendProgramChange = useCallback((program, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
-    out.send([0xc0 | (channel & 0x0f), program & 0x7f]);
-    logger().debug('midi.out.program', { program, channel });
-    return true;
+    return emitOut(out, [0xc0 | (channel & 0x0f), program & 0x7f], 'midi.out.program', { program, channel });
   }, []);
 
   // Local Control (CC 122): false silences the piano's onboard voice so a
@@ -205,33 +226,30 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   const sendLocalControl = useCallback((on, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
-    out.send([0xb0 | (channel & 0x0f), 122, on ? 127 : 0]);
-    logger().info('midi.out.local-control', { on, channel });
-    return true;
+    return emitOut(out, [0xb0 | (channel & 0x0f), 122, on ? 127 : 0], 'midi.out.local-control', { on, channel });
   }, []);
 
   // Select a voice: optional Bank Select (MSB+LSB) then Program Change. Bank 0
   // sends a plain PC (the 128 GM voices); a non-zero bank reaches the device's
-  // extra banks (e.g. the Suzuki Asian-folk voices).
+  // extra banks (e.g. the Suzuki Asian-folk voices). Each message is logged with
+  // its own seq/timestamp so the send ORDER is visible when diagnosing the
+  // one-turn-late bug.
   const sendVoice = useCallback((program, bank = 0, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
     if (bank) {
-      out.send([0xb0 | (channel & 0x0f), 0, bank & 0x7f]);  // Bank Select MSB
-      out.send([0xb0 | (channel & 0x0f), 32, 0]);           // Bank Select LSB
+      emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
+      emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
     }
-    out.send([0xc0 | (channel & 0x0f), program & 0x7f]);    // Program Change
-    logger().info('midi.out.voice', { program, bank, channel });
-    return true;
+    return emitOut(out, [0xc0 | (channel & 0x0f), program & 0x7f], 'midi.out.voice', { program, bank, channel });
   }, []);
 
-  // General Control Change out (used by the MIDI monitor's fireable outputs).
+  // General Control Change out (effects like reverb/chorus, and the monitor's
+  // fireable outputs).
   const sendControlChange = useCallback((controller, value, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
-    out.send([0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f]);
-    logger().debug('midi.out.cc', { controller, value, channel });
-    return true;
+    return emitOut(out, [0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f], 'midi.out.cc', { controller, value, channel });
   }, []);
 
   // Panic: silence stuck notes (All Sound Off + All Notes Off on channel 1).
