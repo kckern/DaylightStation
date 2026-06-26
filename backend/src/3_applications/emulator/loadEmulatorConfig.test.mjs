@@ -138,6 +138,15 @@ describe('loadEmulatorConfig', () => {
     expect(cfg.games.find((g) => g.id === 'pokemon-red').saveMode).toBe('battery');
   });
 
+  it('per-game core override defaults null, carries through when set', () => {
+    const base = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
+    expect(base.games[0].core).toBeNull();
+    const m = JSON.parse(JSON.stringify(gameboyManifest));
+    m.games[0].core = 'gba';
+    const cfg = makeLoader([{ system: 'gb', manifest: m }]);
+    expect(cfg.games[0].core).toBe('gba');
+  });
+
   it('consoles defaults to [] without a readConsoles', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
     expect(cfg.consoles).toEqual([]);

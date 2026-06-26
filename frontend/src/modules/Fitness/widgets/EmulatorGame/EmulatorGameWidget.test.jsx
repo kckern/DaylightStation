@@ -13,6 +13,7 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
       data-testid="console"
       data-game={props.game?.id}
       data-haskbd={!!props.engineConfig?.controls}
+      data-core={props.engineConfig?.core}
       data-gate={props.governanceGate?.mode}
       data-persist={props.persistence?.persist ? '1' : '0'}
       data-user={props.persistence?.userId || ''}
@@ -117,6 +118,24 @@ describe('EmulatorGameWidget arcade shell', () => {
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0');
     expect(el.getAttribute('data-user')).toBe('');
+  });
+
+  it('a per-game core override (GBA in the gb category) reaches the engine config', async () => {
+    api.mockResolvedValue({
+      systems: { gb: { core: 'gb' } },
+      consoles: [{ system: 'gb', label: 'Game Boy', placeholder: false }],
+      games: [
+        { id: 'pokemon-red', system: 'gb', title: 'Pokémon Red', coverUrl: '/c', saveMode: 'none' },
+        { id: 'mario-kart', system: 'gb', title: 'Mario Kart', coverUrl: '/c2', saveMode: 'none', core: 'gba' },
+      ],
+      input: { keyboard: {} },
+    });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Mario Kart')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Mario Kart'));
+    const el = await screen.findByTestId('console');
+    expect(el.getAttribute('data-game')).toBe('mario-kart');
+    expect(el.getAttribute('data-core')).toBe('gba'); // per-game override, not the system 'gb'
   });
 
   it('releases the gamepad on unmount', async () => {
