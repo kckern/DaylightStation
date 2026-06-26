@@ -93,10 +93,9 @@ const FitnessApp = () => {
   // Configure root logger so child components using getLogger() directly
   // also get sessionLog: true (routes their events to the JSONL session file)
   useEffect(() => {
-    // Debug level while the cycle-game is under active tester debugging — captures
-    // the per-tick RPM firehose + layout dimension logs to the session JSONL.
-    // Revert to default ('info') once it's stable.
-    configureLogger({ level: 'debug', context: { app: 'fitness', sessionLog: true } });
+    // Session logging runs at 'info'. Per-component debug can be enabled at
+    // runtime via window.DAYLIGHT_LOG_LEVEL='debug' when investigating.
+    configureLogger({ level: 'info', context: { app: 'fitness', sessionLog: true } });
     return () => {
       configureLogger({ level: 'info', context: { sessionLog: false } });
     };
