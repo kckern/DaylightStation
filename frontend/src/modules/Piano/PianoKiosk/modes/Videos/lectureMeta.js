@@ -39,3 +39,17 @@ export function lectureStatus(item) {
   const watched = (plays != null && plays > 0) || percent >= 90;
   return { watched, percent };
 }
+
+/**
+ * Per-user watch status — prefers the user-keyed fields from the piano courses
+ * endpoint (userWatched/userPercent) when present, else falls back to the
+ * device-level lectureStatus (Plex media-memory signals).
+ */
+export function lectureUserStatus(item) {
+  if (item?.userPercent != null || item?.userWatched != null) {
+    const pct = num(item.userPercent);
+    const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
+    return { watched: !!item.userWatched, percent };
+  }
+  return lectureStatus(item);
+}
