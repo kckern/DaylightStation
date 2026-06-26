@@ -5,10 +5,13 @@ import {
   saveYaml,
   listYamlFiles,
   deleteYaml,
+  ensureDir,
+  writeBinary,
 } from '#system/utils/FileIO.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { userService } from '#system/config/UserService.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { encodeMidiFile } from '#applications/piano/midiFile.mjs';
 
 /**
  * Piano kiosk API.
@@ -267,6 +270,32 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
 
     logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
     res.json({ ...playable, isSequential });
+  }));
+
+  // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────
+  // History lives at the HOUSEHOLD level (not data/users), and accepts `guest`
+  // (the dismiss-outcome identity) in addition to known roster users.
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const TAKE_RE = /^[0-9][0-9.\-]{1,30}$/;            // HH.MM.SS or HH.MM.SS-2
+  const historyUser = (u) => u === 'guest' || knownUser(u);
+
+  router.put('/users/:userId/history/:date/:takeId', asyncHandler(async (req, res) => {
+    const { userId, date, takeId } = req.params;
+    if (!historyUser(userId)) return res.status(400).json({ error: 'Invalid user' });
+    if (!DATE_RE.test(date) || !TAKE_RE.test(takeId) || takeId.includes('..')) {
+      return res.status(400).json({ error: 'Invalid date/take' });
+    }
+    const { events } = req.body || {};
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: 'events (non-empty array) required' });
+    }
+    const dir = configService.getHouseholdPath(path.join('history', 'piano', userId, date));
+    ensureDir(dir);
+    const buf = encodeMidiFile(events);
+    const file = path.join(dir, `${takeId}.mid`);
+    writeBinary(file, buf);                            // overwrite — idempotent
+    logger.info?.('piano.history.write', { userId, date, takeId, events: events.length, bytes: buf.length });
+    res.json({ ok: true, bytes: buf.length, path: file });
   }));
 
   return router;
