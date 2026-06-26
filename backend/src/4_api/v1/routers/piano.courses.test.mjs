@@ -107,6 +107,29 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     spy.mockRestore();
   });
 
+  it('lifts the unit link from metadata.parentId to the item top-level', async () => {
+    // The shared playable service nests the season/unit link under metadata; the
+    // frontend unit grouping keys off a TOP-LEVEL parentId. Regression guard: a
+    // course whose items only carry metadata.parentId must come out lifted.
+    mockPlayableService.getPlayableEpisodes.mockResolvedValueOnce({
+      compoundId: `plex:${MOCK_SHOW}`,
+      showId: MOCK_SHOW,
+      items: [
+        { plex: '200', label: 'Unit 1 Lesson', metadata: { parentId: '676051', parentIndex: 1, parentTitle: 'Unit 1' } },
+      ],
+      parents: { '676051': { index: 1, title: 'Unit 1', thumbnail: null } },
+      info: { title: 'Hoffman Academy', labels: ['sequential'], type: 'show' },
+      containerItem: null,
+    });
+    const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
+    expect(res.status).toBe(200);
+    const ep = res.body.items[0];
+    expect(ep.parentId).toBe('676051');   // lifted from metadata
+    expect(ep.parentIndex).toBe(1);
+    expect(ep.parentTitle).toBe('Unit 1');
+    expect(res.body.parents['676051']).toBeTruthy();
+  });
+
   it('returns 503 when fitnessPlayableService is not configured', async () => {
     const res = await request(makeApp(false)).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
     expect(res.status).toBe(503);

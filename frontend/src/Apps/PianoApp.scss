@@ -928,12 +928,28 @@
   }
 }
 
+/* Videos mode: center the poster wall both axes when it fits; once there are
+   enough rows to overflow, the `safe` keyword falls back to top-align so the
+   first row stays reachable while .piano-mode's overflow:auto scrolls. */
+.piano-mode--videos {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+}
+
 /* Course grid: poster-shaped tiles with visible caption below the cover.
-   Posters sized ~1.5x the original 8.5rem min so cover art is legible. */
+   Posters sized ~1.5x the original 8.5rem min so cover art is legible.
+   Flex-wrap (not grid) so rows center horizontally with a consistent gap
+   between posters — no space-between/justify stretching them apart. */
 .piano-video-grid--posters {
-  grid-template-columns: repeat(auto-fill, minmax(12.75rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: safe center;
 
   .piano-video-grid__tile {
+    flex: 0 0 12.75rem;
+    width: 12.75rem;
     padding: 0 0 0.25rem;
     background: transparent;
     border: none;
@@ -1008,6 +1024,12 @@
     position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.45);
     span { display: block; height: 100%; background: var(--piano-accent); }
   }
+  &__duration {
+    position: absolute; right: 6px; bottom: 6px;
+    background: rgba(0, 0, 0, 0.75); color: #fff;
+    font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    line-height: 1; padding: 0.2em 0.4em; border-radius: 0.25rem; pointer-events: none;
+  }
   &__label { display: flex; gap: 0.4rem; padding: 0.5rem; align-items: baseline; }
   &__num { color: var(--piano-accent-text); font-weight: 700; font-size: 0.85rem; flex: 0 0 auto; }
   &__title {
@@ -1023,7 +1045,8 @@
   }
   &__lock {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    font-size: 1.6rem; line-height: 1; pointer-events: none;
+    display: flex; font-size: 1.6rem; line-height: 1; pointer-events: none;
+    color: #fff;
     filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
   }
 
