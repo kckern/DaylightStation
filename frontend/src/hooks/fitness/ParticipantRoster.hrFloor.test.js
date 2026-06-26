@@ -81,8 +81,10 @@ describe('ParticipantRoster — unregistered HR floor filter', () => {
       lastSeen: Date.now()
     });
 
-    // 72 is above the default 60 floor but below the configured 100 → dropped.
+    // 72 is above the hard floor (40) but below the configured comfort floor (100)
+    // → KEPT as a weak-signal card (demote-not-drop), not dropped.
     const result = roster.getRoster();
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].weakSignal).toBe(true);
   });
 });
