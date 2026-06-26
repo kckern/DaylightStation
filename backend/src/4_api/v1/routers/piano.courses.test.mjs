@@ -92,6 +92,21 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     expect(res.status).toBe(400);
   });
 
+  it('accepts guest (the who\'s-playing dismiss identity): 200, not the unknown-user 400', async () => {
+    const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=guest`);
+    expect(res.status).toBe(200);            // guest is NOT rejected like an unknown user
+    expect(res.body.isSequential).toBe(true); // still computed from the label
+    expect(res.body.items).toHaveLength(2);
+  });
+
+  it('does not run progress enrichment for guest', async () => {
+    // Spy: guest must not invoke the per-user progress store enrich.
+    const spy = vi.spyOn(mockStore, 'enrich');
+    await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=guest`);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('returns 503 when fitnessPlayableService is not configured', async () => {
     const res = await request(makeApp(false)).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
     expect(res.status).toBe(503);

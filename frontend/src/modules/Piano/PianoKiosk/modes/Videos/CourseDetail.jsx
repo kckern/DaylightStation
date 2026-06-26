@@ -1,170 +1,226 @@
 // CourseDetail.jsx
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { DaylightAPI } from '../../../../../lib/api.mjs';
-import { lectureStatus } from './lectureMeta.js';
-import { groupUnits } from './courseUnits.js';
+import { lectureUserStatus } from './lectureMeta.js';
+import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
-/** One lecture card (thumbnail + watch badge + caption). */
-function LectureCard({ item, onPlay }) {
-  const st = lectureStatus(item);
-  const img = item.image || item.thumbnail;
-  return (
-    <li>
-      <button type="button" className="piano-episode" onClick={() => onPlay(item)}>
-        <div className="piano-episode__thumb">
-          {img && <img src={img} alt="" loading="eager" decoding="async" />}
-          {st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
-          {!st.watched && st.percent > 0 && (
-            <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
-          )}
-        </div>
-        <div className="piano-episode__label">
-          {item.itemIndex != null && <span className="piano-episode__num">E{item.itemIndex}</span>}
-          <span className="piano-episode__title">{item.label || item.title}</span>
-        </div>
-      </button>
-    </li>
-  );
+// Best-effort ascending C-E-G chime when a new unit unlocks. Silent if no AudioContext.
+function playUnlockChime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.12;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+      osc.start(t); osc.stop(t + 0.6);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 2000);
+  } catch { /* no audio available */ }
 }
 
 /**
- * Course landing page — FitnessShow-style two-panel layout: a left info panel
- * (poster + title + summary + count) and a right scrollable grid of lecture
- * cards. Watch state (✓ / progress bar) rides on the thumbnail and comes from
- * media_memory signals (see lectureStatus). Tap a card to play.
- *
- * Multi-season courses (e.g. Hoffman Academy's 18 "units") render a tappable
- * unit-tab strip above the grid. On landing the right grid pre-loads Unit 1's
- * lectures while the LEFT panel keeps showing the *show* poster/summary — it
- * only switches to a season's own poster/summary once the user explicitly taps
- * a unit tab. Season summaries are fetched lazily on first tap. Single-season
- * courses render a flat list with no tabs.
+ * Course landing page. Per-user watch state (✓ / progress) rides on each
+ * thumbnail. Sequential courses lock episodes after the first unwatched one and,
+ * when multi-season, hide seasons beyond the first incomplete one — revealing the
+ * next with a toast + chime as the student completes a unit.
  */
 export default function CourseDetail({ course, onPlay }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
+  const { currentUser, currentProfile } = usePianoUser();
+  const courseId = idOf(course?.id);
+  const { items, info, parents, isSequential, loading, error } = usePianoCoursePlayable(courseId, currentUser);
 
+  const seasons = useMemo(() => {
+    if (!parents || typeof parents !== 'object') return [];
+    return Object.entries(parents)
+      .map(([id, p]) => ({
+        id: String(id),
+        index: Number.isFinite(p?.index) ? p.index : (parseInt(p?.index, 10) || 0),
+        title: p?.title || null,
+        thumbnail: p?.thumbnail || null,
+      }))
+      .sort((a, b) => a.index - b.index);
+  }, [parents]);
+
+  const episodesOf = useCallback(
+    (seasonId) => (items || []).filter((ep) => String(ep.parentId) === String(seasonId)),
+    [items],
+  );
+
+  const seasonComplete = useCallback(
+    (seasonId) => {
+      const eps = episodesOf(seasonId);
+      return eps.length > 0 && eps.every((ep) => lectureUserStatus(ep).watched);
+    },
+    [episodesOf],
+  );
+
+  // Visible seasons: sequential multi-season shows through the FIRST incomplete
+  // season then stops (hiding later ones); otherwise all seasons are visible.
+  const visibleSeasons = useMemo(() => {
+    if (!isSequential || seasons.length <= 1) return seasons;
+    const out = [];
+    for (const s of seasons) {
+      out.push(s);
+      if (!seasonComplete(s.id)) break;
+    }
+    return out;
+  }, [isSequential, seasons, seasonComplete]);
+
+  // Linear locked set for sequential courses: everything after the first
+  // not-yet-watched episode (ordered by season index, then itemIndex).
+  const lockedIds = useMemo(() => {
+    if (!isSequential || !items) return new Set();
+    const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
+    const sorted = [...items].sort((a, b) => {
+      const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
+      if (si !== 0) return si;
+      return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
+    });
+    const locked = new Set();
+    let gateClosed = false;
+    for (const ep of sorted) {
+      if (gateClosed) locked.add(ep.plex || ep.id);
+      if (!gateClosed && !lectureUserStatus(ep).watched) gateClosed = true;
+    }
+    return locked;
+  }, [isSequential, items, seasons]);
+
+  // The "current" lesson: in a sequential course, the first not-yet-watched
+  // episode (linear order) — i.e. the one the gate sits at and the student should
+  // play next. It's the only unwatched episode that is NOT locked. Highlighted in
+  // goldenrod. Null for non-sequential courses.
+  const currentId = useMemo(() => {
+    if (!isSequential || !items) return null;
+    const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
+    const sorted = [...items].sort((a, b) => {
+      const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
+      if (si !== 0) return si;
+      return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
+    });
+    const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
+    return next ? (next.plex || next.id) : null;
+  }, [isSequential, items, seasons]);
+
+  // Unlock ceremony: when the complete-season set grows, toast + chime the newly
+  // revealed next season. Skips the first render (no "prev" to compare against).
+  const [unlockedToast, setUnlockedToast] = useState(null);
+  const prevCompleteRef = useRef(null);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const courseId = idOf(course?.id);
-        logger.info('piano.course-load', { courseId });
-        const res = await DaylightAPI(`api/v1/fitness/show/${courseId}/playable`);
-        if (!cancelled) setData(res || { items: [] });
-      } catch (err) {
-        if (!cancelled) { setData({ items: [] }); setError(err.message); }
-        logger.warn('piano.course-load-failed', { error: err.message });
+    if (!isSequential || seasons.length <= 1 || !items) return;
+    const completeNow = new Set(seasons.filter((s) => seasonComplete(s.id)).map((s) => s.id));
+    const prev = prevCompleteRef.current;
+    if (prev) {
+      for (let i = 0; i < seasons.length; i += 1) {
+        const s = seasons[i];
+        if (completeNow.has(s.id) && !prev.has(s.id)) {
+          const next = seasons[i + 1];
+          if (next) {
+            const name = next.title || `Unit ${next.index}`;
+            setUnlockedToast(name);
+            playUnlockChime();
+            logger.info('piano.season-unlocked', { season: next.id, name });
+            setTimeout(() => setUnlockedToast(null), 4000);
+          }
+        }
       }
-    })();
-    return () => { cancelled = true; };
-  }, [logger, course?.id]);
+    }
+    prevCompleteRef.current = completeNow;
+  }, [isSequential, seasons, items, seasonComplete, logger]);
 
-  const info = data?.info || {};
-  const items = data ? (data.items || []) : null;
-  const showPoster = info.image || course?.image;
-  const showTitle = course?.title || info.title || 'Course';
+  const poster = info?.image || course?.image;
+  const title = course?.title || info?.title || 'Course';
+  usePianoBreadcrumb(useMemo(() => [{ label: title }], [title]));
 
-  // Seasons ("units") when this is a multi-season course; null otherwise.
-  const units = useMemo(() => (data ? groupUnits(data) : null), [data]);
+  const renderEpisode = (item) => {
+    const st = lectureUserStatus(item);
+    const img = item.image || item.thumbnail;
+    const key = item.plex || item.id;
+    const isLocked = lockedIds.has(key);
+    const isCurrent = key === currentId;
+    return (
+      <li key={key}>
+        <button
+          type="button"
+          className={`piano-episode${isLocked ? ' piano-episode--locked' : ''}${isCurrent ? ' piano-episode--current' : ''}`}
+          onClick={() => { if (!isLocked) onPlay(item); }}
+          disabled={isLocked}
+          aria-disabled={isLocked}
+          aria-current={isCurrent ? 'true' : undefined}
+        >
+          <div className="piano-episode__thumb">
+            {img && <img src={img} alt="" loading="eager" decoding="async" />}
+            {isLocked && <span className="piano-episode__lock" aria-label="Locked">🔒</span>}
+            {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
+            {!isLocked && !st.watched && st.percent > 0 && (
+              <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
+            )}
+          </div>
+          <div className="piano-episode__label">
+            {item.itemIndex != null && <span className="piano-episode__num">E{item.itemIndex}</span>}
+            <span className="piano-episode__title">{item.label || item.title}</span>
+          </div>
+        </button>
+      </li>
+    );
+  };
 
-  // `activeUnit` drives the right grid (defaults to Unit 1). `tabSelected`
-  // gates the LEFT panel: false → show-level info; true → the active season's
-  // own poster/summary. Reset whenever a new course loads.
-  const [activeUnit, setActiveUnit] = useState(0);
-  const [tabSelected, setTabSelected] = useState(false);
-  const [seasonSummaries, setSeasonSummaries] = useState({}); // unitId -> summary | null
-  useEffect(() => {
-    setActiveUnit(0);
-    setTabSelected(false);
-    setSeasonSummaries({});
-    if (units) logger.info('piano.course-units', { unitCount: units.length });
-  }, [units, logger]);
-
-  const activeUnitObj = units ? units[activeUnit] : null;
-  const visibleItems = units ? (activeUnitObj?.items || []) : items;
-
-  // Left panel shows the season only after an explicit tab press.
-  const showSeasonOnLeft = Boolean(units && tabSelected && activeUnitObj);
-
-  // Lazily fetch the selected season's summary the first time it's shown.
-  useEffect(() => {
-    if (!showSeasonOnLeft) return undefined;
-    const id = activeUnitObj.id;
-    if (seasonSummaries[id] !== undefined) return undefined; // already fetched
-    let cancelled = false;
-    DaylightAPI(`api/v1/list/plex/${id}`)
-      .then((res) => { if (!cancelled) setSeasonSummaries((s) => ({ ...s, [id]: res?.info?.summary || null })); })
-      .catch(() => { if (!cancelled) setSeasonSummaries((s) => ({ ...s, [id]: null })); });
-    return () => { cancelled = true; };
-  }, [showSeasonOnLeft, activeUnitObj, seasonSummaries]);
-
-  const onTab = (i) => { setActiveUnit(i); setTabSelected(true); };
-
-  // Left-panel content: season (post-tap) vs show (landing / single-season).
-  const leftPoster = showSeasonOnLeft ? (activeUnitObj.thumbnail || showPoster) : showPoster;
-  const leftTitle = showSeasonOnLeft ? activeUnitObj.title : showTitle;
-  const leftSummary = showSeasonOnLeft ? seasonSummaries[activeUnitObj.id] : info.summary;
-  const leftCount = showSeasonOnLeft
-    ? `${activeUnitObj.items.length} lectures`
-    : (units ? `${units.length} units · ${items?.length ?? 0} lectures` : `${items?.length ?? 0} lectures`);
-
-  // Current location in the header breadcrumb (Videos › this course) — always
-  // the show, even while a season is shown on the left.
-  usePianoBreadcrumb(useMemo(() => [{ label: showTitle }], [showTitle]));
+  const isMultiSeason = seasons.length > 1;
 
   return (
     <section className="piano-mode--videos piano-course">
       <div className="piano-course__content">
         <aside className="piano-course__info">
-          {leftPoster && <img className="piano-course__poster" src={leftPoster} alt="" />}
-          <h2 className="piano-course__title">{leftTitle}</h2>
-          {items?.length > 0 && <div className="piano-course__count">{leftCount}</div>}
-          {leftSummary && <p className="piano-course__summary">{leftSummary}</p>}
+          {poster && <img className="piano-course__poster" src={poster} alt="" />}
+          <h2 className="piano-course__title">{title}</h2>
+          {items?.length > 0 && <div className="piano-course__count">{items.length} lectures</div>}
+          {isSequential && (
+            <div className="piano-course__learner">
+              <span className="piano-course__badge">Sequential</span>
+              {currentProfile?.name && (
+                <span className="piano-course__learner-name">Learning as {currentProfile.name}</span>
+              )}
+            </div>
+          )}
+          {info?.summary && <p className="piano-course__summary">{info.summary}</p>}
         </aside>
 
         <div className="piano-course__episodes">
-          {items === null && <PianoEmpty loading />}
-          {items?.length === 0 && <PianoEmpty message={error || 'No lectures found.'} />}
-          {items?.length > 0 && (
-            <>
-              {units && (
-                <div className="piano-course__units" role="tablist" aria-label="Units">
-                  {units.map((u, i) => {
-                    const done = u.items.every((it) => lectureStatus(it).watched);
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={i === activeUnit}
-                        title={u.title}
-                        className={`piano-course__unit${i === activeUnit ? ' is-active' : ''}${done ? ' is-done' : ''}`}
-                        onClick={() => onTab(i)}
-                      >
-                        <span className="piano-course__unit-num">{u.index != null ? `Unit ${u.index}` : u.title}</span>
-                        {done && <span className="piano-course__unit-check" aria-label="Unit complete">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {activeUnitObj && <h3 className="piano-course__unit-title">{activeUnitObj.title}</h3>}
-              <ul className="piano-episodes">
-                {visibleItems.map((item) => (
-                  <LectureCard key={item.plex || item.id} item={item} onPlay={onPlay} />
-                ))}
-              </ul>
-            </>
+          {loading && <PianoEmpty loading />}
+          {!loading && (!items || items.length === 0) && <PianoEmpty message={error || 'No lectures found.'} />}
+          {!loading && items?.length > 0 && (
+            isMultiSeason ? (
+              visibleSeasons.map((s) => {
+                const eps = [...episodesOf(s.id)].sort((a, b) => (a.itemIndex ?? 0) - (b.itemIndex ?? 0));
+                if (!eps.length) return null;
+                return (
+                  <div className="piano-course__season" key={s.id}>
+                    <h3 className="piano-course__season-title">{s.title || `Unit ${s.index}`}</h3>
+                    <ul className="piano-episodes">{eps.map(renderEpisode)}</ul>
+                  </div>
+                );
+              })
+            ) : (
+              <ul className="piano-episodes">{items.map(renderEpisode)}</ul>
+            )
           )}
         </div>
       </div>
+      {unlockedToast && (
+        <div className="piano-course__unlock-toast" role="status">🎉 {unlockedToast} unlocked!</div>
+      )}
     </section>
   );
 }

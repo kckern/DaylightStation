@@ -247,17 +247,24 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     const { courseId } = req.params;
     const { userId } = req.query;
 
-    // Validate userId when provided. Prefer the store's guard if wired, else the
-    // router's knownUser() — both reject unknown users with 400.
-    if (userId) {
+    // `guest` is the who's-playing dismiss-outcome identity (it never has tracked
+    // progress). Treat it like an anonymous request: serve the course + isSequential
+    // with NO per-user enrichment, rather than rejecting it — otherwise an idle
+    // kiosk that fell back to Guest would 400 here and the course would render blank.
+    const isGuest = userId === 'guest';
+
+    // Validate a real userId. Prefer the store's guard if wired, else the router's
+    // knownUser() — both reject unknown users with 400 (guest is exempted above).
+    if (userId && !isGuest) {
       const ok = userVideoProgressStore ? userVideoProgressStore.isKnownUser(userId) : knownUser(userId);
       if (!ok) return res.status(400).json({ error: 'Invalid user' });
     }
 
     const playable = await fitnessPlayableService.getPlayableEpisodes(courseId);
 
-    // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared store.
-    if (userId && userVideoProgressStore) {
+    // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared
+    // store — known users only; guest/anonymous get the course with no progress.
+    if (userId && !isGuest && userVideoProgressStore) {
       playable.items = userVideoProgressStore.enrich(playable.items, userId);
     }
 
