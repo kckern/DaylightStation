@@ -1859,7 +1859,12 @@ export class FitnessSession {
     this._cumulativeRotations = new Map();
     this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking on session start
     this._lastKnownGoodRoster = null;
-    this._lastKnownGoodDeviceAssignments = null;
+    // Preserve active guest assignments across session start: re-seed the
+    // durability snapshot from the LIVE ledger instead of discarding it, so an
+    // assignment made before the strap broadcast survives (guest-UX audit #2).
+    // Falls back to null when there are no active assignments (clean new session).
+    const liveAssignmentsAtStart = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    this._lastKnownGoodDeviceAssignments = liveAssignmentsAtStart.length > 0 ? liveAssignmentsAtStart : null;
     this._collectTimelineTick({ timestamp: now });
     return true;
   }
