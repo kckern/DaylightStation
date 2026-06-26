@@ -41,7 +41,8 @@ const CircularUserAvatar = ({
   children,
   onClick,
   role,
-  boostBadge
+  boostBadge,
+  weakSignal = false
 }) => {
   const isFireZone = zoneId === 'fire';
   //if fire, showIndicator is false
@@ -79,6 +80,7 @@ const CircularUserAvatar = ({
     'vital-avatar',
     zoneId ? `zone-${zoneId}` : null,
     !hasActiveHr ? 'no-hr' : null,
+    weakSignal ? 'weak-signal' : null,
     className
   ].filter(Boolean).join(' ');
 
@@ -196,7 +198,8 @@ CircularUserAvatar.propTypes = {
   children: PropTypes.node,
   onClick: PropTypes.func,
   role: PropTypes.string,
-  boostBadge: PropTypes.string
+  boostBadge: PropTypes.string,
+  weakSignal: PropTypes.bool
 };
 
 export default CircularUserAvatar;
