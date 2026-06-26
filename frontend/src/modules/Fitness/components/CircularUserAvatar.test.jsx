@@ -34,3 +34,15 @@ describe('CircularUserAvatar no-HR state', () => {
     expect(container.querySelector('.circular-user-avatar.no-hr')).toBeNull();
   });
 });
+
+describe('CircularUserAvatar weakSignal', () => {
+  it('adds .weak-signal when weakSignal is true', () => {
+    const { container } = render(<CircularUserAvatar name="#10266" weakSignal heartRate={59} />);
+    expect(container.querySelector('.circular-user-avatar.weak-signal')).not.toBeNull();
+  });
+
+  it('omits .weak-signal by default', () => {
+    const { container } = render(<CircularUserAvatar name="Felix" heartRate={120} />);
+    expect(container.querySelector('.circular-user-avatar.weak-signal')).toBeNull();
+  });
+});
