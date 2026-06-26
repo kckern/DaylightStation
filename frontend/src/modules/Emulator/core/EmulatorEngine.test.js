@@ -72,6 +72,77 @@ describe('EmulatorEngine boot', () => {
   });
 });
 
+describe('EmulatorEngine save / resume', () => {
+  function makeSaveInstance() {
+    const fs = {
+      files: {},
+      writeFile: vi.fn(function (p, data) { this.files[p] = data; }),
+      analyzePath: vi.fn(function (p) { return { exists: p in this.files }; }),
+      readFile: vi.fn(function (p) { return this.files[p]; }),
+    };
+    const gm = {
+      Module: { HEAPU8: new Uint8Array(16) },
+      functions: { getFrameNum: vi.fn(() => 0) },
+      FS: fs,
+      getState: vi.fn(() => new Uint8Array([1, 2, 3])),
+      loadState: vi.fn(),
+      getSaveFile: vi.fn(() => new Uint8Array([7, 7])),
+      getSaveFilePath: vi.fn(() => '/saves/game.srm'),
+      loadSaveFiles: vi.fn(),
+      saveSaveFiles: vi.fn(),
+      restart: vi.fn(),
+    };
+    return { pause: vi.fn(), play: vi.fn(), setVolume: vi.fn(), gameManager: gm };
+  }
+
+  async function booted() {
+    const instance = makeSaveInstance();
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    return { engine, gm: instance.gameManager };
+  }
+
+  it('captureState / loadState delegate to gameManager', async () => {
+    const { engine, gm } = await booted();
+    expect(Array.from(engine.captureState())).toEqual([1, 2, 3]);
+    expect(engine.loadState(new Uint8Array([4]))).toBe(true);
+    expect(gm.loadState).toHaveBeenCalled();
+  });
+
+  it('captureSave reads the .srm; loadSave writes FS then loadSaveFiles', async () => {
+    const { engine, gm } = await booted();
+    expect(Array.from(engine.captureSave())).toEqual([7, 7]);
+    expect(engine.loadSave(new Uint8Array([9, 9]).buffer)).toBe(true);
+    expect(gm.FS.writeFile).toHaveBeenCalledWith('/saves/game.srm', expect.any(Uint8Array));
+    expect(gm.loadSaveFiles).toHaveBeenCalled();
+  });
+
+  it('captureResume / loadResume branch by saveMode', async () => {
+    const { engine, gm } = await booted();
+    engine.captureResume('battery');
+    expect(gm.getSaveFile).toHaveBeenCalled();
+    engine.captureResume('state');
+    expect(gm.getState).toHaveBeenCalled();
+    expect(engine.captureResume('none')).toBeNull();
+    engine.loadResume('state', new Uint8Array([1]));
+    expect(gm.loadState).toHaveBeenCalled();
+    expect(engine.loadResume('none', new Uint8Array([1]))).toBe(false);
+  });
+
+  it('restart delegates to gameManager.restart', async () => {
+    const { engine, gm } = await booted();
+    expect(engine.restart()).toBe(true);
+    expect(gm.restart).toHaveBeenCalled();
+  });
+
+  it('save/resume methods are inert before boot', () => {
+    const engine = createEmulatorEngine({ load: async () => makeSaveInstance(), win: makeFakeWin() });
+    expect(engine.captureState()).toBeNull();
+    expect(engine.loadState(new Uint8Array([1]))).toBe(false);
+    expect(engine.restart()).toBe(false);
+  });
+});
+
 describe('EmulatorEngine controls', () => {
   let instance, engine;
   beforeEach(async () => {

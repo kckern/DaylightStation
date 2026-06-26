@@ -388,3 +388,48 @@
     pointer-events: auto;
   }
 }
+
+// Reset / "start over" confirm modal (raised by the power-switch hotspot).
+.emulator-reset-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  &__sheet {
+    position: relative;
+    max-width: 60vh;
+    padding: 3vh 3.5vh;
+    border-radius: 1.6vh;
+    background: #16181f;
+    color: #e8e8ee;
+    text-align: center;
+    box-shadow: 0 1.2vh 4vh rgba(0, 0, 0, 0.6);
+    font-family: system-ui, sans-serif;
+  }
+
+  &__title { font-size: 2.4vh; font-weight: 700; margin-bottom: 1vh; }
+  &__body { font-size: 1.8vh; color: #b9bdca; margin-bottom: 2.4vh; }
+
+  &__actions { display: flex; gap: 1.4vh; justify-content: center; }
+
+  &__cancel,
+  &__confirm {
+    padding: 1.3vh 2.6vh;
+    border: none;
+    border-radius: 1vh;
+    font-size: 1.8vh;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  &__cancel { background: #2b2f3a; color: #e8e8ee; }
+  &__confirm { background: #c0392b; color: #fff; }
+}

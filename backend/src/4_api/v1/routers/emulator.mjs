@@ -94,6 +94,7 @@ export function createEmulatorRouter({
   loadConfig,
   readBinary,
   writeBinary,
+  deleteBinary,
   readEngineFile,
   resolveRomPath,
   resolveArtPath,
@@ -180,7 +181,7 @@ export function createEmulatorRouter({
   router.get('/library', (req, res) => {
     try {
       const cfg = loadConfig();
-      const { systems } = buildCatalog(cfg, logger);
+      const { systems, consoles } = buildCatalog(cfg, logger);
       const user = req.query.user ? safeSegment(String(req.query.user)) : null;
 
       const games = (cfg.games ?? [])
@@ -191,6 +192,7 @@ export function createEmulatorRouter({
             id: g.id,
             system: g.system,
             title: g.title,
+            saveMode: rules.saveMode ?? 'none',
             governance: rules.governance ?? null,
             shader: rules.shader ?? null,
             chrome: rules.chrome ?? null,
@@ -201,7 +203,7 @@ export function createEmulatorRouter({
           };
         });
 
-      res.json({ systems, games, input: cfg.input ?? null });
+      res.json({ systems, consoles, games, input: cfg.input ?? null });
     } catch (err) {
       if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
       logger.error('emulator.library.error', { error: err.message });
@@ -303,12 +305,38 @@ export function createEmulatorRouter({
     }
   }
 
+  async function deleteUserBlob(req, res, resolvePath) {
+    let system, gameId, slot, user;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+      if (req.params.slot !== undefined) slot = safeSegment(req.params.slot, { dot: true });
+      user = safeSegment(String(req.query.user ?? ''));
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    if (typeof deleteBinary !== 'function') {
+      return res.status(500).json({ error: 'delete unsupported' });
+    }
+    try {
+      const absPath = resolvePath({ system, gameId, slot, user });
+      await deleteBinary(absPath); // idempotent — missing file is a no-op
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error('emulator.blob.delete_error', { system, gameId, slot, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  }
+
   // ---- saves ---------------------------------------------------------------
   router.get('/save/:system/:gameId', (req, res) =>
     readUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
   );
   router.put('/save/:system/:gameId', rawBody, (req, res) =>
     writeUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
+  );
+  router.delete('/save/:system/:gameId', (req, res) =>
+    deleteUserBlob(req, res, ({ system, gameId, user }) => resolveSavePath(system, gameId, user))
   );
 
   // ---- states --------------------------------------------------------------
@@ -317,6 +345,9 @@ export function createEmulatorRouter({
   );
   router.put('/state/:system/:gameId/:slot', rawBody, (req, res) =>
     writeUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
+  );
+  router.delete('/state/:system/:gameId/:slot', (req, res) =>
+    deleteUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
   );
 
   return router;

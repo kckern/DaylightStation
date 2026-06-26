@@ -58,4 +58,15 @@ describe('formatOverlayValue', () => {
     expect(formatOverlayValue('badge_meter', 5)).toEqual({ kind: 'text', text: '5' });
     expect(formatOverlayValue(undefined, 'hi')).toEqual({ kind: 'text', text: 'hi' });
   });
+
+  it('formats a count-up timer (seconds → mm:ss, h:mm:ss past an hour)', () => {
+    expect(formatOverlayValue('timer', 0)).toEqual({ kind: 'stat', text: '0:00', unit: '' });
+    expect(formatOverlayValue('timer', 75)).toEqual({ kind: 'stat', text: '1:15', unit: '' });
+    expect(formatOverlayValue('timer', 3725)).toEqual({ kind: 'stat', text: '1:02:05', unit: '' });
+  });
+
+  it('renders the coin placeholder literally (non-numeric coins → text)', () => {
+    expect(formatOverlayValue('coins', '—')).toEqual({ kind: 'stat', text: '—', unit: '' });
+    expect(formatOverlayValue('coins', 12)).toEqual({ kind: 'stat', text: '12', unit: '' });
+  });
 });

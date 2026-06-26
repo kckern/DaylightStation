@@ -75,6 +75,10 @@ function makeApp(overrides = {}) {
       store.set(absPath, Buffer.from(buffer));
       return Promise.resolve();
     }),
+    deleteBinary: vi.fn((absPath) => {
+      store.delete(absPath); // idempotent — no throw when absent
+      return Promise.resolve();
+    }),
     resolveRomPath: vi.fn((cfg, system, gameId) => `/media/${system}/ROM/${gameId}`),
     resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
     resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
@@ -149,6 +153,29 @@ describe('createEmulatorRouter', () => {
       const res = await request(app).get('/api/v1/emulator/library?user=soren');
       expect(res.status).toBe(200);
       expect(res.body.games[0].governance.required_zone).toBe('hot');
+    });
+
+    it('surfaces saveMode per game (default none)', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.body.games[0].saveMode).toBe('none');
+    });
+
+    it('includes resolved consoles (fallback: one tab per system)', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.body.consoles).toEqual([{ system: 'gb', label: 'Game Boy', placeholder: false }]);
+    });
+
+    it('passes configured consoles (real + blank placeholder) through', async () => {
+      const { app } = makeApp({
+        loadConfig: () => ({ ...makeCfg(), consoles: [{ system: 'gb' }, {}] }),
+      });
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.body.consoles).toEqual([
+        { system: 'gb', label: 'Game Boy', placeholder: false },
+        { system: null, label: null, placeholder: true },
+      ]);
     });
   });
 
@@ -263,6 +290,29 @@ describe('createEmulatorRouter', () => {
         .send(Buffer.from([1]));
       expect(res.status).toBe(400);
     });
+
+    it('DELETE erases the save (reset) and is idempotent', async () => {
+      const { app } = makeApp();
+      await request(app)
+        .put('/api/v1/emulator/save/gb/pokemon-red?user=soren')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from([1, 2, 3]));
+      const del = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      expect(del.status).toBe(200);
+      expect(del.body).toEqual({ ok: true });
+      // gone now → GET 204
+      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      expect(get.status).toBe(204);
+      // second delete still ok (idempotent)
+      const del2 = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      expect(del2.status).toBe(200);
+    });
+
+    it('DELETE missing user → 400', async () => {
+      const { app } = makeApp();
+      const res = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red');
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('states', () => {
@@ -285,6 +335,18 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=soren');
       expect(res.status).toBe(204);
+    });
+
+    it('DELETE erases a state slot', async () => {
+      const { app } = makeApp();
+      await request(app)
+        .put('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren')
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from([5, 5]));
+      const del = await request(app).delete('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren');
+      expect(del.status).toBe(200);
+      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren');
+      expect(get.status).toBe(204);
     });
   });
 

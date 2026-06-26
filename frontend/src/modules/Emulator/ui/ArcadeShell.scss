@@ -1,0 +1,129 @@
+// Video Games arcade shell — centered cover grid + bottom console tabs.
+// Targets the garage fullscreen display; sits inside the fullscreen module overlay.
+
+.emu-arcade-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0d0f15;
+  color: #e8e8ee;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+
+  &__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;       // vertical centering of the grid
+    justify-content: center;   // horizontal centering
+    padding: 3vh 4vw;
+    overflow: auto;
+  }
+}
+
+// Grid wrapper keeps the grid block centered even when it doesn't fill the row.
+.emu-grid-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+
+  &--empty { min-height: 30vh; }
+}
+
+.emu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 14vh);
+  gap: 3vh 3vw;
+  justify-content: center;
+  align-content: center;
+
+  &__cell { display: flex; }
+  &__empty { color: #6b7080; font-size: 2vh; }
+}
+
+// A cover tile — square, art-filled, no caption.
+.emu-cover {
+  position: relative;
+  width: 14vh;
+  height: 14vh;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 1.4vh;
+  background: #1a1d26;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 0.6vh 1.8vh rgba(0, 0, 0, 0.5);
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    image-rendering: auto;
+  }
+
+  // Fallback tile when a cover is missing/broken: show the title centered.
+  &__fallback {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1vh;
+    font-size: 1.5vh;
+    font-weight: 600;
+    color: #aab;
+    background: linear-gradient(150deg, #23283a, #161922);
+  }
+
+  &.is-focused {
+    border-color: #7c83ff;
+    transform: scale(1.06);
+    box-shadow: 0 0 0 0.4vh rgba(124, 131, 255, 0.35), 0 0.8vh 2.2vh rgba(0, 0, 0, 0.6);
+    outline: none;
+  }
+
+  &:focus-visible { outline: none; }
+}
+
+// Bottom console tab strip.
+.emu-console-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1vw;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 1.6vh 2vw 2.4vh;
+  border-top: 1px solid #1f2230;
+  background: #0a0c11;
+}
+
+.emu-console-tab {
+  padding: 1.4vh 3vw;
+  border: none;
+  border-radius: 1.2vh 1.2vh 0 0;
+  background: #161922;
+  color: #6b7080;
+  font-size: 1.9vh;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+
+  &.is-active {
+    background: #7c83ff;
+    color: #0c0d12;
+  }
+
+  // Blank placeholders for not-yet-built consoles.
+  &--placeholder {
+    min-width: 9vw;
+    background: #12141b;
+    border: 1px dashed #262a38;
+    cursor: default;
+    pointer-events: none;
+  }
+}

@@ -144,6 +144,93 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
     });
   }
 
+  // ── Save / resume ─────────────────────────────────────────────────────────
+  // Verified against the vendored EmulatorJS gameManager API:
+  //   getState() → Uint8Array (save-state)         loadState(Uint8Array)
+  //   getSaveFile() → Uint8Array (.srm; flushes SRAM first)   getSaveFilePath()
+  //   loadSaveFiles() (reads SRM from FS)           restart()
+  // These are how we snapshot/restore the single per-user resume point.
+
+  /** Capture a save-state snapshot (Uint8Array) or null if unavailable. */
+  function captureState() {
+    if (!ready) return null;
+    try {
+      return instance.gameManager.getState();
+    } catch (err) {
+      log().warn('capture-state.failed', { error: err?.message });
+      return null;
+    }
+  }
+
+  /** Restore a save-state snapshot (Uint8Array). Returns success. */
+  function loadState(data) {
+    if (!ready || !data) return false;
+    try {
+      instance.gameManager.loadState(toU8(data));
+      return true;
+    } catch (err) {
+      log().warn('load-state.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  /** Capture the battery save (.srm) bytes (Uint8Array) or null. */
+  function captureSave() {
+    if (!ready) return null;
+    try {
+      return instance.gameManager.getSaveFile(); // flushes SRAM → FS, then reads
+    } catch (err) {
+      log().warn('capture-save.failed', { error: err?.message });
+      return null;
+    }
+  }
+
+  /** Inject a battery save (.srm): write to the FS path, then load it. */
+  function loadSave(data) {
+    if (!ready || !data) return false;
+    try {
+      const gm = instance.gameManager;
+      const path = gm.getSaveFilePath();
+      gm.FS.writeFile(path, toU8(data));
+      gm.loadSaveFiles();
+      return true;
+    } catch (err) {
+      log().warn('load-save.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  /** Restart the ROM from power-on (used by the reset / start-over hotspot). */
+  function restart() {
+    if (!ready) return false;
+    try {
+      instance.gameManager.restart();
+      return true;
+    } catch (err) {
+      log().warn('restart.failed', { error: err?.message });
+      return false;
+    }
+  }
+
+  // saveMode-aware resume helpers so callers don't branch on mode themselves.
+  function captureResume(saveMode) {
+    if (saveMode === 'battery') return captureSave();
+    if (saveMode === 'state') return captureState();
+    return null;
+  }
+  function loadResume(saveMode, data) {
+    if (saveMode === 'battery') return loadSave(data);
+    if (saveMode === 'state') return loadState(data);
+    return false;
+  }
+
+  function toU8(data) {
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new Uint8Array(data);
+  }
+
   /**
    * Best-effort teardown. EmulatorJS does not cleanly support re-init within a
    * single page; a full re-boot may require a page reload. That's acceptable —
@@ -178,6 +265,13 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window } = {
     resetCheat,
     getFrameNum,
     waitFrames,
+    captureState,
+    loadState,
+    captureSave,
+    loadSave,
+    captureResume,
+    loadResume,
+    restart,
     destroy,
   };
 }
