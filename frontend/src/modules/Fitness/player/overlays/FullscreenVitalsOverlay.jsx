@@ -4,6 +4,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
+import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from '@/hooks/fitness/ParticipantRoster.js';
 import { resolveUserZone } from './resolveUserZone.js';
 import './FullscreenVitalsOverlay.scss';
 
@@ -101,7 +102,15 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
   const hrItems = useMemo(() => {
     if (!Array.isArray(heartRateDevices)) return [];
     return heartRateDevices
-      .filter((device) => device && device.deviceId != null)
+      .filter((device) => {
+        if (!device || device.deviceId == null) return false;
+        // Mirror the roster's hard floor: a sub-hard-floor reading on a device
+        // with no resolved user is drawer-strap noise — hide it in fullscreen too.
+        const mapped = getUserByDevice?.(device.deviceId) || null;
+        const hr = Number.isFinite(device.heartRate) ? device.heartRate : null;
+        if (!mapped && hr != null && hr < DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM) return false;
+        return true;
+      })
       .map((device) => {
         const user = getUserByDevice?.(device.deviceId) || null;
         const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
