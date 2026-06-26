@@ -2122,6 +2122,37 @@ export class FitnessSession {
   }
 
   /**
+   * Snapshot the current guest-assignment ledger immediately. Unlike the
+   * tick-driven high-water-mark (which only fires when the roster is non-empty),
+   * this captures an assignment the instant it is made — even before the strap
+   * broadcasts — so it can be restored after a re-init. See guest-UX audit #2.
+   */
+  captureAssignmentSnapshot() {
+    const snap = this.userManager?.assignmentLedger?.snapshot?.() || [];
+    if (snap.length > 0) this._lastKnownGoodDeviceAssignments = snap;
+    return snap;
+  }
+
+  /**
+   * Re-apply any captured assignments that are missing from the live ledger.
+   * Idempotent and non-destructive: an assignment still present (or replaced by
+   * a newer occupant) is left untouched. Called after a re-config rebuilds users.
+   */
+  restoreAssignmentSnapshot() {
+    const snap = this._lastKnownGoodDeviceAssignments || [];
+    const ledger = this.userManager?.assignmentLedger;
+    if (!snap.length || !ledger) return false;
+    let restoredAny = false;
+    for (const entry of snap) {
+      if (!entry?.deviceId) continue;
+      if (ledger.get(entry.deviceId)) continue; // present or replaced — don't clobber
+      this.userManager.assignGuest(entry.deviceId, entry.occupantName, entry.metadata || {});
+      restoredAny = true;
+    }
+    return restoredAny;
+  }
+
+  /**
    * Collect timeline tick - DELEGATED to TimelineRecorder.
    *
    * Phase 5 refactoring: This method now delegates to TimelineRecorder
