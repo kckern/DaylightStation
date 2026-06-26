@@ -161,6 +161,21 @@ describe('createEmulatorRouter', () => {
       expect(res.body.games[0].saveMode).toBe('none');
     });
 
+    it('surfaces a per-game core override (null when unset)', async () => {
+      const base = makeApp();
+      const r1 = await request(base.app).get('/api/v1/emulator/library');
+      expect(r1.body.games[0].core).toBeNull();
+      const withCore = makeApp({
+        loadConfig: () => {
+          const cfg = makeCfg();
+          cfg.games.push({ ...cfg.games[0], id: 'mk', title: 'Mario Kart', system: 'gb', core: 'gba', saveMode: 'none' });
+          return cfg;
+        },
+      });
+      const r2 = await request(withCore.app).get('/api/v1/emulator/library');
+      expect(r2.body.games.find((g) => g.id === 'mk').core).toBe('gba');
+    });
+
     it('includes resolved consoles (fallback: one tab per system)', async () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/library');

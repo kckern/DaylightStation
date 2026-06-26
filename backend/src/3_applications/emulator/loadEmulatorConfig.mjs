@@ -58,6 +58,11 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         // save-state snapshot as the resume point) | 'battery' (.srm battery save).
         // Drives the fingerprint-up-front launch flow; absent ⇒ 'none'.
         saveMode: game.save_mode ?? game.saveMode ?? 'none',
+        // Per-game EJS_core override (e.g. a GBA game living in the gb category so
+        // it shares the bezel/shader, but boots with the mGBA core). Absent ⇒ use
+        // the system's core. EmulatorJS treats this as a system id and resolves
+        // it to the actual libretro core (e.g. 'gba' → mgba).
+        core: game.core ?? null,
         boxart: game.cover,
         bezel: game.bezel,
         watches: game.watches,

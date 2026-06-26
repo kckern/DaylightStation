@@ -197,6 +197,7 @@ export function createEmulatorRouter({
             system: g.system,
             title: g.title,
             saveMode: rules.saveMode ?? 'none',
+            core: rules.core ?? null,
             governance: rules.governance ?? null,
             shader: rules.shader ?? null,
             chrome: rules.chrome ?? null,

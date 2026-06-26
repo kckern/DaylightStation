@@ -97,7 +97,9 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
     const gate = buildFitnessGameGate({ game, zonesOrder, getActivePlayerId, getUserVitals });
     const engineConfig = {
       pathtodata: ENGINE_PATH,
-      core: library?.systems?.[game.system]?.core || game.system || 'gb',
+      // Per-game core override wins (e.g. a GBA title in the gb category boots
+      // with EJS_core 'gba' → mGBA), else the system's core.
+      core: game.core || library?.systems?.[game.system]?.core || game.system || 'gb',
       controls,
     };
     const ctx = { system: game.system, gameId: game.id, user: userId, saveMode: game.saveMode };
