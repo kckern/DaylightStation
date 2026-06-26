@@ -26,6 +26,15 @@ import getLogger from '../../lib/logging/Logger.js';
 export const DEFAULT_ANONYMOUS_HR_FLOOR_BPM = 60;
 
 /**
+ * Hard floor (BPM) below which an UNREGISTERED device is dropped as pure noise
+ * (e.g. a strap in a drawer broadcasting 16 BPM). Between this hard floor and
+ * DEFAULT_ANONYMOUS_HR_FLOOR_BPM the device is KEPT but flagged `weakSignal`,
+ * so a real low-HR guest still gets a tappable card. Overridable per-instance
+ * via configure({ anonymousHrHardFloor }).
+ */
+export const DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM = 40;
+
+/**
  * @typedef {Object} RosterEntry
  * @property {string} name - Participant name
  * @property {string} displayLabel - Display label
@@ -65,6 +74,7 @@ export class ParticipantRoster {
 
     // HR floor (BPM) below which an UNREGISTERED device is dropped as noise.
     this._anonymousHrFloor = DEFAULT_ANONYMOUS_HR_FLOOR_BPM;
+    this._anonymousHrHardFloor = DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM;
   }
 
   /**
@@ -86,6 +96,7 @@ export class ParticipantRoster {
     if (config.timeline !== undefined) this._timeline = config.timeline;
     if (config.zoneProfileStore !== undefined) this._zoneProfileStore = config.zoneProfileStore;
     if (Number.isFinite(config.anonymousHrFloor)) this._anonymousHrFloor = config.anonymousHrFloor;
+    if (Number.isFinite(config.anonymousHrHardFloor)) this._anonymousHrHardFloor = config.anonymousHrHardFloor;
     this._invalidateCache();
   }
 
@@ -504,13 +515,23 @@ export class ParticipantRoster {
     // would otherwise render as a `#<deviceId>` card. Registered users and
     // explicitly-assigned guests are exempt — only true ghosts are filtered.
     const isUnregistered = !mappedUser && !guestEntry;
-    if (isUnregistered && rawHeartRate != null && rawHeartRate < this._anonymousHrFloor) {
-      getLogger().debug('participant.roster.dropped_unregistered_low_hr', {
-        deviceId,
-        heartRate: rawHeartRate,
-        floor: this._anonymousHrFloor,
-      });
-      return null;
+    let weakSignal = false;
+    if (isUnregistered && rawHeartRate != null) {
+      if (rawHeartRate < this._anonymousHrHardFloor) {
+        // Genuine noise (e.g. drawer strap at 16 BPM) — drop. Sampled so a
+        // flapping ghost device cannot storm the session log (see audit Issue 7).
+        getLogger().sampled('participant.roster.dropped_unregistered_low_hr', {
+          deviceId,
+          heartRate: rawHeartRate,
+          hardFloor: this._anonymousHrHardFloor,
+        }, { maxPerMinute: 6, aggregate: true });
+        return null;
+      }
+      if (rawHeartRate < this._anonymousHrFloor) {
+        // Real but low (e.g. an older guest at 58-59) — KEEP as a tappable
+        // card, flagged so the UI can hint "weak signal / tap to add".
+        weakSignal = true;
+      }
     }
 
     // Phase 4: Get entityId from ledger for entity-aware tracking
@@ -626,7 +647,8 @@ export class ParticipantRoster {
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility
       inactiveSince: resolvedInactiveSince, // Null when any owned device is active; else latest inactiveSince across all owned devices
-      hrInactive: mappedUser?.currentData?.hrInactive ?? true
+      hrInactive: mappedUser?.currentData?.hrInactive ?? true,
+      weakSignal
     };
 
     return rosterEntry;
