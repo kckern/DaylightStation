@@ -6,26 +6,32 @@ const api = vi.fn();
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
+import { PianoUserProvider } from '../../PianoUserContext.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
 import { Videos } from './Videos.jsx';
 
 // Videos renders its own <Routes>, so mount it under a "videos/*" route inside a
 // MemoryRouter — mirroring how PianoShell mounts it (path="videos/*"). The course
 // id and lecture contentId live in the URL; assertions check the right view per path.
+// CourseDetail now reads the current user from PianoUserProvider (the roster mock
+// below returns no users, so currentUser stays null and the course hook falls back
+// to the device-level fitness show endpoint these tests already mock).
 const renderVideos = (plexCollection, initialEntry = '/videos') => render(
   <MemoryRouter initialEntries={[initialEntry]}>
     <ActivePianoProvider
       pianoId="test"
       config={{ videos: { plexCollection }, voices: [], midi: {}, inactivityMinutes: 10 }}
     >
-      <Routes>
-        <Route path="videos/*" element={<Videos />} />
-      </Routes>
+      <PianoUserProvider pianoId="test">
+        <Routes>
+          <Route path="videos/*" element={<Videos />} />
+        </Routes>
+      </PianoUserProvider>
     </ActivePianoProvider>
   </MemoryRouter>
 );
 
-beforeEach(() => { api.mockReset(); __clearPianoListCache(); });
+beforeEach(() => { api.mockReset(); api.mockResolvedValue({}); __clearPianoListCache(); });
 
 describe('Videos mode', () => {
   it('lists courses from the configured Plex collection (index route)', async () => {

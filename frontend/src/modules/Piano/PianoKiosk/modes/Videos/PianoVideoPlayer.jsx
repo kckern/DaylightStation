@@ -16,6 +16,9 @@ import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
 import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
+import EngagementGate from './EngagementGate.jsx';
+import { useEngagementGate } from './useEngagementGate.js';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -23,7 +26,7 @@ const Player = lazy(() => import('../../../../Player/Player.jsx'));
 const EMPTY_NOTES = new Map();
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, source, onBack }) {
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, engagementTimeoutSeconds = 90 }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -60,7 +63,25 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
 
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
-  const resumeSeconds = deriveResumeSeconds(lecture);
+  const resumeSeconds = lecture?.userPlayhead != null ? lecture.userPlayhead : deriveResumeSeconds(lecture);
+
+  const { currentUser } = usePianoUser();
+  const engagedRef = useRef(false);
+  const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
+
+  // Engagement for completion = ANY play-along. Once the student presses any key
+  // this session, the lecture counts as engaged (the inactivity gate's note also
+  // lands here). engagedRef is read at each play/log post (Part 2).
+  useEffect(() => {
+    if (activeNotes && activeNotes.size > 0) engagedRef.current = true;
+  }, [activeNotes]);
+
+  const { gateOpen, dismissGate } = useEngagementGate({
+    mediaEl,
+    isSequential,
+    timeoutSeconds: engagementTimeoutSeconds,
+    onEngagementConfirmed: () => { engagedRef.current = true; },
+  });
 
   // Header breadcrumb: the source show (tap → back to the course) › this lecture.
   usePianoBreadcrumb(useMemo(() => [
@@ -68,7 +89,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
     ...(title ? [{ label: title }] : []),
   ], [source, title, onBack]));
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
-  usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds });
+  usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef });
   useReloadGuard(isPlaying);
 
   // Memoize the heavy Player element so high-frequency re-renders (timeupdate
@@ -110,7 +131,11 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
   // Mirror media-element state into React for the chrome.
   useEffect(() => {
     if (!mediaEl) return undefined;
-    const onTime = () => setCurrentTime(mediaEl.currentTime || 0);
+    const onTime = () => {
+      const t = mediaEl.currentTime || 0;
+      setCurrentTime(t);
+      setFurthestWatched((prev) => (t > prev ? t : prev));
+    };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onMeta = () => {
@@ -182,8 +207,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
           live staff (fills all leftover width to the right). */}
       <div className="piano-video-player__body" ref={bodyRef}>
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
-          <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen}>
+          <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen} style={{ position: 'relative' }}>
             {playerEl}
+            {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
           </div>
 
           <PianoVideoChrome
@@ -193,6 +219,8 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
             rate={rate}
             loop={loop}
             playAlong={playAlong}
+            isSequential={isSequential}
+            furthestWatched={furthestWatched}
             onToggle={ctrl.toggle}
             onRestart={handleRestart}
             onSkip={handleSkip}

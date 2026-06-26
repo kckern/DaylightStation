@@ -91,7 +91,11 @@ export function EmulatorConsole({
   fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
-  const logger = useMemo(() => getLogger().child({ component: 'emulator-console' }), []);
+  // Per-mount correlation id: stamped on every console/session/engine/mixer event
+  // so one play session greps end-to-end. (Math.random is fine — this only needs
+  // to be unique within a log window, not cryptographic.)
+  const playId = useMemo(() => `play-${Math.random().toString(36).slice(2, 10)}`, []);
+  const logger = useMemo(() => getLogger().child({ component: 'emulator-console', playId }), [playId]);
 
   const mountRef = useRef(null);
   const consoleRef = useRef(null);
@@ -114,7 +118,15 @@ export function EmulatorConsole({
   const [gameState, setGameState] = useState({});
   const [, setHotspotState] = useState({ volume: 1, muted: false, paused: false });
   const [animClass, setAnimClass] = useState('');
-  const [, setError] = useState(null);
+  // Boot error state — now actually RENDERED (was previously discarded, making
+  // setError a no-op). `bootNonce` re-runs the boot effect for a clean retry.
+  const [error, setError] = useState(null);
+  const [bootNonce, setBootNonce] = useState(0);
+  const retryBoot = useCallback(() => {
+    logger.info('emulator.console.retry', { fromError: error?.kind || null });
+    setError(null);
+    setBootNonce((n) => n + 1);
+  }, [logger, error]);
   const animTimerRef = useRef(null);
 
   // Persistence held in a ref so the mount-once effect's cleanup reads the latest
@@ -170,10 +182,11 @@ export function EmulatorConsole({
   const cycleShade = useCallback(() => {
     setShadeIndex((i) => {
       const next = (i + 1) % LCD_SHADES.length;
-      try { window.localStorage?.setItem(SHADE_STORAGE_KEY, String(next)); } catch { /* ignore */ }
+      try { window.localStorage?.setItem(SHADE_STORAGE_KEY, String(next)); }
+      catch (err) { logger.debug('emulator.console.localstorage-failed', { key: SHADE_STORAGE_KEY, error: err && err.message }); }
       return next;
     });
-  }, []);
+  }, [logger]);
 
   // ── Integer-locked LCD geometry ──────────────────────────────────────────
   // The dot-matrix grid is only uniform AND aligned with the game's pixels when
@@ -286,12 +299,24 @@ export function EmulatorConsole({
   const applyVolume = useCallback((level) => {
     setVolumeLevel(level);
     volumeLevelRef.current = level;
-    try { window.localStorage?.setItem(VOLUME_STORAGE_KEY, String(level)); } catch { /* ignore */ }
+    try { window.localStorage?.setItem(VOLUME_STORAGE_KEY, String(level)); }
+    catch (err) { logger.debug('emulator.console.localstorage-failed', { key: VOLUME_STORAGE_KEY, error: err && err.message }); }
     const v = logVolumeFromLevel(level);
     runtimeRef.current?.mixer?.setBusVolume?.('game', v);
     runtimeRef.current?.engine?.resume?.();
-    logger.debug('emulator.console.volume', { level, volume: v });
+    logger.info('emulator.console.volume-applied', { reason: 'change', level, volume: v, bus: 'game' });
   }, [logger]);
+
+  // Re-assert the saved volume on the game bus whenever the settings panel opens.
+  // This is the path that historically "made the volume finally take" — now it is
+  // explicit and logged, instead of an accidental side effect.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const level = volumeLevelRef.current;
+    const v = logVolumeFromLevel(level);
+    runtimeRef.current?.mixer?.setBusVolume?.('game', v);
+    logger.info('emulator.console.volume-applied', { reason: 'panel-open', level, volume: v, bus: 'game' });
+  }, [settingsOpen, logger]);
 
   // Internal default pairing trigger: POST to this app's own backend, then flip
   // local pairing to scanning → done (or error). Host can override via
@@ -358,7 +383,7 @@ export function EmulatorConsole({
 
     logger.info('emulator.console.mount', { game: game?.id, system: game?.system });
 
-    const engine = fns.createEngine();
+    const engine = fns.createEngine({ logger });
     const mixer = fns.createMixer({
       setGameVolume: engine.setVolume,
       createClip: fns.createClip,
@@ -400,17 +425,40 @@ export function EmulatorConsole({
       .then(() => session.start({ mount: mountRef.current }))
       .then(async (res) => {
         if (cancelled) return;
-        // Apply the persisted (or default) volume to the game bus on boot.
-        mixer.setBusVolume?.('game', logVolumeFromLevel(volumeLevelRef.current));
+        // Apply the persisted (or default) volume to the game bus on boot — and
+        // LOG it (info), so "did the saved volume take on load?" is answerable.
+        const level = volumeLevelRef.current;
+        const gameVol = logVolumeFromLevel(level);
+        mixer.setBusVolume?.('game', gameVol);
+        logger.info('emulator.console.volume-applied', { reason: 'boot', level, volume: gameVol, bus: 'game' });
         logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
+
+        // Success = OBSERVED, not resolved: confirm the game actually rendered a
+        // frame. A booted-but-blank screen (e.g. a stale single-instance reuse)
+        // trips the error/retry state instead of silently showing nothing.
+        const rendered = await engine.confirmFirstFrame?.({ core: engineConfig?.core });
+        if (cancelled) return;
+        if (rendered === false) {
+          logger.error('emulator.console.no-frames', { game: game?.id });
+          setError({ kind: 'no-frames', message: 'The game booted but never appeared.' });
+          return;
+        }
+
         // Inject the user's resume blob (battery .srm or save-state) after boot.
+        // saveClient returns a discriminated result so an absent save and a
+        // failed load are distinct — a failed load is surfaced, never silent.
         const p = persistenceRef.current;
         if (p?.loadResume) {
           try {
-            const data = await p.loadResume();
-            if (data && !cancelled) {
-              const ok = engine.loadResume(p.saveMode, data);
+            const result = await p.loadResume();
+            if (cancelled) return;
+            if (result?.status === 'ok' && result.data) {
+              const ok = engine.loadResume(p.saveMode, result.data);
               logger.info('emulator.console.resume-loaded', { ok, saveMode: p.saveMode });
+            } else if (result?.status === 'error') {
+              logger.warn('emulator.console.resume-load-failed', { saveMode: p.saveMode, httpStatus: result.httpStatus ?? null });
+            } else {
+              logger.info('emulator.console.resume-absent', { saveMode: p.saveMode });
             }
           } catch (err) {
             logger.warn('emulator.console.resume-failed', { error: err && err.message });
@@ -420,7 +468,7 @@ export function EmulatorConsole({
       .catch((err) => {
         if (cancelled) return;
         logger.error('emulator.console.start-error', { error: err && err.message });
-        setError(err);
+        setError({ kind: 'start-error', message: err && err.message, error: err });
       });
 
     // Seed + subscribe + poll governance status.
@@ -455,15 +503,30 @@ export function EmulatorConsole({
         animTimerRef.current = null;
       }
       // Persist the resume point on exit (battery .srm or save-state) BEFORE
-      // teardown, for an identified, save-enabled session. Fire-and-forget.
+      // teardown, for an identified, save-enabled session. The write outlives
+      // this synchronous cleanup, but its OUTCOME is logged when it settles —
+      // never a silent .catch(() => {}). A failed save is a logged warn.
       try {
         const p = persistenceRef.current;
         const eng = runtimeRef.current?.engine;
         if (p?.persist && p?.saveResume && eng?.captureResume) {
           const bytes = eng.captureResume(p.saveMode);
           if (bytes && bytes.length) {
-            Promise.resolve(p.saveResume(bytes)).catch(() => {});
-            logger.info('emulator.console.persisted', { saveMode: p.saveMode, bytes: bytes.length });
+            logger.info('emulator.console.persist-start', { saveMode: p.saveMode, bytes: bytes.length });
+            Promise.resolve(p.saveResume(bytes))
+              .then((result) => {
+                if (result?.status === 'ok') {
+                  logger.info('emulator.console.persisted', { saveMode: p.saveMode, bytes: bytes.length });
+                } else {
+                  logger.warn('emulator.console.persist-failed', {
+                    saveMode: p.saveMode, bytes: bytes.length,
+                    status: result?.status ?? 'unknown', httpStatus: result?.httpStatus ?? null,
+                  });
+                }
+              })
+              .catch((err) => logger.warn('emulator.console.persist-failed', { saveMode: p.saveMode, error: err && err.message }));
+          } else {
+            logger.warn('emulator.console.persist-skipped', { saveMode: p.saveMode, reason: 'no-bytes' });
           }
         }
       } catch (err) {
@@ -476,9 +539,10 @@ export function EmulatorConsole({
       }
       runtimeRef.current = null;
     };
-    // Mount-once: collaborators are stable for the life of the console.
+    // Re-runs on retry (bootNonce). Cleanup fully tears down the prior session +
+    // loader memo, so each retry boots clean. Other collaborators are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bootNonce]);
 
   // No controller nag: the panel starts collapsed and is only opened via the
   // 🎮 toggle. Keyboard always works (arrows = D-pad, Enter = Start, Space =
@@ -559,6 +623,23 @@ export function EmulatorConsole({
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
           <span>{overlayText(status)}</span>
+        </div>
+      )}
+      {error && (
+        <div className="emulator-error-overlay" role="alertdialog" aria-label="Emulator error">
+          <div className="emulator-error-card">
+            <p className="emulator-error-message">
+              {error.kind === 'no-frames'
+                ? 'The game booted but never appeared.'
+                : 'The game failed to load.'}
+            </p>
+            <div className="emulator-error-actions">
+              <button type="button" className="emulator-error-retry" onClick={retryBoot}>Retry</button>
+              {typeof onExit === 'function' && (
+                <button type="button" className="emulator-error-exit" onClick={onExit}>Exit</button>
+              )}
+            </div>
+          </div>
         </div>
       )}
       {typeof onExit === 'function' && (

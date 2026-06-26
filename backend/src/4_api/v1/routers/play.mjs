@@ -23,7 +23,7 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, logger = console } = config;
+  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, userVideoProgressStore = null, logger = console } = config;
   const router = express.Router();
 
   // ==========================================================================
@@ -49,7 +49,7 @@ export function createPlayRouter(config) {
       headers: { 'content-type': req.headers['content-type'] }
     });
 
-    const { type, assetId, percent, seconds, title, watched_duration, listId } = req.body;
+    const { type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged } = req.body;
 
       // Validate required fields
       if (!type || !assetId || percent === undefined) {
@@ -174,6 +174,25 @@ export function createPlayRouter(config) {
         }
       }
 
+      // Per-user video course progress (piano kiosk). Additive — the device-level
+      // media-memory write above is unaffected. Only fires when a userId is supplied
+      // and the store is wired. engaged = the user played along (any MIDI) this session.
+      let userProgress = null;
+      if (userId && userVideoProgressStore) {
+        try {
+          userProgress = userVideoProgressStore.record({
+            userId,
+            plexId: assetId,
+            percent: normalizedPercent,
+            seconds: normalizedSeconds,
+            duration: estimatedDuration,
+            engaged: !!engaged,
+          });
+        } catch (err) {
+          logger.warn?.('play.log.user_progress_failed', { userId, assetId, error: err.message });
+        }
+      }
+
       res.json({
         response: {
           type,
@@ -185,7 +204,8 @@ export function createPlayRouter(config) {
           percent: newState.percent,
           playCount: newState.playCount,
           lastPlayed: newState.lastPlayed,
-          watchTime: newState.watchTime
+          watchTime: newState.watchTime,
+          userProgress: userProgress || undefined,
         }
       });
   }));

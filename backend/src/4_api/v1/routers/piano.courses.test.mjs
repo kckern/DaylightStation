@@ -1,6 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
@@ -36,19 +34,32 @@ const mockPlayableService = {
   }),
 };
 
+const mockStore = {
+  isKnownUser: (id) => id === MOCK_USER,
+  enrich: (items, userId) => items.map((it) => ({
+    ...it,
+    userPercent: it.plex === '100' ? 92 : null,
+    userPlayhead: it.plex === '100' ? 480 : null,
+    userWatched: it.plex === '100',
+    userEngaged: it.plex === '100',
+    userCompletedAt: it.plex === '100' ? '2026-06-26T00:00:00Z' : null,
+  })),
+};
+
 const makeApp = (withService = true) => {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/piano', createPianoRouter({
     configService: mockConfigService,
     fitnessPlayableService: withService ? mockPlayableService : null,
+    userVideoProgressStore: mockStore,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   }));
   return app;
 };
 
 describe('GET /api/v1/piano/courses/:courseId/playable', () => {
-  beforeEach(() => mockPlayableService.getPlayableEpisodes.mockClear());
+  beforeEach(() => { mockPlayableService.getPlayableEpisodes.mockClear(); });
 
   it('returns items and isSequential:true when course has sequential label', async () => {
     const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
@@ -57,39 +68,7 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     expect(res.body.items).toHaveLength(2);
   });
 
-  const PROGRESS_FILE = '/tmp/piano-test-user/apps/piano/video-progress.yml';
-
-  afterEach(() => {
-    if (fs.existsSync(PROGRESS_FILE)) fs.unlinkSync(PROGRESS_FILE);
-  });
-
-  it('adds all 5 user-progress fields with null/false defaults when no progress file exists', async () => {
-    // Ensure no stale fixture from a previous run
-    if (fs.existsSync(PROGRESS_FILE)) fs.unlinkSync(PROGRESS_FILE);
-
-    const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
-    expect(res.status).toBe(200);
-    const item = res.body.items[0];
-    expect(item).toHaveProperty('userPercent', null);
-    expect(item).toHaveProperty('userPlayhead', null);
-    expect(item).toHaveProperty('userWatched', false);
-    expect(item).toHaveProperty('userEngaged', false);
-    expect(item).toHaveProperty('userCompletedAt', null);
-  });
-
-  it('merges actual progress values and marks userWatched:true for a completed item', async () => {
-    // Write a fixture for item plex:100 (percent >= 90 and engagementCount > 0)
-    fs.mkdirSync(path.dirname(PROGRESS_FILE), { recursive: true });
-    fs.writeFileSync(PROGRESS_FILE, [
-      '"plex:100":',
-      '  percent: 92',
-      '  playhead: 480',
-      '  duration: 520',
-      '  engagementCount: 2',
-      '  completedAt: "2026-06-26T10:00:00.000Z"',
-      '  lastPlayed: "2026-06-26T10:00:00.000Z"',
-    ].join('\n'), 'utf8');
-
+  it('adds userPercent/userWatched fields via the progress store enrichment', async () => {
     const res = await request(makeApp()).get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
     expect(res.status).toBe(200);
 
@@ -98,9 +77,9 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     expect(completed.userPlayhead).toBe(480);
     expect(completed.userWatched).toBe(true);
     expect(completed.userEngaged).toBe(true);
-    expect(completed.userCompletedAt).toBe('2026-06-26T10:00:00.000Z');
+    expect(completed.userCompletedAt).toBe('2026-06-26T00:00:00Z');
 
-    const untouched = res.body.items[1]; // plex:101 — no entry in fixture
+    const untouched = res.body.items[1]; // plex:101
     expect(untouched.userPercent).toBeNull();
     expect(untouched.userPlayhead).toBeNull();
     expect(untouched.userWatched).toBe(false);

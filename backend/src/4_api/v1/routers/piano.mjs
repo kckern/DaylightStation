@@ -40,7 +40,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
  */
-export function createPianoRouter({ configService, fitnessPlayableService = null, logger = console }) {
+export function createPianoRouter({ configService, fitnessPlayableService = null, userVideoProgressStore = null, logger = console }) {
   const router = express.Router();
 
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
@@ -244,36 +244,21 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     const { courseId } = req.params;
     const { userId } = req.query;
 
-    if (userId && !knownUser(userId)) {
-      return res.status(400).json({ error: 'Invalid user' });
+    // Validate userId when provided. Prefer the store's guard if wired, else the
+    // router's knownUser() — both reject unknown users with 400.
+    if (userId) {
+      const ok = userVideoProgressStore ? userVideoProgressStore.isKnownUser(userId) : knownUser(userId);
+      if (!ok) return res.status(400).json({ error: 'Invalid user' });
     }
 
     const playable = await fitnessPlayableService.getPlayableEpisodes(courseId);
 
-    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
-
-    if (userId) {
-      const dir = userPianoDir(userId);
-      const userProgress = loadYaml(path.join(dir, 'video-progress')) || {};
-      const threshold = pianoConfig.videos?.completion_threshold_percent ?? 90;
-
-      playable.items = playable.items.map((item) => {
-        const rawId = String(item.plex || item.id).replace(/^plex:/, '');
-        const key = `plex:${rawId}`;
-        const up = userProgress[key] || {};
-        const userWatched = !!(up.completedAt) ||
-          ((up.percent ?? 0) >= threshold && (up.engagementCount ?? 0) > 0);
-        return {
-          ...item,
-          userPercent: up.percent ?? null,
-          userPlayhead: up.playhead ?? null,
-          userWatched,
-          userEngaged: (up.engagementCount ?? 0) > 0,
-          userCompletedAt: up.completedAt || null,
-        };
-      });
+    // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared store.
+    if (userId && userVideoProgressStore) {
+      playable.items = userVideoProgressStore.enrich(playable.items, userId);
     }
 
+    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
     const sequentialLabels = new Set(
       (pianoConfig.videos?.sequential_labels || []).map((l) => l.toLowerCase())
     );

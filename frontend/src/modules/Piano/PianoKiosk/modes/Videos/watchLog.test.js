@@ -20,4 +20,13 @@ describe('buildWatchLogPayload', () => {
     const p = buildWatchLogPayload({ contentId: 'plex:9', seconds: 0, duration: 0, reason: 'close' });
     expect(p).toMatchObject({ percent: 0, status: 'none', naturalEnd: false });
   });
+  it('omits userId/engaged when not supplied', () => {
+    const p = buildWatchLogPayload({ contentId: 'plex:9', seconds: 30, duration: 120, reason: 'progress' });
+    expect(p).not.toHaveProperty('userId');
+    expect(p).not.toHaveProperty('engaged');
+  });
+  it('includes userId and engaged when supplied', () => {
+    const p = buildWatchLogPayload({ contentId: 'plex:9', seconds: 30, duration: 120, reason: 'progress', userId: 'milo', engaged: true });
+    expect(p).toMatchObject({ userId: 'milo', engaged: true });
+  });
 });

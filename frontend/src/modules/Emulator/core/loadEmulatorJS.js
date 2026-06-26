@@ -75,6 +75,32 @@ export function buildEjsGlobals({ player, core = 'gb', romUrl, pathtodata, onRea
 
 // Memoized in-flight / resolved promise. Single-instance library => single load.
 let _loadPromise = null;
+// Identity (core::romUrl) the memoized promise was booted for. Guards against
+// returning a STALE instance when a DIFFERENT game is requested — the bug that
+// made a second game silently never appear.
+let _loadedKey = null;
+
+const loadKey = (core, romUrl) => `${core}::${romUrl}`;
+
+/**
+ * Tear down the single-instance EmulatorJS so a different game can boot clean:
+ * remove the injected loader script, drop the global instance handle, and reset
+ * the memo. EmulatorJS cannot cleanly re-init in-page in all cases — if a fresh
+ * boot fails to render, the engine's first-frame check surfaces it as an error
+ * (no silent blank screen).
+ */
+export function resetEmulatorJSLoader(win = (typeof window !== 'undefined' ? window : undefined)) {
+  _loadPromise = null;
+  _loadedKey = null;
+  if (!win) return;
+  try {
+    const script = win.document?.getElementById?.(LOADER_SCRIPT_ID);
+    if (script?.remove) script.remove();
+  } catch {
+    // best-effort teardown; nothing to recover here
+  }
+  try { win.EJS_emulator = null; } catch { /* ignore */ }
+}
 
 /**
  * Force NEAREST-neighbour texture filtering on the emulator's WebGL context so
@@ -119,11 +145,22 @@ export function forceNearestFiltering(win = window) {
  * @returns {Promise<object>} resolves with win.EJS_emulator
  */
 export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = window, timeoutMs = DEFAULT_TIMEOUT_MS, controls } = {}) {
+  const requestedKey = loadKey(core, romUrl);
   if (_loadPromise) {
-    log().debug('load.memoized-hit', {});
-    return _loadPromise;
+    if (_loadedKey === requestedKey) {
+      // Same game/core: legitimate single-instance reuse. Logged at info (not
+      // debug) so reuse is always visible in prod.
+      log().info('load.memoized-hit', { requestedRom: romUrl, core });
+      return _loadPromise;
+    }
+    // A DIFFERENT game was requested against a live instance. Returning the
+    // memoized promise here is exactly how a second game silently never appears.
+    // Surface it and force a clean reload instead.
+    log().warn('load.identity-mismatch', { requestedRom: romUrl, loadedKey: _loadedKey, core });
+    resetEmulatorJSLoader(win);
   }
 
+  _loadedKey = requestedKey;
   _loadPromise = new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
@@ -149,6 +186,7 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
       cleanup();
       // Allow a future retry after a hard failure.
       _loadPromise = null;
+      _loadedKey = null;
       log().error('load.failed', { error: err?.message });
       reject(err);
     };
@@ -196,4 +234,5 @@ export function loadEmulatorJS({ player, core = 'gb', romUrl, pathtodata, win = 
 /** Test-only: reset memoization between cases. */
 export function _resetLoaderForTests() {
   _loadPromise = null;
+  _loadedKey = null;
 }
