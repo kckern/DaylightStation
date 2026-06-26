@@ -39,7 +39,7 @@ import { userService } from '#system/config/UserService.mjs';
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
  */
-export function createPianoRouter({ configService, logger = console }) {
+export function createPianoRouter({ configService, fitnessPlayableService = null, logger = console }) {
   const router = express.Router();
 
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
