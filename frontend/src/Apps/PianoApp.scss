@@ -1917,7 +1917,30 @@
     border-radius: var(--r-lg, 1rem);
   }
 
-  &__title { margin: 0 0 1.25rem; font-size: var(--t-display); font-weight: 800; }
+  &__title { margin: 0 0 1.25rem; padding-right: 3rem; font-size: var(--t-display); font-weight: 800; }
+
+  // Close (✕) — dismissing without a pick leaves the player as Guest.
+  &__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--piano-border);
+    border-radius: 50%;
+    background: var(--piano-surface-2);
+    color: var(--piano-muted);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+
+    &:hover,
+    &:focus-visible { background: var(--piano-border); color: var(--piano-text, inherit); outline: none; }
+  }
 
   &__grid {
     list-style: none;
