@@ -40,7 +40,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
  */
-export function createPianoRouter({ configService, fitnessPlayableService = null, logger = console }) {
+export function createPianoRouter({ configService, fitnessPlayableService = null, userVideoProgressStore = null, logger = console }) {
   const router = express.Router();
 
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
@@ -282,53 +282,6 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
 
     logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
     res.json({ ...playable, isSequential });
-  }));
-
-  // ── User video progress log ──────────────────────────────────────────────────
-  router.post('/users/:userId/video-log', asyncHandler(async (req, res) => {
-    const dir = userPianoDir(req.params.userId);
-    if (!dir) return res.status(400).json({ error: 'Invalid user' });
-
-    const { plexId, percent, seconds, duration, engaged } = req.body || {};
-    if (!plexId || percent === undefined) {
-      return res.status(400).json({ error: 'Missing required fields: plexId, percent' });
-    }
-
-    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
-    const threshold = pianoConfig.videos?.completion_threshold_percent ?? 90;
-
-    const rawId = String(plexId).replace(/^plex:/, '');
-    const key = `plex:${rawId}`;
-
-    const progress = loadYaml(path.join(dir, 'video-progress')) || {};
-    const existing = progress[key] || {};
-
-    const newEngagementCount = (existing.engagementCount || 0) + (engaged ? 1 : 0);
-    const normalizedPercent = Math.round(parseFloat(percent) || 0);
-    const completedAt = existing.completedAt ||
-      (normalizedPercent >= threshold && newEngagementCount > 0
-        ? new Date().toISOString()
-        : null);
-
-    progress[key] = {
-      ...existing,
-      playhead: Math.round(parseFloat(seconds) || 0),
-      percent: normalizedPercent,
-      duration: Math.round(parseFloat(duration) || 0),
-      lastPlayed: new Date().toISOString(),
-      engagementCount: newEngagementCount,
-      completedAt,
-    };
-
-    saveYaml(path.join(dir, 'video-progress'), progress);
-    logger.info?.('piano.video-log.updated', {
-      userId: req.params.userId,
-      plexId: key,
-      percent: normalizedPercent,
-      engaged: !!engaged,
-      completed: !!completedAt,
-    });
-    res.json(progress[key]);
   }));
 
   return router;

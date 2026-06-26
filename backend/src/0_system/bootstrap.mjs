@@ -70,6 +70,7 @@ import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { UserVideoProgressStore } from '#apps/piano/UserVideoProgressStore.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
@@ -871,6 +872,10 @@ export function createApiRouters(config) {
   // Create PlayResponseService for play response building and watch state reconciliation
   const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources });
 
+  // Per-user video course progress store (piano kiosk). Injected into the play
+  // router (write side, via /play/log) and exposed for the piano router (read side).
+  const userVideoProgressStore = new UserVideoProgressStore({ configService, logger });
+
   // Get FileAdapter from registry for local router (handles local media browsing)
   const localMediaAdapter = registry.get('files');
 
@@ -879,7 +884,7 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, configService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, configService, mediaBasePath, dataPath, retroarchProxy, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
       queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
@@ -898,6 +903,7 @@ export function createApiRouters(config) {
       contentQueryService,
       contentIdResolver,
       savedQueryService,
+      userVideoProgressStore,
     }
   };
 }
