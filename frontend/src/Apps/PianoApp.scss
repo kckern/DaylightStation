@@ -1057,8 +1057,32 @@
     flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden;
     box-sizing: border-box; padding: 0.5rem;
     background: #fff; border-left: 1px solid var(--piano-border);
-    display: flex; align-items: center; justify-content: center;
-    .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0.25rem 0; }
+    display: flex; align-items: stretch; justify-content: center;
+  }
+
+  /* Right-sidebar chord column: circle of fifths pinned at the top, the live
+     grand staff vertically + horizontally centered in the flexible middle (NOT
+     rotated — normal horizontal staff orientation), chord-name badge pinned at
+     the bottom. Top/bottom are fixed-size so their centers don't drift. */
+  .piano-chord-column {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; flex-direction: column; align-items: center;
+
+    &__circle {
+      flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      padding-top: 0.25rem;
+    }
+    &__staff {
+      flex: 1 1 auto; min-height: 0; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+      .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0.25rem 0; }
+    }
+    &__chord {
+      flex: 0 0 auto; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+      padding-bottom: 0.25rem;
+    }
   }
 
   &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }

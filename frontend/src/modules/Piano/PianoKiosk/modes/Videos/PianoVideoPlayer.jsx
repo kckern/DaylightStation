@@ -7,7 +7,7 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoMix } from '../../PianoMixContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import { CurrentChordStaff } from '../../../components/CurrentChordStaff.jsx';
+import { PianoChordColumn } from '../../../components/PianoChordColumn.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
@@ -36,7 +36,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [rate, setRate] = useState(1);
-  const [playAlong, setPlayAlong] = useState(true);
   const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
   const bodyRef = useRef(null);
   const [stackW, setStackW] = useState(null);   // px width of the video+controls column
@@ -176,14 +175,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.rate', { rate: r });
   }, [rate]);
 
-  const togglePlayAlong = useCallback(() => {
-    setPlayAlong((v) => {
-      const next = !v;
-      getLogger().child({ component: 'piano-video-player' }).info('piano.video.playalong', { on: next });
-      return next;
-    });
-  }, []);
-
   if (!contentId) {
     return (
       <div className="piano-mode__placeholder">
@@ -202,9 +193,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   }
 
   return (
-    <div className={`piano-video-player${playAlong ? ' piano-video-player--playalong' : ''}`}>
+    <div className="piano-video-player piano-video-player--playalong">
       {/* Upper row: video + transport (left, sized to the video aspect) and the
-          live staff (fills all leftover width to the right). */}
+          chord-theory column (fills all leftover width to the right). */}
       <div className="piano-video-player__body" ref={bodyRef}>
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
           <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen} style={{ position: 'relative' }}>
@@ -218,7 +209,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             duration={duration}
             rate={rate}
             loop={loop}
-            playAlong={playAlong}
             isSequential={isSequential}
             furthestWatched={furthestWatched}
             onToggle={ctrl.toggle}
@@ -230,24 +220,20 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             onToggleLoop={loop.toggle}
             onClearLoop={loop.clear}
             onSeek={ctrl.seek}
-            onTogglePlayAlong={togglePlayAlong}
           />
         </div>
 
-        {/* Live grand-staff (treble + bass) of the notes being played along. */}
-        {playAlong && (
-          <aside className="piano-video-player__staff">
-            <CurrentChordStaff activeNotes={notes} />
-          </aside>
-        )}
+        {/* Right sidebar: circle of fifths (top) · live grand staff (centered) ·
+            chord-name badge (bottom). Always visible. */}
+        <aside className="piano-video-player__staff">
+          <PianoChordColumn activeNotes={notes} />
+        </aside>
       </div>
 
-      {/* Full-width playable keyboard footer spanning the whole bottom edge. */}
-      {playAlong && (
-        <div className="piano-video-player__keys">
-          <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
-        </div>
-      )}
+      {/* Full-width playable keyboard footer — always visible on the main view. */}
+      <div className="piano-video-player__keys">
+        <PianoKeyboard activeNotes={notes} onNoteOn={pressNote} onNoteOff={releaseNote} />
+      </div>
     </div>
   );
 }
