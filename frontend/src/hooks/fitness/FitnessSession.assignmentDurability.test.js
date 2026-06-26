@@ -54,4 +54,26 @@ describe('FitnessSession — guest assignment durability', () => {
 
     expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('Milo');
   });
+
+  it('survives a session start between assign and restore (assigned-before-broadcast)', () => {
+    const session = makeSession();
+    // Guest assigned while the strap is still silent.
+    session.userManager.assignGuest('10266', 'Grannie', { profileId: 'grannie', occupantType: 'guest' });
+    session.captureAssignmentSnapshot();
+
+    // Session starts AFTER the assignment (the audit's exact ordering).
+    // force:true bypasses the kiosk/threshold guards so ensureStarted runs its body.
+    session.ensureStarted({ reason: 'test', force: true });
+
+    // The strap finally broadcasts under a different code path and the ledger
+    // is rebuilt empty by a re-config; restore must still recover Grannie.
+    session.userManager.assignmentLedger.remove('10266');
+    const restored = session.restoreAssignmentSnapshot();
+
+    expect(restored).toBe(true);
+    expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('Grannie');
+
+    // cleanup timers (reset() stops both the autosave and tick intervals)
+    session.reset();
+  });
 });
