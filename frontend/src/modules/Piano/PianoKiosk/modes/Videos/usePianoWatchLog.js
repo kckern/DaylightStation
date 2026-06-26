@@ -7,7 +7,7 @@ import { buildWatchLogPayload } from './watchLog.js';
 const LOG_INTERVAL_MS = 10000;
 
 /** Resume-on-load + throttled play/log posting for a piano lecture. */
-export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds }) {
+export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId, engagedRef }) {
   const logger = useRef(null);
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-video-player' });
 
@@ -39,6 +39,8 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
         seconds: mediaEl.currentTime,
         duration: mediaEl.duration,
         reason,
+        userId,
+        engaged: engagedRef?.current || false,
       });
       DaylightAPI('api/v1/play/log', payload)
         .then(() => logger.current.debug('piano.video.log-ok', { reason, seconds: payload.seconds }))
@@ -46,5 +48,5 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
     };
     const id = setInterval(() => { if (!mediaEl.paused) post('progress'); }, LOG_INTERVAL_MS);
     return () => { clearInterval(id); post('close'); };
-  }, [mediaEl, contentId, title]);
+  }, [mediaEl, contentId, title, userId]);
 }

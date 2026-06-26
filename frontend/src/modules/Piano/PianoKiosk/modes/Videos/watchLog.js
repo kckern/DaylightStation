@@ -1,6 +1,6 @@
 // watchLog.js
 /** Build the POST api/v1/play/log payload (mirrors the fitness convention). */
-export function buildWatchLogPayload({ contentId, title, seconds, duration, reason }) {
+export function buildWatchLogPayload({ contentId, title, seconds, duration, reason, userId, engaged }) {
   const s = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
   const d = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const percent = d ? Math.round((s / d) * 100) : 0;
@@ -15,5 +15,7 @@ export function buildWatchLogPayload({ contentId, title, seconds, duration, reas
     naturalEnd,
     duration: Math.round(d),
     reason: reason || 'progress',
+    ...(userId ? { userId } : {}),
+    ...(engaged !== undefined ? { engaged } : {}),
   };
 }
