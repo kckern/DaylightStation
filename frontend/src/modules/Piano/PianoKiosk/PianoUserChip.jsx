@@ -1,22 +1,6 @@
 import { useState, useContext } from 'react';
 import PianoUserContext from './PianoUserContext.jsx';
-
-/** Round avatar — user image, falling back to initials on a colour from the id. */
-function Avatar({ id, name }) {
-  const [failed, setFailed] = useState(false);
-  const initials = (name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-  if (failed || !id) {
-    return <span className="piano-avatar piano-avatar--fallback" data-initials={initials}>{initials}</span>;
-  }
-  return (
-    <img
-      className="piano-avatar"
-      src={`/api/v1/static/img/users/${id}`}
-      alt={name}
-      onError={() => setFailed(true)}
-    />
-  );
-}
+import PianoAvatar from './PianoAvatar.jsx';
 
 /**
  * Current-player chip for the chrome. Shows who's playing; tap to open a roster
@@ -37,7 +21,7 @@ export default function PianoUserChip() {
   return (
     <>
       <button type="button" className="piano-chrome__user" onClick={() => setOpen(true)} aria-label="Switch player" title={currentProfile?.name || 'Choose player'}>
-        <Avatar id={currentProfile?.id} name={currentProfile?.name} />
+        <PianoAvatar id={currentProfile?.id} name={currentProfile?.name} />
         <span className="piano-chrome__username">{label}</span>
       </button>
 
@@ -55,7 +39,7 @@ export default function PianoUserChip() {
                     onClick={() => { setCurrentUser(u.id); setOpen(false); }}
                     aria-pressed={u.id === currentUser}
                   >
-                    <Avatar id={u.id} name={u.name} />
+                    <PianoAvatar id={u.id} name={u.name} />
                     <span className="piano-usercard__name">{u.name}</span>
                     {u.group_label && <span className="piano-usercard__label">{u.group_label}</span>}
                   </button>
