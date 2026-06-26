@@ -221,6 +221,22 @@ freeze-vs-reset semantics before building** — it's the one open product questi
 
 ---
 
+## Implementation status (2026-06-26, branch `feature/governance-four-fixes`)
+All four shipped with TDD; full Fitness suite green (1143 tests).
+- **Issue 1** — `useChallengeOverlays` keeps `ringColor: zoneInfo.color` on success;
+  center ✅ replaced by a `challenge-overlay__done-check` green badge; SCSS green
+  ring stroke removed. (`ChallengeOverlay.jsx/.scss` + `ChallengeOverlay.successRing.test.jsx`)
+- **Issue 2** — `CycleRaceController._applyMercyKill()` (config `raceMercyAfterWinnerS`,
+  off in the pure engine) → `cycleGameLobby` passthrough → container default **60s**
+  via `race_mercy_after_winner_s` (0 disables; time races unaffected). Manual
+  "Finish race" button was already present.
+- **Issue 3** — `buildChallengeToast` attaches a `{id,label,color}` zone descriptor
+  (HR only) via injected `resolveZoneColor`; `FitnessToast` renders a zone-hued pill;
+  wired from `FitnessContext` using `zoneInfoMap`.
+- **Issue 4** — `GovernanceEngine.setPlaybackPaused()` + `_shiftDeadlinesBy()`
+  (freeze-and-resume) + cycle pause guard; wired from `FitnessContext` on
+  voice-memo-open or manual pause while `!videoLocked`.
+
 ## Suggested sequencing
 1. **Issue 4** first (correctness — stops phantom challenge completions; highest user impact).
 2. **Issues 1 & 3** together (both are overlay/toast color-signal polish, low risk, share zone-color plumbing).
