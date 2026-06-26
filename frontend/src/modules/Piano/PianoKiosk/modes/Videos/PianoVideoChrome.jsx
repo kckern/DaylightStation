@@ -12,8 +12,8 @@ const fmt = (s) => {
 };
 
 export default function PianoVideoChrome({
-  isPlaying, currentTime, duration, rate, loop, playAlong,
-  onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onTogglePlayAlong,
+  isPlaying, currentTime, duration, rate, loop,
+  onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek,
   isSequential = false,
   furthestWatched = 0,
 }) {
@@ -74,7 +74,6 @@ export default function PianoVideoChrome({
             </div>
           )}
         </div>
-        <button type="button" className={`piano-video-chrome__btn${playAlong ? ' is-on' : ''}`} onClick={onTogglePlayAlong} aria-label={playAlong ? 'Hide play-along' : 'Show play-along'}><Icon name="play-along" /></button>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import abcjs from 'abcjs';
 import 'abcjs/abcjs-audio.css';
 import { generateAbc } from './abc.js';
@@ -50,9 +50,14 @@ export function collectStaffNotes(tune) {
  * @param {string} [className='abc-renderer'] - class on the render container
  * @param {boolean} [singleLine=false] - render the whole voice on one horizontal
  *   line (no wrapping) for a teleprompter-style scrolling follow-along
+ * @param {boolean} [pinStaff=false] - keep the STAVE fixed in place: after each
+ *   paint, translate the SVG so the staff lines' vertical midpoint sits at the
+ *   container's center, regardless of how high/low the current note is. Prevents
+ *   the "rug pull"/pan-and-scan where ledger lines grow the SVG and shift the
+ *   stave. For live chord displays; leave off for scrolling teleprompter drills.
  * @param {(tune:object, staffNotes:Array)=>void} [onRender] - post-paint hook
  */
-export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, onRender }) {
+export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, onRender }) {
   const containerRef = useRef(null);
   const onRenderRef = useRef(onRender);
   onRenderRef.current = onRender;
@@ -62,7 +67,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
   // over `notes` (a Map rendered as a single chord).
   const notesKey = abc ?? (notes ? Array.from(notes.keys()).sort((a, b) => a - b).join(',') : '');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!containerRef.current) return;
     try {
       const tune = abc ?? generateAbc(notes, keySignature);
@@ -88,6 +93,37 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
         scale,
       });
       const tuneObject = Array.isArray(result) ? result[0] : result;
+
+      // Pin the stave: measure the rendered staff lines and translate the SVG so
+      // their vertical midpoint lands at the container's center. abcjs grows the
+      // SVG asymmetrically as ledger lines appear above/below, so centering the
+      // SVG box would slide the stave around (the "rug pull"). Measuring the
+      // staff lines themselves — which never move relative to the music — keeps
+      // the stave fixed no matter how high or low the current note is. Runs in a
+      // layout effect, so it applies before paint (no visible jump).
+      if (pinStaff) {
+        const container = containerRef.current;
+        const svg = container.querySelector('svg');
+        const staffEls = container.querySelectorAll('.abcjs-staff');
+        if (svg && staffEls.length) {
+          svg.style.transform = 'none';
+          const cRect = container.getBoundingClientRect();
+          let top = Infinity;
+          let bottom = -Infinity;
+          staffEls.forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0) return;
+            top = Math.min(top, r.top);
+            bottom = Math.max(bottom, r.bottom);
+          });
+          if (Number.isFinite(top) && Number.isFinite(bottom)) {
+            const staffMid = (top + bottom) / 2;
+            const containerMid = cRect.top + cRect.height / 2;
+            svg.style.transform = `translateY(${Math.round(containerMid - staffMid)}px)`;
+          }
+        }
+      }
+
       if (onRenderRef.current && tuneObject) {
         onRenderRef.current(tuneObject, collectStaffNotes(tuneObject));
       }
@@ -96,7 +132,7 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       setError(e.message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notesKey, keySignature, scale, singleLine]);
+  }, [notesKey, keySignature, scale, singleLine, pinStaff]);
 
   if (error) {
     return <span style={{ color: 'red', fontSize: '12px' }}>{error}</span>;

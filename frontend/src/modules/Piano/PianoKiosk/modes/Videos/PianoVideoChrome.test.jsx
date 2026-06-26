@@ -10,10 +10,8 @@ vi.mock('../../PianoMixContext.jsx', () => ({ usePianoMix: () => mix }));
 
 const baseProps = {
   isPlaying: true, currentTime: 30, duration: 120, rate: 1, loop: { a: null, b: null },
-  playAlong: true,
   onToggle: vi.fn(), onSkip: vi.fn(), onRestart: vi.fn(), onCycleRate: vi.fn(),
   onMarkA: vi.fn(), onMarkB: vi.fn(), onClearLoop: vi.fn(), onSeek: vi.fn(), onBack: vi.fn(),
-  onTogglePlayAlong: vi.fn(),
 };
 
 describe('PianoVideoChrome', () => {
@@ -23,11 +21,10 @@ describe('PianoVideoChrome', () => {
     fireEvent.click(screen.getByLabelText('Pause'));
     expect(onToggle).toHaveBeenCalled();
   });
-  it('toggles the play-along panel', () => {
-    const onTogglePlayAlong = vi.fn();
-    render(<PianoVideoChrome {...baseProps} onTogglePlayAlong={onTogglePlayAlong} />);
-    fireEvent.click(screen.getByLabelText('Hide play-along'));
-    expect(onTogglePlayAlong).toHaveBeenCalled();
+  it('no longer renders the play-along toggle (keyboard is always visible)', () => {
+    render(<PianoVideoChrome {...baseProps} />);
+    expect(screen.queryByLabelText('Hide play-along')).toBeNull();
+    expect(screen.queryByLabelText('Show play-along')).toBeNull();
   });
   it('skips ±15s', () => {
     const onSkip = vi.fn();
