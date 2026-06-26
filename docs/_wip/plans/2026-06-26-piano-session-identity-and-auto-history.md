@@ -33,23 +33,26 @@ Both hang off the existing per-user model (`PianoUserContext.currentUser` → `/
   `timeoutMinutes <= 0`. Does **not** fire on the very first interaction after mount unless that
   interaction itself follows a ≥threshold gap from mount (a kiosk left sitting, then approached,
   *should* prompt).
-- **`WhoIsPlayingPrompt`** (`.../WhoIsPlayingPrompt.jsx`) — modal overlay reusing `PianoUserChip`'s
-  avatar grid. Title "Who's playing?", roster faces. Tap a face → `setCurrentUser(id)` + close.
-  Backdrop tap or ~30s auto-timeout → close, leaving the player as Guest. Rendered at `PianoShell`.
-- **Guest sentinel** — `PianoUserContext` gains a synthetic `guest` profile (`{ id: 'guest',
-  name: 'Guest' }`) that is always selectable even though it's not in the roster. `currentUser`
-  may be `'guest'`; `PianoUserChip` renders "Guest". Selecting Guest persists like any user.
+- **`WhoIsPlayingPrompt`** (`.../WhoIsPlayingPrompt.jsx`) — modal overlay showing the title
+  "Who's playing?" and **only the roster faces** (Guest is **never** a card in the picker). Tap a
+  face → `setCurrentUser(id)` + close. **Dismiss without a selection** — the **✕**/close button,
+  backdrop tap, or ~30s auto-timeout — → `setCurrentUser('guest')` + close. Rendered at `PianoShell`.
+- **Guest sentinel** — `PianoUserContext` recognizes `currentUser === 'guest'` and resolves a
+  synthetic `{ id: 'guest', name: 'Guest' }` profile so `PianoUserChip` renders "Guest". Guest is
+  **NOT** added to the `users` roster array (so it never appears as a pick option anywhere). It is
+  set only by dismissing the prompt.
 
 ### Flow
 ```
 … playing/idle … gap ≥ who_is_playing_minutes (no MIDI, no touch)
-   └─ next input (note OR touch) ─→ setCurrentUser('guest')  +  open "Who's playing?"
-          ├─ tap a face   → currentUser = that user (credited from here)
-          └─ ignore / 30s → stays Guest
+   └─ next input (note OR touch) ─→ open "Who's playing?" (roster faces only)
+          ├─ tap a face            → currentUser = that user
+          └─ ✕ / backdrop / 30s    → currentUser = 'guest'
 ```
-Reset-to-Guest happens **at gap-detect**, so any playing before a face is picked credits Guest,
-never the previous (departed) player. Independent of `inactivityMinutes` (return-to-menu) and the
-screensaver timers; all three coexist.
+Guest is the **dismiss outcome**, never a pickable face — so a new player who doesn't identify
+isn't silently credited to the previous (departed) player. The always-on recorder's player-change
+segmentation + min-take filter (Feature B) make any brief pre-selection tail negligible.
+Independent of `inactivityMinutes` (return-to-menu) and the screensaver timers; all three coexist.
 
 ### Config (`piano.yml`, per piano)
 - `who_is_playing_minutes` (number; default `2`; `<= 0` disables).
