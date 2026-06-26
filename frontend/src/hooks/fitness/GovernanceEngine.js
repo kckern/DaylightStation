@@ -1509,19 +1509,21 @@ export class GovernanceEngine {
   }
 
   /**
-   * Resume governance timers after playback recovers.
-   * Restores deadline based on preserved remaining time.
+   * Resume governance timers after playback recovers (stall) or a video pause
+   * clears (issue 4). Freeze-and-resume: every future deadline is advanced by the
+   * paused span so governance continues EXACTLY where it stopped — the grace
+   * countdown, the active HR challenge timer, the cycle tick clock, the warning/
+   * lock stopwatches, and the next-challenge schedule.
    */
   _resumeTimers() {
     if (!this._timersPaused) return;
     this._timersPaused = false;
 
-    if (this._remainingMs > 0 && this.meta) {
-      this.meta.deadline = this._now() + this._remainingMs;
-    }
-
     const pauseDuration = this._pausedAt ? this._now() - this._pausedAt : 0;
     this._pausedAt = null;
+    this._remainingMs = null;
+
+    this._shiftDeadlinesBy(pauseDuration);
 
     getLogger().info('governance.timers_resumed', {
       phase: this.phase,
@@ -1529,6 +1531,55 @@ export class GovernanceEngine {
       pauseDurationMs: pauseDuration,
       contentId: this.media?.id
     });
+  }
+
+  /**
+   * Advance every future-facing absolute timestamp by `delta` ms. Used on resume
+   * so a pause adds no real progress to any governance clock (freeze-and-resume).
+   * Stopwatch anchors (_warningStartTime/_lockStartTime) shift too, so elapsed
+   * durations exclude the paused span.
+   */
+  _shiftDeadlinesBy(delta) {
+    if (!Number.isFinite(delta) || delta <= 0) return;
+    if (this.meta && Number.isFinite(this.meta.deadline)) this.meta.deadline += delta;
+    if (Number.isFinite(this._warningStartTime)) this._warningStartTime += delta;
+    if (Number.isFinite(this._lockStartTime)) this._lockStartTime += delta;
+    if (Number.isFinite(this._warningCooldownUntil)) this._warningCooldownUntil += delta;
+
+    const cs = this.challengeState || {};
+    if (Number.isFinite(cs.nextChallengeAt)) cs.nextChallengeAt += delta;
+
+    const active = cs.activeChallenge;
+    if (active) {
+      // HR challenge anchors
+      if (Number.isFinite(active.expiresAt)) active.expiresAt += delta;
+      if (Number.isFinite(active.startedAt)) active.startedAt += delta;
+      // Cycle challenge clocks (tick delta source + state-debounce anchors)
+      if (Number.isFinite(active._lastCycleTs)) active._lastCycleTs += delta;
+      if (Number.isFinite(active._pendingSince)) active._pendingSince += delta;
+      if (Number.isFinite(active._publishedAt)) active._publishedAt += delta;
+      if (Number.isFinite(active._initFailSince)) active._initFailSince += delta;
+    }
+  }
+
+  /**
+   * Freeze (or resume) ALL governance while the video is paused for a reason
+   * other than governance's own lock — a voice memo overlay or a manual pause
+   * (issue 4). Freezing stops the grace countdown, challenge scheduling, the
+   * active challenge timer, and the always-on base-requirement lock; resuming
+   * continues exactly where it left off and re-evaluates immediately.
+   */
+  setPlaybackPaused(paused) {
+    const next = Boolean(paused);
+    if (next === this._timersPaused) return;
+    if (next) {
+      this._pauseTimers();
+      this._updateGlobalState?.();
+    } else {
+      this._resumeTimers();
+      this._invalidateStateCache?.();
+      this._triggerPulse?.();
+    }
   }
 
   /**
@@ -2994,6 +3045,15 @@ export class GovernanceEngine {
     }
 
     const now = this._now();
+
+    // Playback-pause gate (issue 4): the video is paused (voice memo / manual
+    // pause). Freeze the cycle clock — consume dt so the resume tick computes a
+    // small delta, never a pause-sized jump. Defense-in-depth; evaluate() also
+    // early-returns while paused, so this rarely runs.
+    if (this._timersPaused) {
+      active._lastCycleTs = now;
+      return;
+    }
 
     // Pause gate: base requirement failing globally → freeze all cycle timers.
     // Manually-triggered cycles bypass this gate — they're run as a directed

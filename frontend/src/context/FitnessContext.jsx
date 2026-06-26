@@ -2294,6 +2294,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const governanceState = session?.governanceEngine?.state || { status: 'idle' };
   const governanceChallenge = session?.governanceEngine?.challengeState || {};
 
+  // Issue 4: freeze ALL governance while the video is paused for a reason that
+  // is NOT governance's own lock — a voice memo overlay, or a manual pause while
+  // playback is unlocked/in-grace. Excluded: governance's own video lock
+  // (videoLocked) must keep evaluating so it can detect the unlock condition,
+  // else the lock screen would deadlock. setPlaybackPaused freezes the grace
+  // countdown, challenge scheduling, the active challenge timer, and the
+  // always-on base-requirement lock; resuming continues exactly where it froze.
+  const freezeGovernanceForPause = Boolean(voiceMemoOverlayState.open)
+    || (videoPlayerPaused && !governanceState?.videoLocked);
+  useEffect(() => {
+    fitnessSessionRef.current?.governanceEngine?.setPlaybackPaused?.(freezeGovernanceForPause);
+  }, [freezeGovernanceForPause]);
+
   // Challenge start/success toasts. View-agnostic (mirrors the rider_select toast): the
   // toast is mounted at the FitnessApp root, so its trigger lives here in context rather
   // than in a player-only overlay.
