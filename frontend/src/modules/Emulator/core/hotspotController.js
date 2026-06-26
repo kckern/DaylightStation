@@ -26,6 +26,7 @@ export function createHotspotController({
   mixer = {},
   engine = {},
   onExit,
+  onReset,
   runActions,
   saveState,
   onChange,
@@ -74,6 +75,9 @@ export function createHotspotController({
     pause: togglePause,
     save_state: () => saveState?.(),
     exit: () => onExit?.(),
+    // "Start over" — the power-switch etching. The console intercepts this to
+    // raise a confirm modal before erasing the save + restarting the ROM.
+    reset: () => onReset?.(),
   };
 
   function activate(hotspot) {

@@ -103,4 +103,11 @@ describe('createHotspotController', () => {
     expect(() => c.activate({ action: 'save_state' })).not.toThrow();
     expect(() => c.activate({ action: 'exit' })).not.toThrow();
   });
+
+  it('the reset verb fires onReset (start-over / power switch)', () => {
+    const onReset = vi.fn();
+    const c = createHotspotController(makeDeps({ onReset }));
+    c.activate({ id: 'reset', action: 'reset' });
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
 });

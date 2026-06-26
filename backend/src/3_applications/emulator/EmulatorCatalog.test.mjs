@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { resolveGameRules, buildCatalog } from './EmulatorCatalog.mjs';
+import { resolveGameRules, buildCatalog, resolveConsoles } from './EmulatorCatalog.mjs';
 
 const cfg = {
   defaults: { governance: { mode: 'gate', required_zone: 'active', grace_seconds: 20, earn_rate: 1 }, shader: 'crt', chrome: null },
@@ -64,5 +64,50 @@ describe('buildCatalog', () => {
     expect(out.systems).toEqual(baseCfg.systems);
     expect(out.games).toHaveLength(1);
     expect(out.games[0].boxart).toBe('art/pk.png');
+  });
+
+  it('surfaces saveMode (default none)', () => {
+    const cfg = {
+      ...baseCfg,
+      games: [
+        { id: 'a', system: 'gbc', rom: 'a.gbc', title: 'A' },
+        { id: 'b', system: 'gbc', rom: 'b.gbc', title: 'B', saveMode: 'battery' },
+      ],
+    };
+    const out = buildCatalog(cfg);
+    expect(out.games.find((g) => g.id === 'a').saveMode).toBe('none');
+    expect(out.games.find((g) => g.id === 'b').saveMode).toBe('battery');
+  });
+});
+
+describe('resolveConsoles', () => {
+  const systems = { gb: { label: 'Game Boy' }, nes: { label: 'NES' } };
+
+  it('falls back to one real tab per system when none configured', () => {
+    const out = resolveConsoles({ consoles: [] }, systems);
+    expect(out).toEqual([
+      { system: 'gb', label: 'Game Boy', placeholder: false },
+      { system: 'nes', label: 'NES', placeholder: false },
+    ]);
+  });
+
+  it('resolves real consoles and blank placeholders in order', () => {
+    const out = resolveConsoles({ consoles: [{ system: 'gb' }, {}, { system: 'unknown' }, { label: 'Soon' }] }, systems);
+    expect(out).toEqual([
+      { system: 'gb', label: 'Game Boy', placeholder: false },
+      { system: null, label: null, placeholder: true },
+      { system: null, label: null, placeholder: true },
+      { system: null, label: 'Soon', placeholder: true },
+    ]);
+  });
+
+  it('honors an explicit label override on a real console', () => {
+    const out = resolveConsoles({ consoles: [{ system: 'gb', label: 'GameBoy™' }] }, systems);
+    expect(out[0]).toEqual({ system: 'gb', label: 'GameBoy™', placeholder: false });
+  });
+
+  it('buildCatalog attaches resolved consoles', () => {
+    const out = buildCatalog({ systems, defaults: {}, games: [], consoles: [{ system: 'gb' }, {}] });
+    expect(out.consoles.map((c) => c.placeholder)).toEqual([false, true]);
   });
 });

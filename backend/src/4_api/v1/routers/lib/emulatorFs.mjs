@@ -141,6 +141,14 @@ export async function writeBinary(absPath, buffer) {
 }
 
 /**
+ * Delete a binary file (per-user save/state) for the "start over" reset. Missing
+ * files are a no-op (idempotent) so a reset before any save still succeeds.
+ */
+export async function deleteBinary(absPath) {
+  await fs.promises.rm(absPath, { force: true });
+}
+
+/**
  * Scan emulationDir/*\/ for the per-system YAML manifest and parse it.
  * Returns an array of { system, manifest } for loadEmulatorConfig.
  * The system id is taken from the manifest's own `system` field (falling back
@@ -196,6 +204,33 @@ export function makeReadInputConfig(emulationDir) {
     let raw;
     try {
       raw = fs.readFileSync(inputPath, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }
+    try {
+      return yaml.load(raw) ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * Build a reader for the ordered console-tab list (emulationDir/consoles.yml)
+ * that drives the arcade shell's bottom tabs. Accepts either a bare list or a
+ * `{ consoles: [...] }` wrapper; loadEmulatorConfig normalizes both. Returns
+ * null when absent/unparseable so the shell falls back to one tab per system.
+ *
+ * @param {string} emulationDir
+ * @returns {() => (object[]|object|null)}
+ */
+export function makeReadConsolesConfig(emulationDir) {
+  const consolesPath = path.join(emulationDir, 'consoles.yml');
+  return function readConsoles() {
+    let raw;
+    try {
+      raw = fs.readFileSync(consolesPath, 'utf8');
     } catch (err) {
       if (err.code === 'ENOENT') return null;
       throw err;

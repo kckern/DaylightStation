@@ -72,7 +72,15 @@ export function EmulatorConsole({
   // host may override. `overlayData` is the injected data bag overlays read
   // (e.g. { 'fitness.heart_rate': 142, 'session.current_player': {...} }).
   presentation: presentationProp,
-  overlayData = {},
+  overlayData: overlayDataProp = {},
+  // Per-user save/resume contract from the host (saveMode/persist/userId +
+  // loadResume/saveResume/clearResume). Drives boot-time resume injection,
+  // persist-on-exit, and the reset hotspot. Null ⇒ anonymous, no persistence.
+  persistence = null,
+  // Now-playing person ({ name, avatarSrc }) for the player overlay, and the
+  // launch timestamp for the count-up play timer.
+  nowPlaying = null,
+  playStartedAt = null,
   factories,
   // Controller panel
   controllers = [],
@@ -92,6 +100,10 @@ export function EmulatorConsole({
   const controllerRef = useRef(null); // hotspot controller
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  // Stable indirection so the mount-once hotspot controller can open the (live)
+  // reset confirm modal without being recreated.
+  const openResetRef = useRef(null);
+  openResetRef.current = () => setResetOpen(true);
 
   const presentation = presentationProp || game?.presentation || {};
   const hotspots = presentation.hotspots || [];
@@ -103,6 +115,36 @@ export function EmulatorConsole({
   const [animClass, setAnimClass] = useState('');
   const [, setError] = useState(null);
   const animTimerRef = useRef(null);
+
+  // Persistence held in a ref so the mount-once effect's cleanup reads the latest
+  // contract without re-running the boot effect.
+  const persistenceRef = useRef(persistence);
+  persistenceRef.current = persistence;
+
+  // Reset ("start over") confirm modal.
+  const [resetOpen, setResetOpen] = useState(false);
+
+  // Count-up play timer (seconds since launch), ticked every 1s.
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!playStartedAt) return undefined;
+    const tick = () => setElapsedSec(Math.max(0, Math.floor((Date.now() - playStartedAt) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [playStartedAt]);
+
+  // Merge host overlayData with the live now-playing person, play timer, and the
+  // coin placeholder so the bezel's player/timer/coins slots resolve.
+  const overlayData = useMemo(() => ({
+    ...overlayDataProp,
+    'session.current_player': nowPlaying
+      ? { name: nowPlaying.name, avatar: nowPlaying.avatarSrc }
+      : (overlayDataProp['session.current_player'] ?? null),
+    'session.play_seconds': elapsedSec,
+    // Coins economy not built yet — render a literal placeholder.
+    'session.coins': overlayDataProp['session.coins'] ?? '—',
+  }), [overlayDataProp, nowPlaying, elapsedSec]);
 
   // Controller panel: visibility + console-managed local pairing state.
   const [panelOpen, setPanelOpen] = useState(false);
@@ -257,6 +299,17 @@ export function EmulatorConsole({
   // Host-provided pairing prop takes precedence over console-managed local state.
   const effectivePairing = pairing ?? localPairing;
 
+  // Reset / "start over": erase the user's save, then restart the ROM fresh.
+  const confirmReset = useCallback(async () => {
+    setResetOpen(false);
+    const p = persistenceRef.current;
+    try { if (p?.clearResume) await p.clearResume(); }
+    catch (err) { logger.warn('emulator.console.reset-clear-failed', { error: err && err.message }); }
+    try { runtimeRef.current?.engine?.restart?.(); }
+    catch (err) { logger.warn('emulator.console.reset-restart-failed', { error: err && err.message }); }
+    logger.info('emulator.console.reset', { game: game?.id, user: p?.userId || null });
+  }, [game, logger]);
+
   // Console-owned animation handler: flash a transient CSS class on the shader.
   const triggerAnim = (name) => {
     if (!name) return;
@@ -305,6 +358,7 @@ export function EmulatorConsole({
       mixer,
       engine,
       onExit: () => onExitRef.current?.(),
+      onReset: () => openResetRef.current?.(),
       runActions: (doMap, ctx) => session.runActions?.(doMap, ctx),
       saveState: actionHandlers.saveState,
       onChange: (s) => setHotspotState(s),
@@ -315,11 +369,24 @@ export function EmulatorConsole({
     // Kick off boot/start asynchronously; never block render.
     Promise.resolve()
       .then(() => session.start({ mount: mountRef.current }))
-      .then((res) => {
+      .then(async (res) => {
         if (cancelled) return;
         // Apply the persisted (or default) volume to the game bus on boot.
         mixer.setBusVolume?.('game', logVolumeFromLevel(volumeLevelRef.current));
         logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
+        // Inject the user's resume blob (battery .srm or save-state) after boot.
+        const p = persistenceRef.current;
+        if (p?.loadResume) {
+          try {
+            const data = await p.loadResume();
+            if (data && !cancelled) {
+              const ok = engine.loadResume(p.saveMode, data);
+              logger.info('emulator.console.resume-loaded', { ok, saveMode: p.saveMode });
+            }
+          } catch (err) {
+            logger.warn('emulator.console.resume-failed', { error: err && err.message });
+          }
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -357,6 +424,21 @@ export function EmulatorConsole({
       if (animTimerRef.current) {
         clearTimeout(animTimerRef.current);
         animTimerRef.current = null;
+      }
+      // Persist the resume point on exit (battery .srm or save-state) BEFORE
+      // teardown, for an identified, save-enabled session. Fire-and-forget.
+      try {
+        const p = persistenceRef.current;
+        const eng = runtimeRef.current?.engine;
+        if (p?.persist && p?.saveResume && eng?.captureResume) {
+          const bytes = eng.captureResume(p.saveMode);
+          if (bytes && bytes.length) {
+            Promise.resolve(p.saveResume(bytes)).catch(() => {});
+            logger.info('emulator.console.persisted', { saveMode: p.saveMode, bytes: bytes.length });
+          }
+        }
+      } catch (err) {
+        logger.warn('emulator.console.persist-failed', { error: err && err.message });
       }
       try {
         runtimeRef.current?.session?.destroy();
@@ -516,6 +598,29 @@ export function EmulatorConsole({
               <button type="button" className="emulator-shade-cycle" onClick={cycleShade}>
                 <span className="emulator-shade-swatch" style={{ background: shade.color }} aria-hidden="true" />
                 {shade.name}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset / "start over" confirm — raised by the power-switch hotspot. */}
+      {resetOpen && (
+        <div className="emulator-reset-modal" role="dialog" aria-modal="true" aria-label="Start over">
+          <div className="emulator-reset-modal__backdrop" onPointerDown={() => setResetOpen(false)} />
+          <div className="emulator-reset-modal__sheet">
+            <div className="emulator-reset-modal__title">Start {game?.title || 'this game'} over?</div>
+            <div className="emulator-reset-modal__body">
+              {persistence?.persist && nowPlaying?.name
+                ? `This erases ${nowPlaying.name}'s save and begins a fresh game.`
+                : 'This restarts the game from the beginning.'}
+            </div>
+            <div className="emulator-reset-modal__actions">
+              <button type="button" className="emulator-reset-modal__cancel" onPointerDown={() => setResetOpen(false)}>
+                Keep playing
+              </button>
+              <button type="button" className="emulator-reset-modal__confirm" onPointerDown={confirmReset}>
+                Start over
               </button>
             </div>
           </div>

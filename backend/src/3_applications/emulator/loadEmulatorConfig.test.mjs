@@ -125,6 +125,32 @@ describe('loadEmulatorConfig', () => {
     expect(cfg.input).toBeNull();
   });
 
+  it('defaults saveMode to "none" when the game omits save_mode', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
+    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    expect(game.saveMode).toBe('none');
+  });
+
+  it('carries save_mode through as saveMode', () => {
+    const m = JSON.parse(JSON.stringify(gameboyManifest));
+    m.games[0].save_mode = 'battery';
+    const cfg = makeLoader([{ system: 'gb', manifest: m }]);
+    expect(cfg.games.find((g) => g.id === 'pokemon-red').saveMode).toBe('battery');
+  });
+
+  it('consoles defaults to [] without a readConsoles', () => {
+    const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
+    expect(cfg.consoles).toEqual([]);
+  });
+
+  it('accepts a bare console list and a { consoles } wrapper', () => {
+    const list = [{ system: 'gb', label: 'Game Boy' }, {}];
+    const bare = makeLoader([{ system: 'gb', manifest: gameboyManifest }], { readConsoles: () => list });
+    const wrapped = makeLoader([{ system: 'gb', manifest: gameboyManifest }], { readConsoles: () => ({ consoles: list }) });
+    expect(bare.consoles).toEqual(list);
+    expect(wrapped.consoles).toEqual(list);
+  });
+
   it('manifest with no games contributes system but no games', () => {
     const cfg = makeLoader([{ system: 'snes', manifest: { system: 'snes', label: 'SNES' } }]);
     expect(cfg.systems.snes.label).toBe('SNES');

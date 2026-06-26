@@ -15,10 +15,11 @@ const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
  * @param {string}   opts.emulationDir     Base media dir (provenance/logging only).
  * @param {function} opts.readManifests    () => Array<{ system, manifest }>.
  * @param {function} [opts.readInputConfig] () => parsed input.yml object (keyboard/controllers) or null.
+ * @param {function} [opts.readConsoles]   () => ordered console-tab list (consoles.yml) or null.
  * @param {object}   [opts.logger]         Logger with warn/info/debug/error.
- * @returns {{ systems: object, games: object[], defaults: object, users: object, input: object|null }}
+ * @returns {{ systems: object, games: object[], defaults: object, users: object, input: object|null, consoles: object[] }}
  */
-export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, logger = NOOP_LOGGER }) {
+export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, readConsoles, logger = NOOP_LOGGER }) {
   const systems = {};
   const games = [];
 
@@ -53,6 +54,10 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         title: game.title,
         rom: game.rom,
         save: game.save,
+        // Per-game save behavior: 'none' (no persistence) | 'state' (emulator
+        // save-state snapshot as the resume point) | 'battery' (.srm battery save).
+        // Drives the fingerprint-up-front launch flow; absent ⇒ 'none'.
+        saveMode: game.save_mode ?? game.saveMode ?? 'none',
         boxart: game.cover,
         bezel: game.bezel,
         watches: game.watches,
@@ -72,11 +77,21 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
 
   const input = (typeof readInputConfig === 'function' ? readInputConfig() : null) ?? null;
 
+  // Ordered console-tab list (consoles.yml). Each entry is either a real console
+  // bound to a `system`, or a blank placeholder (no/unknown system). Resolution
+  // of real-vs-placeholder happens in buildCatalog (it knows `systems`). Absent
+  // ⇒ empty, and buildCatalog falls back to one tab per discovered system.
+  const consolesRaw = (typeof readConsoles === 'function' ? readConsoles() : null);
+  const consoles = Array.isArray(consolesRaw)
+    ? consolesRaw
+    : (Array.isArray(consolesRaw?.consoles) ? consolesRaw.consoles : []);
+
   return {
     systems,
     games,
     defaults: { governance: {}, shader: null, chrome: null },
     users: {},
     input,
+    consoles,
   };
 }

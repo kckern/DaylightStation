@@ -47,8 +47,22 @@ export function formatOverlayValue(format, value) {
       avatar: value?.avatar ?? null,
     };
   }
+  // Count-up play timer: value is elapsed seconds → mm:ss (or h:mm:ss past an hour).
+  if (format === 'timer' || format === 'clock') {
+    const secs = Math.max(0, Math.floor(Number(value) || 0));
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    const text = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+    return { kind: 'stat', text, unit: '' };
+  }
   if (Object.prototype.hasOwnProperty.call(STAT_UNITS, format)) {
-    return { kind: 'stat', text: String(Math.round(Number(value))), unit: STAT_UNITS[format] };
+    // Numeric stats round; a non-numeric value (e.g. the coin placeholder "—")
+    // passes through as text so placeholders render literally instead of "NaN".
+    const num = Number(value);
+    if (!Number.isFinite(num)) return { kind: 'stat', text: String(value), unit: STAT_UNITS[format] };
+    return { kind: 'stat', text: String(Math.round(num)), unit: STAT_UNITS[format] };
   }
   return { kind: 'text', text: String(value) };
 }

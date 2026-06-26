@@ -44,6 +44,10 @@ export function IdentityProvider({ children }) {
 
   // Refs read inside the (stable) WS handler to avoid stale closures.
   const activeLockRef = useRef(null);
+  // identifyOnly: resolve on ANY recognized finger (no per-lock authz check).
+  // Used by surfaces that only need to KNOW who scanned — e.g. the emulator
+  // save-game identity prompt — rather than gate on a permission.
+  const identifyOnlyRef = useRef(false);
   const verdictResolverRef = useRef(null);
   const emergencyRef = useRef(emergency);
   emergencyRef.current = emergency;
@@ -91,8 +95,8 @@ export function IdentityProvider({ children }) {
     if (lock) {
       const recognized = msg.matched === true;
       const authorized = recognized
-        && Array.isArray(msg.authz?.locks)
-        && msg.authz.locks.includes(lock);
+        && (identifyOnlyRef.current
+          || (Array.isArray(msg.authz?.locks) && msg.authz.locks.includes(lock)));
 
       if (!authorized) {
         if (recognized) {
@@ -159,20 +163,29 @@ export function IdentityProvider({ children }) {
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [handleIdentity]);
 
-  const registerUnlock = useCallback((lock) => {
+  const registerUnlock = useCallback((lock, { identifyOnly = false } = {}) => {
     // Called from a user gesture in consumers — prime the cue element now so the
     // async success chime can play later.
     primeCueAudio('unlock-request');
     activeLockRef.current = lock;
+    identifyOnlyRef.current = !!identifyOnly;
     setActiveLock(lock);
     setUnlockState('scanning');
     setUnlockedUser(null);
-    logger().info('unlock-registered', { lock });
+    logger().info('unlock-registered', { lock, identifyOnly: !!identifyOnly });
     return new Promise((resolve) => { verdictResolverRef.current = resolve; });
   }, []);
 
+  // Sugar for "just tell me who scanned" — any recognized finger resolves with a
+  // userId; no authorization gate. `lock` is a synthetic key (prompt label only).
+  const registerIdentify = useCallback(
+    (lock = 'identify') => registerUnlock(lock, { identifyOnly: true }),
+    [registerUnlock],
+  );
+
   const clearUnlock = useCallback(() => {
     activeLockRef.current = null;
+    identifyOnlyRef.current = false;
     setActiveLock(null);
     setUnlockedUser(null);
     setUnlockState('idle');
@@ -189,6 +202,7 @@ export function IdentityProvider({ children }) {
     release: emergency.release,
     // Unlock sub-API.
     registerUnlock,
+    registerIdentify,
     clearUnlock,
     activeLock,
     unlockState,
@@ -196,7 +210,7 @@ export function IdentityProvider({ children }) {
   }), [
     emergency.phase, emergency.lockedUntil, emergency.lockedBy,
     emergency.commit, emergency.abort, emergency.release,
-    registerUnlock, clearUnlock, activeLock, unlockState, unlockedUser,
+    registerUnlock, registerIdentify, clearUnlock, activeLock, unlockState, unlockedUser,
   ]);
 
   return (

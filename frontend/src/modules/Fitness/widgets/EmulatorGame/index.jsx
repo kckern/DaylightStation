@@ -3,9 +3,9 @@ import EmulatorGameWidget from './EmulatorGameWidget.jsx';
 export default EmulatorGameWidget;
 export const manifest = {
   id: 'emulator',
-  name: 'Game Boy',
+  name: 'Video Games',
   icon: '🎮',
-  description: 'Retro games — keep moving to keep playing.',
+  description: 'Retro consoles — pick a game and play.',
   // Renders as a full app-viewport overlay (like the player), not inside the frame.
   fullscreen: true,
 };

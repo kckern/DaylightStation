@@ -53,6 +53,9 @@ export function resolveGameRules(cfg, gameId, userId) {
     rom: game.rom,
     title: game.title,
     boxart: game.boxart,
+    // Save behavior surfaced to the browser so the launch flow knows whether to
+    // fingerprint up front (state/battery) or boot anonymously (none).
+    saveMode: game.saveMode ?? 'none',
     watches: game.watches ?? null,
     hooks: game.hooks ?? null,
     governance: merged.governance,
@@ -74,7 +77,7 @@ export function resolveGameRules(cfg, gameId, userId) {
  *
  * @param {object} cfg     Emulator config
  * @param {object} [logger] Logger with warn/info/debug/error (defaults to no-op)
- * @returns {{ systems: object, games: object[] }}
+ * @returns {{ systems: object, games: object[], consoles: object[] }}
  */
 export function buildCatalog(cfg, logger = NOOP_LOGGER) {
   const systems = cfg?.systems ?? {};
@@ -99,5 +102,35 @@ export function buildCatalog(cfg, logger = NOOP_LOGGER) {
     games.push(resolved);
   }
 
-  return { systems, games };
+  return { systems, games, consoles: resolveConsoles(cfg, systems) };
+}
+
+/**
+ * Resolve the ordered console-tab list for the arcade shell.
+ *
+ * Each configured slot becomes either a REAL console (its `system` is known —
+ * gets a label fallback) or a blank PLACEHOLDER (no/unknown system). When no
+ * `consoles` are configured, fall back to one real tab per discovered system so
+ * the shell still works without a consoles.yml.
+ *
+ * @param {object} cfg     Emulator config ({ consoles?, systems })
+ * @param {object} systems Known systems map ({ [id]: { label } })
+ * @returns {Array<{ system: string|null, label: string|null, placeholder: boolean }>}
+ */
+export function resolveConsoles(cfg, systems = {}) {
+  const configured = Array.isArray(cfg?.consoles) ? cfg.consoles : [];
+  if (configured.length === 0) {
+    return Object.entries(systems).map(([system, s]) => ({
+      system,
+      label: s?.label ?? system,
+      placeholder: false,
+    }));
+  }
+  return configured.map((slot) => {
+    const system = slot?.system ?? null;
+    if (system && system in systems) {
+      return { system, label: slot.label || systems[system].label || system, placeholder: false };
+    }
+    return { system: null, label: slot?.label ?? null, placeholder: true };
+  });
 }
