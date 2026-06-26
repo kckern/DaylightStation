@@ -4,6 +4,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
+import { resolveUserZone } from './resolveUserZone.js';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -32,50 +33,6 @@ const withAlpha = (hexColor, alpha = 0.9) => {
     return `rgba(0, 0, 0, ${alpha})`;
   }
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-const canonicalZones = ['cool', 'active', 'warm', 'hot', 'fire'];
-
-const resolveUserZone = (userName, device, context) => {
-  if (!userName) return { id: null, color: null };
-  const { userCurrentZones, zones = [], usersConfigRaw } = context;
-  const entry = userCurrentZones?.[userName];
-  let zoneId = null;
-  let color = null;
-
-  if (entry) {
-    if (typeof entry === 'object') {
-      zoneId = entry.id || null;
-      color = entry.color || null;
-    } else if (typeof entry === 'string') {
-      color = entry;
-    }
-  }
-
-  if (color && !zoneId) {
-    const normalizedColor = String(color).toLowerCase();
-    zoneId = zones.find((z) => String(z.color).toLowerCase() === normalizedColor)?.id || normalizedColor;
-  }
-
-  if ((!zoneId || !canonicalZones.includes(zoneId)) && device?.heartRate) {
-    const cfg = usersConfigRaw?.primary?.find((u) => u.name === userName)
-      || usersConfigRaw?.secondary?.find((u) => u.name === userName);
-    const overrides = cfg?.zones || {};
-    const sorted = [...zones].sort((a, b) => b.min - a.min);
-    for (const z of sorted) {
-      const min = typeof overrides[z.id] === 'number' ? overrides[z.id] : z.min;
-      if (device.heartRate >= min) {
-        zoneId = z.id;
-        color = z.color;
-        break;
-      }
-    }
-  }
-
-  return {
-    id: zoneId && canonicalZones.includes(zoneId) ? zoneId : null,
-    color: color || null
-  };
 };
 
 const getProfileSlug = (user) => {
