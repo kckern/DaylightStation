@@ -1301,13 +1301,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'art-api' })
   });
 
-  // Piano kiosk API (studio take persistence). No MIDI here — the browser owns
-  // Web-MIDI; this is CRUD over data/household/apps/piano/studio.
-  v1Routers.piano = createPianoRouter({
-    configService,
-    logger: rootLogger.child({ module: 'piano-api' })
-  });
-
   // App-wide voice-feedback capture + inbox. Background-transcribes via the shared
   // OpenAI gateway (null-safe: items still save when transcription isn't configured).
   v1Routers.feedback = createFeedbackRouter({
@@ -1687,6 +1680,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentQueryService: contentServices.contentQueryService,
     createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
     logger: rootLogger.child({ module: 'fitness-playable' })
+  });
+
+  // Piano kiosk API — per-user studio, preferences, lesson progress, and
+  // course video progress. fitnessPlayableService provides Plex enrichment
+  // for the /courses/:id/playable endpoint.
+  v1Routers.piano = createPianoRouter({
+    configService,
+    fitnessPlayableService,
+    logger: rootLogger.child({ module: 'piano-api' })
   });
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
