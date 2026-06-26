@@ -6,6 +6,8 @@ export const manifest = {
   name: 'Video Games',
   icon: '🎮',
   description: 'Retro consoles — pick a game and play.',
-  // Renders as a full app-viewport overlay (like the player), not inside the frame.
-  fullscreen: true,
+  // The SELECTION screen (console tabs + game grid) renders inside the fitness
+  // frame WITH the nav sidebar, like the content menus. Only the running game
+  // goes truly fullscreen — the widget portals the console to document.body.
+  fullscreen: false,
 };
