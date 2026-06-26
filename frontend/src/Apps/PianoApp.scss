@@ -1090,7 +1090,7 @@
   &__mark--a { background: var(--piano-warn); }
   &__mark--b { background: var(--piano-warn-2); }
 
-  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; row-gap: 0.4rem; }
+  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; overflow: hidden; }
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
@@ -1103,7 +1103,29 @@
     &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
     &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); }
   }
-  &__btn--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.3rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+  &__btn--play { min-width: 4.5rem; height: 3rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+  &__btn--rate { width: 4rem; flex-shrink: 0; }
+  &__btn--restart { flex-shrink: 0; }
+
+  &__loop-group {
+    display: flex; align-items: center; gap: 0;
+    border: 1px solid var(--piano-border); border-radius: var(--r-md); overflow: hidden;
+    flex-shrink: 0;
+    &.has-marks { border-color: var(--piano-warn); }
+    .piano-video-chrome__btn {
+      border: none; border-radius: 0;
+      border-right: 1px solid var(--piano-border);
+      &:last-child { border-right: none; }
+    }
+  }
+
+  &__mix-wrap { position: relative; flex-shrink: 0; }
+  &__mix-flyout {
+    position: absolute; bottom: calc(100% + 0.5rem); right: 0;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); padding: 0.75rem 1rem; z-index: 20;
+    white-space: nowrap; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
 
 }
 

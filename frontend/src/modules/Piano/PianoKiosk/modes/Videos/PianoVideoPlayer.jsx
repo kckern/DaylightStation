@@ -133,6 +133,11 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
   // Apply the shared media level to the resolved element (mirrors MusicPlayer).
   useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
 
+  const handleRestart = useCallback(() => {
+    ctrl.seek(0);
+    getLogger().child({ component: 'piano-video-player' }).info('piano.video.restart');
+  }, [ctrl]);
+
   const handleSkip = useCallback((delta) => {
     const cur = ctrl.getCurrentTime() || 0;
     const max = duration > 0 ? duration : cur + Math.abs(delta);
@@ -189,6 +194,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack }) {
             loop={loop}
             playAlong={playAlong}
             onToggle={ctrl.toggle}
+            onRestart={handleRestart}
             onSkip={handleSkip}
             onCycleRate={handleCycleRate}
             onMarkA={loop.markA}
