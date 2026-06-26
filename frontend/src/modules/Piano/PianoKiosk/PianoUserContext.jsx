@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
+import { resolveProfile } from './pianoUser.js';
 
 /**
  * Piano roster + current player.
@@ -44,7 +45,7 @@ export function PianoUserProvider({ pianoId, children }) {
   }, [storeKey]);
 
   const currentProfile = useMemo(
-    () => users.find((u) => u.id === currentUser) || null,
+    () => resolveProfile(users, currentUser),
     [users, currentUser],
   );
 
