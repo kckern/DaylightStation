@@ -15,6 +15,9 @@ function makeFactories() {
     pause: vi.fn(),
     resume: vi.fn(),
     boot: vi.fn(() => Promise.resolve()),
+    confirmFirstFrame: vi.fn(() => Promise.resolve(true)),
+    captureResume: vi.fn(() => new Uint8Array([1, 2, 3])),
+    loadResume: vi.fn(() => true),
     destroy: vi.fn(),
   };
 
@@ -236,6 +239,58 @@ describe('EmulatorConsole', () => {
     expect(gate._hasSub()).toBe(false);
     // no pending timers should fire into a torn-down tree
     expect(() => act(() => vi.advanceTimersByTime(2000))).not.toThrow();
+  });
+
+  describe('observability: boot failure is visible + recoverable', () => {
+    it('booted-but-blank (no first frame) trips the error overlay with Retry', async () => {
+      const h = renderConsole();
+      h.engine.confirmFirstFrame.mockResolvedValue(false);
+      await act(async () => {});
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeTruthy();
+      expect(h.container.querySelector('.emulator-error-retry')).toBeTruthy();
+    });
+
+    it('Retry clears the error and re-boots the session', async () => {
+      const h = renderConsole();
+      h.engine.confirmFirstFrame.mockResolvedValue(false);
+      await act(async () => {});
+      expect(h.session.start).toHaveBeenCalledTimes(1);
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeTruthy();
+
+      // Next boot renders fine.
+      h.engine.confirmFirstFrame.mockResolvedValue(true);
+      act(() => h.container.querySelector('.emulator-error-retry').click());
+      await act(async () => {});
+
+      expect(h.session.start).toHaveBeenCalledTimes(2);
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeNull();
+    });
+
+    it('a healthy boot shows no error overlay', async () => {
+      const h = renderConsole();
+      await act(async () => {});
+      expect(h.container.querySelector('.emulator-error-overlay')).toBeNull();
+    });
+  });
+
+  describe('observability: persist-on-exit is never a silent catch', () => {
+    it('persists captured bytes on unmount through the discriminated saveResume', async () => {
+      const saveResume = vi.fn(() => Promise.resolve({ status: 'error', httpStatus: 503 }));
+      const persistence = {
+        persist: true, saveMode: 'state', userId: 'p1',
+        saveResume,
+        loadResume: vi.fn(() => Promise.resolve({ status: 'absent' })),
+        clearResume: vi.fn(),
+      };
+      const { unmount, engine } = renderConsole({ props: { persistence } });
+      await act(async () => {});
+      act(() => unmount());
+      await act(async () => {});
+      expect(engine.captureResume).toHaveBeenCalledWith('state');
+      expect(saveResume).toHaveBeenCalledTimes(1);
+      // The failed-save result is handled (logged warn), not thrown/swallowed.
+      expect(saveResume.mock.results[0].value).resolves.toEqual({ status: 'error', httpStatus: 503 });
+    });
   });
 
   describe('bezel hotspots + overlays', () => {

@@ -107,9 +107,11 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
       saveMode: game.saveMode,
       persist: !!persist,
       userId: userId || null,
-      loadResume: () => (userId ? saveClient.loadResume(ctx) : Promise.resolve(null)),
-      saveResume: (body) => (persist && userId ? saveClient.persist({ ...ctx, body }) : Promise.resolve(false)),
-      clearResume: () => (userId ? saveClient.clear(ctx) : Promise.resolve(false)),
+      // saveClient returns discriminated results ({status:'absent'|'ok'|'error'});
+      // the console interprets them so a failed save/load is never silent.
+      loadResume: () => (userId ? saveClient.loadResume(ctx) : Promise.resolve({ status: 'absent' })),
+      saveResume: (body) => (persist && userId ? saveClient.persist({ ...ctx, body }) : Promise.resolve({ status: 'skipped' })),
+      clearResume: () => (userId ? saveClient.clear(ctx) : Promise.resolve({ status: 'skipped' })),
     };
     return { game, engineConfig, gate, persistence };
   }, [library, zonesOrder, getActivePlayerId, getUserVitals, saveClient]);
@@ -158,7 +160,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
         return;
       }
       const resume = await saveClient.loadResume({ system: game.system, gameId: game.id, user: verdict.userId, saveMode: game.saveMode });
-      startGame(game, resolveLaunch({ saveMode: game.saveMode, userId: verdict.userId, hasSave: !!resume }));
+      startGame(game, resolveLaunch({ saveMode: game.saveMode, userId: verdict.userId, hasSave: resume?.status === 'ok' }));
     });
   }, [registerIdentify, saveClient, startGame]);
 
