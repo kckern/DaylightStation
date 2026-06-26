@@ -50,6 +50,24 @@
   &__title { font-size: 1.5rem; font-weight: 700; }
   &__subtitle { font-size: 1.05rem; opacity: 0.85; }
 
+  // Zone-hued pill on the challenge toast (issue 3): signals the HR zone the
+  // challenge targeted (warm/hot/fire) so the color — not just the text — reads
+  // the achieved state. Border + text inherit the zone color via inline style;
+  // the tinted background comes from the per-zone color-mix below.
+  &__zone-pill {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 12px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+    line-height: 1.5;
+  }
+
   // Contributor chips on the challenge success toast (§5B): avatar + name of
   // each user who earned the challenge (cycle rider / HR metUsers).
   &__contributors {

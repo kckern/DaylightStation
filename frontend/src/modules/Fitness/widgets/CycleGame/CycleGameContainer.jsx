@@ -170,6 +170,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   // ~20s to lock onto rotation from a dead stop (e.g. the tricycle's BK467).
   const raceStartGraceS = Number.isFinite(cycleGameConfig?.race_start_grace_s) ? cycleGameConfig.race_start_grace_s : 30;
   const hotStartPenaltyS = Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0;
+  // Distance-race mercy-kill (issue 2): seconds after the FIRST rider crosses the
+  // line before the race auto-ends, forfeiting (DNF) anyone still going — a
+  // distance race otherwise waits forever for the slowest rider. Defaults ON at
+  // 60s; set race_mercy_after_winner_s: 0 to disable. Ignored by time races.
+  const raceMercyAfterWinnerS = Number.isFinite(cycleGameConfig?.race_mercy_after_winner_s)
+    ? cycleGameConfig.race_mercy_after_winner_s
+    : 60;
   // How long the results board holds before auto-returning to the lobby.
   const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
 
@@ -653,6 +660,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       raceIdleDnfS,
       raceStartGraceS,
       hotStartPenaltyS,
+      raceMercyAfterWinnerS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
       lapLengthM,
       intervalMs: RACE_TICK_MS
@@ -736,7 +744,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
 
   // Keep stable refs to the latest startRace + phase so the sim control hook
   // (registered once) always reads current values.

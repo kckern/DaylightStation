@@ -21,6 +21,10 @@ export function buildRaceConfigFromCourse(course = {}, opts = {}) {
     raceIdleDnfS: opts.raceIdleDnfS ?? 20,
     raceStartGraceS: opts.raceStartGraceS ?? 30,
     hotStartPenaltyS: opts.hotStartPenaltyS ?? 0,
+    // Distance-race mercy-kill window (issue 2); 0 = off. Product default is
+    // supplied by the container (race_mercy_after_winner_s); the pure builder
+    // defaults to off so course-less/test configs are unaffected.
+    raceMercyAfterWinnerS: opts.raceMercyAfterWinnerS ?? 0,
     lapLengthM: Number.isFinite(course.lap_length_m) ? course.lap_length_m : (opts.lapLengthM ?? 0),
     courseId: course.id ?? null,
     backgroundPlexId: course.background_plex_id ?? opts.backgroundPlexId ?? null

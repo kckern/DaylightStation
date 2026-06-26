@@ -2314,6 +2314,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         // Contributor names (§5B): cycle rider / HR metUsers are user slugs —
         // resolve against configuredUsers, the same SSOT the rider toast uses.
         resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
+        // Zone pill (issue 3): color the toast by the challenge's HR zone so the
+        // achieved state reads from color, not just text. infoMap is keyed by
+        // lowercased zone id (e.g. "warm" → "#facc15").
+        resolveZoneColor: (key) => zoneInfoMap[key]?.color || null,
       }));
       getLogger().info('fitness.challenge.toast', {
         event,
