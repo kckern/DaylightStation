@@ -41,6 +41,7 @@ import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useWhoIsPlaying } from '../modules/Piano/PianoKiosk/useWhoIsPlaying.js';
+import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
 import WhoIsPlayingPrompt from '../modules/Piano/PianoKiosk/WhoIsPlayingPrompt.jsx';
 import './PianoApp.scss';
 
@@ -98,12 +99,12 @@ function ConnectGate({ children }) {
 
 function PianoShell() {
   const { config, pianoId, basePath } = usePianoKioskConfig();
-  const { activeNotes, noteHistory } = usePianoMidi();
+  const { activeNotes, noteHistory, subscribe } = usePianoMidi();
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
   const { playing } = usePianoPlayback();
-  const { users, setCurrentUser } = usePianoUser();
+  const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
 
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
@@ -111,6 +112,9 @@ function PianoShell() {
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
+
+  // Always-on MIDI history: capture/segment/flush .mid files under the player.
+  useAutoMidiHistory(subscribe, currentUser, config.autoRecord);
 
   // After idle, return to this piano's menu (unless already there).
   // keepAlive=playing suppresses the timer while audio/video is actively playing.
