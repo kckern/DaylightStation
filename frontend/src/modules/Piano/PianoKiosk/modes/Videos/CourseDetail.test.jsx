@@ -23,6 +23,32 @@ describe('CourseDetail', () => {
     expect(screen.getByText('B')).toBeTruthy();
   });
 
+  it('marks the first unwatched episode as current (goldenrod) in a sequential course', () => {
+    hookReturn = { ...baseHook, isSequential: true, items: [
+      { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
+      { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
+      { plex: '3', label: 'C', itemIndex: 3, userWatched: false },
+    ] };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    const bBtn = screen.getByText('B').closest('button');
+    const aBtn = screen.getByText('A').closest('button');
+    const cBtn = screen.getByText('C').closest('button');
+    expect(bBtn.className).toContain('piano-episode--current');
+    expect(bBtn.getAttribute('aria-current')).toBe('true');
+    // watched (A) and locked (C) are NOT the current lesson
+    expect(aBtn.className).not.toContain('piano-episode--current');
+    expect(cBtn.className).not.toContain('piano-episode--current');
+  });
+
+  it('does not mark any episode current in a non-sequential course', () => {
+    hookReturn = { ...baseHook, isSequential: false, items: [
+      { plex: '1', label: 'A', itemIndex: 1, userWatched: false },
+      { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
+    ] };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    expect(screen.getByText('A').closest('button').className).not.toContain('piano-episode--current');
+  });
+
   it('locks episodes after the first unwatched one in a sequential course', () => {
     const onPlay = vi.fn();
     hookReturn = { ...baseHook, isSequential: true, items: [
