@@ -96,6 +96,7 @@ export function EmulatorConsole({
   const mountRef = useRef(null);
   const consoleRef = useRef(null);
   const runtimeRef = useRef(null); // { engine, mixer, session }
+  const gridCanvasRef = useRef(null);
   const volumeLevelRef = useRef(DEFAULT_VOLUME_LEVEL); // latest volume for the boot apply
   const controllerRef = useRef(null); // hotspot controller
   const onExitRef = useRef(onExit);
@@ -221,6 +222,34 @@ export function EmulatorConsole({
     window.addEventListener('resize', compute);
     return () => { ro.disconnect(); window.removeEventListener('resize', compute); };
   }, [game]);
+
+  // ── Canvas LCD grid — device-pixel-exact, no moiré at any DPR ─────────
+  // CSS gradients with a fractional px period (scale/dpr) cause moiré because
+  // sub-pixel rounding differs cell to cell. Drawing on a canvas whose pixel
+  // dimensions are set to integer device pixels and whose grid lines fall at
+  // exact integer positions (multiples of `scale`) eliminates this entirely.
+  // Works at any DPR, including non-integer multipliers like 1.05.
+  useEffect(() => {
+    if (!screenBox) return;
+    const canvas = gridCanvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const devW = Math.round(screenBox.width * dpr);
+    const devH = Math.round(screenBox.height * dpr);
+    canvas.width = devW;
+    canvas.height = devH;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, devW, devH);
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+    ctx.lineWidth = 1;
+    const s = screenBox.scale;
+    for (let x = s; x < devW; x += s) {
+      ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, devH); ctx.stroke();
+    }
+    for (let y = s; y < devH; y += s) {
+      ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(devW, y + 0.5); ctx.stroke();
+    }
+  }, [screenBox]);
 
   // Diagnostic: log live gamepad input (pressed button indices + active axes)
   // exactly as the browser reports it — the source of truth for EmulatorJS
@@ -485,7 +514,6 @@ export function EmulatorConsole({
   const isDotmatrix = game?.shader === 'dotmatrix';
   const shaderStyle = {
     ...(isDotmatrix ? { ...pixelBox, backgroundColor: shade.color } : pixelBox),
-    ...(isDotmatrix && screenBox ? { backgroundSize: `${screenBox.cell}px ${screenBox.cell}px` } : null),
   };
 
   // On-screen controls (native EmulatorJS menu/virtual-gamepad + our controller
@@ -523,7 +551,9 @@ export function EmulatorConsole({
       <div
         className={`emulator-shader shader-${game?.shader || 'none'} ${animClass}`.trim()}
         style={shaderStyle}
-      />
+      >
+        {isDotmatrix && <canvas ref={gridCanvasRef} className="emulator-shader-grid" aria-hidden="true" />}
+      </div>
       <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
       <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
       {showOverlay && (
