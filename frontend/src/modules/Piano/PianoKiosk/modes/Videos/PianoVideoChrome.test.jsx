@@ -82,6 +82,46 @@ describe('PianoVideoChrome — mix flyout', () => {
   });
 });
 
+describe('sequential mode restrictions', () => {
+  const baseProps = {
+    isPlaying: false, currentTime: 60, duration: 600, rate: 1, loop: {},
+    playAlong: false,
+    onToggle: vi.fn(), onSkip: vi.fn(), onCycleRate: vi.fn(),
+    onMarkA: vi.fn(), onMarkB: vi.fn(), onToggleLoop: vi.fn(),
+    onClearLoop: vi.fn(), onSeek: vi.fn(), onTogglePlayAlong: vi.fn(),
+  };
+
+  it('hides the rate button when isSequential', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential furthestWatched={60} />);
+    expect(screen.queryByLabelText('Playback speed')).toBeNull();
+  });
+
+  it('shows the rate button when NOT sequential', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential={false} furthestWatched={60} />);
+    expect(screen.getByLabelText('Playback speed')).toBeTruthy();
+  });
+
+  it('disables forward skips when currentTime is at furthestWatched', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential currentTime={60} furthestWatched={60} />);
+    expect(screen.getByLabelText('Forward 15 seconds')).toBeDisabled();
+  });
+
+  it('enables forward skips when behind furthestWatched', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential currentTime={30} furthestWatched={60} />);
+    expect(screen.getByLabelText('Forward 15 seconds')).not.toBeDisabled();
+  });
+
+  it('keeps backward skips enabled in sequential mode', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential currentTime={60} furthestWatched={60} />);
+    expect(screen.getByLabelText('Back 15 seconds')).not.toBeDisabled();
+  });
+
+  it('does not disable forward skips when NOT sequential even past furthestWatched', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential={false} currentTime={600} furthestWatched={60} />);
+    expect(screen.getByLabelText('Forward 15 seconds')).not.toBeDisabled();
+  });
+});
+
 describe('PianoVideoChrome — mix balance', () => {
   const openMix = () => fireEvent.click(screen.getByLabelText('Toggle mix controls'));
 

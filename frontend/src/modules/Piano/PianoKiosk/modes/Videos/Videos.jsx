@@ -2,7 +2,8 @@ import { useMemo, useCallback } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
-import usePianoList from '../../usePianoList.js';
+import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
@@ -76,10 +77,12 @@ function CourseDetailRoute() {
 function LecturePlayerRoute() {
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
-  // Keep the whole response so we can read the show/source title for the breadcrumb.
-  const { data } = usePianoList(`api/v1/fitness/show/${idOf(courseId)}/playable`, (r) => r);
-  const lectures = data ? (data.items ?? []) : null;
-  const source = data?.info?.title || '';
+  const { config } = usePianoKioskConfig();
+  const { currentUser } = usePianoUser();
+  // Keep the whole response so we can read the show/source title + per-user fields.
+  const { items, info, isSequential } = usePianoCoursePlayable(idOf(courseId), currentUser);
+  const lectures = items;
+  const source = info?.title || '';
   const lecture = useMemo(
     () => (lectures || []).find((l) => String(lectureContentId(l)) === String(lectureId)) || null,
     [lectures, lectureId],
@@ -102,7 +105,15 @@ function LecturePlayerRoute() {
       </div>
     );
   }
-  return <PianoVideoPlayer lecture={lecture} source={source} onBack={goBack} />;
+  return (
+    <PianoVideoPlayer
+      lecture={lecture}
+      source={source}
+      onBack={goBack}
+      isSequential={isSequential}
+      engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
+    />
+  );
 }
 
 export default Videos;

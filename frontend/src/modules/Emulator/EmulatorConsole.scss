@@ -201,6 +201,50 @@
     }
   }
 
+  // Boot failure (load error / booted-but-blank) — recoverable via Retry, so a
+  // failure is never a silent dead screen.
+  .emulator-error-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.78);
+    font-family: 'Roboto Condensed', sans-serif;
+    color: #fff;
+
+    .emulator-error-card {
+      text-align: center;
+      padding: 2rem 2.5rem;
+    }
+    .emulator-error-message {
+      font-size: 1.6rem;
+      margin: 0 0 1.25rem;
+    }
+    .emulator-error-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+    }
+    button {
+      font-family: inherit;
+      font-size: 1.2rem;
+      padding: 0.5rem 1.5rem;
+      border-radius: 0.4rem;
+      border: 2px solid #fff;
+      cursor: pointer;
+    }
+    .emulator-error-retry {
+      background: #fff;
+      color: #111;
+    }
+    .emulator-error-exit {
+      background: transparent;
+      color: #fff;
+    }
+  }
+
   // Blur the live game while governance is not "playing".
   &[data-state='warning'] .emulator-mount,
   &[data-state='paused'] .emulator-mount,

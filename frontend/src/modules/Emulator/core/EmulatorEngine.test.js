@@ -274,3 +274,34 @@ describe('EmulatorEngine destroy', () => {
     expect(engine.getHeap()).toBeNull();
   });
 });
+
+describe('EmulatorEngine confirmFirstFrame (success = observed, not resolved)', () => {
+  it('resolves true once the frame counter advances', async () => {
+    let frame = 0;
+    const instance = makeFakeInstance();
+    instance.gameManager.functions.getFrameNum = vi.fn(() => (frame += 1));
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    await expect(engine.confirmFirstFrame({ timeoutMs: 500 })).resolves.toBe(true);
+  });
+
+  it('resolves false (booted-but-blank) when frames never advance', async () => {
+    const instance = makeFakeInstance(); // getFrameNum stays 0
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    await expect(engine.confirmFirstFrame({ timeoutMs: 80 })).resolves.toBe(false);
+  });
+
+  it('treats a missing frame counter as inconclusive-OK (true)', async () => {
+    const instance = makeFakeInstance();
+    instance.gameManager.functions.getFrameNum = undefined;
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    await expect(engine.confirmFirstFrame({ timeoutMs: 80 })).resolves.toBe(true);
+  });
+
+  it('resolves false when not ready', async () => {
+    const engine = createEmulatorEngine({ load: async () => makeFakeInstance(), win: makeFakeWin() });
+    await expect(engine.confirmFirstFrame({ timeoutMs: 80 })).resolves.toBe(false);
+  });
+});

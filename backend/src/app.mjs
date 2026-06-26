@@ -1688,6 +1688,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.piano = createPianoRouter({
     configService,
     fitnessPlayableService,
+    userVideoProgressStore: contentServices.userVideoProgressStore,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 

@@ -228,7 +228,9 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - `cli/` - CLI tools
 
 ### Config System
-- Household configs: `data/household[-{hid}]/apps/{app}/config.yml`
+- **Runtime-loaded household app config:** `data/household[-{hid}]/config/{app}.yml` (e.g. `config/piano.yml`). This is the file `ConfigService.getHouseholdAppConfig(hid, app)` actually serves — see `reloadHouseholdAppConfig`, which resolves `<dataDir>/<folder>/config/<app>`. **A stale duplicate may also exist at `apps/{app}/config.yml` — that path is NOT loaded for app config; don't edit it expecting runtime effect.** Verify which file is live by checking which one holds real values (e.g. the actual `videos.plexCollection`) vs. a `null` stub.
+- **Config is cached in-memory at startup.** `getHouseholdAppConfig` reads from `#config` (loaded once); editing the YAML requires a dev-server restart (nodemon: touch a watched `backend/**.mjs` file) or a `reloadHouseholdAppConfig` call before changes take effect.
+- Per-app subdirectories under `apps/{app}/` (e.g. `apps/piano/studio/`, `apps/piano/devices/`) and per-user data under `users/{id}/apps/{app}/` ARE used directly — only the top-level `apps/{app}/config.yml` is the misleading one.
 - Use ConfigService for reads (preferred over io.mjs)
 - Multi-dimensional process.env (use spread pattern to set)
 
