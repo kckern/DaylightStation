@@ -79,7 +79,7 @@ export function CurrentChordStaff({ activeNotes }) {
 
   return (
     <div className="current-chord-staff-wrapper">
-      <AbcRenderer notes={displayNotes} keySignature={detectedKey} className="current-chord-staff" />
+      <AbcRenderer notes={displayNotes} keySignature={detectedKey} className="current-chord-staff" pinStaff />
     </div>
   );
 }
