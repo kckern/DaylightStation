@@ -8,6 +8,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { userService } from '#system/config/UserService.mjs';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Piano kiosk API.
@@ -233,6 +234,55 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
       res.status(500).json({ error: err.message });
     }
   });
+
+  // ── Course video playable (per-user) ────────────────────────────────────────
+  router.get('/courses/:courseId/playable', asyncHandler(async (req, res) => {
+    if (!fitnessPlayableService) {
+      return res.status(503).json({ error: 'Piano course service not configured' });
+    }
+
+    const { courseId } = req.params;
+    const { userId } = req.query;
+
+    if (userId && !knownUser(userId)) {
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+
+    const playable = await fitnessPlayableService.getPlayableEpisodes(courseId);
+
+    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
+
+    if (userId) {
+      const dir = userPianoDir(userId);
+      const userProgress = loadYaml(path.join(dir, 'video-progress')) || {};
+      const threshold = pianoConfig.videos?.completion_threshold_percent ?? 90;
+
+      playable.items = playable.items.map((item) => {
+        const rawId = String(item.plex || item.id).replace(/^plex:/, '');
+        const key = `plex:${rawId}`;
+        const up = userProgress[key] || {};
+        const userWatched = !!(up.completedAt) ||
+          ((up.percent ?? 0) >= threshold && (up.engagementCount ?? 0) > 0);
+        return {
+          ...item,
+          userPercent: up.percent ?? null,
+          userPlayhead: up.playhead ?? null,
+          userWatched,
+          userEngaged: (up.engagementCount ?? 0) > 0,
+          userCompletedAt: up.completedAt || null,
+        };
+      });
+    }
+
+    const sequentialLabels = new Set(
+      (pianoConfig.videos?.sequential_labels || []).map((l) => l.toLowerCase())
+    );
+    const isSequential = Array.isArray(playable.info?.labels) &&
+      playable.info.labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
+
+    logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
+    res.json({ ...playable, isSequential });
+  }));
 
   return router;
 }
