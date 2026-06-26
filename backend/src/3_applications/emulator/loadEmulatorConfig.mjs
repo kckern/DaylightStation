@@ -64,7 +64,11 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         // it to the actual libretro core (e.g. 'gba' → mgba).
         core: game.core ?? null,
         boxart: game.cover,
-        bezel: game.bezel,
+        // The bezel is a SYSTEM-level asset (the DMG chrome shared by every GB/
+        // GBC/GBA title in this category), so default it — games shouldn't each
+        // need to declare it. A game may override; a system may name its bezel via
+        // manifest.bezel. Falls back to the conventional `bezel.png`.
+        bezel: game.bezel ?? manifest.bezel ?? 'bezel.png',
         watches: game.watches,
         hooks: game.hooks,
         // Deep-merge system defaults UNDER the game so the global-defaults pure
