@@ -669,6 +669,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       floor: Number(governanceConfig?.anonymous_hr_floor),
       hardFloor: Number(governanceConfig?.anonymous_hr_hard_floor)
     });
+    // The re-config above rebuilds users (and is where guest assignments were
+    // being lost). Re-apply any captured assignments that went missing.
+    session.restoreAssignmentSnapshot?.();
     session.invalidateUserCaches?.();
 
     // Configure Governance

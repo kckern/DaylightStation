@@ -325,6 +325,9 @@ export class GuestAssignmentService {
         zones: metadata.zones
       });
     }
+    // Durability: snapshot the ledger now so this assignment survives a
+    // session/cycle-game re-init (see guest-UX audit #2).
+    this.session?.captureAssignmentSnapshot?.();
     return { ok: true, data: { entityId } };
   }
 
