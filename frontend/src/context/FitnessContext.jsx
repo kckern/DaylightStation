@@ -665,6 +665,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     // Configure User Manager
     session.userManager.configure(usersConfig, zoneConfig);
+    session.configureRosterFloors?.({
+      floor: Number(governanceConfig?.anonymous_hr_floor),
+      hardFloor: Number(governanceConfig?.anonymous_hr_hard_floor)
+    });
     session.invalidateUserCaches?.();
 
     // Configure Governance
