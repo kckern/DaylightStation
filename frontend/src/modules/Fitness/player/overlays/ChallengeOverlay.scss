@@ -136,11 +136,26 @@
     text-shadow: 0 6px 22px rgba(15, 23, 42, 0.65);
   }
 
-  &--success {
-    .challenge-overlay__ring-progress {
-      stroke: #22c55e;
-    }
+  // Issue 1: success keeps the zone-colored ring (stroke comes from the inline
+  // ringColor = zone hue) and signals completion with the green check badge
+  // below — no full-ring green that collides with the "active" zone color.
+  &__done-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(2rem, var(--challenge-overlay-diameter) * 0.30, 3.4rem);
+    height: clamp(2rem, var(--challenge-overlay-diameter) * 0.30, 3.4rem);
+    border-radius: 50%;
+    background: #22c55e;
+    color: #06210f;
+    font-size: clamp(1.1rem, var(--challenge-overlay-diameter) * 0.18, 2.1rem);
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 0 0 3px rgba(11, 18, 28, 0.85), 0 0 14px rgba(34, 197, 94, 0.6);
+    animation: challenge-overlay-done-check-pop 0.4s ease-out;
+  }
 
+  &--success {
     .challenge-overlay__time {
       color: #bbf7d0;
     }
@@ -207,5 +222,17 @@
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes challenge-overlay-done-check-pop {
+  0% {
+    transform: scale(0);
+  }
+  70% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
   }
 }

@@ -329,7 +329,10 @@ export const useChallengeOverlays = (governanceState, zones) => {
 			statusLabel,
 			timeLabel,
 			countdownPaused,
-			ringColor: isDonePhase ? SUCCESS_RING_COLOR : zoneInfo.color
+			// Issue 1: keep the target zone color on success — a green ring reads as
+			// the "active" HR zone. Success is signalled by a green check badge
+			// (rendered in the center) while the ring stays the zone hue.
+			ringColor: zoneInfo.color
 		});
 	} else {
 		resetPauseSnapshot();
@@ -451,7 +454,11 @@ export const ChallengeOverlay = ({ overlay }) => {
 					)}
 				</div>
 				<div className="challenge-overlay__time-block" aria-label={timeAriaLabel} role="timer">
-					<div className="challenge-overlay__time">{isSuccess ? '✅' : normalizedTime}</div>
+					{isSuccess ? (
+						<span className="challenge-overlay__done-check" aria-hidden="true">✓</span>
+					) : (
+						<div className="challenge-overlay__time">{normalizedTime}</div>
+					)}
 				</div>
 			</div>
 		</div>
