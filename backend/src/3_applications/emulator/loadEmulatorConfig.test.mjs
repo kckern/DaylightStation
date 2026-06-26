@@ -138,6 +138,26 @@ describe('loadEmulatorConfig', () => {
     expect(cfg.games.find((g) => g.id === 'pokemon-red').saveMode).toBe('battery');
   });
 
+  it('defaults the bezel to the shared system asset when a game omits it', () => {
+    const m = JSON.parse(JSON.stringify(gameboyManifest));
+    delete m.games[0].bezel; // game without its own bezel
+    m.games.push({ id: 'mk', title: 'Mario Kart', rom: 'roms/mk.gba', core: 'gba' });
+    const cfg = makeLoader([{ system: 'gb', manifest: m }]);
+    // Both the un-bezeled original game and the new one inherit the system bezel.
+    expect(cfg.games.find((g) => g.id === 'pokemon-red').bezel).toBe('bezel.png');
+    expect(cfg.games.find((g) => g.id === 'mk').bezel).toBe('bezel.png');
+  });
+
+  it('honors a system-level manifest.bezel and a per-game bezel override', () => {
+    const m = JSON.parse(JSON.stringify(gameboyManifest));
+    m.bezel = 'system-bezel.png';
+    delete m.games[0].bezel;
+    m.games.push({ id: 'special', title: 'Special', rom: 'r.gb', bezel: 'special-bezel.png' });
+    const cfg = makeLoader([{ system: 'gb', manifest: m }]);
+    expect(cfg.games.find((g) => g.id === 'pokemon-red').bezel).toBe('system-bezel.png'); // system default
+    expect(cfg.games.find((g) => g.id === 'special').bezel).toBe('special-bezel.png');    // per-game override
+  });
+
   it('per-game core override defaults null, carries through when set', () => {
     const base = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
     expect(base.games[0].core).toBeNull();

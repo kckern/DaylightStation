@@ -49,6 +49,11 @@ export function IdentityProvider({ children }) {
   // save-game identity prompt — rather than gate on a permission.
   const identifyOnlyRef = useRef(false);
   const verdictResolverRef = useRef(null);
+  // A decided-but-not-yet-resolved grant (during the "Access Granted" chime
+  // hold). If a cancel/tap lands in that window, clearUnlock must honor THIS
+  // grant rather than downgrade it to a cancellation — otherwise a successful
+  // (often retry) unlock launches anonymous. See IdentityProvider.test.jsx.
+  const pendingGrantRef = useRef(null);
   const emergencyRef = useRef(emergency);
   emergencyRef.current = emergency;
 
@@ -120,6 +125,11 @@ export function IdentityProvider({ children }) {
       setUnlockState('granted');
       setUnlockedUser(person);
 
+      // Commit the grant: from here the outcome is decided. A cancel during the
+      // hold (below) must resolve THIS, not a cancellation.
+      const grantVerdict = { matched: true, userId: msg.userId };
+      pendingGrantRef.current = grantVerdict;
+
       // Hold the "Access Granted" confirmation while the chime plays, then resolve.
       // Resolves on chime end, on a silent/rejected device, or after the safety cap.
       let done = false;
@@ -128,7 +138,8 @@ export function IdentityProvider({ children }) {
         if (done) return;
         done = true;
         clearTimeout(capTimer);
-        resolveVerdict({ matched: true, userId: msg.userId });
+        pendingGrantRef.current = null;
+        resolveVerdict(grantVerdict);
       };
       const played = playCueOnce({ sound: soundRef.current, volume: volumeRef.current, onDone: finish });
       if (!played) { finish(); return; }
@@ -169,6 +180,7 @@ export function IdentityProvider({ children }) {
     primeCueAudio('unlock-request');
     activeLockRef.current = lock;
     identifyOnlyRef.current = !!identifyOnly;
+    pendingGrantRef.current = null; // fresh attempt — no decided grant yet
     setActiveLock(lock);
     setUnlockState('scanning');
     setUnlockedUser(null);
@@ -189,7 +201,11 @@ export function IdentityProvider({ children }) {
     setActiveLock(null);
     setUnlockedUser(null);
     setUnlockState('idle');
-    resolveVerdict({ matched: false, reason: 'cancelled' });
+    // Honor a grant that was already decided (a tap during the success-hold);
+    // only a cancel with NO decided grant resolves as a true cancellation.
+    const pendingGrant = pendingGrantRef.current;
+    pendingGrantRef.current = null;
+    resolveVerdict(pendingGrant || { matched: false, reason: 'cancelled' });
   }, [resolveVerdict]);
 
   const value = useMemo(() => ({

@@ -22,9 +22,12 @@ vi.mock('@/context/FitnessContext.jsx', () => ({
   __esModule: true,
   useFitness: () => ({ fitnessConfiguration: {}, userCollections: { all: [{ id: 'kc', name: 'KC' }] } }),
 }));
-// Chime: resolve immediately so granted verdicts settle in tests.
+// Chime: resolve immediately so granted verdicts settle in tests. `autoDone`
+// is controllable so a test can HOLD the success screen (chime pending) and
+// exercise the cancel-during-granted race.
+const chime = vi.hoisted(() => ({ autoDone: true }));
 vi.mock('@/modules/Fitness/player/hooks/useGovernanceAudioDuck.js', () => ({
-  __esModule: true, playCueOnce: ({ onDone }) => { onDone?.(); return true; },
+  __esModule: true, playCueOnce: ({ onDone }) => { if (chime.autoDone) onDone?.(); return true; },
 }));
 vi.mock('@/modules/Fitness/player/hooks/audioCuePlayer.js', () => ({
   __esModule: true, primeCueAudio: vi.fn(),
@@ -32,7 +35,7 @@ vi.mock('@/modules/Fitness/player/hooks/audioCuePlayer.js', () => ({
 
 function emit(payload) { act(() => { wsHandler({ topic: 'fitness.identity.detected', ...payload }); }); }
 function Probe({ onReady }) { const id = useIdentity(); onReady(id); return <div>{id.unlockState}</div>; }
-beforeEach(() => { emergency.phase = 'normal'; vi.clearAllMocks(); });
+beforeEach(() => { emergency.phase = 'normal'; chime.autoDone = true; vi.clearAllMocks(); });
 
 test('no modal + emergency-authorized → starts ceremony', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
@@ -68,6 +71,34 @@ test('modal open + UNrecognized finger → denied (distinct from unauthorized)',
   emit({ matched: false, userId: null, authz: { admin: false, locks: [] } });
   await waitFor(() => expect(api.unlockState).toBe('denied'));
 });
+test('grant during the success-hold survives a cancel — a decided grant is NOT downgraded to cancelled', async () => {
+  // Hold the success screen open (chime hasn't finished) so the grant verdict is
+  // decided but not yet resolved — the exact window a stray tap on Close hits.
+  chime.autoDone = false;
+  let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  let verdict; act(() => { api.registerIdentify('emulator-save').then((v) => { verdict = v; }); });
+  // First finger unrecognized → denied (no resolve).
+  emit({ matched: false, userId: null });
+  await waitFor(() => expect(api.unlockState).toBe('denied'));
+  // Retry: recognized → granted, but held (chime pending), so not yet resolved.
+  emit({ matched: true, userId: 'kc' });
+  await waitFor(() => expect(api.unlockState).toBe('granted'));
+  expect(verdict).toBeUndefined();
+  // A tap on Close during the hold cancels — but the grant was already decided,
+  // so the verdict must be the grant, not { matched:false }.
+  act(() => { api.clearUnlock(); });
+  await waitFor(() => expect(verdict).toEqual({ matched: true, userId: 'kc' }));
+});
+
+test('cancel with NO decided grant still resolves cancelled (play-without-saving path intact)', async () => {
+  let api; render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  let verdict; act(() => { api.registerIdentify('emulator-save').then((v) => { verdict = v; }); });
+  emit({ matched: false, userId: null });
+  await waitFor(() => expect(api.unlockState).toBe('denied'));
+  act(() => { api.clearUnlock(); });
+  await waitFor(() => expect(verdict).toEqual({ matched: false, reason: 'cancelled' }));
+});
+
 test('no modal + non-emergency scan → ignored', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
   emit({ matched: true, userId: 'guest', authz: { admin: false, locks: ['dance_party'] } });
