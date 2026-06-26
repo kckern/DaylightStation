@@ -14,6 +14,8 @@ const fmt = (s) => {
 export default function PianoVideoChrome({
   isPlaying, currentTime, duration, rate, loop, playAlong,
   onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onTogglePlayAlong,
+  isSequential = false,
+  furthestWatched = 0,
 }) {
   const barRef = useRef(null);
   const [mixOpen, setMixOpen] = useState(false);
@@ -21,11 +23,14 @@ export default function PianoVideoChrome({
   const dur = duration > 0 ? duration : 0;
   const pct = dur ? Math.min(100, (currentTime / dur) * 100) : 0;
   const markPos = (v) => (dur && Number.isFinite(v) ? `${Math.min(100, (v / dur) * 100)}%` : null);
+  // Sequential: can't advance past the furthest point already reached (1s tolerance).
+  const forwardDisabled = isSequential && currentTime >= furthestWatched - 1;
   const seekFromEvent = (e) => {
     const el = barRef.current; if (!el || !dur) return;
     const rect = el.getBoundingClientRect();
     const x = (e.clientX ?? 0) - rect.left;
-    onSeek(Math.max(0, Math.min(dur, (x / rect.width) * dur)));
+    const pos = Math.max(0, Math.min(dur, (x / rect.width) * dur));
+    onSeek(isSequential ? Math.min(pos, furthestWatched) : pos);
   };
   const hasLoop = loop?.a != null || loop?.b != null;
   const bothMarks = loop?.a != null && loop?.b != null;
@@ -44,9 +49,11 @@ export default function PianoVideoChrome({
         <div className="piano-video-chrome__spacer" />
         <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-15)} aria-label="Back 15 seconds"><Icon name="skip-back-15" /></button>
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--play" onClick={onToggle} aria-label={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? <Icon name="pause" /> : <Icon name="play" />}</button>
-        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(15)} aria-label="Forward 15 seconds"><Icon name="skip-forward-15" /></button>
+        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(15)} disabled={forwardDisabled} aria-label="Forward 15 seconds"><Icon name="skip-forward-15" /></button>
         <div className="piano-video-chrome__spacer" />
-        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--rate" onClick={onCycleRate} aria-label="Playback speed">{rate}×</button>
+        {!isSequential && (
+          <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--rate" onClick={onCycleRate} aria-label="Playback speed">{rate}×</button>
+        )}
         <div className={`piano-video-chrome__loop-group${hasLoop ? ' has-marks' : ''}`}>
           <button type="button" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} onClick={onMarkA} aria-label="Mark loop start"><Icon name="loop-a" /></button>
           <button type="button" className="piano-video-chrome__btn" onClick={onMarkB} aria-label="Mark loop end"><Icon name="loop-b" /></button>
