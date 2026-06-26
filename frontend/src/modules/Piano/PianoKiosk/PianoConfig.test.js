@@ -99,6 +99,21 @@ describe('studio config', () => {
   });
 });
 
+describe('resolvePianoConfig — whoIsPlayingMinutes + autoRecord', () => {
+  it('resolves who-is-playing + auto-record defaults and per-piano overrides', () => {
+    const base = resolvePianoConfig({}, 'default');
+    expect(base.whoIsPlayingMinutes).toBe(2);
+    expect(base.autoRecord).toEqual({ enabled: false, silenceSeconds: 25, minNotes: 5, minSeconds: 3, flushSeconds: 12 });
+
+    const over = resolvePianoConfig(
+      { whoIsPlayingMinutes: 5, autoRecord: { enabled: true, minNotes: 8 } },
+      'default',
+    );
+    expect(over.whoIsPlayingMinutes).toBe(5);
+    expect(over.autoRecord).toEqual({ enabled: true, silenceSeconds: 25, minNotes: 8, minSeconds: 3, flushSeconds: 12 });
+  });
+});
+
 describe('resolveScreensaver', () => {
   it('disables screen control by default (no deviceId)', () => {
     expect(resolveScreensaver({}, {})).toEqual({

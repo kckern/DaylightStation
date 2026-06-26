@@ -32,6 +32,10 @@ export const PIANO_CONFIG_DEFAULTS = {
   // e.g. { package: 'com.android.settings', activity: 'com.android.settings.Settings$BluetoothSettingsActivity' }
   bluetooth: null,
   inactivityMinutes: 10,
+  // Re-prompt "who's playing?" after this many idle minutes (0 disables).
+  whoIsPlayingMinutes: 2,
+  // Always-on MIDI history (disabled by default — opt in per piano).
+  autoRecord: { enabled: false, silenceSeconds: 25, minNotes: 5, minSeconds: 3, flushSeconds: 12 },
   // Screensaver disabled until a deviceId is configured (null = no screen control).
   screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
   // Studio mode defaults. topPaneLayout: 'staff' (centered grand staff, default) |
@@ -49,6 +53,20 @@ export function resolveScreensaver(shared, p) {
     deviceId: ps.deviceId ?? s.deviceId ?? d.deviceId,
     timeoutMinutes: ps.timeoutMinutes ?? s.timeoutMinutes ?? d.timeoutMinutes,
     quietHours: ps.quietHours ?? s.quietHours ?? d.quietHours,
+  };
+}
+
+/** Resolve auto-record config: per-piano over shared over defaults (field-wise). */
+export function resolveAutoRecord(shared, p) {
+  const s = shared.autoRecord || {};
+  const ps = p.autoRecord || {};
+  const d = PIANO_CONFIG_DEFAULTS.autoRecord;
+  return {
+    enabled: ps.enabled ?? s.enabled ?? d.enabled,
+    silenceSeconds: ps.silenceSeconds ?? s.silenceSeconds ?? d.silenceSeconds,
+    minNotes: ps.minNotes ?? s.minNotes ?? d.minNotes,
+    minSeconds: ps.minSeconds ?? s.minSeconds ?? d.minSeconds,
+    flushSeconds: ps.flushSeconds ?? s.flushSeconds ?? d.flushSeconds,
   };
 }
 
@@ -88,6 +106,8 @@ export function resolvePianoConfig(raw, pianoId) {
     },
     bluetooth: p.bluetooth ?? shared.bluetooth ?? PIANO_CONFIG_DEFAULTS.bluetooth,
     inactivityMinutes: p.inactivityMinutes ?? shared.inactivityMinutes ?? PIANO_CONFIG_DEFAULTS.inactivityMinutes,
+    whoIsPlayingMinutes: p.whoIsPlayingMinutes ?? shared.whoIsPlayingMinutes ?? PIANO_CONFIG_DEFAULTS.whoIsPlayingMinutes,
+    autoRecord: resolveAutoRecord(shared, p),
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
     studio: {
