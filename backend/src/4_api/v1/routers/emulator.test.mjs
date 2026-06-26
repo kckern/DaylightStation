@@ -222,11 +222,13 @@ describe('createEmulatorRouter', () => {
   });
 
   describe('GET /art/:kind', () => {
-    it('serves cover', async () => {
+    it('serves cover with a moderate (non-immutable) cache so art can be swapped', async () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/art/gb/pokemon-red/cover');
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/image\/png/);
+      expect(res.headers['cache-control']).toMatch(/max-age/);
+      expect(res.headers['cache-control']).not.toMatch(/immutable/);
     });
 
     it('400 on invalid kind', async () => {

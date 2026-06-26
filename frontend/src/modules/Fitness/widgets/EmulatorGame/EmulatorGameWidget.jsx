@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { isKioskEnv } from '@/lib/kioskEnv.js';
@@ -172,22 +173,8 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
   if (error) return <div className="fitness-emulator__error">Video games unavailable: {error}</div>;
   if (!library) return <div className="fitness-emulator__loading">Loading…</div>;
 
-  if (view === 'playing' && launch) {
-    return (
-      <EmulatorConsole
-        game={launch.game}
-        engineConfig={launch.engineConfig}
-        governanceGate={launch.gate}
-        identity={{ getActivePlayerId: () => launch.userId }}
-        persistence={launch.persistence}
-        nowPlaying={launch.person}
-        playStartedAt={launch.startedAt}
-        resolveMediaUrl={(p) => DaylightMediaPath(p)}
-        onExit={handleExitGame}
-      />
-    );
-  }
-
+  // The arcade shell stays mounted in-frame (sidebar visible). A running game is
+  // portaled to document.body as a true-fullscreen overlay over everything.
   return (
     <>
       <ArcadeShell
@@ -205,6 +192,22 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
         unlockedUser={unlockedUser}
         onCancel={cancelIdentify}
       />
+      {view === 'playing' && launch && createPortal(
+        <div className="fitness-emulator-fullscreen">
+          <EmulatorConsole
+            game={launch.game}
+            engineConfig={launch.engineConfig}
+            governanceGate={launch.gate}
+            identity={{ getActivePlayerId: () => launch.userId }}
+            persistence={launch.persistence}
+            nowPlaying={launch.person}
+            playStartedAt={launch.startedAt}
+            resolveMediaUrl={(p) => DaylightMediaPath(p)}
+            onExit={handleExitGame}
+          />
+        </div>,
+        document.body,
+      )}
     </>
   );
 }

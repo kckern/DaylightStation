@@ -34,6 +34,10 @@
 
 .emu-grid {
   display: grid;
+  // A definite width is required for auto-fit to compute >1 column; without it
+  // the grid shrink-wraps to a single column. Empty tracks collapse, so items
+  // stay centered via justify-content.
+  width: 100%;
   grid-template-columns: repeat(auto-fit, 14vh);
   gap: 3vh 3vw;
   justify-content: center;

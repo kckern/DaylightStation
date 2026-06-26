@@ -52,7 +52,11 @@ function sendBinary(res, result, { range, cache = true } = {}) {
     'Content-Type': result.contentType || 'application/octet-stream',
     'Accept-Ranges': 'bytes',
   };
-  if (cache) headers['Cache-Control'] = IMMUTABLE_CACHE;
+  // `cache: true` → immutable (ROMs are content-fixed by id). A string sets an
+  // explicit Cache-Control — covers/bezels use a moderate TTL since art can be
+  // swapped under the same URL (an immutable cover never updates in-browser).
+  if (typeof cache === 'string') headers['Cache-Control'] = cache;
+  else if (cache) headers['Cache-Control'] = IMMUTABLE_CACHE;
 
   if (range) {
     headers['Content-Range'] = `bytes ${range.start}-${range.end}/${result.size}`;
@@ -249,7 +253,8 @@ export function createEmulatorRouter({
       const cfg = loadConfig();
       const absPath = resolveArtPath(cfg, system, gameId, kind);
       const result = readBinary(absPath);
-      sendBinary(res, result, { cache: true });
+      // Moderate (not immutable): art may be swapped under the same URL.
+      sendBinary(res, result, { cache: MODERATE_CACHE });
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
       logger.error('emulator.art.error', { system, gameId, kind, error: err.message });

@@ -433,3 +433,12 @@
   &__cancel { background: #2b2f3a; color: #e8e8ee; }
   &__confirm { background: #c0392b; color: #fff; }
 }
+
+// A running game is portaled to document.body and covers the whole viewport
+// (over the fitness nav sidebar). The arcade selection screen stays framed.
+.fitness-emulator-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+}
