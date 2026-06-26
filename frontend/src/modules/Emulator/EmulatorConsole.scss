@@ -51,26 +51,24 @@
     z-index: 2;
   }
 
-  // Game Boy dot-matrix LCD shader: a fine pixel grid that multiplies onto the
-  // screen, plus a faint inner shadow, approximating the handheld LCD's visible
-  // Game Boy dot-matrix LCD: colour-shade wash (set inline by the shade cycler) +
-  // the per-pixel grid (the LCD cell gaps), sized to the GB's native 160×144 so
-  // each cell lands on one game pixel. Pixel-perfect (no moiré) ONLY when the
-  // screen renders at an INTEGER device-pixel ratio so the 800px cutout = 5×160
-  // exact (the garage must run devPixelsPerPx = 1.0, not 1.05). The game itself
-  // renders crisp via the WebGL NEAREST patch + image-rendering below.
+  // Game Boy dot-matrix LCD shader: colour-shade wash (set inline by the shade
+  // cycler) + a pixel grid drawn on a canvas at integer device-pixel positions.
+  // The canvas approach eliminates moiré at any DPR (including non-integer
+  // multiples like 1.05): lines land at exact multiples of `scale` device px,
+  // so no sub-pixel rounding drift across 160 cells.
   .emulator-shader.shader-dotmatrix {
     background-color: #c6d2a2;
-    background-image:
-      linear-gradient(to right, rgba(0, 0, 0, 0.18) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 1px, transparent 1px);
-    // background-size is set INLINE by EmulatorConsole to an exact integer
-    // device-pixel period (one N×-scaled game pixel) so the grid is uniform and
-    // pixel-aligned. The calc() below is only a fallback before the box is
-    // measured (first paint) — a fractional period that the JS box replaces.
-    background-size: calc(100% / 160) calc(100% / 144);
     mix-blend-mode: multiply;
     opacity: 1;
+  }
+
+  // Canvas grid overlay — fills the shader div, drawn in device-pixel space.
+  .emulator-shader-grid {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
   }
   // Pin the EmulatorJS canvas to fill its (integer-sized, exact-160:144-aspect)
   // mount with NO internal letterbox or centering margin. EmulatorJS otherwise
