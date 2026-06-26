@@ -252,6 +252,19 @@ ble_users:
 
 ---
 
+## Anonymous-device HR floors (config)
+
+`data/household/apps/fitness/config.yml` → `governance:`
+- `anonymous_hr_floor` (default 60): below this, an unregistered device is KEPT
+  but flagged `weakSignal` (rendered as a tappable "tap to add" card).
+- `anonymous_hr_hard_floor` (default 40): below this, an unregistered device is
+  dropped as noise (e.g. a strap in a drawer).
+
+Registered users and explicitly-assigned guests are never filtered, regardless
+of heart rate.
+
+---
+
 ## See Also
 
 - [Guest Mode](./guest-mode.md) — umbrella overview of friend/family participation

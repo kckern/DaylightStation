@@ -2108,8 +2108,22 @@ export class FitnessSession {
   }
 
   /**
+   * Configure the anonymous-device HR floors on the participant roster from
+   * household config (fitness.yml governance.anonymous_hr_floor /
+   * governance.anonymous_hr_hard_floor). No-ops for non-finite values, so the
+   * roster keeps its built-in defaults when the keys are absent.
+   */
+  configureRosterFloors({ floor, hardFloor } = {}) {
+    if (!this._participantRoster) return;
+    const cfg = {};
+    if (Number.isFinite(floor)) cfg.anonymousHrFloor = floor;
+    if (Number.isFinite(hardFloor)) cfg.anonymousHrHardFloor = hardFloor;
+    if (Object.keys(cfg).length > 0) this._participantRoster.configure(cfg);
+  }
+
+  /**
    * Collect timeline tick - DELEGATED to TimelineRecorder.
-   * 
+   *
    * Phase 5 refactoring: This method now delegates to TimelineRecorder
    * which owns all timeline metric recording, cumulative tracking, and
    * dropout detection logic.
