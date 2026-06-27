@@ -110,6 +110,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
                             .put("GET /log").put("POST /panic")
+                            .put("GET /speaker · POST /speaker  (A2DP speaker status / force reconnect)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
                             .put("GET|POST /exec?cmd=…[&timeout=10000]  (sh -c as app uid)")
                             .put("GET /cpu?ms=600             (OWN per-thread CPU, in-process)")
@@ -122,10 +123,18 @@ public class ControlServer extends NanoWSD {
                 case "/status": {
                     JSONObject o = ok();
                     o.put("ble", ble != null ? ble.status() : JSONObject.NULL);
+                    A2dpConnector spk = service.getA2dpConnector();
+                    o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
                     o.put("preset", currentPresetId == null ? JSONObject.NULL : currentPresetId);
                     return json(o);
+                }
+                case "/speaker": {
+                    A2dpConnector spk = service.getA2dpConnector();
+                    if (spk == null) return json(err("no_a2dp"));
+                    if (method == NanoHTTPD.Method.POST) { spk.connectNow(); return json(ok().put("action", "speaker_connect")); }
+                    return json(ok().put("speaker", spk.status()));
                 }
                 case "/connect":
                     if (ble == null) return json(err("no_connector"));

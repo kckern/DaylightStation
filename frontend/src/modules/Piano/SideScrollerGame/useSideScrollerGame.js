@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { useStaffMatching } from '../PianoTetris/useStaffMatching.js';
 import { shuffle, buildNotePool } from '../noteUtils.js';
+import { resolveTheme } from './sideScrollerTheme.js';
+import { useSideScrollerSfx } from './sideScrollerSounds.js';
 import {
   TOTAL_HEALTH,
   MAX_DUCK_MS,
@@ -29,7 +31,6 @@ const OUTCOME_ADVANCE = 'advance';
 const COUNTDOWN_STEPS = [3, 2, 1, 0];
 const COUNTDOWN_STEP_MS = 800;
 const GAME_OVER_DISPLAY_MS = 5000;
-const SIDE_SCROLLER_ACTIONS = ['jump', 'duck'];
 
 // ─── Target Generation (2 actions only) ─────────────────────────
 
@@ -77,6 +78,11 @@ function generateScrollerTargets(noteRange, complexity, whiteKeysOnly) {
 
 export function useSideScrollerGame(activeNotes, gameConfig) {
   const logger = useMemo(() => getChildLogger({ component: 'side-scroller' }), []);
+
+  // Resolved visual + audio theme (config-driven; defaults reproduce the
+  // original Mega Man + procedural-CSS look). Sounds are silent until configured.
+  const theme = useMemo(() => resolveTheme(gameConfig), [gameConfig]);
+  const sfx = useSideScrollerSfx(theme.sounds);
 
   const [phase, setPhase] = useState('IDLE');
   const [world, setWorld] = useState(() => createInitialWorld(gameConfig));
@@ -178,6 +184,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       if (collisions.length > 0) {
         const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
         next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
+        sfx.play('hit');
         logger.info('side-scroller.collision', { count: collisions.length, health: next.health, damagePerHit: config.damagePerHit });
         if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
           logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
@@ -190,6 +197,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         for (let i = 0; i < dodged; i++) {
           next = applyHeal(next, config.healPerDodge);
         }
+        sfx.play('dodge');
         logger.info('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
         prevDodgeCountRef.current = next.dodgeCount;
       }
@@ -214,13 +222,16 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     if (outcome) {
       pendingOutcomeRef.current = null;
       if (outcome.type === OUTCOME_FAIL) {
+        sfx.play('gameover');
         logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
         setPhase('GAME_OVER');
       } else if (outcome.type === OUTCOME_ADVANCE) {
         logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
         if (outcome.nextLevel >= levels.length) {
+          sfx.play('gameover');
           setPhase('GAME_OVER');
         } else {
+          sfx.play('levelup');
           setLevel(outcome.nextLevel);
           setLevelName(levels[outcome.nextLevel]?.name ?? '');
           setTimeout(() => regenerateTargets(levels[outcome.nextLevel]), 0);
@@ -229,7 +240,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     }
 
     rafRef.current = requestAnimationFrame(gameLoop);
-  }, [levels, config, logger, regenerateTargets]);
+  }, [levels, config, logger, regenerateTargets, sfx]);
 
   // Start/stop game loop based on phase — DO NOT reset refs here
   useEffect(() => {
@@ -247,13 +258,14 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
 
   const handleAction = useCallback((actionName) => {
     logger.info('side-scroller.action', { action: actionName });
+    sfx.play(actionName); // 'jump' / 'duck' — theme.sounds key
     if (actionName === 'jump') {
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
       const now = performance.now();
       setWorld(prev => applyDuck(prev, now));
     }
-  }, [logger]);
+  }, [logger, sfx]);
 
   // Staff matching
   const staffEnabled = phase === 'PLAYING';
@@ -298,6 +310,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     setCountdown(3);
     setLevelName(levels[0]?.name ?? '');
 
+    sfx.play('start');
     logger.info('side-scroller.game-started', {});
 
     let step = 0;
@@ -317,7 +330,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         }
       }
     }, COUNTDOWN_STEP_MS);
-  }, [clearAllTimers, levels, config, logger, regenerateTargets]);
+  }, [clearAllTimers, levels, config, logger, regenerateTargets, sfx]);
 
   // ─── Game Over Auto-Dismiss ─────────────────────────────────
 
@@ -372,6 +385,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     score: world.score,
     startGame,
     nextObstacleType,
+    theme,
   };
 }
 

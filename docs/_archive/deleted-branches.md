@@ -96,3 +96,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-22 | feat/piano-clickable-keyboard | 7eb10087c | Clickable on-screen keyboard + trimmed piano video player |
 | 2026-06-22 | feat/piano-music-mode | 92c3dff91 | Piano Music jukebox + Sheet Music shell |
 | 2026-06-22 | feat/piano-kiosk-remediation | c963e082c | Piano kiosk remediation: light mode, never-lose-state, caching, routing, media reliability, design system (merged to main) |
+| 2026-06-26 | feature/governance-four-fixes | eb69e931f | Fitness governance four-issue fixes (merged to main via rebase) |
