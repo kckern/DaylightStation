@@ -104,3 +104,19 @@ test('no modal + non-emergency scan → ignored', () => {
   emit({ matched: true, userId: 'guest', authz: { admin: false, locks: ['dance_party'] } });
   expect(emergency.triggerCeremony).not.toHaveBeenCalled();
 });
+
+test('registerAdmin resolves only for an admin finger', async () => {
+  let api;
+  render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  let verdict;
+  act(() => { api.registerAdmin('emulator').then((v) => { verdict = v; }); });
+
+  // Recognized but non-admin → not granted; promise stays pending.
+  emit({ matched: true, userId: 'kc', authz: { admin: false, locks: [] } });
+  await waitFor(() => expect(api.unlockState).toBe('unauthorized'));
+  expect(verdict).toBeUndefined();
+
+  // Admin finger → granted.
+  emit({ matched: true, userId: 'kc', authz: { admin: true } });
+  await waitFor(() => expect(verdict).toMatchObject({ matched: true, userId: 'kc' }));
+});
