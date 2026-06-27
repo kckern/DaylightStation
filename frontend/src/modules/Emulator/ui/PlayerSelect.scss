@@ -1,0 +1,35 @@
+.emu-player-select {
+  position: absolute;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  background: rgba(12, 16, 24, 0.92);
+  color: #fff;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+
+  &__title { font-weight: 600; }
+  &__message { color: #ffd27a; font-size: 0.9rem; }
+  &__savers { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  &__empty { opacity: 0.6; font-size: 0.9rem; }
+  &__saver {
+    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+    background: none; border: 0; color: inherit; cursor: pointer;
+  }
+  &__avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #333; }
+  &__claim {
+    align-self: center; padding: 0.5rem 1.25rem; border: 0; border-radius: 999px;
+    background: #2f7; color: #042; font-weight: 700; cursor: pointer;
+  }
+  &__dismiss { position: absolute; top: 0.5rem; right: 0.75rem; background: none; border: 0; color: #aaa; cursor: pointer; }
+}
+.emu-player-select__reopen {
+  position: absolute; top: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 40;
+  width: 48px; height: 48px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(12, 16, 24, 0.85); font-size: 1.25rem;
+}
