@@ -13,7 +13,26 @@ import { lectureContentId } from './lectureMeta.js';
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
 /**
- * Videos mode — passive lectures from a configured Plex collection.
+ * Normalize the videos config into ordered tab groups — each `{ label, collections }`
+ * becomes one tab whose poster wall merges every collection it lists.
+ *
+ * Grouped form (preferred): `videos.collections: [{ label, plex: [...] }, ...]`.
+ * Legacy form: a flat `videos.plexCollection` (string or array) collapses to a
+ * single unlabeled group → a plain grid with no tab bar.
+ */
+export function resolveCourseGroups(videos) {
+  const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
+  if (Array.isArray(videos?.collections) && videos.collections.length) {
+    return videos.collections
+      .map((g) => ({ label: g?.label || null, collections: toList(g?.plex ?? g?.collections) }))
+      .filter((g) => g.collections.length);
+  }
+  const flat = toList(videos?.plexCollection);
+  return flat.length ? [{ label: null, collections: flat }] : [];
+}
+
+/**
+ * Videos mode — passive lectures from configured Plex collections.
  *
  * Routed so the course id and lecture contentId live in the URL (deep-linkable,
  * survives reload, physical/browser Back becomes an "up" gesture):
@@ -23,15 +42,15 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  *
  * All navigation is RELATIVE (navigate('subpath') / navigate('..')) so the mode
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
- * Collection id comes from piano config `videos.plexCollection` (a Plex
- * collection ratingKey, optionally `plex:`-prefixed).
+ * Collections come from piano config `videos.collections` (grouped into tabs) or
+ * the legacy flat `videos.plexCollection`.
  */
 export function Videos() {
   const { config } = usePianoKioskConfig();
-  const collection = config.videos.plexCollection;
+  const groups = useMemo(() => resolveCourseGroups(config.videos), [config.videos]);
   return (
     <Routes>
-      <Route index element={<CourseGridRoute collection={collection} />} />
+      <Route index element={<CourseGridRoute groups={groups} />} />
       <Route path=":courseId" element={<CourseDetailRoute />} />
       <Route path=":courseId/:lectureId" element={<LecturePlayerRoute />} />
     </Routes>
@@ -39,12 +58,12 @@ export function Videos() {
 }
 
 /** Course grid → push the selected course id (relative). */
-function CourseGridRoute({ collection }) {
+function CourseGridRoute({ groups }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const navigate = useNavigate();
   return (
     <CourseGrid
-      collection={collection}
+      groups={groups}
       onSelect={(item) => { logger.info('piano.course-open', { id: item.id }); navigate(idOf(item.id)); }}
     />
   );
