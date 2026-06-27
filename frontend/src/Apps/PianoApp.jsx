@@ -103,12 +103,15 @@ function PianoShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
-  const { playing } = usePianoPlayback();
+  const { playing, videoActive } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
 
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
+  // Suppressed while a video lecture is open: the open player is already earning
+  // watch credit for the current user, so a mid-lesson re-prompt would mis-credit.
   useWhoIsPlaying(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
+    if (videoActive) return;
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
