@@ -52,6 +52,38 @@ describe('Videos mode', () => {
     expect(api).toHaveBeenCalledWith('api/v1/list/plex/440630');
   });
 
+  it('renders a tab per collection (labeled by Plex name) and switches courses', async () => {
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/list/plex/675686') {
+        return Promise.resolve({ title: 'Music Lessons', items: [
+          { id: 'plex:1', title: 'How to Play Piano' },
+        ] });
+      }
+      if (path === 'api/v1/list/plex/676074') {
+        return Promise.resolve({ title: 'Piano Courses', items: [
+          { id: 'plex:2', title: 'Hoffman Academy', type: 'show' },
+        ] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderVideos(['plex:675686', 'plex:676074']);
+
+    // Both collections become tabs labeled by their Plex collection name.
+    const lessonsTab = await screen.findByRole('tab', { name: 'Music Lessons' });
+    const coursesTab = screen.getByRole('tab', { name: 'Piano Courses' });
+    expect(lessonsTab.getAttribute('aria-selected')).toBe('true'); // first tab default
+
+    // Default tab shows its own collection's course, not the other's.
+    expect(await screen.findByTitle('How to Play Piano')).toBeTruthy();
+    expect(screen.queryByTitle('Hoffman Academy')).toBeNull();
+
+    // Switching tabs swaps the grid to the other collection.
+    fireEvent.click(coursesTab);
+    expect(await screen.findByTitle('Hoffman Academy')).toBeTruthy();
+    expect(screen.queryByTitle('How to Play Piano')).toBeNull();
+  });
+
   it('shows a helpful message when no collection is configured', async () => {
     renderVideos(null);
     await waitFor(() =>

@@ -939,10 +939,40 @@
   }
 }
 
-/* Videos mode: center the poster wall both axes when it fits; once there are
-   enough rows to overflow, the `safe` keyword falls back to top-align so the
-   first row stays reachable while .piano-mode's overflow:auto scrolls. */
+/* Videos mode: a column of [optional tab bar] + the centered poster panel. */
 .piano-mode--videos {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Course collection tabs (one per configured Plex collection), pinned at top. */
+.piano-course-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem;
+  border-bottom: 1px solid var(--piano-border);
+}
+.piano-course-tab {
+  background: none;
+  border: none;
+  color: var(--piano-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  &.is-active { color: var(--piano-fg); border-bottom-color: var(--piano-accent); }
+  &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
+}
+
+/* Active tab's grid: center the poster wall both axes when it fits; once there
+   are enough rows to overflow, the `safe` keyword falls back to top-align so the
+   first row stays reachable while .piano-mode's overflow:auto scrolls. */
+.piano-course-tabpanel {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: safe center;
