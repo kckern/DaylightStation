@@ -43,6 +43,24 @@ describe('resolvePianoConfig', () => {
     expect(cfg.voices).toEqual(PIANO_CONFIG_DEFAULTS.voices);
     expect(cfg.videos.plexCollection).toBeNull();
   });
+  it('passes the whole videos block through (collections + thresholds, not just plexCollection)', () => {
+    const raw = {
+      videos: {
+        collections: [
+          { label: 'Music Lessons', plex: ['plex:675686', 'plex:676074'] },
+          { label: 'Music Appreciation', plex: ['plex:675687'] },
+        ],
+        sequential_labels: ['sequential'],
+        engagement_timeout_seconds: 90,
+      },
+    };
+    const cfg = resolvePianoConfig(raw, 'default');
+    expect(cfg.videos.collections).toHaveLength(2);
+    expect(cfg.videos.collections[1].label).toBe('Music Appreciation');
+    expect(cfg.videos.sequential_labels).toEqual(['sequential']);
+    expect(cfg.videos.engagement_timeout_seconds).toBe(90);
+  });
+
   it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
     const raw = {
       screensaver: { timeoutMinutes: 30, quietHours: { start: '22:00', end: '06:00' } },
