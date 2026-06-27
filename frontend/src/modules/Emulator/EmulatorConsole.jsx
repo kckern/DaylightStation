@@ -426,6 +426,7 @@ export function EmulatorConsole({
     let interval = null;
     let cancelled = false;
 
+    const mountedAt = Date.now();
     logger.info('emulator.console.mount', { game: game?.id, system: game?.system });
 
     const engine = fns.createEngine({ logger });
@@ -475,8 +476,15 @@ export function EmulatorConsole({
         const level = volumeLevelRef.current;
         const gameVol = logVolumeFromLevel(level);
         mixer.setBusVolume?.('game', gameVol);
-        logger.info('emulator.console.volume-applied', { reason: 'boot', level, volume: gameVol, bus: 'game' });
-        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
+        logger.info('emulator.console.volume-applied', {
+          reason: 'boot',
+          level,
+          volume: gameVol,
+          bus: 'game',
+          isDefault: level === DEFAULT_VOLUME_LEVEL,
+        });
+        const audioCtxState = runtimeRef.current?.engine?.getAudioContextState?.() ?? 'unavailable';
+        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase, audioContext: audioCtxState });
 
         // Success = OBSERVED, not resolved: confirm the game actually rendered a
         // frame. A booted-but-blank screen (e.g. a stale single-instance reuse)
@@ -540,7 +548,8 @@ export function EmulatorConsole({
 
     return () => {
       cancelled = true;
-      logger.info('emulator.console.unmount', { game: game?.id });
+      const playDurationMs = Date.now() - mountedAt;
+      logger.info('emulator.console.unmount', { game: game?.id, playDurationMs });
       if (interval) clearInterval(interval);
       if (typeof unsub === 'function') unsub();
       if (animTimerRef.current) {

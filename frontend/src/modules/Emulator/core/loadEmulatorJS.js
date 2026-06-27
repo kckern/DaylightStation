@@ -90,6 +90,7 @@ const loadKey = (core, romUrl) => `${core}::${romUrl}`;
  * (no silent blank screen).
  */
 export function resetEmulatorJSLoader(win = (typeof window !== 'undefined' ? window : undefined)) {
+  log().info('load.loader-reset', { loadedKey: _loadedKey });
   _loadPromise = null;
   _loadedKey = null;
   if (!win) return;

@@ -90,10 +90,10 @@ export function createEmulatorSession({
     if (playable === lastPlayable) return; // only act on a flip
     lastPlayable = playable;
     if (playable) {
-      childLog.debug('emulator.governance.resume', {});
+      childLog.info('emulator.governance.resume', {});
       engine.resume();
     } else {
-      childLog.debug('emulator.governance.pause', {});
+      childLog.info('emulator.governance.pause', {});
       engine.pause();
     }
   }

@@ -86,6 +86,9 @@ export function createWramCalibrator({
   const warn = logger && typeof logger.warn === 'function'
     ? logger.warn.bind(logger)
     : () => {};
+  const info = logger && typeof logger.info === 'function'
+    ? logger.info.bind(logger)
+    : () => {};
 
   async function calibrate() {
     // 1. Ping: write each signature byte to scratchAddr + i.
@@ -108,6 +111,7 @@ export function createWramCalibrator({
     if (matches.length === 1) {
       const matchIndex = matches[0];
       const wramBase = matchIndex - (scratchAddr - SCRATCH_BASE);
+      info('wram-calibrate-ok', { wramBase, matchIndex, system });
       return { wramBase, matchIndex };
     }
 
