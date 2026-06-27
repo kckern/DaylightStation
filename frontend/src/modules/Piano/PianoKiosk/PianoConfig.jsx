@@ -92,7 +92,10 @@ export function resolvePianoConfig(raw, pianoId) {
     device: p.device ?? shared.device ?? null,   // hardware profile id, e.g. 'suzuki-mdg-400'
     voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
     instruments: p.instruments || shared.instruments || PIANO_CONFIG_DEFAULTS.instruments,
-    videos: { plexCollection: p.videos?.plexCollection ?? shared.videos?.plexCollection ?? null },
+    // Whole videos block (per-piano overrides shared), so collection tabs,
+    // sequential_labels, thresholds, etc. all reach the frontend — not just
+    // plexCollection. Default floor keeps the { plexCollection } shape.
+    videos: { ...PIANO_CONFIG_DEFAULTS.videos, ...(shared.videos || {}), ...(p.videos || {}) },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],
