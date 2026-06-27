@@ -143,6 +143,16 @@ describe('mergeKnown (OS-level BT inventory merge)', () => {
     const { known } = computeStatus([], withAddr, { btInventory: bt });
     expect(known.find((k) => k.id === '8bitdo_sn30').os).toEqual({ connected: true, battery: 42 });
   });
+
+  it('carries the controller address onto the known row', () => {
+    const rows = mergeKnown([{ id: 'a', label: '8BitDo', address: 'AA:BB:CC:DD:EE:FF' }], [], null);
+    expect(rows[0].address).toBe('AA:BB:CC:DD:EE:FF');
+  });
+
+  it('address is null when the config has none', () => {
+    const rows = mergeKnown([{ id: 'b', label: 'Pad' }], [], null);
+    expect(rows[0].address).toBe(null);
+  });
 });
 
 describe('useGamepadStatus (hook)', () => {

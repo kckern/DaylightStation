@@ -209,4 +209,64 @@ describe('ControllerStatus', () => {
       expect(onPair).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('forget affordance', () => {
+    const ctrlsWithAddr = [
+      { id: '8bitdo_sn30', label: '8BitDo SN30 Pro', match: '8BitDo', address: 'AA:BB:CC:DD:EE:FF' },
+    ];
+    const btInventory = [
+      { address: 'aa:bb:cc:dd:ee:ff', name: '8BitDo', connected: true, battery: 75 },
+    ];
+    const getGamepads = () => [pad({ index: 0, id: '8BitDo SN30 Pro' })];
+
+    it('renders a Forget button for a known row with an address and calls onForget with that address', () => {
+      const onForget = vi.fn();
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={ctrlsWithAddr}
+            getGamepads={getGamepads}
+            btInventory={btInventory}
+            onForget={onForget}
+          />,
+        ));
+      });
+      const button = container.querySelector('[data-controller-id="8bitdo_sn30"] .ccs-forget-button');
+      expect(button).toBeTruthy();
+      act(() => button.click());
+      expect(onForget).toHaveBeenCalledTimes(1);
+      expect(onForget).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF');
+    });
+
+    it('renders no Forget button when onForget is absent (backward-compatible)', () => {
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={ctrlsWithAddr}
+            getGamepads={getGamepads}
+            btInventory={btInventory}
+          />,
+        ));
+      });
+      expect(container.querySelector('.ccs-forget-button')).toBeNull();
+    });
+
+    it('renders no Forget button for a row with no address even when onForget is provided', () => {
+      const onForget = vi.fn();
+      const noAddr = [{ id: 'xbox', label: 'Xbox Wireless', match: 'Xbox' }];
+      let container;
+      act(() => {
+        ({ container } = render(
+          <ControllerStatus
+            controllers={noAddr}
+            getGamepads={() => [pad({ index: 0, id: 'Xbox' })]}
+            onForget={onForget}
+          />,
+        ));
+      });
+      expect(container.querySelector('[data-controller-id="xbox"] .ccs-forget-button')).toBeNull();
+    });
+  });
 });

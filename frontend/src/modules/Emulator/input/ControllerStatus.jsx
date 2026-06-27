@@ -65,8 +65,11 @@ export function pairButtonState(pairing) {
  *   provided, render a "Pair controller" button that calls this on click.
  * @param {{ phase?: string, device?: object, message?: string, paired?: Array }} [props.pairing]
  *   optional live pairing status driving the button's label/disabled state.
+ * @param {Function} [props.onForget]          (address: string) => void | Promise<void>.
+ *   When provided, render a per-controller "Forget" button on each known row that
+ *   has a MAC `address`; clicking it calls this with that address (unpair).
  */
-export function ControllerStatus({ controllers = [], getGamepads, btInventory, onPair, pairing }) {
+export function ControllerStatus({ controllers = [], getGamepads, btInventory, onPair, pairing, onForget }) {
   const { connected, known } = useGamepadStatus(controllers, { getGamepads, btInventory });
 
   // Show the OS column only when a BT inventory feed is actually present.
@@ -127,6 +130,23 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
                     ? `BT: connected${k.os.battery != null ? ` · ${k.os.battery}%` : ''}`
                     : 'BT: off'}
                 </span>
+              ) : null}
+              {typeof onForget === 'function' && k.address ? (
+                <button
+                  type="button"
+                  className="ccs-forget-button"
+                  aria-label={`Forget ${k.label}`}
+                  onClick={() => {
+                    try {
+                      logger().info('controller-status.forget-click', { id: k.id });
+                    } catch {
+                      /* logging must never break the forget action */
+                    }
+                    onForget(k.address);
+                  }}
+                >
+                  Forget
+                </button>
               ) : null}
             </li>
           ))}
