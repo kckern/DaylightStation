@@ -197,6 +197,39 @@ describe('loadEmulatorConfig', () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
+  it('defaults native resolution to 160×144 for a gb-core game', () => {
+    const cfg = loadEmulatorConfig({ emulationDir: '/x', readManifests: () => ([
+      { system: 'gb', manifest: { system: 'gb', core: { ejs_core: 'gb' }, games: [{ id: 'pkmn', rom: 'r.gb' }] } },
+    ]) });
+    expect(cfg.games[0].native).toEqual({ width: 160, height: 144 });
+  });
+
+  it('auto-defaults native resolution to 240×160 for a per-game gba core', () => {
+    const cfg = loadEmulatorConfig({ emulationDir: '/x', readManifests: () => ([
+      { system: 'gb', manifest: { system: 'gb', core: { ejs_core: 'gb' }, games: [
+        { id: 'msc', rom: 'msc.gba', core: 'gba' },
+      ] } },
+    ]) });
+    expect(cfg.games[0].native).toEqual({ width: 240, height: 160 });
+  });
+
+  it('honors an explicit per-game native override over the core default', () => {
+    const cfg = loadEmulatorConfig({ emulationDir: '/x', readManifests: () => ([
+      { system: 'gb', manifest: { system: 'gb', core: { ejs_core: 'gb' }, games: [
+        { id: 'odd', rom: 'odd.gb', native: { width: 256, height: 224 } },
+      ] } },
+    ]) });
+    expect(cfg.games[0].native).toEqual({ width: 256, height: 224 });
+  });
+
+  it('honors a system-level native default when no per-game core/native', () => {
+    const cfg = loadEmulatorConfig({ emulationDir: '/x', readManifests: () => ([
+      { system: 'gba', manifest: { system: 'gba', core: { ejs_core: 'gba' }, native: { width: 240, height: 160 }, games: [{ id: 'g', rom: 'g.gba' }] } },
+    ]) });
+    expect(cfg.games[0].native).toEqual({ width: 240, height: 160 });
+    expect(cfg.systems.gba.native).toEqual({ width: 240, height: 160 });
+  });
+
   it('output is consumable by buildCatalog + resolveGameRules', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
     const { systems, games } = buildCatalog(cfg, { warn() {}, info() {}, debug() {}, error() {} });
