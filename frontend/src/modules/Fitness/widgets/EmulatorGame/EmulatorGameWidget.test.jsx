@@ -199,4 +199,28 @@ describe('EmulatorGameWidget save flow', () => {
       expect(el.getAttribute('data-user')).toBe('soren');
     });
   });
+
+  it('claim as an existing saver warns, then Overwrite turns on persistence', async () => {
+    kiosk.value = true;
+    api.mockImplementation((p) => (p === 'api/v1/emulator/library'
+      ? Promise.resolve(libraryWith('battery'))
+      : Promise.resolve({ users: ['soren'] })));
+    identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'soren' });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await screen.findByTestId('player-select');
+    // Claim the running fresh game; the scanner (soren) already has a save → conflict warning.
+    fireEvent.click(screen.getByTestId('claim'));
+    const overwrite = await screen.findByText('Overwrite');
+    // Still anonymous until the user confirms the overwrite.
+    expect(screen.getByTestId('console').getAttribute('data-persist')).toBe('0');
+    fireEvent.click(overwrite);
+    await waitFor(() => {
+      const el = screen.getByTestId('console');
+      expect(el.getAttribute('data-persist')).toBe('1');
+      expect(el.getAttribute('data-user')).toBe('soren');
+    });
+  });
 });
