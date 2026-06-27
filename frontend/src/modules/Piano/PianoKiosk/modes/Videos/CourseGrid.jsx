@@ -22,7 +22,7 @@ function showsFirst(items) {
     .map(([it]) => it);
 }
 
-/** Dedupe + show-first a collection's items; null passes through (still loading). */
+/** Dedupe + show-first a merged item list; null passes through (still loading). */
 function coursesOf(items) {
   if (!Array.isArray(items)) return null;
   const seen = new Set();
@@ -38,20 +38,23 @@ function CollectionFetcher({ collection, onData }) {
   return null;
 }
 
+const itemsFromPayload = (p) => (Array.isArray(p) ? p : (p?.items ?? null));
+const titleFromPayload = (p) => (p && !Array.isArray(p) ? p.title : null);
+
 /**
- * Grid of the configured collections' courses; tap one to open its lectures.
+ * Grid of the configured course collections; tap one to open its lectures.
  *
- * `collection` is either a single Plex collection ratingKey (`plex:`-prefix
- * optional) OR a list of them (piano config `videos.plexCollection` may be an
- * array). Each collection becomes a TAB labeled by its Plex collection name
- * (e.g. "Music Lessons" / "Piano Courses"); the active tab shows that
- * collection's courses with multi-season shows sorted first. A single configured
- * collection renders as a plain grid with no tab bar.
+ * `groups` is an ordered list of `{ label, collections }`. Each group is one TAB
+ * whose poster wall MERGES every collection it lists (multi-season shows sorted
+ * first). A tab's label is its explicit `label`, else — for a single-collection
+ * group — the collection's Plex name, else a positional fallback. A single group
+ * renders as a plain grid with no tab bar.
  */
-export default function CourseGrid({ collection, onSelect }) {
-  const collections = useMemo(
-    () => (Array.isArray(collection) ? collection : [collection]).filter(Boolean),
-    [collection],
+export default function CourseGrid({ groups = [], onSelect }) {
+  // Every distinct collection across all groups is fetched once.
+  const allCollections = useMemo(
+    () => [...new Set(groups.flatMap((g) => g.collections || []))],
+    [groups],
   );
 
   // collectionId -> { title, items } (null while loading).
@@ -62,52 +65,61 @@ export default function CourseGrid({ collection, onSelect }) {
   useEffect(() => {
     setByCollection((m) => {
       const next = {};
-      for (const c of collections) if (c in m) next[c] = m[c];
+      for (const c of allCollections) if (c in m) next[c] = m[c];
       return next;
     });
-  }, [collections]);
+  }, [allCollections]);
 
-  // Active tab tracked by collection id so it survives re-fetches; falls back to
-  // the first collection if the active one is removed from config.
-  const [activeCol, setActiveCol] = useState(null);
-  const active = (activeCol && collections.includes(activeCol)) ? activeCol : (collections[0] || null);
-  const multi = collections.length > 1;
+  const [activeIdx, setActiveIdx] = useState(0);
+  const idx = groups.length ? Math.min(activeIdx, groups.length - 1) : 0;
+  const activeGroup = groups[idx] || null;
+  const multi = groups.length > 1;
 
-  const payloadOf = (c) => byCollection[c];
-  const titleOf = (c) => { const p = payloadOf(c); return (p && !Array.isArray(p) && p.title) || null; };
-  const itemsOf = (c) => { const p = payloadOf(c); return Array.isArray(p) ? p : (p?.items ?? null); };
+  // Merge the active group's collections. Loading (null) until every collection
+  // in the group has reported, so the wall doesn't flash a partial set.
+  const merged = useMemo(() => {
+    if (!activeGroup) return null;
+    const payloads = activeGroup.collections.map((c) => byCollection[c]);
+    if (payloads.some((p) => p == null)) return null;
+    return payloads.flatMap((p) => itemsFromPayload(p) || []);
+  }, [activeGroup, byCollection]);
+  const courses = useMemo(() => coursesOf(merged), [merged]);
 
-  const courses = useMemo(() => coursesOf(active ? itemsOf(active) : null), [active, byCollection]); // eslint-disable-line react-hooks/exhaustive-deps
+  const labelFor = (g, i) => {
+    if (g.label) return g.label;
+    if (g.collections.length === 1) return titleFromPayload(byCollection[g.collections[0]]) || `Courses ${i + 1}`;
+    return `Courses ${i + 1}`;
+  };
 
-  const noCollections = collections.length === 0;
-  const loading = !noCollections && courses === null;
-  const empty = !noCollections && Array.isArray(courses) && courses.length === 0;
+  const noGroups = groups.length === 0;
+  const loading = !noGroups && courses === null;
+  const empty = !noGroups && Array.isArray(courses) && courses.length === 0;
 
   return (
     <section className="piano-mode piano-mode--videos">
-      {collections.map((c) => (
+      {allCollections.map((c) => (
         <CollectionFetcher key={c} collection={c} onData={onData} />
       ))}
 
       {multi && (
         <div className="piano-course-tabs" role="tablist" aria-label="Course collections">
-          {collections.map((c, i) => (
+          {groups.map((g, i) => (
             <button
-              key={c}
+              key={g.label || g.collections.join(',') || i}
               type="button"
               role="tab"
-              aria-selected={c === active}
-              className={`piano-course-tab${c === active ? ' is-active' : ''}`}
-              onClick={() => setActiveCol(c)}
+              aria-selected={i === idx}
+              className={`piano-course-tab${i === idx ? ' is-active' : ''}`}
+              onClick={() => setActiveIdx(i)}
             >
-              {titleOf(c) || `Courses ${i + 1}`}
+              {labelFor(g, i)}
             </button>
           ))}
         </div>
       )}
 
       <div className="piano-course-tabpanel" role={multi ? 'tabpanel' : undefined}>
-        {noCollections && <PianoEmpty message="No video library has been set up yet." />}
+        {noGroups && <PianoEmpty message="No video library has been set up yet." />}
         {loading && <PianoEmpty loading />}
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
