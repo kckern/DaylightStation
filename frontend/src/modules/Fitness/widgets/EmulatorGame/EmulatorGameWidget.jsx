@@ -198,6 +198,11 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
         onExit={onClose}
         resolveMediaUrl={(p) => DaylightMediaPath(p)}
         inputEnabled={view === 'arcade'}
+        controllers={library.input?.controllers || []}
+        btInventory={fitnessContext?.btInventory}
+        controllerPairing={fitnessContext?.controllerPairing}
+        onPairController={fitnessContext?.pairController}
+        onForgetController={fitnessContext?.forgetController}
       />
       <UnlockPrompt
         open={view === 'identify'}

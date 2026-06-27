@@ -22,6 +22,60 @@
   }
 }
 
+// Controller connection indicator: a non-intrusive pill in the top-right corner
+// that toggles a popover with the full controller status / pair / forget panel.
+.emu-controller-indicator {
+  position: absolute;
+  top: 1.6vh;
+  right: 2vw;
+  z-index: 20;
+
+  // Emphasis comes from color/glow — NOT a new typeface (Roboto Condensed is canon).
+  .emu-controller-chip {
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-size: 1.7vh;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.8vh 1.6vh;
+    border-radius: 3vh;
+    border: 1px solid #2a2f40;
+    background: #161922;
+    color: #6b7080;            // dim grey = no controller
+    cursor: pointer;
+    transition: color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+
+    &:hover { border-color: #3a4156; }
+    &:focus-visible { outline: none; box-shadow: 0 0 0 0.3vh rgba(124, 131, 255, 0.4); }
+  }
+
+  // Connected: green text + glow.
+  &[data-connected='1'] .emu-controller-chip {
+    color: #4ade80;
+    border-color: #2f6f4a;
+    box-shadow: 0 0 1.2vh rgba(74, 222, 128, 0.35);
+    text-shadow: 0 0 0.8vh rgba(74, 222, 128, 0.55);
+  }
+}
+
+// Popover panel under the chip, above the grid.
+.emu-controller-panel {
+  position: absolute;
+  top: calc(100% + 1vh);
+  right: 0;
+  z-index: 30;
+  min-width: 34vh;
+  max-width: 80vw;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 1.6vh 1.8vh;
+  border-radius: 1.2vh;
+  border: 1px solid #262a38;
+  background: #12141b;
+  box-shadow: 0 1.2vh 3vh rgba(0, 0, 0, 0.65);
+  color: #e8e8ee;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+}
+
 // Grid wrapper keeps the grid block centered even when it doesn't fill the row.
 .emu-grid-wrap {
   display: flex;
