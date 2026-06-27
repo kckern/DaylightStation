@@ -1943,6 +1943,20 @@ refresh_loop() {
             mac=$(jq -r '.mac' <<< "$device_json")
             tag=$(device_tag "$slot" "$mac" "$name")
             queue=$(selected_queue "$device_json")
+            # Armed slots (scheduled fires / POST /api/play) override the
+            # device's schedule-correct static queue — identical to the
+            # override membership_tick applies. Without this, refresh_loop
+            # re-fetched the SCHEDULED queue and clobbered an active override
+            # every REFRESH_INTERVAL, while membership_loop yanked it back
+            # every MEMBERSHIP_INTERVAL — the two loops fought and an
+            # explicit override "reverted" to the scheduled queue on a ~5 min
+            # cycle. The .armed.json sentinel keeps the override durable
+            # without ever mutating config.
+            if is_armed_for_play "$slot"; then
+                local armed_queue
+                armed_queue=$(armed_field "$slot" "queue")
+                [[ -n "$armed_queue" ]] && queue=$(resolve_queue_url "$armed_queue")
+            fi
             shuffle=$(selected_shuffle "$device_json")
             local dir=$(slot_dir "$slot")
 
