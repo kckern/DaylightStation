@@ -8,7 +8,7 @@ import { ArcadeShell } from '../../../Emulator/ui/ArcadeShell.jsx';
 import { PlayerSelect } from '../../../Emulator/ui/PlayerSelect.jsx';
 import { buildEjsControls } from '../../../Emulator/input/buildEjsControls.js';
 import { createSaveClient } from '../../../Emulator/core/saveClient.js';
-import { supportsSave, freshLaunch, loadLaunch, claimLaunch } from '../../../Emulator/core/launchModel.js';
+import { supportsSave, freshLaunch, loadLaunch } from '../../../Emulator/core/launchModel.js';
 import { buildFitnessGameGate } from './fitnessGameGate.js';
 import { useIdentity } from '../../identity/IdentityProvider';
 import UnlockPrompt from '../../player/overlays/UnlockPrompt.jsx';
