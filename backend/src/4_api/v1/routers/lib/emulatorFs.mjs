@@ -149,6 +149,45 @@ export async function deleteBinary(absPath) {
 }
 
 /**
+ * Directory names (only) under `dir`, or [] if it doesn't exist.
+ */
+function userDirs(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List user slugs that have a save for {system}/{gameId} — either a battery
+ * `.srm` under saves/{user}/ or a non-empty state dir under states/{user}/.
+ * Sorted + deduped. Used by GET /saves to populate the "Continue as…" row.
+ */
+export function listSaveUsers(emulationDir, system, gameId) {
+  safeSegment(system);
+  safeSegment(gameId);
+  const users = new Set();
+
+  const savesRoot = path.join(emulationDir, system, 'saves');
+  for (const user of userDirs(savesRoot)) {
+    if (fs.existsSync(path.join(savesRoot, user, `${gameId}.srm`))) users.add(user);
+  }
+
+  const statesRoot = path.join(emulationDir, system, 'states');
+  for (const user of userDirs(statesRoot)) {
+    const gameDir = path.join(statesRoot, user, gameId);
+    try {
+      if (fs.statSync(gameDir).isDirectory() && fs.readdirSync(gameDir).length > 0) users.add(user);
+    } catch { /* absent */ }
+  }
+
+  return Array.from(users).sort();
+}
+
+/**
  * Scan emulationDir/*\/ for the per-system YAML manifest and parse it.
  * Returns an array of { system, manifest } for loadEmulatorConfig.
  * The system id is taken from the manifest's own `system` field (falling back
