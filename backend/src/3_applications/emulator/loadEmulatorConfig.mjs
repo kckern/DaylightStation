@@ -3,6 +3,29 @@ import { mergePresentation } from './mergePresentation.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 
+// EmulatorJS core → native framebuffer resolution. The dot-matrix grid + the
+// integer-locked screen box must scale to the ACTUAL game resolution, not GB's
+// 160×144, or the LCD cells drift off a GBA title's pixels.
+const CORE_NATIVE = {
+  gb: { width: 160, height: 144 },
+  gbc: { width: 160, height: 144 },
+  gambatte: { width: 160, height: 144 },
+  gba: { width: 240, height: 160 },
+  mgba: { width: 240, height: 160 },
+};
+const DEFAULT_NATIVE = { width: 160, height: 144 };
+
+function resolveNative({ gameNative, systemNative, core }) {
+  if (gameNative && Number.isFinite(gameNative.width) && Number.isFinite(gameNative.height)) {
+    return { width: gameNative.width, height: gameNative.height };
+  }
+  if (systemNative && Number.isFinite(systemNative.width) && Number.isFinite(systemNative.height)) {
+    return { width: systemNative.width, height: systemNative.height };
+  }
+  const key = typeof core === 'string' ? core.toLowerCase() : core;
+  return CORE_NATIVE[key] || DEFAULT_NATIVE;
+}
+
 /**
  * Load + normalize per-system emulator manifests into the in-memory `cfg`
  * shape consumed by buildCatalog/resolveGameRules.
@@ -37,6 +60,9 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
     systems[systemId] = {
       core: manifest.core?.ejs_core || manifest.core?.name || systemId,
       label: manifest.label || systemId,
+      native: manifest.native && Number.isFinite(manifest.native.width) && Number.isFinite(manifest.native.height)
+        ? { width: manifest.native.width, height: manifest.native.height }
+        : null,
     };
 
     const sysDefaults = manifest.defaults ?? {};
@@ -76,6 +102,13 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
         governance: deepMerge(sysDefaults.governance ?? {}, game.governance ?? {}),
         shader: game.shader ?? presentation.shader ?? null,
         chrome: game.chrome ?? presentation.chrome ?? null,
+        // Native framebuffer res for the LCD grid / integer screen box. Per-game
+        // override → system manifest native → core default → 160×144.
+        native: resolveNative({
+          gameNative: game.native,
+          systemNative: manifest.native,
+          core: game.core ?? manifest.core?.ejs_core ?? manifest.core?.name ?? systemId,
+        }),
         // Bezel control surface: system presentation (screen cutout, hotspots,
         // overlays, onscreen controls) merged under the game's own presentation
         // override (by id). The browser reads screen/onscreen_controls from here.
