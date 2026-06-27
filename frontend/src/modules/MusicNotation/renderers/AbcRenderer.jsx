@@ -50,11 +50,13 @@ export function collectStaffNotes(tune) {
  * @param {string} [className='abc-renderer'] - class on the render container
  * @param {boolean} [singleLine=false] - render the whole voice on one horizontal
  *   line (no wrapping) for a teleprompter-style scrolling follow-along
- * @param {boolean} [pinStaff=false] - keep the STAVE fixed in place: after each
- *   paint, translate the SVG so the staff lines' vertical midpoint sits at the
- *   container's center, regardless of how high/low the current note is. Prevents
- *   the "rug pull"/pan-and-scan where ledger lines grow the SVG and shift the
- *   stave. For live chord displays; leave off for scrolling teleprompter drills.
+ * @param {boolean} [pinStaff=false] - keep the STAVE fixed and centered: after
+ *   each paint, translate the SVG so the staff lines' midpoint sits at the
+ *   container's center on BOTH axes. Vertically this prevents the "rug pull"
+ *   where ledger lines grow the SVG and shift the stave; horizontally it
+ *   counters abcjs left-aligning the music inside a full-width SVG (sparse/empty
+ *   chords would otherwise hug the left). For live chord displays; leave off for
+ *   scrolling teleprompter drills.
  * @param {(tune:object, staffNotes:Array)=>void} [onRender] - post-paint hook
  */
 export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, className = 'abc-renderer', singleLine = false, pinStaff = false, onRender }) {
@@ -67,7 +69,13 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
   // over `notes` (a Map rendered as a single chord).
   const notesKey = abc ?? (notes ? Array.from(notes.keys()).sort((a, b) => a - b).join(',') : '');
 
+  // Holds the latest render closure so a ResizeObserver can re-render with current
+  // props (staffwidth + pin both depend on the live container width) without
+  // re-subscribing the observer on every prop change.
+  const renderRef = useRef(() => {});
+
   useLayoutEffect(() => {
+    const render = () => {
     if (!containerRef.current) return;
     try {
       const tune = abc ?? generateAbc(notes, keySignature);
@@ -110,16 +118,33 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
           const cRect = container.getBoundingClientRect();
           let top = Infinity;
           let bottom = -Infinity;
+          let left = Infinity;
+          let right = -Infinity;
           staffEls.forEach((el) => {
             const r = el.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) return;
             top = Math.min(top, r.top);
             bottom = Math.max(bottom, r.bottom);
+            left = Math.min(left, r.left);
+            right = Math.max(right, r.right);
           });
           if (Number.isFinite(top) && Number.isFinite(bottom)) {
-            const staffMid = (top + bottom) / 2;
-            const containerMid = cRect.top + cRect.height / 2;
-            svg.style.transform = `translateY(${Math.round(containerMid - staffMid)}px)`;
+            const staffMidY = (top + bottom) / 2;
+            const containerMidY = cRect.top + cRect.height / 2;
+            const dy = Math.round(containerMidY - staffMidY);
+            // abcjs sizes the SVG to staffwidth but left-aligns the music and
+            // draws the staff lines only out to the final barline, so a sparse
+            // chord (or empty staff) leaves blank space on the right and reads as
+            // left-aligned. Mirror the vertical pin: measure the staff lines'
+            // horizontal extent and translate so their midpoint lands at the
+            // container's center.
+            let dx = 0;
+            if (Number.isFinite(left) && Number.isFinite(right)) {
+              const staffMidX = (left + right) / 2;
+              const containerMidX = cRect.left + cRect.width / 2;
+              dx = Math.round(containerMidX - staffMidX);
+            }
+            svg.style.transform = `translate(${dx}px, ${dy}px)`;
           }
         }
       }
@@ -131,8 +156,24 @@ export function AbcRenderer({ notes, abc, keySignature = 'C', scale = 1.5, class
       console.error('abcjs render error:', e.message);
       setError(e.message);
     }
+    };
+    renderRef.current = render;
+    render();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesKey, keySignature, scale, singleLine, pinStaff]);
+
+  // When the container resizes (e.g. the player sidebar widens once the video's
+  // aspect ratio resolves and the JS-sized stack settles), a one-shot mount-time
+  // pin would leave the staff off-center. Re-render on resize so the staffwidth
+  // and the horizontal/vertical pin track the live container size. Only for the
+  // pinned live-chord display — the scrolling teleprompter manages its own width.
+  useLayoutEffect(() => {
+    if (!pinStaff || !containerRef.current || typeof ResizeObserver === 'undefined') return undefined;
+    const target = containerRef.current.parentElement || containerRef.current;
+    const ro = new ResizeObserver(() => renderRef.current?.());
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [pinStaff]);
 
   if (error) {
     return <span style={{ color: 'red', fontSize: '12px' }}>{error}</span>;
