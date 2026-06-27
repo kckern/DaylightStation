@@ -6,6 +6,7 @@ import { isKioskEnv } from '@/lib/kioskEnv.js';
 import { EmulatorConsole } from '../../../Emulator/EmulatorConsole.jsx';
 import { ArcadeShell } from '../../../Emulator/ui/ArcadeShell.jsx';
 import { PlayerSelect } from '../../../Emulator/ui/PlayerSelect.jsx';
+import { EmulatorToasts } from '../../../Emulator/ui/EmulatorToasts.jsx';
 import { buildEjsControls } from '../../../Emulator/input/buildEjsControls.js';
 import { createSaveClient } from '../../../Emulator/core/saveClient.js';
 import { supportsSave, freshLaunch, loadLaunch } from '../../../Emulator/core/launchModel.js';
@@ -281,6 +282,12 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
 
   return (
     <>
+      {/* Connect/disconnect toasts for known controllers (BlueZ bt_inventory
+          feed); self-portals to <body> so it shows over arcade + in-game. */}
+      <EmulatorToasts
+        btInventory={fitnessContext?.btInventory}
+        controllers={library.input?.controllers || []}
+      />
       <ArcadeShell
         consoles={library.consoles}
         games={library.games}
