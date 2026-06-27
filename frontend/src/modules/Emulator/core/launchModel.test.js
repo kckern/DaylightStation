@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { requiresIdentity, resolveLaunch } from './launchModel.js';
+import { supportsSave, freshLaunch, loadLaunch, claimLaunch } from './launchModel.js';
 
 describe('requiresIdentity', () => {
   it('is false for none, true for state/battery', () => {
@@ -33,5 +34,26 @@ describe('resolveLaunch', () => {
 
   it('defaults to a no-save fresh launch', () => {
     expect(resolveLaunch()).toEqual({ action: 'fresh', persist: false, userId: null });
+  });
+});
+
+describe('new launch model', () => {
+  it('supportsSave is true for state/battery, false otherwise', () => {
+    expect(supportsSave('state')).toBe(true);
+    expect(supportsSave('battery')).toBe(true);
+    expect(supportsSave('none')).toBe(false);
+    expect(supportsSave(undefined)).toBe(false);
+  });
+
+  it('freshLaunch is anonymous + non-persisting', () => {
+    expect(freshLaunch()).toEqual({ action: 'fresh', persist: false, userId: null });
+  });
+
+  it('loadLaunch resumes + persists for the user', () => {
+    expect(loadLaunch('soren')).toEqual({ action: 'resume', persist: true, userId: 'soren' });
+  });
+
+  it('claimLaunch keeps the fresh game + persists for the user', () => {
+    expect(claimLaunch('milo')).toEqual({ action: 'fresh', persist: true, userId: 'milo' });
   });
 });

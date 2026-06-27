@@ -45,4 +45,24 @@ export function resolveLaunch({ saveMode = 'none', userId = null, hasSave = fals
   return { action: hasSave ? 'resume' : 'fresh', persist: true, userId };
 }
 
-export default { SAVE_MODES, requiresIdentity, resolveLaunch };
+/** True when the saveMode supports persistence (state or battery). */
+export function supportsSave(saveMode) {
+  return saveMode === 'state' || saveMode === 'battery';
+}
+
+/** Boot fresh + anonymous. Identity/saving is opt-in post-launch. */
+export function freshLaunch() {
+  return { action: 'fresh', persist: false, userId: null };
+}
+
+/** Load an identified user's existing save → resume + persist. */
+export function loadLaunch(userId) {
+  return { action: 'resume', persist: true, userId };
+}
+
+/** Claim the running fresh game for an identified user → keep playing + persist. */
+export function claimLaunch(userId) {
+  return { action: 'fresh', persist: true, userId };
+}
+
+export default { SAVE_MODES, requiresIdentity, resolveLaunch, supportsSave, freshLaunch, loadLaunch, claimLaunch };
