@@ -167,18 +167,6 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
       }
       return errorResult(null, `unsupported saveMode: ${saveMode}`);
     },
-    /** Persist the resume blob for this game's save mode. Returns a discriminated result. */
-    persist({ system, gameId, user, saveMode, body, slot = DEFAULT_SLOT }) {
-      if (saveMode === 'battery') return putBlob(saveUrl(system, gameId, user), body);
-      if (saveMode === 'state') return putBlob(stateUrl(system, gameId, slot, user), body);
-      return Promise.resolve(errorResult(null, `unsupported saveMode: ${saveMode}`));
-    },
-    /** Erase the resume blob for this game's save mode (reset / start over). */
-    clear({ system, gameId, user, saveMode, slot = DEFAULT_SLOT }) {
-      if (saveMode === 'battery') return deleteBlob(saveUrl(system, gameId, user));
-      if (saveMode === 'state') return deleteBlob(stateUrl(system, gameId, slot, user));
-      return Promise.resolve(errorResult(null, `unsupported saveMode: ${saveMode}`));
-    },
   };
 }
 

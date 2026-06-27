@@ -13,38 +13,6 @@
 
 export const SAVE_MODES = ['none', 'state', 'battery'];
 
-/** A save-enabled game requires identifying the player up front (fingerprint). */
-export function requiresIdentity(saveMode) {
-  return saveMode === 'state' || saveMode === 'battery';
-}
-
-/**
- * Resolve the launch action.
- *
- * @param {object} opts
- * @param {string} opts.saveMode  'none' | 'state' | 'battery'
- * @param {string|null} opts.userId  identified player, or null if anonymous/cancelled
- * @param {boolean} opts.hasSave   whether a stored save exists for this user+game
- * @returns {{ action: 'fresh'|'resume'|'cold', persist: boolean, userId: string|null }}
- *   - action 'fresh'  : boot a new game from power-on
- *   - action 'resume' : load the user's existing save
- *   - action 'cold'   : boot fresh, anonymous, never persist (fingerprint declined)
- *   - persist         : whether progress should be saved on exit / via save actions
- */
-export function resolveLaunch({ saveMode = 'none', userId = null, hasSave = false } = {}) {
-  if (!requiresIdentity(saveMode)) {
-    // No-save game: always anonymous, never persists.
-    return { action: 'fresh', persist: false, userId: null };
-  }
-  if (!userId) {
-    // Save-enabled but no identity (cancelled / unrecognized) → cold start.
-    return { action: 'cold', persist: false, userId: null };
-  }
-  // Identified: resume by default when a save exists, else a fresh game; either
-  // way progress persists under this user.
-  return { action: hasSave ? 'resume' : 'fresh', persist: true, userId };
-}
-
 /** True when the saveMode supports persistence (state or battery). */
 export function supportsSave(saveMode) {
   return saveMode === 'state' || saveMode === 'battery';
@@ -65,4 +33,4 @@ export function claimLaunch(userId) {
   return { action: 'fresh', persist: true, userId };
 }
 
-export default { SAVE_MODES, requiresIdentity, resolveLaunch, supportsSave, freshLaunch, loadLaunch, claimLaunch };
+export default { SAVE_MODES, supportsSave, freshLaunch, loadLaunch, claimLaunch };
