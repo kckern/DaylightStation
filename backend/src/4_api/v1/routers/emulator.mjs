@@ -104,6 +104,7 @@ export function createEmulatorRouter({
   resolveArtPath,
   resolveSavePath,
   resolveStatePath,
+  listSaveUsers,
   publishBtPair = () => { logger.warn('emulator.bt_pair.no_publisher', {}); },
   makeRequestId = (() => { let n = 0; return () => `btpair-${++n}`; })(),
 }) {
@@ -355,6 +356,30 @@ export function createEmulatorRouter({
   router.delete('/state/:system/:gameId/:slot', (req, res) =>
     deleteUserBlob(req, res, ({ system, gameId, slot, user }) => resolveStatePath(system, gameId, slot, user))
   );
+
+  // ---- GET /saves/:system/:gameId -----------------------------------------
+  // Users who have a save for this game (drives the "Continue as…" row).
+  // Returns [] for none-save games without touching the FS.
+  router.get('/saves/:system/:gameId', (req, res) => {
+    let system, gameId;
+    try {
+      system = safeSegment(req.params.system);
+      gameId = safeSegment(req.params.gameId);
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    if (typeof listSaveUsers !== 'function') return res.json({ users: [] });
+    try {
+      const cfg = loadConfig();
+      const rules = resolveGameRules(cfg, gameId, null) ?? {};
+      const saveMode = rules.saveMode ?? 'none';
+      if (saveMode === 'none') return res.json({ users: [] });
+      res.json({ users: listSaveUsers(system, gameId) });
+    } catch (err) {
+      logger.error('emulator.saves.error', { system, gameId, error: err.message });
+      res.status(500).json({ error: 'internal error' });
+    }
+  });
 
   return router;
 }
