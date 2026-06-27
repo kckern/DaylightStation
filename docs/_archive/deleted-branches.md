@@ -97,3 +97,9 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-22 | feat/piano-music-mode | 92c3dff91 | Piano Music jukebox + Sheet Music shell |
 | 2026-06-22 | feat/piano-kiosk-remediation | c963e082c | Piano kiosk remediation: light mode, never-lose-state, caching, routing, media reliability, design system (merged to main) |
 | 2026-06-26 | feature/governance-four-fixes | eb69e931f | Fitness governance four-issue fixes (merged to main via rebase) |
+| 2026-06-26 | feat/fitness-timelapse-recap-redesign | 0b3e65903 | Wall-clock date+time header + group labels — fully merged to main (0 ahead, 552 behind). Branch deleted. |
+| 2026-06-26 | feat/piano-voice-bridge | fd06b55f5 | Native multi-engine voice APK scaffold + plan doc — fully merged to main (0 ahead, 258 behind). Worktree at DaylightStation-piano-voice-bridge removed; branch deleted. |
+| 2026-06-26 | feature/emulator-console | bc893fa69 | Emulator console handoff + BT pairing chain docs — fully merged to main (0 ahead, 403 behind). Worktree at .worktrees/emulator-console removed; branch deleted. |
+| 2026-06-26 | feature/fitness-session-timelapse | 380650f13 | Session time-lapse runbook + realtime-capture design note — fully merged to main (0 ahead, 727 behind). Branch deleted. |
+| 2026-06-26 | piano/kiosk-perf-and-ble-bridge | 394973ff6 | BLE direct-connect + ADB-replacement HTTP diagnostics — fully merged to main (0 ahead, 219 behind). Local branch deleted (origin/piano/kiosk-perf-and-ble-bridge remote ref left intact). |
+| 2026-06-26 | backup/local-art-pre-eink-push | f3e2d02eb | Stale pre-eink backup (3 ahead, 674 behind). All 3 commits already represented on main: eink panel landed (cherry confirmed); per-image `fit` override superseded by main's cropFocus/cropBandFit "explicit per-work crop overrides" system; recursive scope scan superseded by main's scanScope section-subfolder walk (readWork + sectionsUnchanged). No unique live work — obsolete, dropped. |
