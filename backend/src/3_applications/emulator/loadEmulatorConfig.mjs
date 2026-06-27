@@ -19,7 +19,7 @@ const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
  * @param {object}   [opts.logger]         Logger with warn/info/debug/error.
  * @returns {{ systems: object, games: object[], defaults: object, users: object, input: object|null, consoles: object[] }}
  */
-export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, readConsoles, logger = NOOP_LOGGER }) {
+export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfig, readConsoles, readSettings, logger = NOOP_LOGGER }) {
   const systems = {};
   const games = [];
 
@@ -95,6 +95,14 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
     ? consolesRaw
     : (Array.isArray(consolesRaw?.consoles) ? consolesRaw.consoles : []);
 
+  const rawSettings = (typeof readSettings === 'function' ? readSettings() : null) ?? {};
+  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const settings = {
+    autosaveSeconds: num(rawSettings.autosaveSeconds, 15),
+    idleRelockMinutes: num(rawSettings.idleRelockMinutes, 10),
+    adminGate: rawSettings.adminGate !== false,
+  };
+
   return {
     systems,
     games,
@@ -102,5 +110,6 @@ export function loadEmulatorConfig({ emulationDir, readManifests, readInputConfi
     users: {},
     input,
     consoles,
+    settings,
   };
 }

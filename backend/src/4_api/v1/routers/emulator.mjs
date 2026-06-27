@@ -209,7 +209,7 @@ export function createEmulatorRouter({
           };
         });
 
-      res.json({ systems, consoles, games, input: cfg.input ?? null });
+      res.json({ systems, consoles, games, input: cfg.input ?? null, settings: cfg.settings ?? null });
     } catch (err) {
       if (/unsafe path segment/.test(err.message)) return res.status(400).json({ error: 'bad request' });
       logger.error('emulator.library.error', { error: err.message });

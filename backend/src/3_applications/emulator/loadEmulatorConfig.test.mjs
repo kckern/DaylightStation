@@ -209,6 +209,22 @@ describe('loadEmulatorConfig', () => {
   });
 });
 
+describe('settings', () => {
+  it('defaults when readSettings returns null', () => {
+    const cfg = loadEmulatorConfig({ emulationDir: '/x', readManifests: () => [], readSettings: () => null });
+    expect(cfg.settings).toEqual({ autosaveSeconds: 15, idleRelockMinutes: 10, adminGate: true });
+  });
+
+  it('takes provided values and coerces adminGate:false', () => {
+    const cfg = loadEmulatorConfig({
+      emulationDir: '/x',
+      readManifests: () => [],
+      readSettings: () => ({ autosaveSeconds: 30, idleRelockMinutes: 5, adminGate: false }),
+    });
+    expect(cfg.settings).toEqual({ autosaveSeconds: 30, idleRelockMinutes: 5, adminGate: false });
+  });
+});
+
 describe('presentation passthrough (bezel hotspots + overlays)', () => {
   const withPresentation = {
     ...gameboyManifest,

@@ -193,6 +193,14 @@ describe('createEmulatorRouter', () => {
         { system: null, label: null, placeholder: true },
       ]);
     });
+
+    it('includes settings in the library payload', async () => {
+      const { app } = makeApp({
+        loadConfig: () => ({ ...makeCfg(), settings: { autosaveSeconds: 15, idleRelockMinutes: 10, adminGate: true } }),
+      });
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.body.settings).toEqual({ autosaveSeconds: 15, idleRelockMinutes: 10, adminGate: true });
+    });
   });
 
   describe('GET /rom', () => {
