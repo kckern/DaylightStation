@@ -69,6 +69,27 @@ export function computeScreenBox({ cut, dpr, native }) {
   return { left, top, width, height, cell, scale };
 }
 
+/**
+ * Capture the resume blob(s) for a save mode. Battery captures BOTH a state
+ * snapshot and the .srm; state captures only the snapshot. Returns
+ * { state?, battery? } or null when nothing was captured.
+ */
+function captureForMode(engine, saveMode) {
+  if (saveMode === 'state') {
+    const state = engine.captureState?.();
+    return state ? { state } : null;
+  }
+  if (saveMode === 'battery') {
+    const captured = {};
+    const state = engine.captureState?.();
+    if (state) captured.state = state;
+    const battery = engine.captureSave?.();
+    if (battery) captured.battery = battery;
+    return Object.keys(captured).length ? captured : null;
+  }
+  return null;
+}
+
 function overlayText(status) {
   if (status.state === 'warning') {
     const grace = status.graceMsLeft != null ? ` ${Math.ceil(status.graceMsLeft / 1000)}s` : '';
@@ -97,6 +118,9 @@ export function EmulatorConsole({
   // loadResume/saveResume/clearResume). Drives boot-time resume injection,
   // persist-on-exit, and the reset hotspot. Null ⇒ anonymous, no persistence.
   persistence = null,
+  // Interval in seconds to auto-persist the resume blob while playing.
+  // Keyed on persistence?.persist/userId so claiming post-mount starts it.
+  autosaveSeconds = 15,
   // Now-playing person ({ name, avatarSrc }) for the player overlay, and the
   // launch timestamp for the count-up play timer.
   nowPlaying = null,
@@ -166,6 +190,27 @@ export function EmulatorConsole({
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [playStartedAt]);
+
+  // Continuous autosave: once the session is save-enabled AND user-scoped,
+  // capture + persist the resume blob(s) every autosaveSeconds. Re-runs when
+  // persistence flips active (the claim path), so saving starts without remount.
+  useEffect(() => {
+    if (!autosaveSeconds || !persistence?.persist || !persistence?.userId) return undefined;
+    const id = setInterval(() => {
+      const cur = persistenceRef.current;
+      const eng = runtimeRef.current?.engine;
+      if (!eng || !cur?.persist || !cur?.userId || !cur?.saveResume) return;
+      const captured = captureForMode(eng, cur.saveMode);
+      if (!captured) return;
+      Promise.resolve(cur.saveResume(captured))
+        .then((result) => {
+          if (result?.status === 'ok') logger.debug('emulator.console.autosaved', { saveMode: cur.saveMode });
+          else if (result?.status !== 'skipped') logger.warn('emulator.console.autosave-failed', { saveMode: cur.saveMode, status: result?.status ?? 'unknown' });
+        })
+        .catch((err) => logger.warn('emulator.console.autosave-failed', { error: err && err.message }));
+    }, autosaveSeconds * 1000);
+    return () => clearInterval(id);
+  }, [autosaveSeconds, persistence?.persist, persistence?.userId, persistence?.saveMode, logger]);
 
   // Merge host overlayData with the live now-playing person, play timer, and the
   // coin placeholder so the bezel's player/timer/coins slots resolve.
@@ -395,6 +440,7 @@ export function EmulatorConsole({
     let interval = null;
     let cancelled = false;
 
+    const mountedAt = Date.now();
     logger.info('emulator.console.mount', { game: game?.id, system: game?.system });
 
     const engine = fns.createEngine({ logger });
@@ -444,8 +490,15 @@ export function EmulatorConsole({
         const level = volumeLevelRef.current;
         const gameVol = logVolumeFromLevel(level);
         mixer.setBusVolume?.('game', gameVol);
-        logger.info('emulator.console.volume-applied', { reason: 'boot', level, volume: gameVol, bus: 'game' });
-        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase });
+        logger.info('emulator.console.volume-applied', {
+          reason: 'boot',
+          level,
+          volume: gameVol,
+          bus: 'game',
+          isDefault: level === DEFAULT_VOLUME_LEVEL,
+        });
+        const audioCtxState = runtimeRef.current?.engine?.getAudioContextState?.() ?? 'unavailable';
+        logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase, audioContext: audioCtxState });
 
         // Success = OBSERVED, not resolved: confirm the game actually rendered a
         // frame. A booted-but-blank screen (e.g. a stale single-instance reuse)
@@ -467,8 +520,8 @@ export function EmulatorConsole({
             const result = await p.loadResume();
             if (cancelled) return;
             if (result?.status === 'ok' && result.data) {
-              const ok = engine.loadResume(p.saveMode, result.data);
-              logger.info('emulator.console.resume-loaded', { ok, saveMode: p.saveMode });
+              const ok = engine.loadResume(result.kind || p.saveMode, result.data);
+              logger.info('emulator.console.resume-loaded', { ok, kind: result.kind || p.saveMode });
             } else if (result?.status === 'error') {
               logger.warn('emulator.console.resume-load-failed', { saveMode: p.saveMode, httpStatus: result.httpStatus ?? null });
             } else {
@@ -509,7 +562,8 @@ export function EmulatorConsole({
 
     return () => {
       cancelled = true;
-      logger.info('emulator.console.unmount', { game: game?.id });
+      const playDurationMs = Date.now() - mountedAt;
+      logger.info('emulator.console.unmount', { game: game?.id, playDurationMs });
       if (interval) clearInterval(interval);
       if (typeof unsub === 'function') unsub();
       if (animTimerRef.current) {
@@ -523,20 +577,14 @@ export function EmulatorConsole({
       try {
         const p = persistenceRef.current;
         const eng = runtimeRef.current?.engine;
-        if (p?.persist && p?.saveResume && eng?.captureResume) {
-          const bytes = eng.captureResume(p.saveMode);
-          if (bytes && bytes.length) {
-            logger.info('emulator.console.persist-start', { saveMode: p.saveMode, bytes: bytes.length });
-            Promise.resolve(p.saveResume(bytes))
+        if (p?.persist && p?.saveResume) {
+          const captured = captureForMode(eng, p.saveMode);
+          if (captured) {
+            logger.info('emulator.console.persist-start', { saveMode: p.saveMode });
+            Promise.resolve(p.saveResume(captured))
               .then((result) => {
-                if (result?.status === 'ok') {
-                  logger.info('emulator.console.persisted', { saveMode: p.saveMode, bytes: bytes.length });
-                } else {
-                  logger.warn('emulator.console.persist-failed', {
-                    saveMode: p.saveMode, bytes: bytes.length,
-                    status: result?.status ?? 'unknown', httpStatus: result?.httpStatus ?? null,
-                  });
-                }
+                if (result?.status === 'ok') logger.info('emulator.console.persisted', { saveMode: p.saveMode });
+                else logger.warn('emulator.console.persist-failed', { saveMode: p.saveMode, status: result?.status ?? 'unknown', httpStatus: result?.httpStatus ?? null });
               })
               .catch((err) => logger.warn('emulator.console.persist-failed', { saveMode: p.saveMode, error: err && err.message }));
           } else {

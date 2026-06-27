@@ -11,7 +11,7 @@
 import { readValue } from './memoryRead.js';
 import { evalPredicate } from './memoryPredicates.js';
 
-const NOOP_LOGGER = { warn() {} };
+const NOOP_LOGGER = { warn() {}, debug() {} };
 
 const DEFAULT_SCHEDULER = {
   set: (fn, ms) => setInterval(fn, ms),
@@ -96,6 +96,7 @@ export function createStateMap({
       current[name] = value;
       const had = prev.has(name);
       if (!had || prev.get(name) !== value) {
+        logger.debug?.('emulator.state.change', { name, value });
         prev.set(name, value);
         onState && onState(name, detail);
       }

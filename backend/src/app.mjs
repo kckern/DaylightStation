@@ -1337,6 +1337,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         readManifests: () => emuFs.readManifests(emulationDir),
         readInputConfig: emuFs.makeReadInputConfig(emulationDir),
         readConsoles: emuFs.makeReadConsolesConfig(emulationDir),
+        readSettings: emuFs.makeReadSettingsConfig(emulationDir),
         logger: emuLogger,
       }),
       readBinary: emuFs.readBinary,
@@ -1347,6 +1348,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       resolveArtPath: (cfg, system, gameId, kind) => emuFs.resolveArtPath(emulationDir, cfg, system, gameId, kind),
       resolveSavePath: (system, gameId, user) => emuFs.resolveSavePath(emulationDir, system, gameId, user),
       resolveStatePath: (system, gameId, slot, user) => emuFs.resolveStatePath(emulationDir, system, gameId, slot, user),
+      listSaveUsers: (system, gameId) => emuFs.listSaveUsers(emulationDir, system, gameId),
       // Broadcasts the bt.pair.request bus topic the garage fitness bridge
       // listens for (puts the box into controller-pairing mode without SSH).
       // eventBus is already constructed (above) and in scope here.

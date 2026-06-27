@@ -16,11 +16,11 @@ import { Videos } from './Videos.jsx';
 // CourseDetail now reads the current user from PianoUserProvider (the roster mock
 // below returns no users, so currentUser stays null and the course hook falls back
 // to the device-level fitness show endpoint these tests already mock).
-const renderVideos = (plexCollection, initialEntry = '/videos') => render(
+const renderVideosCfg = (videos, initialEntry = '/videos') => render(
   <MemoryRouter initialEntries={[initialEntry]}>
     <ActivePianoProvider
       pianoId="test"
-      config={{ videos: { plexCollection }, voices: [], midi: {}, inactivityMinutes: 10 }}
+      config={{ videos, voices: [], midi: {}, inactivityMinutes: 10 }}
     >
       <PianoUserProvider pianoId="test">
         <Routes>
@@ -30,6 +30,9 @@ const renderVideos = (plexCollection, initialEntry = '/videos') => render(
     </ActivePianoProvider>
   </MemoryRouter>
 );
+// Legacy convenience: a flat plexCollection (string/null) → a single grid, no tabs.
+const renderVideos = (plexCollection, initialEntry = '/videos') =>
+  renderVideosCfg({ plexCollection }, initialEntry);
 
 beforeEach(() => { api.mockReset(); api.mockResolvedValue({}); __clearPianoListCache(); });
 
@@ -50,6 +53,44 @@ describe('Videos mode', () => {
     expect(await screen.findByTitle('Beethoven Sonatas')).toBeTruthy();
     expect(screen.getByTitle('How to Listen to Opera')).toBeTruthy();
     expect(api).toHaveBeenCalledWith('api/v1/list/plex/440630');
+  });
+
+  it('renders a tab per group; a group merges its collections; tabs switch', async () => {
+    api.mockImplementation((path) => {
+      // "Music Lessons" tab merges two collections...
+      if (path === 'api/v1/list/plex/675686') {
+        return Promise.resolve({ title: 'Music Lessons', items: [{ id: 'plex:1', title: 'How to Play Piano' }] });
+      }
+      if (path === 'api/v1/list/plex/676074') {
+        return Promise.resolve({ title: 'Piano Courses', items: [{ id: 'plex:2', title: 'Hoffman Academy', type: 'show' }] });
+      }
+      // ...the second tab is the appreciation collection.
+      if (path === 'api/v1/list/plex/675687') {
+        return Promise.resolve({ title: 'Music Appreciation', items: [{ id: 'plex:3', title: 'Symphonies of Beethoven' }] });
+      }
+      return Promise.resolve({});
+    });
+
+    renderVideosCfg({
+      collections: [
+        { label: 'Music Lessons', plex: ['plex:675686', 'plex:676074'] },
+        { label: 'Music Appreciation', plex: ['plex:675687'] },
+      ],
+    });
+
+    const lessonsTab = await screen.findByRole('tab', { name: 'Music Lessons' });
+    const apprTab = screen.getByRole('tab', { name: 'Music Appreciation' });
+    expect(lessonsTab.getAttribute('aria-selected')).toBe('true'); // first tab default
+
+    // The Lessons tab MERGES both of its collections (Hoffman sorts first as a show).
+    expect(await screen.findByTitle('Hoffman Academy')).toBeTruthy();
+    expect(screen.getByTitle('How to Play Piano')).toBeTruthy();
+    expect(screen.queryByTitle('Symphonies of Beethoven')).toBeNull();
+
+    // Switching to Appreciation swaps the wall to that collection.
+    fireEvent.click(apprTab);
+    expect(await screen.findByTitle('Symphonies of Beethoven')).toBeTruthy();
+    expect(screen.queryByTitle('Hoffman Academy')).toBeNull();
   });
 
   it('shows a helpful message when no collection is configured', async () => {

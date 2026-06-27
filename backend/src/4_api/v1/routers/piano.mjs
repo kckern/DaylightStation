@@ -262,6 +262,26 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
 
     const playable = await fitnessPlayableService.getPlayableEpisodes(courseId);
 
+    // Surface the unit/season link at the item top-level. The shared playable
+    // service nests it under `metadata.parentId/parentIndex/parentTitle`, but the
+    // frontend's unit grouping (CourseDetail.episodesOf) keys off a top-level
+    // `parentId` that matches the `parents` map. Without this lift, multi-unit
+    // courses (e.g. Hoffman Academy's 18 units) render zero episodes per unit.
+    if (Array.isArray(playable.items)) {
+      playable.items = playable.items.map((it) => {
+        const md = it?.metadata || {};
+        return {
+          ...it,
+          parentId: it.parentId ?? md.parentId ?? null,
+          parentIndex: it.parentIndex ?? md.parentIndex ?? null,
+          parentTitle: it.parentTitle ?? md.parentTitle ?? null,
+          // The episode number (E12 badge) and intra-unit sort key live under
+          // metadata too; lift so the grid can label + order lectures correctly.
+          itemIndex: it.itemIndex ?? md.itemIndex ?? null,
+        };
+      });
+    }
+
     // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared
     // store — known users only; guest/anonymous get the course with no progress.
     if (userId && !isGuest && userVideoProgressStore) {

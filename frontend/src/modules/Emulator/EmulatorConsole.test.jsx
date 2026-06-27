@@ -19,6 +19,11 @@ function makeFactories() {
     captureResume: vi.fn(() => new Uint8Array([1, 2, 3])),
     loadResume: vi.fn(() => true),
     destroy: vi.fn(),
+    captureState: vi.fn(() => new Uint8Array([9, 9])),
+    captureSave: vi.fn(() => new Uint8Array([7])),
+    loadState: vi.fn(() => true),
+    loadSave: vi.fn(() => true),
+    isReady: vi.fn(() => true),
   };
 
   const mixer = {
@@ -302,7 +307,7 @@ describe('EmulatorConsole', () => {
   });
 
   describe('observability: persist-on-exit is never a silent catch', () => {
-    it('persists captured bytes on unmount through the discriminated saveResume', async () => {
+    it('persists captured object on unmount through the discriminated saveResume', async () => {
       const saveResume = vi.fn(() => Promise.resolve({ status: 'error', httpStatus: 503 }));
       const persistence = {
         persist: true, saveMode: 'state', userId: 'p1',
@@ -314,8 +319,12 @@ describe('EmulatorConsole', () => {
       await act(async () => {});
       act(() => unmount());
       await act(async () => {});
-      expect(engine.captureResume).toHaveBeenCalledWith('state');
+      // New path: captureState is called (saveMode 'state'), NOT captureResume.
+      expect(engine.captureState).toHaveBeenCalled();
       expect(saveResume).toHaveBeenCalledTimes(1);
+      // saveResume now receives a captured object { state } instead of raw bytes.
+      const captured = saveResume.mock.calls[0][0];
+      expect(captured).toHaveProperty('state');
       // The failed-save result is handled (logged warn), not thrown/swallowed.
       expect(saveResume.mock.results[0].value).resolves.toEqual({ status: 'error', httpStatus: 503 });
     });
@@ -497,5 +506,39 @@ describe('EmulatorConsole', () => {
       expect(onPairController).toHaveBeenCalledTimes(1);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('autosave', () => {
+  it('persists captured state on the configured interval for a save-enabled session', async () => {
+    vi.useFakeTimers();
+    const { factories } = makeFactories();
+    const saveResume = vi.fn(() => Promise.resolve({ status: 'ok' }));
+    const persistence = {
+      saveMode: 'battery', persist: true, userId: 'soren',
+      loadResume: () => Promise.resolve({ status: 'absent' }),
+      saveResume,
+      clearResume: () => Promise.resolve({ status: 'ok' }),
+    };
+    await act(async () => {
+      render(
+        <EmulatorConsole
+          game={baseGame}
+          engineConfig={{ core: 'gb', controls: {} }}
+          governanceGate={makeGate()}
+          identity={{ getActivePlayerId: () => 'soren' }}
+          persistence={persistence}
+          autosaveSeconds={15}
+          factories={factories}
+        />,
+      );
+      await Promise.resolve(); // let session.start() settle
+    });
+    await act(async () => { vi.advanceTimersByTime(15000); await Promise.resolve(); });
+    expect(saveResume).toHaveBeenCalled();
+    const captured = saveResume.mock.calls[0][0];
+    expect(captured).toHaveProperty('state');
+    expect(captured).toHaveProperty('battery'); // battery captures both
+    vi.useRealTimers();
   });
 });

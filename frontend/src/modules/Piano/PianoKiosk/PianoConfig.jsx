@@ -16,6 +16,8 @@ export const PIANO_CONFIG_DEFAULTS = {
   ],
   instruments: [], // rendered-voice definitions (sfizz/dexed/…); [] = onboard-only
   videos: { plexCollection: null },
+  // Playalong menu — a video collection (backing tracks) reusing the Courses flow.
+  playalong: { plexCollection: null },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
   // Technique-drill collection slug → media/docs/piano-lessons/{collection}/.
@@ -92,7 +94,11 @@ export function resolvePianoConfig(raw, pianoId) {
     device: p.device ?? shared.device ?? null,   // hardware profile id, e.g. 'suzuki-mdg-400'
     voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
     instruments: p.instruments || shared.instruments || PIANO_CONFIG_DEFAULTS.instruments,
-    videos: { plexCollection: p.videos?.plexCollection ?? shared.videos?.plexCollection ?? null },
+    // Whole videos block (per-piano overrides shared), so collection tabs,
+    // sequential_labels, thresholds, etc. all reach the frontend — not just
+    // plexCollection. Default floor keeps the { plexCollection } shape.
+    videos: { ...PIANO_CONFIG_DEFAULTS.videos, ...(shared.videos || {}), ...(p.videos || {}) },
+    playalong: { ...PIANO_CONFIG_DEFAULTS.playalong, ...(shared.playalong || {}), ...(p.playalong || {}) },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],
