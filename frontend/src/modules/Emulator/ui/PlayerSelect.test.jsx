@@ -13,18 +13,18 @@ describe('PlayerSelect', () => {
     const onReopen = vi.fn();
     render(<PlayerSelect visible={false} savers={savers} onReopen={onReopen} />);
     expect(screen.queryByText('Continue as…')).toBeNull();
-    fireEvent.pointerDown(screen.getByLabelText('Players'));
+    fireEvent.click(screen.getByLabelText('Players'));
     expect(onReopen).toHaveBeenCalled();
   });
 
   it('lists savers and fires onLoad / onClaim / onDismiss', () => {
     const onLoad = vi.fn(); const onClaim = vi.fn(); const onDismiss = vi.fn();
     render(<PlayerSelect visible savers={savers} onLoad={onLoad} onClaim={onClaim} onDismiss={onDismiss} />);
-    fireEvent.pointerDown(screen.getByLabelText('Continue as Soren'));
+    fireEvent.click(screen.getByLabelText('Continue as Soren'));
     expect(onLoad).toHaveBeenCalledWith('soren');
-    fireEvent.pointerDown(screen.getByText('Save my game'));
+    fireEvent.click(screen.getByText('Save my game'));
     expect(onClaim).toHaveBeenCalled();
-    fireEvent.pointerDown(screen.getByLabelText('Dismiss'));
+    fireEvent.click(screen.getByLabelText('Dismiss'));
     expect(onDismiss).toHaveBeenCalled();
   });
 

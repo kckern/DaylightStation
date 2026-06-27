@@ -21,7 +21,7 @@ export function PlayerSelect({
         type="button"
         className="emu-player-select__reopen"
         aria-label="Players"
-        onPointerDown={onReopen}
+        onClick={onReopen}
       >
         👥
       </button>
@@ -30,7 +30,7 @@ export function PlayerSelect({
 
   return (
     <div className="emu-player-select" role="dialog" aria-label="Choose a player">
-      <button type="button" className="emu-player-select__dismiss" aria-label="Dismiss" onPointerDown={onDismiss}>✕</button>
+      <button type="button" className="emu-player-select__dismiss" aria-label="Dismiss" onClick={onDismiss}>✕</button>
       <div className="emu-player-select__title">Continue as…</div>
       {message && <div className="emu-player-select__message">{message}</div>}
       <div className="emu-player-select__savers">
@@ -41,14 +41,14 @@ export function PlayerSelect({
             type="button"
             className="emu-player-select__saver"
             aria-label={`Continue as ${s.name}`}
-            onPointerDown={() => onLoad(s.userId)}
+            onClick={() => onLoad(s.userId)}
           >
             <img src={s.avatarSrc} alt="" className="emu-player-select__avatar" />
             <span>{s.name}</span>
           </button>
         ))}
       </div>
-      <button type="button" className="emu-player-select__claim" onPointerDown={onClaim}>Save my game</button>
+      <button type="button" className="emu-player-select__claim" onClick={onClaim}>Save my game</button>
     </div>
   );
 }
