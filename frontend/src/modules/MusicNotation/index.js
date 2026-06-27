@@ -14,6 +14,8 @@ export { diatonicTranspose, expandDrill, handMidiSequence } from './model/drillT
 export { AbcRenderer } from './renderers/AbcRenderer.jsx';
 export { SvgStaffRenderer } from './renderers/SvgStaffRenderer.jsx';
 export { MusicXmlRenderer } from './renderers/MusicXmlRenderer.jsx';
+export { ChordStaffRenderer } from './renderers/ChordStaffRenderer.jsx';
+export { renderChordStaff, midiToVexKey } from './renderers/chordStaff.js';
 export { midiToAbc, generateAbc, generateMelodyAbc } from './renderers/abc.js';
 
 // Facade
