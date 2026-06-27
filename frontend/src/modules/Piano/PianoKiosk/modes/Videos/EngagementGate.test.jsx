@@ -12,6 +12,17 @@ vi.mock('../../../PianoFlashcards/flashcardEngine.js', () => ({
   evaluateMatch: (...a) => evaluateMatch(...a),
 }));
 
+// Render the shared flashcard staff as a stub that surfaces its props.
+vi.mock('../../../components/ActionStaff.jsx', () => ({
+  ActionStaff: ({ targetPitches, matched }) => (
+    <div
+      data-testid="action-staff"
+      data-target={JSON.stringify(targetPitches)}
+      data-matched={String(matched)}
+    />
+  ),
+}));
+
 import EngagementGate from './EngagementGate.jsx';
 
 beforeEach(() => {
@@ -26,11 +37,13 @@ describe('EngagementGate', () => {
     expect(screen.queryByTestId('engagement-gate')).toBeNull();
   });
 
-  it('renders the prompt dialog when open is true', () => {
+  it('renders the prompt dialog with a flashcard staff when open is true', () => {
     render(<EngagementGate open={true} onDismiss={vi.fn()} />);
     expect(screen.getByTestId('engagement-gate')).toBeTruthy();
-    // shows the target note name (C4 for MIDI 60)
-    expect(screen.getByTestId('engagement-gate').textContent).toMatch(/C4/);
+    // renders the shared flashcard staff seeded with the target pitch (MIDI 60)
+    const staff = screen.getByTestId('action-staff');
+    expect(staff).toBeTruthy();
+    expect(staff.getAttribute('data-target')).toBe('[60]');
   });
 
   it('calls onDismiss when the played note matches (correct)', () => {
