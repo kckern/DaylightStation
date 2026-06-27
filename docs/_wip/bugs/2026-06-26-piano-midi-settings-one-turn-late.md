@@ -113,3 +113,33 @@ Notes are intentionally **not** routed through `emitOut` (too high-frequency).
 - `frontend/src/modules/Piano/PianoKiosk/PianoSoundContext.jsx` — `selectVoice` / `setEffect` / `select`.
 - `frontend/src/modules/Piano/PianoKiosk/PianoSettingsSheet.jsx`, `PianoKeyboardPanel.jsx` — the UI.
 - `frontend/src/modules/Piano/PianoKiosk/devices/suzukiMdg400.js` — device voice/effect map.
+
+---
+
+## Resolution (2026-06-27)
+
+**Diagnosis confirmed from logs, NOT the send path.** Correlating `piano.device.voice`
+(intent, `pc`) against `midi.out.voice` (actual byte, `program`) across 7 live voice
+changes showed an EXACT match every time, emitted ~1ms after selection on an open link
+(`conn:"open", state:"connected"`):
+
+| Selected pc | Sent byte | Match |
+|---|---|---|
+| 5 / 4 / 3 / 7 / 4 / 3 / 2 | `c0 05/04/03/07/04/03/02` | ✓ every time |
+
+So the Program Change we transmit already carries the just-selected voice — there is no
+stale-closure / off-by-one in our code. The lateness is **peripheral-side BLE buffering**:
+the Program Change is the LAST message in each selection burst (`b0 7a 7f` local-control,
+then `c0 0X`), and the piano defers the final message of a packet until the next BLE packet
+arrives — so the PC lands "one turn late".
+
+**Fix applied:** `flushOut()` in `useWebMidiBLE.js` re-sends the same Program Change
+`BLE_FLUSH_MS` (30ms) later — a *scheduled* (separate-packet) idempotent duplicate. The
+duplicate's packet flushes the original through so the voice lands on THIS selection; the
+repeat is harmless if the peripheral didn't actually buffer. Applied to both `sendVoice`
+(voice cards) and `sendProgramChange` (onboard-source picker). Logged as `midi.out.flush`
+(debug). Notes are deliberately NOT flushed (too high-frequency).
+
+**Follow-up if confirmed:** effect CCs (`sendControlChange`) likely share the quirk when a
+single CC is the last in a burst; extend the same flush there once instrument changes are
+verified on time.

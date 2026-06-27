@@ -50,6 +50,32 @@ function emitOut(out, bytes, event, extra = {}) {
   return true;
 }
 
+// Delay (ms) before the trailing flush re-send. Must exceed one BLE connection
+// interval (~7.5–30ms on Android) so the flush lands in a SEPARATE BLE packet
+// rather than batching with the original in the same write.
+const BLE_FLUSH_MS = 30;
+
+/**
+ * BLE-MIDI one-turn-late fix. The diagnostic logs proved the Program Change byte
+ * we send already matches the just-selected voice (no stale-closure bug), yet the
+ * piano sounds the PREVIOUS voice until the next interaction. The cause is the
+ * peripheral: it defers the LAST message in a burst until the next BLE packet
+ * arrives, so a Program Change sent on its own never lands on its own turn.
+ *
+ * Re-send the same PC ~one connection-interval later: the duplicate's packet
+ * flushes the original through (voice now lands on THIS selection), and because a
+ * Program Change is idempotent the repeat is harmless if the peripheral didn't
+ * actually buffer. Scheduled (not same-tick) so it's a distinct BLE packet.
+ */
+function flushOut(out, bytes) {
+  setTimeout(() => {
+    try {
+      out.send(bytes);
+      logger().debug('midi.out.flush', { bytes: hex(bytes), conn: out.connection, state: out.state });
+    } catch { /* port may have closed between send and flush — fire-and-forget */ }
+  }, BLE_FLUSH_MS);
+}
+
 /**
  * useWebMidiBLE — the piano kiosk's single MIDI authority over Web MIDI (BLE).
  *
@@ -218,7 +244,10 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   const sendProgramChange = useCallback((program, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
-    return emitOut(out, [0xc0 | (channel & 0x0f), program & 0x7f], 'midi.out.program', { program, channel });
+    const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
+    emitOut(out, bytes, 'midi.out.program', { program, channel });
+    flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
+    return true;
   }, []);
 
   // Local Control (CC 122): false silences the piano's onboard voice so a
@@ -241,7 +270,10 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
       emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
     }
-    return emitOut(out, [0xc0 | (channel & 0x0f), program & 0x7f], 'midi.out.voice', { program, bank, channel });
+    const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
+    emitOut(out, bytes, 'midi.out.voice', { program, bank, channel });
+    flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
+    return true;
   }, []);
 
   // General Control Change out (effects like reverb/chorus, and the monitor's
