@@ -92,7 +92,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
 
         {/* Game canvas — full width */}
         <div className="side-scroller__canvas">
-          <RunnerCanvas world={game.world} scrollSpeed={currentLevelConfig?.scroll_speed ?? 3} invincible={invincible} phase={game.phase} />
+          <RunnerCanvas world={game.world} invincible={invincible} phase={game.phase} theme={game.theme} />
 
           {/* Jump staff — 45° up-right from player */}
           <div className="side-scroller__staff-above" style={{ left: `${(PLAYER_X + 0.12) * 100}%`, opacity: jumpStaffOpacity }}>

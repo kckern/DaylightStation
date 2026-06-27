@@ -55,6 +55,7 @@ public class PianoBridgeService extends Service {
 
     private DeviceConfig config;
     private BleMidiConnector bleConnector;
+    private A2dpConnector a2dpConnector;
 
     private volatile boolean engineRunning = false;
 
@@ -106,6 +107,7 @@ public class PianoBridgeService extends Service {
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
+        if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
         closeMidi();
         if (controlServer != null) {
             controlServer.stop();
@@ -205,7 +207,18 @@ public class PianoBridgeService extends Service {
         } else {
             bleConnector.connectNow();
         }
+
+        // Keep the A2DP speaker (the piano's audio sink) connected so the synth is
+        // audible. Independent of MIDI — runs its own reconnect watchdog.
+        if (a2dpConnector == null) {
+            a2dpConnector = new A2dpConnector(this, config);
+            a2dpConnector.start();
+        } else {
+            a2dpConnector.connectNow();
+        }
     }
+
+    public A2dpConnector getA2dpConnector() { return a2dpConnector; }
 
     /** Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver. */
     private synchronized void connectPort(MidiDevice device) {
@@ -231,6 +244,7 @@ public class PianoBridgeService extends Service {
     public synchronized void reloadConfigAndReconnect() {
         config = DeviceConfig.load(this);
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
+        if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
         closeMidi();
         startBleMidi();
     }

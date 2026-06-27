@@ -119,6 +119,10 @@ public class DeviceConfig {
     public int reconnectDelayMs() { return intOr("reconnectDelayMs", 3000); }
     public int controlPort() { return intOr("controlPort", 8770); }
 
+    /** A2DP speaker target MAC (normalized upper-case), or "" if unset. */
+    public String speakerMac() { return norm(values.get("speakerMac")); }
+    public String speakerName() { return values.getOrDefault("speakerName", "Speaker"); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 

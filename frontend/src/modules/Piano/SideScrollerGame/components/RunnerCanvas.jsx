@@ -2,41 +2,37 @@ import { useMemo } from 'react';
 import {
   GROUND_Y, PLAYER_X, PLAYER_HEIGHT, PLAYER_DUCK_HEIGHT, PLAYER_WIDTH,
 } from '../sideScrollerEngine.js';
+import { getSpriteFrame } from '../sideScrollerTheme.js';
 import './RunnerCanvas.scss';
 
-const SPRITE_URL = '/api/v1/static/img/sprites/megaman-sprites.png';
+/** Normalize displaySize (number | {width,height}) into px CSS values. */
+function spriteSize(displaySize) {
+  if (displaySize && typeof displaySize === 'object') {
+    return { width: `${displaySize.width}px`, height: `${displaySize.height}px` };
+  }
+  return { width: `${displaySize}px`, height: `${displaySize}px` };
+}
 
-// Sprite sheet: 5 columns x 6 rows
-// Col positions: 0%=0, 25%=1, 50%=2, 75%=3, 100%=4
-// Row positions: 0%=0, 20%=1, 40%=2, 60%=3, 80%=4, 100%=5
-const SPRITE_FRAMES = {
-  stand:  '0% 0%',       // row 0, col 0 — passive init pose
-  run1:   '0% 20%',      // row 1, col 0
-  run2:   '25% 20%',     // row 1, col 1
-  run3:   '50% 20%',     // row 1, col 2
-  run4:   '75% 20%',     // row 1, col 3
-  jump:   '100% 0%',     // row 0, col 4
-  duck:   '0% 60%',      // row 3, col 0
-  hit:    '50% 60%',     // row 3, col 2
-};
-
-const RUN_FRAMES = [SPRITE_FRAMES.run1, SPRITE_FRAMES.run2, SPRITE_FRAMES.run3, SPRITE_FRAMES.run4];
-
-function getSpriteFrame(state, worldPos, { idle, invincible } = {}) {
-  if (idle) return SPRITE_FRAMES.stand;
-  if (invincible) return SPRITE_FRAMES.hit;
-  if (state === 'jumping') return SPRITE_FRAMES.jump;
-  if (state === 'ducking') return SPRITE_FRAMES.duck;
-  // Running: cycle through 4 walk frames based on world position
-  const frameIdx = Math.floor((worldPos * 32) % 4);
-  return RUN_FRAMES[frameIdx];
+/** Background style for an obstacle: image skin if `src`, else procedural CSS. */
+function obstacleStyle(skin) {
+  if (skin?.src) {
+    return { backgroundImage: `url(${skin.src})`, backgroundSize: '100% 100%' };
+  }
+  const [from, to] = skin?.fill ?? ['#888', '#555'];
+  const border = skin?.border ?? from;
+  return {
+    background: `linear-gradient(180deg, ${from} 0%, ${to} 100%)`,
+    border: `2px solid ${border}`,
+    boxShadow: `inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 6px ${border}80`,
+  };
 }
 
 /**
- * Renders the side-scroller game world: ground, Mega Man sprite, obstacles.
- * All positions are normalized 0-1 and rendered via percentage CSS.
+ * Renders the side-scroller game world: ground, player sprite, obstacles.
+ * All appearance comes from the resolved `theme`; positions are normalized 0-1
+ * and rendered via percentage CSS.
  */
-export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
+export function RunnerCanvas({ world, invincible, phase, theme }) {
   const playerH = world.playerState === 'ducking' ? PLAYER_DUCK_HEIGHT : PLAYER_HEIGHT;
   const playerTop = (world.playerY - playerH) * 100;
   const playerLeft = PLAYER_X * 100;
@@ -48,14 +44,20 @@ export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
   );
 
   const idle = phase !== 'PLAYING';
-  const spriteFrame = getSpriteFrame(world.playerState, world.worldPos, { idle, invincible });
+  const spriteFrame = getSpriteFrame(world.playerState, world.worldPos, { idle, invincible }, theme);
+
+  const { player, obstacles, background, ground } = theme;
+  const { width: spriteW, height: spriteH } = spriteSize(player.displaySize);
+  const spriteBgSize = `${player.grid.cols * 100}% ${player.grid.rows * 100}%`;
+
+  const canvasBg = background.src ? { backgroundImage: `url(${background.src})` } : { background: background.color };
 
   return (
-    <div className="runner-canvas">
+    <div className="runner-canvas" style={canvasBg}>
       {/* Ground platform */}
       <div
         className="runner-canvas__ground"
-        style={{ top: `${GROUND_Y * 100}%` }}
+        style={{ top: `${GROUND_Y * 100}%`, background: ground.color }}
       />
       <div
         className="runner-canvas__ground-scroll"
@@ -65,7 +67,7 @@ export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
         }}
       />
 
-      {/* Mega Man sprite */}
+      {/* Player sprite */}
       <div
         className={[
           'runner-canvas__player',
@@ -81,8 +83,11 @@ export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
         <div
           className="runner-canvas__sprite"
           style={{
-            backgroundImage: `url(${SPRITE_URL})`,
+            backgroundImage: `url(${player.src})`,
             backgroundPosition: spriteFrame,
+            backgroundSize: spriteBgSize,
+            width: spriteW,
+            height: spriteH,
           }}
         />
       </div>
@@ -93,7 +98,6 @@ export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
           key={i}
           className={[
             'runner-canvas__obstacle',
-            `runner-canvas__obstacle--${ob.type}`,
             ob.hit && 'runner-canvas__obstacle--hit',
           ].filter(Boolean).join(' ')}
           style={{
@@ -101,6 +105,7 @@ export function RunnerCanvas({ world, scrollSpeed, invincible, phase }) {
             top: `${ob.y * 100}%`,
             width: `${ob.width * 100}%`,
             height: `${ob.height * 100}%`,
+            ...obstacleStyle(obstacles[ob.type]),
           }}
         />
       ))}
