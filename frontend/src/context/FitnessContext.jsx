@@ -16,6 +16,7 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/widgets/VibrationApp/constants.js';
 import { buildSelectionConfig } from '../hooks/fitness/selectPrimaryMedia.js';
 import { applyEquipmentCatalogFromConfig } from './fitnessConfigBridge.js';
+import { buildPairRequest, buildRemoveRequest } from './fitnessBtActions.js';
 import { endLiveSession } from '../hooks/fitness/endLiveSession.js';
 import { normalizeToast, dismissMatches } from '../modules/Fitness/player/overlays/fitnessToastSlot.js';
 import { buildRiderToast } from '../modules/Fitness/player/overlays/buildRiderToast.js';
@@ -149,6 +150,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
   const [vibrationState, setVibrationState] = useState({});
+  // Bluetooth game-controller management (Task 3.3)
+  const [btInventory, setBtInventory] = useState(null);
+  const [controllerPairing, setControllerPairing] = useState(null);
+  const btReqRef = useRef(0);
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
@@ -1276,14 +1281,28 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       
       // Subscribe to fitness and vibration topics
       unsubscribe = wsService.subscribe(
-        ['fitness', 'vibration', 'rider_select'],
+        ['fitness', 'vibration', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
         (data) => {
           // Guard against malformed or empty data during reconnect churn
           if (!data || typeof data !== 'object') return;
           if (data.topic === undefined && data.type === undefined) return;
-          
+
           if (data?.topic === 'vibration') {
             handleVibrationEvent(data);
+            return;
+          }
+
+          if (data?.topic === 'bt_inventory') {
+            setBtInventory(Array.isArray(data.devices) ? data.devices : []);
+            return;
+          }
+          if (data?.topic === 'bt.pair.progress') {
+            setControllerPairing(data);
+            return;
+          }
+          if (data?.topic === 'bt.remove.result') {
+            // Forget completed (success/failure surfaced by inventory refresh); log only.
+            getLogger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
             return;
           }
 
@@ -1374,6 +1393,26 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       wsService.disconnect();
       wsService.connect();
     });
+  }, []);
+
+  // Bluetooth game-controller management actions (Task 3.3)
+  const pairController = useCallback((durationMs = 30000) => {
+    const requestId = `pair-${++btReqRef.current}`;
+    setControllerPairing({ phase: 'scanning', durationMs });
+    import('../services/WebSocketService').then(({ wsService }) => {
+      wsService.send(buildPairRequest({ requestId, durationMs }));
+    });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs });
+    return requestId;
+  }, []);
+
+  const forgetController = useCallback((address) => {
+    const requestId = `forget-${++btReqRef.current}`;
+    import('../services/WebSocketService').then(({ wsService }) => {
+      wsService.send(buildRemoveRequest({ requestId, address }));
+    });
+    getLogger().info('fitness.bt.remove-request', { requestId, address });
+    return requestId;
   }, []);
 
   // ═══════════════════════════════════════════════════════════════
@@ -2375,6 +2414,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     
     connected,
     vibrationState,
+    // Bluetooth game-controller management (Task 3.3)
+    btInventory,
+    controllerPairing,
+    pairController,
+    forgetController,
     fitnessDevices,
     // Expose allDevices for backward compatibility (prefer domain selectors below)
     allDevices,
