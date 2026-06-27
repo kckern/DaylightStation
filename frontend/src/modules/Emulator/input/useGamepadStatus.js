@@ -98,6 +98,7 @@ export function mergeKnown(controllersConfig, connected, btInventory) {
     return {
       id: config.id,
       label: config.label ?? config.id,
+      address: config.address ?? null,
       count: Number.isFinite(config.count) ? config.count : 1,
       connectedCount,
       connected: connectedCount > 0,
