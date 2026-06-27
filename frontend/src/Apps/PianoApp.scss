@@ -122,8 +122,19 @@
     color: inherit;
     font: inherit;
     cursor: pointer;
+
+    // Locked during a lesson: visible (who's credited) but not interactive.
+    &--locked {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
   }
   &__username { font-weight: 700; }
+  &__user-lock {
+    display: inline-flex;
+    font-size: 0.85rem;
+    opacity: 0.8;
+  }
 
   /* breadcrumb trail (left): home › mode › …deeper crumbs. Grows + ellipsizes. */
   &__crumbs {

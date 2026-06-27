@@ -115,11 +115,19 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   }, []);
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
-  const { setPlaying: setGlobalPlaying } = usePianoPlayback();
+  const { setPlaying: setGlobalPlaying, setVideoActive } = usePianoPlayback();
   useEffect(() => {
     setGlobalPlaying(isPlaying);
     return () => setGlobalPlaying(false);
   }, [isPlaying, setGlobalPlaying]);
+
+  // Mark the video player mounted (survives pause, unlike `playing`) so the chrome
+  // locks player-switching and the "who's playing?" re-prompt until the lesson is
+  // left — a mid-lesson user change would mis-credit the watch.
+  useEffect(() => {
+    setVideoActive(true);
+    return () => setVideoActive(false);
+  }, [setVideoActive]);
 
   const notes = activeNotes || EMPTY_NOTES;
 
