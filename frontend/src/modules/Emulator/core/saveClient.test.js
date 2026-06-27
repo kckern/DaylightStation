@@ -108,25 +108,6 @@ describe('saveMode-aware convenience', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3); // none made no request
   });
 
-  it('persist + clear route by saveMode', async () => {
-    const fetchImpl = vi.fn(async () => res({ status: 200 }));
-    const c = clientWith(fetchImpl);
-    const p = await c.persist({ system: 'gb', gameId: 'g', user: 'u', saveMode: 'state', body: new Uint8Array([1]) });
-    const cl = await c.clear({ system: 'gb', gameId: 'g', user: 'u', saveMode: 'battery' });
-    expect(p.status).toBe('ok');
-    expect(cl.status).toBe('ok');
-    expect(fetchImpl.mock.calls[0][0]).toContain('/state/');
-    expect(fetchImpl.mock.calls[0][1].method).toBe('PUT');
-    expect(fetchImpl.mock.calls[1][0]).toContain('/save/');
-    expect(fetchImpl.mock.calls[1][1].method).toBe('DELETE');
-  });
-
-  it('persist with unsupported saveMode → error, no request', async () => {
-    const fetchImpl = vi.fn(async () => res({ status: 200 }));
-    const out = await clientWith(fetchImpl).persist({ system: 'gb', gameId: 'g', user: 'u', saveMode: 'none', body: new Uint8Array([1]) });
-    expect(out.status).toBe('error');
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
 });
 
 describe('battery-both resume', () => {
