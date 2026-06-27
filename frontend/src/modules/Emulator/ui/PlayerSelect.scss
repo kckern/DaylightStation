@@ -1,35 +1,51 @@
+// PlayerSelect lives in the grey bezel frame BELOW the game screen, never over
+// gameplay. The screen cutout bottom sits at ~77.5% of the bezel height (manifest
+// presentation.screen: y 10.88% + height 66.667%), so we anchor just under it and
+// center horizontally under the screen — clear of the D-pad (left) and A/B (right).
+// Single-line horizontal bar so it reads as a slim toolbar, not a center-stage modal.
 .emu-player-select {
   position: absolute;
-  top: 1.5rem;
+  top: 79%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  border-radius: 1rem;
-  background: rgba(12, 16, 24, 0.92);
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 52%;            // stay within the central grey frame, clear of side controls
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;      // pill toolbar
+  background: rgba(12, 16, 24, 0.82);
   color: #fff;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  font-family: 'Roboto Condensed', sans-serif;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
 
-  &__title { font-weight: 600; }
-  &__message { color: #ffd27a; font-size: 0.9rem; }
-  &__savers { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-  &__empty { opacity: 0.6; font-size: 0.9rem; }
+  &__title { font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
+  &__message { color: #ffd27a; font-size: 0.8rem; white-space: nowrap; }
+  &__savers { display: flex; flex-direction: row; gap: 0.5rem; }
+  &__empty { opacity: 0.6; font-size: 0.8rem; white-space: nowrap; }
   &__saver {
-    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+    display: flex; flex-direction: row; align-items: center; gap: 0.3rem;
     background: none; border: 0; color: inherit; cursor: pointer;
+    font-family: inherit; font-size: 0.82rem; white-space: nowrap;
   }
-  &__avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #333; }
+  &__avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #333; flex: 0 0 auto; }
   &__claim {
-    align-self: center; padding: 0.5rem 1.25rem; border: 0; border-radius: 999px;
+    padding: 0.3rem 0.9rem; border: 0; border-radius: 999px;
     background: #2f7; color: #042; font-weight: 700; cursor: pointer;
+    font-family: inherit; font-size: 0.82rem; white-space: nowrap; flex: 0 0 auto;
   }
-  &__dismiss { position: absolute; top: 0.5rem; right: 0.75rem; background: none; border: 0; color: #aaa; cursor: pointer; }
+  // ✕ sits at the far right of the row (no longer an absolutely-positioned corner).
+  &__dismiss {
+    order: 99; flex: 0 0 auto;
+    background: none; border: 0; color: #aaa; cursor: pointer; font-size: 0.95rem; line-height: 1;
+  }
 }
+
+// Collapsed affordance — the small re-open pill — sits in the same below-screen spot.
 .emu-player-select__reopen {
-  position: absolute; top: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 40;
-  width: 48px; height: 48px; border-radius: 50%; border: 0; cursor: pointer;
-  background: rgba(12, 16, 24, 0.85); font-size: 1.25rem;
+  position: absolute; top: 79%; left: 50%; transform: translateX(-50%); z-index: 40;
+  width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(12, 16, 24, 0.78); font-size: 1.1rem;
 }
