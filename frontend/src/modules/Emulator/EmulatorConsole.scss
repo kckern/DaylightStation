@@ -484,3 +484,11 @@
   z-index: 2000;
   background: #000;
 }
+
+// Kiosk: the fullscreen emulator is portaled to <body>, escaping the
+// .fitness-app-container.kiosk-ui cursor-hide scope — re-apply it here so the
+// cursor stays hidden over the bezel on the touch-screen kiosk.
+.fitness-emulator-fullscreen.kiosk-ui,
+.fitness-emulator-fullscreen.kiosk-ui * {
+  cursor: none !important;
+}

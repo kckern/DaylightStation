@@ -20,6 +20,16 @@ const ENGINE_PATH = '/api/v1/emulator/engine/';
  * input.yml under each controller). Prefer a controller whose `match` regex hits
  * a connected pad; else the first controller defining an override.
  */
+/**
+ * Class for the portaled fullscreen wrapper. The running emulator is rendered via
+ * createPortal to document.body, so it escapes the `.fitness-app-container.kiosk-ui`
+ * cursor-hide scope. Tagging the wrapper with `kiosk-ui` lets EmulatorConsole.scss
+ * re-apply the cursor-hide rule there.
+ */
+export function fullscreenClass(isKiosk) {
+  return `fitness-emulator-fullscreen${isKiosk ? ' kiosk-ui' : ''}`;
+}
+
 function resolveControllerGamepad(controllers) {
   const list = Array.isArray(controllers) ? controllers : [];
   const pads = (typeof navigator !== 'undefined' && navigator.getGamepads)
@@ -197,7 +207,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
         onCancel={cancelIdentify}
       />
       {view === 'playing' && launch && createPortal(
-        <div className="fitness-emulator-fullscreen">
+        <div className={fullscreenClass(isKioskEnv())}>
           <EmulatorConsole
             game={launch.game}
             engineConfig={launch.engineConfig}

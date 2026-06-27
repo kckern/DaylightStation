@@ -33,7 +33,7 @@ vi.mock('../../player/overlays/UnlockPrompt.jsx', () => ({ default: ({ open }) =
 const saveClient = { loadResume: vi.fn(), persist: vi.fn(), clear: vi.fn() };
 vi.mock('../../../Emulator/core/saveClient.js', () => ({ createSaveClient: () => saveClient }));
 
-import EmulatorGameWidget from './EmulatorGameWidget.jsx';
+import EmulatorGameWidget, { fullscreenClass } from './EmulatorGameWidget.jsx';
 
 const fitnessContext = {
   getUserVitals: () => ({ zoneId: 'warm' }),
@@ -138,6 +138,28 @@ describe('EmulatorGameWidget arcade shell', () => {
     expect(el.getAttribute('data-core')).toBe('gba'); // per-game override, not the system 'gb'
   });
 
+  it('kiosk: the portaled fullscreen wrapper carries kiosk-ui (cursor-hide reaches it)', async () => {
+    kiosk.value = true;
+    api.mockResolvedValue(libraryWith('none')); // no-save game cold-starts straight to playing
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await screen.findByTestId('console');
+    const wrapper = document.querySelector('.fitness-emulator-fullscreen');
+    expect(wrapper).toBeTruthy();
+    expect(wrapper.className).toContain('kiosk-ui');
+  });
+
+  it('off-kiosk: the portaled fullscreen wrapper omits kiosk-ui', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await screen.findByTestId('console');
+    const wrapper = document.querySelector('.fitness-emulator-fullscreen');
+    expect(wrapper.className).not.toContain('kiosk-ui');
+  });
+
   it('releases the gamepad on unmount', async () => {
     api.mockResolvedValue(libraryWith('none'));
     const { unmount } = render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
@@ -147,4 +169,9 @@ describe('EmulatorGameWidget arcade shell', () => {
     unmount();
     expect(window.__emulatorCapturingGamepad).toBeFalsy();
   });
+});
+
+describe('fullscreenClass', () => {
+  it('adds kiosk-ui when kiosk', () => { expect(fullscreenClass(true)).toBe('fitness-emulator-fullscreen kiosk-ui'); });
+  it('omits kiosk-ui when not kiosk', () => { expect(fullscreenClass(false)).toBe('fitness-emulator-fullscreen'); });
 });
