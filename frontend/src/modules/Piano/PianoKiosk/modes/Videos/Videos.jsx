@@ -45,9 +45,13 @@ export function resolveCourseGroups(videos) {
  * Collections come from piano config `videos.collections` (grouped into tabs) or
  * the legacy flat `videos.plexCollection`.
  */
-export function Videos() {
+export function Videos({ source }) {
   const { config } = usePianoKioskConfig();
-  const groups = useMemo(() => resolveCourseGroups(config.videos), [config.videos]);
+  // `source` (a videos-shaped config: { collections } or { plexCollection }) lets
+  // the same grid→detail→player flow back another menu item (e.g. Playalong).
+  // Defaults to the Courses config.
+  const videos = source ?? config.videos;
+  const groups = useMemo(() => resolveCourseGroups(videos), [videos]);
   return (
     <Routes>
       <Route index element={<CourseGridRoute groups={groups} />} />
