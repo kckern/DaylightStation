@@ -39,6 +39,7 @@ export function createHotspotController({
   let paused = false;
 
   const warn = typeof logger?.warn === 'function' ? logger.warn.bind(logger) : () => {};
+  const dbg = typeof logger?.debug === 'function' ? logger.debug.bind(logger) : () => {};
 
   function getState() {
     return { volume, muted, paused };
@@ -53,12 +54,14 @@ export function createHotspotController({
     if (next < 0) next = 1; // wrap from silence back to full
     volume = next;
     mixer.setBusVolume?.('game', volume);
+    dbg('emulator.hotspot.volume', { volume });
     emit();
   }
 
   function toggleMute() {
     muted = !muted;
     mixer.muteBus?.('game', muted);
+    dbg('emulator.hotspot.mute', { muted });
     emit();
   }
 
@@ -66,6 +69,7 @@ export function createHotspotController({
     paused = !paused;
     if (paused) engine.pause?.();
     else engine.resume?.();
+    dbg('emulator.hotspot.pause', { paused });
     emit();
   }
 
@@ -73,11 +77,11 @@ export function createHotspotController({
     volume: stepVolume,
     mute: toggleMute,
     pause: togglePause,
-    save_state: () => saveState?.(),
-    exit: () => onExit?.(),
+    save_state: () => { dbg('emulator.hotspot.save-state', {}); saveState?.(); },
+    exit: () => { dbg('emulator.hotspot.exit', {}); onExit?.(); },
     // "Start over" — the power-switch etching. The console intercepts this to
     // raise a confirm modal before erasing the save + restarting the ROM.
-    reset: () => onReset?.(),
+    reset: () => { dbg('emulator.hotspot.reset', {}); onReset?.(); },
   };
 
   function activate(hotspot) {

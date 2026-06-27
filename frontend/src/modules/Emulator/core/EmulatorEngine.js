@@ -40,6 +40,21 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
    * Boot the emulator. Idempotent: a second call returns the same readiness
    * promise rather than re-loading the single-instance library.
    */
+  /**
+   * Read the Web Audio context state from the running EmulatorJS instance.
+   * EmulatorJS owns the AudioContext at Module.AL.currentCtx.ctx — we probe it
+   * defensively since the path varies across EJS builds.
+   * Returns 'running' | 'suspended' | 'closed' | null (not available).
+   */
+  function getAudioContextState() {
+    if (!ready || !instance) return null;
+    try {
+      return instance?.gameManager?.Module?.AL?.currentCtx?.ctx?.state ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function boot({ mount, romUrl, pathtodata, core = 'gb', controls } = {}) {
     if (bootPromise) return bootPromise;
 
@@ -48,7 +63,8 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
       .then((emu) => {
         instance = emu;
         ready = true;
-        log().info('boot.ready', { core });
+        const audioCtxState = getAudioContextState();
+        log().info('boot.ready', { core, audioContext: audioCtxState });
         return instance;
       })
       .catch((err) => {
@@ -121,7 +137,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     if (!ready) return;
     const clamped = clamp01(v);
     instance.setVolume(clamped);
-    log().debug('set-volume', { volume: clamped });
+    log().debug('set-volume', { volume: clamped, audioContext: getAudioContextState() });
   }
 
   /** Fresh HEAPU8 each call — the WASM heap can be reallocated. */
@@ -307,6 +323,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     pause,
     resume,
     setVolume,
+    getAudioContextState,
     getHeap,
     setCheat,
     resetCheat,

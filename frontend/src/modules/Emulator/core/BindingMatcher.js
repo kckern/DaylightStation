@@ -8,7 +8,7 @@
  * tolerant: unknown actions route to `handlers.log` and nothing throws.
  */
 
-const NOOP_LOGGER = { warn() {} };
+const NOOP_LOGGER = { warn() {}, debug() {} };
 
 /**
  * Parse an `on` expression into a predicate descriptor.
@@ -63,6 +63,7 @@ export function createBindingMatcher({ bindings = [], handlers = {}, logger = NO
   function dispatch(action, payload, context) {
     const handler = handlers[action];
     if (typeof handler === 'function') {
+      logger.debug('emulator.binding.fired', { action, state: context?.state });
       try {
         handler(payload, context);
       } catch (err) {

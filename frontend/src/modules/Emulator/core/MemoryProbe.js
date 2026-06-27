@@ -41,6 +41,9 @@ export function createMemoryProbe({
   const warn = logger && typeof logger.warn === 'function'
     ? logger.warn.bind(logger)
     : () => {};
+  const dbg = logger && typeof logger.debug === 'function'
+    ? logger.debug.bind(logger)
+    : () => {};
 
   // Per-watch state: previous raw value + previous predicate state (edge mem).
   // prevState defaults to false so an initial true predicate fires once.
@@ -78,6 +81,7 @@ export function createMemoryProbe({
       const predicate = evalPredicate(w.when, value, s.prevValue);
       if (predicate && !s.prevPredicate) {
         // Rising edge.
+        dbg('emulator.memory-probe.fired', { id: w.id, addr: w.addr, value });
         onEvent(w.id, { value, prevValue: s.prevValue });
       }
       s.prevPredicate = predicate;

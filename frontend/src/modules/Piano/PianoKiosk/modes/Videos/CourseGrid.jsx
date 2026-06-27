@@ -6,11 +6,13 @@ import CourseTile from './CourseTile.jsx';
 
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
 
+// Pull both the collection's display title and its courses from one /list call.
+const selectCollection = (r) => ({ title: r?.title || null, items: r?.items ?? [] });
+
 /**
  * Stable sort putting multi-season "show" courses first, then everything else
  * (single-season `season`-type courses) in their original order. So a course
- * like Hoffman Academy leads the wall regardless of which collection it came
- * from or where it sits in config.
+ * like Hoffman Academy leads its tab regardless of where it sits in the collection.
  */
 function showsFirst(items) {
   const rank = (it) => (it?.type === 'show' ? 0 : 1);
@@ -20,69 +22,114 @@ function showsFirst(items) {
     .map(([it]) => it);
 }
 
-/** Fetches one collection's courses and reports them up; renders nothing itself. */
-function CollectionFetcher({ collection, onItems }) {
+/** Dedupe + show-first a merged item list; null passes through (still loading). */
+function coursesOf(items) {
+  if (!Array.isArray(items)) return null;
+  const seen = new Set();
+  const uniq = items.filter((it) => (it?.id != null && !seen.has(it.id) ? seen.add(it.id) : false));
+  return showsFirst(uniq);
+}
+
+/** Fetches one collection's `{ title, items }` and reports it up; renders nothing. */
+function CollectionFetcher({ collection, onData }) {
   const ratingKey = ratingKeyOf(collection);
-  const { data } = usePianoList(ratingKey ? `api/v1/list/plex/${ratingKey}` : null);
-  useEffect(() => { onItems(collection, data ?? null); }, [collection, data, onItems]);
+  const { data } = usePianoList(ratingKey ? `api/v1/list/plex/${ratingKey}` : null, selectCollection);
+  useEffect(() => { onData(collection, data ?? null); }, [collection, data, onData]);
   return null;
 }
 
+const itemsFromPayload = (p) => (Array.isArray(p) ? p : (p?.items ?? null));
+const titleFromPayload = (p) => (p && !Array.isArray(p) ? p.title : null);
+
 /**
- * Grid of the configured collection's courses; tap one to open its lectures.
+ * Grid of the configured course collections; tap one to open its lectures.
  *
- * `collection` is either a single Plex collection ratingKey (`plex:`-prefix
- * optional) OR a list of them (piano config `videos.plexCollection` may be an
- * array). The grid concatenates every collection's courses into one poster
- * wall, de-duplicated, with show-type (multi-season) courses sorted first.
+ * `groups` is an ordered list of `{ label, collections }`. Each group is one TAB
+ * whose poster wall MERGES every collection it lists (multi-season shows sorted
+ * first). A tab's label is its explicit `label`, else — for a single-collection
+ * group — the collection's Plex name, else a positional fallback. A single group
+ * renders as a plain grid with no tab bar.
  */
-export default function CourseGrid({ collection, onSelect }) {
-  const collections = useMemo(
-    () => (Array.isArray(collection) ? collection : [collection]).filter(Boolean),
-    [collection],
+export default function CourseGrid({ groups = [], onSelect }) {
+  // Every distinct collection across all groups is fetched once.
+  const allCollections = useMemo(
+    () => [...new Set(groups.flatMap((g) => g.collections || []))],
+    [groups],
   );
 
-  // collectionId -> items (null while loading).
+  // collectionId -> { title, items } (null while loading).
   const [byCollection, setByCollection] = useState({});
-  const onItems = useCallback((c, items) => setByCollection((m) => ({ ...m, [c]: items })), []);
+  const onData = useCallback((c, payload) => setByCollection((m) => ({ ...m, [c]: payload })), []);
 
   // Drop stale collections if config changes.
   useEffect(() => {
     setByCollection((m) => {
       const next = {};
-      for (const c of collections) if (c in m) next[c] = m[c];
+      for (const c of allCollections) if (c in m) next[c] = m[c];
       return next;
     });
-  }, [collections]);
+  }, [allCollections]);
 
-  // Resolved = an array reported (`[]` empty or items); `null` means still loading.
-  const settled = collections.every((c) => Array.isArray(byCollection[c]));
+  const [activeIdx, setActiveIdx] = useState(0);
+  const idx = groups.length ? Math.min(activeIdx, groups.length - 1) : 0;
+  const activeGroup = groups[idx] || null;
+  const multi = groups.length > 1;
+
+  // Merge the active group's collections. Loading (null) until every collection
+  // in the group has reported, so the wall doesn't flash a partial set.
   const merged = useMemo(() => {
-    const all = collections.flatMap((c) => byCollection[c] || []);
-    const seen = new Set();
-    const uniq = all.filter((it) => (it?.id != null && !seen.has(it.id) ? seen.add(it.id) : false));
-    return showsFirst(uniq);
-  }, [collections, byCollection]);
+    if (!activeGroup) return null;
+    const payloads = activeGroup.collections.map((c) => byCollection[c]);
+    if (payloads.some((p) => p == null)) return null;
+    return payloads.flatMap((p) => itemsFromPayload(p) || []);
+  }, [activeGroup, byCollection]);
+  const courses = useMemo(() => coursesOf(merged), [merged]);
 
-  const noCollections = collections.length === 0;
-  const loading = !noCollections && !settled && merged.length === 0;
-  const empty = !noCollections && settled && merged.length === 0;
+  const labelFor = (g, i) => {
+    if (g.label) return g.label;
+    if (g.collections.length === 1) return titleFromPayload(byCollection[g.collections[0]]) || `Courses ${i + 1}`;
+    return `Courses ${i + 1}`;
+  };
+
+  const noGroups = groups.length === 0;
+  const loading = !noGroups && courses === null;
+  const empty = !noGroups && Array.isArray(courses) && courses.length === 0;
 
   return (
     <section className="piano-mode piano-mode--videos">
-      {collections.map((c) => (
-        <CollectionFetcher key={c} collection={c} onItems={onItems} />
+      {allCollections.map((c) => (
+        <CollectionFetcher key={c} collection={c} onData={onData} />
       ))}
-      {noCollections && <PianoEmpty message="No video library has been set up yet." />}
-      {loading && <PianoEmpty loading />}
-      {empty && <PianoEmpty message="No videos found." />}
-      {merged.length > 0 && (
-        <ul className="piano-video-grid piano-video-grid--posters">
-          {merged.map((item) => (
-            <CourseTile key={item.id} item={item} onSelect={onSelect} />
+
+      {multi && (
+        <div className="piano-course-tabs" role="tablist" aria-label="Course collections">
+          {groups.map((g, i) => (
+            <button
+              key={g.label || g.collections.join(',') || i}
+              type="button"
+              role="tab"
+              aria-selected={i === idx}
+              className={`piano-course-tab${i === idx ? ' is-active' : ''}`}
+              onClick={() => setActiveIdx(i)}
+            >
+              {labelFor(g, i)}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
+
+      <div className="piano-course-tabpanel" role={multi ? 'tabpanel' : undefined}>
+        {noGroups && <PianoEmpty message="No video library has been set up yet." />}
+        {loading && <PianoEmpty loading />}
+        {empty && <PianoEmpty message="No videos found." />}
+        {courses && courses.length > 0 && (
+          <ul className="piano-video-grid piano-video-grid--posters">
+            {courses.map((item) => (
+              <CourseTile key={item.id} item={item} onSelect={onSelect} />
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

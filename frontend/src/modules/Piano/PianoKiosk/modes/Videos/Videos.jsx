@@ -8,12 +8,32 @@ import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { lectureContentId } from './lectureMeta.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
 /**
- * Videos mode — passive lectures from a configured Plex collection.
+ * Normalize the videos config into ordered tab groups — each `{ label, collections }`
+ * becomes one tab whose poster wall merges every collection it lists.
+ *
+ * Grouped form (preferred): `videos.collections: [{ label, plex: [...] }, ...]`.
+ * Legacy form: a flat `videos.plexCollection` (string or array) collapses to a
+ * single unlabeled group → a plain grid with no tab bar.
+ */
+export function resolveCourseGroups(videos) {
+  const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
+  if (Array.isArray(videos?.collections) && videos.collections.length) {
+    return videos.collections
+      .map((g) => ({ label: g?.label || null, collections: toList(g?.plex ?? g?.collections) }))
+      .filter((g) => g.collections.length);
+  }
+  const flat = toList(videos?.plexCollection);
+  return flat.length ? [{ label: null, collections: flat }] : [];
+}
+
+/**
+ * Videos mode — passive lectures from configured Plex collections.
  *
  * Routed so the course id and lecture contentId live in the URL (deep-linkable,
  * survives reload, physical/browser Back becomes an "up" gesture):
@@ -23,15 +43,19 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  *
  * All navigation is RELATIVE (navigate('subpath') / navigate('..')) so the mode
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
- * Collection id comes from piano config `videos.plexCollection` (a Plex
- * collection ratingKey, optionally `plex:`-prefixed).
+ * Collections come from piano config `videos.collections` (grouped into tabs) or
+ * the legacy flat `videos.plexCollection`.
  */
-export function Videos() {
+export function Videos({ source }) {
   const { config } = usePianoKioskConfig();
-  const collection = config.videos.plexCollection;
+  // `source` (a videos-shaped config: { collections } or { plexCollection }) lets
+  // the same grid→detail→player flow back another menu item (e.g. Playalong).
+  // Defaults to the Courses config.
+  const videos = source ?? config.videos;
+  const groups = useMemo(() => resolveCourseGroups(videos), [videos]);
   return (
     <Routes>
-      <Route index element={<CourseGridRoute collection={collection} />} />
+      <Route index element={<CourseGridRoute groups={groups} />} />
       <Route path=":courseId" element={<CourseDetailRoute />} />
       <Route path=":courseId/:lectureId" element={<LecturePlayerRoute />} />
     </Routes>
@@ -39,12 +63,12 @@ export function Videos() {
 }
 
 /** Course grid → push the selected course id (relative). */
-function CourseGridRoute({ collection }) {
+function CourseGridRoute({ groups }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const navigate = useNavigate();
   return (
     <CourseGrid
-      collection={collection}
+      groups={groups}
       onSelect={(item) => { logger.info('piano.course-open', { id: item.id }); navigate(idOf(item.id)); }}
     />
   );
@@ -92,9 +116,13 @@ function LecturePlayerRoute() {
   // (an unstable onBack would defeat the memo and remount the video).
   const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
 
-  // Keep the tablet screen awake while a lecture is playing (passive playback
-  // produces no MIDI/touch, which would otherwise trip the screensaver).
-  useKeepScreenAwake('video', true);
+  // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
+  // (passive playback produces no MIDI/touch that would otherwise reset the
+  // screensaver). A paused lecture releases the hold, so an idle paused tab is
+  // allowed to sleep — and a tap/MIDI note wakes it. `playing` is the global
+  // play/pause state PianoVideoPlayer maintains.
+  const { playing } = usePianoPlayback();
+  useKeepScreenAwake('video', playing);
 
   if (lectures === null) return <div className="piano-mode__placeholder">Loading…</div>;
   if (!lecture) {

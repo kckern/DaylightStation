@@ -2565,7 +2565,7 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId);
     if (!Number.isFinite(requiredRank)) return null;
 
-    const isSubject = this._buildSubjectFilter();
+    const isSubject = this._buildSubjectFilter(activeParticipants);
     const metUsers = [];
     let subjectMetCount = 0;
     activeParticipants.forEach((participantId) => {
@@ -2638,7 +2638,7 @@ export class GovernanceEngine {
     const zoneId = challenge.zone;
     const zoneInfo = this._getZoneInfo(zoneId);
     const requiredRank = this._getZoneRank(zoneId) ?? 0;
-    const isSubject = this._buildSubjectFilter();
+    const isSubject = this._buildSubjectFilter(activeParticipants);
 
     const metUsers = [];
     activeParticipants.forEach((participantId) => {
@@ -2695,12 +2695,34 @@ export class GovernanceEngine {
    * is by participant id (the ids that arrive in activeParticipants).
    * @returns {(participantId: string) => boolean}
    */
-  _buildSubjectFilter() {
+  _buildSubjectFilter(activeParticipants) {
+    // Exemptions/guest status are SUSPENDED when no real subject is carrying the
+    // session — everyone becomes a subject so an exempt/guest-only roster cannot
+    // satisfy a requirement without actually meeting the zone (anti-freeload).
+    if (!this._exemptionsApply(activeParticipants)) return () => true;
     const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     const guestIds = new Set(this._latestInputs?.guestIds || []);
     return (participantId) =>
       !guestIds.has(participantId) &&
       !exemptUsers.includes(normalizeName(participantId));
+  }
+
+  /**
+   * Exemptions (and guest non-subject status) only apply while a REAL
+   * participant is carrying the session — i.e. ≥1 active BASELINE subject
+   * (registered, not exempt, not guest) is present. With none, exemptions are
+   * suspended and every participant is governed as a subject. Falls back to the
+   * latest captured roster when called without an explicit list.
+   * @param {string[]} [activeParticipants]
+   * @returns {boolean}
+   */
+  _exemptionsApply(activeParticipants) {
+    const list = Array.isArray(activeParticipants) && activeParticipants.length
+      ? activeParticipants
+      : (this._latestInputs?.activeParticipants || []);
+    const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    return list.some((id) => !guestIds.has(id) && !exemptUsers.includes(normalizeName(id)));
   }
 
   /**
@@ -2711,6 +2733,11 @@ export class GovernanceEngine {
    * @returns {{ subjects: string[], guests: string[], exempt: string[] }}
    */
   _classifyParticipants(activeParticipants = []) {
+    // When exemptions are suspended (no real subject present), everyone is a
+    // subject — mirror that here so diagnostics match the governing decision.
+    if (!this._exemptionsApply(activeParticipants)) {
+      return { subjects: [...activeParticipants], guests: [], exempt: [] };
+    }
     const exemptUsers = (this.config?.exemptions || []).map((u) => normalizeName(u));
     const guestSet = new Set(this._latestInputs?.guestIds || []);
     const subjects = [];
@@ -2729,7 +2756,7 @@ export class GovernanceEngine {
     // denominator — guests/exempt never raise the bar.
     let effectiveCount = totalCount;
     if (Array.isArray(activeParticipants) && activeParticipants.length > 0) {
-      const isSubject = this._buildSubjectFilter();
+      const isSubject = this._buildSubjectFilter(activeParticipants);
       effectiveCount = activeParticipants.filter(isSubject).length;
     }
 

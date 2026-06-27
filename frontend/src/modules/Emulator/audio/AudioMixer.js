@@ -104,7 +104,7 @@ export function createAudioMixer({ setGameVolume, createClip, duck, logger } = {
     musicClip = createClip(url, { loop });
     musicClip.setVolume(effective('music'));
     musicClip.play();
-    debug('audio-mixer.music-play', { url, loop, volume: effective('music') });
+    log.info('audio-mixer.music-play', { url, loop, volume: effective('music') });
     return musicClip;
   }
 
@@ -135,9 +135,9 @@ export function createAudioMixer({ setGameVolume, createClip, duck, logger } = {
         reapply();
         debug('audio-mixer.cue-end', { url, duckDepth });
       });
-      debug('audio-mixer.cue-play', { url, volume: cueVolume, duck: true, duckDepth });
+      log.info('audio-mixer.cue-play', { url, volume: cueVolume, duck: true, duckDepth });
     } else {
-      debug('audio-mixer.cue-play', { url, volume: cueVolume, duck: false });
+      log.info('audio-mixer.cue-play', { url, volume: cueVolume, duck: false });
     }
 
     return clip;
