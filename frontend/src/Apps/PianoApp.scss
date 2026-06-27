@@ -1173,7 +1173,9 @@
   &__mark--a { background: var(--piano-warn); }
   &__mark--b { background: var(--piano-warn-2); }
 
-  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; overflow: hidden; }
+  /* No overflow:hidden here — it would clip the mix flyout, which pops UP out of
+     the row (bottom: 100%). The loop-group clips its own rounded corners. */
+  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
