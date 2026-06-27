@@ -43,7 +43,7 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     const host = mount(new Map());
     const svg = host.querySelector('svg');
     expect(svg).toBeTruthy();
-    expect(Number(svg.getAttribute('width'))).toBeGreaterThan(0);
+    expect(svg.querySelectorAll('path,rect,line').length).toBeGreaterThan(0);
   });
 
   it('renders a chord (treble + bass) in dark ink, not theme foreground', () => {
@@ -56,11 +56,14 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3); // brace + staff + notes
   });
 
-  it('scales the engraving to its container width (responsive re-fit)', () => {
-    const narrow = mount(new Map([[60, {}]]), 'C', 160);
-    const wide = mount(new Map([[60, {}]]), 'C', 480);
-    const w1 = Number(narrow.querySelector('svg').getAttribute('width'));
-    const w2 = Number(wide.querySelector('svg').getAttribute('width'));
-    expect(w2).toBeGreaterThan(w1); // wider column → larger staff
+  it('is fluid: a viewBox + preserveAspectRatio lets the browser fit & center it', () => {
+    // Sizing is CSS/SVG-driven (no JS px-scale), so it survives any DPR/resolution
+    // without overflowing or clipping — the bug the px-scale version hit on the tablet.
+    const host = mount(new Map([[60, {}]]));
+    const svg = host.querySelector('svg');
+    expect(svg.getAttribute('viewBox')).toMatch(/^0 0 \d+ \d+$/);
+    expect(svg.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
+    expect(svg.getAttribute('width')).toBe('100%');
+    expect(svg.getAttribute('height')).toBe('100%');
   });
 });

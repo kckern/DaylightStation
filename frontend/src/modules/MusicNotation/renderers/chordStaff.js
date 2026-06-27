@@ -65,19 +65,16 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   const accCount = KEY_SIGNATURES[ks].sharps.length + KEY_SIGNATURES[ks].flats.length;
 
   // Content-sized stave: clef + key signature + one chord. No trailing staff.
-  const staveW = 54 + accCount * 10 + 48;
+  const staveW = 44 + accCount * 10 + 40;
   const logicalW = staveW + PAD * 2;
   const logicalH = PAD * 2 + STAFF_GAP + 78;
 
-  // Fit the fixed-size engraving to the column (cap up/down-scaling). The SVG is
-  // then centered by its flex container, so the staff is centered as one unit.
-  const containerW = host.parentElement?.clientWidth || host.clientWidth || logicalW;
-  const scale = Math.max(0.6, Math.min(2.4, (containerW * 0.92) / logicalW));
-
+  // Render at LOGICAL units (no container-width math, no scale cap). The SVG is
+  // given a viewBox so the browser scales the whole engraving to fit its box and
+  // centers it (preserveAspectRatio) — resolution/DPR independent, never clipped.
   const renderer = new Renderer(host, Renderer.Backends.SVG);
-  renderer.resize(Math.round(logicalW * scale), Math.round(logicalH * scale));
+  renderer.resize(logicalW, logicalH);
   const ctx = renderer.getContext();
-  ctx.scale(scale, scale);
   ctx.setFillStyle(INK);
   ctx.setStrokeStyle(INK);
 
@@ -111,6 +108,23 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   };
   drawVoice(tNote, treble);
   drawVoice(bNote, bass);
+
+  // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its
+  // container and center it (xMidYMid meet), preserving aspect ratio. Replaces the
+  // fixed px width/height VexFlow stamps on — so it never overflows or clips.
+  const svg = host.querySelector('svg');
+  if (svg) {
+    svg.setAttribute('viewBox', `0 0 ${logicalW} ${logicalH}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    // Inline style wins over the attribute, so set it too (VexFlow may stamp a px
+    // width/height in style on some paths).
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.maxWidth = '100%';
+    svg.style.maxHeight = '100%';
+  }
 }
 
 export default renderChordStaff;
