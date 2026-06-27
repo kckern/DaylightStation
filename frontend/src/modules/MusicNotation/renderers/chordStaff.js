@@ -14,8 +14,11 @@ import { Renderer, Stave, StaveNote, Voice, Formatter, StaveConnector, Accidenta
 import { KEY_SIGNATURES } from '../model/keySignature.js';
 import { splitByHand, getOttavaInfo } from '../model/handSplit.js';
 
-const PAD = 8;
-const STAFF_GAP = 66; // treble top line → bass top line (one grand-staff system)
+const PAD = 8;          // horizontal margin (left/right) inside the viewBox
+const TOP_ROOM = 14;    // room above the treble staff (clef overshoot + high ledger notes)
+const BOTTOM_ROOM = 72; // room below the bass staff for LOW ledger notes (don't clip them)
+const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
+const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
 
 // pitch-class → [letter, alter] spelled with sharps (default / sharp keys)…
@@ -67,7 +70,9 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   // Content-sized stave: clef + key signature + one chord. No trailing staff.
   const staveW = 44 + accCount * 10 + 40;
   const logicalW = staveW + PAD * 2;
-  const logicalH = PAD * 2 + STAFF_GAP + 78;
+  // Extra top/bottom room makes the whole engraving a touch smaller (the taller
+  // viewBox scales down under `meet`) AND keeps low-register ledger notes in frame.
+  const logicalH = TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM;
 
   // Render at LOGICAL units (no container-width math, no scale cap). The SVG is
   // given a viewBox so the browser scales the whole engraving to fit its box and
@@ -78,8 +83,8 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   ctx.setFillStyle(INK);
   ctx.setStrokeStyle(INK);
 
-  const treble = new Stave(PAD, PAD, staveW);
-  const bass = new Stave(PAD, PAD + STAFF_GAP, staveW);
+  const treble = new Stave(PAD, TOP_ROOM, staveW);
+  const bass = new Stave(PAD, TOP_ROOM + STAFF_GAP, staveW);
   treble.addClef('treble').addKeySignature(ks);
   bass.addClef('bass').addKeySignature(ks);
   treble.setContext(ctx).draw();
