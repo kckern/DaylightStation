@@ -103,3 +103,73 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
     expect(res.missingUsers).toEqual([]);        // guest cold but NOT blamed
   });
 });
+
+/**
+ * Anti-freeload: the exemption (and guest non-subject status) is a privilege
+ * that only exists while a REAL participant is carrying the session — i.e. at
+ * least one active BASELINE subject (registered, non-exempt, non-guest) is
+ * present. With no such subject, exemptions are SUSPENDED and every participant
+ * is governed as a subject, so an exempt- or guest-only roster cannot satisfy a
+ * requirement without actually meeting the zone. Closes the "borrow the exempt
+ * kid's HR strap and turn it on alone" loophole.
+ */
+describe('GovernanceEngine — exemption suspension when no real subject present', () => {
+  it('_buildSubjectFilter treats an exempt-only roster as all-subjects', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['mom'], guestIds: [] });
+    const isSubject = eng._buildSubjectFilter(['mom']);
+    expect(isSubject('mom')).toBe(true); // suspended → exempt user is governed
+  });
+
+  it('_buildSubjectFilter treats a guest-only roster as all-subjects', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [] };
+    eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'] });
+    const isSubject = eng._buildSubjectFilter(['g1']);
+    expect(isSubject('g1')).toBe(true); // suspended → guest is governed
+  });
+
+  it('keeps exemptions ACTIVE when a real subject is present (regression)', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['felix', 'mom', 'g1'], guestIds: ['g1'] });
+    const isSubject = eng._buildSubjectFilter(['felix', 'mom', 'g1']);
+    expect(isSubject('felix')).toBe(true);
+    expect(isSubject('mom')).toBe(false);  // still exempt — a real subject is present
+    expect(isSubject('g1')).toBe(false);   // still guest
+  });
+
+  it('requiredCount no longer collapses to 0 for an exempt/guest-only roster', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
+    // Suspended → both count as subjects → 'all' over 2 = 2 (was 0 → vacuously satisfied).
+    expect(eng._normalizeRequiredCount('all', 2, ['mom', 'g1'])).toBe(2);
+  });
+
+  it('steady-state: exempt-only roster must meet the zone (loophole closed)', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    const zoneRankMap = { cold: 0, warm: 1, hot: 2 };
+    const zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
+    eng._captureLatestInputs({ activeParticipants: ['mom'], guestIds: [], zoneRankMap, zoneInfoMap });
+    // Exempt 'mom' alone, cold → cannot vacuously satisfy, and is now blamed.
+    const cold = eng._evaluateZoneRequirement('hot', 'all', ['mom'], { mom: 'cold' }, zoneRankMap, zoneInfoMap, 1);
+    expect(cold.satisfied).toBe(false);
+    expect(cold.missingUsers).toEqual(['mom']);
+    // Exempt 'mom' alone, in zone → she is actually working out → satisfies.
+    const hot = eng._evaluateZoneRequirement('hot', 'all', ['mom'], { mom: 'hot' }, zoneRankMap, zoneInfoMap, 1);
+    expect(hot.satisfied).toBe(true);
+  });
+
+  it('_classifyParticipants reports suspended exempt/guests as subjects', () => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: ['mom'] };
+    eng._captureLatestInputs({ activeParticipants: ['mom', 'g1'], guestIds: ['g1'] });
+    const cls = eng._classifyParticipants(['mom', 'g1']);
+    expect([...cls.subjects].sort()).toEqual(['g1', 'mom']);
+    expect(cls.guests).toEqual([]);
+    expect(cls.exempt).toEqual([]);
+  });
+});
