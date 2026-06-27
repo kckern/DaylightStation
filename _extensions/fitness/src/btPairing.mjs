@@ -168,3 +168,35 @@ export async function handleBtPairRequest(message, { exec, send, logger = consol
   logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs})`);
   return runPairingWindow({ exec, durationMs, send, logger, requestId });
 }
+
+const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+/**
+ * Forget/unpair a controller: `bluetoothctl remove <mac>`. Validates the MAC
+ * (it is interpolated into a shell command) and never throws — the result is
+ * reported via the `bt.remove.result` bus topic.
+ *
+ * @param {object} message  parsed bus message ({ requestId, address }).
+ * @param {object} deps     { exec, send, logger }.
+ */
+export async function handleBtRemoveRequest(message, { exec = defaultExec, send, logger = console } = {}) {
+  const requestId = message?.requestId;
+  const address = String(message?.address || '');
+  const reply = (extra) => {
+    try { send?.('bt.remove.result', { requestId, address, ...extra }); }
+    catch (e) { logger?.error?.(`❌ bt.remove.result send failed: ${e?.message}`); }
+  };
+  if (!MAC_RE.test(address)) {
+    logger?.warn?.(`⚠️  bt.remove rejected malformed address: ${address}`);
+    reply({ success: false, error: 'invalid-address' });
+    return;
+  }
+  try {
+    await exec(`bluetoothctl remove ${address}`);
+    logger?.info?.(`🎮 bt.remove removed ${address}`);
+    reply({ success: true });
+  } catch (err) {
+    logger?.warn?.(`⚠️  bt.remove failed for ${address}: ${err?.message}`);
+    reply({ success: false, error: err?.message || String(err) });
+  }
+}

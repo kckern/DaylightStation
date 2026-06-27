@@ -5,6 +5,7 @@ import {
   parseDiscovered,
   runPairingWindow,
   handleBtPairRequest,
+  handleBtRemoveRequest,
 } from '../src/btPairing.mjs';
 
 // ── isLikelyGamepad ───────────────────────────────────────────────────────
@@ -215,4 +216,43 @@ test('handleBtPairRequest: runs a pairing window from the message durationMs', a
   assert.equal(calls[0].payload.durationMs, 8000);
   assert.equal(calls[0].payload.requestId, 'r1');
   assert.equal(calls.at(-1).payload.phase, 'done');
+});
+
+// ── handleBtRemoveRequest ─────────────────────────────────────────────────
+
+test('handleBtRemoveRequest: removes a device and emits bt.remove.result success', async () => {
+  const calls = [];
+  const sent = [];
+  const exec = async (cmd) => { calls.push(cmd); return { stdout: '', stderr: '' }; };
+  await handleBtRemoveRequest(
+    { requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF' },
+    { exec, send: (t, p) => sent.push([t, p]), logger: SILENT_LOGGER }
+  );
+  assert.ok(calls.includes('bluetoothctl remove AA:BB:CC:DD:EE:FF'));
+  assert.deepEqual(sent, [
+    ['bt.remove.result', { requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF', success: true }],
+  ]);
+});
+
+test('handleBtRemoveRequest: emits failure on exec error', async () => {
+  const sent = [];
+  const exec = async () => { throw new Error('not found'); };
+  await handleBtRemoveRequest(
+    { requestId: 'r2', address: 'AA:BB:CC:DD:EE:FF' },
+    { exec, send: (t, p) => sent.push([t, p]), logger: SILENT_LOGGER }
+  );
+  assert.equal(sent[0][0], 'bt.remove.result');
+  assert.equal(sent[0][1].success, false);
+  assert.equal(sent[0][1].error, 'not found');
+});
+
+test('handleBtRemoveRequest: rejects a malformed MAC without shelling out', async () => {
+  const calls = [];
+  const sent = [];
+  await handleBtRemoveRequest(
+    { requestId: 'r3', address: 'nope' },
+    { exec: async (c) => { calls.push(c); return { stdout: '' }; }, send: (t, p) => sent.push([t, p]) }
+  );
+  assert.equal(calls.length, 0);
+  assert.equal(sent[0][1].success, false);
 });
