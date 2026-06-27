@@ -82,3 +82,82 @@ describe('ArcadeShell', () => {
     expect(container.querySelectorAll('.emu-cover').length).toBe(1); // snes: mario kart
   });
 });
+
+describe('ArcadeShell controller indicator', () => {
+  const controllers = [
+    { id: 'a', label: '8BitDo', match: '8bitdo', address: 'AA:BB:CC:DD:EE:FF' },
+  ];
+  const btInventory = [
+    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 80 },
+  ];
+  const connectedPad = () => [{ index: 0, id: '8BitDo SN30 Pro', buttons: [], axes: [] }];
+  const noPads = () => [];
+
+  it('reflects connected state on the indicator (data-connected="1")', () => {
+    const { container } = render(
+      <ArcadeShell
+        consoles={consoles}
+        games={games}
+        controllers={controllers}
+        btInventory={btInventory}
+        getGamepads={connectedPad}
+      />,
+    );
+    const indicator = container.querySelector('.emu-controller-indicator');
+    expect(indicator).toBeTruthy();
+    expect(indicator.getAttribute('data-connected')).toBe('1');
+  });
+
+  it('reflects not-connected state on the indicator (data-connected="0")', () => {
+    const { container } = render(
+      <ArcadeShell
+        consoles={consoles}
+        games={games}
+        controllers={controllers}
+        btInventory={btInventory}
+        getGamepads={noPads}
+      />,
+    );
+    const indicator = container.querySelector('.emu-controller-indicator');
+    expect(indicator).toBeTruthy();
+    expect(indicator.getAttribute('data-connected')).toBe('0');
+  });
+
+  it('toggles the controller panel (ControllerStatus content) on chip click', () => {
+    const { container, queryByText, getByText } = render(
+      <ArcadeShell
+        consoles={consoles}
+        games={games}
+        controllers={controllers}
+        btInventory={btInventory}
+        getGamepads={noPads}
+      />,
+    );
+    // Panel closed initially.
+    expect(queryByText('Known controllers')).toBeNull();
+    fireEvent.click(container.querySelector('.emu-controller-chip'));
+    expect(getByText('Known controllers')).toBeTruthy();
+    // Toggling again closes it.
+    fireEvent.click(container.querySelector('.emu-controller-chip'));
+    expect(queryByText('Known controllers')).toBeNull();
+  });
+
+  it('renders the Pair button in the open panel and calls onPairController', () => {
+    const onPairController = vi.fn();
+    const { container, getByText } = render(
+      <ArcadeShell
+        consoles={consoles}
+        games={games}
+        controllers={controllers}
+        btInventory={btInventory}
+        getGamepads={noPads}
+        onPairController={onPairController}
+      />,
+    );
+    fireEvent.click(container.querySelector('.emu-controller-chip'));
+    const pairButton = getByText('🎮 Pair controller');
+    expect(pairButton).toBeTruthy();
+    fireEvent.click(pairButton);
+    expect(onPairController).toHaveBeenCalled();
+  });
+});
