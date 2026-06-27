@@ -63,6 +63,10 @@ export function resolveGameRules(cfg, gameId, userId) {
     governance: merged.governance,
     shader: merged.shader,
     chrome: merged.chrome,
+    // Native framebuffer res for the LCD dot-matrix grid / integer screen box.
+    // Already resolved (game override → system manifest → core default) in
+    // loadEmulatorConfig; passed through with the other presentation fields.
+    native: game.native ?? null,
     // Bezel control surface (screen cutout, hotspots, overlays, onscreen
     // controls). Already merged system-under-game in loadEmulatorConfig;
     // passed through to the browser.

@@ -155,6 +155,21 @@ describe('createEmulatorRouter', () => {
       expect(res.body.games[0].governance.required_zone).toBe('hot');
     });
 
+    it('carries native through to the game and keeps system native', async () => {
+      const { app } = makeApp({
+        loadConfig: () => {
+          const cfg = makeCfg();
+          cfg.systems.gb.native = { width: 160, height: 144 };
+          cfg.games[0].native = { width: 240, height: 160 };
+          return cfg;
+        },
+      });
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.status).toBe(200);
+      expect(res.body.games[0].native).toEqual({ width: 240, height: 160 });
+      expect(res.body.systems.gb.native).toEqual({ width: 160, height: 144 });
+    });
+
     it('surfaces saveMode per game (default none)', async () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/library');

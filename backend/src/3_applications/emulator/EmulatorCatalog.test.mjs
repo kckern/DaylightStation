@@ -23,6 +23,15 @@ describe('resolveGameRules', () => {
   it('returns null for unknown game', () => {
     expect(resolveGameRules(cfg, 'nope', null)).toBeNull();
   });
+
+  it('carries the per-game native framebuffer resolution', () => {
+    const cfgWithNative = {
+      ...cfg,
+      games: [{ ...cfg.games[0], native: { width: 240, height: 160 } }],
+    };
+    const r = resolveGameRules(cfgWithNative, 'pkmn', null);
+    expect(r.native).toEqual({ width: 240, height: 160 });
+  });
 });
 
 describe('buildCatalog', () => {
@@ -64,6 +73,17 @@ describe('buildCatalog', () => {
     expect(out.systems).toEqual(baseCfg.systems);
     expect(out.games).toHaveLength(1);
     expect(out.games[0].boxart).toBe('art/pk.png');
+  });
+
+  it('carries native through to the catalog game (and keeps system native)', () => {
+    const cfg = {
+      ...baseCfg,
+      systems: { gbc: { core: 'gambatte', label: 'Game Boy Color', native: { width: 160, height: 144 } } },
+      games: [{ id: 'gbagame', system: 'gbc', rom: 'g.gba', title: 'GBA', native: { width: 240, height: 160 } }],
+    };
+    const out = buildCatalog(cfg);
+    expect(out.games[0].native).toEqual({ width: 240, height: 160 });
+    expect(out.systems.gbc.native).toEqual({ width: 160, height: 144 });
   });
 
   it('surfaces saveMode (default none)', () => {
