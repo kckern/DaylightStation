@@ -256,6 +256,28 @@ export function makeReadInputConfig(emulationDir) {
 }
 
 /**
+ * Reader for emulationDir/settings.yml — autosaveSeconds / idleRelockMinutes /
+ * adminGate. Returns null when absent/unparseable; loadEmulatorConfig defaults.
+ */
+export function makeReadSettingsConfig(emulationDir) {
+  const settingsPath = path.join(emulationDir, 'settings.yml');
+  return function readSettings() {
+    let raw;
+    try {
+      raw = fs.readFileSync(settingsPath, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    }
+    try {
+      return yaml.load(raw) ?? null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
  * Build a reader for the ordered console-tab list (emulationDir/consoles.yml)
  * that drives the arcade shell's bottom tabs. Accepts either a bare list or a
  * `{ consoles: [...] }` wrapper; loadEmulatorConfig normalizes both. Returns
