@@ -1134,9 +1134,18 @@
   position: absolute; inset: 0; z-index: 50;
   display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.88);
-  &__content { text-align: center; color: #fff; padding: 2rem; }
-  &__prompt { font-size: 1.1rem; opacity: 0.82; margin: 0 0 0.75rem; }
-  &__target { font-size: 3.5rem; font-weight: 800; letter-spacing: 0.06em; margin: 0; }
+  &__content {
+    text-align: center; color: #fff; padding: 2rem;
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
+  }
+  &__prompt { font-size: 1.1rem; opacity: 0.82; margin: 0; }
+  /* A single flashcard, mirroring .piano-flashcards__card (white staff card). */
+  &__card {
+    background: #fff; border-radius: var(--r-card, 12px);
+    padding: 1rem 1.5rem; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    transition: box-shadow 0.15s ease;
+    &--hit { box-shadow: 0 0 0 4px var(--piano-accent), 0 8px 28px rgba(0, 0, 0, 0.45); }
+  }
 }
 
 @media (orientation: portrait) {

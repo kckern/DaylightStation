@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { generateCardPitches, evaluateMatch } from '../../../PianoFlashcards/flashcardEngine.js';
+import { ActionStaff } from '../../../components/ActionStaff.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
 
 let _logger;
@@ -9,13 +10,11 @@ function logger() {
   return _logger;
 }
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const midiToName = (n) => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`;
-
 /**
  * In-place overlay shown over the paused video when the inactivity gate fires.
- * Prompts the student to play a single note; on a correct MIDI match calls
- * onDismiss() (the parent's dismissGate). Does not unmount the video.
+ * Renders a single flashcard (the same staff the Flashcards game uses) and
+ * prompts the student to play it; on a correct MIDI match calls onDismiss()
+ * (the parent's dismissGate). Does not unmount the video.
  */
 export default function EngagementGate({ open, onDismiss }) {
   const { activeNotes } = usePianoMidi();
@@ -26,14 +25,16 @@ export default function EngagementGate({ open, onDismiss }) {
     [open]
   );
 
+  const matched = useMemo(
+    () => Boolean(open && targetPitches.length && evaluateMatch(activeNotes, targetPitches) === 'correct'),
+    [open, activeNotes, targetPitches]
+  );
+
   useEffect(() => {
-    if (!open || !targetPitches.length) return;
-    const result = evaluateMatch(activeNotes, targetPitches);
-    if (result === 'correct') {
-      logger().info('piano.engagement-gate.correct', { target: targetPitches });
-      onDismiss?.();
-    }
-  }, [open, activeNotes, targetPitches, onDismiss]);
+    if (!matched) return;
+    logger().info('piano.engagement-gate.correct', { target: targetPitches });
+    onDismiss?.();
+  }, [matched, targetPitches, onDismiss]);
 
   if (!open) return null;
 
@@ -47,7 +48,14 @@ export default function EngagementGate({ open, onDismiss }) {
     >
       <div className="piano-engagement-gate__content">
         <p className="piano-engagement-gate__prompt">Still there? Play this note to continue:</p>
-        <p className="piano-engagement-gate__target">{targetPitches.map(midiToName).join(' + ')}</p>
+        <div
+          className={[
+            'piano-engagement-gate__card',
+            matched && 'piano-engagement-gate__card--hit',
+          ].filter(Boolean).join(' ')}
+        >
+          <ActionStaff targetPitches={targetPitches} matched={matched} activeNotes={activeNotes} />
+        </div>
       </div>
     </div>
   );
