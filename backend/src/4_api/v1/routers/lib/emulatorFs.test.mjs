@@ -11,6 +11,7 @@ import {
   readBinary,
   writeBinary,
   makeReadEngineFile,
+  listSaveUsers,
 } from './emulatorFs.mjs';
 
 const EMU_DIR = '/media/emulation';
@@ -152,5 +153,36 @@ describe('makeReadEngineFile (real tmp engine dir)', () => {
     } finally {
       fs.rmSync(secret, { force: true });
     }
+  });
+});
+
+describe('listSaveUsers', () => {
+  function tmpEmu() {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'emu-saves-'));
+  }
+
+  it('returns [] when nothing exists', () => {
+    const dir = tmpEmu();
+    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual([]);
+  });
+
+  it('finds users with a .srm and users with a state dir, sorted + deduped', () => {
+    const dir = tmpEmu();
+    // battery: {system}/saves/{user}/{gameId}.srm
+    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'soren'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'soren', 'pokemon-red.srm'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'milo'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'milo', 'other-game.srm'), 'x'); // different game
+    // state: {system}/states/{user}/{gameId}/{slot}.state
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'alan', 'pokemon-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'alan', 'pokemon-red', 'auto.state'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'soren', 'pokemon-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'soren', 'pokemon-red', 'auto.state'), 'x'); // dup of soren
+    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual(['alan', 'soren']);
+  });
+
+  it('rejects unsafe segments', () => {
+    const dir = tmpEmu();
+    expect(() => listSaveUsers(dir, '..', 'x')).toThrow('unsafe path segment');
   });
 });

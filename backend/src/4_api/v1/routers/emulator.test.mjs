@@ -83,6 +83,7 @@ function makeApp(overrides = {}) {
     resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
     resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
     resolveStatePath: vi.fn((system, gameId, slot, user) => `/media/${system}/states/${user}/${gameId}/${slot}.state`),
+    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['soren', 'alan'] : [])),
     readEngineFile: vi.fn((relPath) => {
       const ENGINE = {
         'loader.js': { buffer: Buffer.from('LOADER'), contentType: 'text/javascript' },
@@ -191,6 +192,14 @@ describe('createEmulatorRouter', () => {
         { system: 'gb', label: 'Game Boy', placeholder: false },
         { system: null, label: null, placeholder: true },
       ]);
+    });
+
+    it('includes settings in the library payload', async () => {
+      const { app } = makeApp({
+        loadConfig: () => ({ ...makeCfg(), settings: { autosaveSeconds: 15, idleRelockMinutes: 10, adminGate: true } }),
+      });
+      const res = await request(app).get('/api/v1/emulator/library');
+      expect(res.body.settings).toEqual({ autosaveSeconds: 15, idleRelockMinutes: 10, adminGate: true });
     });
   });
 
@@ -396,6 +405,33 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const res = await request(app).get('/api/v1/emulator/engine/nope.js');
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('GET /saves/:system/:gameId', () => {
+    const batteryCfg = () => ({ ...makeCfg(), games: [{ ...makeCfg().games[0], saveMode: 'battery' }] });
+
+    it('returns the saver list for a save-enabled game', async () => {
+      const { app } = makeApp({ loadConfig: batteryCfg });
+      const res = await request(app).get('/api/v1/emulator/saves/gb/pokemon-red');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ users: ['soren', 'alan'] });
+    });
+
+    it('returns [] for a none-save game without scanning', async () => {
+      const { app, deps } = makeApp({
+        loadConfig: () => ({ ...makeCfg(), games: [{ id: 'tetris', system: 'gb', title: 'Tetris', saveMode: 'none' }] }),
+      });
+      const res = await request(app).get('/api/v1/emulator/saves/gb/tetris');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ users: [] });
+      expect(deps.listSaveUsers).not.toHaveBeenCalled();
+    });
+
+    it('400s on an unsafe segment', async () => {
+      const { app } = makeApp();
+      const res = await request(app).get('/api/v1/emulator/saves/gb/..%2Fetc');
+      expect(res.status).toBe(400);
     });
   });
 
