@@ -8,6 +8,7 @@ import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
+import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { lectureContentId } from './lectureMeta.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
@@ -115,9 +116,13 @@ function LecturePlayerRoute() {
   // (an unstable onBack would defeat the memo and remount the video).
   const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
 
-  // Keep the tablet screen awake while a lecture is playing (passive playback
-  // produces no MIDI/touch, which would otherwise trip the screensaver).
-  useKeepScreenAwake('video', true);
+  // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
+  // (passive playback produces no MIDI/touch that would otherwise reset the
+  // screensaver). A paused lecture releases the hold, so an idle paused tab is
+  // allowed to sleep — and a tap/MIDI note wakes it. `playing` is the global
+  // play/pause state PianoVideoPlayer maintains.
+  const { playing } = usePianoPlayback();
+  useKeepScreenAwake('video', playing);
 
   if (lectures === null) return <div className="piano-mode__placeholder">Loading…</div>;
   if (!lecture) {
