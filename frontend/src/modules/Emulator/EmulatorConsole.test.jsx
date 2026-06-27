@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { EmulatorConsole } from './EmulatorConsole.jsx';
+import { EmulatorConsole, computeScreenBox } from './EmulatorConsole.jsx';
 
 /**
  * Build a set of injectable fake factories and capture the objects/args they
@@ -116,6 +116,34 @@ function renderConsole(overrides = {}) {
   const result = render(<EmulatorConsole {...props} />);
   return { ...result, factories, captured, engine, mixer, session, gate };
 }
+
+describe('computeScreenBox', () => {
+  const cut = { left: 0, top: 0, width: 320, height: 288 };
+  it('locks to integer multiples of 160×144 for GB', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 160, height: 144 } });
+    expect(box.scale).toBe(2);
+    expect(box.width).toBe(320);
+    expect(box.height).toBe(288);
+  });
+  it('locks to integer multiples of 240×160 for GBA', () => {
+    const box = computeScreenBox({ cut: { left: 0, top: 0, width: 480, height: 320 }, dpr: 1, native: { width: 240, height: 160 } });
+    expect(box.scale).toBe(2);
+    expect(box.width).toBe(480);
+    expect(box.height).toBe(320);
+  });
+  it('letterboxes GBA inside a GB-shaped cutout (centered)', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: { width: 240, height: 160 } });
+    expect(box.scale).toBe(1);
+    expect(box.width).toBe(240);
+    expect(box.height).toBe(160);
+    expect(box.left).toBe(40);
+    expect(box.top).toBe(64);
+  });
+  it('falls back to 160×144 when native is absent', () => {
+    const box = computeScreenBox({ cut, dpr: 1, native: undefined });
+    expect(box.scale).toBe(2);
+  });
+});
 
 describe('EmulatorConsole', () => {
   beforeEach(() => {
