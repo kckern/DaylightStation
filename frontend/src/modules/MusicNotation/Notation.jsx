@@ -1,21 +1,25 @@
 import { AbcRenderer } from './renderers/AbcRenderer.jsx';
 import { SvgStaffRenderer } from './renderers/SvgStaffRenderer.jsx';
 import { MusicXmlRenderer } from './renderers/MusicXmlRenderer.jsx';
+import { ChordStaffRenderer } from './renderers/ChordStaffRenderer.jsx';
 
 /**
  * Notation — renderer-selecting facade over the MusicNotation framework.
  *
  * One music model, pluggable renderers:
- *   - 'abc' → AbcRenderer (abcjs grand-staff; live chords)
+ *   - 'chord' → ChordStaffRenderer (VexFlow; compact self-centering live chord)
+ *   - 'abc' → AbcRenderer (abcjs grand-staff; melodic drills / scrolling)
  *   - 'svg' → SvgStaffRenderer (hand-rolled SVG; game target staves)
- *   - 'musicxml' → FUTURE (OSMD), for notation-driven lessons
+ *   - 'musicxml' → MusicXmlRenderer (VexFlow; notation-driven lessons)
  *
  * Props are forwarded to the chosen renderer (see each renderer for its API).
  *
- * @param {'abc'|'svg'|'musicxml'} renderer
+ * @param {'chord'|'abc'|'svg'|'musicxml'} renderer
  */
 export function Notation({ renderer = 'abc', ...props }) {
   switch (renderer) {
+    case 'chord':
+      return <ChordStaffRenderer {...props} />;
     case 'svg':
       return <SvgStaffRenderer {...props} />;
     case 'abc':

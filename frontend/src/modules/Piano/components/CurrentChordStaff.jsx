@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { detectKey } from '../../MusicNotation/model/keySignature.js';
-import { AbcRenderer } from '../../MusicNotation/renderers/AbcRenderer.jsx';
+import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
 import './CurrentChordStaff.scss';
 
-// Music-theory model (key signatures, key detection, hand split, ABC generation)
-// now lives in the shared MusicNotation framework. CurrentChordStaff keeps the
-// live-input concerns — note decay, peak-chord tracking, rolling key detection —
-// and delegates rendering to AbcRenderer.
+// Music-theory model (key signatures, key detection, hand split) lives in the
+// shared MusicNotation framework. CurrentChordStaff keeps the live-input concerns
+// — note decay, peak-chord tracking, rolling key detection — and delegates
+// rendering to ChordStaffRenderer (a compact, self-centering VexFlow grand staff).
 
 const NOTE_DECAY_MS = 500; // Keep notes visible for 500ms after release
 const KEY_BUFFER_MAX_AGE = 10000; // 10 seconds
@@ -79,7 +79,7 @@ export function CurrentChordStaff({ activeNotes }) {
 
   return (
     <div className="current-chord-staff-wrapper">
-      <AbcRenderer notes={displayNotes} keySignature={detectedKey} className="current-chord-staff" pinStaff />
+      <ChordStaffRenderer notes={displayNotes} keySignature={detectedKey} className="current-chord-staff" />
     </div>
   );
 }
