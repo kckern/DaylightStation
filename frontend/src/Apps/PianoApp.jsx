@@ -35,7 +35,6 @@ import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
 import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
-import { Composers } from '../modules/Piano/PianoKiosk/modes/Composers/Composers.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
@@ -140,7 +139,7 @@ function PianoShell() {
     quietHours: config.screensaver?.quietHours,
   });
 
-  const MODE_LABELS = { videos: 'Courses', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', producer: 'Producer', composers: 'Composers' };
+  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
@@ -158,13 +157,13 @@ function PianoShell() {
           <Routes>
             <Route index element={<PianoMenu />} />
             <Route path="videos/*" element={<Videos />} />
+            <Route path="playalong/*" element={<Videos source={config.playalong} />} />
             <Route path="music/*" element={<Music />} />
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />
             <Route path="lessons/*" element={<Lessons />} />
             <Route path="studio/*" element={<Studio />} />
             <Route path="producer/*" element={<Producer />} />
-            <Route path="composers" element={<Composers />} />
             <Route path="test/*" element={<PianoTest />} />
             <Route path="*" element={<PianoMenu />} />
           </Routes>

@@ -8,13 +8,13 @@ import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
 
 // Order maps to the 4-column grid, row by row (top row, then bottom row):
 //   Courses  Lessons  Sheet Music  Studio      ← far-left = Courses, far-right = Studio
-//   Composers  Music   Games       Producer    ← far-left = Composers, far-right = Producer
+//   Playalong  Music   Games       Producer    ← far-left = Playalong, far-right = Producer
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'lessons', label: 'Lessons', blurb: 'Technique drills', icon: 'lessons' },
   { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: 'studio' },
-  { id: 'composers', label: 'Composers', blurb: 'Study the masters', icon: 'quill' },
+  { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
   { id: 'producer', label: 'Producer', blurb: 'Beats, loops & jam', icon: 'producer' },
