@@ -24,6 +24,7 @@ import { HttpClient } from './0_system/services/HttpClient.mjs';
 import { getDispatcher } from './0_system/logging/dispatcher.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
 import { ingestFrontendLogs } from './0_system/logging/ingestion.mjs';
+import { shouldRelayBtTopic } from './0_system/eventbus/btRelay.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
@@ -454,6 +455,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         userAgent: clientMeta?.userAgent
       });
       return;
+    }
+  });
+
+  // Bluetooth controller management relay (browser ⇄ garage fitness extension).
+  // The bus does not relay client→client by default; whitelist the bt.* control
+  // topics so pairing/inventory/remove flow both ways. Whitelist only — never blanket.
+  eventBus.onClientMessage((clientId, message) => {
+    if (message && shouldRelayBtTopic(message.topic)) {
+      eventBus.broadcast(message.topic, message);
+      rootLogger.debug?.('eventbus.bt.relay', { clientId, topic: message.topic });
     }
   });
 
