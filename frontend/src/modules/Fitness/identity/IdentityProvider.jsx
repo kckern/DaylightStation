@@ -48,6 +48,9 @@ export function IdentityProvider({ children }) {
   // Used by surfaces that only need to KNOW who scanned — e.g. the emulator
   // save-game identity prompt — rather than gate on a permission.
   const identifyOnlyRef = useRef(false);
+  // adminOnly: resolve ONLY on authz.admin === true (e.g. the emulator arcade
+  // unlock gate that requires a parent's finger regardless of per-lock perms).
+  const adminOnlyRef = useRef(false);
   const verdictResolverRef = useRef(null);
   // A decided-but-not-yet-resolved grant (during the "Access Granted" chime
   // hold). If a cancel/tap lands in that window, clearUnlock must honor THIS
@@ -101,7 +104,9 @@ export function IdentityProvider({ children }) {
       const recognized = msg.matched === true;
       const authorized = recognized
         && (identifyOnlyRef.current
-          || (Array.isArray(msg.authz?.locks) && msg.authz.locks.includes(lock)));
+          || (adminOnlyRef.current
+            ? msg.authz?.admin === true
+            : (Array.isArray(msg.authz?.locks) && msg.authz.locks.includes(lock))));
 
       if (!authorized) {
         if (recognized) {
@@ -174,17 +179,18 @@ export function IdentityProvider({ children }) {
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [handleIdentity]);
 
-  const registerUnlock = useCallback((lock, { identifyOnly = false } = {}) => {
+  const registerUnlock = useCallback((lock, { identifyOnly = false, adminOnly = false } = {}) => {
     // Called from a user gesture in consumers — prime the cue element now so the
     // async success chime can play later.
     primeCueAudio('unlock-request');
     activeLockRef.current = lock;
     identifyOnlyRef.current = !!identifyOnly;
+    adminOnlyRef.current = !!adminOnly;
     pendingGrantRef.current = null; // fresh attempt — no decided grant yet
     setActiveLock(lock);
     setUnlockState('scanning');
     setUnlockedUser(null);
-    logger().info('unlock-registered', { lock, identifyOnly: !!identifyOnly });
+    logger().info('unlock-registered', { lock, identifyOnly: !!identifyOnly, adminOnly: !!adminOnly });
     return new Promise((resolve) => { verdictResolverRef.current = resolve; });
   }, []);
 
@@ -195,9 +201,17 @@ export function IdentityProvider({ children }) {
     [registerUnlock],
   );
 
+  // Sugar for "require an admin finger" — authorizes on authz.admin regardless of
+  // per-lock permissions. Used by the emulator arcade unlock gate.
+  const registerAdmin = useCallback(
+    (lock = 'admin') => registerUnlock(lock, { adminOnly: true }),
+    [registerUnlock],
+  );
+
   const clearUnlock = useCallback(() => {
     activeLockRef.current = null;
     identifyOnlyRef.current = false;
+    adminOnlyRef.current = false;
     setActiveLock(null);
     setUnlockedUser(null);
     setUnlockState('idle');
@@ -219,6 +233,7 @@ export function IdentityProvider({ children }) {
     // Unlock sub-API.
     registerUnlock,
     registerIdentify,
+    registerAdmin,
     clearUnlock,
     activeLock,
     unlockState,
@@ -226,7 +241,7 @@ export function IdentityProvider({ children }) {
   }), [
     emergency.phase, emergency.lockedUntil, emergency.lockedBy,
     emergency.commit, emergency.abort, emergency.release,
-    registerUnlock, registerIdentify, clearUnlock, activeLock, unlockState, unlockedUser,
+    registerUnlock, registerIdentify, registerAdmin, clearUnlock, activeLock, unlockState, unlockedUser,
   ]);
 
   return (

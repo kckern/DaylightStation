@@ -120,23 +120,52 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
     deleteState: (system, gameId, user, slot = DEFAULT_SLOT) => deleteBlob(stateUrl(system, gameId, slot, user)),
 
     // --- saveMode-aware convenience (used by the launch flow) ---
-    /** Load the resume blob for this game's save mode. Returns a discriminated result. */
-    loadResume({ system, gameId, user, saveMode, slot = DEFAULT_SLOT }) {
-      if (saveMode === 'battery') return getBlob(saveUrl(system, gameId, user));
-      if (saveMode === 'state') return getBlob(stateUrl(system, gameId, slot, user));
-      return Promise.resolve(absent());
+    /**
+     * Load the resume blob, snapshot-preferred for battery. Returns a
+     * discriminated result with `kind` ('state'|'battery') on success so the
+     * caller injects via the matching engine path.
+     */
+    async loadResume({ system, gameId, user, saveMode, slot = DEFAULT_SLOT }) {
+      if (saveMode === 'state') {
+        const r = await getBlob(stateUrl(system, gameId, slot, user));
+        return r.status === 'ok' ? { ...r, kind: 'state' } : r;
+      }
+      if (saveMode === 'battery') {
+        const s = await getBlob(stateUrl(system, gameId, slot, user));
+        if (s.status === 'ok') return { ...s, kind: 'state' };
+        const b = await getBlob(saveUrl(system, gameId, user));
+        if (b.status === 'ok') return { ...b, kind: 'battery' };
+        return s.status === 'error' ? s : b; // surface an error over a plain absent
+      }
+      return absent();
     },
-    /** Persist the resume blob for this game's save mode. Returns a discriminated result. */
-    persist({ system, gameId, user, saveMode, body, slot = DEFAULT_SLOT }) {
-      if (saveMode === 'battery') return putBlob(saveUrl(system, gameId, user), body);
-      if (saveMode === 'state') return putBlob(stateUrl(system, gameId, slot, user), body);
-      return Promise.resolve(errorResult(null, `unsupported saveMode: ${saveMode}`));
+    /**
+     * Persist the resume blob(s) for the mode. `captured` is { state?, battery? };
+     * battery writes both. Returns ok only if every write succeeds.
+     */
+    async persistResume({ system, gameId, user, saveMode, captured, slot = DEFAULT_SLOT }) {
+      if (saveMode === 'state') {
+        if (!captured?.state) return errorResult(null, 'no state bytes');
+        return putBlob(stateUrl(system, gameId, slot, user), captured.state);
+      }
+      if (saveMode === 'battery') {
+        const results = [];
+        if (captured?.state) results.push(await putBlob(stateUrl(system, gameId, slot, user), captured.state));
+        if (captured?.battery) results.push(await putBlob(saveUrl(system, gameId, user), captured.battery));
+        if (!results.length) return errorResult(null, 'no bytes');
+        return results.every((r) => r.status === 'ok') ? ok() : errorResult(null, 'partial persist');
+      }
+      return errorResult(null, `unsupported saveMode: ${saveMode}`);
     },
-    /** Erase the resume blob for this game's save mode (reset / start over). */
-    clear({ system, gameId, user, saveMode, slot = DEFAULT_SLOT }) {
-      if (saveMode === 'battery') return deleteBlob(saveUrl(system, gameId, user));
+    /** Erase all resume blobs for the mode (reset / overwrite). */
+    async clearResume({ system, gameId, user, saveMode, slot = DEFAULT_SLOT }) {
       if (saveMode === 'state') return deleteBlob(stateUrl(system, gameId, slot, user));
-      return Promise.resolve(errorResult(null, `unsupported saveMode: ${saveMode}`));
+      if (saveMode === 'battery') {
+        const a = await deleteBlob(stateUrl(system, gameId, slot, user));
+        const b = await deleteBlob(saveUrl(system, gameId, user));
+        return a.status === 'ok' && b.status === 'ok' ? ok() : errorResult(null, 'partial clear');
+      }
+      return errorResult(null, `unsupported saveMode: ${saveMode}`);
     },
   };
 }
