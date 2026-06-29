@@ -42,6 +42,16 @@ function playUnlockChime() {
   } catch { /* no audio available */ }
 }
 
+// Two-person silhouette — distinguishes the co-progress lock from the standard
+// sequential padlock at a glance.
+function CoProgressLockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ width: '1em', height: '1em' }}>
+      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+    </svg>
+  );
+}
+
 /**
  * Course landing page. Per-user watch state (✓ / progress) rides on each
  * thumbnail. Sequential courses lock episodes after the first unwatched one and,
@@ -50,9 +60,9 @@ function playUnlockChime() {
  */
 export default function CourseDetail({ course, onPlay }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
-  const { currentUser, currentProfile } = usePianoUser();
+  const { currentUser, currentProfile, users } = usePianoUser();
   const courseId = idOf(course?.id);
-  const { items, info, parents, isSequential, loading, error } = usePianoCoursePlayable(courseId, currentUser);
+  const { items, info, parents, isSequential, loading, error, coProgressLock } = usePianoCoursePlayable(courseId, currentUser);
 
   const seasons = useMemo(() => {
     if (!parents || typeof parents !== 'object') return [];
@@ -126,9 +136,24 @@ export default function CourseDetail({ course, onPlay }) {
     return next ? (next.plex || next.id) : null;
   }, [isSequential, items, seasons]);
 
+  // Co-progress lock: if the backend says the user is too far ahead, the first
+  // available (unwatched) episode gets a navigation gate instead of playing.
+  const coProgressLockedId = useMemo(() => {
+    if (!coProgressLock?.locked || !isSequential || !items) return null;
+    const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
+    const sorted = [...items].sort((a, b) => {
+      const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
+      if (si !== 0) return si;
+      return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
+    });
+    const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
+    return next ? (next.plex || next.id) : null;
+  }, [coProgressLock, isSequential, items, seasons]);
+
   // Unlock ceremony: when the complete-season set grows, toast + chime the newly
   // revealed next season. Skips the first render (no "prev" to compare against).
   const [unlockedToast, setUnlockedToast] = useState(null);
+  const [coProgressToast, setCoProgressToast] = useState(null);
   const prevCompleteRef = useRef(null);
   useEffect(() => {
     if (!isSequential || seasons.length <= 1 || !items) return;
@@ -160,22 +185,51 @@ export default function CourseDetail({ course, onPlay }) {
     const st = lectureUserStatus(item);
     const img = item.image || item.thumbnail;
     const key = item.plex || item.id;
-    const isLocked = lockedIds.has(key);
-    const isCurrent = key === currentId;
+    const isSequentiallyLocked = lockedIds.has(key);
+    const isCoProgressLocked = key === coProgressLockedId;
+    const isLocked = isSequentiallyLocked || isCoProgressLocked;
+    // Not "current" if co-progress locked (not actually playable right now).
+    const isCurrent = key === currentId && !isCoProgressLocked;
     const duration = fmtDuration(item.duration);
+
+    const handleClick = () => {
+      if (isSequentiallyLocked) return;
+      if (isCoProgressLocked) {
+        const name = (users || []).find((u) => u.id === coProgressLock.waitingForId)?.name
+          || coProgressLock.waitingForId;
+        setCoProgressToast(
+          `You're ${coProgressLock.aheadBy} episodes ahead of ${name} — let them catch up first.`,
+        );
+        setTimeout(() => setCoProgressToast(null), 4000);
+        return;
+      }
+      onPlay(item);
+    };
+
     return (
       <li key={key}>
         <button
           type="button"
-          className={`piano-episode${isLocked ? ' piano-episode--locked' : ''}${isCurrent ? ' piano-episode--current' : ''}`}
-          onClick={() => { if (!isLocked) onPlay(item); }}
-          disabled={isLocked}
+          className={[
+            'piano-episode',
+            isLocked && 'piano-episode--locked',
+            isCurrent && 'piano-episode--current',
+          ].filter(Boolean).join(' ')}
+          onClick={handleClick}
+          disabled={isSequentiallyLocked}
           aria-disabled={isLocked}
           aria-current={isCurrent ? 'true' : undefined}
         >
           <div className="piano-episode__thumb">
             {img && <img src={img} alt="" loading="eager" decoding="async" />}
-            {isLocked && <span className="piano-episode__lock" aria-label="Locked"><LockIcon /></span>}
+            {isSequentiallyLocked && (
+              <span className="piano-episode__lock" aria-label="Locked"><LockIcon /></span>
+            )}
+            {isCoProgressLocked && (
+              <span className="piano-episode__lock piano-episode__lock--co-progress" aria-label="Waiting for partner">
+                <CoProgressLockIcon />
+              </span>
+            )}
             {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
             {!isLocked && !st.watched && st.percent > 0 && (
               <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
@@ -234,6 +288,11 @@ export default function CourseDetail({ course, onPlay }) {
       </div>
       {unlockedToast && (
         <div className="piano-course__unlock-toast" role="status">🎉 {unlockedToast} unlocked!</div>
+      )}
+      {coProgressToast && (
+        <div className="piano-course__unlock-toast piano-course__co-progress-toast" role="status">
+          {coProgressToast}
+        </div>
       )}
     </section>
   );
