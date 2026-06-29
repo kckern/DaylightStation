@@ -295,8 +295,43 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     const isSequential = Array.isArray(playable.info?.labels) &&
       playable.info.labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
 
+    // Co-progress lock: in sequential courses with a configured user pair, block the
+    // ahead user from the next episode until the gap falls below the buffer.
+    let coProgressLock = null;
+    if (isSequential && userId && !isGuest && userVideoProgressStore) {
+      const rules = pianoConfig.videos?.co_progress || [];
+      const compoundId = playable.compoundId || `plex:${courseId}`;
+      const rule = rules.find(
+        (r) => r.courseId === compoundId &&
+               Array.isArray(r.users) &&
+               r.users.includes(userId),
+      );
+      if (rule) {
+        const myCount = (playable.items || []).filter((it) => it.userWatched).length;
+        const partnerIds = rule.users.filter((u) => u !== userId);
+        const partnerCounts = partnerIds.map((pid) => {
+          if (!userVideoProgressStore.isKnownUser(pid)) return 0;
+          const enriched = userVideoProgressStore.enrich(playable.items || [], pid);
+          return enriched.filter((it) => it.userWatched).length;
+        });
+        if (partnerCounts.length) {
+          const minPartnerCount = Math.min(...partnerCounts);
+          const aheadBy = myCount - minPartnerCount;
+          if (aheadBy >= rule.buffer) {
+            const slowestIndex = partnerCounts.indexOf(minPartnerCount);
+            coProgressLock = {
+              locked: true,
+              aheadBy,
+              waitingForId: partnerIds[slowestIndex],
+              buffer: rule.buffer,
+            };
+          }
+        }
+      }
+    }
+
     logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
-    res.json({ ...playable, isSequential });
+    res.json({ ...playable, isSequential, coProgressLock });
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────

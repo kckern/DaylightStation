@@ -135,3 +135,116 @@ describe('GET /api/v1/piano/courses/:courseId/playable', () => {
     expect(res.status).toBe(503);
   });
 });
+
+// ── Co-progress lock helpers ────────────────────────────────────────────────
+const PARTNER_USER = 'partner-user';
+
+const items6 = Array.from({ length: 6 }, (_, i) => ({
+  plex: String(100 + i), label: `Lesson ${i + 1}`, itemIndex: i + 1,
+  parentId: '10', isWatched: false, watchProgress: 0,
+}));
+
+function makePartnerStore(userWatched) {
+  return {
+    isKnownUser: (id) => id === MOCK_USER || id === PARTNER_USER,
+    enrich: (items, userId) => {
+      const watchedIds = new Set(userWatched[userId] || []);
+      return items.map((it) => ({
+        ...it,
+        userWatched: watchedIds.has(it.plex),
+        userPercent: watchedIds.has(it.plex) ? 92 : null,
+        userPlayhead: watchedIds.has(it.plex) ? 480 : null,
+        userEngaged: watchedIds.has(it.plex),
+        userCompletedAt: watchedIds.has(it.plex) ? '2026-06-26T00:00:00Z' : null,
+      }));
+    },
+  };
+}
+
+const coProgressConfig = {
+  users: { primary: [MOCK_USER, PARTNER_USER] },
+  videos: {
+    sequential_labels: ['sequential'],
+    co_progress: [{ courseId: `plex:${MOCK_SHOW}`, users: [MOCK_USER, PARTNER_USER], buffer: 5 }],
+  },
+};
+
+const makeAppWith = ({ config, store, items } = {}) => {
+  const configSvc = config
+    ? { ...mockConfigService, getHouseholdAppConfig: () => config }
+    : mockConfigService;
+  const svc = items
+    ? {
+        getPlayableEpisodes: vi.fn().mockResolvedValue({
+          compoundId: `plex:${MOCK_SHOW}`,
+          showId: MOCK_SHOW,
+          items,
+          parents: { '10': { index: 1, title: 'Season 1', thumbnail: null } },
+          info: { title: 'Piano Course', labels: ['sequential'], type: 'show' },
+          containerItem: null,
+        }),
+      }
+    : mockPlayableService;
+  const app = express();
+  app.use(express.json());
+  app.use('/api/v1/piano', createPianoRouter({
+    configService: configSvc,
+    fitnessPlayableService: svc,
+    userVideoProgressStore: store || mockStore,
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  }));
+  return app;
+};
+
+describe('co-progress lock', () => {
+  it('returns coProgressLock: null when no co_progress config exists', async () => {
+    const res = await request(makeApp())
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+    expect(res.body.coProgressLock).toBeNull();
+  });
+
+  it('returns coProgressLock: null when the gap is below the buffer (4 < 5)', async () => {
+    const store = makePartnerStore({ [MOCK_USER]: ['100', '101', '102', '103'], [PARTNER_USER]: [] });
+    const res = await request(makeAppWith({ config: coProgressConfig, store, items: items6 }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+    expect(res.body.coProgressLock).toBeNull();
+  });
+
+  it('locks when the requesting user is ahead by exactly buffer episodes', async () => {
+    const store = makePartnerStore({
+      [MOCK_USER]: ['100', '101', '102', '103', '104'],
+      [PARTNER_USER]: [],
+    });
+    const res = await request(makeAppWith({ config: coProgressConfig, store, items: items6 }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+    expect(res.body.coProgressLock).toEqual({
+      locked: true,
+      aheadBy: 5,
+      waitingForId: PARTNER_USER,
+      buffer: 5,
+    });
+  });
+
+  it('does not lock guest users (guest is always exempt)', async () => {
+    const store = makePartnerStore({ guest: ['100', '101', '102', '103', '104'] });
+    const res = await request(makeAppWith({ config: coProgressConfig, store, items: items6 }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=guest`);
+    expect(res.status).toBe(200);
+    expect(res.body.coProgressLock).toBeNull();
+  });
+
+  it('does not lock for a non-sequential course even with a matching rule', async () => {
+    const nonSeqConfig = {
+      ...coProgressConfig,
+      videos: { ...coProgressConfig.videos, sequential_labels: [] },
+    };
+    const store = makePartnerStore({ [MOCK_USER]: ['100', '101', '102', '103', '104'] });
+    const res = await request(makeAppWith({ config: nonSeqConfig, store, items: items6 }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+    expect(res.body.coProgressLock).toBeNull();
+  });
+});
