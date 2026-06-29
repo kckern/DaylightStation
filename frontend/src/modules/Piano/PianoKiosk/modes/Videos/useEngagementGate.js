@@ -13,8 +13,11 @@ function logger() {
  * pressed for `timeoutSeconds` while a sequential lecture plays, pauses the video
  * and opens the gate. The parent shows a play-along prompt and calls dismissGate()
  * on success to resume. No-op when isSequential is false.
+ *
+ * pause/play/isPaused should come from usePlayerController (ctrl.pause, ctrl.play,
+ * () => !isPlaying) — NOT from mediaEl directly, which bypasses the Player's API.
  */
-export function useEngagementGate({ mediaEl, isSequential, timeoutSeconds = 90, onEngagementConfirmed }) {
+export function useEngagementGate({ pause, play, isPaused, isSequential, timeoutSeconds = 90, onEngagementConfirmed }) {
   const [gateOpen, setGateOpen] = useState(false);
   const { activeNotes } = usePianoMidi();
   const lastActivityRef = useRef(Date.now());
@@ -30,30 +33,28 @@ export function useEngagementGate({ mediaEl, isSequential, timeoutSeconds = 90, 
 
   // Poll once a second; open the gate when idle too long and the video is playing.
   useEffect(() => {
-    if (!isSequential || !mediaEl) return undefined;
+    if (!isSequential) return undefined;
     const id = setInterval(() => {
-      if (gateOpenRef.current || mediaEl.paused) return;
+      if (gateOpenRef.current || isPaused?.()) return;
       const idleMs = Date.now() - lastActivityRef.current;
       if (idleMs >= timeoutSeconds * 1000) {
         gateOpenRef.current = true;
         setGateOpen(true);
-        try { mediaEl.pause(); } catch { /* element may be detached */ }
+        pause?.();
         logger().info('piano.engagement-gate.open', { idleMs });
       }
     }, 1000);
     return () => clearInterval(id);
-  }, [isSequential, mediaEl, timeoutSeconds]);
+  }, [isSequential, isPaused, pause, timeoutSeconds]);
 
   const dismissGate = useCallback(() => {
     gateOpenRef.current = false;
     setGateOpen(false);
     lastActivityRef.current = Date.now();
-    if (mediaEl && mediaEl.paused) {
-      try { mediaEl.play(); } catch { /* autoplay policy */ }
-    }
+    if (isPaused?.()) play?.();
     logger().info('piano.engagement-gate.dismissed');
     onEngagementConfirmed?.();
-  }, [mediaEl, onEngagementConfirmed]);
+  }, [isPaused, play, onEngagementConfirmed]);
 
   return { gateOpen, dismissGate };
 }
