@@ -76,7 +76,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   }, [activeNotes]);
 
   const { gateOpen, dismissGate } = useEngagementGate({
-    mediaEl,
+    pause: ctrl.pause,
+    play: ctrl.play,
+    isPaused: () => !isPlaying,
     isSequential,
     timeoutSeconds: engagementTimeoutSeconds,
     onEngagementConfirmed: () => { engagedRef.current = true; },
