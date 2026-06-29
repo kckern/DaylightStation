@@ -206,6 +206,7 @@ export function useAdvancedKeyboardHandler(config = {}) {
 
     const handleKeyDown = (event) => {
       if (event.repeat) return;
+      if (event._menuNav) return;
 
       // Never hijack typing: key events originating in editable elements
       // (search boxes, forms) belong to those elements. Kiosk surfaces have

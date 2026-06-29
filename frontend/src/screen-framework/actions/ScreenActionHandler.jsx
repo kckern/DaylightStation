@@ -113,7 +113,9 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
         // Dispatch synthetic ArrowRight so Menu.jsx advances to the next item sequentially
         // (ArrowDown skips by column count in grid layouts; ArrowRight always moves +1)
         logger().debug('menu.duplicate-navigate', { menuId });
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+        const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true });
+        ev._menuNav = true;
+        window.dispatchEvent(ev);
       } else {
         logger().debug('menu.duplicate-ignored', { menuId });
       }
