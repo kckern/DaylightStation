@@ -22,16 +22,10 @@ const PIANO = programChange(0); // Acoustic Grand — re-assert after any reset
 export function buildCandidates() {
   return [
     // ── Reverb ────────────────────────────────────────────────────────────
-    // 1. The standard reverb SEND (CC 91), now delivered with BLE framing
-    //    (flush + spacing). Tests "the CCs were just dropped" hypothesis.
-    { id: 'rv-cc91-framed', kind: 'reverb', label: 'CC91 send (framed)', sysex: false,
-      dry: [PIANO, cc(91, 0)], wet: [PIANO, cc(91, 127)] },
+    // Channel-CC reverb (CC80/91) was rigorously disproven by the effect-audit
+    // level sweep — omitted here. We test only the SysEx dialects, replicated.
 
-    // 2. The original owner's-manual guess (CC80 type + CC91 level), framed.
-    { id: 'rv-cc80-91-framed', kind: 'reverb', label: 'CC80 type + CC91 (framed)', sysex: false,
-      dry: [PIANO, cc(80, 4), cc(91, 0)], wet: [PIANO, cc(80, 4), cc(91, 127)] },
-
-    // 3. Roland GS: reset, set a Hall reverb macro + level (the macro also sets
+    // Roland GS: reset, set a Hall reverb macro + level (the macro also sets
     //    the per-part send), vs reset + zero level.
     { id: 'rv-gs', kind: 'reverb', label: 'GS reset + reverb macro/level', sysex: true,
       dry: [GS_RESET, PIANO, gsReverbLevel(0)],
@@ -48,9 +42,6 @@ export function buildCandidates() {
       wet: [GM2_SYSTEM_ON, PIANO, gm2ReverbType(4), cc(91, 127)] },
 
     // ── Chorus ────────────────────────────────────────────────────────────
-    { id: 'ch-cc93-framed', kind: 'chorus', label: 'CC93 send (framed)', sysex: false,
-      dry: [PIANO, cc(93, 0)], wet: [PIANO, cc(93, 127)] },
-
     { id: 'ch-gs', kind: 'chorus', label: 'GS reset + chorus macro/level', sysex: true,
       dry: [GS_RESET, PIANO, gsChorusLevel(0)],
       wet: [GS_RESET, PIANO, gsChorusMacro(2), gsChorusLevel(127), cc(93, 127)] },

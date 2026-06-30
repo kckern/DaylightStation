@@ -114,9 +114,14 @@ export function EffectProbe({ autoRun = false }) {
       // Reliable framed control send (flush re-send + spacing).
       const framed = (msg) => { out.send(msg); setTimeout(() => { try { out.send(msg); } catch { /* closed */ } }, FLUSH_MS); };
       const apply = async (msgs) => { for (const m of msgs) { framed(m); await sleep(SPACING_MS); } };
+      // Frame the note too: a lone note_on is otherwise deferred by the BLE
+      // one-turn-late bug and the clip records silence. Re-send note_on; the
+      // scheduled note_off (a following packet) flushes it reliably.
       const playNote = () => {
+        const t = performance?.now?.() ?? 0;
         out.send([0x90, NOTE, VEL]);
-        out.send([0x80, NOTE, 0], (performance?.now?.() ?? 0) + STIMULUS.offMs);
+        out.send([0x90, NOTE, VEL], t + FLUSH_MS);
+        out.send([0x80, NOTE, 0], t + STIMULUS.offMs);
       };
       const recordOne = async (label, msgs) => {
         await apply(msgs);
@@ -129,21 +134,25 @@ export function EffectProbe({ autoRun = false }) {
         return blob.size;
       };
 
+      const REPS = 3; // replicate each phase; the analyzer averages (BLE is noisy)
       const candidates = buildCandidates();
       const usable = candidates.filter((c) => sysex || !candidateNeedsSysex(c));
       const skipped = candidates.filter((c) => !sysex && candidateNeedsSysex(c)).map((c) => c.id);
       const clips = [];
-      setProgress({ i: 0, n: usable.length * 2 });
+      const total = usable.length * 2 * REPS;
+      setProgress({ i: 0, n: total });
       let done = 0;
       for (const c of candidates) {
         if (!sysex && candidateNeedsSysex(c)) { logger.warn('effect-probe.skip', { id: c.id, reason: 'no-sysex' }); continue; }
         for (const phase of ['dry', 'wet']) {
-          const label = `${c.id}-${phase}`;
-          setStatus('recording'); setDetail(`${c.label} (${phase})`);
-          const bytes = await recordOne(label, c[phase]);
-          clips.push({ label, candidate: c.id, kind: c.kind, phase, bytes });
-          setProgress({ i: ++done, n: usable.length * 2 });
-          logger.info('effect-probe.clip', { label, bytes });
+          for (let rep = 0; rep < REPS; rep++) {
+            const label = `${c.id}-${phase}-${rep}`;
+            setStatus('recording'); setDetail(`${c.label} (${phase} ${rep + 1}/${REPS})`);
+            const bytes = await recordOne(label, c[phase]);
+            clips.push({ label, candidate: c.id, kind: c.kind, phase, rep, bytes });
+            setProgress({ i: ++done, n: total });
+            logger.info('effect-probe.clip', { label, bytes });
+          }
         }
         // All Sound Off + reset effect sends between candidates.
         out.send([0xb0, 120, 0]); out.send([0xb0, 123, 0]);
