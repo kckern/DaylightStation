@@ -10,6 +10,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { createSimState, stepSim, TEST_DEFAULTS } from './pianoTestStream.js';
 import { EffectAudit } from './effectAudit/EffectAudit.jsx';
+import { EffectProbe } from './effectProbe/EffectProbe.jsx';
 
 /**
  * Piano performance test harness — self-driving, no human at the keyboard.
@@ -255,6 +256,10 @@ export default function PianoTest() {
 
   if (params.scene === 'effect-audit') {
     return <EffectAudit autoRun={sp.get('run') === '1'} />;
+  }
+
+  if (params.scene === 'effect-probe') {
+    return <EffectProbe autoRun={sp.get('run') === '1'} />;
   }
 
   if (params.scene === 'waterfall') {
