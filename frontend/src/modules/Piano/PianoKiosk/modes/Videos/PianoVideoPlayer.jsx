@@ -221,6 +221,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             loop={loop}
             isSequential={isSequential}
             furthestWatched={furthestWatched}
+            gateOpen={gateOpen}
             onToggle={ctrl.toggle}
             onRestart={handleRestart}
             onSkip={handleSkip}
