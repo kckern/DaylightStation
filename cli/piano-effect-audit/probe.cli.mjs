@@ -50,22 +50,33 @@ function measure(label) {
   };
 }
 
-// Group clips by candidate.
+// Group clips by candidate+phase, averaging reps. A note that didn't sound shows
+// as a deep-silence tail (<-120 dB); drop those reps as failed captures so one
+// dropped BLE note can't fake a huge Δ.
+const VALID_PEAK_DB = -45; // a real struck note peaks well above this
 const byCand = new Map();
 for (const c of manifest.clips) {
-  const m = byCand.get(c.candidate) || { id: c.candidate, kind: c.kind };
-  m[c.phase] = measure(c.label);
-  byCand.set(c.candidate, m);
+  const m = measure(c.label);
+  const key = c.candidate;
+  const rec = byCand.get(key) || { id: key, kind: c.kind, dry: [], wet: [] };
+  if (m.peakDb >= VALID_PEAK_DB) rec[c.phase].push(m); // keep only clips where the note sounded
+  byCand.set(key, rec);
 }
+const mean = (arr, f) => (arr.length ? arr.reduce((a, x) => a + f(x), 0) / arr.length : NaN);
 
 const rows = [];
 for (const [, m] of byCand) {
-  if (!m.dry || !m.wet) continue;
-  const dTail = round(m.wet.tailDb - m.dry.tailDb);
-  const dDecay = round(m.wet.decayMs - m.dry.decayMs);
+  const nDry = m.dry.length; const nWet = m.wet.length;
+  if (!nDry || !nWet) { console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} SKIP (valid dry=${nDry} wet=${nWet})`); continue; }
+  const dryTail = round(mean(m.dry, (x) => x.tailDb));
+  const wetTail = round(mean(m.wet, (x) => x.tailDb));
+  const dryDecay = round(mean(m.dry, (x) => x.decayMs));
+  const wetDecay = round(mean(m.wet, (x) => x.decayMs));
+  const dTail = round(wetTail - dryTail);
+  const dDecay = round(wetDecay - dryDecay);
   const works = dTail >= WORKS_TAIL_DB || dDecay >= WORKS_DECAY_MS;
-  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dryTail: m.dry.tailDb, wetTail: m.wet.tailDb, dryDecay: m.dry.decayMs, wetDecay: m.wet.decayMs, works });
-  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} dry.tail=${m.dry.tailDb} wet.tail=${m.wet.tailDb}  Δtail=${dTail}dB  Δdecay=${dDecay}ms  ${works ? '*** WORKS ***' : ''}`);
+  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dryTail, wetTail, dryDecay, wetDecay, nDry, nWet, works });
+  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} dry=${dryTail}dB(${nDry}) wet=${wetTail}dB(${nWet})  Δtail=${dTail}dB  Δdecay=${dDecay}ms  ${works ? '*** WORKS ***' : ''}`);
 }
 
 rows.sort((a, b) => (b.dTail + b.dDecay / 50) - (a.dTail + a.dDecay / 50));
