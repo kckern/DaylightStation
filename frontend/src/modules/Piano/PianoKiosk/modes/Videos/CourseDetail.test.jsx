@@ -15,7 +15,7 @@ vi.mock('../../PianoEmpty.jsx', () => ({ default: ({ loading, message }) => <div
 
 import CourseDetail from './CourseDetail.jsx';
 
-const baseHook = { items: null, info: {}, parents: null, isSequential: false, loading: false, error: null, coProgressLock: null };
+const baseHook = { items: null, info: {}, parents: null, isSequential: false, loading: false, error: null, coProgressLock: null, referenceUnitIds: [] };
 beforeEach(() => { hookReturn = { ...baseHook }; });
 
 describe('CourseDetail', () => {
@@ -162,5 +162,75 @@ describe('co-progress lock', () => {
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
     fireEvent.click(screen.getByText('B').closest('button'));
     expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reference units + descending order', () => {
+  it('renders multi-unit LESSON units in descending order (latest on top)', () => {
+    hookReturn = {
+      ...baseHook,
+      isSequential: false,
+      parents: { s1: { index: 1, title: 'Unit 1' }, s2: { index: 2, title: 'Unit 2' } },
+      items: [
+        { plex: '1', label: 'A', itemIndex: 1, parentId: 's1', userWatched: false },
+        { plex: '2', label: 'B', itemIndex: 1, parentId: 's2', userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    const titles = Array.from(document.querySelectorAll('.piano-course__season-title')).map((e) => e.textContent);
+    expect(titles).toEqual(['Unit 2', 'Unit 1']); // descending
+  });
+
+  it('renders reference units in a Practice & Reference section, not gated', () => {
+    const onPlay = vi.fn();
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      referenceUnitIds: ['s3'],
+      parents: { s1: { index: 1, title: 'Unit 1' }, s3: { index: 3, title: 'Exercise Module' } },
+      items: [
+        { plex: '1', label: 'L1', itemIndex: 1, parentId: 's1', userWatched: false },
+        { plex: '2', label: 'L2', itemIndex: 2, parentId: 's1', userWatched: false },
+        { plex: '9', label: 'Drill', itemIndex: 1, parentId: 's3', userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
+    expect(screen.getByText(/Practice & Reference/)).toBeTruthy();
+    const drill = screen.getByText('Drill').closest('button');
+    expect(drill).not.toBeDisabled();
+    fireEvent.click(drill);
+    expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the lesson gate working while reference units stay open', () => {
+    const onPlay = vi.fn();
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      referenceUnitIds: ['s3'],
+      parents: { s1: { index: 1, title: 'Unit 1' }, s3: { index: 3, title: 'Exercise Module' } },
+      items: [
+        { plex: '1', label: 'L1', itemIndex: 1, parentId: 's1', userWatched: false },
+        { plex: '2', label: 'L2', itemIndex: 2, parentId: 's1', userWatched: false },
+        { plex: '9', label: 'Drill', itemIndex: 1, parentId: 's3', userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
+    expect(screen.getByText('L2').closest('button')).toBeDisabled();
+    expect(screen.getByText('Drill').closest('button')).not.toBeDisabled();
+  });
+
+  it('shows no Practice & Reference section when referenceUnitIds is empty', () => {
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      parents: { s1: { index: 1, title: 'Unit 1' }, s2: { index: 2, title: 'Unit 2' } },
+      items: [
+        { plex: '1', label: 'A', itemIndex: 1, parentId: 's1', userWatched: true },
+        { plex: '2', label: 'B', itemIndex: 1, parentId: 's2', userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    expect(screen.queryByText(/Practice & Reference/)).toBeNull();
   });
 });
