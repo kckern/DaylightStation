@@ -1205,7 +1205,8 @@
     animation: piano-unlock-pop 0.3s ease-out;
   }
 
-  /* Practice & Reference: always-open, non-gated units below the lesson flow. */
+  /* Practice & Reference: opt-in, non-gated units. The info-panel switch reveals
+     them in the episodes column. */
   &__reference {
     margin-top: 1.5rem; padding-top: 1.25rem;
     border-top: 2px solid var(--piano-border, rgba(255, 255, 255, 0.12));
@@ -1215,6 +1216,30 @@
     color: var(--piano-muted); margin: 0 0 1rem;
   }
   &__season--reference { opacity: 0.92; }
+
+  /* Toggle switch in the info panel (left), under the summary. */
+  &__reference-toggle {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%;
+    margin-top: 1rem; padding: 0.6rem 0.7rem;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); color: inherit; cursor: pointer; text-align: left;
+    transition: border-color 120ms ease, background 120ms ease;
+    &:active { background: var(--piano-border); }
+    &.is-on { border-color: var(--piano-accent); }
+  }
+  &__reference-toggle-label { font-size: 0.85rem; font-weight: 700; }
+  &__reference-switch {
+    flex: 0 0 auto; position: relative; width: 2.2rem; height: 1.3rem;
+    border-radius: 0.65rem; background: var(--piano-border);
+    transition: background 140ms ease;
+  }
+  &__reference-knob {
+    position: absolute; top: 0.15rem; left: 0.15rem; width: 1rem; height: 1rem;
+    border-radius: 50%; background: var(--piano-muted);
+    transition: transform 140ms ease, background 140ms ease;
+  }
+  &__reference-toggle.is-on &__reference-switch { background: var(--piano-accent); }
+  &__reference-toggle.is-on &__reference-knob { transform: translateX(0.9rem); background: var(--piano-accent-ink); }
 }
 
 @keyframes piano-unlock-pop {
