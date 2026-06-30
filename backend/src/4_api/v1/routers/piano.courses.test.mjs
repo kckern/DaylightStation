@@ -169,7 +169,7 @@ const coProgressConfig = {
   },
 };
 
-const makeAppWith = ({ config, store, items } = {}) => {
+const makeAppWith = ({ config, store, items, parents } = {}) => {
   const configSvc = config
     ? { ...mockConfigService, getHouseholdAppConfig: () => config }
     : mockConfigService;
@@ -179,7 +179,7 @@ const makeAppWith = ({ config, store, items } = {}) => {
           compoundId: `plex:${MOCK_SHOW}`,
           showId: MOCK_SHOW,
           items,
-          parents: { '10': { index: 1, title: 'Season 1', thumbnail: null } },
+          parents: parents || { '10': { index: 1, title: 'Season 1', thumbnail: null } },
           info: { title: 'Piano Course', labels: ['sequential'], type: 'show' },
           containerItem: null,
         }),
@@ -246,5 +246,85 @@ describe('co-progress lock', () => {
       .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
     expect(res.status).toBe(200);
     expect(res.body.coProgressLock).toBeNull();
+  });
+});
+
+// ── Reference-unit helpers ──────────────────────────────────────────────────
+// Two units: a lesson unit ('20') and an "Exercise Module" reference unit ('30').
+const refParents = {
+  '20': { index: 1, title: 'Welcome & Basics', thumbnail: null },
+  '30': { index: 2, title: 'Exercise Module - C Position', thumbnail: null },
+};
+const refItems = [
+  { plex: '201', label: 'Lesson A1', itemIndex: 1, parentId: '20', isWatched: false, watchProgress: 0 },
+  { plex: '202', label: 'Lesson A2', itemIndex: 2, parentId: '20', isWatched: false, watchProgress: 0 },
+  { plex: '301', label: '01 Drill', itemIndex: 1, parentId: '30', isWatched: false, watchProgress: 0 },
+  { plex: '302', label: '02 Drill', itemIndex: 2, parentId: '30', isWatched: false, watchProgress: 0 },
+];
+const refConfig = (refRule) => ({
+  users: { primary: [MOCK_USER, PARTNER_USER] },
+  videos: {
+    sequential_labels: ['sequential'],
+    reference_units: [{ courseId: `plex:${MOCK_SHOW}`, ...refRule }],
+  },
+});
+
+describe('reference units', () => {
+  it('returns referenceUnitIds: [] and isReference:false on every item when no rule', async () => {
+    const res = await request(makeAppWith({ items: refItems, parents: refParents }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
+    expect(res.status).toBe(200);
+    expect(res.body.referenceUnitIds).toEqual([]);
+    expect(res.body.items.every((it) => it.isReference === false)).toBe(true);
+  });
+
+  it('flags a unit whose title matches a titlePattern (case-insensitive)', async () => {
+    const config = refConfig({ titlePatterns: ['exercise module'] });
+    const res = await request(makeAppWith({ config, items: refItems, parents: refParents }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
+    expect(res.status).toBe(200);
+    expect(res.body.referenceUnitIds).toEqual(['30']);
+    const byId = Object.fromEntries(res.body.items.map((it) => [it.plex, it.isReference]));
+    expect(byId['201']).toBe(false);
+    expect(byId['202']).toBe(false);
+    expect(byId['301']).toBe(true);
+    expect(byId['302']).toBe(true);
+  });
+
+  it('flags a unit listed in unitIds regardless of title', async () => {
+    const config = refConfig({ titlePatterns: [], unitIds: ['20'] });
+    const res = await request(makeAppWith({ config, items: refItems, parents: refParents }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable`);
+    expect(res.status).toBe(200);
+    expect(res.body.referenceUnitIds).toEqual(['20']);
+  });
+
+  it('excludes reference episodes from the co-progress count', async () => {
+    // milo watched 4 lessons + 5 reference; felix watched none. buffer 5.
+    // Counting reference would make milo 9 ahead (lock); excluding it leaves 4 (no lock).
+    const lessons = Array.from({ length: 6 }, (_, i) => ({
+      plex: String(400 + i), label: `Lesson ${i + 1}`, itemIndex: i + 1, parentId: '20',
+    }));
+    const drills = Array.from({ length: 5 }, (_, i) => ({
+      plex: String(500 + i), label: `Drill ${i + 1}`, itemIndex: i + 1, parentId: '30',
+    }));
+    const items = [...lessons, ...drills];
+    const store = makePartnerStore({
+      [MOCK_USER]: ['400', '401', '402', '403', '500', '501', '502', '503', '504'],
+      [PARTNER_USER]: [],
+    });
+    const config = {
+      users: { primary: [MOCK_USER, PARTNER_USER] },
+      videos: {
+        sequential_labels: ['sequential'],
+        co_progress: [{ courseId: `plex:${MOCK_SHOW}`, users: [MOCK_USER, PARTNER_USER], buffer: 5 }],
+        reference_units: [{ courseId: `plex:${MOCK_SHOW}`, titlePatterns: ['Exercise Module'] }],
+      },
+    };
+    const res = await request(makeAppWith({ config, store, items, parents: refParents }))
+      .get(`/api/v1/piano/courses/${MOCK_SHOW}/playable?userId=${MOCK_USER}`);
+    expect(res.status).toBe(200);
+    expect(res.body.referenceUnitIds).toEqual(['30']);
+    expect(res.body.coProgressLock).toBeNull(); // 4 lesson-ahead < 5, reference excluded
   });
 });
