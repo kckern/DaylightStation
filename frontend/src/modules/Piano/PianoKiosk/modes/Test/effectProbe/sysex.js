@@ -10,8 +10,11 @@
 export const cc = (controller, value, channel = 0) => [0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f];
 export const programChange = (program, channel = 0) => [0xc0 | (channel & 0x0f), program & 0x7f];
 
-// ── Universal system-on ──────────────────────────────────────────────────────
+// ── Universal system-on / master volume ─────────────────────────────────────
 export const GM_SYSTEM_ON = [0xf0, 0x7e, 0x7f, 0x09, 0x01, 0xf7];
+// GM Master Volume: F0 7E 7F 04 01 LL MM F7 (LL=fine, MM=coarse 0..127). Sweeping
+// MM is an unambiguous, peak-level test of whether Universal SysEx reaches the piano.
+export const gmMasterVolume = (mm, ll = 0) => [0xf0, 0x7e, 0x7f, 0x04, 0x01, ll & 0x7f, mm & 0x7f, 0xf7];
 export const GM2_SYSTEM_ON = [0xf0, 0x7e, 0x7f, 0x09, 0x03, 0xf7];
 
 // ── Roland GS ────────────────────────────────────────────────────────────────
