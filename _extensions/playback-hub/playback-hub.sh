@@ -1707,15 +1707,25 @@ loadlist_replace_preserving_pos() { # slot name -> 0 on reconcile, 1 on skip/fai
     local slot="$1" name="$2" dir; dir="$(slot_dir "$slot")"
     local socket="$dir/mpv-socket"
     [[ -S "$socket" ]] || { logev "$name" reconcile.skip slot="$slot" reason=no_socket; return 1; }
-    local cur_id before; cur_id="$(mpv_current_plexid "$socket")"; before="$(mpv_playlist_count "$socket")"
+    local cur_id before cur_pos; cur_id="$(mpv_current_plexid "$socket")"; before="$(mpv_playlist_count "$socket")"
+    # Capture the in-track time BEFORE the reload — loadlist replace resets both
+    # playlist-pos AND time-pos to 0, so without this the surviving track would
+    # audibly restart at 0:00 on every reconcile.
+    cur_pos="$(mpv_get_prop "$socket" time-pos)"
     mpv_ipc "$socket" "{\"command\":[\"loadlist\",\"$dir/playlist.m3u\",\"replace\"]}" >/dev/null || {
         logev "$name" reconcile.fail slot="$slot" reason=loadlist; return 1; }
     local idx; idx="$(playlist_index_of "$dir/playlist.m3u" "$cur_id")"
     if (( idx >= 0 )); then
         mpv_ipc "$socket" "{\"command\":[\"set_property\",\"playlist-pos\",$idx]}" >/dev/null || true
+        # Restore the in-track position so the surviving track keeps playing from
+        # where it was instead of restarting. Best-effort: only on a positive
+        # numeric sample; mpv clamps an at-EOF seek to the track end.
+        if [[ "$cur_pos" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN{exit !($cur_pos > 0.5)}"; then
+            mpv_ipc "$socket" "{\"command\":[\"seek\",$cur_pos,\"absolute\"]}" >/dev/null || true
+        fi
     fi
     local after; after="$(mpv_playlist_count "$socket")"
-    logev "$name" reconcile.loadlist slot="$slot" mpv_count="${before}-${after}" cur_track_survived="$([[ $idx -ge 0 ]] && echo true || echo false)"
+    logev "$name" reconcile.loadlist slot="$slot" mpv_count="${before}-${after}" cur_track_survived="$([[ $idx -ge 0 ]] && echo true || echo false)" preserved_pos="${cur_pos:-}"
 }
 
 start_playback() {
@@ -1974,6 +1984,25 @@ refresh_loop() {
                         exit 0
                     fi
                     log "$tag" "Periodic queue refresh"
+                    # Membership gate: skip the disruptive re-fetch/reshuffle/
+                    # reload when the queue's contentId membership is unchanged.
+                    # fetch_and_cache re-applies the shuffle and reload_mpv_playlist
+                    # does a naked loadlist-replace that resets mpv to track 0 /
+                    # pos 0, so an UNCONDITIONAL refresh restarts the current track
+                    # every REFRESH_INTERVAL — on a shuffle:true slot the user
+                    # hears the song jump to a new random track every 5 minutes.
+                    # A genuine schedule/content change alters the membership hash
+                    # (different contentIds) and still flows through. Mirrors the
+                    # cheap hash exit in reconcile_slot_membership.
+                    local _rqj _rnh _roh
+                    if _rqj=$(curl_api "$queue") && is_valid_queue_json "$_rqj"; then
+                        _rnh=$(queue_membership_hash "$_rqj")
+                        _roh=$(cat "$dir/.membership" 2>/dev/null || echo "")
+                        if [[ -n "$_roh" && "$_rnh" == "$_roh" ]]; then
+                            logev "$tag" refresh.skip slot="$slot" reason=membership_unchanged
+                            exit 0
+                        fi
+                    fi
                     if fetch_and_cache "$slot" "$tag" "$queue" "$shuffle"; then
                         # Reload the freshly-primed list into the running mpv,
                         # then stream the remainder in the background and do a
