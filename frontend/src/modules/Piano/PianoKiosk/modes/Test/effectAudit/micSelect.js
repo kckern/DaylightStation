@@ -6,15 +6,20 @@
 // captured faithfully.
 
 const BT_RE = /bluetooth|headset|hands-?free|sco|a2dp|j2-usb/i;
-const BUILTIN_RE = /built-?in|internal|default|microphone|\bmic\b/i;
+const BUILTIN_RE = /built-?in|internal|speakerphone|microphone|\bmic\b/i;
+// 'default'/'communications' are pseudo-devices that FOLLOW system routing — when
+// a Bluetooth HFP headset is connected they resolve to its SCO mic (the far,
+// wrong mic). We must pin a concrete hardware deviceId instead.
+const PSEUDO_IDS = new Set(['default', 'communications']);
 
-/** Pick a built-in audio input deviceId from enumerateDevices() output. */
+/** Pick a concrete built-in audio input deviceId from enumerateDevices() output. */
 export function pickBuiltInMic(devices) {
   const inputs = (devices || []).filter((d) => d.kind === 'audioinput');
   if (inputs.length === 0) return null;
-  const nonBt = inputs.filter((d) => !BT_RE.test(d.label || ''));
-  const builtIn = nonBt.find((d) => BUILTIN_RE.test(d.label || ''));
-  return (builtIn || nonBt[0] || inputs[0]).deviceId || null;
+  // Real hardware inputs only: drop BT/SCO and the routing pseudo-ids.
+  const real = inputs.filter((d) => !BT_RE.test(d.label || '') && !PSEUDO_IDS.has(d.deviceId));
+  const builtIn = real.find((d) => BUILTIN_RE.test(d.label || ''));
+  return (builtIn || real[0] || null)?.deviceId || null;
 }
 
 /** getUserMedia audio constraints pinning a device with processing disabled. */

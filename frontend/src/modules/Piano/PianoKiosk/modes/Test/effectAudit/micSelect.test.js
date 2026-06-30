@@ -20,6 +20,15 @@ describe('pickBuiltInMic', () => {
   it('returns null when there are no audio inputs', () => {
     expect(pickBuiltInMic([{ kind: 'videoinput', deviceId: 'cam', label: 'cam' }])).toBeNull();
   });
+  it('avoids the "default" pseudo-device (routes to BT SCO) and pins the concrete built-in', () => {
+    // Real Android/WebView enumeration when a BT headset is connected.
+    const id = pickBuiltInMic([
+      { kind: 'audioinput', deviceId: 'default', label: '' },
+      { kind: 'audioinput', deviceId: 'hw-spk', label: 'Speakerphone' },
+      { kind: 'audioinput', deviceId: 'hw-bt', label: 'Bluetooth headset' },
+    ]);
+    expect(id).toBe('hw-spk');
+  });
 });
 
 describe('buildMicConstraints', () => {

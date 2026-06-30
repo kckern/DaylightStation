@@ -1,5 +1,5 @@
 // verdict.mjs — turn per-clip metrics into effective/ignored verdicts.
-// Input clips: [{ label, group, metrics:{ tailDb, decayMs, centroid, spread } }]
+// Input clips: [{ label, group, metrics:{ tailDb, decayMs, centroid, spread, onsetDb } }]
 
 const byGroup = (clips, g) => clips.filter((c) => c.group === g);
 const round = (x) => Math.round(x * 10) / 10;
@@ -38,7 +38,17 @@ export function verdict(clips) {
   const instCentroidSpread = instCentroids.length ? Math.max(...instCentroids) - Math.min(...instCentroids) : 0;
   const instrumentDetectable = instCentroidSpread >= 150;
 
+  // Capture validity: a struck note must have an ATTACK louder than its tail.
+  // If most clips have onset <= tail, the mic captured noise/the wrong device
+  // (e.g. a Bluetooth SCO mic), not the piano — every verdict below is then junk.
+  const onset = (c) => c?.metrics?.onsetDb ?? -200;
+  const withAttack = clips.filter((c) => onset(c) > tail(c) + 3).length;
+  const captureReliable = clips.length > 0 && withAttack >= clips.length * 0.5;
+
   const rec = [];
+  if (!captureReliable) {
+    rec.push(`CAPTURE UNRELIABLE — only ${withAttack}/${clips.length} clips have a note attack louder than the tail; the mic captured noise or the wrong device (not the piano). The verdicts below are NOT trustworthy — fix the capture and re-run.`);
+  }
   rec.push(reverbDepthEffective
     ? 'KEEP reverb depth slider — measurable tail-energy change.'
     : 'REMOVE/REVIEW reverb depth slider — no measurable tail change (CC 91 likely ignored).');
@@ -58,6 +68,8 @@ export function verdict(clips) {
     reverbType: { effective: reverbTypeEffective, spreadMs: round(reverbTypeSpreadMs) },
     chorus: { effective: chorusEffective, deltaDb: round(chorusDeltaDb), spreadHz: round(chorusSpreadHz) },
     instrument: { detectable: instrumentDetectable, centroidSpreadHz: round(instCentroidSpread) },
+    captureReliable,
+    clipsWithAttack: withAttack,
     recommendations: rec,
   };
 }
