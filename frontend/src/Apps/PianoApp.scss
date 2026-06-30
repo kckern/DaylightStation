@@ -1122,6 +1122,17 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     animation: piano-unlock-pop 0.3s ease-out;
   }
+
+  /* Practice & Reference: always-open, non-gated units below the lesson flow. */
+  &__reference {
+    margin-top: 1.5rem; padding-top: 1.25rem;
+    border-top: 2px solid var(--piano-border, rgba(255, 255, 255, 0.12));
+  }
+  &__reference-title {
+    font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--piano-muted); margin: 0 0 1rem;
+  }
+  &__season--reference { opacity: 0.92; }
 }
 
 @keyframes piano-unlock-pop {
