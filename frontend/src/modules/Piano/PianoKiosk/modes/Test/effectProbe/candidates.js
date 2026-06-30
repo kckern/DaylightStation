@@ -10,7 +10,7 @@
 
 import {
   cc, programChange,
-  GM2_SYSTEM_ON,
+  GM2_SYSTEM_ON, gmMasterVolume,
   GS_RESET, gsReverbMacro, gsReverbLevel, gsChorusMacro, gsChorusLevel,
   XG_SYSTEM_ON, xgReverbType, xgReverbReturn, xgChorusType, xgChorusReturn,
   gm2ReverbType, gm2ChorusType, isSysex,
@@ -18,9 +18,16 @@ import {
 
 const PIANO = programChange(0); // Acoustic Grand — re-assert after any reset
 
-/** Ordered candidate list. groupKind is 'reverb' | 'chorus'. */
+/** Ordered candidate list. groupKind is 'reverb' | 'chorus' | 'control'. */
 export function buildCandidates() {
   return [
+    // ── Control: does Universal SysEx reach the PIANO at all? ───────────────
+    // GM Master Volume moves loudness unambiguously (measured by note PEAK). If
+    // wet(127) is much louder than dry(0), SysEx passes the WIDI Master to the
+    // piano; if not, the BLE→DIN bridge isn't forwarding SysEx (everything moot).
+    { id: 'gm-mastervol', kind: 'control', label: 'GM Master Volume sweep', sysex: true,
+      dry: [PIANO, gmMasterVolume(0)], wet: [PIANO, gmMasterVolume(127)] },
+
     // ── Reverb ────────────────────────────────────────────────────────────
     // Channel-CC reverb (CC80/91) was rigorously disproven by the effect-audit
     // level sweep — omitted here. We test only the SysEx dialects, replicated.

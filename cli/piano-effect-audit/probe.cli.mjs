@@ -59,7 +59,10 @@ for (const c of manifest.clips) {
   const m = measure(c.label);
   const key = c.candidate;
   const rec = byCand.get(key) || { id: key, kind: c.kind, dry: [], wet: [] };
-  if (m.peakDb >= VALID_PEAK_DB) rec[c.phase].push(m); // keep only clips where the note sounded
+  // For effect candidates, drop clips where the note failed to send (BLE drop).
+  // For the 'control' (master-volume) candidate the dry clip is *meant* to be
+  // silent, so keep all of its clips.
+  if (c.kind === 'control' || m.peakDb >= VALID_PEAK_DB) rec[c.phase].push(m);
   byCand.set(key, rec);
 }
 const mean = (arr, f) => (arr.length ? arr.reduce((a, x) => a + f(x), 0) / arr.length : NaN);
@@ -72,11 +75,17 @@ for (const [, m] of byCand) {
   const wetTail = round(mean(m.wet, (x) => x.tailDb));
   const dryDecay = round(mean(m.dry, (x) => x.decayMs));
   const wetDecay = round(mean(m.wet, (x) => x.decayMs));
+  const dryPeak = round(mean(m.dry, (x) => x.peakDb));
+  const wetPeak = round(mean(m.wet, (x) => x.peakDb));
   const dTail = round(wetTail - dryTail);
   const dDecay = round(wetDecay - dryDecay);
-  const works = dTail >= WORKS_TAIL_DB || dDecay >= WORKS_DECAY_MS;
-  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dryTail, wetTail, dryDecay, wetDecay, nDry, nWet, works });
-  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} dry=${dryTail}dB(${nDry}) wet=${wetTail}dB(${nWet})  Δtail=${dTail}dB  Δdecay=${dDecay}ms  ${works ? '*** WORKS ***' : ''}`);
+  const dPeak = round(wetPeak - dryPeak);
+  // 'control' (master volume) is judged on PEAK loudness; effects on tail/decay.
+  const works = m.kind === 'control'
+    ? Math.abs(dPeak) >= 6
+    : (dTail >= WORKS_TAIL_DB || dDecay >= WORKS_DECAY_MS);
+  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dPeak, dryTail, wetTail, dryDecay, wetDecay, dryPeak, wetPeak, nDry, nWet, works });
+  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} peak ${dryPeak}->${wetPeak} (Δ${dPeak})  tail ${dryTail}->${wetTail} (Δ${dTail})  Δdecay=${dDecay}ms  ${works ? '*** WORKS ***' : ''}`);
 }
 
 rows.sort((a, b) => (b.dTail + b.dDecay / 50) - (a.dTail + a.dDecay / 50));
