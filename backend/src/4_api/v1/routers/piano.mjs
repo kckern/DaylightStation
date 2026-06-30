@@ -12,6 +12,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
 import { userService } from '#system/config/UserService.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { encodeMidiFile } from '#applications/piano/midiFile.mjs';
+import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#applications/piano/courseProgress.mjs';
 
 /**
  * Piano kiosk API.
@@ -239,6 +240,65 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
   });
 
   // ── Course video playable (per-user) ────────────────────────────────────────
+  // Per-course roster progress for the poster wall: for each requested course id,
+  // returns { isSequential, total, users:[{id,name,completed,total,lastPlayedAt}] }.
+  // Users are filtered to those with recent, sufficient progress (videos.progress_overlay)
+  // and only populated for sequential courses (the overlay is a sequential affordance).
+  router.get('/courses/progress', asyncHandler(async (req, res) => {
+    if (!fitnessPlayableService) {
+      return res.status(503).json({ error: 'Piano course service not configured' });
+    }
+    const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const courses = {};
+    if (ids.length === 0) return res.json({ courses });
+
+    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
+    const videos = pianoConfig.videos || {};
+    const sequentialLabels = new Set((videos.sequential_labels || []).map((l) => String(l).toLowerCase()));
+    const overlay = videos.progress_overlay || {};
+    const recencyDays = overlay.recency_days ?? 7;
+    const minCompleted = overlay.min_completed ?? 1;
+    const maxAvatars = overlay.max_avatars ?? 4;
+    const referenceUnits = videos.reference_units || [];
+
+    const primary = Array.isArray(pianoConfig.users?.primary) ? pianoConfig.users.primary : [];
+    const roster = primary
+      .map((id) => { const p = configService.getUserProfile(id); return p ? { id, name: p.name } : null; })
+      .filter(Boolean);
+    const now = new Date();
+
+    for (const courseId of ids) {
+      let playable;
+      try {
+        // The playable service keys off the bare Plex rating key (the grid sends
+        // `plex:`-prefixed ids); strip for the call, keep the original as the map key.
+        playable = await fitnessPlayableService.getPlayableEpisodes(String(courseId).replace(/^plex:/, ''));
+      } catch (err) {
+        logger.warn?.('piano.courses.progress.fetch_error', { courseId, error: err.message });
+        continue;
+      }
+      const labels = playable?.info?.labels;
+      const isSequential = Array.isArray(labels) && labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
+      const items = excludeReferenceUnits(playable?.items || [], courseId, referenceUnits);
+      const total = items.length;
+
+      let users = [];
+      if (isSequential && userVideoProgressStore) {
+        for (const u of roster) {
+          const s = userVideoProgressStore.summarize(items, u.id);
+          if (s.completed >= minCompleted && isRecent(s.lastPlayedAt, recencyDays, now)) {
+            users.push({ id: u.id, name: u.name, completed: s.completed, total, lastPlayedAt: s.lastPlayedAt });
+          }
+        }
+        users = rankAndCapUsers(users, maxAvatars);
+      }
+      courses[courseId] = { isSequential, total, users };
+    }
+
+    logger.info?.('piano.courses.progress', { ids: ids.length, courses: Object.keys(courses).length });
+    res.json({ courses });
+  }));
+
   router.get('/courses/:courseId/playable', asyncHandler(async (req, res) => {
     if (!fitnessPlayableService) {
       return res.status(503).json({ error: 'Piano course service not configured' });

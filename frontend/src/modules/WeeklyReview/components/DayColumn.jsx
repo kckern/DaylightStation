@@ -17,6 +17,11 @@ export default function DayColumn({ day, isFocused, onClick }) {
   ].filter(Boolean).join(' ');
 
   const weather = day.weather;
+  // When a day has a photo grid, photos should dominate the cell. Collapse the
+  // calendar/fitness chip stacks to a single horizontal row (fewer chips, the
+  // rest folded into a "+N more" overflow) so they don't eat vertical space.
+  const compact = day.photoCount > 0;
+  const chipMax = compact ? 2 : MAX_CHIPS;
 
   return (
     <div
@@ -52,22 +57,22 @@ export default function DayColumn({ day, isFocused, onClick }) {
       </div>
 
       {day.calendar.length > 0 && (
-        <div className="day-calendar">
-          {day.calendar.slice(0, MAX_CHIPS).map((event, i) => (
+        <div className={`day-calendar${compact ? ' day-calendar--compact' : ''}`}>
+          {day.calendar.slice(0, chipMax).map((event, i) => (
             <div key={i} className="calendar-chip">
               {event.time && <span className="chip-time">{event.time}</span>}
               {event.summary}
             </div>
           ))}
-          {day.calendar.length > MAX_CHIPS && (
-            <div className="calendar-chip calendar-chip--overflow">+{day.calendar.length - MAX_CHIPS} more</div>
+          {day.calendar.length > chipMax && (
+            <div className="calendar-chip calendar-chip--overflow">+{day.calendar.length - chipMax} more</div>
           )}
         </div>
       )}
 
       {day.fitness?.length > 0 && (
-        <div className="day-fitness">
-          {day.fitness.slice(0, MAX_CHIPS).map((session, i) => (
+        <div className={`day-fitness${compact ? ' day-fitness--compact' : ''}`}>
+          {day.fitness.slice(0, chipMax).map((session, i) => (
             <div key={i} className="fitness-chip">
               <span className="fitness-icon">🏋️</span>
               {session.media?.primary?.showTitle || session.media?.primary?.title || 'Workout'}
@@ -76,8 +81,8 @@ export default function DayColumn({ day, isFocused, onClick }) {
               )}
             </div>
           ))}
-          {day.fitness.length > MAX_CHIPS && (
-            <div className="fitness-chip fitness-chip--overflow">+{day.fitness.length - MAX_CHIPS} more</div>
+          {day.fitness.length > chipMax && (
+            <div className="fitness-chip fitness-chip--overflow">+{day.fitness.length - chipMax} more</div>
           )}
         </div>
       )}

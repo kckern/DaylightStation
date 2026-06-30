@@ -1007,6 +1007,62 @@
     transition: opacity 240ms ease, filter 240ms ease;
     &.is-loading { opacity: 0.35; filter: blur(8px); }
   }
+
+  // Sequential indicator — small step glyph chip, top-left of the poster.
+  .piano-cover-badge {
+    position: absolute;
+    top: 0.45rem;
+    left: 0.45rem;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: var(--r-sm, 0.4rem);
+    background: rgba(0, 0, 0, 0.62);
+    color: var(--piano-accent);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+
+  // Per-user progress — gradient scrim over the bottom fifth of the cover with
+  // avatar chips + completed/total. Anchored to the image's bottom edge (the
+  // tile's 0.25rem bottom padding), so it never adds height.
+  .piano-cover-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0.25rem;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem 0.45rem;
+    padding: 1.4rem 0.4rem 0.4rem;
+    border-radius: 0 0 var(--r-sm) var(--r-sm);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.86) 0%, rgba(0, 0, 0, 0.6) 55%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+
+    &__chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      max-width: 100%;
+
+      .piano-avatar { width: 1.4rem; height: 1.4rem; font-size: 0.6rem; flex: 0 0 auto; }
+    }
+
+    &__count {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+      white-space: nowrap;
+    }
+  }
 }
 
 .piano-game-fullscreen {
@@ -1055,18 +1111,26 @@
     position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--piano-surface-2);
     img { width: 100%; height: 100%; object-fit: cover; display: block; }
   }
+  // "Completed" chip — green check plus the completion date, bottom-left (mirrors
+  // the Fitness show's watched-date badge). Date is optional (device-level
+  // history carries none), so the chip gracefully shrinks to just the check.
   &__check {
-    position: absolute; top: 6px; right: 6px;
-    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    position: absolute; left: 6px; bottom: 6px;
+    display: inline-flex; align-items: center; gap: 0.28em;
+    max-width: calc(100% - 12px);
     background: var(--piano-accent); color: var(--piano-accent-ink);
-    display: flex; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 700;
+    font-size: 0.72rem; font-weight: 700; line-height: 1;
+    padding: 0.22em 0.45em; border-radius: 0.25rem; pointer-events: none;
   }
+  &__check-mark { font-size: 0.8rem; flex: 0 0 auto; }
+  &__check-date { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   &__bar {
     position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.45);
     span { display: block; height: 100%; background: var(--piano-accent); }
   }
+  // Duration moved to the top-right so it never collides with the completion chip.
   &__duration {
-    position: absolute; right: 6px; bottom: 6px;
+    position: absolute; right: 6px; top: 6px;
     background: rgba(0, 0, 0, 0.75); color: #fff;
     font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums;
     line-height: 1; padding: 0.2em 0.4em; border-radius: 0.25rem; pointer-events: none;
@@ -1096,6 +1160,24 @@
     border-color: goldenrod;
     box-shadow: 0 0 0 2px goldenrod, 0 0 12px rgba(218, 165, 32, 0.55);
   }
+
+  /* Loading placeholder — shimmer over the thumb + a caption line. Uses the
+     standard .piano-episodes grid so the wall doesn't reflow when content lands. */
+  &--skeleton {
+    cursor: default; pointer-events: none;
+    .piano-episode__thumb { animation: piano-skeleton-shimmer 1.4s ease-in-out infinite; background-size: 200% 100%;
+      background-image: linear-gradient(90deg, var(--piano-surface-2) 0%, var(--piano-border) 50%, var(--piano-surface-2) 100%); }
+    .piano-episode__skel-line {
+      display: block; width: 70%; height: 0.8rem; border-radius: 0.25rem;
+      background-image: linear-gradient(90deg, var(--piano-surface-2) 0%, var(--piano-border) 50%, var(--piano-surface-2) 100%);
+      background-size: 200% 100%; animation: piano-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes piano-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* Sequential course chrome: badge, learner label, season groups, unlock toast. */
@@ -1123,7 +1205,8 @@
     animation: piano-unlock-pop 0.3s ease-out;
   }
 
-  /* Practice & Reference: always-open, non-gated units below the lesson flow. */
+  /* Practice & Reference: opt-in, non-gated units. The info-panel switch reveals
+     them in the episodes column. */
   &__reference {
     margin-top: 1.5rem; padding-top: 1.25rem;
     border-top: 2px solid var(--piano-border, rgba(255, 255, 255, 0.12));
@@ -1133,6 +1216,30 @@
     color: var(--piano-muted); margin: 0 0 1rem;
   }
   &__season--reference { opacity: 0.92; }
+
+  /* Toggle switch in the info panel (left), under the summary. */
+  &__reference-toggle {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%;
+    margin-top: 1rem; padding: 0.6rem 0.7rem;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); color: inherit; cursor: pointer; text-align: left;
+    transition: border-color 120ms ease, background 120ms ease;
+    &:active { background: var(--piano-border); }
+    &.is-on { border-color: var(--piano-accent); }
+  }
+  &__reference-toggle-label { font-size: 0.85rem; font-weight: 700; }
+  &__reference-switch {
+    flex: 0 0 auto; position: relative; width: 2.2rem; height: 1.3rem;
+    border-radius: 0.65rem; background: var(--piano-border);
+    transition: background 140ms ease;
+  }
+  &__reference-knob {
+    position: absolute; top: 0.15rem; left: 0.15rem; width: 1rem; height: 1rem;
+    border-radius: 50%; background: var(--piano-muted);
+    transition: transform 140ms ease, background 140ms ease;
+  }
+  &__reference-toggle.is-on &__reference-switch { background: var(--piano-accent); }
+  &__reference-toggle.is-on &__reference-knob { transform: translateX(0.9rem); background: var(--piano-accent-ink); }
 }
 
 @keyframes piano-unlock-pop {
@@ -1994,7 +2101,7 @@
   &__sheet {
     position: relative;
     z-index: 1;
-    width: min(46rem, 92vw);
+    width: min(52rem, 94vw);
     max-height: 86vh;
     overflow: auto;
     padding: 1.5rem 2rem 2rem;
@@ -2028,13 +2135,44 @@
     &:focus-visible { background: var(--piano-border); color: var(--piano-text, inherit); outline: none; }
   }
 
+  // Balanced rows: a centered flex-wrap capped to `--picker-cols` columns
+  // (set per page by columnsForCount), so 6 wraps 3+3, 8 wraps 4+4, and a 7's
+  // orphan row centers under the row above. Width is constrained to exactly
+  // N cards so wrapping lands where we want.
   &__grid {
+    --picker-card: 8.5rem;
     list-style: none;
-    margin: 0;
+    margin: 0 auto;
     padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 1rem;
+    max-width: calc(var(--picker-cols, 4) * var(--picker-card) + (var(--picker-cols, 4) - 1) * 1rem);
+
+    > li { flex: 0 0 var(--picker-card); width: var(--picker-card); }
+  }
+
+  // Page dots (only rendered when the roster spans more than one page of 9).
+  &__dots {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 1.5rem;
+  }
+
+  &__dot {
+    width: 0.7rem;
+    height: 0.7rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--piano-border);
+    cursor: pointer;
+    transition: background 120ms ease, transform 120ms ease;
+
+    &.is-active { background: var(--piano-accent); transform: scale(1.3); }
+    &:focus-visible { outline: 2px solid var(--piano-accent); outline-offset: 2px; }
   }
 }
 

@@ -173,21 +173,31 @@ export function createTimelapseFrameRenderer(config = {}) {
       const centerY = H - Math.round(footerH * 0.5);
       const participants = descriptor.participants || [];
 
+      // Circular meters (rider avatars AND bike RPM icons) share ONE diameter so
+      // the two families read as the same gauge — a user's ring is exactly the size
+      // of an RPM device's ring, and they scale together off the band height.
+      const meterD = Math.round(footerH * 0.46);
+
       // Active bikes (equipment icon + RPM, in each bike's cadence colour),
       // right-anchored. The icon identifies WHICH device each cadence belongs to —
       // cadence isn't rider-attributed, so it stays device-labelled, not a bare number.
       let rightLimit = W - margin;
       if (descriptor.cadence?.length) {
-        rightLimit = await drawCadenceCluster(ctx, descriptor.cadence, equipmentBuffers, W - margin, centerY, footerH);
+        rightLimit = await drawCadenceCluster(ctx, descriptor.cadence, equipmentBuffers, W - margin, centerY, footerH, meterD);
       }
 
-      // Per-participant chips fill the rest of the width. (Zone is shown per person
-      // via the heart colour, so there is no global zone pill.)
+      // Per-participant chips. Each chip is snug to its natural content width, and
+      // the whole block is centred in the region left of any cadence cluster — so a
+      // solo rider sits mid-bar instead of stranded at the left edge. When the riders
+      // would overflow, slots shrink to share the space (drawParticipant scales text).
       if (participants.length) {
-        const avail = (rightLimit - Math.round(footerH * 0.25)) - margin;
-        const slotW = Math.min(Math.round(W * 0.21), Math.floor(avail / participants.length));
+        const region = Math.max(0, (rightLimit - Math.round(footerH * 0.25)) - margin);
+        const natural = naturalChipWidth(ctx, footerH, meterD);
+        const slotW = Math.min(natural, Math.floor(region / participants.length));
+        const blockW = slotW * participants.length;
+        const startX = margin + Math.max(0, Math.round((region - blockW) / 2));
         for (let i = 0; i < participants.length; i++) {
-          await drawParticipant(ctx, participants[i], margin + i * slotW, centerY, slotW, footerH, avatarBuffers);
+          await drawParticipant(ctx, participants[i], startX + i * slotW, centerY, slotW, footerH, avatarBuffers, meterD);
         }
       }
     }
@@ -211,20 +221,36 @@ export function createTimelapseFrameRenderer(config = {}) {
 // carries that person's HR ZONE (cool→blue … hot→red), over a big white HR number
 // (the hero stat). The HR sits in a fixed 3-digit cell so the heart never jitters
 // as digits change frame to frame.
-async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuffers) {
+// Snug width of one chip: avatar + gap + 3-digit HR cell + heart + trailing pad,
+// plus an inter-chip breathing gap. Used to size/centre the chip block.
+function naturalChipWidth(ctx, scrimH, meterD) {
+  const hrFpx = Math.round(scrimH * 0.34);
+  const D = meterD ?? Math.round(scrimH * 0.46);
+  const gap = Math.round(scrimH * 0.1);
+  ctx.font = `700 ${hrFpx}px "${FONT_FAMILY}"`;
+  const hrCellW = ctx.measureText('000').width;
+  const heart = Math.round(hrFpx * 0.72) + Math.round(hrFpx * 0.22);
+  return D + gap + hrCellW + heart + Math.round(scrimH * 0.06) + Math.round(scrimH * 0.35);
+}
+
+async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuffers, meterD) {
   const color = p.color || COL.text;
   const heartColor = p.zone ? zoneMeta(p.zone).color : COL.heart;
-  let D = Math.round(scrimH * 0.46);
+  // The avatar ring is a shared-size meter (matches the RPM device rings) and is
+  // NOT shrunk — only the text scales to fit, so every gauge circle stays equal.
+  const D = meterD ?? Math.round(scrimH * 0.46);
   let hrFpx = Math.round(scrimH * 0.34);
   let nameFpx = Math.round(scrimH * 0.17);
   let gap = Math.round(scrimH * 0.1);
 
-  // Scale the whole chip down (never up) so avatar + big HR + heart fit the slot.
+  // Scale only the text cluster down (never up) so the big HR + heart fit beside
+  // the fixed-size avatar within the slot.
   ctx.font = `700 ${hrFpx}px "${FONT_FAMILY}"`;
-  const naturalW = D + gap + ctx.measureText('000').width + Math.round(hrFpx * 0.94) + Math.round(scrimH * 0.06);
-  const scale = Math.min(1, slotW / naturalW);
+  const textNaturalW = ctx.measureText('000').width + Math.round(hrFpx * 0.94) + Math.round(scrimH * 0.06);
+  const textAvail = slotW - D - gap;
+  const scale = Math.min(1, textAvail / textNaturalW);
   if (scale < 1) {
-    D = Math.round(D * scale); hrFpx = Math.round(hrFpx * scale);
+    hrFpx = Math.round(hrFpx * scale);
     nameFpx = Math.round(nameFpx * scale); gap = Math.round(gap * scale);
   }
 
@@ -275,8 +301,8 @@ function participantName(p) {
 // Active-bike cadence cluster: [equipment icon][rpm RPM] per bike, laid out
 // right-to-left from rightX, each in its bike's cadence colour. The icon names the
 // device. Returns the left edge reached (so chips don't overrun it).
-async function drawCadenceCluster(ctx, cadence, equipmentBuffers, rightX, centerY, bandH) {
-  const iconD = Math.round(bandH * 0.5);
+async function drawCadenceCluster(ctx, cadence, equipmentBuffers, rightX, centerY, bandH, meterD) {
+  const iconD = meterD ?? Math.round(bandH * 0.46); // shared meter size (== rider avatar ring)
   const numFpx = Math.round(bandH * 0.32);
   const unitFpx = Math.round(numFpx * 0.45);
   const baseY = centerY + Math.round(numFpx * 0.36);
@@ -395,26 +421,55 @@ function drawChart(ctx, chart, x, y, w, h) {
   const padX = Math.round(w * 0.02);
   const padTop = Math.round(h * 0.22);
   const padBot = Math.round(h * 0.1);
-  const ix = x + padX, iw = w - padX * 2 - Math.round(w * 0.03);
-  const iy = y + padTop, ih = h - padTop - padBot;
   const maxC = Math.max(1, chart.maxCoins);
   const maxT = Math.max(1, chart.totalTicks - 1);
+
+  // Scale labels: a left coin-axis (max at top … 0 at bottom) and per-rider
+  // endpoint totals on the right. Reserve a gutter for each so they never sit on
+  // the race lines; both gutters size to the widest number actually shown.
+  const scaleFpx = Math.max(10, Math.round(h * 0.085));
+  ctx.font = `600 ${scaleFpx}px "${FONT_FAMILY}"`;
+  const maxLabelW = ctx.measureText(formatCoins(maxC)).width;
+  const axisGap = Math.round(w * 0.012);
+  const leftAxisW = maxLabelW + axisGap;          // left coin scale
+  const dotR = Math.max(3, Math.round(h * 0.03));
+  const rightGutter = maxLabelW + dotR + axisGap; // right endpoint values
+
+  const ix = x + padX + leftAxisW;
+  const iw = Math.max(1, w - padX * 2 - leftAxisW - rightGutter);
+  const iy = y + padTop, ih = h - padTop - padBot;
   const sx = (t) => ix + (t / maxT) * iw;
   const sy = (c) => iy + ih - (Math.max(0, c) / maxC) * ih;
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  // Gridlines + left coin-scale numbers. With only ~4 lines, drop the inner two
+  // (keep min/max) when they'd crowd; also dedupe equal rounded values.
+  const GRID = 3;
+  const rowGap = ih / GRID;
+  const showInner = rowGap >= scaleFpx * 1.4;
   ctx.lineWidth = Math.max(1, Math.round(h * 0.005));
-  for (let g = 0; g <= 3; g++) {
-    const gy = iy + (g / 3) * ih;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  ctx.font = `600 ${scaleFpx}px "${FONT_FAMILY}"`;
+  let lastVal = null;
+  for (let g = 0; g <= GRID; g++) {
+    const gy = iy + (g / GRID) * ih;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.beginPath(); ctx.moveTo(ix, gy); ctx.lineTo(ix + iw, gy); ctx.stroke();
+    const isEdge = g === 0 || g === GRID;
+    if (!isEdge && !showInner) continue;
+    const val = Math.round(maxC * (1 - g / GRID));
+    if (val === lastVal) continue;                 // dedupe (small ranges)
+    lastVal = val;
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(formatCoins(val), ix - axisGap, gy);
   }
+
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `700 ${Math.round(h * 0.12)}px "${FONT_FAMILY}"`;
-  ctx.fillText('COIN RACE', ix, y + Math.round(h * 0.155));
+  ctx.fillText('COIN RACE', x + padX, y + Math.round(h * 0.155));
 
   const tick = Math.min(chart.tick, maxT);
-  const dotR = Math.max(3, Math.round(h * 0.03));
+  const endpoints = [];
   for (const s of chart.series) {
     const coins = s.coins || [];
     if (!coins.length) continue;
@@ -422,12 +477,12 @@ function drawChart(ctx, chart, x, y, w, h) {
     ctx.lineWidth = Math.max(2, Math.round(h * 0.018));
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.beginPath();
-    let started = false, lx = ix, ly = sy(0);
+    let started = false, lx = ix, ly = sy(0), lc = 0;
     for (let t = 0; t <= tick; t++) {
       const c = coins[t]; if (c == null) continue;
       const px = sx(t), py = sy(c);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
-      lx = px; ly = py;
+      lx = px; ly = py; lc = c;
     }
     if (!started) continue;
     ctx.stroke();
@@ -436,6 +491,22 @@ function drawChart(ctx, chart, x, y, w, h) {
     ctx.fill();
     ctx.lineWidth = Math.max(1, Math.round(dotR * 0.35));
     ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.stroke();
+    endpoints.push({ y: ly, value: lc, color: s.color || COL.text });
+  }
+
+  // Per-rider endpoint totals (in each rider's colour) right of the dots. Hide a
+  // label when it would overlap a higher-valued one already placed — declutter
+  // tight finishes rather than stack unreadable numbers.
+  endpoints.sort((a, b) => b.value - a.value); // leader first wins the space
+  const placed = [];
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = `700 ${scaleFpx}px "${FONT_FAMILY}"`;
+  const labelX = ix + iw + dotR + axisGap;
+  for (const e of endpoints) {
+    if (placed.some(py => Math.abs(py - e.y) < scaleFpx * 1.05)) continue;
+    placed.push(e.y);
+    ctx.fillStyle = e.color;
+    ctx.fillText(formatCoins(e.value), labelX, e.y);
   }
   ctx.textBaseline = 'middle';
 }
