@@ -500,7 +500,7 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       logger.info('nav.pop-guard', { isRecording: isRecordingRef.current, viewLevel: viewLevelRef.current, modalType: modalTypeRef.current });
       if (modalTypeRef.current === 'exitGate') { onSaveAndExitRef.current(); return false; }
       if (viewLevelRef.current === 'reel') { dispatchView({ type: 'CLIMB' }); return false; }
-      dispatchModal({ type: 'OPEN', modal: 'exitGate' });
+      dispatchModal({ type: 'OPEN', modal: 'exitGate', focusIndex: 1 });
       return false;
     });
 
@@ -598,11 +598,12 @@ export default function WeeklyReview({ dispatch, dismiss, clear }) {
       {/* Exit gate */}
       {modal.type === 'exitGate' && (
         <ConfirmOverlay labelId="wr-exit-label">
-          <div className="confirm-message" id="wr-exit-label">End weekly review recording?</div>
+          <div className="confirm-message" id="wr-exit-label">Done with your weekly review?</div>
           <div className="confirm-actions">
             <button className={`confirm-btn confirm-btn--continue${modal.focusIndex === 0 ? ' focused' : ''}`} onClick={() => dispatchModal({ type: 'CLOSE' })}>Keep going</button>
-            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>Save &amp; end</button>
+            <button className={`confirm-btn confirm-btn--save${modal.focusIndex === 1 ? ' focused' : ''}`} onClick={onSaveAndExit}>✓ Save &amp; Close</button>
           </div>
+          <div className="confirm-hint">Press <strong>OK</strong> to save &amp; close · <strong>Back</strong> again also saves &amp; closes</div>
         </ConfirmOverlay>
       )}
 
