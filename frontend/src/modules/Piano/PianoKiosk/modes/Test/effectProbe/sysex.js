@@ -29,6 +29,19 @@ export function gsParam(address, data) {
   return [0xf0, 0x41, 0x10, 0x42, 0x12, ...body, rolandChecksum(body), 0xf7];
 }
 export const GS_RESET = gsParam([0x40, 0x00, 0x7f], [0x00]); // → F0 41 10 42 12 40 00 7F 00 41 F7
+
+// GS Data Request (RQ1, command 0x11): ask the device for <size> bytes at <addr>.
+// A GS device answers with DT1 (command 0x12). If the MDG-400 replies, we have a
+// synchronous read-back of the live reverb/chorus state. addr+size are 3 bytes each.
+export function gsDataRequest(address, size = [0x00, 0x00, 0x01]) {
+  const body = [...address, ...size];
+  return [0xf0, 0x41, 0x10, 0x42, 0x11, ...body, rolandChecksum(body), 0xf7];
+}
+// Read-back targets: reverb macro/level + chorus macro/level.
+export const GS_RQ_REVERB_MACRO = gsDataRequest([0x40, 0x01, 0x30]);
+export const GS_RQ_REVERB_LEVEL = gsDataRequest([0x40, 0x01, 0x33]);
+export const GS_RQ_CHORUS_MACRO = gsDataRequest([0x40, 0x01, 0x38]);
+export const GS_RQ_CHORUS_LEVEL = gsDataRequest([0x40, 0x01, 0x3b]);
 export const gsReverbMacro = (type) => gsParam([0x40, 0x01, 0x30], [type]); // 0..7 (4=Hall2)
 export const gsReverbLevel = (level) => gsParam([0x40, 0x01, 0x33], [level]);
 export const gsChorusMacro = (type) => gsParam([0x40, 0x01, 0x38], [type]); // 0..7 (2=Chorus3)

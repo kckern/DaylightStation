@@ -4,6 +4,7 @@ import { pickBuiltInMic, buildMicConstraints } from '../effectAudit/micSelect.js
 import { uploadClip, uploadManifest } from '../effectAudit/upload.js';
 import { STIMULUS, recordTotalMs } from '../effectAudit/matrix.js';
 import { buildCandidates, candidateNeedsSysex } from './candidates.js';
+import { GS_RESET, gsReverbMacro, gsReverbLevel, GS_RQ_REVERB_MACRO, GS_RQ_REVERB_LEVEL } from './sysex.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FLUSH_MS = 30;     // BLE one-turn-late flush re-send (matches useWebMidiBLE)
@@ -103,6 +104,22 @@ export function EffectProbe({ autoRun = false }) {
         logger.info('effect-probe.identity', { identity, sysexSeen: inbound.sysex.length });
       }
 
+      // GS read-back probe: set a KNOWN reverb value, then RQ1-query it. A DT1
+      // reply (F0 41 10 42 12 …) means the piano supports synchronous state
+      // read-back — enabling set→verify→retry instead of fire-and-forget.
+      let readback = null;
+      if (sysex) {
+        setDetail('GS read-back (RQ1) probe…');
+        inbound.sysex.length = 0;
+        out.send(GS_RESET); await sleep(150);
+        out.send(gsReverbMacro(8)); await sleep(150);   // Plate
+        out.send(gsReverbLevel(100)); await sleep(250);
+        out.send(GS_RQ_REVERB_MACRO); await sleep(200);
+        out.send(GS_RQ_REVERB_LEVEL); await sleep(900);
+        readback = { sent: { macro: 8, level: 100 }, replies: inbound.sysex.map((s) => s.bytes) };
+        logger.info('effect-probe.readback', readback);
+      }
+
       setDetail('Opening microphone…');
       const perm = await navigator.mediaDevices.getUserMedia({ audio: true });
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -166,7 +183,7 @@ export function EffectProbe({ autoRun = false }) {
       stream.getTracks().forEach((t) => t.stop());
       await uploadManifest(runId, {
         runId, kind: 'effect-probe', sysex, startedAt: runId,
-        identity, inbound,
+        identity, readback, inbound,
         stimulus: { ...STIMULUS, noteOnAtMs: STIMULUS.recordLeadMs, noteOffAtMs: STIMULUS.recordLeadMs + STIMULUS.offMs },
         skipped, clips,
       });
