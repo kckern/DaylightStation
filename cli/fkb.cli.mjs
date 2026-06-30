@@ -8,10 +8,15 @@
 //
 // Host:     FKB_HOST env or default 10.0.0.245:2323
 // Password: $FKB_PW, else /tmp/fkb_piano_pw, else `op read op://Private/Fully Kiosk Piano/value`
+// ADB:      optional, for OS-level settings the FKB REST API can't reach (e.g.
+//           "stay awake while plugged"). Set FKB_ADB to the adb invocation — "adb"
+//           if it's on PATH, or "sudo docker exec daylight-station adb" to borrow
+//           the container's adb on the prod host. Target IP comes from FKB_HOST;
+//           FKB_ADB_PORT overrides the default 5555. See `adb` / `keepawake`.
 //
-// What it CAN'T do (needs ADB, intentionally absent): per-process CPU (`top`),
-// dumpsys, input taps into other apps, pm/am, logcat. See `fps` for jank
-// detection without CPU%.
+// What needs ADB: OS globals (stay_on_while_plugged_in, wifi_sleep_policy) and any
+// shell (top, dumpsys, input, pm/am, logcat) via the `adb` passthrough. See `fps`
+// for jank detection without CPU%.
 //
 // Examples:
 //   node fkb.cli.mjs info                       # deviceInfo (RAM/battery/wifi)
@@ -73,6 +78,21 @@ function status(html) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function tsPath() { return `/tmp/fkb-${Date.now()}.png`; }
+
+// ── ADB (optional) — OS-level controls the FKB REST API can't reach ──────────
+// FKB_ADB is the adb invocation: "adb" (on PATH) or e.g.
+// "sudo docker exec daylight-station adb" to borrow the container's adb. The ADB
+// target is the FKB host IP on FKB_ADB_PORT (default 5555).
+const ADB = process.env.FKB_ADB || 'adb';
+const ADB_SERIAL = `${HOST.split(':')[0]}:${process.env.FKB_ADB_PORT || 5555}`;
+function adbRaw(argline) { return execSync(`${ADB} ${argline}`, { encoding: 'utf8' }).trim(); }
+function adbShell(cmd) {
+  return execSync(`${ADB} -s ${ADB_SERIAL} shell ${JSON.stringify(cmd)}`, { encoding: 'utf8' }).trim();
+}
+function adbConnect() {
+  adbRaw(`connect ${ADB_SERIAL}`);
+  if (adbShell('echo ok') !== 'ok') throw new Error(`ADB not authorized on ${ADB_SERIAL}`);
+}
 
 const commands = {
   async info(keys) {
@@ -167,6 +187,48 @@ const commands = {
     const out = await call(command, params);
     console.log(out.length > 400 ? status(out) : out.trim());
   },
+
+  // ── ADB-backed commands (need FKB_ADB) ─────────────────────────────────────
+  async 'adb-connect'() {
+    adbConnect();
+    console.log('✓ adb connected + authorized: ' + ADB_SERIAL);
+  },
+  async adb(parts) {
+    if (!parts.length) {
+      console.error('usage: adb <shell command…>   e.g. adb "settings get global stay_on_while_plugged_in"');
+      process.exit(1);
+    }
+    adbConnect();
+    console.log(adbShell(parts.join(' ')));
+  },
+
+  // Make the tablet never sleep while plugged + survive WiFi doze. Combines the
+  // FKB wake-locks (REST, survive without ADB) with the OS-level globals (ADB)
+  // that FKB can't set. Idempotent — safe to re-run.
+  async keepawake() {
+    const fkb = {
+      keepScreenOn: 'true',
+      setWifiWakelock: 'true',
+      setCpuWakelock: 'true',
+      preventSleepWhileScreenOff: 'true',
+      reloadOnWifiOn: 'true',
+    };
+    for (const [key, value] of Object.entries(fkb)) {
+      console.log(`FKB ${key} → ${status(await call('setBooleanSetting', { key, value }))}`);
+    }
+    try {
+      adbConnect();
+    } catch (e) {
+      console.log(`✗ ADB unreachable (${e.message}) — FKB wake-locks applied; OS-level skipped.`);
+      console.log('  Set FKB_ADB (e.g. "sudo docker exec daylight-station adb") and ensure ADB-over-WiFi is on.');
+      return;
+    }
+    adbShell('settings put global stay_on_while_plugged_in 7'); // AC|USB|Wireless
+    adbShell('settings put global wifi_sleep_policy 2');         // never sleep WiFi
+    console.log('OS stay_on_while_plugged_in = ' + adbShell('settings get global stay_on_while_plugged_in'));
+    console.log('OS wifi_sleep_policy        = ' + adbShell('settings get global wifi_sleep_policy'));
+    console.log('✓ keepawake applied');
+  },
 };
 
 const [, , name, ...args] = process.argv;
@@ -184,7 +246,10 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  launch <package>         startApplication');
   console.log('  inject <js> | inject-file <path> | back-script');
   console.log('  cmd <fullyCmd> [k=v...]  raw passthrough');
-  console.log('\nNot available (needs ADB): CPU%, dumpsys, input taps, pm/am, logcat.');
+  console.log('  adb-connect              connect + authorize ADB over WiFi');
+  console.log('  adb <shell…>             run a shell command via ADB (top/dumpsys/settings/…)');
+  console.log('  keepawake                FKB wake-locks + OS stay-awake-while-plugged (needs FKB_ADB)');
+  console.log('\nADB commands need FKB_ADB set (e.g. "adb" or "sudo docker exec daylight-station adb").');
   process.exit(name && name !== 'help' ? 1 : 0);
 }
 try { await commands[name](args); } catch (e) { console.error('✗ ' + (e.message || e)); process.exit(1); }
