@@ -7,12 +7,12 @@ describe('columnsForCount — balanced rows', () => {
     expect(columnsForCount(3)).toBe(3);
     expect(columnsForCount(4)).toBe(4);
   });
-  it('splits 5–9 into even-ish rows via ceil(n/2)', () => {
-    expect(columnsForCount(5)).toBe(3); // 3 + 2
-    expect(columnsForCount(6)).toBe(3); // 3 + 3
-    expect(columnsForCount(7)).toBe(4); // 4 + 3 (orphan centers)
-    expect(columnsForCount(8)).toBe(4); // 4 + 4
-    expect(columnsForCount(9)).toBe(5); // 5 + 4
+  it('balances 5–9 into the fewest-empty rectangle (rows = ceil(n/4))', () => {
+    expect(columnsForCount(5)).toBe(3); // 3 + 2  (2 rows)
+    expect(columnsForCount(6)).toBe(3); // 3 × 2  (perfect)
+    expect(columnsForCount(7)).toBe(4); // 4 + 3  (2 rows, orphan centers)
+    expect(columnsForCount(8)).toBe(4); // 4 × 2  (perfect)
+    expect(columnsForCount(9)).toBe(3); // 3 × 3  (perfect — no empty cell)
   });
   it('never returns less than one column', () => {
     expect(columnsForCount(0)).toBe(1);
