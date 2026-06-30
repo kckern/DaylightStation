@@ -37,7 +37,8 @@ export function lectureStatus(item) {
   const plays = num(item?.playCount);
   const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
   const watched = (plays != null && plays > 0) || percent >= 90;
-  return { watched, percent };
+  // Device-level signals carry no completion timestamp.
+  return { watched, percent, completedAt: null };
 }
 
 /**
@@ -49,7 +50,7 @@ export function lectureUserStatus(item) {
   if (item?.userPercent != null || item?.userWatched != null) {
     const pct = num(item.userPercent);
     const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
-    return { watched: !!item.userWatched, percent };
+    return { watched: !!item.userWatched, percent, completedAt: item.userCompletedAt || null };
   }
   return lectureStatus(item);
 }
