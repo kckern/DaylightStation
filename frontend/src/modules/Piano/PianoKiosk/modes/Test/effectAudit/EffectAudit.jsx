@@ -78,9 +78,12 @@ export function EffectAudit({ autoRun = false }) {
         setDetail(setup.label);
         setProgress({ i: i + 1, n: matrix.length });
 
-        // Apply the setup: voice, then every CC.
+        // Apply the setup: voice, then every CC — spaced so the BLE peripheral
+        // can't coalesce/defer them (the one-turn-late bug; sendControlChange
+        // now also flushes each CC).
         midi.sendVoice(setup.voice.pc, setup.voice.bank || 0);
-        for (const cc of setup.cc) midi.sendControlChange(cc.controller, cc.value);
+        await sleep(90);
+        for (const cc of setup.cc) { midi.sendControlChange(cc.controller, cc.value); await sleep(90); }
         await sleep(SETTLE_MS);
 
         // Record; fire the stimulus recordLeadMs into the recording.
