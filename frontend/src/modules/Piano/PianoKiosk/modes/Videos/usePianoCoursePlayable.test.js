@@ -45,4 +45,33 @@ describe('usePianoCoursePlayable', () => {
     expect(api).not.toHaveBeenCalled();
     expect(result.current.items).toBe(null);
   });
+
+  it('exposes coProgressLock from response', async () => {
+    const lock = { locked: true, aheadBy: 5, waitingForId: 'felix', buffer: 5 };
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true, coProgressLock: lock });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.coProgressLock).toEqual(lock);
+  });
+
+  it('exposes coProgressLock: null when not present in response', async () => {
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.coProgressLock).toBeNull();
+  });
+
+  it('exposes referenceUnitIds from response', async () => {
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true, referenceUnitIds: ['30', '40'] });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.referenceUnitIds).toEqual(['30', '40']);
+  });
+
+  it('exposes referenceUnitIds: [] when not present in response', async () => {
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.referenceUnitIds).toEqual([]);
+  });
 });

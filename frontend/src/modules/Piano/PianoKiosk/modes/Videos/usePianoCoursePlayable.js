@@ -47,5 +47,7 @@ export function usePianoCoursePlayable(courseId, userId) {
     info: state.data?.info ?? {},
     parents: state.data?.parents ?? null,
     isSequential: state.data?.isSequential ?? false,
+    coProgressLock: state.data?.coProgressLock ?? null,
+    referenceUnitIds: state.data?.referenceUnitIds ?? [],
   };
 }

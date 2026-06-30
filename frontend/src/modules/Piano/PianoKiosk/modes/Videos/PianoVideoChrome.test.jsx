@@ -139,3 +139,28 @@ describe('PianoVideoChrome — mix balance', () => {
     expect(mix.setMediaLevel).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('engagement gate transport lock', () => {
+  it('all core transport buttons are disabled when gateOpen is true', () => {
+    render(<PianoVideoChrome {...baseProps} gateOpen={true} />);
+    expect(screen.getByLabelText('Pause')).toBeDisabled();
+    expect(screen.getByLabelText('Restart from beginning')).toBeDisabled();
+    expect(screen.getByLabelText('Back 15 seconds')).toBeDisabled();
+    expect(screen.getByLabelText('Forward 15 seconds')).toBeDisabled();
+  });
+
+  it('core transport buttons are enabled when gateOpen is false', () => {
+    render(<PianoVideoChrome {...baseProps} gateOpen={false} />);
+    expect(screen.getByLabelText('Pause')).not.toBeDisabled();
+    expect(screen.getByLabelText('Restart from beginning')).not.toBeDisabled();
+    expect(screen.getByLabelText('Back 15 seconds')).not.toBeDisabled();
+  });
+
+  it('seek bar does not call onSeek when gateOpen is true', () => {
+    const onSeek = vi.fn();
+    render(<PianoVideoChrome {...baseProps} gateOpen={true} onSeek={onSeek} />);
+    const bar = screen.getByTestId('piano-video-chrome').querySelector('.piano-video-chrome__bar');
+    fireEvent.pointerDown(bar, { clientX: 50 });
+    expect(onSeek).not.toHaveBeenCalled();
+  });
+});
