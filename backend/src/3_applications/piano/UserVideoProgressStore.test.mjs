@@ -114,3 +114,28 @@ describe('UserVideoProgressStore.enrich', () => {
     expect(items[0].userWatched).toBe(true);
   });
 });
+
+describe('UserVideoProgressStore.summarize', () => {
+  it('counts completed lectures and reports total + latest lastPlayed', () => {
+    const store = makeStore();
+    store.record({ userId: USER, plexId: '100', percent: 95, engaged: true });   // completed
+    store.record({ userId: USER, plexId: '101', percent: 40, engaged: true });   // not completed
+    const summary = store.summarize([{ plex: '100' }, { plex: '101' }, { plex: '102' }], USER);
+    expect(summary.total).toBe(3);
+    expect(summary.completed).toBe(1);
+    expect(summary.lastPlayedAt).toBeTruthy();
+  });
+
+  it('returns zeros for an unknown user', () => {
+    const store = makeStore();
+    const summary = store.summarize([{ plex: '100' }, { plex: '101' }], 'nobody');
+    expect(summary).toEqual({ completed: 0, total: 2, lastPlayedAt: null });
+  });
+
+  it('matches items by plex or id, stripping the plex: prefix', () => {
+    const store = makeStore();
+    store.record({ userId: USER, plexId: '100', percent: 95, engaged: true });
+    const summary = store.summarize([{ id: 'plex:100' }], USER);
+    expect(summary.completed).toBe(1);
+  });
+});

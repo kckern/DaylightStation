@@ -12,6 +12,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
 import { userService } from '#system/config/UserService.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { encodeMidiFile } from '#applications/piano/midiFile.mjs';
+import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#applications/piano/courseProgress.mjs';
 
 /**
  * Piano kiosk API.
@@ -239,6 +240,65 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
   });
 
   // ── Course video playable (per-user) ────────────────────────────────────────
+  // Per-course roster progress for the poster wall: for each requested course id,
+  // returns { isSequential, total, users:[{id,name,completed,total,lastPlayedAt}] }.
+  // Users are filtered to those with recent, sufficient progress (videos.progress_overlay)
+  // and only populated for sequential courses (the overlay is a sequential affordance).
+  router.get('/courses/progress', asyncHandler(async (req, res) => {
+    if (!fitnessPlayableService) {
+      return res.status(503).json({ error: 'Piano course service not configured' });
+    }
+    const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const courses = {};
+    if (ids.length === 0) return res.json({ courses });
+
+    const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
+    const videos = pianoConfig.videos || {};
+    const sequentialLabels = new Set((videos.sequential_labels || []).map((l) => String(l).toLowerCase()));
+    const overlay = videos.progress_overlay || {};
+    const recencyDays = overlay.recency_days ?? 7;
+    const minCompleted = overlay.min_completed ?? 1;
+    const maxAvatars = overlay.max_avatars ?? 4;
+    const referenceUnits = videos.reference_units || [];
+
+    const primary = Array.isArray(pianoConfig.users?.primary) ? pianoConfig.users.primary : [];
+    const roster = primary
+      .map((id) => { const p = configService.getUserProfile(id); return p ? { id, name: p.name } : null; })
+      .filter(Boolean);
+    const now = new Date();
+
+    for (const courseId of ids) {
+      let playable;
+      try {
+        // The playable service keys off the bare Plex rating key (the grid sends
+        // `plex:`-prefixed ids); strip for the call, keep the original as the map key.
+        playable = await fitnessPlayableService.getPlayableEpisodes(String(courseId).replace(/^plex:/, ''));
+      } catch (err) {
+        logger.warn?.('piano.courses.progress.fetch_error', { courseId, error: err.message });
+        continue;
+      }
+      const labels = playable?.info?.labels;
+      const isSequential = Array.isArray(labels) && labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
+      const items = excludeReferenceUnits(playable?.items || [], courseId, referenceUnits);
+      const total = items.length;
+
+      let users = [];
+      if (isSequential && userVideoProgressStore) {
+        for (const u of roster) {
+          const s = userVideoProgressStore.summarize(items, u.id);
+          if (s.completed >= minCompleted && isRecent(s.lastPlayedAt, recencyDays, now)) {
+            users.push({ id: u.id, name: u.name, completed: s.completed, total, lastPlayedAt: s.lastPlayedAt });
+          }
+        }
+        users = rankAndCapUsers(users, maxAvatars);
+      }
+      courses[courseId] = { isSequential, total, users };
+    }
+
+    logger.info?.('piano.courses.progress', { ids: ids.length, courses: Object.keys(courses).length });
+    res.json({ courses });
+  }));
+
   router.get('/courses/:courseId/playable', asyncHandler(async (req, res) => {
     if (!fitnessPlayableService) {
       return res.status(503).json({ error: 'Piano course service not configured' });
@@ -383,6 +443,45 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     logger.info?.('piano.history.write', { userId, date, takeId, events: events.length, bytes: buf.length });
     res.json({ ok: true, bytes: buf.length, path: file });
   }));
+
+  // ── Effect audit (autonomous reverb/chorus audibility test) ────────────────
+  // The harness page POSTs each recorded clip as raw audio/webm, then POSTs a
+  // manifest. Both land under media/logs/piano/effect-audit/<runId>/ (survives
+  // redeploys, like the per-session JSONL logs).
+  const SAFE_SEG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/; // no slashes, no leading dot/dash
+  const auditDir = (runId) => path.join(configService.getMediaDir(), 'logs', 'piano', 'effect-audit', runId);
+  const rawAudio = express.raw({ type: ['audio/webm', 'application/octet-stream'], limit: '25mb' });
+
+  router.post('/effect-audit/:runId/clip/:label', rawAudio, (req, res) => {
+    const { runId, label } = req.params;
+    if (!SAFE_SEG.test(runId) || !SAFE_SEG.test(label)) {
+      return res.status(400).json({ error: 'Invalid runId/label' });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Empty audio body' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, `${label}.webm`);
+    writeBinary(file, req.body);
+    logger.info?.('piano.effect-audit.clip', { runId, label, bytes: req.body.length });
+    res.status(201).json({ ok: true, bytes: req.body.length, path: file });
+  });
+
+  router.post('/effect-audit/:runId/manifest', (req, res) => {
+    const { runId } = req.params;
+    if (!SAFE_SEG.test(runId)) return res.status(400).json({ error: 'Invalid runId' });
+    const manifest = req.body;
+    if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.clips)) {
+      return res.status(400).json({ error: 'manifest.clips (array) required' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, 'manifest.json');
+    writeBinary(file, Buffer.from(JSON.stringify(manifest, null, 2)));
+    logger.info?.('piano.effect-audit.manifest', { runId, clips: manifest.clips.length });
+    res.status(201).json({ ok: true, clips: manifest.clips.length, path: file });
+  });
 
   return router;
 }
