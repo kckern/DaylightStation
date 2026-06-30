@@ -20,4 +20,35 @@ describe('CourseTile', () => {
     fireEvent.click(screen.getByTitle('Bach'));
     expect(onSelect).toHaveBeenCalledWith(item);
   });
+
+  it('shows a sequential badge when the course is sequential', () => {
+    render(<CourseTile item={item} onSelect={() => {}} progress={{ isSequential: true, total: 40, users: [] }} />);
+    expect(screen.getByLabelText('Sequential course')).toBeTruthy();
+  });
+
+  it('shows no sequential badge for a non-sequential course', () => {
+    const { container } = render(<CourseTile item={item} onSelect={() => {}} progress={{ isSequential: false, users: [] }} />);
+    expect(container.querySelector('.piano-cover-badge')).toBeNull();
+  });
+
+  it('renders a progress overlay chip per qualifying user with completed/total', () => {
+    const progress = {
+      isSequential: true,
+      total: 40,
+      users: [
+        { id: 'user_2', name: 'User_2', completed: 12, total: 40 },
+        { id: 'user_3', name: 'User_3', completed: 8, total: 40 },
+      ],
+    };
+    render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
+    const overlay = document.querySelector('.piano-cover-progress');
+    expect(overlay).toBeTruthy();
+    expect(overlay.textContent).toContain('12/40');
+    expect(overlay.textContent).toContain('8/40');
+  });
+
+  it('renders no overlay when no users qualify', () => {
+    const { container } = render(<CourseTile item={item} onSelect={() => {}} progress={{ isSequential: true, total: 40, users: [] }} />);
+    expect(container.querySelector('.piano-cover-progress')).toBeNull();
+  });
 });

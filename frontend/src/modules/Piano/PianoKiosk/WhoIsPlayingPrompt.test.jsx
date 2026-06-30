@@ -35,4 +35,25 @@ describe('WhoIsPlayingPrompt', () => {
     const { container } = render(<WhoIsPlayingPrompt open={false} users={users} onPick={() => {}} onDismiss={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('exposes a balanced column count on the grid (6 → 3 cols)', () => {
+    const six = Array.from({ length: 6 }, (_, i) => ({ id: `u${i}`, name: `U${i}` }));
+    const { container } = render(<WhoIsPlayingPrompt open users={six} onPick={() => {}} onDismiss={() => {}} />);
+    const grid = container.querySelector('.piano-userpicker__grid');
+    expect(grid.getAttribute('data-columns')).toBe('3');
+  });
+
+  it('paginates a roster larger than 9, showing dots and switching pages', () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, name: `U${i}` }));
+    const { container } = render(<WhoIsPlayingPrompt open users={twelve} onPick={() => {}} onDismiss={() => {}} />);
+    // Page 1: first 9 faces only.
+    expect(screen.getByText('U0')).toBeTruthy();
+    expect(screen.queryByText('U9')).toBeNull();
+    const dots = container.querySelectorAll('.piano-userpicker__dot');
+    expect(dots).toHaveLength(2);
+    // Switch to page 2 → the overflow faces appear.
+    fireEvent.click(dots[1]);
+    expect(screen.getByText('U9')).toBeTruthy();
+    expect(screen.queryByText('U0')).toBeNull();
+  });
 });
