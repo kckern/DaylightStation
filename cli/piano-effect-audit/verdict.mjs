@@ -26,12 +26,18 @@ export function verdict(clips) {
   const reverbTypeSpreadMs = typeDecays.length ? Math.max(...typeDecays) - Math.min(...typeDecays) : 0;
   const reverbTypeEffective = reverbTypeSpreadMs >= 120; // >=120 ms spread = distinguishable
 
-  // Chorus: tail energy or spectral-spread change off->max.
+  // Chorus: tail energy or spectral-spread change off->max. The spread threshold
+  // must clear the natural clip-to-clip spectral variance (mic noise makes
+  // aspectralstats wander ~1 kHz between identical-setting clips), else it
+  // false-positives. Measure that variance from the reverb-type clips (whose
+  // effect we treat as a constant baseline) and require chorus to exceed it.
   const cOff = chorus.find((c) => /l000$/.test(c.label));
   const cMax = chorus.find((c) => /l127$/.test(c.label));
+  const typeSpreads = types.map(spread).filter((x) => x > 0);
+  const baselineSpreadVarHz = typeSpreads.length ? Math.max(...typeSpreads) - Math.min(...typeSpreads) : 0;
   const chorusDeltaDb = tail(cMax) - tail(cOff);
   const chorusSpreadHz = Math.abs(spread(cMax) - spread(cOff));
-  const chorusEffective = chorusDeltaDb >= 3 || chorusSpreadHz >= 20;
+  const chorusEffective = chorusDeltaDb >= 3 || chorusSpreadHz >= baselineSpreadVarHz + 300;
 
   // Instrument control (rig sanity): centroid must change piano->strings.
   const instCentroids = inst.map(centroid);

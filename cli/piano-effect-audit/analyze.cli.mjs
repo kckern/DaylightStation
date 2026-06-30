@@ -8,7 +8,7 @@
 // reverb/chorus/timbre metrics, and writes report/verdict.md + report/metrics.json.
 
 import { execSync } from 'child_process';
-import { rms, tailEnergyDb, decayTimeMs } from './metrics.mjs';
+import { decayTimeMs, findPeak, windowDb } from './metrics.mjs';
 import { verdict } from './verdict.mjs';
 
 const CONTAINER = 'daylight-station';
@@ -25,10 +25,15 @@ function exec(cmd) { return execSync(cmd, { encoding: 'utf-8', maxBuffer: 256 * 
 function execBin(cmd) { return execSync(cmd, { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 }); }
 function inContainer(shCmd) { return exec(`sudo docker exec ${CONTAINER} sh -c ${JSON.stringify(shCmd)}`); }
 
-// 1. Read manifest.
+// 1. Read manifest. (Note timing is auto-detected per clip — see findPeak —
+// because MediaRecorder + BLE latency shifts the strike ~1.5-2.3s into the clip,
+// drifting later through the run, so a fixed offset can't be trusted.)
 const manifest = JSON.parse(inContainer(`cat ${APP}/${runRel}/manifest.json`));
-const noteOffMs = manifest.stimulus?.noteOffAtMs ?? 400;
-const measureFromMs = noteOffMs + 30; // start tail measurement just after release
+
+// Reverb tail measured in this window AFTER the detected strike: the dry note has
+// largely decayed by ~400ms, so extra energy here is reverb.
+const TAIL_FROM_MS = 400;
+const TAIL_TO_MS = 1400;
 
 // 2. Decode a clip to Float32Array via ffmpeg (stdout f32le).
 function decode(label) {
@@ -38,13 +43,12 @@ function decode(label) {
   return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
 }
 
-// 3. Spectral centroid + spread over the sustain (note_on..note_off), via ffmpeg.
-function spectral(label) {
-  // aspectralstats prints per-frame metadata; average centroid + spread.
+// 3. Spectral centroid + spread over a time window (the note body), via ffmpeg.
+function spectral(label, startMs, durMs) {
   let out = '';
   try {
     out = inContainer(
-      `ffmpeg -v error -i ${APP}/${runRel}/${label}.webm -af aspectralstats=measure=centroid+spread,ametadata=print:file=- -f null - 2>&1`,
+      `ffmpeg -v error -i ${APP}/${runRel}/${label}.webm -ss ${(startMs / 1000).toFixed(3)} -t ${(durMs / 1000).toFixed(3)} -af aspectralstats=measure=centroid+spread,ametadata=print:file=- -f null - 2>&1`,
     );
   } catch (e) { out = ''; }
   const grab = (key) => {
@@ -54,20 +58,26 @@ function spectral(label) {
   return { centroid: grab('centroid'), spread: grab('spread') };
 }
 
-// 4. Per-clip metrics.
+// 4. Per-clip metrics — all relative to the auto-detected note strike (peak).
 const clips = [];
 for (const c of manifest.clips) {
   const samples = decode(c.label);
-  const sp = spectral(c.label);
+  const peak = findPeak(samples, SR);
+  const p = peak.peakAtMs;
+  const baselineDb = windowDb(samples, SR, Math.max(0, p - 350), Math.max(1, p - 50));
+  const sp = spectral(c.label, p, 400); // timbre over the note body
   const metrics = {
-    tailDb: round(tailEnergyDb(samples, SR, measureFromMs)),
-    decayMs: round(decayTimeMs(samples, SR, measureFromMs, 20) ?? 0),
+    peakDb: round(peak.peakDb),
+    peakAtMs: round(p),
+    onsetDb: round(peak.peakDb),                                  // the note strike
+    baselineDb: round(baselineDb),                               // pre-note room floor
+    tailDb: round(windowDb(samples, SR, p + TAIL_FROM_MS, p + TAIL_TO_MS)), // reverb region
+    decayMs: round(decayTimeMs(samples, SR, Math.max(0, p - 50), 20) ?? 0),
     centroid: round(sp.centroid),
     spread: round(sp.spread),
-    onsetDb: round(20 * Math.log10(rms(samples, Math.floor((manifest.stimulus.noteOnAtMs / 1000) * SR), Math.floor(((manifest.stimulus.noteOnAtMs + 200) / 1000) * SR)) + 1e-9)),
   };
   clips.push({ label: c.label, group: c.group, metrics });
-  console.log(`${c.label.padEnd(34)} tail=${metrics.tailDb}dB decay=${metrics.decayMs}ms centroid=${metrics.centroid}Hz spread=${metrics.spread}Hz`);
+  console.log(`${c.label.padEnd(34)} peak=${metrics.peakDb}dB@${metrics.peakAtMs}ms tail=${metrics.tailDb}dB decay=${metrics.decayMs}ms centroid=${metrics.centroid}Hz`);
 }
 
 // 5. Verdict + report.
@@ -90,11 +100,13 @@ function writeInContainer(rel, content) {
 }
 
 function renderMarkdown(rid, man, cs, vv) {
-  const row = (c) => `| ${c.label} | ${c.group} | ${c.metrics.tailDb} | ${c.metrics.decayMs} | ${c.metrics.centroid} | ${c.metrics.spread} |`;
+  const row = (c) => `| ${c.label} | ${c.group} | ${c.metrics.peakDb} | ${c.metrics.peakAtMs} | ${c.metrics.tailDb} | ${c.metrics.decayMs} | ${c.metrics.centroid} | ${c.metrics.spread} |`;
   return [
     `# Piano Effect Audit — ${rid}`,
     '',
-    `Device: ${man.device}  ·  clips: ${cs.length}  ·  note-off at ${man.stimulus.noteOffAtMs}ms`,
+    `Device: ${man.device}  ·  clips: ${cs.length}  ·  note strike auto-detected per clip; reverb tail = energy 400–1400 ms after the strike`,
+    '',
+    `**Capture: ${vv.captureReliable ? 'RELIABLE' : 'UNRELIABLE'}** (${vv.clipsWithAttack}/${cs.length} clips show a clear note strike above the room floor)`,
     '',
     '## Verdict',
     '',
@@ -110,8 +122,8 @@ function renderMarkdown(rid, man, cs, vv) {
     '',
     '## Per-clip metrics',
     '',
-    '| clip | group | tailDb | decayMs | centroidHz | spreadHz |',
-    '|------|-------|--------|---------|-----------|----------|',
+    '| clip | group | peakDb | peakAtMs | tailDb | decayMs | centroidHz | spreadHz |',
+    '|------|-------|--------|----------|--------|---------|-----------|----------|',
     ...cs.map(row),
     '',
   ].join('\n');

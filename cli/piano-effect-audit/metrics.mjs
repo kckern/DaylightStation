@@ -19,6 +19,26 @@ export function tailEnergyDb(samples, sampleRate, afterMs) {
   return 20 * Math.log10(r + 1e-9);
 }
 
+/** Find the loudest window in the clip — the note strike. Returns { peakDb, peakAtMs }. */
+export function findPeak(samples, sampleRate, winMs = 30) {
+  const win = Math.max(1, Math.floor((winMs / 1000) * sampleRate));
+  const step = Math.max(1, Math.floor(win / 2));
+  let peak = 0;
+  let peakAt = 0;
+  for (let i = 0; i + win <= samples.length; i += step) {
+    const r = rms(samples, i, i + win);
+    if (r > peak) { peak = r; peakAt = i; }
+  }
+  return { peakDb: 20 * Math.log10(peak + 1e-9), peakAtMs: (peakAt / sampleRate) * 1000 };
+}
+
+/** RMS energy (dBFS) over the time window [startMs, endMs). */
+export function windowDb(samples, sampleRate, startMs, endMs) {
+  const a = Math.floor((startMs / 1000) * sampleRate);
+  const b = Math.floor((endMs / 1000) * sampleRate);
+  return 20 * Math.log10(rms(samples, a, b) + 1e-9);
+}
+
 /**
  * Decay time (ms): from the post-marker envelope peak, time to fall `dropDb`.
  * Coarse RT-style measure on a windowed envelope. Returns null if never reached.
