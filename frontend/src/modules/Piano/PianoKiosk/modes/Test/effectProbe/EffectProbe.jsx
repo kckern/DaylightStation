@@ -73,7 +73,7 @@ function monitorInput(input, logger, sink) {
 }
 
 /** EffectProbe — sweep reverb/chorus command candidates, record dry+wet, upload. */
-export function EffectProbe({ autoRun = false }) {
+export function EffectProbe({ autoRun = false, monitor = false }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-effect-probe' }), []);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState('');
@@ -118,6 +118,36 @@ export function EffectProbe({ autoRun = false }) {
         out.send(GS_RQ_REVERB_LEVEL); await sleep(900);
         readback = { sent: { macro: 8, level: 100 }, replies: inbound.sysex.map((s) => s.bytes) };
         logger.info('effect-probe.readback', readback);
+      }
+
+      // MONITOR mode: skip the sweep; just watch inbound MIDI for 90s while the
+      // user changes settings on the piano's PHYSICAL panel. Answers "does the
+      // piano transmit its state when you change it?" (listen-and-reconcile).
+      if (monitor) {
+        inbound.sysex.length = 0; inbound.cc.length = 0;
+        const seen = [];
+        if (input) input.onmidimessage = (ev) => {
+          const d = ev.data; const h = hex(d);
+          seen.push(h);
+          const st = d[0] & 0xf0;
+          if (d[0] === 0xf0) logger.info('effect-probe.mon.sysex', { bytes: h });
+          else if (st === 0xc0) logger.info('effect-probe.mon.programchange', { program: d[1] });
+          else if (st === 0xb0) logger.info('effect-probe.mon.cc', { cc: d[1], value: d[2] });
+          else if (st === 0x90 || st === 0x80) { /* notes — confirms return path */ }
+          else logger.info('effect-probe.mon.other', { bytes: h });
+        };
+        const t0 = performance?.now?.() ?? 0;
+        while ((performance?.now?.() ?? 0) - t0 < 90000) {
+          const notes = seen.filter((h) => /^[89]/.test(h)).length;
+          setStatus('recording'); setDetail(`MONITOR ${Math.round(90 - ((performance?.now?.() ?? 0) - t0) / 1000)}s · play a note + change a PANEL setting · msgs=${seen.length} notes=${notes}`);
+          await sleep(1000);
+        }
+        stopMonitor();
+        stream.getTracks().forEach((t) => t.stop());
+        await uploadManifest(runId, { runId, kind: 'effect-probe-monitor', sysex, identity, readback, seen });
+        setStatus('done'); setDetail(`MONITOR done · ${seen.length} inbound msgs · runId ${runId}`);
+        logger.info('effect-probe.monitor-done', { runId, count: seen.length, identity, readback });
+        return;
       }
 
       setDetail('Opening microphone…');
@@ -197,7 +227,7 @@ export function EffectProbe({ autoRun = false }) {
     } finally {
       runningRef.current = false;
     }
-  }, [logger]);
+  }, [logger, monitor]);
 
   useEffect(() => { if (autoRun) run(); }, [autoRun, run]);
 
