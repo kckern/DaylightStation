@@ -384,6 +384,45 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     res.json({ ok: true, bytes: buf.length, path: file });
   }));
 
+  // ── Effect audit (autonomous reverb/chorus audibility test) ────────────────
+  // The harness page POSTs each recorded clip as raw audio/webm, then POSTs a
+  // manifest. Both land under media/logs/piano/effect-audit/<runId>/ (survives
+  // redeploys, like the per-session JSONL logs).
+  const SAFE_SEG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/; // no slashes, no leading dot/dash
+  const auditDir = (runId) => path.join(configService.getMediaDir(), 'logs', 'piano', 'effect-audit', runId);
+  const rawAudio = express.raw({ type: ['audio/webm', 'application/octet-stream'], limit: '25mb' });
+
+  router.post('/effect-audit/:runId/clip/:label', rawAudio, (req, res) => {
+    const { runId, label } = req.params;
+    if (!SAFE_SEG.test(runId) || !SAFE_SEG.test(label)) {
+      return res.status(400).json({ error: 'Invalid runId/label' });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Empty audio body' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, `${label}.webm`);
+    writeBinary(file, req.body);
+    logger.info?.('piano.effect-audit.clip', { runId, label, bytes: req.body.length });
+    res.status(201).json({ ok: true, bytes: req.body.length, path: file });
+  });
+
+  router.post('/effect-audit/:runId/manifest', (req, res) => {
+    const { runId } = req.params;
+    if (!SAFE_SEG.test(runId)) return res.status(400).json({ error: 'Invalid runId' });
+    const manifest = req.body;
+    if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.clips)) {
+      return res.status(400).json({ error: 'manifest.clips (array) required' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, 'manifest.json');
+    writeBinary(file, Buffer.from(JSON.stringify(manifest, null, 2)));
+    logger.info?.('piano.effect-audit.manifest', { runId, clips: manifest.clips.length });
+    res.status(201).json({ ok: true, clips: manifest.clips.length, path: file });
+  });
+
   return router;
 }
 
