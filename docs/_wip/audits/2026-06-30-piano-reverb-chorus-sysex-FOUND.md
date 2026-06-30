@@ -68,3 +68,35 @@ in both runs; the CCs and GM Master Volume are flat. Chorus is especially strong
 Probe harness + analyzer + SysEx builders: `frontend/src/modules/Piano/PianoKiosk/
 modes/Test/effectProbe/` and `cli/piano-effect-audit/probe.cli.mjs` (branch
 `feat/piano-effect-probe`).
+
+---
+
+## Can the piano's state be READ over MIDI? (2026-06-30, panel-transmit capture)
+
+**Querying — NO.** The MDG-400 doesn't answer parameter requests (GS RQ1 → no DT1
+reply, zero inbound SysEx). You cannot poll it, and it does NOT echo MIDI-induced
+changes (setting reverb via SysEx produces no CC91 echo). Fire-and-forget.
+
+**Listening — YES.** It *transmits* most PANEL changes on its MIDI OUT, so the app
+can track live state by listening (the "listen-and-reconcile" path). Captured via
+a live inbound monitor while changing controls on the panel:
+
+| Panel control | Transmits |
+|---|---|
+| Reverb level | **CC 91** |
+| Chorus level | **CC 93** |
+| Reverb / chorus type | **CC 80 / CC 81** |
+| Instrument / voice | **Program Change** (+ **Bank Select CC 0** for folk voices) |
+| Equalizer | **NRPN** MSB=10, LSB=band(0–9,32), Data-Entry CC 6 (64=flat) |
+| Sustain / sostenuto pedal | CC 64 / CC 66 |
+| (unidentified) | NRPN (3,0) and (4,0) — appear with reverb/chorus; role TBD |
+| Volume, Transpose | **silent** (not transmitted; inbound CC7 seen is the app's own loopback) |
+
+**Key asymmetry for reverb/chorus:** the piano TRANSMITS them as CC 91/93 but
+IGNORES those CCs on input — read via CC, write via GS/GM2 SysEx.
+
+**Open / inconclusive:** whether *sending* NRPN (CC-based, would survive the
+Jamcorder) can SET the EQ/reverb — the acoustic test was too corrupted by the
+intermittent dropped-note capture problem to call. Needs a cleaner measurement
+(e.g. a stable close mic, or a unit that echoes). NRPN(3,0)/(4,0) likewise need a
+controlled one-at-a-time isolation to identify.
