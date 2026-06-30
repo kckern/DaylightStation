@@ -109,6 +109,33 @@ export class UserVideoProgressStore {
     });
   }
 
+  /**
+   * Aggregate one user's progress across a course's lecture `items`. Returns
+   * `{ completed, total, lastPlayedAt }` using the same completion rule as
+   * enrich (completedAt, or >= threshold AND engaged). `total` is items.length;
+   * the caller excludes reference units before calling. Unknown user → zeros.
+   */
+  summarize(items, userId) {
+    const total = Array.isArray(items) ? items.length : 0;
+    const dir = this.#userDir(userId);
+    if (!dir || total === 0) return { completed: 0, total, lastPlayedAt: null };
+
+    const progress = loadYaml(path.join(dir, 'video-progress')) || {};
+    const threshold = this.#threshold();
+    let completed = 0;
+    let lastPlayedAt = null;
+
+    for (const item of items) {
+      const up = progress[this.#keyFor(item.plex || item.id)];
+      if (!up) continue;
+      const engaged = this.#wasEngaged(up);
+      const done = !!up.completedAt || ((up.percent ?? 0) >= threshold && engaged);
+      if (done) completed += 1;
+      if (up.lastPlayed && (!lastPlayedAt || up.lastPlayed > lastPlayedAt)) lastPlayedAt = up.lastPlayed;
+    }
+    return { completed, total, lastPlayedAt };
+  }
+
   // Convenience guard reused by routers.
   isKnownUser(userId) {
     return !!this.#userDir(userId);
