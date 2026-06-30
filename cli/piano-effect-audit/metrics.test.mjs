@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { rms, tailEnergyDb, decayTimeMs } from './metrics.mjs';
+import { rms, tailEnergyDb, decayTimeMs, findPeak, windowDb } from './metrics.mjs';
 
 const SR = 48000;
 
@@ -48,5 +48,27 @@ describe('decayTimeMs', () => {
     const dt = decayTimeMs(decayingTone({ tau }), SR, 100, 20);
     const expected = tau * Math.log(10) * 1000; // ms
     expect(Math.abs(dt - expected)).toBeLessThan(80);
+  });
+});
+
+describe('findPeak', () => {
+  it('locates the note strike even when it starts late in the clip', () => {
+    // Tone begins at 1500ms — like the real recordings (latency-shifted).
+    const p = findPeak(decayingTone({ afterMs: 1500, tau: 0.4 }), SR);
+    expect(p.peakAtMs).toBeGreaterThan(1450);
+    expect(p.peakAtMs).toBeLessThan(1650);
+    expect(p.peakDb).toBeGreaterThan(-15);
+  });
+  it('returns a deep-silence peak for an empty clip', () => {
+    expect(findPeak(new Float32Array(SR), SR).peakDb).toBeLessThan(-100);
+  });
+});
+
+describe('windowDb', () => {
+  it('measures only the requested time window', () => {
+    const s = decayingTone({ afterMs: 1000, tau: 0.3, durMs: 1000 });
+    const beforeNote = windowDb(s, SR, 0, 900);     // silence before the note
+    const onNote = windowDb(s, SR, 1000, 1200);     // the note itself
+    expect(onNote).toBeGreaterThan(beforeNote + 20);
   });
 });
