@@ -130,8 +130,18 @@ const MAX_THUMBS = 9;
 export default function PhotoWall({ photos }) {
   const layout = useMemo(() => {
     if (!photos || photos.length === 0) return null;
-    const visible = photos.length > MAX_THUMBS ? photos.slice(0, MAX_THUMBS) : photos;
-    const overflow = photos.length > MAX_THUMBS ? photos.length - MAX_THUMBS : 0;
+    // Photos arrive in chronological order (for the reel). The collage layouts
+    // feature photos[0] as the large hero tile, so pull the flagged hero to the
+    // front while keeping the rest chronological.
+    let ordered = photos;
+    const heroIdx = photos.findIndex(p => p.isHero);
+    if (heroIdx > 0) {
+      ordered = [...photos];
+      const [hero] = ordered.splice(heroIdx, 1);
+      ordered.unshift(hero);
+    }
+    const visible = ordered.length > MAX_THUMBS ? ordered.slice(0, MAX_THUMBS) : ordered;
+    const overflow = ordered.length > MAX_THUMBS ? ordered.length - MAX_THUMBS : 0;
     return { ...computeLayout(visible), overflow };
   }, [photos]);
 

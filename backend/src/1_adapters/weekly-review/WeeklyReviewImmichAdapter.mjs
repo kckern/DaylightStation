@@ -82,11 +82,23 @@ export class WeeklyReviewImmichAdapter {
       return { asset, people, priorityCount };
     });
 
-    scored.sort((a, b) => b.priorityCount - a.priorityCount);
+    // Priority sort picks the hero — the most priority-people, non-video photo
+    // that the grid collage features as the large tile.
+    const byPriority = [...scored].sort((a, b) => b.priorityCount - a.priorityCount);
+    const heroAsset = (assets.length >= 3 && byPriority[0]?.asset.type !== 'VIDEO')
+      ? byPriority[0].asset
+      : null;
 
     const sessions = this.#groupSessions(scored);
 
-    const photos = scored.map((item, index) => {
+    // The canonical photo order is chronological (earliest first) so that browsing
+    // a day in the reel moves forward in time. The grid pulls the hero to the
+    // front for its collage (see PhotoWall); the reel uses this order as-is.
+    const chronological = [...scored].sort((a, b) =>
+      new Date(a.asset.localDateTime) - new Date(b.asset.localDateTime)
+    );
+
+    const photos = chronological.map((item) => {
       const isVideo = item.asset.type === 'VIDEO';
       // Images: use Immich's pre-generated `?size=preview` JPEG rather than
       // `/original` (HEIC — only Safari decodes it → blank) or `?size=fullsize`
@@ -102,7 +114,7 @@ export class WeeklyReviewImmichAdapter {
         thumbnail: `${this.#proxyPath}/assets/${item.asset.id}/thumbnail`,
         original,
         people: item.people,
-        isHero: assets.length >= 3 && index === 0 && item.asset.type !== 'VIDEO',
+        isHero: item.asset === heroAsset,
         sessionIndex: this.#findSessionIndex(sessions, item.asset),
         takenAt: item.asset.localDateTime,
       };

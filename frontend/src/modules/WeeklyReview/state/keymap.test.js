@@ -28,8 +28,8 @@ describe('keymap — week grid', () => {
   it('Enter opens the focused day', () => {
     expect(r({ ...onGrid(), key: 'Enter' }).view).toEqual([{ type: 'OPEN_DAY' }]);
   });
-  it('Back raises the exit gate', () => {
-    expect(r({ ...onGrid(), key: 'Escape' }).modal).toEqual([{ type: 'OPEN', modal: 'exitGate' }]);
+  it('Back raises the exit gate, pre-focused on Save & Close', () => {
+    expect(r({ ...onGrid(), key: 'Escape' }).modal).toEqual([{ type: 'OPEN', modal: 'exitGate', focusIndex: 1 }]);
   });
 });
 
