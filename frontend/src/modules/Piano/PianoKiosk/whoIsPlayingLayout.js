@@ -6,14 +6,16 @@
 export const PICKER_PAGE_SIZE = 9;
 
 /**
- * Column count for one page of `n` faces so rows stay balanced:
- *   ≤4 → single row (n columns); 5–9 → ceil(n/2) columns.
- * So 6 → 3 (3+3), 7 → 4 (4+3), 8 → 4 (4+4), 9 → 5 (5+4).
+ * Column count for one page of `n` faces, balanced into the fewest-empty
+ * rectangle: keep up to 4 in a single row, then add rows (rows = ceil(n/4)) and
+ * spread evenly (cols = ceil(n/rows)). This favours tidy grids over a ragged
+ * trailing row — 6 → 3×2, 8 → 4×2, 9 → 3×3 (no empty cell), 5 → 3+2, 7 → 4+3.
  */
 export function columnsForCount(n) {
   const count = Math.max(0, Math.floor(n) || 0);
-  if (count <= 4) return Math.max(1, count);
-  return Math.ceil(count / 2);
+  if (count <= 1) return 1;
+  const rows = Math.ceil(count / 4);
+  return Math.ceil(count / rows);
 }
 
 /** Split users into pages of at most `perPage` (default 9), preserving order. */
