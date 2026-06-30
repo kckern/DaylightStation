@@ -81,6 +81,25 @@ inject-file` + `shot`; write findings to a short results note (effect-audit styl
 - Sync logic (assert-and-reconcile / listen-and-reconcile) gets unit tests once
   the mechanism is chosen.
 
+## Web research findings (2026-06-30)
+
+Searched for a public MDG-400 SysEx spec; pulled the owner's manual MIDI
+Implementation Chart (manualslib, "Suzuki Micro Grand Digital Piano", p.45).
+
+- **No public proprietary SysEx address map exists.** Suzuki publishes only the
+  standard MIDI Implementation Chart — no manufacturer/model SysEx map. Confirms a
+  Roland-style RQ1/DT1 query is not implementable from any documentation; the probe
+  is the only way to know SysEx round-trip behaviour.
+- **CC7 (Channel Volume) is in the chart's Control Change list** (alongside 0, 1,
+  5, 7, 10, 11, 64/66/67, 65, 80/81, 91). So volume *is* part of the device's MIDI
+  map — unlike reverb/chorus (CC80/81/91), which are *listed* yet the effect-audit
+  proved *ignored*. Lesson: "listed in the chart" ≠ "works" → probe empirically.
+- The chart's **System Exclusive** row and the per-row Transmitted/Recognized O/X
+  marks are an image table that didn't OCR; the decisive cell — does the unit
+  **transmit CC7 when its physical volume moves** — must be read by the probe's
+  passive monitor. That single observation picks listen-and-reconcile vs
+  assert-and-reconcile, so it's the probe's top priority.
+
 ## Out of scope (until probe says otherwise)
 
 - Proprietary Suzuki SysEx (factory-service-only; not public).
