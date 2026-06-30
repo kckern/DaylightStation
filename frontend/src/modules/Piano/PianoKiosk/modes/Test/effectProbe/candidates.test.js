@@ -14,10 +14,11 @@ describe('buildCandidates', () => {
     expect(cands.some((c) => c.kind === 'reverb')).toBe(true);
     expect(cands.some((c) => c.kind === 'chorus')).toBe(true);
   });
-  it('all candidates are SysEx dialects (GS/XG/GM2)', () => {
-    expect(cands.every((c) => candidateNeedsSysex(c))).toBe(true);
-    expect(cands.some((c) => c.id === 'rv-gs')).toBe(true);
-    expect(cands.some((c) => c.id === 'rv-gm2')).toBe(true);
+  it('GS/GM2 candidates are SysEx; NRPN/CC candidates are not', () => {
+    expect(candidateNeedsSysex(cands.find((c) => c.id === 'rv-gs'))).toBe(true);
+    expect(candidateNeedsSysex(cands.find((c) => c.id === 'rv-gm2'))).toBe(true);
+    expect(candidateNeedsSysex(cands.find((c) => c.id === 'eq-nrpn-10-0'))).toBe(false);
+    expect(candidateNeedsSysex(cands.find((c) => c.id === 'nrpn-3-0'))).toBe(false);
   });
   it('every message is a valid 7-bit-framed byte array (sysex starts F0 ends F7)', () => {
     for (const c of cands) {

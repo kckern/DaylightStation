@@ -39,6 +39,15 @@ function decode(label) {
   return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
 }
 
+function spectralCentroid(label, startMs, durMs) {
+  let out = '';
+  try {
+    out = inContainer(`ffmpeg -v error -i ${APP}/${rel}/${label}.webm -ss ${(startMs / 1000).toFixed(3)} -t ${(durMs / 1000).toFixed(3)} -af aspectralstats=measure=centroid,ametadata=print:file=- -f null - 2>&1`);
+  } catch (e) { out = ''; }
+  const vals = [...out.matchAll(/aspectralstats\.[0-9]+\.centroid=([0-9.]+)/g)].map((mm) => Number(mm[1]));
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+
 function measure(label) {
   const s = decode(label);
   const peak = findPeak(s, SR);
@@ -47,6 +56,7 @@ function measure(label) {
     peakDb: round(peak.peakDb),
     tailDb: round(windowDb(s, SR, p + TAIL_FROM_MS, p + TAIL_TO_MS)),
     decayMs: round(decayTimeMs(s, SR, Math.max(0, p - 50), 20) ?? 0),
+    centroid: round(spectralCentroid(label, p, 400)),
   };
 }
 
@@ -77,15 +87,20 @@ for (const [, m] of byCand) {
   const wetDecay = round(mean(m.wet, (x) => x.decayMs));
   const dryPeak = round(mean(m.dry, (x) => x.peakDb));
   const wetPeak = round(mean(m.wet, (x) => x.peakDb));
+  const dryCent = round(mean(m.dry, (x) => x.centroid ?? 0));
+  const wetCent = round(mean(m.wet, (x) => x.centroid ?? 0));
   const dTail = round(wetTail - dryTail);
   const dDecay = round(wetDecay - dryDecay);
   const dPeak = round(wetPeak - dryPeak);
-  // 'control' (master volume) is judged on PEAK loudness; effects on tail/decay.
+  const dCent = round(wetCent - dryCent);
+  // 'control' judged on PEAK loudness; 'eq' on spectral CENTROID; effects on tail/decay.
   const works = m.kind === 'control'
     ? Math.abs(dPeak) >= 6
-    : (dTail >= WORKS_TAIL_DB || dDecay >= WORKS_DECAY_MS);
-  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dPeak, dryTail, wetTail, dryDecay, wetDecay, dryPeak, wetPeak, nDry, nWet, works });
-  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} peak ${dryPeak}->${wetPeak} (Δ${dPeak})  tail ${dryTail}->${wetTail} (Δ${dTail})  Δdecay=${dDecay}ms  ${works ? '*** WORKS ***' : ''}`);
+    : m.kind === 'eq'
+      ? Math.abs(dCent) >= 200
+      : (dTail >= WORKS_TAIL_DB || dDecay >= WORKS_DECAY_MS);
+  rows.push({ id: m.id, kind: m.kind, dTail, dDecay, dPeak, dCent, dryTail, wetTail, dryPeak, wetPeak, dryCent, wetCent, nDry, nWet, works });
+  console.log(`${m.id.padEnd(20)} ${m.kind.padEnd(7)} peak Δ${dPeak}  tail ${dryTail}->${wetTail} Δ${dTail}  decayΔ${dDecay}ms  centroid ${dryCent}->${wetCent} Δ${dCent}Hz  ${works ? '*** WORKS ***' : ''}`);
 }
 
 rows.sort((a, b) => (b.dTail + b.dDecay / 50) - (a.dTail + a.dDecay / 50));
