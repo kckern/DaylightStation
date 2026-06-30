@@ -2101,7 +2101,9 @@
   &__sheet {
     position: relative;
     z-index: 1;
-    width: min(52rem, 94vw);
+    // Hug the balanced grid so the modal doesn't carry big empty side gutters.
+    width: fit-content;
+    max-width: 94vw;
     max-height: 86vh;
     overflow: auto;
     padding: 1.5rem 2rem 2rem;

@@ -277,11 +277,17 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   }, []);
 
   // General Control Change out (effects like reverb/chorus, and the monitor's
-  // fireable outputs).
+  // fireable outputs). Flushed like Program Change: the BLE-MIDI peripheral
+  // defers the last message in a burst until the next packet, so a lone reverb/
+  // chorus CC never lands on its own turn — an acoustic probe confirmed CC 91/93
+  // only take effect once re-sent. See the one-turn-late bug doc.
   const sendControlChange = useCallback((controller, value, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
-    return emitOut(out, [0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f], 'midi.out.cc', { controller, value, channel });
+    const bytes = [0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f];
+    emitOut(out, bytes, 'midi.out.cc', { controller, value, channel });
+    flushOut(out, bytes); // re-send to push the CC through BLE (one-turn-late fix)
+    return true;
   }, []);
 
   // Panic: silence stuck notes (All Sound Off + All Notes Off on channel 1).

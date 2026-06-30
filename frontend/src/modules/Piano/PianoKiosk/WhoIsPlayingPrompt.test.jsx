@@ -43,6 +43,38 @@ describe('WhoIsPlayingPrompt', () => {
     expect(grid.getAttribute('data-columns')).toBe('3');
   });
 
+  it('shows relational labels (Dad/Mom) when the kids are in the roster, no subtitle', () => {
+    const family = [
+      { id: 'kckern', name: 'User_1', group_label: 'Dad' },
+      { id: 'user_9', name: 'User_9', group_label: 'Mom' },
+      { id: 'user_2', name: 'User_2' },
+    ];
+    const { container } = render(<WhoIsPlayingPrompt open users={family} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText('Dad')).toBeTruthy();
+    expect(screen.getByText('Mom')).toBeTruthy();
+    expect(screen.getByText('User_2')).toBeTruthy();
+    expect(screen.queryByText('User_1')).toBeNull();        // relational label replaces the full name
+    expect(container.querySelector('.piano-usercard__label')).toBeNull(); // no alternate-name subtitle
+  });
+
+  it('uses full names when no kids are present (adults only)', () => {
+    const adults = [
+      { id: 'kckern', name: 'User_1', group_label: 'Dad' },
+      { id: 'user_9', name: 'User_9', group_label: 'Mom' },
+    ];
+    render(<WhoIsPlayingPrompt open users={adults} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText('User_1')).toBeTruthy();
+    expect(screen.queryByText('Dad')).toBeNull();
+  });
+
+  it('still calls onPick with the user id (not the resolved label)', () => {
+    const onPick = vi.fn();
+    const family = [{ id: 'kckern', name: 'User_1', group_label: 'Dad' }, { id: 'user_2', name: 'User_2' }];
+    render(<WhoIsPlayingPrompt open users={family} onPick={onPick} onDismiss={() => {}} />);
+    fireEvent.click(screen.getByText('Dad'));
+    expect(onPick).toHaveBeenCalledWith('kckern');
+  });
+
   it('paginates a roster larger than 9, showing dots and switching pages', () => {
     const twelve = Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, name: `U${i}` }));
     const { container } = render(<WhoIsPlayingPrompt open users={twelve} onPick={() => {}} onDismiss={() => {}} />);
