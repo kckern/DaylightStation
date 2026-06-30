@@ -1,0 +1,142 @@
+// filenameToLoopMeta — turn a source-pack file path into a structured LoopEntry.
+// Pure string logic, no I/O. The packs encode key/mood/type/chords/bpm/reverb in
+// folder names + filenames using four different conventions; this normalises them.
+
+import { parseChordSymbol, PITCH_CLASS } from '../../shared/music/chords.mjs';
+
+const SOURCE_BY_PACK = {
+  '2000_NikoChord_Pack': 'niko-chord',
+  'Top_100_Melody_Starters': 'melody-starters',
+  'FamousMIDI_Bonus': 'famous',
+  'Niko_MIDI_Pack_': 'niko-master',
+};
+
+/** "Gb Major - Eb Minor" or "EMaj_C#Min" → { major, minor, raw } | null. */
+export function parseKeyFolder(name) {
+  const m = name.match(/^([A-G][#b]?)\s*Maj(?:or)?\s*[-_]\s*([A-G][#b]?)\s*Min(?:or)?$/);
+  if (!m) return null;
+  const major = PITCH_CLASS[m[1]];
+  const minor = PITCH_CLASS[m[2]];
+  if (major === undefined || minor === undefined) return null;
+  return { major, minor, raw: name };
+}
+
+/** Pull a BPM integer out of a name, or null. */
+export function extractBpm(name) {
+  const m = name.match(/(\d{2,3})\s*BPM/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** Detect a WET/DRY reverb tag (returned lowercase), or null. */
+export function extractReverb(name) {
+  const tok = name.split(/[_\s.\-]+/).find((t) => /^(wet|dry)$/i.test(t));
+  return tok ? tok.toLowerCase() : null;
+}
+
+/** Extract a scale-degree run (e.g. "5-6-1" → [5,6,1]), longest wins, or null. */
+export function extractDegrees(name) {
+  const runs = name.match(/(?:[1-7]-)+[1-7]/g);
+  if (!runs) return null;
+  const longest = runs.sort((a, b) => b.length - a.length)[0];
+  return longest.split('-').map(Number);
+}
+
+/** Extract a hyphenated chord run (every token a valid chord), longest wins, or null. */
+export function extractChords(name) {
+  const base = name.replace(/\.mid$/i, '');
+  let best = null;
+  for (const seg of base.split(/[_\s]+/)) {
+    if (!seg.includes('-')) continue;
+    const tokens = seg.split('-');
+    if (tokens.length < 2) continue;
+    if (tokens.every((t) => /^\d+$/.test(t))) continue; // degree run, not chords
+    if (!tokens.every((t) => parseChordSymbol(t))) continue;
+    if (!best || tokens.length > best.length) best = tokens;
+  }
+  return best;
+}
+
+/** kebab-case a label: lowercase, non-alphanumerics → single dash, trimmed. */
+export function kebab(str) {
+  return String(str).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Mood from the deepest "N - Word" FOLDER (not the filename), or null. */
+function extractMood(parts) {
+  for (let i = parts.length - 2; i >= 0; i -= 1) { // -2: skip the filename
+    const m = parts[i].match(/^\d+\s*-\s*(.+)$/);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+/** "_EMajor" / "_C#Minor" filename suffix → { major, minor, raw } | null. */
+function parseKeySuffix(base) {
+  const m = base.match(/_([A-G][#b]?)(major|minor)$/i);
+  if (!m) return null;
+  const pc = PITCH_CLASS[m[1]];
+  if (pc === undefined) return null;
+  const isMajor = /major/i.test(m[2]);
+  return { major: isMajor ? pc : null, minor: isMajor ? null : pc, raw: m[1] + m[2] };
+}
+
+/** Descriptor from a "68_Beautiful_Peaceful_Rhythm_118BPM" parent folder, or null. */
+function parentDescriptor(parentName) {
+  const m = (parentName || '').match(/^\d+_(.+)$/);
+  if (!m) return null;
+  return m[1].replace(/_\d{2,3}BPM$/i, '').replace(/_/g, ' ').trim() || null;
+}
+
+/** Leading "235_" or trailing "Idea_35"/"Bassline_1" index, or null. */
+function extractIndex(base) {
+  const lead = base.match(/^(\d+)[_\s]/);
+  if (lead) return Number(lead[1]);
+  const tagged = base.match(/(?:idea|bassline)_(\d+)/i);
+  return tagged ? Number(tagged[1]) : null;
+}
+
+/**
+ * Parse a path relative to the midi root into a LoopEntry.
+ * @param {string} relPath e.g. "FamousMIDI_Bonus/Classics/EMaj_C#Min/Metallica/One_Chorus_E-A-G-F#m_100BPM.mid"
+ */
+export function filenameToLoopMeta(relPath) {
+  const parts = relPath.split('/');
+  const pack = parts[0];
+  const base = parts[parts.length - 1].replace(/\.mid$/i, '');
+  const source = SOURCE_BY_PACK[pack] || 'unknown';
+
+  const parent = parts[parts.length - 2] || '';
+  const key = parts.map(parseKeyFolder).find(Boolean) || parseKeySuffix(base) || null;
+  const bpm = extractBpm(base) ?? extractBpm(parent);
+  const reverb = extractReverb(base);
+  const degrees = extractDegrees(base);
+  const chords = extractChords(base);
+  const mood = extractMood(parts);
+  const descriptor = parentDescriptor(parent);
+  const index = extractIndex(base);
+
+  let type;
+  if (/bassline/i.test(relPath)) type = 'bassline';
+  else if (/melod/i.test(relPath)) type = 'melody';
+  else if (chords) type = 'chord-progression';
+  else if (degrees) type = 'melody';
+  else type = 'idea';
+
+  // Famous packs: <category>/<key>/<artist>/<file>
+  let artist = null;
+  let category = null;
+  if (source === 'famous') {
+    category = parts[1] || null;
+    const maybeArtist = parts[parts.length - 2];
+    artist = maybeArtist && !parseKeyFolder(maybeArtist) ? maybeArtist : null;
+  }
+
+  const slug = chords ? kebab(chords.join('-')) : kebab(base.replace(/_(wet|dry)$/i, ''));
+
+  return {
+    sourcePath: relPath, source, type, key, mood, descriptor, bpm, reverb,
+    chords, degrees, index, artist, category, slug,
+  };
+}
+
+export default filenameToLoopMeta;

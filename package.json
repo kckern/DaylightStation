@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@extractus/article-extractor": "^8.0.20",
+    "@tonejs/midi": "^2.0.28",
     "@mastra/core": "1.32.1",
     "@mastra/libsql": "1.10.0",
     "@mastra/memory": "1.17.5",
