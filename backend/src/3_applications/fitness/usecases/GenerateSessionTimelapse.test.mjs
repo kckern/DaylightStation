@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { GenerateSessionTimelapse } from './GenerateSessionTimelapse.mjs';
+import { GenerateSessionTimelapse, buildSlug, participantSlug, durationMinutes } from './GenerateSessionTimelapse.mjs';
 
 function baseSession() {
   return {
@@ -195,4 +195,60 @@ test('finalized session bypasses the merge window and renders immediately', asyn
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'ready');
   assert.ok(f.calls.cleaned);
+});
+
+// --- filename slug ---
+
+test('buildSlug prefers the primary media item over earlier background audio (ESPN bug)', () => {
+  const data = {
+    sessionId: '20260625170246',
+    session: { duration_seconds: 1825 },
+    participants: { 'device:10266': {}, kckern: {}, milo: {}, felix: {} },
+    summary: {
+      media: [
+        { showTitle: 'ESPN', mediaType: 'video', primary: null },          // started first, NOT primary
+        { showTitle: 'Game Cycling', mediaType: 'video', primary: true }   // the real workout
+      ]
+    }
+  };
+  assert.equal(buildSlug(data), '20260625170246_30m_kckern-milo-felix_game-cycling');
+});
+
+test('buildSlug drops the redundant date prefix (sessionId already carries the date)', () => {
+  const data = {
+    sessionId: '20260626151907',
+    session: { duration_seconds: 2010 },
+    participants: { kckern: {}, felix: {} },
+    summary: { media: [{ showTitle: 'Insanity Max:30', primary: true }] }
+  };
+  const slug = buildSlug(data);
+  assert.equal(slug, '20260626151907_34m_kckern-felix_insanity-max-30');
+  assert.equal(slug.startsWith('20260626151907_'), true);
+  assert.equal(slug.includes('20260626_'), false); // no double-date
+});
+
+test('buildSlug falls back to media[0] then strava.name then "workout"', () => {
+  assert.match(buildSlug({ sessionId: 's', summary: { media: [{ title: 'Only One' }] } }), /_only-one$/);
+  assert.match(buildSlug({ sessionId: 's', strava: { name: 'Lunch Ride' } }), /_lunch-ride$/);
+  assert.equal(buildSlug({ sessionId: 's' }), 's_workout');
+});
+
+test('buildSlug omits users/duration segments when unavailable', () => {
+  const data = { sessionId: '20260101120000', summary: { media: [{ showTitle: 'Yoga', primary: true }] } };
+  assert.equal(buildSlug(data), '20260101120000_yoga');
+});
+
+test('participantSlug excludes device:* pseudo-ids and preserves order', () => {
+  assert.equal(participantSlug({ participants: { 'device:1': {}, kckern: {}, 'grandpa-kern': {}, soren: {} } }),
+    'kckern-grandpa-kern-soren');
+  assert.equal(participantSlug({ summary: { participants: { milo: {} } } }), 'milo');
+  assert.equal(participantSlug({}), '');
+});
+
+test('durationMinutes rounds to nearest minute, falls back to start/end, else null', () => {
+  assert.equal(durationMinutes({ session: { duration_seconds: 1825 } }), 30); // 30.4 -> 30
+  assert.equal(durationMinutes({ session: { duration_seconds: 1830 } }), 31); // 30.5 -> 31
+  assert.equal(durationMinutes({ startTime: 0, endTime: 90_000 }), 2);        // 1.5min -> 2
+  assert.equal(durationMinutes({ session: { duration_seconds: 10 } }), 1);    // min 1
+  assert.equal(durationMinutes({}), null);
 });

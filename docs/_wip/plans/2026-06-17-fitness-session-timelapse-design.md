@@ -104,14 +104,29 @@ timelapse:
 
 ## Output & session record
 
-- File: `media/video/fitness/{date}_{sessionId}_{slug}.mp4` (`slug` = session title, prefers
-  show/video name over generic Strava name).
+Naming + metadata are mapped by the pure module `2_domains/fitness/services/recapNaming.mjs`
+(`buildSlug` + `buildPlexMeta`), shared by the use case, the ffmpeg encoder, and the backfill tool.
+
+- **Slug file (source of truth):** `media/video/fitness/{sessionId}_{Nm}_{users}_{video-slug}.mp4`
+  - `sessionId` is `YYYYMMDDHHmmss` (already carries the date — no separate date prefix).
+  - `{Nm}` = session length in minutes; `{users}` = dash-joined participant ids (excl. `device:*`).
+  - `{video-slug}` comes from the **primary** media item (`summary.media[].primary`), NOT `media[0]`
+    — background audio (ESPN/music mixes) is tagged `primary:null` and must not win the name.
+- **Embedded MP4 tags** (Plex-friendly, written via ffmpeg `-metadata`):
+  `title` = `Family Fitness - S{year}E{MMDDHHMM} - {Users} - {Video}`, plus `show`, `episode_id`
+  (string), `media_type=10`, `artist` (participants), `album` (video), `album_artist`, `genre=Fitness`,
+  `date` (year), and `comment`/`description`/`synopsis` (= `strava_notes.text`, which bundles the
+  voice memo + media list). Integer `season_number`/`episode_sort` atoms are intentionally omitted —
+  ffmpeg's mov muxer byte-truncates `tvsn`/`tves`; Plex reads season/episode from the filename.
+- **Plex-library copy:** a TV-convention hardlink (copy fallback) at
+  `media/video/fitness/plex/Family Fitness - S{year}E{MMDDHHMM} - {Users} - {Video}.mp4` so a Plex
+  TV library ingests recaps as episodes. Best-effort — a link failure never fails the recap.
 - Recorded on the session via aggregate methods, persisted in YAML:
 
 ```yaml
 timelapse:
   status: ready            # processing | ready | failed | skipped
-  videoPath: media/video/fitness/2026-06-12_20260612180809_daytona-usa.mp4
+  videoPath: media/video/fitness/20260612180809_30m_kckern-felix_daytona-usa.mp4
   durationSeconds: 180
   frameCount: 1800
   fps: 10
