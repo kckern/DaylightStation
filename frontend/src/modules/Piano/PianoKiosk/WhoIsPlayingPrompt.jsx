@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import PianoAvatar from './PianoAvatar.jsx';
 import { columnsForCount, paginatePlayers } from './whoIsPlayingLayout.js';
+import { hasFamilyContext, resolveUserDisplayName } from '@/lib/userDisplayName.js';
 
 /**
  * "Who's playing?" prompt — roster faces ONLY (Guest is never a card). Tap a
@@ -15,6 +16,10 @@ export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
+  // A roster that lists the kids is a "family scene" → show relational labels
+  // (Dad/Mom) for the parents; adults-only → full names. Derived once from the
+  // whole roster so it's stable across pages.
+  const familyContext = useMemo(() => hasFamilyContext(users), [users]);
   const pages = useMemo(() => paginatePlayers(users), [users]);
   const [page, setPage] = useState(0);
   // Keep the active page in range when the roster shrinks.
@@ -44,8 +49,7 @@ export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss
             <li key={u.id}>
               <button type="button" className="piano-usercard" onClick={() => onPick?.(u.id)}>
                 <PianoAvatar id={u.id} name={u.name} />
-                <span className="piano-usercard__name">{u.name}</span>
-                {u.group_label && <span className="piano-usercard__label">{u.group_label}</span>}
+                <span className="piano-usercard__name">{resolveUserDisplayName(u, { familyContext }).displayName}</span>
               </button>
             </li>
           ))}

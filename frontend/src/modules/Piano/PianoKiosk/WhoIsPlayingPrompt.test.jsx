@@ -43,6 +43,38 @@ describe('WhoIsPlayingPrompt', () => {
     expect(grid.getAttribute('data-columns')).toBe('3');
   });
 
+  it('shows relational labels (Dad/Mom) when the kids are in the roster, no subtitle', () => {
+    const family = [
+      { id: 'kckern', name: 'KC Kern', group_label: 'Dad' },
+      { id: 'elizabeth', name: 'Elizabeth', group_label: 'Mom' },
+      { id: 'felix', name: 'Felix' },
+    ];
+    const { container } = render(<WhoIsPlayingPrompt open users={family} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText('Dad')).toBeTruthy();
+    expect(screen.getByText('Mom')).toBeTruthy();
+    expect(screen.getByText('Felix')).toBeTruthy();
+    expect(screen.queryByText('KC Kern')).toBeNull();        // relational label replaces the full name
+    expect(container.querySelector('.piano-usercard__label')).toBeNull(); // no alternate-name subtitle
+  });
+
+  it('uses full names when no kids are present (adults only)', () => {
+    const adults = [
+      { id: 'kckern', name: 'KC Kern', group_label: 'Dad' },
+      { id: 'elizabeth', name: 'Elizabeth', group_label: 'Mom' },
+    ];
+    render(<WhoIsPlayingPrompt open users={adults} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText('KC Kern')).toBeTruthy();
+    expect(screen.queryByText('Dad')).toBeNull();
+  });
+
+  it('still calls onPick with the user id (not the resolved label)', () => {
+    const onPick = vi.fn();
+    const family = [{ id: 'kckern', name: 'KC Kern', group_label: 'Dad' }, { id: 'felix', name: 'Felix' }];
+    render(<WhoIsPlayingPrompt open users={family} onPick={onPick} onDismiss={() => {}} />);
+    fireEvent.click(screen.getByText('Dad'));
+    expect(onPick).toHaveBeenCalledWith('kckern');
+  });
+
   it('paginates a roster larger than 9, showing dots and switching pages', () => {
     const twelve = Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, name: `U${i}` }));
     const { container } = render(<WhoIsPlayingPrompt open users={twelve} onPick={() => {}} onDismiss={() => {}} />);
