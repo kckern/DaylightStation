@@ -328,3 +328,78 @@ describe('reference units', () => {
     expect(res.body.coProgressLock).toBeNull(); // 4 lesson-ahead < 5, reference excluded
   });
 });
+
+describe('GET /api/v1/piano/courses/progress', () => {
+  const RECENT = new Date(Date.now() - 2 * 86400000).toISOString(); // 2 days ago
+  const STALE = new Date(Date.now() - 60 * 86400000).toISOString(); // 60 days ago
+
+  // Roster of two; only test-user has recent, qualifying progress.
+  const rosterConfig = {
+    getUserProfile: (id) => (['test-user', 'other-user'].includes(id) ? { id, name: id === 'test-user' ? 'Test' : 'Other' } : null),
+    getUserDir: () => '/tmp/piano-test-user',
+    getMediaDir: () => '/tmp/piano-test-media',
+    getHouseholdAppConfig: () => ({
+      users: { primary: ['test-user', 'other-user'] },
+      videos: {
+        sequential_labels: ['sequential'],
+        completion_threshold_percent: 90,
+        progress_overlay: { recency_days: 7, min_completed: 1, max_avatars: 4 },
+      },
+    }),
+  };
+
+  const summarizeStore = {
+    isKnownUser: (id) => ['test-user', 'other-user'].includes(id),
+    summarize: (items, userId) => {
+      if (userId === 'test-user') return { completed: 2, total: items.length, lastPlayedAt: RECENT };
+      return { completed: 0, total: items.length, lastPlayedAt: STALE };
+    },
+  };
+
+  const progressApp = (playable = mockPlayableService) => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/piano', createPianoRouter({
+      configService: rosterConfig,
+      fitnessPlayableService: playable,
+      userVideoProgressStore: summarizeStore,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    }));
+    return app;
+  };
+
+  it('returns a course map with isSequential, total, and qualifying users', async () => {
+    const res = await request(progressApp()).get(`/api/v1/piano/courses/progress?ids=plex:${MOCK_SHOW}`);
+    expect(res.status).toBe(200);
+    const course = res.body.courses[`plex:${MOCK_SHOW}`];
+    expect(course.isSequential).toBe(true);
+    expect(course.total).toBe(2);
+    // Only test-user qualifies (other-user: 0 completed + stale).
+    expect(course.users).toHaveLength(1);
+    expect(course.users[0]).toMatchObject({ id: 'test-user', name: 'Test', completed: 2, total: 2 });
+  });
+
+  it('omits users for a non-sequential course but still reports total', async () => {
+    const nonSeq = {
+      getPlayableEpisodes: vi.fn().mockResolvedValue({
+        items: [{ plex: '100' }, { plex: '101' }],
+        info: { title: 'Open Course', labels: [], type: 'show' },
+      }),
+    };
+    const res = await request(progressApp(nonSeq)).get(`/api/v1/piano/courses/progress?ids=plex:${MOCK_SHOW}`);
+    const course = res.body.courses[`plex:${MOCK_SHOW}`];
+    expect(course.isSequential).toBe(false);
+    expect(course.users).toEqual([]);
+  });
+
+  it('returns an empty map when no ids are given', async () => {
+    const res = await request(progressApp()).get('/api/v1/piano/courses/progress');
+    expect(res.status).toBe(200);
+    expect(res.body.courses).toEqual({});
+  });
+
+  it('returns 503 when the playable service is not configured', async () => {
+    const res = await request(progressApp(null)).get(`/api/v1/piano/courses/progress?ids=plex:${MOCK_SHOW}`);
+    expect(res.status).toBe(503);
+  });
+});
