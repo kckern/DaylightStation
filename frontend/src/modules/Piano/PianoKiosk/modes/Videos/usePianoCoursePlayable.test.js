@@ -60,4 +60,18 @@ describe('usePianoCoursePlayable', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.coProgressLock).toBeNull();
   });
+
+  it('exposes referenceUnitIds from response', async () => {
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true, referenceUnitIds: ['30', '40'] });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.referenceUnitIds).toEqual(['30', '40']);
+  });
+
+  it('exposes referenceUnitIds: [] when not present in response', async () => {
+    api.mockResolvedValue({ items: [], info: {}, isSequential: true });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.referenceUnitIds).toEqual([]);
+  });
 });
