@@ -201,6 +201,73 @@ Sample command: `node simulation.mjs --host localhost  melody`
 
 ---
 
+## Piano Kiosk Tablet (Fully Kiosk Browser)
+
+The piano app is displayed on a wall-mounted Android tablet (the "yellow-room" tablet,
+a Samsung SM-T590 on Android 10) running **Fully Kiosk Browser** (FKB) pointed at the
+`/piano` route. It is a separate device from the MIDI recorder above — the recorder
+captures notes; this tablet shows the UI.
+
+### Control: `cli/fkb.cli.mjs`
+
+FKB exposes a REST API on `:2323` that survives reboots (unlike ADB-over-WiFi). The CLI
+wraps it:
+
+```bash
+node cli/fkb.cli.mjs info          # device info (RAM/battery/wifi)
+node cli/fkb.cli.mjs reload        # loadStartUrl (pick up a new frontend bundle)
+node cli/fkb.cli.mjs restart       # respawn the WebView/renderer
+node cli/fkb.cli.mjs get [key]     # dump all settings, or one value
+node cli/fkb.cli.mjs set <k> <v>   # change a setting (bool auto-detected)
+node cli/fkb.cli.mjs fps           # frame-rate jank probe -> screenshot
+```
+
+Host comes from `FKB_HOST` (the tablet's `host:2323` from `devices.yml`); the password
+resolves from `$FKB_PW`, `/tmp/fkb_piano_pw`, or 1Password. On the prod host you can seed
+the password cache from the data volume:
+
+```bash
+sudo docker exec daylight-station sh -c 'cat data/household/auth/fullykiosk-piano.yml' \
+  | sed -n 's/^password:[[:space:]]*//p' | tr -d '"' > /tmp/fkb_piano_pw
+```
+
+### Keeping it awake + online (the doze/WiFi-drop fix)
+
+The tablet would intermittently fall off the network — still powered (smart plug on,
+~18 W) but unreachable (no ping/ARP/FKB). Cause: **Android doze suspended the WiFi radio
+while the app screensaver had the screen off**, because FKB's wake-locks were off. The
+screensaver itself (`usePianoScreensaver`, FKB `screenOff`) is fine; the device just must
+not deep-doze while plugged.
+
+Fix it with one idempotent command:
+
+```bash
+# ADB lives in the container, not the host, so point FKB_ADB at it:
+FKB_ADB="sudo docker exec daylight-station adb" node cli/fkb.cli.mjs keepawake
+```
+
+`keepawake` applies, and is safe to re-run:
+
+- **FKB wake-locks (REST):** `keepScreenOn`, `setWifiWakelock`, `setCpuWakelock`,
+  `preventSleepWhileScreenOff`, `reloadOnWifiOn` — keep CPU + WiFi held while the screen
+  is off, and reload the SPA when the network reconnects.
+- **OS globals (ADB):** `stay_on_while_plugged_in=7` (never sleep on any power source) and
+  `wifi_sleep_policy=2` (never sleep WiFi) — the part FKB REST can't set.
+
+ADB-over-WiFi (`<ip>:5555`) must be enabled + authorized on the tablet. Run arbitrary
+shell with `node cli/fkb.cli.mjs adb "<cmd>"` (needs `FKB_ADB`).
+
+**Gotcha:** FKB's `resetWifiOnDisconnection` reports "Saved" but won't stick — **Android
+10+ blocks non-device-owner apps from toggling WiFi**. It's moot once the wake-locks stop
+the drop from happening; the OS auto-reconnects on wake and `reloadOnWifiOn` refreshes the
+page.
+
+### After a frontend deploy
+
+The tablet serves the cached bundle until reloaded: `node cli/fkb.cli.mjs reload`.
+
+---
+
 ## Frontend Integration
 
 The Piano Visualizer is automatically shown in OfficeApp when:
