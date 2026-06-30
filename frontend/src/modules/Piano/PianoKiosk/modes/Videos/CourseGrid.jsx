@@ -85,6 +85,18 @@ export default function CourseGrid({ groups = [], onSelect }) {
   }, [activeGroup, byCollection]);
   const courses = useMemo(() => coursesOf(merged), [merged]);
 
+  // Per-course roster progress for the poster overlay. Sorted ids keep the
+  // request path stable (cache-friendly); ids stay `plex:`-prefixed so the map
+  // keys line up with each course item's id. Null while the wall is still loading.
+  const progressIds = useMemo(
+    () => (Array.isArray(courses) ? courses.map((c) => c.id).filter(Boolean).sort() : []),
+    [courses],
+  );
+  const progressPath = progressIds.length
+    ? `api/v1/piano/courses/progress?ids=${progressIds.join(',')}`
+    : null;
+  const { data: progressMap } = usePianoList(progressPath, (r) => r?.courses ?? {});
+
   const labelFor = (g, i) => {
     if (g.label) return g.label;
     if (g.collections.length === 1) return titleFromPayload(byCollection[g.collections[0]]) || `Courses ${i + 1}`;
@@ -125,7 +137,7 @@ export default function CourseGrid({ groups = [], onSelect }) {
         {courses && courses.length > 0 && (
           <ul className="piano-video-grid piano-video-grid--posters">
             {courses.map((item) => (
-              <CourseTile key={item.id} item={item} onSelect={onSelect} />
+              <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />
             ))}
           </ul>
         )}

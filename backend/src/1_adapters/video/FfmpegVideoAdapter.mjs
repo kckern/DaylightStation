@@ -5,6 +5,17 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
+/** Expand a {key:value} metadata map into `-metadata key=value` ffmpeg args. */
+export function metadataArgs(metadata) {
+  if (!metadata || typeof metadata !== 'object') return [];
+  const args = [];
+  for (const [k, v] of Object.entries(metadata)) {
+    if (v == null || v === '') continue;
+    args.push('-metadata', `${k}=${v}`);
+  }
+  return args;
+}
+
 /**
  * ffmpeg-backed implementation of IVideoEncoder. Stitches a frame sequence into
  * a silent MP4. (Player frames are captured client-side in realtime, so no
@@ -20,8 +31,8 @@ export class FfmpegVideoAdapter extends IVideoEncoder {
     this.#timeoutMs = timeoutMs;
   }
 
-  /** @param {{framesDir:string, pattern:string, fps:number, outputPath:string, crf?:number}} params */
-  async encodeSequence({ framesDir, pattern, fps, outputPath, crf = 20 } = {}) {
+  /** @param {{framesDir:string, pattern:string, fps:number, outputPath:string, crf?:number, metadata?:Record<string,string>}} params */
+  async encodeSequence({ framesDir, pattern, fps, outputPath, crf = 20, metadata = null } = {}) {
     if (!framesDir || !pattern || !outputPath) {
       throw new InfrastructureError('encodeSequence missing args', { code: 'MISSING_ARGS' });
     }
@@ -30,7 +41,9 @@ export class FfmpegVideoAdapter extends IVideoEncoder {
       '-framerate', String(fps),
       '-i', path.join(framesDir, pattern),
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', String(crf),
-      '-an', outputPath
+      '-an',
+      ...metadataArgs(metadata),
+      outputPath
     ], { capture: false });
     return { outputPath };
   }

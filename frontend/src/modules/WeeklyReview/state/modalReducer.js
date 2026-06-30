@@ -21,7 +21,9 @@ export function modalReducer(state, action) {
       if (state.type && incomingPriority < currentPriority) return state;
       return {
         type: incoming,
-        focusIndex: 0,
+        // Callers may pre-focus a button (e.g. the exit gate defaults focus to
+        // "Save & Close" so a second Back / Enter exits without navigation).
+        focusIndex: action.focusIndex ?? 0,
         payload: action.payload ?? null,
       };
     }

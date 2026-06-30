@@ -31,19 +31,19 @@ describe('deriveResumeSeconds', () => {
 
 describe('lectureStatus', () => {
   it('reports watched and clamps percent', () => {
-    expect(lectureStatus({ isWatched: true, watchProgress: 140 })).toEqual({ watched: true, percent: 100 });
+    expect(lectureStatus({ isWatched: true, watchProgress: 140 })).toEqual({ watched: true, percent: 100, completedAt: null });
   });
   it('reports in-progress percent', () => {
-    expect(lectureStatus({ watchProgress: 33.6 })).toEqual({ watched: false, percent: 34 });
+    expect(lectureStatus({ watchProgress: 33.6 })).toEqual({ watched: false, percent: 34, completedAt: null });
   });
   it('defaults to unwatched/0', () => {
-    expect(lectureStatus({})).toEqual({ watched: false, percent: 0 });
+    expect(lectureStatus({})).toEqual({ watched: false, percent: 0, completedAt: null });
   });
   it('ignores a spurious isWatched flag when there is no real history', () => {
     // Generic Plex collections return isWatched:true with playCount/progress 0.
-    expect(lectureStatus({ isWatched: true, playCount: 0, watchProgress: 0 })).toEqual({ watched: false, percent: 0 });
+    expect(lectureStatus({ isWatched: true, playCount: 0, watchProgress: 0 })).toEqual({ watched: false, percent: 0, completedAt: null });
   });
   it('counts a real completed view via playCount', () => {
-    expect(lectureStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: true, percent: 0 });
+    expect(lectureStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: true, percent: 0, completedAt: null });
   });
 });

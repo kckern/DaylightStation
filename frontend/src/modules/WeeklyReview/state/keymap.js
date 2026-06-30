@@ -64,7 +64,9 @@ export function resolveKey(input) {
       return out;
     }
     if (isEnter) { out.view.push({ type: 'OPEN_DAY' }); return out; }
-    if (isBack)  { out.modal.push({ type: 'OPEN', modal: 'exitGate' }); return out; }
+    // Default focus to "Save & Close" (index 1) so a confirming Enter — or a
+    // second Back — exits without having to navigate to the right button.
+    if (isBack)  { out.modal.push({ type: 'OPEN', modal: 'exitGate', focusIndex: 1 }); return out; }
     return out;
   }
 
