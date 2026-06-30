@@ -138,6 +138,46 @@ Convention: `cli/<name>.mjs` thin wrapper + `<name>.lib.mjs` pure logic +
   chord namer); build the layering engine + Producer rebuild + falling-notes.
 - Minor parser refinements: bassline slugs (e.g. `c-m-g-m`), idea/famous mood.
 
+## Engine layer — SHIPPED (2026-06-30, 74 tests, committed)
+
+All framework-agnostic, in `shared/music/*.mjs` (frontend + CLI):
+- `layerMatch` — `rankLayerCandidates(base, candidates, {role})`: role-complement /
+  mood / mode / source-artist / tempo scoring with human reasons.
+- `loopScheduler` — `loopToEvents(notes, {ppq,bpm,transpose,velocity,cycleStartMs})`
+  → `{t(ms),type,note,velocity}` for the kiosk's `scheduleNotes`; `loopLengthTicks`
+  rounds to whole bars for phase-aligned layering.
+- `loopQuery` — `queryLoops(loops, {role,mood,source,text})` + `facets()`.
+
+## Integration blueprint (next session — needs the kiosk to verify)
+
+Confirmed plumbing (from code map):
+- **Serving is free:** `GET /api/v1/local/stream/midi/loops/index.yml` (text → jsyaml)
+  and `…/stream/midi/loops/<path>.mid` (binary, range). No backend changes.
+  (`backend/src/4_api/v1/routers/local.mjs`; `streamUrl = /api/v1/local/stream/${rel}`.)
+- **MIDI playback exists:** `usePianoMidi().scheduleNotes(events, channel)` (events
+  `{t ms-from-now, type, note, velocity}`) + `sendVoice(program, bank, channel)`.
+  Transport pattern to mirror: `modes/Studio/useStudioPlayback.js` (rAF wall-clock,
+  primeTo/seek/releaseAll). **Multi-layer = one MIDI channel (0–15) per layer.**
+- **Voices:** `usePianoVoiceBridge().loadPreset(spec)` (engine sfizz|dexed) — assign
+  a voice per channel for distinct layer timbres.
+- **Playalong today** = `Videos` with `config.playalong` (Plex backing videos), fully
+  implemented in `PianoApp.jsx`. Famous MIDI is a *new kind* of backing bed — surface
+  as a `source:famous` view (own tab) rather than replacing the video Playalong.
+
+To build (React; verify on garage Firefox kiosk + voice bridge):
+1. `useLoopLibrary()` — fetch+parse `index.yml`, expose `queryLoops`/`facets`/
+   `rankFor(base)` (wraps `rankLayerCandidates`), and `loadNotes(entry)` (fetch .mid
+   → `@tonejs/midi` in-browser → `{ppq, notes:[{ticks,durationTicks,midi}]}`).
+2. `useLoopTransport(layers)` — looping multitrack: per layer call `loopToEvents`
+   then `scheduleNotes(events, layer.channel)`, re-schedule each cycle
+   (`loopLengthTicks`), play/stop/tempo, `sendVoice` per channel. Mirror
+   useStudioPlayback's rAF + cleanup.
+3. Rebuild `modes/Producer/` around: pick base → `rankFor` candidates → toggle
+   layers → play-along keyboard over the stack (existing split-keyboard footer).
+4. `source:famous` browse view (artist→song) for the Playalong-style use.
+5. Re-export `Piano/theory/*.js` from `shared/music/*` (retire duplicate
+   `modes/Videos/chordName.js`).
+
 ## Open / deferred
 - Exact voice assignment per role (chord vs bass vs lead) — Producer rebuild stage.
 - Whether `index.yml` is one file or sharded by role (decide at ingest scale).
