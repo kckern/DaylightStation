@@ -26,23 +26,49 @@ function recordFor(stream, ms) {
   });
 }
 
-/** Open a MIDI output, preferring SysEx access; fall back to non-sysex. */
-async function openOutput() {
-  const pick = (access) => {
-    const outs = [...access.outputs.values()];
-    return outs.find((o) => /widi|bluetooth|midi/i.test(o.name)) || outs[0] || null;
-  };
+const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
+
+/** Open MIDI access (in+out), preferring SysEx; fall back to non-sysex. */
+async function openAccess() {
+  const pickOut = (a) => { const o = [...a.outputs.values()]; return o.find((x) => /widi|bluetooth|midi/i.test(x.name)) || o[0] || null; };
+  const pickIn = (a) => { const i = [...a.inputs.values()]; return i.find((x) => /widi|bluetooth|midi/i.test(x.name)) || i[0] || null; };
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
-  try {
-    const access = await withTimeout(navigator.requestMIDIAccess({ sysex: true }), 8000);
-    const out = pick(access);
-    if (out) { await out.open(); return { out, sysex: true }; }
-  } catch (e) { /* fall through to non-sysex */ }
-  const access = await navigator.requestMIDIAccess({ sysex: false });
-  const out = pick(access);
+  let access; let sysex = false;
+  try { access = await withTimeout(navigator.requestMIDIAccess({ sysex: true }), 8000); sysex = true; }
+  catch (e) { access = await navigator.requestMIDIAccess({ sysex: false }); sysex = false; }
+  const out = pickOut(access); const input = pickIn(access);
   if (!out) throw new Error('no MIDI output found');
   await out.open();
-  return { out, sysex: false };
+  if (input) await input.open();
+  return { out, input, sysex };
+}
+
+/**
+ * Attach a SysEx-aware inbound monitor: reassembles F0..F7 frames (Web MIDI may
+ * chunk them) and reports every SysEx + interesting CC. Returns a stop fn.
+ */
+function monitorInput(input, logger, sink) {
+  if (!input) return () => {};
+  let buf = null;
+  input.onmidimessage = (ev) => {
+    const d = ev.data;
+    if (d[0] === 0xf0) buf = [...d];
+    else if (buf) buf.push(...d);
+    else {
+      const status = d[0] & 0xf0;
+      if (status === 0xb0) { logger.info('effect-probe.in.cc', { cc: d[1], value: d[2] }); sink.cc.push({ cc: d[1], value: d[2] }); }
+      return;
+    }
+    if (buf && buf[buf.length - 1] === 0xf7) {
+      const h = hex(buf);
+      // Identity Reply: F0 7E <ch> 06 02 <mfr…> F7
+      const isIdentity = buf[1] === 0x7e && buf[3] === 0x06 && buf[4] === 0x02;
+      logger.info('effect-probe.in.sysex', { bytes: h, identity: isIdentity });
+      sink.sysex.push({ bytes: h, identity: isIdentity });
+      buf = null;
+    }
+  };
+  return () => { try { input.onmidimessage = null; } catch { /* noop */ } };
 }
 
 /** EffectProbe — sweep reverb/chorus command candidates, record dry+wet, upload. */
@@ -61,8 +87,21 @@ export function EffectProbe({ autoRun = false }) {
     let stream;
     try {
       setStatus('preflight'); setDetail('Opening MIDI (SysEx)…');
-      const { out, sysex } = await openOutput();
-      logger.info('effect-probe.midi', { output: out.name, sysex });
+      const { out, input, sysex } = await openAccess();
+      logger.info('effect-probe.midi', { output: out.name, input: input?.name, sysex });
+      const inbound = { sysex: [], cc: [] };
+      const stopMonitor = monitorInput(input, logger, inbound);
+
+      // Identity Request — confirms SysEx round-trips over BLE and reveals the
+      // device's real manufacturer/family/model (decides GS vs XG vs proprietary).
+      let identity = null;
+      if (sysex) {
+        setDetail('Identity request…');
+        out.send([0xf0, 0x7e, 0x7f, 0x06, 0x01, 0xf7]);
+        await sleep(1200);
+        identity = inbound.sysex.find((s) => s.identity)?.bytes || null;
+        logger.info('effect-probe.identity', { identity, sysexSeen: inbound.sysex.length });
+      }
 
       setDetail('Opening microphone…');
       const perm = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -110,14 +149,19 @@ export function EffectProbe({ autoRun = false }) {
         out.send([0xb0, 120, 0]); out.send([0xb0, 123, 0]);
       }
 
+      // Give a moment to catch any late inbound (e.g. physical volume wiggle).
+      await sleep(500);
+      stopMonitor();
       stream.getTracks().forEach((t) => t.stop());
       await uploadManifest(runId, {
         runId, kind: 'effect-probe', sysex, startedAt: runId,
+        identity, inbound,
         stimulus: { ...STIMULUS, noteOnAtMs: STIMULUS.recordLeadMs, noteOffAtMs: STIMULUS.recordLeadMs + STIMULUS.offMs },
         skipped, clips,
       });
-      setStatus('done'); setDetail(`${clips.length} clips · sysex=${sysex} · skipped ${skipped.length} · ${runId}`);
-      logger.info('effect-probe.done', { runId, clips: clips.length, sysex, skipped });
+      setStatus('done');
+      setDetail(`identity=${identity || 'none'} · ${clips.length} clips · sysex=${sysex} · inSysex=${inbound.sysex.length} inCC=${inbound.cc.length} · ${runId}`);
+      logger.info('effect-probe.done', { runId, clips: clips.length, sysex, identity, inbound, skipped });
     } catch (e) {
       setStatus('fail'); setDetail(String(e.message || e));
       logger.error('effect-probe.fail', { error: String(e.message || e) });
