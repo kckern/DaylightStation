@@ -2,6 +2,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { Session } from '#domains/fitness/entities/Session.mjs';
 import { evaluateRecapReadiness, SESSION_RESUME_MERGE_WINDOW_MS } from '../sessionConsolidationPolicy.mjs';
+import { buildSlug, buildPlexMeta, participantSlug, durationMinutes } from '#domains/fitness/services/recapNaming.mjs';
+
+// Re-exported for callers/tests that imported these from the use case.
+export { buildSlug, participantSlug, durationMinutes };
 
 /**
  * Use case: render a session's silent time-lapse recap.
@@ -141,11 +145,12 @@ export class GenerateSessionTimelapse {
 
       stage = 'encode';
       const slug = buildSlug(data);
+      const plexMeta = buildPlexMeta(data, { resolveName: resolveName || null });
       const outDir = path.join(mediaDir, 'video', 'fitness');
       fileIO.mkdirSync(outDir, { recursive: true });
       const outputPath = path.join(outDir, `${slug}.mp4`);
       const encodeStart = Date.now();
-      await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20 });
+      await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20, metadata: plexMeta.tags });
       const encodeMs = Date.now() - encodeStart;
 
       stage = 'persist';
@@ -160,6 +165,18 @@ export class GenerateSessionTimelapse {
       if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
       session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
       await sessionDatastore.save(session, householdId);
+
+      // Plex-library copy: a TV-convention hardlink (`Family Fitness - SxxExx - …`)
+      // in a `plex/` subfolder so a Plex TV library ingests recaps as episodes,
+      // while the slug file stays the human-readable source of truth. Best-effort —
+      // a link failure must never fail the recap (the slug MP4 already landed).
+      stage = 'plex-link';
+      try {
+        const plexPath = linkPlexCopy(fileIO, outDir, outputPath, plexMeta.plexFileBase, logger);
+        logger.info?.('fitness.timelapse.plex_linked', { sessionId, plexPath });
+      } catch (err) {
+        logger.warn?.('fitness.timelapse.plex_link_failed', { sessionId, error: err.message });
+      }
 
       stage = 'cleanup';
       // Default to ARCHIVING the source frames (screenshots -> screenshots_archive)
@@ -223,15 +240,23 @@ function pickCapture(sorted, ts) {
   }
   return best;
 }
-function buildSlug(data) {
-  const title = data?.summary?.media?.[0]?.showTitle
-    || data?.summary?.media?.[0]?.title
-    || data?.strava?.name
-    || 'workout';
-  const date = String(data.sessionId || '').slice(0, 8);
-  const clean = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-  return `${date}_${data.sessionId}_${clean || 'workout'}`;
-}
 function safeRm(fileIO, dir) {
   try { fileIO.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+
+// Materialise a Plex-named copy of `srcPath` in `<outDir>/plex/`. Prefer a hardlink
+// (no extra bytes, tags stay in sync); fall back to a real copy across filesystems.
+// Returns the absolute plex path. Throws only if neither link nor copy works.
+function linkPlexCopy(fileIO, outDir, srcPath, plexFileBase, logger) {
+  const plexDir = path.join(outDir, 'plex');
+  fileIO.mkdirSync(plexDir, { recursive: true });
+  const plexPath = path.join(plexDir, `${plexFileBase}.mp4`);
+  try { if (fileIO.existsSync(plexPath)) fileIO.rmSync(plexPath, { force: true }); } catch { /* ignore */ }
+  try {
+    fileIO.linkSync(srcPath, plexPath);
+  } catch (err) {
+    logger?.debug?.('fitness.timelapse.plex_hardlink_fallback', { error: err.message });
+    fileIO.copyFileSync(srcPath, plexPath);
+  }
+  return plexPath;
 }

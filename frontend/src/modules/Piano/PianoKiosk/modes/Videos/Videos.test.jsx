@@ -100,6 +100,26 @@ describe('Videos mode', () => {
     );
   });
 
+  it('overlays sequential badge + per-user progress chips from the progress endpoint', async () => {
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/list/plex/440630') {
+        return Promise.resolve({ items: [{ id: 'plex:2', title: 'Hoffman Academy', type: 'show' }] });
+      }
+      if (path.startsWith('api/v1/piano/courses/progress')) {
+        expect(path).toContain('ids=plex:2');
+        return Promise.resolve({ courses: {
+          'plex:2': { isSequential: true, total: 40, users: [{ id: 'felix', name: 'Felix', completed: 12, total: 40 }] },
+        } });
+      }
+      return Promise.resolve({});
+    });
+
+    renderVideos('plex:440630');
+    expect(await screen.findByTitle('Hoffman Academy')).toBeTruthy();
+    expect(await screen.findByLabelText('Sequential course')).toBeTruthy();
+    expect(await screen.findByText('12/40')).toBeTruthy();
+  });
+
   it('drills into a course via relative nav and lists its lectures', async () => {
     // Back-to-grid navigation now lives in the shared breadcrumb chrome (the
     // "Videos" mode crumb), not in CourseDetail — so this isolated mode test

@@ -2,6 +2,7 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { lectureUserStatus } from './lectureMeta.js';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -172,6 +173,9 @@ export default function CourseDetail({ course, onPlay }) {
   // revealed next lesson unit. Skips the first render (no "prev" to compare against).
   const [unlockedToast, setUnlockedToast] = useState(null);
   const [coProgressToast, setCoProgressToast] = useState(null);
+  // Practice & Reference is opt-in: collapsed by default, revealed via the
+  // info-panel switch so it doesn't clutter the lesson flow.
+  const [showReference, setShowReference] = useState(false);
   const prevCompleteRef = useRef(null);
   useEffect(() => {
     if (!isSequential || lessonSeasons.length <= 1 || !items) return;
@@ -249,7 +253,12 @@ export default function CourseDetail({ course, onPlay }) {
                 <CoProgressLockIcon />
               </span>
             )}
-            {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
+            {!isLocked && st.watched && (
+              <span className="piano-episode__check" aria-label={st.completedAt ? `Completed ${formatFitnessDate(st.completedAt)}` : 'Completed'}>
+                <span className="piano-episode__check-mark">✓</span>
+                {st.completedAt && <span className="piano-episode__check-date">{formatFitnessDate(st.completedAt)}</span>}
+              </span>
+            )}
             {!isLocked && !reference && !st.watched && st.percent > 0 && (
               <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
             )}
@@ -283,10 +292,35 @@ export default function CourseDetail({ course, onPlay }) {
             </div>
           )}
           {info?.summary && <p className="piano-course__summary">{info.summary}</p>}
+          {referenceSeasons.length > 0 && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showReference}
+              className={`piano-course__reference-toggle${showReference ? ' is-on' : ''}`}
+              onClick={() => setShowReference((v) => !v)}
+            >
+              <span className="piano-course__reference-switch" aria-hidden="true">
+                <span className="piano-course__reference-knob" />
+              </span>
+              <span className="piano-course__reference-toggle-label">Practice &amp; Reference</span>
+            </button>
+          )}
         </aside>
 
         <div className="piano-course__episodes">
-          {loading && <PianoEmpty loading />}
+          {loading && (
+            <ul className="piano-episodes" aria-busy="true" aria-label="Loading lectures">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <li key={i} className="piano-episode piano-episode--skeleton" aria-hidden="true">
+                  <div className="piano-episode__thumb" />
+                  <div className="piano-episode__label">
+                    <span className="piano-episode__skel-line" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {!loading && (!items || items.length === 0) && <PianoEmpty message={error || 'No lectures found.'} />}
           {!loading && items?.length > 0 && (
             <>
@@ -305,7 +339,7 @@ export default function CourseDetail({ course, onPlay }) {
                 <ul className="piano-episodes">{lessonItems.map((ep) => renderEpisode(ep))}</ul>
               )}
 
-              {referenceSeasons.length > 0 && (
+              {showReference && referenceSeasons.length > 0 && (
                 <div className="piano-course__reference">
                   <h3 className="piano-course__reference-title">Practice &amp; Reference · open anytime</h3>
                   {referenceSeasons.map((s) => {
