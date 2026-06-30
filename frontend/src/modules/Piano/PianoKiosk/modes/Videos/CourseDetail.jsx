@@ -42,17 +42,29 @@ function playUnlockChime() {
   } catch { /* no audio available */ }
 }
 
+// Two-person silhouette — distinguishes the co-progress lock from the standard
+// sequential padlock at a glance.
+function CoProgressLockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ width: '1em', height: '1em' }}>
+      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+    </svg>
+  );
+}
+
 /**
  * Course landing page. Per-user watch state (✓ / progress) rides on each
- * thumbnail. Sequential courses lock episodes after the first unwatched one and,
- * when multi-season, hide seasons beyond the first incomplete one — revealing the
- * next with a toast + chime as the student completes a unit.
+ * thumbnail. Sequential courses lock episodes after the first unwatched LESSON one
+ * and, when multi-unit, hide lesson units beyond the first incomplete one. Lesson
+ * units render newest-on-top (descending), episodes ascending within. Config-flagged
+ * "reference" units (exercise/practice/walkthrough banks) are never locked, give no
+ * credit, and render in an always-open "Practice & Reference" section at the bottom.
  */
 export default function CourseDetail({ course, onPlay }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
-  const { currentUser, currentProfile } = usePianoUser();
+  const { currentUser, currentProfile, users } = usePianoUser();
   const courseId = idOf(course?.id);
-  const { items, info, parents, isSequential, loading, error } = usePianoCoursePlayable(courseId, currentUser);
+  const { items, info, parents, isSequential, loading, error, coProgressLock, referenceUnitIds } = usePianoCoursePlayable(courseId, currentUser);
 
   const seasons = useMemo(() => {
     if (!parents || typeof parents !== 'object') return [];
@@ -65,6 +77,17 @@ export default function CourseDetail({ course, onPlay }) {
       }))
       .sort((a, b) => a.index - b.index);
   }, [parents]);
+
+  // Reference units (config-flagged): split out from the gated lesson flow.
+  const referenceUnitIdSet = useMemo(() => new Set(referenceUnitIds || []), [referenceUnitIds]);
+  const lessonSeasons = useMemo(
+    () => seasons.filter((s) => !referenceUnitIdSet.has(s.id)),
+    [seasons, referenceUnitIdSet],
+  );
+  const referenceSeasons = useMemo(
+    () => seasons.filter((s) => referenceUnitIdSet.has(s.id)),
+    [seasons, referenceUnitIdSet],
+  );
 
   const episodesOf = useCallback(
     (seasonId) => (items || []).filter((ep) => String(ep.parentId) === String(seasonId)),
@@ -79,24 +102,30 @@ export default function CourseDetail({ course, onPlay }) {
     [episodesOf],
   );
 
-  // Visible seasons: sequential multi-season shows through the FIRST incomplete
-  // season then stops (hiding later ones); otherwise all seasons are visible.
+  // Lesson episodes only — all sequencing math (lock/current/reveal) ignores reference.
+  const lessonItems = useMemo(
+    () => (items || []).filter((ep) => !referenceUnitIdSet.has(String(ep.parentId))),
+    [items, referenceUnitIdSet],
+  );
+
+  // Visible lesson units: sequential multi-unit shows through the FIRST incomplete
+  // unit then stops (hiding later ones); otherwise all lesson units are visible.
   const visibleSeasons = useMemo(() => {
-    if (!isSequential || seasons.length <= 1) return seasons;
+    if (!isSequential || lessonSeasons.length <= 1) return lessonSeasons;
     const out = [];
-    for (const s of seasons) {
+    for (const s of lessonSeasons) {
       out.push(s);
       if (!seasonComplete(s.id)) break;
     }
     return out;
-  }, [isSequential, seasons, seasonComplete]);
+  }, [isSequential, lessonSeasons, seasonComplete]);
 
-  // Linear locked set for sequential courses: everything after the first
-  // not-yet-watched episode (ordered by season index, then itemIndex).
+  // Linear locked set for sequential courses: every LESSON episode after the first
+  // not-yet-watched lesson episode (ordered by unit index, then itemIndex).
   const lockedIds = useMemo(() => {
-    if (!isSequential || !items) return new Set();
+    if (!isSequential || !lessonItems.length) return new Set();
     const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
-    const sorted = [...items].sort((a, b) => {
+    const sorted = [...lessonItems].sort((a, b) => {
       const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
       if (si !== 0) return si;
       return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
@@ -108,37 +137,51 @@ export default function CourseDetail({ course, onPlay }) {
       if (!gateClosed && !lectureUserStatus(ep).watched) gateClosed = true;
     }
     return locked;
-  }, [isSequential, items, seasons]);
+  }, [isSequential, lessonItems, seasons]);
 
-  // The "current" lesson: in a sequential course, the first not-yet-watched
-  // episode (linear order) — i.e. the one the gate sits at and the student should
-  // play next. It's the only unwatched episode that is NOT locked. Highlighted in
-  // goldenrod. Null for non-sequential courses.
+  // The "current" lesson: the first not-yet-watched LESSON episode (linear order) —
+  // the one the gate sits at and the student should play next. Goldenrod. Null for
+  // non-sequential courses.
   const currentId = useMemo(() => {
-    if (!isSequential || !items) return null;
+    if (!isSequential || !lessonItems.length) return null;
     const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
-    const sorted = [...items].sort((a, b) => {
+    const sorted = [...lessonItems].sort((a, b) => {
       const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
       if (si !== 0) return si;
       return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
     });
     const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
     return next ? (next.plex || next.id) : null;
-  }, [isSequential, items, seasons]);
+  }, [isSequential, lessonItems, seasons]);
 
-  // Unlock ceremony: when the complete-season set grows, toast + chime the newly
-  // revealed next season. Skips the first render (no "prev" to compare against).
+  // Co-progress lock: if the backend says the user is too far ahead, the first
+  // available (unwatched) LESSON episode gets a navigation gate instead of playing.
+  const coProgressLockedId = useMemo(() => {
+    if (!coProgressLock?.locked || !isSequential || !lessonItems.length) return null;
+    const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
+    const sorted = [...lessonItems].sort((a, b) => {
+      const si = seasonIndex(a.parentId) - seasonIndex(b.parentId);
+      if (si !== 0) return si;
+      return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
+    });
+    const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
+    return next ? (next.plex || next.id) : null;
+  }, [coProgressLock, isSequential, lessonItems, seasons]);
+
+  // Unlock ceremony: when the complete lesson-unit set grows, toast + chime the newly
+  // revealed next lesson unit. Skips the first render (no "prev" to compare against).
   const [unlockedToast, setUnlockedToast] = useState(null);
+  const [coProgressToast, setCoProgressToast] = useState(null);
   const prevCompleteRef = useRef(null);
   useEffect(() => {
-    if (!isSequential || seasons.length <= 1 || !items) return;
-    const completeNow = new Set(seasons.filter((s) => seasonComplete(s.id)).map((s) => s.id));
+    if (!isSequential || lessonSeasons.length <= 1 || !items) return;
+    const completeNow = new Set(lessonSeasons.filter((s) => seasonComplete(s.id)).map((s) => s.id));
     const prev = prevCompleteRef.current;
     if (prev) {
-      for (let i = 0; i < seasons.length; i += 1) {
-        const s = seasons[i];
+      for (let i = 0; i < lessonSeasons.length; i += 1) {
+        const s = lessonSeasons[i];
         if (completeNow.has(s.id) && !prev.has(s.id)) {
-          const next = seasons[i + 1];
+          const next = lessonSeasons[i + 1];
           if (next) {
             const name = next.title || `Unit ${next.index}`;
             setUnlockedToast(name);
@@ -150,34 +193,64 @@ export default function CourseDetail({ course, onPlay }) {
       }
     }
     prevCompleteRef.current = completeNow;
-  }, [isSequential, seasons, items, seasonComplete, logger]);
+  }, [isSequential, lessonSeasons, items, seasonComplete, logger]);
 
   const poster = info?.image || course?.image;
   const title = course?.title || info?.title || 'Course';
   usePianoBreadcrumb(useMemo(() => [{ label: title }], [title]));
 
-  const renderEpisode = (item) => {
+  const renderEpisode = (item, opts = {}) => {
+    const reference = !!opts.reference;
     const st = lectureUserStatus(item);
     const img = item.image || item.thumbnail;
     const key = item.plex || item.id;
-    const isLocked = lockedIds.has(key);
-    const isCurrent = key === currentId;
+    const isSequentiallyLocked = !reference && lockedIds.has(key);
+    const isCoProgressLocked = !reference && key === coProgressLockedId;
+    const isLocked = isSequentiallyLocked || isCoProgressLocked;
+    // Not "current" if co-progress locked or a reference episode.
+    const isCurrent = !reference && key === currentId && !isCoProgressLocked;
     const duration = fmtDuration(item.duration);
+
+    const handleClick = () => {
+      if (isSequentiallyLocked) return;
+      if (isCoProgressLocked) {
+        const name = (users || []).find((u) => u.id === coProgressLock.waitingForId)?.name
+          || coProgressLock.waitingForId;
+        setCoProgressToast(
+          `You're ${coProgressLock.aheadBy} episodes ahead of ${name} — let them catch up first.`,
+        );
+        setTimeout(() => setCoProgressToast(null), 4000);
+        return;
+      }
+      onPlay(item);
+    };
+
     return (
       <li key={key}>
         <button
           type="button"
-          className={`piano-episode${isLocked ? ' piano-episode--locked' : ''}${isCurrent ? ' piano-episode--current' : ''}`}
-          onClick={() => { if (!isLocked) onPlay(item); }}
-          disabled={isLocked}
+          className={[
+            'piano-episode',
+            isLocked && 'piano-episode--locked',
+            isCurrent && 'piano-episode--current',
+          ].filter(Boolean).join(' ')}
+          onClick={handleClick}
+          disabled={isSequentiallyLocked}
           aria-disabled={isLocked}
           aria-current={isCurrent ? 'true' : undefined}
         >
           <div className="piano-episode__thumb">
             {img && <img src={img} alt="" loading="eager" decoding="async" />}
-            {isLocked && <span className="piano-episode__lock" aria-label="Locked"><LockIcon /></span>}
+            {isSequentiallyLocked && (
+              <span className="piano-episode__lock" aria-label="Locked"><LockIcon /></span>
+            )}
+            {isCoProgressLocked && (
+              <span className="piano-episode__lock piano-episode__lock--co-progress" aria-label="Waiting for partner">
+                <CoProgressLockIcon />
+              </span>
+            )}
             {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
-            {!isLocked && !st.watched && st.percent > 0 && (
+            {!isLocked && !reference && !st.watched && st.percent > 0 && (
               <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
             )}
             {duration && <span className="piano-episode__duration">{duration}</span>}
@@ -191,7 +264,8 @@ export default function CourseDetail({ course, onPlay }) {
     );
   };
 
-  const isMultiSeason = seasons.length > 1;
+  // Lesson zone is "multi-unit" when there's more than one lesson unit.
+  const isMultiSeason = lessonSeasons.length > 1;
 
   return (
     <section className="piano-mode--videos piano-course">
@@ -215,25 +289,48 @@ export default function CourseDetail({ course, onPlay }) {
           {loading && <PianoEmpty loading />}
           {!loading && (!items || items.length === 0) && <PianoEmpty message={error || 'No lectures found.'} />}
           {!loading && items?.length > 0 && (
-            isMultiSeason ? (
-              visibleSeasons.map((s) => {
-                const eps = [...episodesOf(s.id)].sort((a, b) => (a.itemIndex ?? 0) - (b.itemIndex ?? 0));
-                if (!eps.length) return null;
-                return (
-                  <div className="piano-course__season" key={s.id}>
-                    <h3 className="piano-course__season-title">{s.title || `Unit ${s.index}`}</h3>
-                    <ul className="piano-episodes">{eps.map(renderEpisode)}</ul>
-                  </div>
-                );
-              })
-            ) : (
-              <ul className="piano-episodes">{items.map(renderEpisode)}</ul>
-            )
+            <>
+              {isMultiSeason ? (
+                [...visibleSeasons].reverse().map((s) => {
+                  const eps = [...episodesOf(s.id)].sort((a, b) => (a.itemIndex ?? 0) - (b.itemIndex ?? 0));
+                  if (!eps.length) return null;
+                  return (
+                    <div className="piano-course__season" key={s.id}>
+                      <h3 className="piano-course__season-title">{s.title || `Unit ${s.index}`}</h3>
+                      <ul className="piano-episodes">{eps.map((ep) => renderEpisode(ep))}</ul>
+                    </div>
+                  );
+                })
+              ) : (
+                <ul className="piano-episodes">{lessonItems.map((ep) => renderEpisode(ep))}</ul>
+              )}
+
+              {referenceSeasons.length > 0 && (
+                <div className="piano-course__reference">
+                  <h3 className="piano-course__reference-title">Practice &amp; Reference · open anytime</h3>
+                  {referenceSeasons.map((s) => {
+                    const eps = [...episodesOf(s.id)].sort((a, b) => (a.itemIndex ?? 0) - (b.itemIndex ?? 0));
+                    if (!eps.length) return null;
+                    return (
+                      <div className="piano-course__season piano-course__season--reference" key={s.id}>
+                        <h4 className="piano-course__season-title">{s.title || `Unit ${s.index}`}</h4>
+                        <ul className="piano-episodes">{eps.map((ep) => renderEpisode(ep, { reference: true }))}</ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
       {unlockedToast && (
         <div className="piano-course__unlock-toast" role="status">🎉 {unlockedToast} unlocked!</div>
+      )}
+      {coProgressToast && (
+        <div className="piano-course__unlock-toast piano-course__co-progress-toast" role="status">
+          {coProgressToast}
+        </div>
       )}
     </section>
   );

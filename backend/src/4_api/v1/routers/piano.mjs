@@ -289,14 +289,73 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     }
 
     const pianoConfig = configService.getHouseholdAppConfig(null, 'piano') || {};
+    const compoundId = playable.compoundId || `plex:${courseId}`;
     const sequentialLabels = new Set(
       (pianoConfig.videos?.sequential_labels || []).map((l) => l.toLowerCase())
     );
     const isSequential = Array.isArray(playable.info?.labels) &&
       playable.info.labels.some((l) => sequentialLabels.has(String(l).toLowerCase()));
 
+    // Reference units: config-flagged units (by title pattern or explicit id) that
+    // are never gated, give no progression credit, and render in the always-open
+    // Practice & Reference zone. Matched per course against unit (season) titles.
+    const referenceUnitIds = new Set();
+    const refRule = (pianoConfig.videos?.reference_units || []).find((r) => r.courseId === compoundId);
+    if (refRule) {
+      const patterns = (refRule.titlePatterns || []).map((p) => String(p).toLowerCase()).filter(Boolean);
+      const explicit = new Set((refRule.unitIds || []).map(String));
+      for (const [pid, parent] of Object.entries(playable.parents || {})) {
+        const title = String(parent?.title || '').toLowerCase();
+        if (explicit.has(String(pid)) || patterns.some((pat) => title.includes(pat))) {
+          referenceUnitIds.add(String(pid));
+        }
+      }
+    }
+    if (Array.isArray(playable.items)) {
+      playable.items = playable.items.map((it) => ({
+        ...it,
+        isReference: referenceUnitIds.has(String(it.parentId)),
+      }));
+    }
+
+    // Co-progress lock: in sequential courses with a configured user pair, block the
+    // ahead user from the next episode until the gap falls below the buffer. Reference
+    // episodes give no credit, so they're excluded from both users' counts.
+    let coProgressLock = null;
+    if (isSequential && userId && !isGuest && userVideoProgressStore) {
+      const rules = pianoConfig.videos?.co_progress || [];
+      const rule = rules.find(
+        (r) => r.courseId === compoundId &&
+               Array.isArray(r.users) &&
+               r.users.includes(userId),
+      );
+      if (rule) {
+        const isCredit = (it) => it.userWatched && !referenceUnitIds.has(String(it.parentId));
+        const myCount = (playable.items || []).filter(isCredit).length;
+        const partnerIds = rule.users.filter((u) => u !== userId);
+        const partnerCounts = partnerIds.map((pid) => {
+          if (!userVideoProgressStore.isKnownUser(pid)) return 0;
+          const enriched = userVideoProgressStore.enrich(playable.items || [], pid);
+          return enriched.filter(isCredit).length;
+        });
+        if (partnerCounts.length) {
+          const minPartnerCount = Math.min(...partnerCounts);
+          const aheadBy = myCount - minPartnerCount;
+          if (aheadBy >= rule.buffer) {
+            const slowestIndex = partnerCounts.indexOf(minPartnerCount);
+            coProgressLock = {
+              locked: true,
+              aheadBy,
+              waitingForId: partnerIds[slowestIndex],
+              buffer: rule.buffer,
+            };
+          }
+        }
+      }
+    }
+
     logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
-    res.json({ ...playable, isSequential });
+    res.json({ ...playable, isSequential, coProgressLock, referenceUnitIds: [...referenceUnitIds] });
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────
@@ -324,6 +383,45 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     logger.info?.('piano.history.write', { userId, date, takeId, events: events.length, bytes: buf.length });
     res.json({ ok: true, bytes: buf.length, path: file });
   }));
+
+  // ── Effect audit (autonomous reverb/chorus audibility test) ────────────────
+  // The harness page POSTs each recorded clip as raw audio/webm, then POSTs a
+  // manifest. Both land under media/logs/piano/effect-audit/<runId>/ (survives
+  // redeploys, like the per-session JSONL logs).
+  const SAFE_SEG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/; // no slashes, no leading dot/dash
+  const auditDir = (runId) => path.join(configService.getMediaDir(), 'logs', 'piano', 'effect-audit', runId);
+  const rawAudio = express.raw({ type: ['audio/webm', 'application/octet-stream'], limit: '25mb' });
+
+  router.post('/effect-audit/:runId/clip/:label', rawAudio, (req, res) => {
+    const { runId, label } = req.params;
+    if (!SAFE_SEG.test(runId) || !SAFE_SEG.test(label)) {
+      return res.status(400).json({ error: 'Invalid runId/label' });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Empty audio body' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, `${label}.webm`);
+    writeBinary(file, req.body);
+    logger.info?.('piano.effect-audit.clip', { runId, label, bytes: req.body.length });
+    res.status(201).json({ ok: true, bytes: req.body.length, path: file });
+  });
+
+  router.post('/effect-audit/:runId/manifest', (req, res) => {
+    const { runId } = req.params;
+    if (!SAFE_SEG.test(runId)) return res.status(400).json({ error: 'Invalid runId' });
+    const manifest = req.body;
+    if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.clips)) {
+      return res.status(400).json({ error: 'manifest.clips (array) required' });
+    }
+    const dir = auditDir(runId);
+    ensureDir(dir);
+    const file = path.join(dir, 'manifest.json');
+    writeBinary(file, Buffer.from(JSON.stringify(manifest, null, 2)));
+    logger.info?.('piano.effect-audit.manifest', { runId, clips: manifest.clips.length });
+    res.status(201).json({ ok: true, clips: manifest.clips.length, path: file });
+  });
 
   return router;
 }
