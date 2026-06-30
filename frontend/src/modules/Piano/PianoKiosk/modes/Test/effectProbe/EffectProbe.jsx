@@ -112,7 +112,9 @@ export function EffectProbe({ autoRun = false }) {
       logger.info('effect-probe.mic', { micId });
 
       // Reliable framed control send (flush re-send + spacing).
-      const framed = (msg) => { out.send(msg); setTimeout(() => { try { out.send(msg); } catch { /* closed */ } }, FLUSH_MS); };
+      // Re-send only SHORT channel messages (the one-turn-late flush). SysEx is a
+      // complete frame — re-sending big SysEx doubles BLE load and chokes the link.
+      const framed = (msg) => { out.send(msg); if (msg[0] !== 0xf0) setTimeout(() => { try { out.send(msg); } catch { /* closed */ } }, FLUSH_MS); };
       const apply = async (msgs) => { for (const m of msgs) { framed(m); await sleep(SPACING_MS); } };
       // Frame the note too: a lone note_on is otherwise deferred by the BLE
       // one-turn-late bug and the clip records silence. Re-send note_on; the

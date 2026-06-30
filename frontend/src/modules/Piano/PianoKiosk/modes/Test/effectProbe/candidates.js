@@ -31,12 +31,7 @@ export function buildCandidates() {
       dry: [GS_RESET, PIANO, gsReverbLevel(0)],
       wet: [GS_RESET, PIANO, gsReverbMacro(4), gsReverbLevel(127), cc(91, 127)] },
 
-    // 4. Yamaha XG: system-on, reverb type Hall1 + return, vs return 0.
-    { id: 'rv-xg', kind: 'reverb', label: 'XG on + reverb type/return', sysex: true,
-      dry: [XG_SYSTEM_ON, PIANO, xgReverbReturn(0)],
-      wet: [XG_SYSTEM_ON, PIANO, xgReverbType(1, 0), xgReverbReturn(127), cc(91, 127)] },
-
-    // 5. GM2 Global Parameter Control reverb type + CC91 send.
+    // GM2 Global Parameter Control reverb type + CC91 send.
     { id: 'rv-gm2', kind: 'reverb', label: 'GM2 reverb type + CC91', sysex: true,
       dry: [GM2_SYSTEM_ON, PIANO, cc(91, 0)],
       wet: [GM2_SYSTEM_ON, PIANO, gm2ReverbType(4), cc(91, 127)] },
@@ -45,10 +40,6 @@ export function buildCandidates() {
     { id: 'ch-gs', kind: 'chorus', label: 'GS reset + chorus macro/level', sysex: true,
       dry: [GS_RESET, PIANO, gsChorusLevel(0)],
       wet: [GS_RESET, PIANO, gsChorusMacro(2), gsChorusLevel(127), cc(93, 127)] },
-
-    { id: 'ch-xg', kind: 'chorus', label: 'XG on + chorus type/return', sysex: true,
-      dry: [XG_SYSTEM_ON, PIANO, xgChorusReturn(0)],
-      wet: [XG_SYSTEM_ON, PIANO, xgChorusType(0x41, 0), xgChorusReturn(127), cc(93, 127)] },
 
     { id: 'ch-gm2', kind: 'chorus', label: 'GM2 chorus type + CC93', sysex: true,
       dry: [GM2_SYSTEM_ON, PIANO, cc(93, 0)],
