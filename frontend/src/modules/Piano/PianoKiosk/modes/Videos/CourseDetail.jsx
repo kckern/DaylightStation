@@ -2,6 +2,7 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { lectureUserStatus } from './lectureMeta.js';
+import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -249,7 +250,12 @@ export default function CourseDetail({ course, onPlay }) {
                 <CoProgressLockIcon />
               </span>
             )}
-            {!isLocked && st.watched && <span className="piano-episode__check" aria-label="Watched">✓</span>}
+            {!isLocked && st.watched && (
+              <span className="piano-episode__check" aria-label={st.completedAt ? `Completed ${formatFitnessDate(st.completedAt)}` : 'Completed'}>
+                <span className="piano-episode__check-mark">✓</span>
+                {st.completedAt && <span className="piano-episode__check-date">{formatFitnessDate(st.completedAt)}</span>}
+              </span>
+            )}
             {!isLocked && !reference && !st.watched && st.percent > 0 && (
               <span className="piano-episode__bar"><span style={{ width: `${st.percent}%` }} /></span>
             )}
@@ -286,7 +292,18 @@ export default function CourseDetail({ course, onPlay }) {
         </aside>
 
         <div className="piano-course__episodes">
-          {loading && <PianoEmpty loading />}
+          {loading && (
+            <ul className="piano-episodes" aria-busy="true" aria-label="Loading lectures">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <li key={i} className="piano-episode piano-episode--skeleton" aria-hidden="true">
+                  <div className="piano-episode__thumb" />
+                  <div className="piano-episode__label">
+                    <span className="piano-episode__skel-line" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {!loading && (!items || items.length === 0) && <PianoEmpty message={error || 'No lectures found.'} />}
           {!loading && items?.length > 0 && (
             <>

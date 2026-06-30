@@ -29,6 +29,16 @@ describe('CourseDetail', () => {
     expect(screen.getByText('B')).toBeTruthy();
   });
 
+  it('shows the completion date on a watched lecture (✓ + formatted date)', () => {
+    hookReturn = { ...baseHook, items: [
+      { plex: '1', label: 'A', itemIndex: 1, userWatched: true, userPercent: 95, userCompletedAt: '2026-04-20T10:00:00Z' },
+    ] };
+    render(<CourseDetail course={{ id: 'plex:99', title: 'Course' }} onPlay={vi.fn()} />);
+    const check = document.querySelector('.piano-episode__check');
+    expect(check).toBeTruthy();
+    expect(check.textContent).toContain('Apr 20'); // formatFitnessDate → "Mon, Apr 20"
+  });
+
   it('marks the first unwatched episode as current (goldenrod) in a sequential course', () => {
     hookReturn = { ...baseHook, isSequential: true, items: [
       { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
@@ -97,16 +107,18 @@ describe('CourseDetail', () => {
     expect(screen.getByText('Unit 2')).toBeTruthy(); // s1 complete → s2 visible
   });
 
-  it('shows a watched check for user-watched lectures', () => {
+  it('shows a completed check for user-watched lectures (no date when none recorded)', () => {
     hookReturn = { ...baseHook, items: [{ plex: '1', label: 'A', itemIndex: 1, userWatched: true, userPercent: 100 }] };
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
-    expect(screen.getByLabelText('Watched')).toBeTruthy();
+    expect(screen.getByLabelText('Completed')).toBeTruthy();
   });
 
-  it('shows the loading state', () => {
+  it('shows shimmer skeleton tiles (standard grid) while loading — not a text loader', () => {
     hookReturn = { ...baseHook, items: null, loading: true };
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
-    expect(screen.getByTestId('empty').textContent).toBe('loading');
+    expect(screen.queryByTestId('empty')).toBeNull();           // no text loader
+    expect(document.querySelector('.piano-episodes')).toBeTruthy(); // standard grid
+    expect(document.querySelectorAll('.piano-episode--skeleton').length).toBeGreaterThan(0);
   });
 });
 
