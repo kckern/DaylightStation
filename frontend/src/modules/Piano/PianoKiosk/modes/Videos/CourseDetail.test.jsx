@@ -193,46 +193,57 @@ describe('reference units + descending order', () => {
     expect(titles).toEqual(['Unit 2', 'Unit 1']); // descending
   });
 
-  it('renders reference units in a Practice & Reference section, not gated', () => {
+  const refHook = {
+    ...baseHook,
+    isSequential: true,
+    referenceUnitIds: ['s3'],
+    parents: { s1: { index: 1, title: 'Unit 1' }, s3: { index: 3, title: 'Exercise Module' } },
+    items: [
+      { plex: '1', label: 'L1', itemIndex: 1, parentId: 's1', userWatched: false },
+      { plex: '2', label: 'L2', itemIndex: 2, parentId: 's1', userWatched: false },
+      { plex: '9', label: 'Drill', itemIndex: 1, parentId: 's3', userWatched: false },
+    ],
+  };
+
+  it('offers a Practice & Reference toggle in the info panel, collapsed by default', () => {
+    hookReturn = { ...refHook };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    const toggle = screen.getByRole('switch', { name: /Practice & Reference/i });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByText('Drill')).toBeNull(); // hidden until toggled on
+  });
+
+  it('toggling the switch reveals then hides the reference units', () => {
+    hookReturn = { ...refHook };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    const toggle = screen.getByRole('switch', { name: /Practice & Reference/i });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('Drill')).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.queryByText('Drill')).toBeNull();
+  });
+
+  it('reference units are ungated and playable once revealed', () => {
     const onPlay = vi.fn();
-    hookReturn = {
-      ...baseHook,
-      isSequential: true,
-      referenceUnitIds: ['s3'],
-      parents: { s1: { index: 1, title: 'Unit 1' }, s3: { index: 3, title: 'Exercise Module' } },
-      items: [
-        { plex: '1', label: 'L1', itemIndex: 1, parentId: 's1', userWatched: false },
-        { plex: '2', label: 'L2', itemIndex: 2, parentId: 's1', userWatched: false },
-        { plex: '9', label: 'Drill', itemIndex: 1, parentId: 's3', userWatched: false },
-      ],
-    };
+    hookReturn = { ...refHook };
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
-    expect(screen.getByText(/Practice & Reference/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: /Practice & Reference/i }));
     const drill = screen.getByText('Drill').closest('button');
     expect(drill).not.toBeDisabled();
     fireEvent.click(drill);
     expect(onPlay).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the lesson gate working while reference units stay open', () => {
-    const onPlay = vi.fn();
-    hookReturn = {
-      ...baseHook,
-      isSequential: true,
-      referenceUnitIds: ['s3'],
-      parents: { s1: { index: 1, title: 'Unit 1' }, s3: { index: 3, title: 'Exercise Module' } },
-      items: [
-        { plex: '1', label: 'L1', itemIndex: 1, parentId: 's1', userWatched: false },
-        { plex: '2', label: 'L2', itemIndex: 2, parentId: 's1', userWatched: false },
-        { plex: '9', label: 'Drill', itemIndex: 1, parentId: 's3', userWatched: false },
-      ],
-    };
-    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
-    expect(screen.getByText('L2').closest('button')).toBeDisabled();
-    expect(screen.getByText('Drill').closest('button')).not.toBeDisabled();
+  it('keeps the lesson gate working while reference units are revealed', () => {
+    hookReturn = { ...refHook };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    fireEvent.click(screen.getByRole('switch', { name: /Practice & Reference/i }));
+    expect(screen.getByText('L2').closest('button')).toBeDisabled();      // gated lesson
+    expect(screen.getByText('Drill').closest('button')).not.toBeDisabled(); // open reference
   });
 
-  it('shows no Practice & Reference section when referenceUnitIds is empty', () => {
+  it('shows no Practice & Reference toggle when referenceUnitIds is empty', () => {
     hookReturn = {
       ...baseHook,
       isSequential: true,
