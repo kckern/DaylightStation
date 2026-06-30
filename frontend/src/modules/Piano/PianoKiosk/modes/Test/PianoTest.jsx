@@ -259,7 +259,7 @@ export default function PianoTest() {
   }
 
   if (params.scene === 'effect-probe') {
-    return <EffectProbe autoRun={sp.get('run') === '1'} />;
+    return <EffectProbe autoRun={sp.get('run') === '1'} monitor={sp.get('monitor') === '1'} />;
   }
 
   if (params.scene === 'waterfall') {
