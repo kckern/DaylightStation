@@ -18,6 +18,12 @@ import {
 
 const PIANO = programChange(0); // Acoustic Grand — re-assert after any reset
 
+// An NRPN value-set = three CCs: 99=param MSB, 98=param LSB, 6=Data Entry value.
+// The MDG-400 TRANSMITS its EQ as NRPN (MSB 10) and reverb/chorus as CC91/93;
+// these candidates test whether SENDING NRPN/CC also SETs them (CC-based => would
+// survive the Jamcorder, unlike SysEx).
+const nrpn = (msb, lsb, value) => [cc(99, msb), cc(98, lsb), cc(6, value)];
+
 /** Ordered candidate list. groupKind is 'reverb' | 'chorus' | 'control'. */
 export function buildCandidates() {
   return [
@@ -27,6 +33,19 @@ export function buildCandidates() {
     // piano; if not, the BLE→DIN bridge isn't forwarding SysEx (everything moot).
     { id: 'gm-mastervol', kind: 'control', label: 'GM Master Volume sweep', sysex: true,
       dry: [PIANO, gmMasterVolume(0)], wet: [PIANO, gmMasterVolume(127)] },
+
+    // ── NRPN / CC SET tests (CC-based; survive the Jamcorder if they work) ──
+    // EQ band 0 (the unit transmits EQ as NRPN MSB=10). 64=flat -> 127=max boost;
+    // a spectral-centroid change ⇒ NRPN SETs the EQ.
+    { id: 'eq-nrpn-10-0', kind: 'eq', sysex: false,
+      dry: [PIANO, ...nrpn(10, 0, 64)], wet: [PIANO, ...nrpn(10, 0, 127)] },
+    { id: 'eq-nrpn-10-9', kind: 'eq', sysex: false,
+      dry: [PIANO, ...nrpn(10, 9, 64)], wet: [PIANO, ...nrpn(10, 9, 127)] },
+    // The two unknown NRPN params seen during the reverb/chorus panel test.
+    { id: 'nrpn-3-0', kind: 'reverb', sysex: false,
+      dry: [PIANO, ...nrpn(3, 0, 0)], wet: [PIANO, ...nrpn(3, 0, 127)] },
+    { id: 'nrpn-4-0', kind: 'chorus', sysex: false,
+      dry: [PIANO, ...nrpn(4, 0, 0)], wet: [PIANO, ...nrpn(4, 0, 127)] },
 
     // ── Reverb ────────────────────────────────────────────────────────────
     // Channel-CC reverb (CC80/91) was rigorously disproven by the effect-audit
