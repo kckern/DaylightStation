@@ -34,7 +34,7 @@ async function openAccess() {
   const pickIn = (a) => { const i = [...a.inputs.values()]; return i.find((x) => /widi|bluetooth|midi/i.test(x.name)) || i[0] || null; };
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   let access; let sysex = false;
-  try { access = await withTimeout(navigator.requestMIDIAccess({ sysex: true }), 8000); sysex = true; }
+  try { access = await withTimeout(navigator.requestMIDIAccess({ sysex: true }), 60000); sysex = true; }
   catch (e) { access = await navigator.requestMIDIAccess({ sysex: false }); sysex = false; }
   const out = pickOut(access); const input = pickIn(access);
   if (!out) throw new Error('no MIDI output found');
