@@ -77,6 +77,16 @@ describe('resolveEffectiveCues', () => {
     expect(c.out - c.in).toBeGreaterThanOrEqual(0.9);
   });
 
+  it('widens srt-line mutes generously (word position uncertain) so late words are covered', () => {
+    // A caption-derived mute: the word could be anywhere in the ~2-3s line, so a
+    // narrow window can miss a late word (the "damn hands" leak).
+    const edl2 = { cues: [] };
+    const override = { addCues: [{ id: 's', category: 'language/profanity/damn', effect: 'mute', in: 4438.09, out: 4438.14, precision: 'srt-line' }] };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900, srtLineWidthMs: 1800 } } };
+    const c = resolveEffectiveCues({ edl: edl2, profile: prof, override })[0];
+    expect(c.out - c.in).toBeGreaterThanOrEqual(1.8);
+  });
+
   it('applies only small pads to an ms-precise mute (no min-width blow-up)', () => {
     const vaEdl = { cues: [{ id: 'z', category: 'language/blasphemy/god', type: 'mute', precision: 'ms', in: 180.0, out: 180.35 }] };
     const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
