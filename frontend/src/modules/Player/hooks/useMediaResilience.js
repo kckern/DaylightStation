@@ -9,6 +9,7 @@ import { formatTime } from '../lib/helpers.js';
 import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
+import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -172,6 +173,13 @@ export function useMediaResilience({
   const lastSeekAtRef = useRef(0);
   // True while a warmup-armed deadline is pending, so `transcodewarmed` can cancel it.
   const warmupDeadlineArmedRef = useRef(false);
+  // Stuck-state jolt ladder (mid-playback stall / never-completing seek). Refs so
+  // the ladder survives re-renders and the driving effect can depend only on the
+  // boolean `isStuck`. joltLatestRef snapshots the callbacks/values each render.
+  const joltStepRef = useRef(0);
+  const joltIntentRef = useRef(null);
+  const joltTimerRef = useRef(null);
+  const joltLatestRef = useRef(null);
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
@@ -492,6 +500,86 @@ export function useMediaResilience({
   // because the element was swapped out by a recovery). The spinner must never
   // sit on top of visibly-playing video — advancement is the authority.
   const isBuffering = (playbackHealth.isWaiting || playbackHealth.isStalledEvent) && !playbackHealth.isAdvancing;
+
+  // "Stuck": mid-playback, not paused, the clock is NOT advancing, and we're either
+  // flagged stalled/buffering OR sitting in a seek that won't complete (a forward
+  // seek past the Plex transcoder's head freezes with el.seeking stuck true). This
+  // is the trigger for the jolt ladder below — the state that used to hang forever.
+  const clockAdvancing = playbackHealth.isAdvancing === true;
+  const isStuck = hasEverPlayedRef.current && !isUserPaused && !clockAdvancing
+    && (isStalled || isBuffering || effectiveSeeking);
+
+  // Snapshot everything the ladder needs so its effect can depend only on `isStuck`
+  // (and not tear down/rebuild — resetting the ladder — when a callback identity or
+  // a frozen scalar changes).
+  joltLatestRef.current = {
+    getMediaEl, targetTimeSeconds, seconds, meta, waitKey, logWaitKey,
+    onReload, onExhausted, actions, statusRef, playbackSessionKey, maxAttempts,
+  };
+
+  // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to the
+  // captured intent (the frozen seek target), until the clock advances again or the
+  // ladder + attempt cap are exhausted. A module-tracker cap bounds total jolts even
+  // if `isStuck` flaps (a jolt that plays one frame then re-stalls), so no infinite
+  // loop; successful playback clears the tracker (see the progress effect above).
+  useEffect(() => {
+    if (disabled) return undefined;
+    if (!isStuck) {
+      if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; }
+      joltStepRef.current = 0;
+      joltIntentRef.current = null;
+      return undefined;
+    }
+    if (joltTimerRef.current) return undefined; // ladder already scheduled
+    if (statusRef.current === STATUS.exhausted) return undefined;
+
+    // Capture the intent = the frozen playhead (the seek target we must not lose).
+    {
+      const L = joltLatestRef.current || {};
+      const el = L.getMediaEl?.();
+      joltIntentRef.current = (el && Number.isFinite(el.currentTime)) ? el.currentTime
+        : (Number.isFinite(L.targetTimeSeconds) ? L.targetTimeSeconds
+          : (Number.isFinite(L.seconds) ? L.seconds : null));
+    }
+
+    const fireRung = () => {
+      const L = joltLatestRef.current || {};
+      // Hard cap on total jolts this session (survives isStuck flaps); cleared by the
+      // progress effect once playback resumes.
+      const attempt = _recordRecovery(L.playbackSessionKey);
+      const plan = stallJoltPlan(joltStepRef.current);
+      if (!plan || attempt > (L.maxAttempts || 5)) {
+        playbackLog('resilience-stall-jolt-exhausted', {
+          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt
+        });
+        L.actions?.setStatus(STATUS.exhausted);
+        L.onExhausted?.({ reason: 'stall-jolt-exhausted', attempts: attempt, waitKey: L.waitKey });
+        joltTimerRef.current = null;
+        return;
+      }
+      joltStepRef.current += 1;
+      const intentSeconds = joltIntentRef.current;
+      const seekToIntentMs = Number.isFinite(intentSeconds) ? Math.max(0, intentSeconds * 1000) : undefined;
+      L.actions?.setStatus(STATUS.recovering);
+      playbackLog('resilience-stall-jolt', {
+        waitKey: L.logWaitKey, step: plan.reason, rung: joltStepRef.current, attempt,
+        intentSeconds, refreshUrl: plan.refreshUrl, forceRemount: plan.forceRemount,
+      });
+      L.onReload?.({
+        reason: plan.reason, meta: L.meta, waitKey: L.waitKey,
+        refreshUrl: plan.refreshUrl, forceRemount: plan.forceRemount, seekToIntentMs,
+      });
+      // Escalate again if we're still stuck after this rung has had time to work.
+      joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_STEP_MS);
+    };
+
+    // Grace before the first jolt so a slow-but-succeeding seek/buffer isn't cut off.
+    joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_GRACE_MS);
+    return () => { if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; } };
+    // Depend only on the boolean trigger; the ladder reads a per-render snapshot
+    // (joltLatestRef) so a changing callback/scalar identity can't reset it mid-climb.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStuck, disabled]);
 
   // Detect loop transition: video has loop=true, we've played before, and we're near the start
   // This check runs synchronously during render to prevent overlay flash on loop
