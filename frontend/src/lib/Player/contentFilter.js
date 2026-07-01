@@ -50,10 +50,17 @@ function mergeParams(target, ...sources) {
 export function resolveEffectiveCues({ edl, profile, override } = {}) {
   const overrides = override?.cueOverrides || {};
   const cardByCue = new Map((override?.cards || []).map((c) => [c.after, c.text]));
-  const base = [...(edl?.cues || []), ...(override?.addCues || [])];
+  // sync remaps imported (foreign-timed) cues onto this file: t_local = t*scale + offset.
+  // Manual addCues are authored in local time, so they are NOT synced.
+  const sync = override?.sync;
+  const applySync = (t) => (sync ? t * (sync.scale ?? 1) + (sync.offsetSec || 0) : t);
+  const base = [
+    ...(edl?.cues || []).map((cue) => ({ cue, synced: true })),
+    ...(override?.addCues || []).map((cue) => ({ cue, synced: false })),
+  ];
 
   const out = [];
-  for (const cue of base) {
+  for (const { cue, synced } of base) {
     const ov = overrides[cue.id] || {};
     if (ov.disabled) continue;
 
@@ -70,6 +77,12 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };
+    if (synced && sync) {
+      eff.in = applySync(cue.in);
+      eff.out = applySync(cue.out);
+      // optional per-cue manual nudge (ms), applied after the global sync
+      if (typeof ov.nudgeMs === 'number') { eff.in += ov.nudgeMs / 1000; eff.out += ov.nudgeMs / 1000; }
+    }
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);
     if (cardByCue.has(cue.id)) eff.card = cardByCue.get(cue.id);

@@ -69,6 +69,20 @@ describe('resolveEffectiveCues', () => {
     expect(out[0].effect).toBe('mute');
   });
 
+  it('applies override.sync (offset+scale) to imported cues but not manual addCues', () => {
+    const vaEdl = { cues: [{ id: 'a', category: 'violence/graphic', effect: 'skip', in: 100, out: 110 }] };
+    const override = {
+      sync: { offsetSec: 6.5, scale: 1 },
+      addCues: [{ id: 'm', category: 'y', effect: 'mute', in: 50, out: 52 }],
+    };
+    const out = resolveEffectiveCues({ edl: vaEdl, profile: { categories: {} }, override });
+    const a = out.find((c) => c.id === 'a');
+    const m = out.find((c) => c.id === 'm');
+    expect(a.in).toBeCloseTo(106.5);
+    expect(a.out).toBeCloseTo(116.5);
+    expect(m.in).toBe(50); // manual cue authored in local time — not shifted
+  });
+
   it('attaches plot-card text from override.cards', () => {
     const override = { cards: [{ after: 'b', text: 'Skipped a fight scene.' }] };
     const b = resolveEffectiveCues({ edl, profile, override }).find((c) => c.id === 'b');
