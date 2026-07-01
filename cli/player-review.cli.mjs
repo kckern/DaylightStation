@@ -96,7 +96,7 @@ async function cmdCues(contentId) {
   console.log(`\n→ review one:  node cli/player-review.cli.mjs cue ${contentId} <id>\n`);
 }
 
-async function drive({ contentId, goto, filter, label, waitForFiring = false }) {
+async function drive({ contentId, goto, filter, label, waitUntilTime = null }) {
   const params = new URLSearchParams({ play: toContentId(contentId), goto: String(Math.floor(goto)) });
   if (filter) { params.set('filter', '1'); params.set('filter-debug', '1'); }
   const url = `${HOST}/screen/${SCREEN}?${params}`;
@@ -146,15 +146,20 @@ async function drive({ contentId, goto, filter, label, waitForFiring = false }) 
   if (!playing) {
     console.error(`  ⚠ playback didn't start within ${TIMEOUT_MS / 1000}s (playhead ${state?.t ?? 'n/a'}, readyState ${state?.readyState ?? 'n/a'})`);
   }
-  if (waitForFiring && playing) {
-    // ?cue lands ~lead seconds BEFORE the cue — dwell until the effect actually fires
-    // so the screenshot captures it (bounded).
-    const fireDeadline = Date.now() + 15000;
-    while (Date.now() < fireDeadline) {
+  if (waitUntilTime != null && playing) {
+    // Cue review lands ~lead seconds BEFORE the target cue (and, when overlapping
+    // cues force the lead-in earlier, well before it) — dwell until the playhead
+    // reaches the TARGET cue's in-point so the shot captures THAT cue firing, not an
+    // intervening one. Bounded by the gap to cross plus warmup slack.
+    const gapMs = Math.max(0, (waitUntilTime - (state.t ?? goto))) * 1000;
+    const dwellDeadline = Date.now() + gapMs + 20000;
+    while (Date.now() < dwellDeadline) {
       await page.waitForTimeout(400);
       state = await read();
-      if (state.effect) break;
+      if (state.t != null && state.t >= waitUntilTime - 0.2) break;
     }
+    await page.waitForTimeout(600); // let the overlay paint
+    state = await read();
   } else {
     await page.waitForTimeout(SETTLE_MS);
     state = await read();
@@ -181,7 +186,7 @@ async function cmdCue(contentId, cueId, lead) {
     die(`cue "${cueId}" not found among ${cues.length} cues. First few: ${near}\n  list them:  node cli/player-review.cli.mjs cues ${contentId}`);
   }
   console.log(`◎ cue ${cueId} (${g.cue.effect} ${fmt(g.cue.in)}–${fmt(g.cue.out)}) → goto ${g.targetTime.toFixed(2)}s`);
-  await drive({ contentId, goto: g.targetTime, filter: true, label: `cue-${cueId}`, waitForFiring: true });
+  await drive({ contentId, goto: g.targetTime, filter: true, label: `cue-${cueId}`, waitUntilTime: g.cue.in });
 }
 
 // ---- main ---------------------------------------------------------------------
