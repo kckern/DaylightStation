@@ -21,11 +21,13 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter-de
 const fmt = (s) => (Number.isFinite(s) ? s.toFixed(2) : '—');
 
 // A stable key for the current display so we skip setState on unchanged frames.
+const tenth = (v) => (v == null ? '' : (Math.round(v * 10) / 10).toFixed(1));
 function snapshotKey(s) {
   return [
     s.focus?.id ?? 'none',
     s.firing ? 'fire' : 'arm',
-    s.countdownSec == null ? '' : (Math.round(s.countdownSec * 10) / 10).toFixed(1),
+    tenth(s.countdownSec),   // ticks while armed
+    tenth(s.firingLeftSec),  // ticks while firing
     s.index,
     s.total,
     s.canPrev ? 1 : 0,
@@ -77,7 +79,7 @@ export function FilterDebugHud({ getMediaEl, transport, effectiveCues, lead = DE
     });
   }, [getMediaEl, transport, effectiveCues, lead]);
 
-  const { focus, firing, countdownSec, index, total, canPrev, canNext } = state;
+  const { focus, firing, countdownSec, firingLeftSec, index, total, canPrev, canNext } = state;
 
   const accent = firing ? '#ff5252' : (theme.debugAccent || '#2a9d8f');
   const label = focus
@@ -150,7 +152,9 @@ export function FilterDebugHud({ getMediaEl, transport, effectiveCues, lead = DE
           </div>
           <div style={{ marginTop: '0.15em' }}>
             {firing
-              ? <span style={{ color: accent, fontWeight: 700 }}>● FIRING</span>
+              ? <span style={{ color: accent, fontWeight: 700 }}>
+                  ● FIRING · {firingLeftSec == null ? '—' : `${firingLeftSec.toFixed(1)}s`} left
+                </span>
               : <>▸ arming in <b>{countdownSec == null ? '—' : `${countdownSec.toFixed(1)}s`}</b></>}
           </div>
         </>

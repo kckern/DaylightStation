@@ -75,16 +75,33 @@ describe('computeGoto', () => {
     expect(computeGoto(cues, 300, 'next')).toBeNull();
     expect(computeGoto([], 0, 'next')).toBeNull();
   });
+
+  it('always lands on a NON-firing point (backs up past an overlapping cue)', () => {
+    // b2 starts only 0.5s after b1 ends; with lead 1.5, b2.in - lead = 129.5 falls
+    // INSIDE b1 [100,130). The target must back up to before b1, not sit mid-fire.
+    const dense = [
+      { id: 'b1', effect: 'skip', in: 100, out: 130 },
+      { id: 'b2', effect: 'mute', in: 131, out: 131.4 },
+    ];
+    const g = computeGoto(dense, 90, 'next'); // heading to b1
+    expect(g.cue.id).toBe('b1');
+    expect(activeCueAt(dense, g.targetTime)).toBeNull(); // guaranteed non-firing
+    expect(g.targetTime).toBeCloseTo(98.5, 5);           // 100 - 1.5
+    // From inside b1, next → b2; its naive lead-in (129.5) is inside b1, so back up.
+    const g2 = computeGoto(dense, 115, 'next');
+    expect(g2.cue.id).toBe('b2');
+    expect(activeCueAt(dense, g2.targetTime)).toBeNull();
+    expect(g2.targetTime).toBeCloseTo(98.5, 5); // before b1, the overlapping cue
+  });
 });
 
 describe('debugCueState', () => {
-  it('reports the firing cue when the playhead is inside one', () => {
-    const s = debugCueState(cues, 10.2);
+  it('reports the firing cue + remaining firing time when inside one', () => {
+    const s = debugCueState(cues, 115); // inside b [100,130)
     expect(s.firing).toBe(true);
-    expect(s.focus.id).toBe('a');
-    expect(s.index).toBe(1);
-    expect(s.total).toBe(3);
+    expect(s.focus.id).toBe('b');
     expect(s.countdownSec).toBeNull();
+    expect(s.firingLeftSec).toBeCloseTo(15, 5); // 130 - 115
   });
   it('reports the next armed cue + countdown when between cues', () => {
     const s = debugCueState(cues, 90);
@@ -92,6 +109,7 @@ describe('debugCueState', () => {
     expect(s.focus.id).toBe('b');
     expect(s.index).toBe(2);
     expect(s.countdownSec).toBeCloseTo(10, 5); // 100 - 90
+    expect(s.firingLeftSec).toBeNull();
   });
   it('flags canPrev/canNext at the edges', () => {
     const first = debugCueState(cues, 0);
