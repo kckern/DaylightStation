@@ -29,3 +29,26 @@ export function minimalCycle(chords) {
   }
   return [...chords];
 }
+
+/**
+ * Canonical, length-independent key for a roman progression, or null if there is
+ * no harmonic content. Same harmony at any rate/repetition → same string.
+ */
+export function signatureKey(roman) {
+  const cycle = minimalCycle(normalizeProgression(roman));
+  return cycle.length ? cycle.join('-') : null;
+}
+
+/**
+ * Can `cand` be layered on `base`? True iff they share a harmonic signature, OR
+ * the candidate has no harmony of its own (a bare melody conforms to any base).
+ */
+export function areStackable(baseRoman, candRoman) {
+  const b = signatureKey(baseRoman);
+  const c = signatureKey(candRoman);
+  if (c === null) return true; // melodic wildcard
+  if (b === null) return true; // base has no harmony to clash with
+  return b === c;
+}
+
+export default { normalizeProgression, minimalCycle, signatureKey, areStackable };
