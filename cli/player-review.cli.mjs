@@ -1,0 +1,205 @@
+#!/usr/bin/env node
+/**
+ * player-review — drive the Player to a surgical point in time and capture what it
+ * shows, so the content-filter test/evaluate loop is one command instead of an
+ * ad-hoc Playwright script.
+ *
+ * It launches the screen route with the ?goto surgical seek (see
+ * frontend/src/lib/Player/reviewParams.js), waits for playback to land on target,
+ * screenshots, and prints the live state (playhead, firing effect, debug-HUD text).
+ * Cue-by-id resolves to a concrete ?goto time using the SAME effective-cue math the
+ * player uses (resolveEffectiveCues → gotoForCueId), so the sync offset + lead match.
+ *
+ * Usage:
+ *   node cli/player-review.cli.mjs cues  <contentId>
+ *   node cli/player-review.cli.mjs goto  <contentId> <seconds> [flags]
+ *   node cli/player-review.cli.mjs cue   <contentId> <cueId> [lead] [flags]
+ *
+ *   contentId : plex:662170  (or bare 662170)
+ *   flags:
+ *     --host <url>     app base URL         (default http://localhost:3111)
+ *     --screen <id>    screen route         (default living-room)
+ *     --out <path>     screenshot path      (default _deleteme/player-review/<id>-<t>.png)
+ *     --headed         show the browser
+ *     --no-filter      goto without the content filter (goto only; cue always filters)
+ *     --settle <sec>   extra dwell after landing before the shot (default 2.5)
+ *     --timeout <sec>  max wait for landing  (default 60)
+ *     --width/--height viewport             (default 1280x720)
+ *
+ * Examples:
+ *   node cli/player-review.cli.mjs cues plex:662170
+ *   node cli/player-review.cli.mjs goto plex:662170 1800
+ *   node cli/player-review.cli.mjs cue  plex:662170 va3388882      # ~1.5s before it fires
+ *   node cli/player-review.cli.mjs cue  plex:662170 va3388882 3    # 3s lead, headed
+ */
+
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+import { dirname, resolve as pathResolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolveEffectiveCues } from '../frontend/src/lib/Player/contentFilter.js';
+import { gotoForCueId } from '../frontend/src/lib/Player/filterDebug.js';
+
+const ROOT = pathResolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// ---- args ---------------------------------------------------------------------
+const argv = process.argv.slice(2);
+const command = argv[0];
+const positional = argv.slice(1).filter((a) => !a.startsWith('--'));
+const flags = {};
+for (let i = 0; i < argv.length; i++) {
+  if (!argv[i].startsWith('--')) continue;
+  const key = argv[i].slice(2);
+  const next = argv[i + 1];
+  if (next && !next.startsWith('--')) { flags[key] = next; i++; } else { flags[key] = true; }
+}
+
+const HOST = (flags.host || 'http://localhost:3111').replace(/\/$/, '');
+const SCREEN = flags.screen || 'living-room';
+const SETTLE_MS = Math.round((parseFloat(flags.settle) || 2.5) * 1000);
+const TIMEOUT_MS = Math.round((parseFloat(flags.timeout) || 60) * 1000);
+const VW = parseInt(flags.width, 10) || 1280;
+const VH = parseInt(flags.height, 10) || 720;
+
+const ratingKey = (id) => String(id || '').replace(/^plex:/, '');
+const toContentId = (id) => (/^\w+:/.test(id) ? id : `plex:${id}`);
+
+function die(msg) { console.error(`✗ ${msg}`); process.exit(1); }
+
+// ---- filter data --------------------------------------------------------------
+async function fetchFilterData(contentId) {
+  const url = `${HOST}/api/v1/content-filter/${ratingKey(contentId)}`;
+  const r = await fetch(url);
+  if (!r.ok) die(`content-filter fetch failed (${r.status}) for ${contentId}`);
+  return r.json();
+}
+
+async function effectiveCuesFor(contentId) {
+  const { edl, profile, override } = await fetchFilterData(contentId);
+  if (!edl) die(`no EDL for ${contentId} (is filtering configured for this title?)`);
+  return { cues: resolveEffectiveCues({ edl, profile, override }), edl };
+}
+
+const fmt = (s) => (Number.isFinite(s) ? s.toFixed(2) : '—');
+
+// ---- commands -----------------------------------------------------------------
+async function cmdCues(contentId) {
+  const { cues, edl } = await effectiveCuesFor(contentId);
+  console.log(`\n${edl.title || contentId} — ${cues.length} effective cues (times are sync-adjusted)\n`);
+  const icon = { skip: '⏭️', 'skip-card': '🎬', mute: '🔇', bleep: '📢', blur: '🌫️', 'full-blur': '🌑', 'censor-bar': '⬛', pixelate: '🔲', 'title-card': '🪧' };
+  cues.forEach((c, i) => {
+    console.log(
+      `${String(i + 1).padStart(3)}  ${(icon[c.effect] || '🎛️')} ${String(c.effect).padEnd(10)} `
+      + `${String(c.id).padEnd(12)} ${fmt(c.in)}–${fmt(c.out)}  ${c.category || ''}`
+    );
+  });
+  console.log(`\n→ review one:  node cli/player-review.cli.mjs cue ${contentId} <id>\n`);
+}
+
+async function drive({ contentId, goto, filter, label, waitForFiring = false }) {
+  const params = new URLSearchParams({ play: toContentId(contentId), goto: String(Math.floor(goto)) });
+  if (filter) { params.set('filter', '1'); params.set('filter-debug', '1'); }
+  const url = `${HOST}/screen/${SCREEN}?${params}`;
+  const out = flags.out
+    ? pathResolve(process.cwd(), flags.out)
+    : pathResolve(ROOT, `_deleteme/player-review/${ratingKey(contentId)}-${label}.png`);
+  mkdirSync(dirname(out), { recursive: true });
+
+  console.log(`▶ ${url}`);
+  const browser = await chromium.launch({ headless: !flags.headed, args: ['--autoplay-policy=no-user-gesture-required'] });
+  const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
+  page.on('pageerror', (e) => console.error('  pageerror:', e.message));
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+  const read = () => page.evaluate(() => {
+    const host = document.querySelector('.video-element, dash-video, video');
+    const v = host?.shadowRoot?.querySelector('video') || host;
+    const hud = document.querySelector('.filter-debug-hud');
+    return {
+      t: v && Number.isFinite(v.currentTime) ? v.currentTime : null,
+      paused: v ? v.paused : null,
+      readyState: v ? v.readyState : 0,
+      effect: document.querySelector('.filter-overlay [data-filter-effect]')?.getAttribute('data-filter-effect') || null,
+      hud: hud ? hud.innerText.replace(/\s+/g, ' ').trim() : null,
+    };
+  });
+
+  // Plex mints a fresh transcode AT the target offset; that warmup can take tens of
+  // seconds during which currentTime is already the target but readyState is 1 and the
+  // clock is frozen. Wait for ACTUAL playback: near target, readyState≥3, and the clock
+  // advancing between polls — not merely currentTime being set.
+  const deadline = Date.now() + TIMEOUT_MS;
+  let state = await read();
+  let prevT = state.t;
+  let playing = false;
+  process.stdout.write('  warming transcode');
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1000);
+    state = await read();
+    process.stdout.write('.');
+    const nearTarget = state.t != null && state.t >= goto - 2;
+    const advancing = state.t != null && prevT != null && state.t > prevT + 0.05;
+    prevT = state.t;
+    if (nearTarget && state.readyState >= 3 && advancing) { playing = true; break; }
+  }
+  process.stdout.write('\n');
+  if (!playing) {
+    console.error(`  ⚠ playback didn't start within ${TIMEOUT_MS / 1000}s (playhead ${state?.t ?? 'n/a'}, readyState ${state?.readyState ?? 'n/a'})`);
+  }
+  if (waitForFiring && playing) {
+    // ?cue lands ~lead seconds BEFORE the cue — dwell until the effect actually fires
+    // so the screenshot captures it (bounded).
+    const fireDeadline = Date.now() + 15000;
+    while (Date.now() < fireDeadline) {
+      await page.waitForTimeout(400);
+      state = await read();
+      if (state.effect) break;
+    }
+  } else {
+    await page.waitForTimeout(SETTLE_MS);
+    state = await read();
+  }
+  await page.screenshot({ path: out });
+  await browser.close();
+
+  console.log(`✓ ${JSON.stringify({ target: Math.round(goto * 100) / 100, landed: state.t == null ? null : Math.round(state.t * 10) / 10, firing: state.effect, paused: state.paused })}`);
+  if (state.hud) console.log(`  HUD: ${state.hud}`);
+  console.log(`  📸 ${out}`);
+}
+
+async function cmdGoto(contentId, seconds) {
+  const goto = parseFloat(seconds);
+  if (!Number.isFinite(goto) || goto < 0) die(`bad <seconds>: ${seconds}`);
+  await drive({ contentId, goto, filter: !flags['no-filter'], label: `t${Math.floor(goto)}` });
+}
+
+async function cmdCue(contentId, cueId, lead) {
+  const { cues } = await effectiveCuesFor(contentId);
+  const g = gotoForCueId(cues, cueId, lead != null ? parseFloat(lead) : undefined);
+  if (!g) {
+    const near = cues.slice(0, 6).map((c) => c.id).join(', ');
+    die(`cue "${cueId}" not found among ${cues.length} cues. First few: ${near}\n  list them:  node cli/player-review.cli.mjs cues ${contentId}`);
+  }
+  console.log(`◎ cue ${cueId} (${g.cue.effect} ${fmt(g.cue.in)}–${fmt(g.cue.out)}) → goto ${g.targetTime.toFixed(2)}s`);
+  await drive({ contentId, goto: g.targetTime, filter: true, label: `cue-${cueId}`, waitForFiring: true });
+}
+
+// ---- main ---------------------------------------------------------------------
+const USAGE = `player-review — surgical Player review loop (${HOST})
+
+  node cli/player-review.cli.mjs cues  <contentId>
+  node cli/player-review.cli.mjs goto  <contentId> <seconds> [--headed --no-filter --out p]
+  node cli/player-review.cli.mjs cue   <contentId> <cueId> [lead] [--headed --out p]
+
+  contentId = plex:662170 (or bare 662170).  Screenshots land in _deleteme/player-review/.
+`;
+
+try {
+  if (!command || ['help', '-h', '--help'].includes(command)) { console.log(USAGE); process.exit(0); }
+  else if (command === 'cues') { if (!positional[0]) die('cues <contentId>'); await cmdCues(positional[0]); }
+  else if (command === 'goto') { if (positional.length < 2) die('goto <contentId> <seconds>'); await cmdGoto(positional[0], positional[1]); }
+  else if (command === 'cue') { if (positional.length < 2) die('cue <contentId> <cueId> [lead]'); await cmdCue(positional[0], positional[1], positional[2]); }
+  else die(`unknown command "${command}"\n${USAGE}`);
+} catch (e) {
+  die(e?.stack || e?.message || String(e));
+}
