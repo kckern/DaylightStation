@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeProgression } from './harmonicSignature.mjs';
 import { minimalCycle } from './harmonicSignature.mjs';
+import { signatureKey, areStackable } from './harmonicSignature.mjs';
 
 describe('normalizeProgression', () => {
   it('collapses consecutive duplicate chords (rate-independent)', () => {
@@ -29,5 +30,34 @@ describe('minimalCycle', () => {
   });
   it('does not reduce a partial/incomplete repeat', () => {
     assert.deepEqual(minimalCycle(['I', 'V', 'I']), ['I', 'V', 'I']);
+  });
+});
+
+describe('signatureKey', () => {
+  it('is equal for the same harmony realized at different rates/lengths', () => {
+    const threeBar = signatureKey(['ii', 'VI', 'V']);
+    const sixBar = signatureKey(['ii', 'ii', 'VI', 'VI', 'V', 'V']);
+    const twoCycles = signatureKey(['ii', 'VI', 'V', 'ii', 'VI', 'V']);
+    assert.equal(threeBar, sixBar);
+    assert.equal(threeBar, twoCycles);
+  });
+  it('differs for different progressions', () => {
+    assert.notEqual(signatureKey(['I', 'V', 'vi', 'IV']), signatureKey(['ii', 'V', 'I']));
+  });
+  it('is null for no harmonic content', () => {
+    assert.equal(signatureKey(null), null);
+    assert.equal(signatureKey([]), null);
+  });
+});
+
+describe('areStackable', () => {
+  it('true when signatures match', () => {
+    assert.equal(areStackable(['I', 'V'], ['I', 'I', 'V', 'V']), true);
+  });
+  it('false when signatures differ', () => {
+    assert.equal(areStackable(['I', 'V', 'vi', 'IV'], ['ii', 'V', 'I']), false);
+  });
+  it('true when the candidate has no harmony (melodic wildcard conforms)', () => {
+    assert.equal(areStackable(['I', 'V', 'vi', 'IV'], null), true);
   });
 });
