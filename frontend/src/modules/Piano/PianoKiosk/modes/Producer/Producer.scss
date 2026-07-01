@@ -76,7 +76,12 @@
 
   &__layers { display: flex; flex-direction: column; gap: 0.45rem; }
 
-  &__keys { flex: 0 0 auto; }
+  &__keys {
+    flex: 0 0 auto;
+    width: 100%;
+    background: var(--piano-surface-2, #14141b);
+    .piano-keyboard { height: 9rem; }
+  }
 }
 
 .piano-chip {
