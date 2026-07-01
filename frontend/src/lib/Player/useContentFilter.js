@@ -108,6 +108,13 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (activeIds.has(id)) return;
         const h = getEffectHandler(cue.effect);
         if (h?.onExit) { try { h.onExit(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.exit-error', { effect: cue.effect, error: e?.message }); } }
+        // Unsampled debug trace: the CLEAR half of each cue. Pairs with the enter
+        // trace below for a complete arm→fire→clear record during a QA/debug pass.
+        // debug level is filtered in prod (default info), so this never spams there.
+        logger().debug?.('content-filter.exit', {
+          effect: cue.effect, cue: id, category: cue.category,
+          in: +cue.in.toFixed(2), out: +cue.out.toFixed(2), at: +t.toFixed(2),
+        });
         entered.delete(id);
       });
 
@@ -129,6 +136,14 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
           logger().sampled?.('content-filter.applied',
             { effect: cue.effect, cue: cue.id, in: +cue.in.toFixed(2), out: +cue.out.toFixed(2) },
             { maxPerMinute: 40 });
+          // Unsampled debug trace: the ARM/FIRE half. Unlike the rate-limited
+          // `.applied` info above, this never drops a cue — so the debug HUD's
+          // ◀/▶ scrubbing produces a complete, gap-free trace. Carries category
+          // + the exact playhead time the cue fired at.
+          logger().debug?.('content-filter.enter', {
+            effect: cue.effect, cue: cue.id, category: cue.category,
+            in: +cue.in.toFixed(2), out: +cue.out.toFixed(2), at: +t.toFixed(2),
+          });
         }
         // Transport effects act every tick while active (e.g. keep seeking past).
         if (h.kind === EFFECT_KINDS.TRANSPORT && h.onActive) h.onActive(ctxFor(cue));

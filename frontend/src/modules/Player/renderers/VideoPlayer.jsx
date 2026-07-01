@@ -14,10 +14,15 @@ import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
 import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { FilterOverlay } from '../components/FilterOverlay.jsx';
+import { FilterDebugHud } from '../components/FilterDebugHud.jsx';
 
 // Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
-const CONTENT_FILTER_ENABLED = typeof window !== 'undefined'
-  && new URLSearchParams(window.location.search).get('filter') === '1';
+// The debug HUD (?filter-debug=1) implies filtering is on — it exists to QA cues.
+const CONTENT_FILTER_DEBUG = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('filter-debug') === '1';
+const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('filter') === '1')
+  || CONTENT_FILTER_DEBUG;
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -199,7 +204,7 @@ export function VideoPlayer({
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
-  const { activeOverlays: filterOverlays, activeCard: filterCard } = useContentFilter({
+  const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues } = useContentFilter({
     getMediaEl,
     transport: filterTransport,
     edl: filterData?.edl,
@@ -724,6 +729,14 @@ export function VideoPlayer({
       )}
       {CONTENT_FILTER_ENABLED && filterData?.edl && (
         <FilterOverlay activeOverlays={filterOverlays} activeCard={filterCard} theme={filterData?.profile?.theme} />
+      )}
+      {CONTENT_FILTER_DEBUG && filterData?.edl && (
+        <FilterDebugHud
+          getMediaEl={getMediaEl}
+          transport={filterTransport}
+          effectiveCues={filterCues}
+          theme={filterData?.profile?.theme}
+        />
       )}
       {showQuality && quality?.supported && (
         <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} renderFps={renderFps} />
