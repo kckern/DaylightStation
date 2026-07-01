@@ -68,3 +68,21 @@ describe('rankLayerCandidates', () => {
     assert.ok(Array.isArray(ranked[0].reasons) && ranked[0].reasons.length > 0);
   });
 });
+
+describe('harmonic gating', () => {
+  const base = { slug: 'base', type: 'chord-progression', roman: ['I', 'V', 'vi', 'IV'], mood: 'Catchy', sources: ['p'] };
+  const sameSig = { slug: 'm1', type: 'melody', roman: ['I', 'I', 'V', 'V', 'vi', 'vi', 'IV', 'IV'], mood: 'Sad', sources: ['q'] };
+  const diffSig = { slug: 'm2', type: 'melody', roman: ['ii', 'V', 'I'], mood: 'Catchy', sources: ['p'] };
+
+  it('scores a same-signature candidate above a same-mood/same-pack different-signature one', () => {
+    assert.ok(compatibilityScore(base, sameSig) > compatibilityScore(base, diffSig));
+  });
+  it('rankLayerCandidates with {onlyStackable:true} drops different-signature candidates', () => {
+    const ranked = rankLayerCandidates(base, [sameSig, diffSig], { onlyStackable: true });
+    assert.deepEqual(ranked.map((r) => r.entry.slug), ['m1']);
+  });
+  it('tags "same progression" as the lead reason', () => {
+    const ranked = rankLayerCandidates(base, [sameSig]);
+    assert.equal(ranked[0].reasons[0], 'same progression');
+  });
+});
