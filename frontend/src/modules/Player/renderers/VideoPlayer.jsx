@@ -47,6 +47,27 @@ export function appendRefreshParam(url, nonce) {
 }
 
 /**
+ * Rewrite (or add) the Plex transcode `offset=` (start position, in seconds) on a
+ * stream URL. Critical for recovering a far-forward-seek stall: a plain URL refresh
+ * re-mints the transcode at the ORIGINAL offset, so the seek target is still past
+ * the transcoder's head and stalls again. Pointing offset at the seek target makes
+ * Plex transcode FROM there, so the seeked position is immediately available.
+ * Preserves other params + fragment. No-op for a non-positive/NaN offset.
+ */
+export function withOffsetParam(url, offsetSec) {
+  if (!url || !Number.isFinite(offsetSec) || offsetSec <= 0) return url;
+  const off = Math.floor(offsetSec);
+  const hashIndex = url.indexOf('#');
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
+  if (/[?&]offset=/.test(base)) {
+    return `${base.replace(/([?&]offset=)[^&]*/, `$1${off}`)}${hash}`;
+  }
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}offset=${off}${hash}`;
+}
+
+/**
  * Video player component for playing video content (including DASH video)
  */
 export function VideoPlayer({
@@ -286,12 +307,20 @@ export function VideoPlayer({
       const container = containerRef.current;
       const currentSrc = container?.getAttribute?.('src');
       if (currentSrc) {
-        const nextSrc = appendRefreshParam(currentSrc, Date.now());
+        // Re-mint the transcode AT the seek target: rewrite offset= to the seek
+        // position (else Plex restarts at the old offset and the target is still
+        // past the transcoder's head → re-stalls). Then cache-bust so dash.js
+        // re-fetches the MPD and the proxy mints a fresh session.
+        const withOffset = Number.isFinite(normalized) && normalized > 0
+          ? withOffsetParam(currentSrc, normalized)
+          : currentSrc;
+        const nextSrc = appendRefreshParam(withOffset, Date.now());
         try {
           container.setAttribute('src', nextSrc);
           playbackLog('playback.stream-url-refreshed', {
             previousSrc: currentSrc,
             nextSrc,
+            offsetSeconds: Number.isFinite(normalized) ? Math.floor(normalized) : null,
             reason: 'hard-reset-with-refresh'
           });
           if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
