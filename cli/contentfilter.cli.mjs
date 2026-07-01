@@ -1077,8 +1077,11 @@ async function main() {
         // a point that the resolver widens — SRT end is never used as a duration.
         const SECS_PER_WORD = 0.33;
         const wt = Math.min(line.start + i * SECS_PER_WORD, line.end);
-        if (covered(wt)) return;
-        const key = Math.round(wt * 2); // ~0.5s dedupe
+        // The SRT is authoritative for WHAT is said and roughly WHEN. Emit a mute
+        // for EVERY profanity word — don't skip ones a VidAngel tag "covers", because
+        // that tag may be mis-timed/mis-snapped and land off the actual word (the
+        // clustered-"damn" leak). Overlapping mutes are harmless; a missed word is not.
+        const key = Math.round(wt * 2); // ~0.5s dedupe (avoid our own duplicates only)
         if (seen.has(key)) return;
         seen.add(key);
         newCues.push({
@@ -1094,7 +1097,7 @@ async function main() {
       });
     }
 
-    console.error(`SRT profanity found: ${found} | already covered by a mute: ${found - newCues.length} | NEW gap-filling mutes: ${newCues.length}`);
+    console.error(`SRT profanity words: ${found} | mute cues emitted (deduped): ${newCues.length} (authoritative — one per word, overlaps with VidAngel mutes are fine)`);
     for (const c of newCues.slice(0, 12)) console.error(`  + ${c.label.padEnd(7)} @ ${c.in}s  (${c.category})`);
     if (newCues.length > 12) console.error(`  … +${newCues.length - 12} more`);
 
