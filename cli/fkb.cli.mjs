@@ -229,6 +229,36 @@ const commands = {
     console.log('OS wifi_sleep_policy        = ' + adbShell('settings get global wifi_sleep_policy'));
     console.log('✓ keepawake applied');
   },
+
+  // Self-heal a dead kiosk page. After a transient load failure (e.g. the app
+  // restarts mid-load) the WebView can get stuck on Chrome's "Webpage not
+  // available" error page and never recover — killing the piano SPA and every-
+  // thing it runs (screensaver, MIDI wake). These FKB settings make it retry on
+  // its own. They only fire on failure / connectivity return, so they don't
+  // disturb a healthy idle session or the app's own screensaver logic (unlike
+  // reloadOnIdle / reloadEachSeconds, which we assert OFF). Idempotent.
+  async recovery() {
+    // seconds-valued settings (strings): '0' = disabled
+    const str = {
+      reloadPageFailure: '30', // retry a failed page load after 30s (the fix)
+      reloadOnIdle: '0',       // OFF: would interrupt idle video watching
+      reloadEachSeconds: '0',  // OFF: no blind periodic reload
+    };
+    // boolean settings
+    const bool = {
+      reloadOnInternet: 'true',     // reload when internet connectivity returns
+      reloadOnWifiOn: 'true',       // reload when WiFi comes back
+      waitInternetOnReload: 'true', // wait for net rather than hammer while offline
+      restartOnCrash: 'true',       // relaunch FKB if the app process dies
+    };
+    for (const [key, value] of Object.entries(str)) {
+      console.log(`FKB ${key} → ${status(await call('setStringSetting', { key, value }))}`);
+    }
+    for (const [key, value] of Object.entries(bool)) {
+      console.log(`FKB ${key} → ${status(await call('setBooleanSetting', { key, value }))}`);
+    }
+    console.log('✓ recovery applied (a dead kiosk page self-heals within ~30s)');
+  },
 };
 
 const [, , name, ...args] = process.argv;
@@ -249,6 +279,7 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  adb-connect              connect + authorize ADB over WiFi');
   console.log('  adb <shell…>             run a shell command via ADB (top/dumpsys/settings/…)');
   console.log('  keepawake                FKB wake-locks + OS stay-awake-while-plugged (needs FKB_ADB)');
+  console.log('  recovery                 FKB auto-reload settings so a dead kiosk page self-heals');
   console.log('\nADB commands need FKB_ADB set (e.g. "adb" or "sudo docker exec daylight-station adb").');
   process.exit(name && name !== 'help' ? 1 : 0);
 }

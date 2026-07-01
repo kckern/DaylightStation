@@ -96,6 +96,27 @@ function ConnectGate({ children }) {
   );
 }
 
+/**
+ * Drives the tablet screensaver independent of the connect gate. Mounted ABOVE
+ * <ConnectGate> (unlike PianoShell) so an idle tablet still sleeps its screen
+ * even when no piano is connected — otherwise the screensaver would only arm
+ * once Web MIDI connects, and a tablet parked on the connect screen would never
+ * sleep. Shares the wake-lock context with the modes below, so a playing video
+ * still keeps the screen awake. Renders nothing.
+ */
+function ScreensaverDriver() {
+  const { config } = usePianoKioskConfig();
+  const { activeNotes, noteHistory } = usePianoMidi();
+  usePianoScreensaver({
+    deviceId: config.screensaver?.deviceId,
+    activeNotes,
+    noteHistory,
+    timeoutMinutes: config.screensaver?.timeoutMinutes,
+    quietHours: config.screensaver?.quietHours,
+  });
+  return null;
+}
+
 function PianoShell() {
   const { config, pianoId, basePath } = usePianoKioskConfig();
   const { activeNotes, noteHistory, subscribe } = usePianoMidi();
@@ -127,17 +148,6 @@ function PianoShell() {
       navigate(home);
     }
   }, playing);
-
-  // Screensaver: a MIDI note wakes the tablet screen; idle sleeps it. Guardrails
-  // (playing video / quiet hours) live in the hook. Inert until a deviceId is
-  // configured under the piano's `screensaver` config.
-  usePianoScreensaver({
-    deviceId: config.screensaver?.deviceId,
-    activeNotes,
-    noteHistory,
-    timeoutMinutes: config.screensaver?.timeoutMinutes,
-    quietHours: config.screensaver?.quietHours,
-  });
 
   const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
@@ -189,15 +199,20 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
       <KeepAliveVideo />
       <PianoUserProvider pianoId={pianoId}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
-        <ConnectGate>
-          <PianoPlaybackProvider>
-            <PianoMixProvider>
-              <PianoWakeLockProvider>
+        <PianoWakeLockProvider>
+          {/* Screensaver runs above the connect gate so an idle tablet sleeps
+              even with no piano connected; the wake-lock provider is hoisted
+              with it so a playing video (a hold set by the modes below) still
+              keeps the screen awake. */}
+          <ScreensaverDriver />
+          <ConnectGate>
+            <PianoPlaybackProvider>
+              <PianoMixProvider>
                 <PianoShell />
-              </PianoWakeLockProvider>
-            </PianoMixProvider>
-          </PianoPlaybackProvider>
-        </ConnectGate>
+              </PianoMixProvider>
+            </PianoPlaybackProvider>
+          </ConnectGate>
+        </PianoWakeLockProvider>
       </PianoMidiProvider>
       </PianoUserProvider>
     </ActivePianoProvider>

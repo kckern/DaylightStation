@@ -43,6 +43,22 @@ tiled partial updates). Measured impact, same session, same interaction:
 > it sounds faster but disables tiling; **2** is software rendering. Set via the FKB REST
 > API: `node cli/fkb.cli.mjs set graphicsAccelerationMode 0` then restart FKB.
 
+### Self-heal a dead kiosk page
+
+A transient load failure (e.g. the app restarts mid-load) can strand the WebView on Chrome's
+**"Webpage not available"** page. Because our JS is gone at that point, nothing in the SPA can
+recover it — the screensaver, MIDI wake, everything is dead until the page reloads. The
+symptom looks like "the screensaver stopped working" (screen stuck on), but the whole app is
+down. Confirm by fetching the DOM (`getHtmlSource` shows `<title>Webpage not available</title>`
+instead of `id="root"`); recover immediately with `node cli/fkb.cli.mjs reload` (`loadStartUrl`).
+
+FKB's own auto-reload settings prevent it from getting stuck: run **`node cli/fkb.cli.mjs
+recovery`** (idempotent — re-run after any re-provision, like `keepawake`). It sets
+`reloadPageFailure=30` (retry a failed load after 30s — the key one), `reloadOnInternet` /
+`reloadOnWifiOn` / `waitInternetOnReload` (recover on connectivity return), and asserts
+`reloadOnIdle`/`reloadEachSeconds` **off** so a healthy idle session (e.g. a paused video) is
+never force-reloaded. These are per-device FKB settings and persist across reboots.
+
 ## Diagnosing on-device (what worked, what misled)
 
 The decisive tools were **adb** (via the in-container `AdbAdapter`, `cli/pianobridge.cli.mjs`
