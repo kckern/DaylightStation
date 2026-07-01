@@ -154,7 +154,7 @@ function Card({ text, theme, effect = 'card', art, visible = true }) {
 export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = {}, art = null }) {
   if (!activeOverlays.length && !activeCard) return null;
   return (
-    <div className="filter-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
+    <div className="filter-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 50 }}>
       {activeOverlays.map(({ effect, cue, visible }) => (
         <OverlayEffect key={`${effect}:${cue.id}`} effect={effect} cue={cue} theme={theme} visible={visible !== false} art={art} />
       ))}
