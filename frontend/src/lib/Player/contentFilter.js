@@ -37,15 +37,19 @@ export function resolveEffect(categoryPath, profile) {
 // approxWidthMs is the minimum coverage for a cue whose timing is NOT ms-precise
 // (VidAngel second-approx points), so a short/zero-width cue still covers the word.
 const WIDEN_DEFAULTS = {
-  mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 },
-  bleep: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 },
-  skip: { padLeadMs: 400, padTrailMs: 250, approxWidthMs: 0 },
+  // srtLineWidthMs is wider than approxWidthMs because a caption-derived word's
+  // exact position is uncertain (±~1s within the line) — a narrow window can end
+  // just before a late-in-caption word and leak it (the "damn hands" case).
+  mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900, srtLineWidthMs: 1800 },
+  bleep: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900, srtLineWidthMs: 1800 },
+  skip: { padLeadMs: 400, padTrailMs: 250, approxWidthMs: 0, srtLineWidthMs: 0 },
 };
 
 /**
  * Widen an effective cue's [in,out] by effect-appropriate pads. Cues that are not
- * ms-precise (no `precision: 'ms'`) are additionally expanded to approxWidthMs,
- * centered, to absorb source timing uncertainty. Never returns a negative start.
+ * ms-precise are additionally expanded to a min width (centered) to absorb source
+ * timing uncertainty — larger for `srt-line` cues (uncertain word position) than
+ * for VidAngel second-approx points. Never returns a negative start.
  */
 function widenCue(eff, treatments) {
   const base = WIDEN_DEFAULTS[eff.effect];
@@ -53,7 +57,9 @@ function widenCue(eff, treatments) {
   const t = (treatments && treatments[eff.effect]) || {};
   const lead = (t.padLeadMs ?? base.padLeadMs) / 1000;
   const trail = (t.padTrailMs ?? base.padTrailMs) / 1000;
-  const approxWidth = (t.approxWidthMs ?? base.approxWidthMs) / 1000;
+  const approxWidth = (eff.precision === 'srt-line'
+    ? (t.srtLineWidthMs ?? base.srtLineWidthMs)
+    : (t.approxWidthMs ?? base.approxWidthMs)) / 1000;
 
   let start = eff.in - lead;
   let end = eff.out + trail;
