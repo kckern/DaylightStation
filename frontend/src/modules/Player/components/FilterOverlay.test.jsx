@@ -47,6 +47,17 @@ describe('FilterOverlay', () => {
     expect(getByText('Content warning: violence')).toBeTruthy();
   });
 
+  it('renders an art-backed card (backdrop + logo) when art is provided', () => {
+    const { container, getByText } = render(
+      <FilterOverlay activeCard={{ text: 'Biff forces Lorraine into his car.' }} art={{ background: '/p/art', logo: '/p/logo' }} />
+    );
+    const card = container.querySelector('.filter-card-art');
+    expect(card).toBeTruthy();
+    expect(card.style.backgroundImage).toContain('/p/art');
+    expect(container.querySelector('img').getAttribute('src')).toBe('/p/logo');
+    expect(getByText('Biff forces Lorraine into his car.')).toBeTruthy();
+  });
+
   it('renders the activeCard (skip plot explainer) text with the theme font', () => {
     const { getByText, container } = render(
       <FilterOverlay activeOverlays={[]} activeCard={{ text: 'Skipped a fight scene.' }} theme={{ font: 'Roboto Condensed' }} />
