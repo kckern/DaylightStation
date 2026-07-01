@@ -101,7 +101,9 @@ function Card({ text, theme, effect = 'card', art, visible = true }) {
       color: '#fff', fontFamily: font, boxShadow: '0 0 40px rgba(0,0,0,0.65)',
       ...fade,
     };
-    const dim = <div style={{ position: 'absolute', inset: 0, background: theme.cardBg || 'rgba(0,0,0,0.58)' }} />;
+    // Scrim over the (busy, character-heavy) film art so the logo/text stay legible:
+    // lighter at top where the art reads, darkening toward the bottom band of text.
+    const dim = <div style={{ position: 'absolute', inset: 0, background: theme.cardScrim || 'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.5) 48%, rgba(0,0,0,0.84) 100%)' }} />;
     const textStyle = { position: 'relative', fontSize: '1.5em', lineHeight: 1.3, padding: '0 1.4em', textShadow: '0 2px 8px rgba(0,0,0,0.85)' };
 
     if (usePoster) {
