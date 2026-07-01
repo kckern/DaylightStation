@@ -1038,10 +1038,19 @@ async function main() {
       god: ['god', 'gods'],
       jesus: ['jesus'],
       christ: ['christ'],
+      // Racial slurs — VidAngel tags these "other_racial" but misses some. spook
+      // is context-ambiguous (a ghost elsewhere); accepted as a rare over-mute
+      // since leaking a slur is far worse.
+      peckerwood: ['peckerwood'],
+      spook: ['spook', 'spooks'],
+      // Mild insult VidAngel tags "other_childish" (Biff's catchphrase).
+      butthead: ['butthead', 'buttheads'],
     };
     const STEM_GROUP = {};
     for (const s of ['god', 'jesus', 'christ']) STEM_GROUP[s] = 'blasphemy';
     for (const s of ['fuck', 'shit', 'ass', 'damn', 'hell', 'bitch', 'bastard']) STEM_GROUP[s] = 'profanity';
+    for (const s of ['peckerwood', 'spook']) STEM_GROUP[s] = 'other_racial';
+    STEM_GROUP.butthead = 'other_childish';
     const FORM_TO_LEAF = {};
     for (const [leaf, forms] of Object.entries(BAD_WORDS)) for (const f of forms) FORM_TO_LEAF[f] = leaf;
     const matchLeaf = (tok) => FORM_TO_LEAF[tok.toLowerCase().replace(/[^a-z]/g, '')] || null;
