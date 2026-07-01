@@ -97,6 +97,12 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
     const [progress, setProgress] = useState(0);
     const [isSeeking, setIsSeeking] = useState(false);
     const seekTimerRef = useRef(null);
+
+    // Seek-bar fill seed. Rather than repaint width every 100ms tick (which steps
+    // and freezes when a tick runs late), the fill runs a linear width keyframe
+    // (`contentSeekFill`) over the media duration on the compositor clock. JS only
+    // re-anchors it on discontinuities — play/pause/seek/stall — never per tick.
+    const [seekFill, setSeekFill] = useState({ offset: 0, running: false, rate: 1, nonce: 0 });
   
     // Use dynamic dimensions hook for layout measurement
     const {
@@ -226,7 +232,42 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 
       return () => clearInterval(syncInterval);
     }, [reportPlaybackMetrics]);
-  
+
+    // Anchor the smooth seek-bar keyframe on playback discontinuities. Each anchor
+    // captures the true playhead + rate so the CSS animation clock re-syncs to the
+    // media (no drift), then runs free at display refresh until the next event.
+    useEffect(() => {
+      const el = mainRef.current;
+      if (!el) return () => {};
+      const anchor = (running) => setSeekFill((s) => ({
+        offset: Number.isFinite(el.currentTime) ? el.currentTime : 0,
+        running,
+        rate: el.playbackRate || 1,
+        nonce: s.nonce + 1,
+      }));
+      const onPlaying = () => anchor(true);
+      const onPause = () => anchor(false);
+      const onWaiting = () => anchor(false);   // buffering: freeze at the true spot
+      const onSeeked = () => anchor(!el.paused);
+      const onEnded = () => anchor(false);
+      el.addEventListener('playing', onPlaying);
+      el.addEventListener('play', onPlaying);
+      el.addEventListener('pause', onPause);
+      el.addEventListener('waiting', onWaiting);
+      el.addEventListener('seeked', onSeeked);
+      el.addEventListener('ratechange', onPlaying);
+      el.addEventListener('ended', onEnded);
+      return () => {
+        el.removeEventListener('playing', onPlaying);
+        el.removeEventListener('play', onPlaying);
+        el.removeEventListener('pause', onPause);
+        el.removeEventListener('waiting', onWaiting);
+        el.removeEventListener('seeked', onSeeked);
+        el.removeEventListener('ratechange', onPlaying);
+        el.removeEventListener('ended', onEnded);
+      };
+    }, [mainMediaUrl]);
+
     const handleLoadedMetadata = useCallback(() => {
       const mainEl = mainRef.current;
       if (mainEl) {
@@ -400,9 +441,15 @@ import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
           <div className="seek-bar" onClick={handleSeekBarClick}>
             <div
               className="seek-progress"
-              style={{
-                width: duration ? `${(currentTime / duration) * 100}%` : "0%"
-              }}
+              key={duration > 0 ? seekFill.nonce : 'w'}
+              style={duration > 0 ? {
+                animationName: 'contentSeekFill',
+                animationTimingFunction: 'linear',
+                animationDuration: `${duration / seekFill.rate}s`,
+                animationDelay: `-${seekFill.offset / seekFill.rate}s`,
+                animationPlayState: seekFill.running ? 'running' : 'paused',
+                animationFillMode: 'both',
+              } : { width: "0%" }}
             >
               <div className="current-time">
                 {moment.utc(currentTime * 1000).format("mm:ss")}
