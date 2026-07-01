@@ -275,11 +275,15 @@ export function Producer() {
               <ul className="piano-producer-mode__list">
                 {browse.map((e) => (
                   <li key={e.path}>
-                    <button type="button" className="piano-loop" onClick={() => onPickFromBrowse(e)}>
-                      <span className="piano-loop__name">{e.title || e.slug}</span>
+                    <button type="button" className="piano-loop" aria-label={e.title || e.slug} onClick={() => onPickFromBrowse(e)}>
                       {e.roman?.length
-                        ? <RomanProgression roman={e.roman} inline />
-                        : <span className="piano-loop__staff"><MelodicStaffThumb entry={e} lib={lib} /></span>}
+                        ? <RomanProgression roman={e.roman} />
+                        : (
+                          <>
+                            <span className="piano-loop__name">{e.title || e.slug}</span>
+                            <span className="piano-loop__staff"><MelodicStaffThumb entry={e} lib={lib} /></span>
+                          </>
+                        )}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
                     </button>
                     <button type="button" className="piano-loop__peek" aria-label={`preview ${e.title || e.slug}`}
@@ -303,8 +307,9 @@ export function Producer() {
                     <button type="button" className={`piano-layer__m${muted[l.id] ? ' is-on' : ''}`} aria-pressed={!!muted[l.id]} aria-label="mute" onClick={() => setMuted((m) => ({ ...m, [l.id]: !m[l.id] }))}>M</button>
                     <button type="button" className={`piano-layer__s${soloed[l.id] ? ' is-on' : ''}`} aria-pressed={!!soloed[l.id]} aria-label="solo" onClick={() => setSoloed((s) => ({ ...s, [l.id]: !s[l.id] }))}>S</button>
                     <span className="piano-layer__role">{roleOf(l.entry)}</span>
-                    <span className="piano-layer__name">{l.entry.title || l.entry.slug}</span>
-                    {l.entry.roman?.length ? <RomanProgression roman={l.entry.roman} inline /> : null}
+                    {l.entry.roman?.length
+                      ? <RomanProgression roman={l.entry.roman} inline />
+                      : <span className="piano-layer__name">{l.entry.title || l.entry.slug}</span>}
                     <button type="button" className="piano-layer__remove" onClick={() => removeLayer(l.id)}>✕</button>
                   </div>
                 ))}
@@ -314,9 +319,15 @@ export function Producer() {
               <ul className="piano-producer-mode__list">
                 {candidates.map((c) => (
                   <li key={c.entry.path}>
-                    <button type="button" className="piano-loop" onClick={() => addLayer(c.entry)}>
-                      <span className="piano-loop__name">{c.entry.title || c.entry.slug}</span>
-                      {c.entry.roman?.length ? <RomanProgression roman={c.entry.roman} inline /> : null}
+                    <button type="button" className="piano-loop" aria-label={c.entry.title || c.entry.slug} onClick={() => addLayer(c.entry)}>
+                      {c.entry.roman?.length
+                        ? <RomanProgression roman={c.entry.roman} />
+                        : (
+                          <>
+                            <span className="piano-loop__name">{c.entry.title || c.entry.slug}</span>
+                            <span className="piano-loop__staff"><MelodicStaffThumb entry={c.entry} lib={lib} /></span>
+                          </>
+                        )}
                       {c.reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
                     </button>
                     <button type="button" className="piano-loop__peek" aria-label={`preview ${c.entry.title || c.entry.slug}`}
