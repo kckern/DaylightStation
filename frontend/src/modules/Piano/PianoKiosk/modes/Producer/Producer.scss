@@ -17,19 +17,33 @@
   }
 
   &__deck {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--piano-bg, #0e0e12);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+  }
+
+  &__controls {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 1.5rem;
+    flex-wrap: wrap;
   }
 
   &__play {
     font: 600 1.05rem 'Roboto Condensed', sans-serif;
-    padding: 0.5rem 1.4rem;
+    padding: 0.5rem 1.6rem;
     border-radius: 999px;
     border: 1px solid var(--piano-accent, #2ec46f);
     background: var(--piano-surface, #1c2a24);
     color: var(--piano-accent-text, #5fe39a);
     cursor: pointer;
+    white-space: nowrap;
     &.is-on { background: var(--piano-surface, #2a1c1c); border-color: var(--piano-danger, #e05a4f); color: var(--piano-danger, #f99); }
     &:disabled { opacity: 0.4; cursor: default; }
   }
@@ -37,17 +51,21 @@
   &__meta {
     display: flex;
     align-items: center;
-    gap: 1.2rem;
+    gap: 1.5rem;
     font-size: 1rem;
     color: var(--piano-muted, #aab);
   }
-  &__key {
+  &__tempo, &__key {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.5rem;
+    white-space: nowrap;
+    line-height: 1;
     button {
-      width: 1.6rem; height: 1.6rem; border-radius: 50%;
-      border: 1px solid var(--piano-border, #334); background: var(--piano-surface, #1a1a22); color: var(--piano-muted, #cce); cursor: pointer;
+      width: 1.9rem; height: 1.9rem; border-radius: 50%;
+      border: 1px solid var(--piano-border, #334); background: var(--piano-surface, #1a1a22);
+      color: var(--piano-fg, #cce); cursor: pointer; font-size: 1.1rem; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
     }
   }
 
@@ -68,8 +86,9 @@
     margin: 0.4rem 0 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 0.5rem;
+    align-content: start;
   }
 
   &__h { margin: 0.5rem 0 0; font-size: 1rem; color: var(--piano-muted, #99a); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -111,11 +130,21 @@
 
   &__name { font-weight: 600; font-size: 0.98rem; color: var(--piano-fg, #e8e8f2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); font-variant-numeric: tabular-nums; }
-  &__tag { font-size: 0.78rem; color: var(--piano-muted, #b9a); }
+  &__tag { font-size: 0.72rem; color: var(--piano-muted, #b9a); text-transform: uppercase; letter-spacing: 0.04em; }
   &__why {
     display: inline-block;
     font-size: 0.72rem; color: var(--piano-accent-text, #7c9); background: var(--piano-stage-panel, #18241c);
     border-radius: 4px; padding: 0.05rem 0.35rem; margin-right: 0.3rem;
+  }
+
+  // Melody contour: a compact staff STRIP (not a full-height staff), so cards stay small.
+  &__staff {
+    display: block;
+    height: 2.4rem;
+    margin: 0.1rem 0;
+    overflow: hidden;
+    opacity: 0.85;
+    svg, .action-staff { height: 2.4rem !important; width: auto; display: block; }
   }
 }
 
@@ -190,20 +219,26 @@
   border: 1px dashed var(--piano-border, #2a2a36);
 }
 
-// Peek button on each browse row: minimal, accent-colored.
+// Each browse/candidate row is a positioned <li> so the peek button can tuck
+// into the card's bottom-right corner instead of floating below it.
+.piano-producer-mode__list li { position: relative; }
+
+// Peek button on each browse row: tucked bottom-right, accent-colored.
 .piano-loop__peek {
-  min-width: 2.4rem;
-  min-height: 2.4rem;
-  border-radius: 6px;
-  border: 1px solid var(--piano-border, #2a2a36);
-  background: var(--piano-surface, #15151d);
+  position: absolute;
+  bottom: 0.45rem;
+  right: 0.45rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--piano-accent, #2ec46f);
+  background: var(--piano-surface-2, #12211a);
   color: var(--piano-accent-text, #7c9);
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
 }
 
