@@ -200,6 +200,13 @@ describe('Producer (loop-layering)', () => {
     expect(screen.getByRole('button', { name: /browse library|add from library/i })).toBeTruthy();
   });
 
+  // Task 5.11: showRoman toggle chip is present in the deck
+  it('has a Roman toggle chip in the deck', async () => {
+    render(<Producer />);
+    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /roman/i })).toBeTruthy();
+  });
+
   // Task 5.4: harmonically-incompatible candidates excluded from suggestions
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);

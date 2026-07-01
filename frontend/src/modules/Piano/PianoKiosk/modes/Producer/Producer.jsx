@@ -10,6 +10,8 @@ import { useLoopTransport } from '../../useLoopTransport.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
 import { RomanProgression } from '../../../components/roman/RomanProgression.jsx';
 import { detectKey } from '../../../../MusicNotation/index.js';
+import { detectChords } from '../Lessons/theory/theoryEngine.js';
+import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import './Producer.scss';
 
 const ROLES = [
@@ -46,7 +48,11 @@ export function Producer() {
   const [browsing, setBrowsing] = useState(false);
   const [previewLayers, setPreviewLayers] = useState([]);
   const [activeChord, setActiveChord] = useState(-1);
+  const [showRoman, setShowRoman] = useState(false);
   const playheadRef = useRef(null);
+
+  // Split note: half of the keyboard range, defaulting to middle C (60).
+  const splitNote = useMemo(() => Math.floor((kb.startNote + kb.endNote) / 2), [kb.startNote, kb.endNote]);
 
   // Seed tempo from base when it changes
   useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
@@ -145,6 +151,23 @@ export function Producer() {
     return detectKey(pcs);
   }, [base, layers]);
 
+  // Left-hand roman chord readout: detect from notes below the split.
+  // detectChords returns string[] (tonal Chord.detect); bestTonic + romanAnalysis
+  // accept string[] directly. Guard on showRoman and enough notes to form a chord.
+  const handLabel = useMemo(() => {
+    if (!showRoman) return null;
+    const left = [...activeNotes.keys()].filter((n) => n < splitNote);
+    if (left.length < 2) return null;
+    try {
+      const detected = detectChords(left);
+      if (!detected?.length) return null;
+      const tonic = bestTonic(detected);
+      return romanAnalysis(detected, tonic)[0] || null;
+    } catch {
+      return null;
+    }
+  }, [showRoman, activeNotes, splitNote]);
+
   const candidates = useMemo(
     () => (base
       ? lib.rankFor(base, { ...(role ? { role } : {}), onlyStackable: true })
@@ -202,6 +225,13 @@ export function Producer() {
                 onClick={() => setRole(r.key)}
               >{r.label}</button>
             ))}
+            <button
+              type="button"
+              className={`piano-chip${showRoman ? ' is-on' : ''}`}
+              aria-label="roman"
+              aria-pressed={showRoman}
+              onClick={() => setShowRoman((v) => !v)}
+            >Roman</button>
           </div>
 
           {(!base || browsing) && (
@@ -273,6 +303,8 @@ export function Producer() {
           loopNotes={loopNotes}
           startNote={kb.startNote}
           endNote={kb.endNote}
+          splitNote={showRoman ? splitNote : null}
+          handChordLabel={handLabel}
           onNoteOn={pressNote}
           onNoteOff={releaseNote}
         />
