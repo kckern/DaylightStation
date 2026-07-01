@@ -136,8 +136,14 @@ conflate them:
 
 - **Dead transcode session** — `dash.error` 27/28, MPD points at a stale UUID;
   fixed by URL refresh, not by re-deciding the encode.
-- **Transcode warmup** — 0-byte segments while the encoder spins up; transient,
-  the overlay rides it out.
+- **Transcode warmup** — 0-byte segments while the encoder spins up. Two cases,
+  same signature: a **cold-start** warmup near the start position is transient and
+  the overlay rides it out (long 60s deadline); a **seek-induced** warmup — a
+  forward seek that landed past the transcoder's head — will *never* self-resolve
+  (the current session can't produce the seeked region), so it escalates to a
+  URL-refresh recovery in ~5s (fresh transcode at the seek offset). Discriminated
+  by "have we ever played" + "did a seek just start" — see
+  `frontend/src/modules/Player/lib/decideWarmupRecovery.js`.
 - **Source audio gap** — DASH stalls at one exact timestamp because the source has
   a gap and Plex remuxes with `-copyts`; not an encoding decision at all.
 - **Codec mismatch** — VP9/AV1 fMP4 rejected by the SourceBuffer; prevented

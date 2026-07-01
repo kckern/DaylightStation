@@ -311,6 +311,15 @@ A recovery reload resets `totalVideoFrames` to 0 while `lastFpsCheck` keeps the 
 - The renderer's `dash.*` events (fragment bytes, buffer level, error codes) plus
   `playback.*` are the first thing to read on any stall — see the README's
   diagnostics table.
+- **A forward seek past the transcoder's head stalls forever, and it looks like a
+  benign warmup.** Seeking well ahead of where Plex has transcoded returns 0-byte
+  fragments (`dash.transcode-warming`) with **no** error code 27/28 — so the
+  dead-session URL-refresh never fires, and the warmup handler's 60s deadline just
+  sits there. Fix: discriminate a *seek-induced* warmup (have-ever-played + a seek
+  just started) from a cold-start one and escalate it to a URL refresh in ~5s so
+  Plex re-transcodes at the seek offset (`decideWarmupRecovery.js`). Any large
+  forward seek hits this — the content-filter debug HUD's cue-jump just made it a
+  reliable repro. *(2026-06-30)*
 
 ---
 

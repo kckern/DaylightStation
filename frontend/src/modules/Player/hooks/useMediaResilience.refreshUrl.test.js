@@ -13,6 +13,10 @@ describe('shouldRefreshUrlForReason', () => {
     expect(shouldRefreshUrlForReason('stale-session-detected')).toBe(true);
   });
 
+  it('returns true for a seek-induced transcode-warming stall (needs a fresh session at the offset)', () => {
+    expect(shouldRefreshUrlForReason('seek-stall-transcode-warming')).toBe(true);
+  });
+
   it('returns false for other reasons', () => {
     expect(shouldRefreshUrlForReason('playback-stalled')).toBe(false);
     expect(shouldRefreshUrlForReason('buffer-exhausted')).toBe(false);
