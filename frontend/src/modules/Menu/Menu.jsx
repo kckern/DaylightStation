@@ -13,6 +13,7 @@ import MenuNavigationContext from "../../context/MenuNavigationContext";
 import { MenuSkeleton } from "./MenuSkeleton";
 import { ArcadeSelector } from "./ArcadeSelector";
 import { isFKBAvailable } from '../../lib/fkb.js';
+import { isPlayerKeyboardActive } from '../../lib/Player/playerKeyboardOwnership.js';
 import { useMenuPerfMonitor } from './hooks/useMenuPerfMonitor.js';
 
 /**
@@ -858,6 +859,14 @@ function MenuItems({
     const handler = (e) => {
       const curItems = itemsRef.current;
       if (!curItems.length) return;
+
+      // A fullscreen video player is mounted over this menu and owns the
+      // keyboard — stand down entirely so its bindings win (Space=play/pause,
+      // arrows=seek, Esc=close). Otherwise a single keypress would both drive
+      // the player AND navigate/select a hidden menu item beneath it (Space
+      // once paused the video *and* launched a music playlist). See
+      // frontend/src/lib/Player/playerKeyboardOwnership.js.
+      if (isPlayerKeyboardActive()) return;
 
       const key = e.key;
       const isBack = key === "Escape" || key === "GoBack" || key === "BrowserBack"

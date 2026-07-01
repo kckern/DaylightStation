@@ -1,6 +1,7 @@
 import { useMemo, useRef, useEffect } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { usePlayerKeyboard } from '../keyboard/keyboardManager.js';
+import { acquirePlayerKeyboard } from './playerKeyboardOwnership.js';
 import { createMediaTransportAdapter } from './mediaTransportAdapter.js';
 import { playbackLog } from '../../modules/Player/lib/playbackLogger.js';
 import { getChildLogger } from '../logging/singleton.js';
@@ -26,7 +27,8 @@ export function useMediaKeyboardHandler(config) {
     setCurrentTime,
     keyboardOverrides = {},
     controller,
-    isPaused: isPausedProp
+    isPaused: isPausedProp,
+    isVideo = false
   } = config;
 
   const logger = useMemo(() => getChildLogger({ component: 'useMediaKeyboardHandler' }), []);
@@ -77,6 +79,16 @@ export function useMediaKeyboardHandler(config) {
       paused: Boolean(isPausedProp)
     });
   }, [logger, playbackKeys, keyboardOverrides, queuePosition, isPausedProp]);
+
+  // Claim keyboard ownership while a fullscreen video is mounted so the
+  // Player's bindings (Space/arrows/Esc) win over other global keydown
+  // handlers beneath it — chiefly the base Menu, which treats Space/Enter as
+  // "select". See playerKeyboardOwnership.js. Audio-only players and
+  // ignoreKeys players don't claim it (the menu stays live beneath them).
+  useEffect(() => {
+    if (!isVideo || ignoreKeys) return undefined;
+    return acquirePlayerKeyboard();
+  }, [isVideo, ignoreKeys]);
 
   const getPlaybackState = () => mediaController.getPlaybackState?.();
 

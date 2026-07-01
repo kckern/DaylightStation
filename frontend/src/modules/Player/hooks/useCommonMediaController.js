@@ -438,6 +438,7 @@ export function useCommonMediaController({
     meta,
     type,
     assetId,
+    isVideo,
     setCurrentTime: setSeconds,
     keyboardOverrides
   });
