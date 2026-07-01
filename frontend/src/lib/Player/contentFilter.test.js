@@ -69,13 +69,55 @@ describe('resolveEffectiveCues', () => {
     expect(out[0].effect).toBe('mute');
   });
 
+  it('widens a zero-width approx mute to a safe min-width so it actually fires', () => {
+    const vaEdl = { cues: [{ id: 'z', category: 'language/blasphemy/god', type: 'mute', in: 180, out: 180 }] };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
+    const c = resolveEffectiveCues({ edl: vaEdl, profile: prof })[0];
+    expect(c.in).toBeLessThan(c.out); // no longer zero-width
+    expect(c.out - c.in).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('applies only small pads to an ms-precise mute (no min-width blow-up)', () => {
+    const vaEdl = { cues: [{ id: 'z', category: 'language/blasphemy/god', type: 'mute', precision: 'ms', in: 180.0, out: 180.35 }] };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
+    const c = resolveEffectiveCues({ edl: vaEdl, profile: prof })[0];
+    expect(c.out - c.in).toBeCloseTo(0.7, 2); // 0.35 word + 0.2 lead + 0.15 trail
+  });
+
+  it('honors precise cueOverride in/out as local ms times (no sync, only small pads)', () => {
+    const edl2 = { cues: [{ id: 'a', category: 'language/blasphemy/god', type: 'mute', in: 180, out: 180 }] };
+    const override = {
+      sync: { offsetSec: 6.5, scale: 1 },
+      cueOverrides: { a: { in: 200.12, out: 200.47, precision: 'ms' } }, // snapped word boundary (local)
+    };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
+    const c = resolveEffectiveCues({ edl: edl2, profile: prof, override })[0];
+    expect(c.in).toBeCloseTo(199.92, 2); // 200.12 - 0.2 lead, NOT sync-shifted (would be ~186.5)
+    expect(c.out - c.in).toBeCloseTo(0.7, 2); // ms path: small pads only, no min-width blow-up
+  });
+
+  it('expands a skip-card into a skip plus a following title-card', () => {
+    const edl2 = { cues: [{ id: 'sc', category: 'sex_any/x', effect: 'skip-card', in: 100, out: 130, text: 'Scene skipped.' }] };
+    const prof = { categories: {}, treatments: { skip: { padLeadMs: 0, padTrailMs: 0 }, 'skip-card': { holdSec: 5 } } };
+    const out = resolveEffectiveCues({ edl: edl2, profile: prof });
+    const skip = out.find((c) => c.effect === 'skip');
+    const card = out.find((c) => c.effect === 'title-card');
+    expect(skip.in).toBe(100);
+    expect(skip.out).toBe(130);
+    expect(card.in).toBe(130);
+    expect(card.out).toBe(135);
+    expect(card.text).toBe('Scene skipped.');
+  });
+
   it('applies override.sync (offset+scale) to imported cues but not manual addCues', () => {
     const vaEdl = { cues: [{ id: 'a', category: 'violence/graphic', effect: 'skip', in: 100, out: 110 }] };
     const override = {
       sync: { offsetSec: 6.5, scale: 1 },
       addCues: [{ id: 'm', category: 'y', effect: 'mute', in: 50, out: 52 }],
     };
-    const out = resolveEffectiveCues({ edl: vaEdl, profile: { categories: {} }, override });
+    // zero pads to isolate sync from widening
+    const profile = { categories: {}, treatments: { skip: { padLeadMs: 0, padTrailMs: 0 }, mute: { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 } } };
+    const out = resolveEffectiveCues({ edl: vaEdl, profile, override });
     const a = out.find((c) => c.id === 'a');
     const m = out.find((c) => c.id === 'm');
     expect(a.in).toBeCloseTo(106.5);

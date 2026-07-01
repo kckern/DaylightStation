@@ -70,5 +70,13 @@ registerEffectHandler('duck', {
 registerEffectHandler('blur', { kind: EFFECT_KINDS.OVERLAY });        // regional blur (rect)
 registerEffectHandler('censor-bar', { kind: EFFECT_KINDS.OVERLAY });  // solid bar (rect)
 registerEffectHandler('pixelate', { kind: EFFECT_KINDS.OVERLAY });    // pixelate (rect)
-registerEffectHandler('full-blur', { kind: EFFECT_KINDS.OVERLAY });   // whole-frame blur/black
-registerEffectHandler('title-card', { kind: EFFECT_KINDS.OVERLAY });  // standalone plot/warning card
+registerEffectHandler('full-blur', { kind: EFFECT_KINDS.OVERLAY });   // whole-frame blur/black (audio keeps playing)
+// Standalone plot/warning card — visual overlay + OPTIONAL narration audio while shown.
+registerEffectHandler('title-card', {
+  kind: EFFECT_KINDS.OVERLAY,
+  onEnter({ cue, sfx }) { if (cue.sound) sfx?.play?.(cue.sound); },
+  onExit({ cue, sfx }) { if (cue.sound) sfx?.stop?.(); },
+});
+// skip-card is expanded by the resolver into skip + title-card; registered so it's
+// a recognized effect name (profiles may map a category to it).
+registerEffectHandler('skip-card', { kind: EFFECT_KINDS.TRANSPORT });

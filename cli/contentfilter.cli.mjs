@@ -937,6 +937,177 @@ async function main() {
     return;
   }
 
+  if (command === 'snap') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter snap <plexRatingKey> [--window 6] [--model small.en] [--limit N] [--write]'); process.exit(1); }
+    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}`); process.exit(1); }
+    const edl = yaml.load(readFileSync(edlPath, 'utf8'));
+    const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
+    const override = existsSync(overridePath) ? (yaml.load(readFileSync(overridePath, 'utf8')) || {}) : {};
+    const off = override?.sync?.offsetSec || 0;
+    const scale = override?.sync?.scale ?? 1;
+    const window = Number(flags.window) || 6;
+
+    // Every matchable mute cue -> its EXPECTED local time (EDL cues via sync;
+    // srt addCues are already local). Whisper finds the true word boundary there.
+    const targets = [];
+    for (const c of edl.cues || []) {
+      if ((c.type !== 'mute' && c.effect !== 'mute') || !stemsFor(c.category)) continue;
+      targets.push({ kind: 'edl', id: c.id, sec: c.in * scale + off, stems: stemsFor(c.category) });
+    }
+    for (const c of override.addCues || []) {
+      if (c.effect !== 'mute' && c.type !== 'mute') continue;
+      const stems = stemsFor(c.category) || (c.label ? [c.label.toLowerCase()] : null);
+      if (stems) targets.push({ kind: 'add', id: c.id, sec: c.in, stems });
+    }
+    const picked = args.includes('--limit') ? targets.slice(0, Number(flags.limit) || 10) : targets;
+    console.error(`Snapping ${picked.length}/${targets.length} mute cues via Whisper (model ${flags.model}, ±${window}s)…`);
+
+    const { token, host } = loadPlexConfig();
+    const meta = (await axios.get(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' } })).data?.MediaContainer?.Metadata?.[0];
+    const part = meta?.Media?.[0]?.Part?.[0];
+    if (!part) { console.error('Could not resolve Plex media part.'); process.exit(1); }
+    const partUrl = `${host}${part.key}?X-Plex-Token=${token}`;
+
+    const res = snapCuesWhisper(partUrl, picked.map((t) => ({ id: t.id, sec: t.sec, stems: t.stems })), { window, model: flags.model });
+    const byId = new Map(res.map((r) => [r.id, r]));
+    const kindById = new Map(picked.map((t) => [t.id, t.kind]));
+
+    const cueOverrides = { ...(override.cueOverrides || {}) };
+    const addCues = (override.addCues || []).map((c) => ({ ...c }));
+    let snapped = 0;
+    for (const t of picked) {
+      const r = byId.get(t.id);
+      if (!r || r.snapped == null) continue;
+      const inS = Number(r.snapped.toFixed(3));
+      const outS = Number((r.end ?? (r.snapped + 0.3)).toFixed(3));
+      snapped++;
+      if (kindById.get(t.id) === 'edl') {
+        cueOverrides[t.id] = { ...(cueOverrides[t.id] || {}), in: inS, out: outS, precision: 'ms' };
+      } else {
+        const ac = addCues.find((c) => c.id === t.id);
+        if (ac) { ac.in = inS; ac.out = outS; ac.precision = 'ms'; }
+      }
+    }
+
+    console.error(`\n✓ snapped ${snapped}/${picked.length} to ms word boundaries (${picked.length - snapped} not found — stay approx/wide)`);
+    for (const t of picked.slice(0, 10)) {
+      const r = byId.get(t.id);
+      console.error(`  ${t.id.padEnd(12)} expected ${t.sec.toFixed(1)}s -> ${r?.snapped != null ? `${r.snapped}s..${r.end}s` : 'MISS'}`);
+    }
+
+    if (args.includes('--write')) {
+      override.contentId = `plex:${rk}`;
+      override.cueOverrides = cueOverrides;
+      if (addCues.length) override.addCues = addCues;
+      mkdirSync(path.dirname(overridePath), { recursive: true });
+      writeFileSync(overridePath, yaml.dump(override, { lineWidth: 140 }));
+      console.error(`\n✓ wrote ms cueOverrides -> ${overridePath}`);
+    } else {
+      console.error('\n(dry run — pass --write to save ms boundaries to the override)');
+    }
+    return;
+  }
+
+  if (command === 'srt-mutes') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter srt-mutes <plexRatingKey> [--window 1.5] [--write]'); process.exit(1); }
+    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}`); process.exit(1); }
+    const edl = yaml.load(readFileSync(edlPath, 'utf8'));
+    const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
+    const override = existsSync(overridePath) ? (yaml.load(readFileSync(overridePath, 'utf8')) || {}) : {};
+    const off = override?.sync?.offsetSec || 0; // existing mutes are source-time; add off to compare in local time
+    const coverWin = Number(flags.window) || 1.5;
+
+    // EXACT whole-word forms — startsWith would false-match hello/christmas/assume
+    // (the Scunthorpe problem). Emitting mutes demands precision.
+    const BAD_WORDS = {
+      fuck: ['fuck', 'fucks', 'fuckin', 'fucking', 'fucked', 'fucker', 'motherfucker', 'motherfucking'],
+      shit: ['shit', 'shits', 'shitty', 'shithead', 'bullshit', 'shithole'],
+      ass: ['ass', 'asses', 'asshole', 'assholes', 'jackass', 'dumbass', 'badass', 'smartass'],
+      damn: ['damn', 'damned', 'damnit', 'dammit', 'goddamn', 'goddammit', 'goddamnit'],
+      hell: ['hell', 'hells'],
+      bitch: ['bitch', 'bitches', 'bitching', 'bitchy'],
+      bastard: ['bastard', 'bastards'],
+      god: ['god', 'gods'],
+      jesus: ['jesus'],
+      christ: ['christ'],
+    };
+    const STEM_GROUP = {};
+    for (const s of ['god', 'jesus', 'christ']) STEM_GROUP[s] = 'blasphemy';
+    for (const s of ['fuck', 'shit', 'ass', 'damn', 'hell', 'bitch', 'bastard']) STEM_GROUP[s] = 'profanity';
+    const FORM_TO_LEAF = {};
+    for (const [leaf, forms] of Object.entries(BAD_WORDS)) for (const f of forms) FORM_TO_LEAF[f] = leaf;
+    const matchLeaf = (tok) => FORM_TO_LEAF[tok.toLowerCase().replace(/[^a-z]/g, '')] || null;
+
+    // Existing mute cues in LOCAL time (for coverage checks).
+    const existingMutes = (edl.cues || [])
+      .filter((c) => c.type === 'mute' || c.effect === 'mute')
+      .map((c) => c.in + off);
+    const covered = (t) => existingMutes.some((m) => Math.abs(m - t) <= coverWin);
+
+    // Fetch the English SRT (LOCAL time).
+    const { token, host } = loadPlexConfig();
+    const meta = (await axios.get(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' } })).data?.MediaContainer?.Metadata?.[0];
+    const part = meta?.Media?.[0]?.Part?.[0];
+    const srtStream = (part?.Stream || []).find((s) => s.streamType === 3 && s.codec === 'srt' && /^en/i.test(s.languageCode || s.language || ''));
+    if (!srtStream) { console.error('No English SRT on this Plex item.'); process.exit(1); }
+    const srtRaw = (await axios.get(`${host}/library/streams/${srtStream.id}?X-Plex-Token=${token}`, { responseType: 'text' })).data;
+    const srt = parseSrt(srtRaw);
+
+    const newCues = [];
+    const seen = new Set();
+    let found = 0;
+    for (const line of srt) {
+      const tokens = line.text.split(/\s+/).filter(Boolean);
+      tokens.forEach((tok, i) => {
+        const leaf = matchLeaf(tok);
+        if (!leaf) return;
+        found++;
+        // A subtitle line's START tracks speech onset, but its END is just when the
+        // caption clears — often long after the words. So DON'T spread words across
+        // the line span; anchor at line.start and advance at a normal speech rate,
+        // capped so we never place a word past the caption's end. The emitted cue is
+        // a point that the resolver widens — SRT end is never used as a duration.
+        const SECS_PER_WORD = 0.33;
+        const wt = Math.min(line.start + i * SECS_PER_WORD, line.end);
+        if (covered(wt)) return;
+        const key = Math.round(wt * 2); // ~0.5s dedupe
+        if (seen.has(key)) return;
+        seen.add(key);
+        newCues.push({
+          id: `srt${Math.round(wt * 1000)}`,
+          effect: 'mute',
+          category: `language/${STEM_GROUP[leaf]}/${leaf}`,
+          in: Number(wt.toFixed(2)),
+          out: Number((wt + 0.05).toFixed(2)),
+          label: leaf,
+          source: 'srt',
+          precision: 'srt-line',
+        });
+      });
+    }
+
+    console.error(`SRT profanity found: ${found} | already covered by a mute: ${found - newCues.length} | NEW gap-filling mutes: ${newCues.length}`);
+    for (const c of newCues.slice(0, 12)) console.error(`  + ${c.label.padEnd(7)} @ ${c.in}s  (${c.category})`);
+    if (newCues.length > 12) console.error(`  … +${newCues.length - 12} more`);
+
+    if (args.includes('--write')) {
+      // addCues are LOCAL-time (NOT sync-shifted). Merge, replacing any prior srt-* cues.
+      const kept = (override.addCues || []).filter((c) => c.source !== 'srt');
+      override.contentId = `plex:${rk}`;
+      override.addCues = [...kept, ...newCues];
+      mkdirSync(path.dirname(overridePath), { recursive: true });
+      writeFileSync(overridePath, yaml.dump(override, { lineWidth: 140 }));
+      console.error(`\n✓ wrote ${newCues.length} srt mute addCues -> ${overridePath}`);
+    } else {
+      console.error('\n(dry run — pass --write to add these mutes to the override)');
+    }
+    return;
+  }
+
   if (command === 'catalog-sync') {
     // Public, no auth needed — but reuse the client (token is harmless on works).
     const va = new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
@@ -1081,6 +1252,10 @@ Commands:
   export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON)
   calibrate <ratingKey> Derive a per-file time sync (offset/scale) that aligns cues to your
                         Plex file, via SRT-snap (default) or --method whisper. --write saves it.
+  srt-mutes <ratingKey> Scan the Plex English SRT for profanity not covered by an existing
+                        mute and emit gap-filling mute cues into the override. --write saves.
+  snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and
+                        write precise in/out into the override. --limit N, --model, --write.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)
   import-mcf <file>     Parse a .mcf/WebVTT file -> FilterEDL (--content-id plex:ID, --out)
   export-mcf <key|edl>  Serialize an EDL back to .mcf/WebVTT (--out)
