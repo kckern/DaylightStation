@@ -139,22 +139,14 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
     mergeParams(eff, ov, cue, rule);
     if (cardByCue.has(cue.id)) eff.card = cardByCue.get(cue.id);
 
-    // skip-card = sugar for "skip [in,out]" + a following "title-card" that
-    // explains the gap for holdSec after the cut (composition, no new handler).
+    // skip-card is driven by the hook (useContentFilter): on entering [in,out] it
+    // seeks to `out`, PAUSES so the seek buffers behind the card, shows the card
+    // for `holdSec`, then resumes instantly. Kept as one cue; just attach holdSec
+    // + resolved card text here (no skip+title-card expansion).
     if (eff.effect === 'skip-card') {
-      const skipEff = widenCue({ ...eff, effect: 'skip' }, profile?.treatments);
-      out.push(skipEff);
-      const hold = (profile?.treatments?.['skip-card']?.holdSec ?? 5);
-      out.push({
-        id: `${eff.id}:card`,
-        effect: 'title-card',
-        category: eff.category,
-        in: skipEff.out,
-        out: skipEff.out + hold,
-        text: eff.card || eff.text || eff.label || 'Scene skipped.',
-        sound: eff.cardSound || undefined, // optional narration/audio
-        source: eff.source,
-      });
+      eff.holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
+      eff.text = eff.card || eff.text || eff.label || 'Scene skipped.';
+      out.push(eff);
       continue;
     }
 
