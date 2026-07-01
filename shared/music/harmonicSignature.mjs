@@ -13,3 +13,19 @@ export function normalizeProgression(roman) {
   }
   return out;
 }
+
+/** Reduce a chord array to its smallest unit that tiles the whole array. */
+export function minimalCycle(chords) {
+  const n = chords.length;
+  if (n < 2) return [...chords];
+  for (let len = 1; len <= n / 2; len += 1) {
+    if (n % len !== 0) continue;
+    const unit = chords.slice(0, len);
+    let tiles = true;
+    for (let i = 0; i < n; i += 1) {
+      if (chords[i] !== unit[i % len]) { tiles = false; break; }
+    }
+    if (tiles) return unit;
+  }
+  return [...chords];
+}

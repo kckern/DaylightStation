@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeProgression } from './harmonicSignature.mjs';
+import { minimalCycle } from './harmonicSignature.mjs';
 
 describe('normalizeProgression', () => {
   it('collapses consecutive duplicate chords (rate-independent)', () => {
@@ -15,5 +16,18 @@ describe('normalizeProgression', () => {
   it('returns [] for empty/nullish input', () => {
     assert.deepEqual(normalizeProgression(null), []);
     assert.deepEqual(normalizeProgression([]), []);
+  });
+});
+
+describe('minimalCycle', () => {
+  it('reduces a whole-cycle repeat to one cycle', () => {
+    assert.deepEqual(minimalCycle(['I', 'V', 'I', 'V']), ['I', 'V']);
+    assert.deepEqual(minimalCycle(['ii', 'V', 'I', 'ii', 'V', 'I']), ['ii', 'V', 'I']);
+  });
+  it('leaves a non-repeating progression untouched', () => {
+    assert.deepEqual(minimalCycle(['I', 'V', 'vi', 'IV']), ['I', 'V', 'vi', 'IV']);
+  });
+  it('does not reduce a partial/incomplete repeat', () => {
+    assert.deepEqual(minimalCycle(['I', 'V', 'I']), ['I', 'V', 'I']);
   });
 });
