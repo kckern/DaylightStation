@@ -44,6 +44,7 @@ export function Producer() {
   const [text, setText] = useState('');
   const [bpm, setBpm] = useState(100);
   const [browsing, setBrowsing] = useState(false);
+  const [previewLayers, setPreviewLayers] = useState([]);
 
   // Seed tempo from base when it changes
   useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
@@ -58,6 +59,7 @@ export function Producer() {
     [layers, keyShift, muted, soloed, anySolo],
   );
   const transport = useLoopTransport({ layers: transportLayers, bpm, pressNote, releaseNote });
+  const previewTransport = useLoopTransport({ layers: previewLayers, bpm, pressNote, releaseNote });
   useKeepScreenAwake('producer', transport.isPlaying);
 
   const pickBase = useCallback(async (entry) => {
@@ -81,6 +83,23 @@ export function Producer() {
     if (base) { await addLayer(entry); setBrowsing(false); }
     else await pickBase(entry);
   }, [base, addLayer, pickBase]);
+
+  const peek = useCallback(async (entry) => {
+    const notes = await lib.loadNotes(entry);
+    if (!notes) return;
+    const stack = [];
+    const baseNotes = layers[0]?.notes;
+    if (base && baseNotes) stack.push({ notes: baseNotes.notes, ppq: baseNotes.ppq, barSpan: base.barSpan, transpose: keyShift });
+    stack.push({ notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan, transpose: keyShift });
+    setPreviewLayers(stack);
+    logger.info('piano.producer.peek', { slug: entry.slug });
+  }, [lib, layers, base, keyShift, logger]);
+
+  // Start/stop the preview transport when previewLayers change
+  useEffect(() => {
+    if (previewLayers.length) previewTransport.play();
+    return () => previewTransport.stop();
+  }, [previewLayers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const removeLayer = useCallback((id) => {
     setLayers((ls) => {
@@ -166,6 +185,8 @@ export function Producer() {
                       {e.roman?.length ? <RomanProgression roman={e.roman} inline /> : null}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
                     </button>
+                    <button type="button" className="piano-loop__peek" aria-label={`preview ${e.title || e.slug}`}
+                      onClick={(ev) => { ev.stopPropagation(); peek(e); }}>▶</button>
                   </li>
                 ))}
               </ul>
@@ -201,6 +222,8 @@ export function Producer() {
                       {c.entry.roman?.length ? <RomanProgression roman={c.entry.roman} inline /> : null}
                       {c.reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
                     </button>
+                    <button type="button" className="piano-loop__peek" aria-label={`preview ${c.entry.title || c.entry.slug}`}
+                      onClick={(ev) => { ev.stopPropagation(); peek(c.entry); }}>▶</button>
                   </li>
                 ))}
               </ul>
