@@ -142,6 +142,16 @@
     background-color: #2a9d8f99;
 }
 
+/* Content-filter blur/pixelate paints a `backdrop-filter: blur()` overlay
+   (.filter-overlay, z-index 50) that blurs everything beneath it — including the
+   progress bar (z 20). While such an effect is actively rendered, lift the
+   progress bar above the filter overlay (but below the debug HUD at 60) so
+   playback position stays sharp and seekable through the blur. Scoped via :has()
+   so normal/shader-dimmed playback is unaffected. */
+.video-player:has(.filter-overlay [data-filter-effect]) .progress-bar{
+    z-index: 55;
+}
+
 
 
 @keyframes pulse {
