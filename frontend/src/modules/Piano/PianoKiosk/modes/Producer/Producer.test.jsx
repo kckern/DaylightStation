@@ -111,4 +111,16 @@ describe('Producer (loop-layering)', () => {
     expect(screen.queryByText('dm-c-f-gm')).toBeNull();
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
+
+  // Task 5.4: harmonically-incompatible candidates excluded from suggestions
+  it('omits harmonically-incompatible candidates from suggestions', async () => {
+    render(<Producer />);
+    // Pick the dm-c-f-gm base (signature i-bVII-bIII-iv)
+    const baseBtn = await screen.findByText('Dm C · F Gm');
+    fireEvent.click(baseBtn.closest('button'));
+    // After base is picked, the "Add a layer" section appears
+    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
+    // "Different Progression Loop" has signature ii-V-I — must NOT appear as a candidate
+    expect(screen.queryByText('Different Progression Loop')).toBeNull();
+  });
 });
