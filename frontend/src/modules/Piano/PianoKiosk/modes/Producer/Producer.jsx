@@ -38,6 +38,7 @@ export function Producer() {
   const [base, setBase] = useState(null);
   const [layers, setLayers] = useState([]); // [{ id, entry, notes }]
   const [muted, setMuted] = useState({}); // id -> bool
+  const [soloed, setSoloed] = useState({}); // id -> bool
   const [keyShift, setKeyShift] = useState(0);
   const [role, setRole] = useState(null);
   const [text, setText] = useState('');
@@ -47,12 +48,13 @@ export function Producer() {
   useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
   useEffect(() => { logger.info('piano.producer.mounted', {}); return () => logger.info('piano.producer.unmounted', {}); }, [logger]);
 
+  const anySolo = useMemo(() => Object.values(soloed).some(Boolean), [soloed]);
   const transportLayers = useMemo(
-    () => layers.filter((l) => l.notes).map((l) => ({
-      notes: l.notes.notes, ppq: l.notes.ppq, barSpan: l.entry.barSpan,
-      transpose: keyShift, muted: !!muted[l.id],
-    })),
-    [layers, keyShift, muted],
+    () => layers.filter((l) => l.notes).map((l) => {
+      const effectiveMuted = !!muted[l.id] || (anySolo && !soloed[l.id]);
+      return { notes: l.notes.notes, ppq: l.notes.ppq, barSpan: l.entry.barSpan, transpose: keyShift, muted: effectiveMuted };
+    }),
+    [layers, keyShift, muted, soloed, anySolo],
   );
   const transport = useLoopTransport({ layers: transportLayers, bpm, pressNote, releaseNote });
   useKeepScreenAwake('producer', transport.isPlaying);
@@ -62,6 +64,7 @@ export function Producer() {
     setBase(entry);
     setLayers([{ id: entry.path, entry, notes }]);
     setMuted({});
+    setSoloed({});
     logger.info('piano.producer.base', { slug: entry.slug, role: roleOf(entry) });
   }, [lib, logger]);
 
@@ -162,9 +165,8 @@ export function Producer() {
               <div className="piano-producer-mode__layers">
                 {layers.map((l, i) => (
                   <div key={l.id} className={`piano-layer${i === 0 ? ' is-base' : ''}${muted[l.id] ? ' is-muted' : ''}`}>
-                    <button type="button" className="piano-layer__mute" onClick={() => setMuted((m) => ({ ...m, [l.id]: !m[l.id] }))}>
-                      {muted[l.id] ? '🔇' : '🔊'}
-                    </button>
+                    <button type="button" className={`piano-layer__m${muted[l.id] ? ' is-on' : ''}`} aria-pressed={!!muted[l.id]} aria-label="mute" onClick={() => setMuted((m) => ({ ...m, [l.id]: !m[l.id] }))}>M</button>
+                    <button type="button" className={`piano-layer__s${soloed[l.id] ? ' is-on' : ''}`} aria-pressed={!!soloed[l.id]} aria-label="solo" onClick={() => setSoloed((s) => ({ ...s, [l.id]: !s[l.id] }))}>S</button>
                     <span className="piano-layer__role">{roleOf(l.entry)}</span>
                     <span className="piano-layer__name">{l.entry.title || l.entry.slug}</span>
                     {l.entry.roman?.length ? <RomanProgression roman={l.entry.roman} inline /> : null}
