@@ -1,0 +1,45 @@
+// Harmonic-notation type system. The ONE place the kiosk spends a display face:
+// roman analysis is the piano's own engraved vernacular. Set --roman-face to a
+// serif/engraving stack; fall back to a system serif so tests/CI don't depend on
+// a web font.
+.roman-progression {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--roman-face, 'Georgia', 'Times New Roman', serif);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+
+  &--inline { gap: 0; }
+  &--inline .roman-chord + .roman-chord::before {
+    content: '·'; margin: 0 0.35rem; color: #667; font-family: system-ui, sans-serif;
+  }
+}
+
+.roman-chord {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  color: #e8e8f2;
+  letter-spacing: 0.01em;
+
+  .roman-progression:not(.roman-progression--inline) & {
+    background: var(--piano-surface, #16161f);
+    border: 1px solid var(--piano-border, #2c2c3a);
+  }
+
+  &__acc { font-size: 0.72em; opacity: 0.7; margin-right: 0.05em; }
+  &__num { font-weight: 600; }
+  &__fig { font-size: 0.6em; font-weight: 500; }
+
+  &[data-quality='minor'] { color: #cdd0e6; }
+  &[data-quality='dim']   { color: #b7c1d6; }
+  &[data-quality='aug']   { color: #e6cdd0; }
+
+  &.is-active {
+    background: var(--piano-accent, #2ec46f);
+    color: var(--piano-accent-ink, #06210f);
+    border-color: var(--piano-accent, #2ec46f);
+  }
+}
