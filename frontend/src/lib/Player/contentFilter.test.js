@@ -114,17 +114,16 @@ describe('resolveEffectiveCues', () => {
     expect(c.out - c.in).toBeCloseTo(0.7, 2); // ms path: small pads only, no min-width blow-up
   });
 
-  it('expands a skip-card into a skip plus a following title-card', () => {
+  it('keeps skip-card as one cue with holdSec + resolved text (hook drives pause/resume)', () => {
     const edl2 = { cues: [{ id: 'sc', category: 'sex_any/x', effect: 'skip-card', in: 100, out: 130, text: 'Scene skipped.' }] };
-    const prof = { categories: {}, treatments: { skip: { padLeadMs: 0, padTrailMs: 0 }, 'skip-card': { holdSec: 5 } } };
+    const prof = { categories: {}, treatments: { 'skip-card': { holdSec: 2.5 } } };
     const out = resolveEffectiveCues({ edl: edl2, profile: prof });
-    const skip = out.find((c) => c.effect === 'skip');
-    const card = out.find((c) => c.effect === 'title-card');
-    expect(skip.in).toBe(100);
-    expect(skip.out).toBe(130);
-    expect(card.in).toBe(130);
-    expect(card.out).toBe(135);
-    expect(card.text).toBe('Scene skipped.');
+    const sc = out.find((c) => c.effect === 'skip-card');
+    expect(sc.in).toBe(100);
+    expect(sc.out).toBe(130);
+    expect(sc.holdSec).toBe(2.5);
+    expect(sc.text).toBe('Scene skipped.');
+    expect(out.filter((c) => c.effect === 'title-card')).toHaveLength(0); // no expansion
   });
 
   it('applies override.sync (offset+scale) to imported cues but not manual addCues', () => {
