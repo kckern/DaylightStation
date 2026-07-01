@@ -12,7 +12,32 @@ import { RomanProgression } from '../../../components/roman/RomanProgression.jsx
 import { detectKey } from '../../../../MusicNotation/index.js';
 import { detectChords } from '../Lessons/theory/theoryEngine.js';
 import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
+import { SvgStaffRenderer } from '../../../../MusicNotation/index.js';
 import './Producer.scss';
+
+/**
+ * Lazily loads notes for a melodic entry and renders a staff thumbnail.
+ * Shows the bare staff immediately (empty pitches), fills in notes async.
+ */
+function MelodicStaffThumb({ entry, lib }) {
+  const [pitches, setPitches] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    lib.loadNotes(entry).then((notes) => {
+      if (cancelled || !notes?.notes?.length) return;
+      // First 8 unique pitches for a compact thumbnail.
+      const seen = new Set();
+      const first8 = [];
+      for (const n of notes.notes) {
+        if (!seen.has(n.midi)) { seen.add(n.midi); first8.push(n.midi); }
+        if (first8.length >= 8) break;
+      }
+      setPitches(first8);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [entry, lib]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <SvgStaffRenderer targetPitches={pitches} />;
+}
 
 const ROLES = [
   { key: null, label: 'All' },
@@ -236,6 +261,9 @@ export function Producer() {
 
           {(!base || browsing) && (
             <div className="piano-producer-mode__browse">
+              {!base && (
+                <p className="piano-producer-mode__hint">Pick a base loop, then stack layers that fit.</p>
+              )}
               <input
                 className="piano-producer-mode__search"
                 placeholder="Search loops (chords, mood, artist…)"
@@ -247,7 +275,9 @@ export function Producer() {
                   <li key={e.path}>
                     <button type="button" className="piano-loop" onClick={() => onPickFromBrowse(e)}>
                       <span className="piano-loop__name">{e.title || e.slug}</span>
-                      {e.roman?.length ? <RomanProgression roman={e.roman} inline /> : null}
+                      {e.roman?.length
+                        ? <RomanProgression roman={e.roman} inline />
+                        : <MelodicStaffThumb entry={e} lib={lib} />}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
                     </button>
                     <button type="button" className="piano-loop__peek" aria-label={`preview ${e.title || e.slug}`}

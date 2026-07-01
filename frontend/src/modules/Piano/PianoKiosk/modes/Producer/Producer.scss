@@ -138,4 +138,85 @@
   &__name { font-weight: 600; color: var(--piano-fg, #eef); flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); margin-left: auto; font-variant-numeric: tabular-nums; }
   &__remove { background: none; border: none; color: var(--piano-danger, #a66); font-size: 1rem; cursor: pointer; }
+
+  // M (Mute) and S (Solo) tap targets: chunky, ≥2.4rem for reliable touch.
+  &__m, &__s {
+    min-width: 2.4rem;
+    min-height: 2.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-muted, #99a);
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+    &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
+  }
+}
+
+// Playhead: thin accent bar that sweeps from left (0%) to right (100%).
+.piano-producer-mode__playhead {
+  width: 100%;
+  height: 3px;
+  background: var(--piano-border, #2c2c3a);
+  border-radius: 2px;
+  margin-top: 0.5rem;
+
+  &-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--piano-accent, #2ec46f);
+    border-radius: 2px;
+    transition: none; // updated by rAF, not CSS transition
+  }
+}
+
+// Roman row: the base loop's progression chips shown while playing.
+.piano-producer-mode__roman-row {
+  margin-top: 0.35rem;
+}
+
+// First-run on-ramp hint.
+.piano-producer-mode__hint {
+  font-size: 0.92rem;
+  color: var(--piano-muted, #99a);
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--piano-surface, #15151d);
+  border: 1px dashed var(--piano-border, #2a2a36);
+}
+
+// Peek button on each browse row: minimal, accent-colored.
+.piano-loop__peek {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--piano-border, #2a2a36);
+  background: var(--piano-surface, #15151d);
+  color: var(--piano-accent-text, #7c9);
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
+}
+
+// Focus outlines for all interactive Producer elements.
+.piano-loop:focus-visible,
+.piano-chip:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
+}
+
+.piano-producer-mode__play:focus-visible,
+.piano-producer-mode__tempo button:focus-visible,
+.piano-producer-mode__key button:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
 }
