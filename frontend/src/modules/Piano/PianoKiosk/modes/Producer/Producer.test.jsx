@@ -78,7 +78,7 @@ describe('Producer (loop-layering)', () => {
   it('loads the loop library and lists browseable loops', async () => {
     render(<Producer />);
     // After 5.3, the primary label is title (or slug if no title), not raw slug
-    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
     expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
     // roman progression rendered via RomanProgression component
     expect(document.querySelector('.roman-progression')).toBeTruthy();
@@ -86,7 +86,7 @@ describe('Producer (loop-layering)', () => {
 
   it('picks a base and shows it as the base layer plus ranked layer suggestions', async () => {
     render(<Producer />);
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
 
     // base now appears in the layer rack with its role…
@@ -98,7 +98,7 @@ describe('Producer (loop-layering)', () => {
 
   it('starts the transport when Play is pressed (fires loop notes through pressNote)', async () => {
     render(<Producer />);
-    fireEvent.click((await screen.findByText('Dm C · F Gm')).closest('button'));
+    fireEvent.click((await screen.findByRole('button', { name: 'Dm C · F Gm' })).closest('button'));
     const play = await screen.findByText(/Play/);
     fireEvent.click(play);
     await waitFor(() => expect(pressNote).toHaveBeenCalled());
@@ -107,7 +107,7 @@ describe('Producer (loop-layering)', () => {
   // Task 5.3: title + roman notation replaces slug labels
   it('labels a loop by title + roman, not the slug', async () => {
     render(<Producer />);
-    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
     expect(screen.queryByText('dm-c-f-gm')).toBeNull();
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
@@ -115,7 +115,7 @@ describe('Producer (loop-layering)', () => {
   // Task 5.5: detected key + editable tempo
   it('shows the detected key and an editable tempo, defaulting to base bpm', async () => {
     render(<Producer />);
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
     // After picking a base (bpm 120), the tempo display updates to 120
     await waitFor(() => {
@@ -130,7 +130,7 @@ describe('Producer (loop-layering)', () => {
   // Task 5.6: per-layer Mute + Solo
   it('solo isolates a layer — M and S buttons present on each layer row', async () => {
     render(<Producer />);
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
     await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
     // Add the catchy hook as a second layer
@@ -169,7 +169,7 @@ describe('Producer (loop-layering)', () => {
   it('removing the base promotes the next layer instead of clearing the stack', async () => {
     render(<Producer />);
     // Pick base
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
     await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
     // Add catchy hook as second layer — it's harmonically compatible (melody, null roman wildcard)
@@ -193,7 +193,7 @@ describe('Producer (loop-layering)', () => {
 
   it('a "Browse library" affordance is present while a base is set', async () => {
     render(<Producer />);
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
     await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
     // A browse library button should be present
@@ -203,14 +203,14 @@ describe('Producer (loop-layering)', () => {
   // Task 5.11: showRoman toggle chip is present in the deck
   it('has a Roman toggle chip in the deck', async () => {
     render(<Producer />);
-    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /roman/i })).toBeTruthy();
   });
 
   // Task 5.12: on-ramp hint before base is chosen
   it('shows a one-line on-ramp before a base is chosen', async () => {
     render(<Producer />);
-    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
     expect(screen.getByText(/pick a base loop/i)).toBeTruthy();
   });
 
@@ -226,7 +226,7 @@ describe('Producer (loop-layering)', () => {
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);
     // Pick the dm-c-f-gm base (signature i-bVII-bIII-iv)
-    const baseBtn = await screen.findByText('Dm C · F Gm');
+    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
     fireEvent.click(baseBtn.closest('button'));
     // After base is picked, the "Add a layer" section appears
     await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
