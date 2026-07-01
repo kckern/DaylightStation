@@ -112,6 +112,21 @@ describe('Producer (loop-layering)', () => {
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 
+  // Task 5.5: detected key + editable tempo
+  it('shows the detected key and an editable tempo, defaulting to base bpm', async () => {
+    render(<Producer />);
+    const baseBtn = await screen.findByText('Dm C · F Gm');
+    fireEvent.click(baseBtn.closest('button'));
+    // After picking a base (bpm 120), the tempo display updates to 120
+    await waitFor(() => {
+      const tempoEl = document.querySelector('[aria-label="tempo"]');
+      expect(tempoEl).toBeTruthy();
+      expect(tempoEl.textContent).toContain('120');
+    });
+    // key control is present in the deck
+    expect(document.querySelector('.piano-producer-mode__key')).toBeTruthy();
+  });
+
   // Task 5.4: harmonically-incompatible candidates excluded from suggestions
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);
