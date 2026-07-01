@@ -62,6 +62,13 @@ describe('resolveEffectiveCues', () => {
     expect(out.find((c) => c.id === 'b')).toBeUndefined();
   });
 
+  it('falls back to the cue.type (VidAngel suggested action) when no profile rule matches', () => {
+    const vaEdl = { cues: [{ id: 'v', category: 'alcohol_or_drug_use/beer', type: 'mute', in: 5, out: 6 }] };
+    const out = resolveEffectiveCues({ edl: vaEdl, profile: { categories: {} } });
+    expect(out).toHaveLength(1);
+    expect(out[0].effect).toBe('mute');
+  });
+
   it('attaches plot-card text from override.cards', () => {
     const override = { cards: [{ after: 'b', text: 'Skipped a fight scene.' }] };
     const b = resolveEffectiveCues({ edl, profile, override }).find((c) => c.id === 'b');

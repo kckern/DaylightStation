@@ -1,0 +1,50 @@
+import { test, expect } from '@playwright/test';
+
+const BASE = 'http://localhost:3111';
+
+/**
+ * End-to-end (real data): Back to the Future's real 219-cue VidAngel EDL flows
+ * through the whole client pipeline — backend endpoint -> useFilterData ->
+ * resolver (family profile) -> useContentFilter — in a real browser.
+ *
+ * Uses the POC harness in ?contentId mode so the assertion is deterministic and
+ * doesn't depend on the headless browser decoding the Plex transcode. (Driving
+ * the full Plex stream in the live VideoPlayer is a manual/real-browser step:
+ * /tv?play=662169&filter=1.)
+ */
+test('BTTF real EDL resolves to applied skip+mute cues via the filter pipeline', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+
+  // The backend endpoint serves the real cascade.
+  const api = await page.request.get(`${BASE}/api/v1/content-filter/662169?profile=family`);
+  expect(api.ok()).toBe(true);
+  const cascade = await api.json();
+  expect(cascade.edl.cues.length).toBe(219);
+  expect(cascade.profile.name).toBe('Family');
+
+  // The client pipeline resolves that real data into concrete effects.
+  await page.goto(`${BASE}/filter-poc?contentId=plex:662169`, { waitUntil: 'domcontentloaded' });
+  const statusLoc = page.locator('[data-testid="poc-status"]');
+  await statusLoc.waitFor({ state: 'visible', timeout: 15000 });
+
+  // Poll until real data has loaded and resolved.
+  let status = null;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    status = JSON.parse(await statusLoc.textContent());
+    if (status.title === 'Back to the Future' && status.cues > 0) break;
+    await page.waitForTimeout(200);
+  }
+
+  console.log('BTTF resolved status:', JSON.stringify(status));
+  expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
+  expect(status.title).toBe('Back to the Future');
+  expect(status.profileName).toBe('Family');
+  // Family profile: language -> mute, violence/sex -> skip. Both must be present.
+  expect(status.byEffect.mute, 'profanity resolved to mute').toBeGreaterThan(0);
+  expect(status.byEffect.skip, 'violence/sex resolved to skip').toBeGreaterThan(0);
+  // Authoritative profile: credits/alcohol are unmapped -> NOT filtered, so the
+  // resolved count is less than the raw 219.
+  expect(status.cues, 'unmapped categories dropped (profile authoritative)').toBeLessThan(219);
+});

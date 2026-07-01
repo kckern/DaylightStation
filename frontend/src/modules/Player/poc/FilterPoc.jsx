@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
+import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { FilterOverlay } from '../components/FilterOverlay.jsx';
 
 /**
@@ -29,6 +30,14 @@ export default function FilterPoc() {
   const skipsRef = useRef(0);
   const [tick, setTick] = useState({ t: 0, muted: false });
 
+  // Optional: load REAL filter data for a title via ?contentId=plex:<ratingKey>.
+  // Falls back to the built-in demo EDL when absent.
+  const contentId = useMemo(() => new URLSearchParams(window.location.search).get('contentId'), []);
+  const realData = useFilterData(contentId, { enabled: !!contentId });
+  const edl = contentId ? realData?.edl : EDL;
+  const profile = contentId ? realData?.profile : PROFILE;
+  const override = contentId ? realData?.override : undefined;
+
   const getMediaEl = useCallback(() => videoRef.current, []);
   const transport = useMemo(() => ({
     seek: (s) => {
@@ -38,7 +47,7 @@ export default function FilterPoc() {
   }), []);
 
   const { activeOverlays, activeCard, effectiveCues } = useContentFilter({
-    getMediaEl, transport, edl: EDL, profile: PROFILE, enabled: true,
+    getMediaEl, transport, edl, profile, override, enabled: !!edl,
   });
 
   const onTimeUpdate = () => {
@@ -46,6 +55,7 @@ export default function FilterPoc() {
     if (el) setTick({ t: el.currentTime, muted: el.muted });
   };
 
+  const byEffect = effectiveCues.reduce((a, c) => ((a[c.effect] = (a[c.effect] || 0) + 1), a), {});
   const status = {
     t: Math.round(tick.t * 10) / 10,
     muted: tick.muted,
@@ -53,6 +63,9 @@ export default function FilterPoc() {
     card: activeCard?.text || null,
     skips: skipsRef.current,
     cues: effectiveCues.length,
+    byEffect,
+    title: edl?.title || null,
+    profileName: profile?.name || null,
   };
 
   return (
@@ -69,7 +82,7 @@ export default function FilterPoc() {
           onTimeUpdate={onTimeUpdate}
           style={{ width: '100%', height: '100%' }}
         />
-        <FilterOverlay activeOverlays={activeOverlays} activeCard={activeCard} theme={PROFILE.theme} />
+        <FilterOverlay activeOverlays={activeOverlays} activeCard={activeCard} theme={profile?.theme || PROFILE.theme} />
       </div>
       <div style={{ marginTop: 12 }}>
         <button

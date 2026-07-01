@@ -57,11 +57,16 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
     const ov = overrides[cue.id] || {};
     if (ov.disabled) continue;
 
-    // Effect precedence: override > cue (addCues) > profile rule.
+    // Effect precedence: override > cue (addCues) > profile rule > cue.type.
+    // The cue.type fallback (VidAngel audio=mute/audiovisual=skip) applies ONLY when
+    // no profile categories are defined — a profile WITH categories is authoritative
+    // (an unmapped category means "don't filter"), so a family profile can e.g. leave
+    // credits/alcohol unfiltered without the source default sneaking them back in.
     let rule = null;
     const explicit = ov.effect || cue.effect;
+    const hasProfileRules = profile?.categories && Object.keys(profile.categories).length > 0;
     if (explicit) rule = { effect: explicit };
-    else rule = resolveEffect(cue.category, profile);
+    else rule = resolveEffect(cue.category, profile) || (!hasProfileRules && cue.type ? { effect: cue.type } : null);
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };
