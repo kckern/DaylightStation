@@ -16,15 +16,18 @@ test('BTTF real EDL resolves to applied skip+mute cues via the filter pipeline',
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  // The backend endpoint serves the real cascade.
-  const api = await page.request.get(`${BASE}/api/v1/content-filter/662169?profile=family`);
+  // The backend endpoint serves the real cascade — incl. the calibrated sync.
+  const api = await page.request.get(`${BASE}/api/v1/content-filter/662170?profile=family`);
   expect(api.ok()).toBe(true);
   const cascade = await api.json();
   expect(cascade.edl.cues.length).toBe(219);
   expect(cascade.profile.name).toBe('Family');
+  // Calibration (SRT-snap) derived a ~+6.6s offset for this Plex file.
+  expect(cascade.override.sync.offsetSec).toBeGreaterThan(2);
+  expect(cascade.override.sync.offsetSec).toBeLessThan(20);
 
   // The client pipeline resolves that real data into concrete effects.
-  await page.goto(`${BASE}/filter-poc?contentId=plex:662169`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${BASE}/filter-poc?contentId=plex:662170`, { waitUntil: 'domcontentloaded' });
   const statusLoc = page.locator('[data-testid="poc-status"]');
   await statusLoc.waitFor({ state: 'visible', timeout: 15000 });
 

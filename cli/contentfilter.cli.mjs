@@ -42,8 +42,10 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { hostname } from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import axios from 'axios';
 
@@ -496,6 +498,118 @@ function edlToMcf(edl) {
 }
 
 // ============================================================================
+// Calibration — derive a per-title time `sync` {offsetSec, scale} that remaps
+// VidAngel's (second-approx, foreign-recording) cue times onto THIS Plex file.
+// Snap a sample of mute cues (whose word we know) to where the word really is,
+// then robustly regress snapped-vs-EDL time. One sync fixes every cue at once;
+// per-cue ms precision is a separate (Whisper) refinement.
+// ============================================================================
+
+// VidAngel category leaf -> spoken word stems (what the SRT/transcript contains).
+const WORD_STEMS = {
+  fuck: ['fuck', 'fuckin', 'fucking', 'fucked', 'motherfuck'],
+  shit: ['shit', 'bullshit', 'shitty'],
+  ass: ['ass', 'asshole', 'dumbass', 'jackass', 'badass'],
+  damn: ['damn', 'dammit', 'damnit', 'goddamn'],
+  hell: ['hell'],
+  bitch: ['bitch'],
+  god: ['god', 'goddamn', 'goddamnit'],
+  jesus: ['jesus'],
+  christ: ['christ'],
+  bastard: ['bastard'],
+};
+
+const srtTimeToSec = (t) => {
+  const m = t.trim().match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+  if (!m) return null;
+  return +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000;
+};
+
+/** Parse an SRT string into [{ start, end, text }] (tags stripped, lowercased). */
+function parseSrt(text) {
+  const blocks = text.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+  const out = [];
+  for (const b of blocks) {
+    const lines = b.split('\n').filter((l) => l.trim() !== '');
+    const tline = lines.find((l) => l.includes('-->'));
+    if (!tline) continue;
+    const [a, c] = tline.split('-->');
+    const start = srtTimeToSec(a);
+    const end = srtTimeToSec(c);
+    if (start == null) continue;
+    const body = lines.slice(lines.indexOf(tline) + 1).join(' ')
+      .replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').toLowerCase().trim();
+    out.push({ start, end, text: body });
+  }
+  return out;
+}
+
+const leafOf = (category) => String(category || '').split('/').pop();
+const stemsFor = (category) => WORD_STEMS[leafOf(category)] || null;
+const textHasStem = (text, stems) => stems.some((s) => new RegExp(`\\b${s}`, 'i').test(text));
+
+/**
+ * Snap one mute cue to the nearest SRT line (within ±window) that contains the
+ * cue's target word. Returns the line start time, or null if no match.
+ */
+function snapCueToSrt(cue, srt, window) {
+  const stems = stemsFor(cue.category);
+  if (!stems) return null;
+  let best = null;
+  for (const line of srt) {
+    if (line.start < cue.in - window || line.start > cue.in + window) continue;
+    if (!textHasStem(line.text, stems)) continue;
+    const dist = Math.abs(line.start - cue.in);
+    if (!best || dist < best.dist) best = { t: line.start, dist };
+  }
+  return best ? best.t : null;
+}
+
+/** Robust linear fit y = scale*x + offset with MAD outlier rejection. */
+function robustFit(pairs) {
+  const median = (arr) => {
+    const s = [...arr].sort((a, b) => a - b);
+    const n = s.length;
+    return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+  };
+  let pts = pairs;
+  // Offset-only robust estimate (scale locked to 1) — best for same-source rips.
+  const offsets = pts.map((p) => p.y - p.x);
+  const medOffset = median(offsets);
+  const resid = offsets.map((o) => Math.abs(o - medOffset));
+  const mad = median(resid) || 0.001;
+  const kept = pts.filter((p, i) => Math.abs(offsets[i] - medOffset) <= 3 * 1.4826 * mad + 0.75);
+  pts = kept.length >= 3 ? kept : pts;
+
+  // Least-squares 2-param fit on the kept points (to detect a framerate scale).
+  const n = pts.length;
+  const sx = pts.reduce((a, p) => a + p.x, 0);
+  const sy = pts.reduce((a, p) => a + p.y, 0);
+  const sxx = pts.reduce((a, p) => a + p.x * p.x, 0);
+  const sxy = pts.reduce((a, p) => a + p.x * p.y, 0);
+  const denom = n * sxx - sx * sx;
+  const scale = denom ? (n * sxy - sx * sy) / denom : 1;
+  const offsetLS = (sy - scale * sx) / n;
+  const meanY = sy / n;
+  const ssTot = pts.reduce((a, p) => a + (p.y - meanY) ** 2, 0) || 1e-9;
+  const ssRes = pts.reduce((a, p) => a + (p.y - (scale * p.x + offsetLS)) ** 2, 0);
+  const r2 = 1 - ssRes / ssTot;
+
+  const offsetOnly = median(pts.map((p) => p.y - p.x));
+  const medAbsResid = median(pts.map((p) => Math.abs(p.y - (p.x + offsetOnly))));
+  return { n, used: pts.length, total: pairs.length, scale, offsetLS, offsetOnly, r2, medAbsResid };
+}
+
+/** Whisper-snap sample cues by shelling the python aligner helper. */
+function snapCuesWhisper(partUrl, samples, { window, model }) {
+  const helper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'contentfilter', 'align.py');
+  const PY = process.env.WHISPER_PY || '/opt/homebrew/opt/python@3.11/bin/python3.11';
+  const job = JSON.stringify({ partUrl, window, model, samples });
+  const out = execFileSync(PY, [helper], { input: job, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' });
+  return JSON.parse(out); // [{ id, edl, snapped|null }]
+}
+
+// ============================================================================
 // Plex (read-only, for `match`)
 // ============================================================================
 
@@ -582,9 +696,17 @@ const flags = {
   out: null,
   section: null,
   delay: 500,
-  'content-id': null
+  'content-id': null,
+  method: 'srt',
+  samples: 25,
+  window: 6,
+  model: 'small.en'
 };
-const VALUE_FLAGS = { '--limit': 'limit', '--out': 'out', '--section': 'section', '--delay': 'delay', '--content-id': 'content-id' };
+const VALUE_FLAGS = {
+  '--limit': 'limit', '--out': 'out', '--section': 'section', '--delay': 'delay',
+  '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
+  '--window': 'window', '--model': 'model'
+};
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
   if (i !== -1 && args[i + 1] !== undefined) flags[key] = args[i + 1];
@@ -742,6 +864,79 @@ async function main() {
     return;
   }
 
+  if (command === 'calibrate') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter calibrate <plexRatingKey> [--method srt|whisper] [--samples 25] [--window 6] [--model small.en] [--write]'); process.exit(1); }
+    const edlPath = path.join(filterCacheDir(), 'edl', `${rk}.edl.yml`);
+    if (!existsSync(edlPath)) { console.error(`No EDL for ${rk}: ${edlPath} (run bulk-export/export first)`); process.exit(1); }
+    const edl = yaml.load(readFileSync(edlPath, 'utf8'));
+    const window = Number(flags.window) || 6;
+    const nSamples = Number(flags.samples) || 25;
+    const method = flags.method === 'whisper' ? 'whisper' : 'srt';
+
+    // Candidate mute cues we can word-match.
+    const mutes = (edl.cues || []).filter((c) => (c.type === 'mute' || c.effect === 'mute') && stemsFor(c.category));
+    if (mutes.length < 4) { console.error(`Only ${mutes.length} matchable mute cues — cannot calibrate reliably.`); process.exit(1); }
+    const step = Math.max(1, Math.floor(mutes.length / nSamples));
+    const picked = mutes.filter((_, i) => i % step === 0).slice(0, nSamples);
+    console.error(`Calibrating ${rk} "${edl.title || ''}" via ${method}: ${picked.length}/${mutes.length} mute cues, ±${window}s window`);
+
+    // Plex: part URL + English SRT stream + duration.
+    const { token, host } = loadPlexConfig();
+    const meta = (await axios.get(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' } })).data?.MediaContainer?.Metadata?.[0];
+    const part = meta?.Media?.[0]?.Part?.[0];
+    if (!part) { console.error('Could not resolve Plex media part.'); process.exit(1); }
+    const partUrl = `${host}${part.key}?X-Plex-Token=${token}`;
+
+    const pairs = [];
+    if (method === 'srt') {
+      const srtStream = (part.Stream || []).find((s) => s.streamType === 3 && s.codec === 'srt' && /^en/i.test(s.languageCode || s.language || ''));
+      if (!srtStream) { console.error('No English SRT on this Plex item — retry with --method whisper.'); process.exit(1); }
+      const srtRaw = (await axios.get(`${host}/library/streams/${srtStream.id}?X-Plex-Token=${token}`, { responseType: 'text' })).data;
+      const srt = parseSrt(srtRaw);
+      console.error(`  loaded SRT: ${srt.length} lines`);
+      for (const c of picked) {
+        const snapped = snapCueToSrt(c, srt, window);
+        if (snapped != null) pairs.push({ x: c.in, y: snapped, leaf: leafOf(c.category) });
+      }
+    } else {
+      const res = snapCuesWhisper(partUrl, picked.map((c) => ({ id: c.id, sec: c.in, stems: stemsFor(c.category) })), { window, model: flags.model });
+      for (const r of res) if (r.snapped != null) pairs.push({ x: r.edl, y: r.snapped });
+    }
+
+    console.error(`  snapped ${pairs.length}/${picked.length} cues`);
+    if (pairs.length < 4) { console.error('Too few snapped cues to fit a reliable sync.'); process.exit(1); }
+    const fit = robustFit(pairs);
+
+    const scaleWarn = Math.abs(fit.scale - 1) > 0.005;
+    console.error(`\n================ SYNC ================`);
+    console.error(`offset (robust, scale=1):  ${fit.offsetOnly >= 0 ? '+' : ''}${fit.offsetOnly.toFixed(2)}s`);
+    console.error(`2-param fit:  scale=${fit.scale.toFixed(5)}  offset=${fit.offsetLS.toFixed(2)}s  R²=${fit.r2.toFixed(4)}`);
+    console.error(`points used: ${fit.used}/${fit.total}   median |residual|: ${fit.medAbsResid.toFixed(2)}s`);
+    if (scaleWarn) console.error(`⚠ scale deviates from 1 (${fit.scale.toFixed(4)}) — possible framerate mismatch; consider --write with scale.`);
+
+    if (args.includes('--write')) {
+      const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
+      mkdirSync(path.dirname(overridePath), { recursive: true });
+      const existing = existsSync(overridePath) ? (yaml.load(readFileSync(overridePath, 'utf8')) || {}) : {};
+      const useScale = scaleWarn;
+      existing.contentId = `plex:${rk}`;
+      existing.sync = {
+        offsetSec: Number((useScale ? fit.offsetLS : fit.offsetOnly).toFixed(3)),
+        scale: useScale ? Number(fit.scale.toFixed(6)) : 1,
+        method,
+        samples: fit.used,
+        r2: Number(fit.r2.toFixed(4)),
+        medAbsResidSec: Number(fit.medAbsResid.toFixed(3)),
+      };
+      writeFileSync(overridePath, yaml.dump(existing, { lineWidth: 140 }));
+      console.error(`\n✓ wrote sync -> ${overridePath}`);
+    } else {
+      console.error('\n(dry run — pass --write to save sync to the override)');
+    }
+    return;
+  }
+
   if (command === 'catalog-sync') {
     // Public, no auth needed — but reuse the client (token is harmless on works).
     const va = new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
@@ -884,6 +1079,8 @@ Commands:
   works                 Popular filterable titles available on your services
   tags <slug>           Summarize a title's filter categories + tag counts
   export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON)
+  calibrate <ratingKey> Derive a per-file time sync (offset/scale) that aligns cues to your
+                        Plex file, via SRT-snap (default) or --method whisper. --write saves it.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)
   import-mcf <file>     Parse a .mcf/WebVTT file -> FilterEDL (--content-id plex:ID, --out)
   export-mcf <key|edl>  Serialize an EDL back to .mcf/WebVTT (--out)
