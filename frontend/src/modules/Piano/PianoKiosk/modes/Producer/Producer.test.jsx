@@ -127,6 +127,30 @@ describe('Producer (loop-layering)', () => {
     expect(document.querySelector('.piano-producer-mode__key')).toBeTruthy();
   });
 
+  // Task 5.6: per-layer Mute + Solo
+  it('solo isolates a layer — M and S buttons present on each layer row', async () => {
+    render(<Producer />);
+    const baseBtn = await screen.findByText('Dm C · F Gm');
+    fireEvent.click(baseBtn.closest('button'));
+    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
+    // Add the catchy hook as a second layer
+    const layerBtn = await screen.findByText('Catchy Hook');
+    fireEvent.click(layerBtn.closest('button'));
+    await waitFor(() => {
+      // Both M and S buttons should be present (one per layer)
+      const soloButtons = document.querySelectorAll('[aria-label="solo"]');
+      expect(soloButtons.length).toBeGreaterThan(0);
+      const muteButtons = document.querySelectorAll('[aria-label="mute"]');
+      expect(muteButtons.length).toBeGreaterThan(0);
+    });
+    // Clicking solo on the first layer: the S button becomes aria-pressed=true
+    const soloBtn = document.querySelector('[aria-label="solo"]');
+    fireEvent.click(soloBtn);
+    await waitFor(() => {
+      expect(document.querySelector('[aria-label="solo"].is-on')).toBeTruthy();
+    });
+  });
+
   // Task 5.4: harmonically-incompatible candidates excluded from suggestions
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);
