@@ -77,6 +77,14 @@ describe('resolveEffectiveCues', () => {
     expect(c.out - c.in).toBeGreaterThanOrEqual(0.9);
   });
 
+  it('widens a zero-width full-blur (VidAngel nudity point tag) so it actually fires', () => {
+    const edl2 = { cues: [{ id: 'n', category: 'sex_nudity_immodesty/immodesty_female', type: 'skip', in: 5280.6, out: 5280.6 }] };
+    const prof = { categories: { sex_nudity_immodesty: { effect: 'full-blur' } } };
+    const c = resolveEffectiveCues({ edl: edl2, profile: prof })[0];
+    expect(c.effect).toBe('full-blur');
+    expect(c.out - c.in).toBeGreaterThanOrEqual(2.5); // no longer zero-width
+  });
+
   it('widens srt-line mutes generously (word position uncertain) so late words are covered', () => {
     // A caption-derived mute: the word could be anywhere in the ~2-3s line, so a
     // narrow window can miss a late word (the "damn hands" leak).
