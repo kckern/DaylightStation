@@ -731,7 +731,14 @@ export function VideoPlayer({
 
   return (
     <div className={`video-player ${shader}`}>
-      <ProgressBar percent={percent} onClick={handleProgressClick} />
+      <ProgressBar
+        percent={percent}
+        onClick={handleProgressClick}
+        durationSeconds={Number.isFinite(duration) ? duration : 0}
+        offsetSeconds={Number.isFinite(seconds) ? seconds : null}
+        paused={isPaused || isStalled}
+        playbackRate={playbackRate || 1}
+      />
       {isDash ? (
         <dash-video
           key={`${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}

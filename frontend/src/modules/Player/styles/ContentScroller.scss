@@ -1,4 +1,12 @@
 
+/* Linear seek-bar fill used by ContentScroller's smooth (keyframe) mode. The
+   fill's width animates 0→100% over the media duration on the compositor clock,
+   seeded per-item via inline animation-duration/-delay/-play-state so it tracks
+   real playback and re-syncs on seek/pause — no dependence on the JS tick rate. */
+@keyframes contentSeekFill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
 
 .content-scroller {
   width: 100%;
