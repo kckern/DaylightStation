@@ -212,6 +212,7 @@ import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
+import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
@@ -1321,6 +1322,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'feedback' }),
     }),
     logger: rootLogger.child({ module: 'feedback-api' }),
+  });
+
+  // Content-filter cascade (EDL + profile + override) for the Player's
+  // useContentFilter hook. Reads data/household/shared/content-filter/.
+  v1Routers['content-filter'] = createContentFilterRouter({
+    dataDir: configService.getDataDir(),
+    logger: rootLogger.child({ module: 'content-filter-api' }),
   });
 
   // Emulator console (games on the media mount). Addresses media by safe
