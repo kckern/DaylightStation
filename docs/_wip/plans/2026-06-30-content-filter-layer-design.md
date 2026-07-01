@@ -136,8 +136,67 @@ Pending:
 - Whisper-snap refinement producer (extract from homeserver file, not flaky HTTP range).
 - Admin authoring tool (manual cues, blur rects, plot cards) + time-remap calibration.
 
-## 6. MVP cut
+## 6. Debug / QA mode (`?filter=1&filter-debug=1`)
+
+Authoring and verifying an EDL is impossible if you have to watch a whole film to reach
+each cue. Debug mode turns the Player into a cue-scrubbing rig: jump cue-to-cue, watch
+each filter arm and fire, confirm the in/out points and action are right.
+
+**Activation.** Two orthogonal query params on the Player route:
+- `filter=1` — enable the filter layer (same flag the normal chrome toggle sets).
+- `filter-debug=1` — additionally mount the debug HUD. Implies `filter=1` (debug with the
+  layer off is meaningless). No effect unless an EDL resolves for the content id.
+
+**The HUD — bottom-left overlay, always visible.** A compact panel pinned bottom-left of
+the video box (above `FilterOverlay`, own z-layer, `pointer-events: auto` so its buttons
+click while the rest of the overlay stays pass-through). It reads `effectiveCues` (already
+resolved L1←L2←L3, sorted by `in`) from `useContentFilter` plus live `currentTime` from
+the transport. It shows the **next armed cue** — the earliest cue whose `in` is still ahead
+of the playhead (or the currently-active cue if the playhead is inside one):
+
+```
+┌─────────────────────────────────────┐
+│ ◀  NEXT: language/profanity/fuck  ▶ │   ← ◀ prev cue   ▶ next cue
+│    mute · silence · medium           │   ← resolved action · treatment · severity
+│    in 168.20 → out 168.55  (0.35s)   │   ← cue window + duration
+│    ▸ arming in  4.7s                 │   ← live countdown (or "● FIRING" when active)
+│    cue 37 / 512                      │   ← position in the EDL
+└─────────────────────────────────────┘
+```
+
+- **Countdown** = `cue.in − currentTime`, updated on `timeupdate` (≈4Hz) / rAF. When the
+  playhead crosses into `[in, out]` the row flips to a red **● FIRING** state for the cue's
+  duration, then advances to the following cue. This makes the arm→fire→clear transition
+  visible frame-accurately.
+- **Next-cue label** always reflects the *resolved effect* (post-profile), not just the
+  raw category — so a cue whose `suggestedType: mute` was overridden to `skip` by the
+  active profile shows `skip`. Surfaces Layer-2/3 resolution bugs directly.
+
+**Go-to buttons — `◀` / `▶`.** Seek to **1.5s before** the previous / next cue's `in`
+point (`max(0, cue.in − LEAD)`, `LEAD = 1.5s`, configurable). Landing a beat early lets
+you watch the filter *arm and fire* rather than starting mid-skip. Semantics:
+- `▶` — next cue strictly after `currentTime` (skipping the one you're inside).
+- `◀` — previous cue whose `in` is before `currentTime − LEAD` (so repeated `◀` walks
+  backward instead of re-snapping to the same lead-in).
+- Clamp at the ends; disable/grey the button when there's no cue in that direction.
+- Seeks go through `transport.seek` with `__seekSource = 'filter-debug'` so they're
+  distinguishable in `playback.*` logs and don't trip seek-based recovery heuristics.
+
+**Logging.** HUD mount/unmount at `info`; each go-to seek logs
+`filter.debug.goto { direction, fromCue, toCue, targetTime }`; arm→fire transitions log
+`filter.debug.fire { cueId, category, action, in, out }` at `debug`. This gives a
+replayable trace of a QA pass.
+
+**Build note.** Pure consumer-side; no new data. A `<FilterDebugHud>` component beside
+`FilterOverlay.jsx`, fed the same `effectiveCues` + `transport` that VideoPlayer already
+wires for the filter layer. Gate both overlays on the parsed query params in VideoPlayer's
+existing chrome/params handling. No profile or EDL changes required.
+
+## 7. MVP cut
 
 VidAngel/MCF import → Layer-1 EDL → a single "family" Layer-2 profile (skip violence/sex,
 mute profanity, silence replacement) → client-side skip+mute in VideoPlayer, toggle in
 chrome. Defer: blur, title cards, custom SFX, Whisper-snap, Admin authoring.
+
+Debug HUD (§6) is cheap and pairs naturally with the VideoPlayer-wiring step — build it
+alongside so the first EDLs can be QA'd cue-by-cue instead of watched end-to-end.
