@@ -44,10 +44,26 @@ function setup(overrides = {}) {
 describe('useContentFilter', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('seeks past a skip cue', () => {
+  it('seeks past a skip cue (past its widened end)', () => {
     const { el, transport } = setup();
     act(() => { el.currentTime = 110; el.fire('timeupdate'); });
-    expect(transport.seek).toHaveBeenCalledWith(expect.closeTo(130.05, 2));
+    const arg = transport.seek.mock.calls[0][0];
+    expect(arg).toBeGreaterThan(130);
+    expect(arg).toBeLessThan(131);
+  });
+
+  it('releases an active mute when the user seeks away before the cue ends', () => {
+    const { el } = setup();
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    act(() => { el.currentTime = 500; el.fire('seeking'); });
+    expect(el.muted).toBe(false); // seek releases the mute immediately
+  });
+
+  it('re-arms on the seeked event (not just timeupdate)', () => {
+    const { el } = setup();
+    act(() => { el.currentTime = 21; el.fire('seeked'); });
+    expect(el.muted).toBe(true);
   });
 
   it('mutes during a mute cue and unmutes on exit', () => {
