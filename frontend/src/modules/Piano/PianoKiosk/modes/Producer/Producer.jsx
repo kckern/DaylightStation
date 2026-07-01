@@ -43,6 +43,7 @@ export function Producer() {
   const [role, setRole] = useState(null);
   const [text, setText] = useState('');
   const [bpm, setBpm] = useState(100);
+  const [browsing, setBrowsing] = useState(false);
 
   // Seed tempo from base when it changes
   useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
@@ -65,6 +66,7 @@ export function Producer() {
     setLayers([{ id: entry.path, entry, notes }]);
     setMuted({});
     setSoloed({});
+    setBrowsing(false);
     logger.info('piano.producer.base', { slug: entry.slug, role: roleOf(entry) });
   }, [lib, logger]);
 
@@ -75,10 +77,20 @@ export function Producer() {
     logger.info('piano.producer.layer-add', { slug: entry.slug, role: roleOf(entry) });
   }, [layers, lib, logger]);
 
+  const onPickFromBrowse = useCallback(async (entry) => {
+    if (base) { await addLayer(entry); setBrowsing(false); }
+    else await pickBase(entry);
+  }, [base, addLayer, pickBase]);
+
   const removeLayer = useCallback((id) => {
-    setLayers((ls) => (ls[0]?.id === id ? [] : ls.filter((l) => l.id !== id)));
-    if (layers[0]?.id === id) setBase(null);
-  }, [layers]);
+    setLayers((ls) => {
+      const next = ls.filter((l) => l.id !== id);
+      setBase(next[0]?.entry ?? null);
+      return next;
+    });
+    setMuted((m) => { const { [id]: _drop, ...rest } = m; return rest; });
+    setSoloed((s) => { const { [id]: _drop, ...rest } = s; return rest; });
+  }, []);
 
   // Detect key from base layer notes
   const detectedKey = useMemo(() => {
@@ -138,7 +150,7 @@ export function Producer() {
             ))}
           </div>
 
-          {!base && (
+          {(!base || browsing) && (
             <div className="piano-producer-mode__browse">
               <input
                 className="piano-producer-mode__search"
@@ -149,7 +161,7 @@ export function Producer() {
               <ul className="piano-producer-mode__list">
                 {browse.map((e) => (
                   <li key={e.path}>
-                    <button type="button" className="piano-loop" onClick={() => pickBase(e)}>
+                    <button type="button" className="piano-loop" onClick={() => onPickFromBrowse(e)}>
                       <span className="piano-loop__name">{e.title || e.slug}</span>
                       {e.roman?.length ? <RomanProgression roman={e.roman} inline /> : null}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
@@ -162,6 +174,11 @@ export function Producer() {
 
           {base && (
             <div className="piano-producer-mode__stack">
+              <div className="piano-producer-mode__stack-header">
+                <button type="button" className="piano-chip" onClick={() => setBrowsing((b) => !b)}>
+                  {browsing ? 'Close library' : 'Browse library'}
+                </button>
+              </div>
               <div className="piano-producer-mode__layers">
                 {layers.map((l, i) => (
                   <div key={l.id} className={`piano-layer${i === 0 ? ' is-base' : ''}${muted[l.id] ? ' is-muted' : ''}`}>

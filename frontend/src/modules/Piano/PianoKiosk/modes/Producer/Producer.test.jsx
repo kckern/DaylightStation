@@ -151,6 +151,41 @@ describe('Producer (loop-layering)', () => {
     });
   });
 
+  // Task 5.7: base-swap keeps stack + browse library affordance
+  it('removing the base promotes the next layer instead of clearing the stack', async () => {
+    render(<Producer />);
+    // Pick base
+    const baseBtn = await screen.findByText('Dm C · F Gm');
+    fireEvent.click(baseBtn.closest('button'));
+    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
+    // Add catchy hook as second layer — it's harmonically compatible (melody, null roman wildcard)
+    const layerBtn = await screen.findByText('Catchy Hook');
+    fireEvent.click(layerBtn.closest('button'));
+    await waitFor(() => {
+      const layers = document.querySelectorAll('.piano-layer');
+      expect(layers.length).toBe(2);
+    });
+    // Remove the base (first layer's ✕ button)
+    const removeBtn = document.querySelector('.piano-layer__remove');
+    fireEvent.click(removeBtn);
+    await waitFor(() => {
+      // Stack should still have 1 layer (Catchy Hook promoted to base), not 0
+      const layers = document.querySelectorAll('.piano-layer');
+      expect(layers.length).toBe(1);
+      // The "Add a layer" section is still visible (base still set)
+      expect(screen.getByText('Add a layer')).toBeInTheDocument();
+    });
+  });
+
+  it('a "Browse library" affordance is present while a base is set', async () => {
+    render(<Producer />);
+    const baseBtn = await screen.findByText('Dm C · F Gm');
+    fireEvent.click(baseBtn.closest('button'));
+    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
+    // A browse library button should be present
+    expect(screen.getByRole('button', { name: /browse library|add from library/i })).toBeTruthy();
+  });
+
   // Task 5.4: harmonically-incompatible candidates excluded from suggestions
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);
