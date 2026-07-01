@@ -39,9 +39,13 @@ export function useLoopTransport({ layers, bpm = 120, pressNote, releaseNote }) 
     activeRef.current.clear();
   }, [releaseNote]);
 
+  const positionRef = useRef(0);
+
   const tick = useCallback(() => {
     const { events, lengthMs } = cycleRef.current;
     const elapsed = performance.now() - startWallRef.current;
+    // Update normalized 0..1 loop position (no React state — avoids render storm).
+    positionRef.current = lengthMs ? (elapsed % lengthMs) / lengthMs : 0;
     while (firedIdxRef.current < events.length && events[firedIdxRef.current].t <= elapsed) {
       const e = events[firedIdxRef.current];
       if (e.type === 'note_on' && (e.velocity ?? 0) > 0) { pressNote(e.note, e.velocity); activeRef.current.add(e.note); }
@@ -87,7 +91,7 @@ export function useLoopTransport({ layers, bpm = 120, pressNote, releaseNote }) 
 
   useEffect(() => () => { cancelAnimationFrame(rafRef.current); releaseAll(); }, [releaseAll]);
 
-  return { isPlaying, play, stop, toggle, lengthMs: cycle.lengthMs };
+  return { isPlaying, play, stop, toggle, lengthMs: cycle.lengthMs, positionRef, loopNotesRef: activeRef };
 }
 
 export default useLoopTransport;

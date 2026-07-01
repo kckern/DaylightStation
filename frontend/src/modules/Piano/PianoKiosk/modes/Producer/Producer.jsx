@@ -45,6 +45,8 @@ export function Producer() {
   const [bpm, setBpm] = useState(100);
   const [browsing, setBrowsing] = useState(false);
   const [previewLayers, setPreviewLayers] = useState([]);
+  const [activeChord, setActiveChord] = useState(-1);
+  const playheadRef = useRef(null);
 
   // Seed tempo from base when it changes
   useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
@@ -101,6 +103,31 @@ export function Producer() {
     return () => previewTransport.stop();
   }, [previewLayers]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // rAF-driven playhead: reads positionRef (no React state per-frame) and updates
+  // the CSS width directly so the playhead sweeps without render-storm risk.
+  // Simultaneously snapshots loopNotesRef into state at rAF cadence (one state
+  // update per frame, not per-note) and derives the active roman chord index.
+  const [loopNotes, setLoopNotes] = useState(null);
+  useEffect(() => {
+    let raf;
+    const paint = () => {
+      const p = transport.positionRef?.current ?? 0;
+      if (playheadRef.current) playheadRef.current.style.width = `${p * 100}%`;
+      setActiveChord(base?.roman?.length ? Math.floor(p * base.roman.length) : -1);
+      if (transport.loopNotesRef?.current) {
+        setLoopNotes(new Set(transport.loopNotesRef.current));
+      }
+      raf = requestAnimationFrame(paint);
+    };
+    if (transport.isPlaying) raf = requestAnimationFrame(paint);
+    else {
+      if (playheadRef.current) playheadRef.current.style.width = '0%';
+      setActiveChord(-1);
+      setLoopNotes(null);
+    }
+    return () => cancelAnimationFrame(raf);
+  }, [transport.isPlaying, base]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const removeLayer = useCallback((id) => {
     setLayers((ls) => {
       const next = ls.filter((l) => l.id !== id);
@@ -154,6 +181,14 @@ export function Producer() {
                 Key {detectedKey}
                 <button type="button" onClick={() => setKeyShift((k) => k + 1)} aria-label="key up">+</button>
               </span>
+            </div>
+            {base?.roman?.length ? (
+              <div className="piano-producer-mode__roman-row">
+                <RomanProgression roman={base.roman} activeIndex={activeChord} />
+              </div>
+            ) : null}
+            <div className="piano-producer-mode__playhead">
+              <div ref={playheadRef} className="piano-producer-mode__playhead-fill" />
             </div>
           </header>
 
