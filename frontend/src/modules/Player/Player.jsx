@@ -22,6 +22,7 @@ import { guardedReload } from '../../lib/reloadGuard.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
+import { REVIEW_ACTIVE } from '../../lib/Player/reviewParams.js';
 import { DaylightAPI } from '../../lib/api.mjs';
 
 const REMOUNT_BACKOFF_BASE_MS = 1000;
@@ -321,7 +322,11 @@ const Player = forwardRef(function Player(props, ref) {
     return collection ? `player-rate:${collection}` : prefsSessionKey;
   }, [effectiveMeta, prefsSessionKey]);
 
-  const explicitStartProvided = effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
+  // A surgical review seek (?goto/?cue) suppresses the saved resume position (Plex
+  // viewOffset in meta.seconds) so the review target is authoritative — otherwise the
+  // resilience layer reasserts resume after VideoPlayer re-mints at the target.
+  const explicitStartProvided = !REVIEW_ACTIVE
+    && effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
   const explicitStartSeconds = explicitStartProvided
     ? Math.max(0, Number(effectiveMeta.seconds) || 0)
     : null;

@@ -77,6 +77,18 @@ export function computeGoto(cues, t, direction, lead = DEFAULT_LEAD_SEC) {
 }
 
 /**
+ * Resolve a specific cue by id to a non-firing landing time ~`lead` seconds before
+ * its in-point — for URL-driven surgical review (`?cue=<id>`). Returns null when no
+ * cue has that id.
+ * @returns {{cue: object, targetTime: number}|null}
+ */
+export function gotoForCueId(cues, cueId, lead = DEFAULT_LEAD_SEC) {
+  const cue = (cues || []).find((c) => c.id === cueId);
+  if (!cue) return null;
+  return { cue, targetTime: nonFiringLeadIn(cues, cue.in, lead) };
+}
+
+/**
  * Full HUD state for time t: the focused cue (the one firing, else the next armed),
  * whether it's firing, the countdown to it when armed, its 1-based position in the
  * EDL, and whether prev/next go-tos are available.

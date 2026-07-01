@@ -13,6 +13,7 @@ import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
 import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
 import { useFilterData } from '../../../lib/Player/useFilterData.js';
+import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
 import { FilterOverlay } from '../components/FilterOverlay.jsx';
 import { FilterDebugHud } from '../components/FilterDebugHud.jsx';
 
@@ -23,6 +24,10 @@ const CONTENT_FILTER_DEBUG = typeof window !== 'undefined'
 const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('filter') === '1')
   || CONTENT_FILTER_DEBUG;
+
+// Surgical review seek (?goto=<seconds>) is parsed in lib/Player/reviewParams.js and
+// shared with Player (which suppresses the saved Plex resume when it's active) so the
+// review target is authoritative. Cue-by-id review resolves to a ?goto time in the CLI.
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -170,7 +175,10 @@ export function VideoPlayer({
     getMediaEl,
     getContainerEl
   } = useCommonMediaController({
-    start: media.segment ? media.segment.start : media.seconds,
+    // ?goto overrides the start position so the transcode mints AT the target
+    // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
+    start: REVIEW_GOTO != null ? REVIEW_GOTO
+      : (media.segment ? media.segment.start : media.seconds),
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
     onClear: clear,
