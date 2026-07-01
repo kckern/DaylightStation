@@ -9,14 +9,18 @@ import { useContentFilter } from './useContentFilter.js';
 
 function makeFakeEl() {
   const handlers = {};
-  return {
+  const el = {
     currentTime: 0,
     muted: false,
     volume: 1,
+    paused: false,
     addEventListener: (ev, fn) => { (handlers[ev] ||= []).push(fn); },
     removeEventListener: (ev, fn) => { handlers[ev] = (handlers[ev] || []).filter((h) => h !== fn); },
     fire: (ev) => (handlers[ev] || []).slice().forEach((h) => h()),
   };
+  el.pause = vi.fn(() => { el.paused = true; });
+  el.play = vi.fn(() => { el.paused = false; });
+  return el;
 }
 
 const profile = {
@@ -177,6 +181,30 @@ describe('useContentFilter', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('does not double-render a title-card as both an overlay and activeCard', () => {
+    const tcEdl = { cues: [{ id: 'tc', effect: 'title-card', category: 'meta/x', in: 20, out: 24, text: 'Skipped a scene.' }] };
+    const { el, hook } = setup({ edl: tcEdl, profile: { categories: {} } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(hook.result.current.activeOverlays.some((o) => o.effect === 'title-card')).toBe(true);
+    expect(hook.result.current.activeCard).toBeNull(); // rendered via overlay only
+  });
+
+  it('skip-card: seeks past, pauses (buffer behind card), shows card, resumes after hold', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped a scene.', holdSec: 2.5 }] };
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn((s) => { el.currentTime = s; }) };
+    const hook = renderHook(() => useContentFilter({ getMediaEl: () => el, transport, edl: scEdl, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(transport.seek).toHaveBeenCalledWith(expect.closeTo(40.05, 2)); // jump to resume point
+    expect(el.pause).toHaveBeenCalled();                                    // freeze/buffer behind card
+    expect(hook.result.current.activeCard.text).toBe('Skipped a scene.');
+    act(() => { vi.advanceTimersByTime(2600); });                          // hold elapses (real-time)
+    expect(el.play).toHaveBeenCalled();                                    // resume instantly
+    expect(hook.result.current.activeCard).toBeNull();
+    vi.useRealTimers();
   });
 
   it('does nothing when disabled', () => {

@@ -757,7 +757,16 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {CONTENT_FILTER_ENABLED && filterData?.edl && (
-        <FilterOverlay activeOverlays={filterOverlays} activeCard={filterCard} theme={filterData?.profile?.theme} />
+        <FilterOverlay
+          activeOverlays={filterOverlays}
+          activeCard={filterCard}
+          theme={filterData?.profile?.theme}
+          art={filterContentId ? {
+            poster: `/api/v1/proxy/plex/library/metadata/${filterContentId}/thumb`,
+            background: `/api/v1/proxy/plex/library/metadata/${filterContentId}/art`,
+            logo: `/api/v1/proxy/plex/library/metadata/${filterContentId}/clearLogo`,
+          } : null}
+        />
       )}
       {CONTENT_FILTER_DEBUG && filterData?.edl && (
         <FilterDebugHud
