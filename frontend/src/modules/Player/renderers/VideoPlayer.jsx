@@ -234,6 +234,17 @@ export function VideoPlayer({
     enabled: CONTENT_FILTER_ENABLED && !!filterData?.edl,
   });
 
+  // Art for title/skip cards, via the Plex image proxy. The proxy keys on the
+  // bare ratingKey — filterContentId carries a `plex:` prefix (it's the mediaKey),
+  // which 404s the proxy and would blank every card's poster/background/logo. Strip
+  // it (mirrors FilterPoc). Cards degrade per-image when a title lacks an art asset.
+  const filterCardArt = useMemo(() => {
+    if (!filterContentId) return null;
+    const rk = String(filterContentId).replace(/^plex:/, '');
+    const base = `/api/v1/proxy/plex/library/metadata/${rk}`;
+    return { poster: `${base}/thumb`, background: `${base}/art`, logo: `${base}/clearLogo` };
+  }, [filterContentId]);
+
   // Render FPS monitoring for blur overlay performance diagnosis
   const renderFps = useRenderFpsMonitor({
     enabled: displayReady && !isPaused,
@@ -768,11 +779,7 @@ export function VideoPlayer({
           activeOverlays={filterOverlays}
           activeCard={filterCard}
           theme={filterData?.profile?.theme}
-          art={filterContentId ? {
-            poster: `/api/v1/proxy/plex/library/metadata/${filterContentId}/thumb`,
-            background: `/api/v1/proxy/plex/library/metadata/${filterContentId}/art`,
-            logo: `/api/v1/proxy/plex/library/metadata/${filterContentId}/clearLogo`,
-          } : null}
+          art={filterCardArt}
         />
       )}
       {CONTENT_FILTER_DEBUG && filterData?.edl && (
