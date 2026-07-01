@@ -75,7 +75,10 @@ export function Producer() {
   }, [layers]);
 
   const candidates = useMemo(
-    () => (base ? lib.rankFor(base, role ? { role } : {}).filter((r) => !layers.some((l) => l.id === r.entry.path)).slice(0, 30) : []),
+    () => (base
+      ? lib.rankFor(base, { ...(role ? { role } : {}), onlyStackable: true })
+          .filter((r) => !layers.some((l) => l.id === r.entry.path)).slice(0, 30)
+      : []),
     [base, lib, role, layers],
   );
   const browse = useMemo(() => lib.query({ role, text }).slice(0, 60), [lib, role, text]);
