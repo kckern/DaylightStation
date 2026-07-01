@@ -20,6 +20,11 @@ import { getEffectHandler, EFFECT_KINDS } from './filterEffects.js';
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
+// Overlay effects (blur/censor-bar/…) fade in and out over this window (blur
+// radius / opacity ramp) instead of hard-cutting. On exit we keep the overlay
+// mounted this long with `visible:false` so it can ramp to 0 before unmount.
+const FILTER_FADE_MS = 300;
+
 /** Default SFX player for bleep sounds; maps a sound name -> URL via profile.sounds. */
 function createSfxPlayer(sounds) {
   let audio = null;
@@ -58,6 +63,10 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // Cues currently "entered" (id -> cue), so we can fire onExit exactly once.
   const enteredRef = useRef(new Map());
   const memRef = useRef({});
+  // Overlay fade lifecycle: cueId -> { effect, cue, visible }. Entries linger with
+  // visible:false for FILTER_FADE_MS after a cue exits so the blur can ramp to 0.
+  const overlayLifeRef = useRef(new Map());
+  const overlayTimersRef = useRef(new Map()); // cueId -> removal timeout
 
   useEffect(() => {
     const el = getMediaEl?.();
@@ -71,8 +80,27 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       prev.clear();
     };
 
+    // Tear down the overlay fade lifecycle (timers + tracked entries).
+    const clearOverlayLife = () => {
+      overlayTimersRef.current.forEach((to) => clearTimeout(to));
+      overlayTimersRef.current.clear();
+      overlayLifeRef.current.clear();
+    };
+
+    // Publish the current overlay lifecycle (active + fading-out) to React, only
+    // when the visible set changed (key includes `visible` so a fade toggle renders).
+    const commitOverlays = () => {
+      const list = [...overlayLifeRef.current.values()]
+        .map((e) => ({ effect: e.effect, cue: e.cue, visible: e.visible }));
+      setActiveOverlays((prev) => {
+        const key = (arr) => arr.map((o) => `${o.effect}:${o.cue.id}:${o.visible ? 1 : 0}`).join('|');
+        return key(prev) === key(list) ? prev : list;
+      });
+    };
+
     if (!enabled || !el) {
       exitAll();
+      clearOverlayLife();
       setActiveOverlays((p) => (p.length ? [] : p));
       setActiveCard((p) => (p ? null : p));
       return undefined;
@@ -150,11 +178,29 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (h.kind === EFFECT_KINDS.OVERLAY) overlays.push({ effect: cue.effect, cue });
       }
 
-      // Overlays: only update state when the active set changes (avoid re-renders).
-      setActiveOverlays((prev) => {
-        const key = (arr) => arr.map((o) => `${o.effect}:${o.cue.id}`).join('|');
-        return key(prev) === key(overlays) ? prev : overlays;
+      // Overlay fade lifecycle: mark active overlays visible (cancel any pending
+      // removal); mark exited ones visible:false and schedule removal after the
+      // fade so <FilterOverlay> can ramp the blur radius to 0 before unmount.
+      const life = overlayLifeRef.current;
+      const timers = overlayTimersRef.current;
+      const activeOverlayIds = new Set(overlays.map((o) => o.cue.id));
+      for (const o of overlays) {
+        const pending = timers.get(o.cue.id);
+        if (pending) { clearTimeout(pending); timers.delete(o.cue.id); }
+        life.set(o.cue.id, { effect: o.effect, cue: o.cue, visible: true });
+      }
+      life.forEach((entry, id) => {
+        if (activeOverlayIds.has(id) || !entry.visible) return;
+        life.set(id, { ...entry, visible: false }); // begin fade-out
+        if (!timers.has(id)) {
+          timers.set(id, setTimeout(() => {
+            life.delete(id);
+            timers.delete(id);
+            commitOverlays(); // unmount once faded
+          }, FILTER_FADE_MS));
+        }
       });
+      commitOverlays();
 
       // Card: any active cue carrying plot text (skip cards, title-cards).
       const carded = active.find((c) => c.card || c.text);
@@ -196,6 +242,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       reactEvents.forEach((ev) => el.removeEventListener(ev, tick));
       el.removeEventListener('seeking', onSeeking);
       exitAll();
+      clearOverlayLife();
       // Session summary (info): what actually fired this segment + blur-with-audio
       // exposure (seconds where video was hidden but audio kept — leak surface).
       logger().info?.('content-filter.session', {

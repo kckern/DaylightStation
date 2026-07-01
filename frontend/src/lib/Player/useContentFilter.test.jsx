@@ -125,6 +125,60 @@ describe('useContentFilter', () => {
     expect(hook.result.current.activeOverlays).toEqual([]);
   });
 
+  it('fades an overlay OUT: lingers visible:false for the fade window, then removes it', () => {
+    vi.useFakeTimers();
+    try {
+      // Stable getMediaEl/transport/sfx so the effect does NOT re-run on each
+      // setState (matches the real app's useCallback/useMemo) — otherwise the fade
+      // lifecycle would be torn down every render and never linger.
+      const el = makeFakeEl();
+      const getMediaEl = () => el;
+      const transport = { seek: vi.fn() };
+      const sfx = { play: vi.fn(), stop: vi.fn() };
+      const hook = renderHook(() => useContentFilter({ getMediaEl, transport, sfx, edl, profile, enabled: true }));
+
+      act(() => { el.currentTime = 202; el.fire('timeupdate'); }); // cue active
+      expect(hook.result.current.activeOverlays).toEqual([
+        expect.objectContaining({ effect: 'censor-bar', visible: true }),
+      ]);
+
+      act(() => { el.currentTime = 210; el.fire('timeupdate'); }); // cue exits → fade out
+      expect(hook.result.current.activeOverlays).toEqual([
+        expect.objectContaining({ effect: 'censor-bar', visible: false }),
+      ]);
+
+      act(() => { vi.advanceTimersByTime(300); }); // fade window elapses → unmount
+      expect(hook.result.current.activeOverlays).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending fade-out if the cue re-activates within the window', () => {
+    vi.useFakeTimers();
+    try {
+      const el = makeFakeEl();
+      const getMediaEl = () => el;
+      const transport = { seek: vi.fn() };
+      const sfx = { play: vi.fn(), stop: vi.fn() };
+      const hook = renderHook(() => useContentFilter({ getMediaEl, transport, sfx, edl, profile, enabled: true }));
+
+      act(() => { el.currentTime = 202; el.fire('timeupdate'); });      // active
+      act(() => { el.currentTime = 210; el.fire('timeupdate'); });      // fading out
+      act(() => { el.currentTime = 203; el.fire('timeupdate'); });      // back in-cue
+      expect(hook.result.current.activeOverlays).toEqual([
+        expect.objectContaining({ effect: 'censor-bar', visible: true }),
+      ]);
+      // The earlier removal timer must NOT fire now that it's visible again.
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(hook.result.current.activeOverlays).toEqual([
+        expect.objectContaining({ effect: 'censor-bar', visible: true }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does nothing when disabled', () => {
     const { el, transport } = setup({ enabled: false });
     act(() => { el.currentTime = 110; el.fire('timeupdate'); });
