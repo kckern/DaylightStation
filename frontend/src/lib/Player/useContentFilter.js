@@ -78,7 +78,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       return undefined;
     }
 
-    const onTime = () => {
+    const tick = () => {
       const t = el.currentTime;
       if (!Number.isFinite(t)) return;
       const active = cuesActiveAt(effectiveCues, t);
@@ -124,10 +124,39 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       setActiveCard((prev) => (prev?.text === cardText ? prev : (cardText ? { text: cardText } : null)));
     };
 
-    el.addEventListener('timeupdate', onTime);
-    logger().debug?.('content-filter.mounted', { cues: effectiveCues.length });
+    // Driver: react to the playhead moving, and — critically — to jumps/stalls.
+    // - timeupdate: coarse (~4Hz) baseline, always present.
+    // - seeked/ratechange/playing/waiting: re-evaluate immediately after a
+    //   jump/rate change/stall so we never apply late or leave a stale effect.
+    // - seeking: RELEASE active effects before the playhead jumps (a seek can
+    //   land past a short mute window; releasing avoids a stuck mute).
+    // - requestVideoFrameCallback: per-displayed-frame (~16-42ms) precision,
+    //   ~10x tighter than timeupdate and immune to timeupdate throttling/jank.
+    const reactEvents = ['timeupdate', 'seeked', 'ratechange', 'playing', 'waiting'];
+    reactEvents.forEach((ev) => el.addEventListener(ev, tick));
+    const onSeeking = () => { exitAll(); };
+    el.addEventListener('seeking', onSeeking);
+
+    let stopped = false;
+    let rvfcHandle = null;
+    const hasRvfc = typeof el.requestVideoFrameCallback === 'function';
+    if (hasRvfc) {
+      const frame = () => {
+        if (stopped) return;
+        tick();
+        rvfcHandle = el.requestVideoFrameCallback(frame);
+      };
+      rvfcHandle = el.requestVideoFrameCallback(frame);
+    }
+
+    logger().debug?.('content-filter.mounted', { cues: effectiveCues.length, driver: hasRvfc ? 'rvfc' : 'timeupdate' });
     return () => {
-      el.removeEventListener('timeupdate', onTime);
+      stopped = true;
+      if (hasRvfc && rvfcHandle != null && typeof el.cancelVideoFrameCallback === 'function') {
+        try { el.cancelVideoFrameCallback(rvfcHandle); } catch (_) { /* ignore */ }
+      }
+      reactEvents.forEach((ev) => el.removeEventListener(ev, tick));
+      el.removeEventListener('seeking', onSeeking);
       exitAll();
     };
   }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);

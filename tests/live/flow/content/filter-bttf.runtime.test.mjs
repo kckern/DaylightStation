@@ -44,10 +44,10 @@ test('BTTF real EDL resolves to applied skip+mute cues via the filter pipeline',
   expect(errors, `page errors: ${errors.join(' | ')}`).toEqual([]);
   expect(status.title).toBe('Back to the Future');
   expect(status.profileName).toBe('Family');
-  // Family profile: language -> mute, violence/sex -> skip. Both must be present.
+  // Family philosophy: language -> mute; sexual/nudity/assault -> blur (keep audio);
+  // violence/peril -> KEPT (not filtered). So mutes + blurs present, and the
+  // resolved set is well under the raw 219 (peril + credits + alcohol kept).
   expect(status.byEffect.mute, 'profanity resolved to mute').toBeGreaterThan(0);
-  expect(status.byEffect.skip, 'violence/sex resolved to skip').toBeGreaterThan(0);
-  // Authoritative profile: credits/alcohol are unmapped -> NOT filtered, so the
-  // resolved count is less than the raw 219.
-  expect(status.cues, 'unmapped categories dropped (profile authoritative)').toBeLessThan(219);
+  expect(status.byEffect['full-blur'], 'sexual/nudity resolved to blur').toBeGreaterThan(0);
+  expect(status.cues, 'peril/unmapped kept (profile authoritative)').toBeLessThan(219);
 });

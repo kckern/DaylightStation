@@ -33,6 +33,40 @@ export function resolveEffect(categoryPath, profile) {
   return null;
 }
 
+// Built-in widening defaults (ms). Pads absorb driver granularity + safety;
+// approxWidthMs is the minimum coverage for a cue whose timing is NOT ms-precise
+// (VidAngel second-approx points), so a short/zero-width cue still covers the word.
+const WIDEN_DEFAULTS = {
+  mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 },
+  bleep: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 },
+  skip: { padLeadMs: 400, padTrailMs: 250, approxWidthMs: 0 },
+};
+
+/**
+ * Widen an effective cue's [in,out] by effect-appropriate pads. Cues that are not
+ * ms-precise (no `precision: 'ms'`) are additionally expanded to approxWidthMs,
+ * centered, to absorb source timing uncertainty. Never returns a negative start.
+ */
+function widenCue(eff, treatments) {
+  const base = WIDEN_DEFAULTS[eff.effect];
+  if (!base) return eff;
+  const t = (treatments && treatments[eff.effect]) || {};
+  const lead = (t.padLeadMs ?? base.padLeadMs) / 1000;
+  const trail = (t.padTrailMs ?? base.padTrailMs) / 1000;
+  const approxWidth = (t.approxWidthMs ?? base.approxWidthMs) / 1000;
+
+  let start = eff.in - lead;
+  let end = eff.out + trail;
+  if (eff.precision !== 'ms' && approxWidth > 0 && end - start < approxWidth) {
+    const center = (eff.in + eff.out) / 2;
+    start = center - approxWidth / 2 - lead;
+    end = center + approxWidth / 2 + trail;
+  }
+  eff.in = Math.max(0, start);
+  eff.out = Math.max(eff.in + 0.001, end);
+  return eff;
+}
+
 function mergeParams(target, ...sources) {
   for (const src of sources) {
     if (!src) continue;
@@ -77,7 +111,13 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };
-    if (synced && sync) {
+    if (ov.in != null || ov.out != null) {
+      // Precise per-cue times (e.g. Whisper-snapped) are already LOCAL and ms —
+      // use as-is, bypassing sync so they aren't offset a second time.
+      if (ov.in != null) eff.in = ov.in;
+      if (ov.out != null) eff.out = ov.out;
+      eff.precision = ov.precision || 'ms';
+    } else if (synced && sync) {
       eff.in = applySync(cue.in);
       eff.out = applySync(cue.out);
       // optional per-cue manual nudge (ms), applied after the global sync
@@ -86,6 +126,29 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);
     if (cardByCue.has(cue.id)) eff.card = cardByCue.get(cue.id);
+
+    // skip-card = sugar for "skip [in,out]" + a following "title-card" that
+    // explains the gap for holdSec after the cut (composition, no new handler).
+    if (eff.effect === 'skip-card') {
+      const skipEff = widenCue({ ...eff, effect: 'skip' }, profile?.treatments);
+      out.push(skipEff);
+      const hold = (profile?.treatments?.['skip-card']?.holdSec ?? 5);
+      out.push({
+        id: `${eff.id}:card`,
+        effect: 'title-card',
+        category: eff.category,
+        in: skipEff.out,
+        out: skipEff.out + hold,
+        text: eff.card || eff.text || eff.label || 'Scene skipped.',
+        sound: eff.cardSound || undefined, // optional narration/audio
+        source: eff.source,
+      });
+      continue;
+    }
+
+    // Widen (pads + min-width for approx cues) so short/zero-width cues fire and
+    // survive driver granularity. Runs after sync so pads are in local time.
+    widenCue(eff, profile?.treatments);
 
     out.push(eff);
   }
