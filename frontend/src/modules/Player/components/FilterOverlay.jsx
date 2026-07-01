@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 
 /**
@@ -47,34 +47,50 @@ function OverlayEffect({ effect, cue, theme, art }) {
 const hideOnError = (e) => { e.currentTarget.style.display = 'none'; };
 
 function Card({ text, theme, effect = 'card', art }) {
+  const [logoFailed, setLogoFailed] = useState(false);
   if (!text) return null;
   const font = theme.font || 'Roboto Condensed, sans-serif';
 
-  // Cinematic slide: dimmed film backdrop + clearLogo + intertitle text.
+  // Cinematic slide: dimmed film backdrop, with either the centered clearLogo or —
+  // when there's no logo (or it fails to load) — the poster flush-left and the text
+  // centered in the space beside it.
   if (art && art.background) {
+    const usePoster = (!art.logo || logoFailed) && art.poster;
+    const cardStyle = {
+      position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+      width: '72%', maxWidth: '900px', aspectRatio: '16 / 7',
+      borderRadius: '0.5em', overflow: 'hidden', pointerEvents: 'none',
+      backgroundImage: `url(${art.background})`, backgroundSize: 'cover', backgroundPosition: 'center',
+      color: '#fff', fontFamily: font, boxShadow: '0 0 40px rgba(0,0,0,0.65)',
+    };
+    const dim = <div style={{ position: 'absolute', inset: 0, background: theme.cardBg || 'rgba(0,0,0,0.58)' }} />;
+    const textStyle = { position: 'relative', fontSize: '1.5em', lineHeight: 1.3, padding: '0 1.4em', textShadow: '0 2px 8px rgba(0,0,0,0.85)' };
+
+    if (usePoster) {
+      return (
+        <div className="filter-card filter-card-art" data-filter-effect={effect} data-card-layout="poster-left" style={cardStyle}>
+          {dim}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'stretch', width: '100%', height: '100%' }}>
+            <img src={art.poster} alt="" onError={hideOnError} style={{ height: '100%', objectFit: 'cover', flexShrink: 0, boxShadow: '2px 0 12px rgba(0,0,0,0.6)' }} />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', ...textStyle, maxWidth: '100%' }}>{text}</div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         className="filter-card filter-card-art"
         data-filter-effect={effect}
-        style={{
-          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-          width: '72%', maxWidth: '900px', aspectRatio: '16 / 7',
-          borderRadius: '0.5em', overflow: 'hidden', pointerEvents: 'none',
-          backgroundImage: `url(${art.background})`, backgroundSize: 'cover', backgroundPosition: 'center',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          textAlign: 'center', color: '#fff', fontFamily: font, boxShadow: '0 0 40px rgba(0,0,0,0.65)',
-        }}
+        data-card-layout="logo-center"
+        style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}
       >
-        <div style={{ position: 'absolute', inset: 0, background: theme.cardBg || 'rgba(0,0,0,0.58)' }} />
-        {art.logo && (
-          <img
-            src={art.logo} alt="" onError={hideOnError}
-            style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.75))' }}
-          />
-        )}
-        <div style={{ position: 'relative', fontSize: '1.5em', lineHeight: 1.3, padding: '0 1.4em', maxWidth: '82%', textShadow: '0 2px 8px rgba(0,0,0,0.8)' }}>
-          {text}
-        </div>
+        {dim}
+        <img
+          src={art.logo} alt="" onError={() => setLogoFailed(true)}
+          style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.75))' }}
+        />
+        <div style={{ ...textStyle, maxWidth: '82%', textAlign: 'center' }}>{text}</div>
       </div>
     );
   }

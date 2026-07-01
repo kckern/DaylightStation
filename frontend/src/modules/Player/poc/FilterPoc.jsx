@@ -45,7 +45,8 @@ export default function FilterPoc() {
     if (!contentId) return null;
     const rk = String(contentId).replace(/^plex:/, '');
     const base = `/api/v1/proxy/plex/library/metadata/${rk}`;
-    return { poster: `${base}/thumb`, background: `${base}/art`, logo: `${base}/clearLogo` };
+    const noLogo = new URLSearchParams(window.location.search).has('nologo'); // demo the poster-left fallback
+    return { poster: `${base}/thumb`, background: `${base}/art`, logo: noLogo ? undefined : `${base}/clearLogo` };
   }, [contentId]);
 
   const getMediaEl = useCallback(() => videoRef.current, []);
