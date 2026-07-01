@@ -78,6 +78,23 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       return undefined;
     }
 
+    // Resolved summary (info, prod-visible): the ACTUAL filter shape after the
+    // cascade — effect breakdown, ms-vs-approx precision split, and the sync
+    // offset. One line answers "what filter is really applied to this title?".
+    const byEffect = {};
+    let msCount = 0; let approxCount = 0;
+    for (const c of effectiveCues) {
+      byEffect[c.effect] = (byEffect[c.effect] || 0) + 1;
+      if (c.precision === 'ms') msCount += 1; else approxCount += 1;
+    }
+    logger().info?.('content-filter.resolved', {
+      effects: byEffect, ms: msCount, approx: approxCount,
+      syncOffset: override?.sync?.offsetSec ?? 0,
+    });
+
+    // Per-session apply tally (emitted at teardown).
+    const session = { applied: {}, blurAudioSec: 0 };
+
     const tick = () => {
       const t = el.currentTime;
       if (!Number.isFinite(t)) return;
@@ -105,7 +122,13 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (!entered.has(cue.id)) {
           entered.set(cue.id, cue);
           if (h.onEnter) { try { h.onEnter(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.enter-error', { effect: cue.effect, error: e?.message }); } }
-          logger().debug?.('content-filter.enter', { cue: cue.id, effect: cue.effect, at: t });
+          session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
+          if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          // Rate-limited so it's visible in prod without spamming per-cue (mute is
+          // the leak-prone effect — this is how we confirm a mute actually fired).
+          logger().sampled?.('content-filter.applied',
+            { effect: cue.effect, cue: cue.id, in: +cue.in.toFixed(2), out: +cue.out.toFixed(2) },
+            { maxPerMinute: 40 });
         }
         // Transport effects act every tick while active (e.g. keep seeking past).
         if (h.kind === EFFECT_KINDS.TRANSPORT && h.onActive) h.onActive(ctxFor(cue));
@@ -158,6 +181,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       reactEvents.forEach((ev) => el.removeEventListener(ev, tick));
       el.removeEventListener('seeking', onSeeking);
       exitAll();
+      // Session summary (info): what actually fired this segment + blur-with-audio
+      // exposure (seconds where video was hidden but audio kept — leak surface).
+      logger().info?.('content-filter.session', {
+        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1),
+      });
     };
   }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);
 
