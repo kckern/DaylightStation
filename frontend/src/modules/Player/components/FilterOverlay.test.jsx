@@ -58,6 +58,15 @@ describe('FilterOverlay', () => {
     expect(getByText('Biff forces Lorraine into his car.')).toBeTruthy();
   });
 
+  it('falls back to poster-left layout when no logo is available', () => {
+    const { container, getByText } = render(
+      <FilterOverlay activeCard={{ text: 'Biff forces Lorraine into his car.' }} art={{ background: '/p/art', poster: '/p/poster' }} />
+    );
+    expect(container.querySelector('[data-card-layout="poster-left"]')).toBeTruthy();
+    expect(container.querySelector('img').getAttribute('src')).toBe('/p/poster'); // poster, no logo
+    expect(getByText('Biff forces Lorraine into his car.')).toBeTruthy();
+  });
+
   it('renders the activeCard (skip plot explainer) text with the theme font', () => {
     const { getByText, container } = render(
       <FilterOverlay activeOverlays={[]} activeCard={{ text: 'Skipped a fight scene.' }} theme={{ font: 'Roboto Condensed' }} />
