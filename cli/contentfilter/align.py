@@ -11,7 +11,7 @@ runs Whisper word-timestamps, and finds the nearest word matching a stem.
 
 Writes JSON to stdout: [ { "id", "edl": <sec>, "snapped": <abs sec|null> } ]
 """
-import json, os, re, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile, time
 
 def norm(w):
     return re.sub(r"[^a-z]", "", w.lower())
@@ -37,17 +37,33 @@ def main():
         stems = s["stems"]
         wstart = max(0, sec - window)
         wav = os.path.join(workdir, f"{s['id']}.wav")
-        try:
+
+        # HTTP range reads on the Plex part are intermittently truncated
+        # ("partial file"); retry a few times before giving up on a window.
+        def extract():
             subprocess.run(
                 ["ffmpeg", "-nostdin", "-loglevel", "error",
-                 "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2",
+                 "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+                 "-rw_timeout", "30000000",
                  "-ss", str(wstart), "-i", part, "-t", str(window * 2),
                  "-map", "0:a:0", "-ac", "1", "-ar", "16000", "-y", wav],
                 check=True,
             )
-            r = model.transcribe(wav, word_timestamps=True, language="en", fp16=False, verbose=False)
-        except Exception as e:  # noqa: BLE001
-            out.append({"id": s["id"], "edl": sec, "snapped": None, "error": str(e)[:120]})
+            if os.path.getsize(wav) < 2000:  # ~empty wav -> treat as failure
+                raise RuntimeError("empty extraction")
+
+        err = None
+        for attempt in range(4):
+            try:
+                extract()
+                r = model.transcribe(wav, word_timestamps=True, language="en", fp16=False, verbose=False)
+                err = None
+                break
+            except Exception as e:  # noqa: BLE001
+                err = str(e)[:120]
+                time.sleep(0.6 * (attempt + 1))
+        if err is not None:
+            out.append({"id": s["id"], "edl": sec, "snapped": None, "error": err})
             continue
 
         words = []
@@ -60,7 +76,11 @@ def main():
             continue
         center = window
         h = min(hits, key=lambda w: abs(((w["start"] + w["end"]) / 2) - center))
-        out.append({"id": s["id"], "edl": sec, "snapped": round(wstart + h["start"], 3)})
+        # word start AND end from the AUDIO (Whisper) — the authoritative boundary.
+        # (SRT end is unreliable: it marks caption-clear, not speech-end.)
+        out.append({"id": s["id"], "edl": sec,
+                    "snapped": round(wstart + h["start"], 3),
+                    "end": round(wstart + h["end"], 3)})
 
     print(json.dumps(out))
 
