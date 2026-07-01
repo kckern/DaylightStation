@@ -87,7 +87,8 @@ export class Device {
 
   /**
    * Get screen path for content loading (e.g., '/screen/living-room').
-   * Falls back to null if not configured (caller should default to '/tv').
+   * Falls back to null if not configured (caller should default to
+   * '/screen/living-room'; the legacy '/tv' app is retired).
    * @returns {string|null}
    */
   get screenPath() {

@@ -131,34 +131,10 @@ export function createHomeAutomationRouter(config) {
     res.json(result);
   }));
 
-  /**
-   * GET /home-automation/tv
-   * Turn on TV and load Daylight TV app
-   */
-  router.get('/tv', asyncHandler(async (req, res) => {
-    if (!tvAdapter) {
-      return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
-    }
-    if (!taskerAdapter) {
-      return res.status(503).json({ error: 'Tasker adapter not configured' });
-    }
-    if (!kioskAdapter) {
-      return res.status(503).json({ error: 'Kiosk adapter not configured' });
-    }
-
-    const tvResult = await tvAdapter.turnOn();
-    const taskerResult = await taskerAdapter.showBlank();
-    const blankResult = await kioskAdapter.waitForBlank();
-    const loadResult = await kioskAdapter.loadUrl('/tv', req.query);
-
-    res.json({
-      status: 'ok',
-      tv: tvResult,
-      tasker: taskerResult,
-      blank: blankResult,
-      load: loadResult
-    });
-  }));
+  // Retired: GET /home-automation/tv (turn on TV + load the legacy /tv app).
+  // The living-room TV is driven by the device registry
+  // (/api/v1/device/livingroom-tv/load), which loads /screen/living-room. The
+  // TVApp is gone; the TV power endpoint (/tv/:state) above stays.
 
   // ===========================================================================
   // Volume Control Endpoints
