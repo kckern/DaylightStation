@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { loopToEvents, loopLengthTicks } from './loopScheduler.mjs';
+import { loopToEvents, loopLengthTicks, buildLoopCycle } from './loopScheduler.mjs';
 
 describe('loopToEvents', () => {
   const notes = [{ ticks: 0, durationTicks: 480, midi: 60 }];
@@ -51,5 +51,47 @@ describe('loopLengthTicks', () => {
   });
   it('returns one bar for an empty loop', () => {
     assert.equal(loopLengthTicks([], 480, { beats: 4, beatType: 4 }), 1920);
+  });
+});
+
+describe('buildLoopCycle', () => {
+  const oneBar = [{ ticks: 0, durationTicks: 480, midi: 60 }]; // 1 note, rounds to 1 bar
+
+  it('merges layers into one looped timeline with a master length in ms', () => {
+    const cycle = buildLoopCycle([
+      { notes: oneBar, ppq: 480, transpose: 0 },
+      { notes: oneBar, ppq: 480, transpose: 7 },
+    ], { bpm: 120 });
+    assert.equal(cycle.lengthMs, 2000); // 1 bar @120bpm = 2000ms
+    // both layers contribute a note_on at t=0 (one at 60, one at 67)
+    const onsAtZero = cycle.events.filter((e) => e.type === 'note_on' && e.t === 0).map((e) => e.note).sort((a, b) => a - b);
+    assert.deepEqual(onsAtZero, [60, 67]);
+  });
+
+  it('excludes muted layers', () => {
+    const cycle = buildLoopCycle([
+      { notes: oneBar, ppq: 480, transpose: 0 },
+      { notes: oneBar, ppq: 480, transpose: 7, muted: true },
+    ], { bpm: 120 });
+    assert.ok(!cycle.events.some((e) => e.note === 67));
+  });
+
+  it('tiles a shorter layer to fill the master cycle', () => {
+    const halfBar = [{ ticks: 0, durationTicks: 240, midi: 60 }]; // still rounds to 1 bar on its own...
+    // make a genuinely 2-bar layer to force tiling of the 1-bar layer
+    const twoBar = [{ ticks: 1920, durationTicks: 480, midi: 72 }]; // note in bar 2 → 2 bars
+    const cycle = buildLoopCycle([
+      { notes: twoBar, ppq: 480, transpose: 0 },   // master = 2 bars = 4000ms
+      { notes: oneBar, ppq: 480, transpose: 0 },   // 1 bar → tiled x2
+    ], { bpm: 120 });
+    assert.equal(cycle.lengthMs, 4000);
+    const oneBarOns = cycle.events.filter((e) => e.type === 'note_on' && e.note === 60).map((e) => e.t);
+    assert.deepEqual(oneBarOns, [0, 2000]); // tiled at start of each bar
+  });
+
+  it('returns an empty cycle with a default length for no layers', () => {
+    const cycle = buildLoopCycle([], { bpm: 120 });
+    assert.deepEqual(cycle.events, []);
+    assert.ok(cycle.lengthMs > 0);
   });
 });

@@ -1,116 +1,191 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
-import useProducer from './useProducer.js';
-import { drumForNote, DEFAULT_SPLIT } from './producerKeys.js';
+import { useLoopLibrary } from '../../useLoopLibrary.js';
+import { useLoopTransport } from '../../useLoopTransport.js';
+import { roleOf } from '@shared-music/layerMatch.mjs';
+import './Producer.scss';
+
+const ROLES = [
+  { key: null, label: 'All' },
+  { key: 'chords', label: 'Chords' },
+  { key: 'melody', label: 'Melody' },
+  { key: 'bass', label: 'Bass' },
+  { key: 'idea', label: 'Ideas' },
+];
+const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const keyName = (shift) => NOTE_NAMES[((shift % 12) + 12) % 12];
+
+/** One-line musical summary chip text for a loop entry. */
+function summaryOf(e) {
+  if (e.roman?.length) return e.roman.join(' ');
+  if (e.degrees?.length) return e.degrees.join('–');
+  if (e.descriptor) return e.descriptor;
+  return e.slug;
+}
 
 /**
- * Producer — DJ-style loop & pad launcher. A platter/deck for the beat bed, a pad
- * bank (loop toggles + one-shots), and a split keyboard: white keys below the
- * split fire the kit's one-shots, the rest play melodic over the mix. Kits come
- * from media/audio/dj (see useProducer).
+ * Producer — the MIDI loop-layering jam surface. Pick a base loop, stack
+ * compatibility-ranked layers (chords/melody/bass) that auto-conform to the
+ * base, loop the stack through the synth, and play along on the keyboard footer.
+ * Everything is canonical MIDI (C), transposed live to the chosen key.
  */
 export function Producer() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer' }), []);
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
-  const splitNote = config?.producer?.splitNote ?? DEFAULT_SPLIT;
-  const { activeNotes, pressNote, releaseNote, subscribe } = usePianoMidi();
-  const { kits, kitId, setKitId, kit, ready, loopOn, error, playOneShot, toggleLoop, stopAll, playing } = useProducer();
+  const { activeNotes, pressNote, releaseNote } = usePianoMidi();
+  const lib = useLoopLibrary();
 
+  const [base, setBase] = useState(null);
+  const [layers, setLayers] = useState([]); // [{ id, entry, notes }]
+  const [muted, setMuted] = useState({}); // id -> bool
+  const [keyShift, setKeyShift] = useState(0);
+  const [role, setRole] = useState(null);
+  const [text, setText] = useState('');
+
+  const bpm = base?.bpm || 100;
   useEffect(() => { logger.info('piano.producer.mounted', {}); return () => logger.info('piano.producer.unmounted', {}); }, [logger]);
-  useKeepScreenAwake('producer', playing);
 
-  const oneshots = kit?.oneshots || [];
-  const loops = kit?.loops || [];
+  const transportLayers = useMemo(
+    () => layers.filter((l) => l.notes).map((l) => ({
+      notes: l.notes.notes, ppq: l.notes.ppq, transpose: keyShift, muted: !!muted[l.id],
+    })),
+    [layers, keyShift, muted],
+  );
+  const transport = useLoopTransport({ layers: transportLayers, bpm, pressNote, releaseNote });
+  useKeepScreenAwake('producer', transport.isPlaying);
 
-  // Hardware MIDI: drum-zone keys fire one-shots (kept in a ref so the listener is stable).
-  const oneshotsRef = useRef(oneshots);
-  oneshotsRef.current = oneshots;
-  useEffect(() => {
-    if (!subscribe) return undefined;
-    return subscribe((e) => {
-      if (e.type !== 'note_on') return;
-      const id = drumForNote(e.note, splitNote, oneshotsRef.current);
-      if (id) playOneShot(id);
-    });
-  }, [subscribe, splitNote, playOneShot]);
+  const pickBase = useCallback(async (entry) => {
+    const notes = await lib.loadNotes(entry);
+    setBase(entry);
+    setLayers([{ id: entry.path, entry, notes }]);
+    setMuted({});
+    logger.info('piano.producer.base', { slug: entry.slug, role: roleOf(entry) });
+  }, [lib, logger]);
 
-  // On-screen keyboard: drum-zone keys fire one-shots; melodic keys play normally.
-  const onNoteOn = (note, vel) => {
-    const id = drumForNote(note, splitNote, oneshots);
-    if (id) playOneShot(id);
-    else pressNote(note, vel);
-  };
-  const onNoteOff = (note) => { if (!drumForNote(note, splitNote, oneshots)) releaseNote(note); };
+  const addLayer = useCallback(async (entry) => {
+    if (layers.some((l) => l.id === entry.path)) return;
+    const notes = await lib.loadNotes(entry);
+    setLayers((ls) => [...ls, { id: entry.path, entry, notes }]);
+    logger.info('piano.producer.layer-add', { slug: entry.slug, role: roleOf(entry) });
+  }, [layers, lib, logger]);
+
+  const removeLayer = useCallback((id) => {
+    setLayers((ls) => (ls[0]?.id === id ? [] : ls.filter((l) => l.id !== id)));
+    if (layers[0]?.id === id) setBase(null);
+  }, [layers]);
+
+  const candidates = useMemo(
+    () => (base ? lib.rankFor(base, role ? { role } : {}).filter((r) => !layers.some((l) => l.id === r.entry.path)).slice(0, 30) : []),
+    [base, lib, role, layers],
+  );
+  const browse = useMemo(() => lib.query({ role, text }).slice(0, 60), [lib, role, text]);
 
   return (
     <section className="piano-mode piano-producer-mode">
-      {kits === null && <PianoEmpty loading />}
-      {kits && kits.length === 0 && <PianoEmpty message="No kits yet — drop one into media/audio/dj (loops + one-shots + kit.yml)." />}
+      {lib.loading && <PianoEmpty loading />}
+      {lib.error && <PianoEmpty message={`Couldn't load the loop library: ${lib.error}`} />}
 
-      {kit && (
+      {lib.loops && (
         <div className="piano-producer-mode__body">
           <header className="piano-producer-mode__deck">
-            <div className={`piano-producer-mode__platter${playing ? ' is-spinning' : ''}`} aria-hidden>
-              <span className="piano-producer-mode__spindle" />
-            </div>
-            <div className="piano-producer-mode__deckinfo">
-              {kits.length > 1 ? (
-                <select className="piano-producer-mode__kit" value={kitId} onChange={(e) => setKitId(e.target.value)} aria-label="Kit">
-                  {kits.map((k) => <option key={k.id} value={k.id}>{k.id}</option>)}
-                </select>
-              ) : (
-                <div className="piano-producer-mode__kitname">{kit.name}</div>
-              )}
-              <div className="piano-producer-mode__bpm">{kit.bpm} BPM{kit.key ? ` · ${kit.key}` : ''}</div>
-              <button type="button" className="piano-producer-mode__stop" onClick={stopAll} disabled={!playing}>Stop</button>
+            <button
+              type="button"
+              className={`piano-producer-mode__play${transport.isPlaying ? ' is-on' : ''}`}
+              onClick={transport.toggle}
+              disabled={!layers.length}
+            >
+              {transport.isPlaying ? '◼ Stop' : '▶ Play'}
+            </button>
+            <div className="piano-producer-mode__meta">
+              <span>{bpm} BPM</span>
+              <span className="piano-producer-mode__key">
+                <button type="button" onClick={() => setKeyShift((k) => k - 1)} aria-label="key down">−</button>
+                Key {keyName(keyShift)}
+                <button type="button" onClick={() => setKeyShift((k) => k + 1)} aria-label="key up">+</button>
+              </span>
             </div>
           </header>
 
-          <div className="piano-producer-mode__pads">
-            {loops.length > 0 && (
-              <div className="piano-producer-mode__padrow">
-                <span className="piano-producer-mode__padlabel">Loops</span>
-                {loops.map((l) => (
-                  <button
-                    key={l.id} type="button"
-                    className={`piano-pad piano-pad--loop${loopOn.has(l.id) ? ' is-on' : ''}`}
-                    onClick={() => toggleLoop(l.id)} disabled={!ready}
-                  >{l.name}</button>
-                ))}
-              </div>
-            )}
-            {oneshots.length > 0 && (
-              <div className="piano-producer-mode__padrow">
-                <span className="piano-producer-mode__padlabel">One-shots</span>
-                {oneshots.map((o) => (
-                  <button
-                    key={o.id} type="button" className="piano-pad piano-pad--shot"
-                    onPointerDown={() => playOneShot(o.id)} disabled={!ready}
-                  >{o.name}</button>
-                ))}
-              </div>
-            )}
+          {/* Role filter chips (shared by browse + suggestions). */}
+          <div className="piano-producer-mode__roles">
+            {ROLES.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                className={`piano-chip${role === r.key ? ' is-on' : ''}`}
+                onClick={() => setRole(r.key)}
+              >{r.label}</button>
+            ))}
           </div>
 
-          {error && <p className="piano-mode__placeholder">{error}</p>}
+          {!base && (
+            <div className="piano-producer-mode__browse">
+              <input
+                className="piano-producer-mode__search"
+                placeholder="Search loops (chords, mood, artist…)"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
+              <ul className="piano-producer-mode__list">
+                {browse.map((e) => (
+                  <li key={e.path}>
+                    <button type="button" className="piano-loop" onClick={() => pickBase(e)}>
+                      <span className="piano-loop__name">{e.slug}</span>
+                      <span className="piano-loop__sum">{summaryOf(e)}</span>
+                      {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {base && (
+            <div className="piano-producer-mode__stack">
+              <div className="piano-producer-mode__layers">
+                {layers.map((l, i) => (
+                  <div key={l.id} className={`piano-layer${i === 0 ? ' is-base' : ''}${muted[l.id] ? ' is-muted' : ''}`}>
+                    <button type="button" className="piano-layer__mute" onClick={() => setMuted((m) => ({ ...m, [l.id]: !m[l.id] }))}>
+                      {muted[l.id] ? '🔇' : '🔊'}
+                    </button>
+                    <span className="piano-layer__role">{roleOf(l.entry)}</span>
+                    <span className="piano-layer__name">{l.entry.slug}</span>
+                    <span className="piano-layer__sum">{summaryOf(l.entry)}</span>
+                    <button type="button" className="piano-layer__remove" onClick={() => removeLayer(l.id)}>✕</button>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="piano-producer-mode__h">Add a layer{role ? ` · ${role}` : ''}</h3>
+              <ul className="piano-producer-mode__list">
+                {candidates.map((c) => (
+                  <li key={c.entry.path}>
+                    <button type="button" className="piano-loop" onClick={() => addLayer(c.entry)}>
+                      <span className="piano-loop__name">{c.entry.slug}</span>
+                      <span className="piano-loop__sum">{summaryOf(c.entry)}</span>
+                      {c.reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Full-width split keyboard footer. */}
       <div className="piano-producer-mode__keys">
         <PianoKeyboard
           activeNotes={activeNotes}
           startNote={kb.startNote}
           endNote={kb.endNote}
-          splitNote={splitNote}
-          onNoteOn={onNoteOn}
-          onNoteOff={onNoteOff}
+          onNoteOn={pressNote}
+          onNoteOff={releaseNote}
         />
       </div>
     </section>

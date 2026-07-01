@@ -37,6 +37,7 @@
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-converter": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
+    "@tonejs/midi": "^2.0.28",
     "abcjs": "^6.5.2",
     "camera-controls": "^2.10.1",
     "codemirror": "^6.0.2",
@@ -72,6 +73,7 @@
     "vimond-replay": "^4.0.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^18.2.56",
