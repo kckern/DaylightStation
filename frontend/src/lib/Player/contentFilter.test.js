@@ -69,13 +69,30 @@ describe('resolveEffectiveCues', () => {
     expect(out[0].effect).toBe('mute');
   });
 
+  it('widens a zero-width approx mute to a safe min-width so it actually fires', () => {
+    const vaEdl = { cues: [{ id: 'z', category: 'language/blasphemy/god', type: 'mute', in: 180, out: 180 }] };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
+    const c = resolveEffectiveCues({ edl: vaEdl, profile: prof })[0];
+    expect(c.in).toBeLessThan(c.out); // no longer zero-width
+    expect(c.out - c.in).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('applies only small pads to an ms-precise mute (no min-width blow-up)', () => {
+    const vaEdl = { cues: [{ id: 'z', category: 'language/blasphemy/god', type: 'mute', precision: 'ms', in: 180.0, out: 180.35 }] };
+    const prof = { categories: { language: { effect: 'mute' } }, treatments: { mute: { padLeadMs: 200, padTrailMs: 150, approxWidthMs: 900 } } };
+    const c = resolveEffectiveCues({ edl: vaEdl, profile: prof })[0];
+    expect(c.out - c.in).toBeCloseTo(0.7, 2); // 0.35 word + 0.2 lead + 0.15 trail
+  });
+
   it('applies override.sync (offset+scale) to imported cues but not manual addCues', () => {
     const vaEdl = { cues: [{ id: 'a', category: 'violence/graphic', effect: 'skip', in: 100, out: 110 }] };
     const override = {
       sync: { offsetSec: 6.5, scale: 1 },
       addCues: [{ id: 'm', category: 'y', effect: 'mute', in: 50, out: 52 }],
     };
-    const out = resolveEffectiveCues({ edl: vaEdl, profile: { categories: {} }, override });
+    // zero pads to isolate sync from widening
+    const profile = { categories: {}, treatments: { skip: { padLeadMs: 0, padTrailMs: 0 }, mute: { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 } } };
+    const out = resolveEffectiveCues({ edl: vaEdl, profile, override });
     const a = out.find((c) => c.id === 'a');
     const m = out.find((c) => c.id === 'm');
     expect(a.in).toBeCloseTo(106.5);
