@@ -210,6 +210,7 @@ export function Producer() {
       {lib.loops && (
         <div className="piano-producer-mode__body">
           <header className="piano-producer-mode__deck">
+            <div className="piano-producer-mode__controls">
             <button
               type="button"
               className={`piano-producer-mode__play${transport.isPlaying ? ' is-on' : ''}`}
@@ -229,6 +230,7 @@ export function Producer() {
                 Key {detectedKey}
                 <button type="button" onClick={() => setKeyShift((k) => k + 1)} aria-label="key up">+</button>
               </span>
+            </div>
             </div>
             {base?.roman?.length ? (
               <div className="piano-producer-mode__roman-row">
@@ -277,7 +279,7 @@ export function Producer() {
                       <span className="piano-loop__name">{e.title || e.slug}</span>
                       {e.roman?.length
                         ? <RomanProgression roman={e.roman} inline />
-                        : <MelodicStaffThumb entry={e} lib={lib} />}
+                        : <span className="piano-loop__staff"><MelodicStaffThumb entry={e} lib={lib} /></span>}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
                     </button>
                     <button type="button" className="piano-loop__peek" aria-label={`preview ${e.title || e.slug}`}
