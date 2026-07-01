@@ -385,7 +385,9 @@ export class WakeAndLoadService {
     }
 
     // --- Step 6: Load Content (or Adopt) ---
-    const screenPath = device.screenPath || '/tv';
+    // Fallback for a device without an explicit screen_path. The legacy /tv app
+    // is retired; default to the living-room screen-framework screen.
+    const screenPath = device.screenPath || '/screen/living-room';
 
     if (isAdopt) {
       this.#emitProgress(topic, dispatchId, 'load', 'running', { method: 'adopt-snapshot' });

@@ -6,7 +6,6 @@ import '@mantine/core/styles.css';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import RootApp from './Apps/RootApp.jsx';
 import HomeApp from './Apps/HomeApp.jsx';
-import TVApp from './Apps/TVApp.jsx';
 import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
 import LifeApp from './Apps/LifeApp.jsx';
@@ -86,10 +85,12 @@ configurePlaybackLogger({
 // Legacy /office routes redirect to screen-framework
 const OfficeRedirect = () => <Navigate to="/screen/office" replace />;
 
-// Wrapper component for TVApp with app parameter
-const TVAppWithParams = () => {
-  const { app } = useParams();
-  return <TVApp appParam={app} />;
+// Legacy /tv (TVApp) retired in favor of the screen-framework living-room screen.
+// Redirect so stale bookmarks / device configs still land somewhere valid — and
+// PRESERVE the query string (?queue=/?play=/?shader= autoplay params the screen honors).
+const TVRedirect = () => {
+  const { search } = useLocation();
+  return <Navigate to={`/screen/living-room${search}`} replace />;
 };
 
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
@@ -151,8 +152,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />
-        <Route path="/tv/app/:app" element={<TVAppWithParams />} />
-        <Route path="/tv" element={<TVApp />} />
+        <Route path="/tv/*" element={<TVRedirect />} />
+        <Route path="/tv" element={<TVRedirect />} />
         <Route path="/media" element={<MediaApp />} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
         <Route path="/health" element={<HealthApp />} />

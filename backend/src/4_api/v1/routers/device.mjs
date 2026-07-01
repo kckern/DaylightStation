@@ -971,7 +971,7 @@ export function createDeviceRouter(config) {
       const skipCameraCheck = reloadQuery ? !contentRequiresCamera(reloadQuery) : true;
       await device.prepareForContent({ skipCameraCheck });
       if (reloadQuery) {
-        const screenPath = device.screenPath || '/tv';
+        const screenPath = device.screenPath || '/screen/living-room';
         await device.loadContent(screenPath, reloadQuery);
       }
     } catch (err) {
