@@ -125,6 +125,14 @@ describe('useContentFilter', () => {
     expect(hook.result.current.activeOverlays).toEqual([]);
   });
 
+  it('does not double-render a title-card as both an overlay and activeCard', () => {
+    const tcEdl = { cues: [{ id: 'tc', effect: 'title-card', category: 'meta/x', in: 20, out: 24, text: 'Skipped a scene.' }] };
+    const { el, hook } = setup({ edl: tcEdl, profile: { categories: {} } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(hook.result.current.activeOverlays.some((o) => o.effect === 'title-card')).toBe(true);
+    expect(hook.result.current.activeCard).toBeNull(); // rendered via overlay only
+  });
+
   it('does nothing when disabled', () => {
     const { el, transport } = setup({ enabled: false });
     act(() => { el.currentTime = 110; el.fire('timeupdate'); });

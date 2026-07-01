@@ -156,9 +156,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         return key(prev) === key(overlays) ? prev : overlays;
       });
 
-      // Card: any active cue carrying plot text (skip cards, title-cards).
-      const carded = active.find((c) => c.card || c.text);
-      const cardText = carded ? (carded.card || carded.text) : null;
+      // Card: only cues carrying an explicit `.card` annotation (legacy skip+card).
+      // NOT `.text`, because title-card cues carry `.text` and already render via
+      // activeOverlays — matching on `.text` here double-rendered the card.
+      const carded = active.find((c) => c.card && c.effect !== 'title-card');
+      const cardText = carded ? carded.card : null;
       setActiveCard((prev) => (prev?.text === cardText ? prev : (cardText ? { text: cardText } : null)));
     };
 
