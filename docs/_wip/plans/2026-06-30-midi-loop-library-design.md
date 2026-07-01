@@ -178,6 +178,32 @@ To build (React; verify on garage Firefox kiosk + voice bridge):
 5. Re-export `Piano/theory/*.js` from `shared/music/*` (retire duplicate
    `modes/Videos/chordName.js`).
 
+## Frontend — SHIPPED (2026-06-30, merged to main, live-verified in Vite)
+
+- `useLoopLibrary` — fetch+parse `loops/index.yml` via `/api/v1/local/stream`,
+  `query`/`facets`/`rankFor` (shared cores), lazy `.mid`→notes with in-browser
+  `@tonejs/midi` (cached).
+- `useLoopTransport` — looping multitrack via `buildLoopCycle` + rAF, firing
+  through `pressNote`/`releaseNote` (loop lights the keys; jam on top). Mirrors
+  `useStudioPlayback`; no Tone.js.
+- `buildLoopCycle` (shared) — merge+tile layers into one phase-aligned cycle.
+- **Producer rebuilt** (`modes/Producer/Producer.jsx` + `.scss`): pick base →
+  compatibility-ranked layer suggestions (with reasons) → toggle/mute layers →
+  live key transpose → play-along keyboard footer. Old audio-kit Producer removed.
+- `@shared-music` alias (vite + vitest); `@tonejs/midi` frontend dep.
+- Verified: 78 node:test + 3 vitest (Producer jsdom smoke); live Vite resolves
+  `@shared-music` + `@tonejs/midi` and streams `index.yml` (2.67MB) + `.mid`.
+
+**Still needs the piano tablet to verify:** actual audio through the voice
+bridge (ws://localhost:8770) + per-layer voices (one MIDI channel each — v1 plays
+all layers through the default voice). Point the tablet at the dev server and
+open Producer.
+
+**Deferred (not essential):** dedicated Playalong `source:famous` view (famous
+loops are already browsable in Producer via search/filter); consolidating the two
+MIDI-note chord namers (`chordName.js`/`chordNaming.js`) — unrelated to the new
+`parseChordSymbol` (symbol-string parser), so no clean re-export.
+
 ## Open / deferred
 - Exact voice assignment per role (chord vs bass vs lead) — Producer rebuild stage.
 - Whether `index.yml` is one file or sharded by role (decide at ingest scale).
