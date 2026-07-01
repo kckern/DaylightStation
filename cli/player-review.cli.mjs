@@ -17,6 +17,8 @@
  *
  *   contentId : plex:662170  (or bare 662170)
  *   flags:
+ *     --exact          (cue) land exactly <lead>s before the cue, skipping the
+ *                      walk-back to a clean gap — best for a cue in a dense cluster
  *     --host <url>     app base URL         (default http://localhost:3111)
  *     --screen <id>    screen route         (default living-room)
  *     --out <path>     screenshot path      (default _deleteme/player-review/<id>-<t>.png)
@@ -38,7 +40,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve as pathResolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveEffectiveCues } from '../frontend/src/lib/Player/contentFilter.js';
-import { gotoForCueId } from '../frontend/src/lib/Player/filterDebug.js';
+import { gotoForCueId, DEFAULT_LEAD_SEC } from '../frontend/src/lib/Player/filterDebug.js';
 
 const ROOT = pathResolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -180,13 +182,22 @@ async function cmdGoto(contentId, seconds) {
 
 async function cmdCue(contentId, cueId, lead) {
   const { cues } = await effectiveCuesFor(contentId);
-  const g = gotoForCueId(cues, cueId, lead != null ? parseFloat(lead) : undefined);
-  if (!g) {
+  const cue = cues.find((c) => c.id === cueId);
+  if (!cue) {
     const near = cues.slice(0, 6).map((c) => c.id).join(', ');
     die(`cue "${cueId}" not found among ${cues.length} cues. First few: ${near}\n  list them:  node cli/player-review.cli.mjs cues ${contentId}`);
   }
-  console.log(`◎ cue ${cueId} (${g.cue.effect} ${fmt(g.cue.in)}–${fmt(g.cue.out)}) → goto ${g.targetTime.toFixed(2)}s`);
-  await drive({ contentId, goto: g.targetTime, filter: true, label: `cue-${cueId}`, waitUntilTime: g.cue.in });
+  const leadSec = lead != null ? parseFloat(lead) : DEFAULT_LEAD_SEC;
+  // Default: nonFiringLeadIn — land at the nearest CLEAN gap before the cue (walks back
+  // past overlapping cues, so a cue in a dense cluster can start far earlier).
+  // --exact: land exactly leadSec before the cue's in-point regardless of overlaps —
+  // best for a cue buried in a cluster where landing inside an expected effect is fine.
+  const targetTime = flags.exact
+    ? Math.max(0, cue.in - leadSec)
+    : gotoForCueId(cues, cueId, leadSec).targetTime;
+  const mode = flags.exact ? 'exact' : 'clean';
+  console.log(`◎ cue ${cueId} (${cue.effect} ${fmt(cue.in)}–${fmt(cue.out)}) → goto ${targetTime.toFixed(2)}s  [${mode} lead ${leadSec}s]`);
+  await drive({ contentId, goto: targetTime, filter: true, label: `cue-${cueId}`, waitUntilTime: cue.in });
 }
 
 // ---- main ---------------------------------------------------------------------
@@ -194,9 +205,10 @@ const USAGE = `player-review — surgical Player review loop (${HOST})
 
   node cli/player-review.cli.mjs cues  <contentId>
   node cli/player-review.cli.mjs goto  <contentId> <seconds> [--headed --no-filter --out p]
-  node cli/player-review.cli.mjs cue   <contentId> <cueId> [lead] [--headed --out p]
+  node cli/player-review.cli.mjs cue   <contentId> <cueId> [lead] [--exact --headed --out p]
 
   contentId = plex:662170 (or bare 662170).  Screenshots land in _deleteme/player-review/.
+  cue default lands at the nearest clean gap before the cue; --exact lands <lead>s before it.
 `;
 
 try {
