@@ -8,6 +8,7 @@ import { usePlaybackSession } from './usePlaybackSession.js';
 import { formatTime } from '../lib/helpers.js';
 import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
+import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -20,6 +21,10 @@ const STATUS = RESILIENCE_STATUS;
 const URL_REFRESH_REASONS = new Set([
   'startup-deadline-exceeded',
   'startup-deadline-exceeded-after-warmup',
+  // A forward seek that landed past the Plex transcoder's head yields 0-byte
+  // fragments the current session will never fill — only a fresh transcode at the
+  // seek offset (URL refresh) unsticks it. See decideWarmupRecovery.js.
+  'seek-stall-transcode-warming',
   'stale-session-detected'
 ]);
 
@@ -162,6 +167,11 @@ export function useMediaResilience({
   const hasEverPlayedRef = useRef(false);
   // Track transcode warmup state (0-byte fragment detection extends startup deadline)
   const transcodeWarmingRef = useRef(false);
+  // Timestamp (ms) a seek last STARTED; used to tell a seek-induced warmup (empty
+  // fragments after a forward seek) from a cold-start warmup. 0 = no seek yet.
+  const lastSeekAtRef = useRef(0);
+  // True while a warmup-armed deadline is pending, so `transcodewarmed` can cancel it.
+  const warmupDeadlineArmedRef = useRef(false);
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
@@ -305,20 +315,40 @@ export function useMediaResilience({
 
     const handleWarming = () => {
       transcodeWarmingRef.current = true;
-      playbackLog('resilience-transcode-warming', { waitKey: logWaitKey });
 
-      // Extend the startup deadline: clear current timer and set a longer one (60s)
+      // A cold-start warmup rides out a long (60s) deadline; a warmup caused by a
+      // forward seek past the transcoder's head won't self-resolve, so escalate to
+      // a URL-refresh recovery in a few seconds (restart the transcode at the seek
+      // offset). decideWarmupRecovery picks which case we're in.
+      const msSinceLastSeek = lastSeekAtRef.current ? (Date.now() - lastSeekAtRef.current) : Infinity;
+      const { kind, deadlineMs, reason } = decideWarmupRecovery({
+        hasEverPlayed: hasEverPlayedRef.current,
+        msSinceLastSeek,
+      });
+      playbackLog('resilience-transcode-warming', {
+        waitKey: logWaitKey, kind, deadlineMs, reason, msSinceLastSeek
+      });
+
       clearTimeout(startupDeadlineRef.current);
+      warmupDeadlineArmedRef.current = true;
       startupDeadlineRef.current = setTimeout(() => {
-        triggerRecovery('startup-deadline-exceeded-after-warmup');
+        warmupDeadlineArmedRef.current = false;
+        triggerRecovery(reason);
         startupDeadlineRef.current = null;
-      }, 60000);
+      }, deadlineMs);
     };
 
     const handleWarmed = () => {
       if (transcodeWarmingRef.current) {
         transcodeWarmingRef.current = false;
         playbackLog('resilience-transcode-warmed', { waitKey: logWaitKey });
+      }
+      // Data is flowing again — cancel a pending warmup-armed recovery so a short
+      // seek-stall deadline doesn't fire after the stall already cleared.
+      if (warmupDeadlineArmedRef.current) {
+        warmupDeadlineArmedRef.current = false;
+        clearTimeout(startupDeadlineRef.current);
+        startupDeadlineRef.current = null;
       }
     };
 
@@ -424,6 +454,9 @@ export function useMediaResilience({
   // SYNCHRONOUS: track when seeking starts/stops (ref only, no setState during render)
   if (effectiveSeeking && seekStartedAtRef.current === null) {
     seekStartedAtRef.current = Date.now();
+    // Persist the seek-start time (seekStartedAtRef is cleared as soon as seeking
+    // ends). decideWarmupRecovery reads this to know a warmup was seek-induced.
+    lastSeekAtRef.current = Date.now();
   }
   if (!effectiveSeeking) {
     seekStartedAtRef.current = null;
