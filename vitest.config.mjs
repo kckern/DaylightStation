@@ -31,6 +31,7 @@ export default {
       '#frontend': path.resolve(__dirname, 'frontend/src'),
       '@': path.resolve(__dirname, 'frontend/src'),
       '@shared-contracts': path.resolve(__dirname, 'shared/contracts'),
+      '@shared-music': path.resolve(__dirname, 'shared/music'),
       '@testing-library/react': path.join(frontendNodeModules, '@testing-library/react'),
       '@testing-library/jest-dom': path.join(frontendNodeModules, '@testing-library/jest-dom'),
       '@mantine/core': path.join(frontendNodeModules, '@mantine/core'),

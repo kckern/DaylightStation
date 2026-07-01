@@ -41,4 +41,35 @@ export function loopLengthTicks(notes, ppq, timeSig = { beats: 4, beatType: 4 })
   return bars * barTicks;
 }
 
-export default { loopToEvents, loopLengthTicks };
+/**
+ * Merge & tile layers into one looped cycle of events for the transport.
+ * Master length = the longest layer (whole bars); shorter layers tile to fill it
+ * so everything stays phase-aligned. Muted layers are skipped.
+ * @param {Array<{notes:Array, ppq:number, transpose?:number, muted?:boolean, velocity?:number}>} layers
+ * @param {{bpm:number, timeSig?:{beats:number,beatType:number}}} opts
+ * @returns {{events:Array, lengthMs:number}}
+ */
+export function buildLoopCycle(layers, opts) {
+  const { bpm, timeSig } = opts;
+  const active = layers.filter((l) => !l.muted && l.notes?.length);
+  // ticks→ms as a single division to avoid float drift (exact for whole bars).
+  const lenMs = (ticks, ppq) => (ticks * 60000) / (bpm * ppq);
+
+  const lengths = active.map((l) => lenMs(loopLengthTicks(l.notes, l.ppq, timeSig), l.ppq));
+  const lengthMs = lengths.length ? Math.max(...lengths) : (60000 / bpm) * 4; // default one 4/4 bar
+
+  const events = [];
+  active.forEach((l, i) => {
+    const layerLenMs = lengths[i];
+    const repeats = Math.max(1, Math.round(lengthMs / layerLenMs));
+    for (let r = 0; r < repeats; r += 1) {
+      events.push(...loopToEvents(l.notes, {
+        ppq: l.ppq, bpm, transpose: l.transpose || 0, velocity: l.velocity ?? 90, cycleStartMs: r * layerLenMs,
+      }));
+    }
+  });
+  events.sort((a, b) => a.t - b.t);
+  return { events, lengthMs };
+}
+
+export default { loopToEvents, loopLengthTicks, buildLoopCycle };
