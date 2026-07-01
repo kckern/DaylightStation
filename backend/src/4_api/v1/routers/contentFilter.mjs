@@ -35,7 +35,13 @@ export function createContentFilterRouter({ dataDir, logger = console } = {}) {
     const profile = readYaml(path.join(root, 'profiles', `${profileName}.yml`));
     const override = readYaml(path.join(root, 'overrides', `${ratingKey}.yml`));
 
-    logger.debug?.('content-filter.serve', { ratingKey, profile: profileName, cues: edl.cues?.length || 0, hasOverride: !!override });
+    // info (not debug) so the endpoint hit is visible in prod logs — confirms the
+    // client fetched, and whether an override (sync/snap/gap-fills) was served.
+    logger.info?.('content-filter.serve', {
+      ratingKey, profile: profileName, cues: edl.cues?.length || 0,
+      hasOverride: !!override, addCues: override?.addCues?.length || 0,
+      cueOverrides: Object.keys(override?.cueOverrides || {}).length,
+    });
     res.json({ edl, profile, override });
   });
 

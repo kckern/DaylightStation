@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+
+// Spy on the structured logger so we can assert observability events.
+const mockLogger = vi.hoisted(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }));
+vi.mock('../logging/singleton.js', () => ({ getChildLogger: () => mockLogger }));
+
 import { useContentFilter } from './useContentFilter.js';
 
 function makeFakeEl() {
@@ -43,6 +48,31 @@ function setup(overrides = {}) {
 
 describe('useContentFilter', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('logs a resolved summary (effect breakdown) at info on load', () => {
+    setup();
+    const call = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.resolved');
+    expect(call, 'content-filter.resolved emitted').toBeTruthy();
+    expect(call[1].effects.mute).toBeGreaterThan(0);
+    expect(call[1].effects['censor-bar']).toBeGreaterThan(0);
+  });
+
+  it('logs a rate-limited apply event (info-visible) when a cue activates', () => {
+    const { el } = setup();
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    const call = mockLogger.sampled.mock.calls.find((c) => c[0] === 'content-filter.applied');
+    expect(call, 'content-filter.applied emitted').toBeTruthy();
+    expect(call[1].effect).toBe('mute');
+  });
+
+  it('logs a session summary at unmount', () => {
+    const { el, hook } = setup();
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    hook.unmount();
+    const call = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.session');
+    expect(call, 'content-filter.session emitted').toBeTruthy();
+    expect(call[1].applied).toBeTruthy();
+  });
 
   it('seeks past a skip cue (past its widened end)', () => {
     const { el, transport } = setup();
