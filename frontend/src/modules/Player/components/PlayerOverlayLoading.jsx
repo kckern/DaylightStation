@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
 import pause from '../../../assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { buildMediaDiagnostics, EMPTY_MEDIA_DIAGNOSTICS } from '../lib/mediaDiagnostics.js';
+import { subscribeSkipCard, isSkipCardPaused } from '../../../lib/Player/skipCardState.js';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -40,6 +41,11 @@ export function PlayerOverlayLoading({
   isExhausted = false,
   onRetryFromExhausted
 }) {
+  // Suppress the buffering spinner during a deliberate content-filter skip-card
+  // pause (we pause to buffer behind the card; that's not a stall). Subscribed
+  // FIRST so this hook is always called regardless of the early returns below.
+  const skipCardPaused = useSyncExternalStore(subscribeSkipCard, isSkipCardPaused, isSkipCardPaused);
+
   // In blackout mode, keep screen completely dark (TV appears off)
   if (suppressForBlackout) {
     return null;
@@ -400,6 +406,11 @@ export function PlayerOverlayLoading({
   }, [effectiveMetaIsNull, overlayLoggingActive, overlayLogContext]);
 
   if (!overlayDisplayActive) {
+    return null;
+  }
+
+  // Deliberate skip-card pause — hide the spinner so the card reads as intentional.
+  if (skipCardPaused) {
     return null;
   }
 
