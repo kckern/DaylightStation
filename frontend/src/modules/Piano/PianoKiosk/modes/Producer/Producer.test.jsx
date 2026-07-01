@@ -207,6 +207,21 @@ describe('Producer (loop-layering)', () => {
     expect(screen.getByRole('button', { name: /roman/i })).toBeTruthy();
   });
 
+  // Task 5.12: on-ramp hint before base is chosen
+  it('shows a one-line on-ramp before a base is chosen', async () => {
+    render(<Producer />);
+    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    expect(screen.getByText(/pick a base loop/i)).toBeTruthy();
+  });
+
+  // Task 5.12: staff thumbnails for melodic loops
+  it('shows a staff thumbnail for a melodic loop with no roman', async () => {
+    render(<Producer />);
+    await waitFor(() => expect(screen.getByText('Catchy Hook')).toBeInTheDocument());
+    // Catchy Hook has type:melody, roman:null → should render a staff element
+    expect(document.querySelector('.action-staff, svg')).toBeTruthy();
+  });
+
   // Task 5.4: harmonically-incompatible candidates excluded from suggestions
   it('omits harmonically-incompatible candidates from suggestions', async () => {
     render(<Producer />);
