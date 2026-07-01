@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getChildLogger } from '../logging/singleton.js';
 import { resolveEffectiveCues, cuesActiveAt } from './contentFilter.js';
-import { getEffectHandler, EFFECT_KINDS } from './filterEffects.js';
+import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from './filterEffects.js';
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
@@ -67,6 +67,15 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // visible:false for FILTER_FADE_MS after a cue exits so the blur can ramp to 0.
   const overlayLifeRef = useRef(new Map());
   const overlayTimersRef = useRef(new Map()); // cueId -> removal timeout
+  // skip-card state: cues already fired (so we don't re-trigger) + the real-time
+  // resume timer (rVFC is paused during the card, so resume can't be frame-driven).
+  const skipCardRef = useRef({ doneIds: new Set(), timer: null });
+
+  // Clear a pending skip-card resume timer only on true unmount (not on every
+  // effect re-run — see the main effect's cleanup note).
+  useEffect(() => () => {
+    if (skipCardRef.current.timer) { clearTimeout(skipCardRef.current.timer); skipCardRef.current.timer = null; }
+  }, []);
 
   useEffect(() => {
     const el = getMediaEl?.();
@@ -124,9 +133,32 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     const session = { applied: {}, blurAudioSec: 0 };
 
     const tick = () => {
+      // While a skip-card is showing, the element is PAUSED (rVFC won't fire) and a
+      // real-time timer drives the resume — so ignore any stray ticks here.
+      if (skipCardRef.current.timer) return;
       const t = el.currentTime;
       if (!Number.isFinite(t)) return;
       const active = cuesActiveAt(effectiveCues, t);
+
+      // skip-card: seek to the resume point and PAUSE so the seek buffers behind the
+      // card; show the card; resume (play) after holdSec so playback is instant.
+      const sc = active.find((c) => c.effect === 'skip-card' && !skipCardRef.current.doneIds.has(c.id));
+      if (sc) {
+        skipCardRef.current.doneIds.add(sc.id);
+        transport?.seek?.(sc.out + SKIP_EPSILON);
+        try { el.pause?.(); } catch (_) { /* ignore */ }
+        setActiveCard({ text: sc.text || 'Scene skipped.' });
+        const holdMs = (typeof sc.holdSec === 'number' ? sc.holdSec : 2.5) * 1000;
+        if (skipCardRef.current.timer) clearTimeout(skipCardRef.current.timer);
+        skipCardRef.current.timer = setTimeout(() => {
+          skipCardRef.current.timer = null;
+          try { el.play?.(); } catch (_) { /* ignore */ }
+          setActiveCard(null);
+        }, holdMs);
+        logger().info?.('content-filter.skip-card', { cue: sc.id, in: +sc.in.toFixed(2), out: +sc.out.toFixed(2), holdSec: sc.holdSec });
+        return;
+      }
+
       const activeIds = new Set(active.map((c) => c.id));
       const entered = enteredRef.current;
       const ctxFor = (cue) => ({ el, transport, cue, sfx: sfxPlayer, mem: memRef.current });
@@ -202,9 +234,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       });
       commitOverlays();
 
-      // Card: any active cue carrying plot text (skip cards, title-cards).
-      const carded = active.find((c) => c.card || c.text);
-      const cardText = carded ? (carded.card || carded.text) : null;
+      // Card: only cues carrying an explicit `.card` annotation (legacy skip+card).
+      // NOT `.text`, because title-card cues carry `.text` and already render via
+      // activeOverlays — matching on `.text` here double-rendered the card.
+      const carded = active.find((c) => c.card && c.effect !== 'title-card');
+      const cardText = carded ? carded.card : null;
       setActiveCard((prev) => (prev?.text === cardText ? prev : (cardText ? { text: cardText } : null)));
     };
 
@@ -236,6 +270,9 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     logger().debug?.('content-filter.mounted', { cues: effectiveCues.length, driver: hasRvfc ? 'rvfc' : 'timeupdate' });
     return () => {
       stopped = true;
+      // NOTE: do NOT clear the skip-card timer here — this cleanup also runs on
+      // benign effect re-runs (e.g. an unstable getMediaEl identity), which would
+      // cancel an in-flight resume. It's cleared only on true unmount (below).
       if (hasRvfc && rvfcHandle != null && typeof el.cancelVideoFrameCallback === 'function') {
         try { el.cancelVideoFrameCallback(rvfcHandle); } catch (_) { /* ignore */ }
       }

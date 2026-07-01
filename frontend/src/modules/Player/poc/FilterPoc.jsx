@@ -38,6 +38,17 @@ export default function FilterPoc() {
   const profile = contentId ? realData?.profile : PROFILE;
   const override = contentId ? realData?.override : undefined;
 
+  // Card-demo mode: ?card=<text> renders the art-backed title card full-frame so it
+  // can be screenshotted (uses the title's Plex art via the proxy, from contentId).
+  const cardDemo = useMemo(() => new URLSearchParams(window.location.search).get('card'), []);
+  const art = useMemo(() => {
+    if (!contentId) return null;
+    const rk = String(contentId).replace(/^plex:/, '');
+    const base = `/api/v1/proxy/plex/library/metadata/${rk}`;
+    const noLogo = new URLSearchParams(window.location.search).has('nologo'); // demo the poster-left fallback
+    return { poster: `${base}/thumb`, background: `${base}/art`, logo: noLogo ? undefined : `${base}/clearLogo` };
+  }, [contentId]);
+
   const getMediaEl = useCallback(() => videoRef.current, []);
   const transport = useMemo(() => ({
     seek: (s) => {
@@ -67,6 +78,16 @@ export default function FilterPoc() {
     title: edl?.title || null,
     profileName: profile?.name || null,
   };
+
+  if (cardDemo) {
+    return (
+      <div data-testid="card-demo" style={{ margin: 0, width: '100vw', height: '100vh', background: '#000', position: 'relative' }}>
+        <div className="video-player" style={{ position: 'absolute', inset: 0 }}>
+          <FilterOverlay activeCard={{ text: cardDemo }} art={art} theme={profile?.theme || PROFILE.theme} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 16, fontFamily: 'Roboto Condensed, sans-serif', color: '#eee', background: '#111', minHeight: '100vh' }}>
