@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100%;
   font-family: 'Roboto Condensed', sans-serif;
-  color: #e8e8ee;
+  color: var(--piano-fg, #e8e8ee);
 
   &__body {
     flex: 1 1 auto;
@@ -26,11 +26,11 @@
     font: 600 1.05rem 'Roboto Condensed', sans-serif;
     padding: 0.5rem 1.4rem;
     border-radius: 999px;
-    border: 1px solid #3a7;
-    background: #1c2a24;
-    color: #8fe;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface, #1c2a24);
+    color: var(--piano-accent-text, #5fe39a);
     cursor: pointer;
-    &.is-on { background: #2a1c1c; border-color: #a55; color: #f99; }
+    &.is-on { background: var(--piano-surface, #2a1c1c); border-color: var(--piano-danger, #e05a4f); color: var(--piano-danger, #f99); }
     &:disabled { opacity: 0.4; cursor: default; }
   }
 
@@ -39,7 +39,7 @@
     align-items: center;
     gap: 1.2rem;
     font-size: 1rem;
-    color: #aab;
+    color: var(--piano-muted, #aab);
   }
   &__key {
     display: inline-flex;
@@ -47,7 +47,7 @@
     gap: 0.4rem;
     button {
       width: 1.6rem; height: 1.6rem; border-radius: 50%;
-      border: 1px solid #556; background: #1a1a22; color: #cce; cursor: pointer;
+      border: 1px solid var(--piano-border, #334); background: var(--piano-surface, #1a1a22); color: var(--piano-muted, #cce); cursor: pointer;
     }
   }
 
@@ -57,9 +57,9 @@
     width: 100%;
     padding: 0.55rem 0.8rem;
     border-radius: 8px;
-    border: 1px solid #334;
-    background: #14141b;
-    color: #eee;
+    border: 1px solid var(--piano-border, #334);
+    background: var(--piano-stage-panel, #14141b);
+    color: var(--piano-fg, #eee);
     font: 1rem 'Roboto Condensed', sans-serif;
   }
 
@@ -72,22 +72,27 @@
     gap: 0.5rem;
   }
 
-  &__h { margin: 0.5rem 0 0; font-size: 1rem; color: #99a; text-transform: uppercase; letter-spacing: 0.05em; }
+  &__h { margin: 0.5rem 0 0; font-size: 1rem; color: var(--piano-muted, #99a); text-transform: uppercase; letter-spacing: 0.05em; }
 
   &__layers { display: flex; flex-direction: column; gap: 0.45rem; }
 
-  &__keys { flex: 0 0 auto; }
+  &__keys {
+    flex: 0 0 auto;
+    width: 100%;
+    background: var(--piano-surface-2, #14141b);
+    .piano-keyboard { height: 9rem; }
+  }
 }
 
 .piano-chip {
   padding: 0.35rem 0.9rem;
   border-radius: 999px;
-  border: 1px solid #3a3a48;
-  background: #16161e;
-  color: #bbc;
+  border: 1px solid var(--piano-border, #3a3a48);
+  background: var(--piano-surface, #16161e);
+  color: var(--piano-muted, #bbc);
   font: 0.95rem 'Roboto Condensed', sans-serif;
   cursor: pointer;
-  &.is-on { background: #243; border-color: #5b8; color: #cfe; }
+  &.is-on { background: var(--piano-surface-2, #243); border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-text, #cfe); }
 }
 
 .piano-loop {
@@ -98,18 +103,18 @@
   gap: 0.15rem;
   padding: 0.55rem 0.7rem;
   border-radius: 8px;
-  border: 1px solid #2a2a36;
-  background: #15151d;
+  border: 1px solid var(--piano-border, #2a2a36);
+  background: var(--piano-surface, #15151d);
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
-  &:hover { border-color: #4a4a66; background: #1b1b27; }
+  &:hover { border-color: var(--piano-border, #4a4a66); background: var(--piano-surface-2, #1b1b27); }
 
-  &__name { font-weight: 600; font-size: 0.98rem; color: #e8e8f2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__sum { font-size: 0.9rem; color: #8ad; font-variant-numeric: tabular-nums; }
-  &__tag { font-size: 0.78rem; color: #b9a; }
+  &__name { font-weight: 600; font-size: 0.98rem; color: var(--piano-fg, #e8e8f2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); font-variant-numeric: tabular-nums; }
+  &__tag { font-size: 0.78rem; color: var(--piano-muted, #b9a); }
   &__why {
     display: inline-block;
-    font-size: 0.72rem; color: #7c9; background: #18241c;
+    font-size: 0.72rem; color: var(--piano-accent-text, #7c9); background: var(--piano-stage-panel, #18241c);
     border-radius: 4px; padding: 0.05rem 0.35rem; margin-right: 0.3rem;
   }
 }
@@ -120,17 +125,98 @@
   gap: 0.7rem;
   padding: 0.45rem 0.7rem;
   border-radius: 8px;
-  border: 1px solid #2c2c3a;
-  background: #16161f;
-  &.is-base { border-color: #5b8; }
+  border: 1px solid var(--piano-border, #2c2c3a);
+  background: var(--piano-surface, #16161f);
+  &.is-base { border-color: var(--piano-accent, #2ec46f); }
   &.is-muted { opacity: 0.5; }
 
   &__mute { background: none; border: none; font-size: 1.1rem; cursor: pointer; }
   &__role {
     font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
-    color: #99c; min-width: 4.5rem;
+    color: var(--piano-muted, #99c); min-width: 4.5rem;
   }
-  &__name { font-weight: 600; color: #eef; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__sum { font-size: 0.9rem; color: #8ad; margin-left: auto; font-variant-numeric: tabular-nums; }
-  &__remove { background: none; border: none; color: #a66; font-size: 1rem; cursor: pointer; }
+  &__name { font-weight: 600; color: var(--piano-fg, #eef); flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); margin-left: auto; font-variant-numeric: tabular-nums; }
+  &__remove { background: none; border: none; color: var(--piano-danger, #a66); font-size: 1rem; cursor: pointer; }
+
+  // M (Mute) and S (Solo) tap targets: chunky, ≥2.4rem for reliable touch.
+  &__m, &__s {
+    min-width: 2.4rem;
+    min-height: 2.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-muted, #99a);
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+    &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
+  }
+}
+
+// Playhead: thin accent bar that sweeps from left (0%) to right (100%).
+.piano-producer-mode__playhead {
+  width: 100%;
+  height: 3px;
+  background: var(--piano-border, #2c2c3a);
+  border-radius: 2px;
+  margin-top: 0.5rem;
+
+  &-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--piano-accent, #2ec46f);
+    border-radius: 2px;
+    transition: none; // updated by rAF, not CSS transition
+  }
+}
+
+// Roman row: the base loop's progression chips shown while playing.
+.piano-producer-mode__roman-row {
+  margin-top: 0.35rem;
+}
+
+// First-run on-ramp hint.
+.piano-producer-mode__hint {
+  font-size: 0.92rem;
+  color: var(--piano-muted, #99a);
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--piano-surface, #15151d);
+  border: 1px dashed var(--piano-border, #2a2a36);
+}
+
+// Peek button on each browse row: minimal, accent-colored.
+.piano-loop__peek {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--piano-border, #2a2a36);
+  background: var(--piano-surface, #15151d);
+  color: var(--piano-accent-text, #7c9);
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
+}
+
+// Focus outlines for all interactive Producer elements.
+.piano-loop:focus-visible,
+.piano-chip:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
+}
+
+.piano-producer-mode__play:focus-visible,
+.piano-producer-mode__tempo button:focus-visible,
+.piano-producer-mode__key button:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
 }

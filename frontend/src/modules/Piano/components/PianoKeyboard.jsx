@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { isWhiteKey, getNoteName } from '../noteUtils.js';
+import { RomanChord } from './roman/RomanProgression.jsx';
 import './PianoKeyboard.scss';
 
 /**
@@ -14,6 +15,7 @@ const PianoKey = React.memo(function PianoKey({
   note,
   isWhite,
   isActive,
+  isLoop,
   velocity,
   isTarget,
   isWrong,
@@ -28,7 +30,7 @@ const PianoKey = React.memo(function PianoKey({
 }) {
   const label = getNoteName(note);
   const className = `piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}`
-    + `${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}`
+    + `${isLoop ? ' loop' : ''}${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}${isDestroyed ? ' destroyed' : ''}`
     + `${isPerc ? ' perc' : ''}${isSplitStart ? ' split-start' : ''}`;
 
   return (
@@ -70,6 +72,7 @@ const PianoKey = React.memo(function PianoKey({
  */
 export function PianoKeyboard({
   activeNotes = new Map(),
+  loopNotes = null,
   startNote = 21,
   endNote = 108,
   showLabels = false,
@@ -79,6 +82,7 @@ export function PianoKeyboard({
   onNoteOn = null,
   onNoteOff = null,
   splitNote = null,
+  handChordLabel = null,
 }) {
   const interactive = typeof onNoteOn === 'function';
 
@@ -146,6 +150,7 @@ export function PianoKeyboard({
             isSplitStart={d.isSplitStart}
             showLabel={d.showLabel}
             isActive={activeNotes.has(d.note)}
+            isLoop={loopNotes?.has(d.note) ?? false}
             velocity={noteData?.velocity || 0}
             isTarget={targetNotes?.has(d.note) ?? false}
             isWrong={wrongNotes?.has(d.note) ?? false}
@@ -157,6 +162,11 @@ export function PianoKeyboard({
           />
         );
       })}
+      {handChordLabel && (
+        <div className="piano-keyboard__hand-label">
+          <RomanChord token={handChordLabel} />
+        </div>
+      )}
     </div>
   );
 }

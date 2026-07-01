@@ -19,6 +19,7 @@ import LiveStreamApp from './Apps/LiveStreamApp.jsx';
 import PianoApp from './Apps/PianoApp.jsx';
 import AppContainer from './modules/AppContainer/AppContainer.jsx';
 import Blank from './modules/Blank/Blank.jsx';
+import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
 import InviteAccept from './modules/Auth/InviteAccept.jsx';
 import { ScreenRenderer } from './screen-framework/index.js';
@@ -162,6 +163,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
+        <Route path="/filter-poc" element={<FilterPoc />} />
         <Route path="/feed/*" element={<FeedApp />} />
         <Route path="/call" element={<CallApp />} />
         <Route path="*" element={<Blank />} />

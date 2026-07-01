@@ -168,5 +168,29 @@
       box-shadow: -3px 0 8px rgba(46, 196, 111, 0.45);
       z-index: 3;
     }
+
+    // Loop-driven notes: distinct accent hue so loop-sounding keys read
+    // differently from the player's own pressed (.active) keys.
+    // White loop keys use the accent fill; black loop keys use a darker tone.
+    &.white.loop:not(.active) {
+      background: var(--piano-accent, #2ec46f);
+      opacity: 0.75;
+    }
+    &.black.loop:not(.active) {
+      background: color-mix(in srgb, var(--piano-accent, #2ec46f) 60%, #1c1c1c 40%);
+      opacity: 0.85;
+    }
+  }
+
+  // Roman-numeral hand-chord label overlay: floats over the left (perc/bass)
+  // region. Positioned absolutely within the keyboard's relative container.
+  &__hand-label {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.4rem;
+    z-index: 4;
+    pointer-events: none;
+    font-size: 1.1rem;
+    line-height: 1;
   }
 }
