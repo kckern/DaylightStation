@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendRefreshParam } from './VideoPlayer.jsx';
+import { appendRefreshParam, withOffsetParam } from './VideoPlayer.jsx';
 
 describe('appendRefreshParam', () => {
   it('appends _refresh=<nonce> to a URL without query string', () => {
@@ -61,5 +61,36 @@ describe('appendRefreshParam', () => {
   it('preserves URL fragment while replacing last _refresh', () => {
     expect(appendRefreshParam('https://h.test/s?foo=bar&_refresh=111#section', 222))
       .toBe('https://h.test/s?foo=bar&_refresh=222#section');
+  });
+});
+
+describe('withOffsetParam', () => {
+  it('rewrites an existing offset= to the seek target (the whole point)', () => {
+    expect(withOffsetParam('/api/v1/proxy/plex/stream/662170?offset=5294', 5465.9))
+      .toBe('/api/v1/proxy/plex/stream/662170?offset=5465');
+  });
+
+  it('floors fractional seconds', () => {
+    expect(withOffsetParam('/s?offset=10', 42.99)).toBe('/s?offset=42');
+  });
+
+  it('adds offset= when absent', () => {
+    expect(withOffsetParam('/s?foo=bar', 300)).toBe('/s?foo=bar&offset=300');
+    expect(withOffsetParam('/s', 300)).toBe('/s?offset=300');
+  });
+
+  it('leaves other params (and their order) intact when rewriting', () => {
+    expect(withOffsetParam('/s?a=1&offset=100&b=2', 250)).toBe('/s?a=1&offset=250&b=2');
+  });
+
+  it('preserves a fragment', () => {
+    expect(withOffsetParam('/s?offset=100#x', 250)).toBe('/s?offset=250#x');
+  });
+
+  it('is a no-op for a non-positive / non-finite offset', () => {
+    expect(withOffsetParam('/s?offset=100', 0)).toBe('/s?offset=100');
+    expect(withOffsetParam('/s?offset=100', -5)).toBe('/s?offset=100');
+    expect(withOffsetParam('/s?offset=100', NaN)).toBe('/s?offset=100');
+    expect(withOffsetParam('', 5)).toBe('');
   });
 });
