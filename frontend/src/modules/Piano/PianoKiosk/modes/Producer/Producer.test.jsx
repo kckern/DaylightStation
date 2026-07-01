@@ -151,6 +151,20 @@ describe('Producer (loop-layering)', () => {
     });
   });
 
+  // Task 5.8: peek preview — doesn't add to stack
+  it('peek previews a loop without adding it to the stack', async () => {
+    render(<Producer />);
+    // In browse mode (no base), all rows have a peek button
+    await waitFor(() => expect(document.querySelector('.piano-loop__peek')).toBeTruthy());
+    // Click peek on a row
+    const peekBtn = document.querySelector('.piano-loop__peek');
+    fireEvent.click(peekBtn);
+    // layers (the real stack) should still be empty — peek doesn't commit
+    await waitFor(() => {
+      expect(document.querySelectorAll('.piano-layer').length).toBe(0);
+    });
+  });
+
   // Task 5.7: base-swap keeps stack + browse library affordance
   it('removing the base promotes the next layer instead of clearing the stack', async () => {
     render(<Producer />);
