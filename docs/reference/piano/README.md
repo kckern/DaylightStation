@@ -195,7 +195,8 @@ recover from the rough edges of an aging WebView.
   signal through the playback context.
 - **Screensaver.** Where a piano is configured with a screen device, idle time sleeps the
   tablet's display and a played note wakes it, with quiet-hours and during-playback
-  guardrails.
+  guardrails. It is driven above the connect gate, so a tablet parked on the "connect your
+  piano" screen (no MIDI connected) still sleeps after idle rather than staying lit forever.
 - **Reload guard.** During states where an accidental pull-to-refresh would lose work (a
   recording in progress), a guard intercepts the unload.
 - **Render watchdog.** A passive sensor measures frame-presentation rate and logs jank
