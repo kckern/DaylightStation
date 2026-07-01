@@ -111,7 +111,13 @@ export function FilterDebugHud({ getMediaEl, transport, effectiveCues, lead = DE
         bottom: '1.2em',
         zIndex: 30,
         pointerEvents: 'none',
+        // `.video-player > div` (Player.scss) forces width/height:100% on direct
+        // children — override to auto so the HUD is a corner panel, not full-screen
+        // (same guard .quality-overlay uses).
+        width: 'auto',
+        height: 'auto',
         minWidth: '16em',
+        maxWidth: '22em',
         padding: '0.7em 0.9em',
         borderRadius: '0.4em',
         borderLeft: `3px solid ${accent}`,
