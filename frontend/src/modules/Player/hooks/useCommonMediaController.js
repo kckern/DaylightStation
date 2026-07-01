@@ -409,7 +409,7 @@ export function useCommonMediaController({
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
     mediaEl.__seekSource = 'click';
-    const rect = event.target.getBoundingClientRect();
+    const rect = event.currentTarget.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     const clickPercent = clickX / rect.width;
     if (segDuration) {
