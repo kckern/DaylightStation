@@ -8,6 +8,7 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { useLoopTransport } from '../../useLoopTransport.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
+import { RomanProgression } from '../../../components/roman/RomanProgression.jsx';
 import './Producer.scss';
 
 const ROLES = [
@@ -19,14 +20,6 @@ const ROLES = [
 ];
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 const keyName = (shift) => NOTE_NAMES[((shift % 12) + 12) % 12];
-
-/** One-line musical summary chip text for a loop entry. */
-function summaryOf(e) {
-  if (e.roman?.length) return e.roman.join(' ');
-  if (e.degrees?.length) return e.degrees.join('–');
-  if (e.descriptor) return e.descriptor;
-  return e.slug;
-}
 
 /**
  * Producer — the MIDI loop-layering jam surface. Pick a base loop, stack
@@ -53,7 +46,8 @@ export function Producer() {
 
   const transportLayers = useMemo(
     () => layers.filter((l) => l.notes).map((l) => ({
-      notes: l.notes.notes, ppq: l.notes.ppq, transpose: keyShift, muted: !!muted[l.id],
+      notes: l.notes.notes, ppq: l.notes.ppq, barSpan: l.entry.barSpan,
+      transpose: keyShift, muted: !!muted[l.id],
     })),
     [layers, keyShift, muted],
   );
@@ -136,8 +130,8 @@ export function Producer() {
                 {browse.map((e) => (
                   <li key={e.path}>
                     <button type="button" className="piano-loop" onClick={() => pickBase(e)}>
-                      <span className="piano-loop__name">{e.slug}</span>
-                      <span className="piano-loop__sum">{summaryOf(e)}</span>
+                      <span className="piano-loop__name">{e.title || e.slug}</span>
+                      {e.roman?.length ? <RomanProgression roman={e.roman} inline /> : null}
                       {e.mood && <span className="piano-loop__tag">{e.mood}</span>}
                     </button>
                   </li>
@@ -155,8 +149,8 @@ export function Producer() {
                       {muted[l.id] ? '🔇' : '🔊'}
                     </button>
                     <span className="piano-layer__role">{roleOf(l.entry)}</span>
-                    <span className="piano-layer__name">{l.entry.slug}</span>
-                    <span className="piano-layer__sum">{summaryOf(l.entry)}</span>
+                    <span className="piano-layer__name">{l.entry.title || l.entry.slug}</span>
+                    {l.entry.roman?.length ? <RomanProgression roman={l.entry.roman} inline /> : null}
                     <button type="button" className="piano-layer__remove" onClick={() => removeLayer(l.id)}>✕</button>
                   </div>
                 ))}
@@ -167,8 +161,8 @@ export function Producer() {
                 {candidates.map((c) => (
                   <li key={c.entry.path}>
                     <button type="button" className="piano-loop" onClick={() => addLayer(c.entry)}>
-                      <span className="piano-loop__name">{c.entry.slug}</span>
-                      <span className="piano-loop__sum">{summaryOf(c.entry)}</span>
+                      <span className="piano-loop__name">{c.entry.title || c.entry.slug}</span>
+                      {c.entry.roman?.length ? <RomanProgression roman={c.entry.roman} inline /> : null}
                       {c.reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
                     </button>
                   </li>

@@ -25,6 +25,9 @@ const INDEX_YML = `
   mood: Catchy
   chords: [Dm, C, F, Gm]
   roman: [i, bVII, bIII, iv]
+  title: "Dm C · F Gm"
+  signature: i-bVII-bIII-iv
+  barSpan: 4
   bpm: 120
 - slug: catchy-hook-5-6-1
   path: melodies/starters/catchy/catchy-hook-5-6-1.mid
@@ -32,6 +35,27 @@ const INDEX_YML = `
   sources: [melody-starters]
   mood: Catchy
   degrees: [5, 6, 1]
+  title: "Catchy Hook"
+- slug: am-f-g-am
+  path: chord-progressions/other/am-f-g-am.mid
+  type: chord-progression
+  sources: [other]
+  mood: Sad
+  roman: [iii, I, II, iii]
+  title: "Am F · G Am"
+  signature: iii-I-II-iii
+  barSpan: 4
+  bpm: 100
+- slug: different-progression-loop
+  path: chord-progressions/other/different-progression-loop.mid
+  type: chord-progression
+  sources: [other]
+  mood: Catchy
+  roman: [ii, V, I]
+  title: "Different Progression Loop"
+  signature: ii-V-I
+  barSpan: 3
+  bpm: 120
 `;
 
 function midiBuffer() {
@@ -53,29 +77,38 @@ beforeEach(() => {
 describe('Producer (loop-layering)', () => {
   it('loads the loop library and lists browseable loops', async () => {
     render(<Producer />);
-    await waitFor(() => expect(screen.getByText('dm-c-f-gm')).toBeInTheDocument());
-    expect(screen.getByText('catchy-hook-5-6-1')).toBeInTheDocument();
-    // roman summary chip rendered
-    expect(screen.getByText('i bVII bIII iv')).toBeInTheDocument();
+    // After 5.3, the primary label is title (or slug if no title), not raw slug
+    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
+    // roman progression rendered via RomanProgression component
+    expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 
   it('picks a base and shows it as the base layer plus ranked layer suggestions', async () => {
     render(<Producer />);
-    const baseBtn = await screen.findByText('dm-c-f-gm');
+    const baseBtn = await screen.findByText('Dm C · F Gm');
     fireEvent.click(baseBtn.closest('button'));
 
     // base now appears in the layer rack with its role…
     await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
     expect(screen.getAllByText('chords').length).toBeGreaterThan(0); // base role label
     // …and the complementary melody is offered as a layer suggestion.
-    expect(screen.getByText('catchy-hook-5-6-1')).toBeInTheDocument();
+    expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
   });
 
   it('starts the transport when Play is pressed (fires loop notes through pressNote)', async () => {
     render(<Producer />);
-    fireEvent.click((await screen.findByText('dm-c-f-gm')).closest('button'));
+    fireEvent.click((await screen.findByText('Dm C · F Gm')).closest('button'));
     const play = await screen.findByText(/Play/);
     fireEvent.click(play);
     await waitFor(() => expect(pressNote).toHaveBeenCalled());
+  });
+
+  // Task 5.3: title + roman notation replaces slug labels
+  it('labels a loop by title + roman, not the slug', async () => {
+    render(<Producer />);
+    await waitFor(() => expect(screen.getByText('Dm C · F Gm')).toBeInTheDocument());
+    expect(screen.queryByText('dm-c-f-gm')).toBeNull();
+    expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 });
