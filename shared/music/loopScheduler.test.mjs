@@ -95,3 +95,26 @@ describe('buildLoopCycle', () => {
     assert.ok(cycle.lengthMs > 0);
   });
 });
+
+describe('buildLoopCycle harmonic alignment', () => {
+  const oneNotePerBar = (bars) => Array.from({ length: bars }, (_, b) => ({ ticks: b * 480 * 4, durationTicks: 480, midi: 60 }));
+
+  it('sizes the master cycle by barSpan (bars), not raw note length', () => {
+    const layers = [
+      { notes: oneNotePerBar(3), ppq: 480, barSpan: 3 },
+      { notes: oneNotePerBar(6), ppq: 480, barSpan: 6 },
+    ];
+    const { lengthMs } = buildLoopCycle(layers, { bpm: 120 });
+    assert.equal(Math.round(lengthMs), 12000);
+  });
+
+  it('tiles the 3-bar layer twice to fill the 6-bar cycle (aligned)', () => {
+    const layers = [
+      { notes: oneNotePerBar(3), ppq: 480, barSpan: 3 },
+      { notes: oneNotePerBar(6), ppq: 480, barSpan: 6 },
+    ];
+    const { events } = buildLoopCycle(layers, { bpm: 120 });
+    const ons = events.filter((e) => e.type === 'note_on').length;
+    assert.equal(ons, 6 + 6);
+  });
+});
