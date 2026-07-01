@@ -6,6 +6,7 @@ const mockLogger = vi.hoisted(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.f
 vi.mock('../logging/singleton.js', () => ({ getChildLogger: () => mockLogger }));
 
 import { useContentFilter } from './useContentFilter.js';
+import { isSkipCardPaused } from './skipCardState.js';
 
 function makeFakeEl() {
   const handlers = {};
@@ -201,9 +202,11 @@ describe('useContentFilter', () => {
     expect(transport.seek).toHaveBeenCalledWith(expect.closeTo(40.05, 2)); // jump to resume point
     expect(el.pause).toHaveBeenCalled();                                    // freeze/buffer behind card
     expect(hook.result.current.activeCard.text).toBe('Skipped a scene.');
+    expect(isSkipCardPaused()).toBe(true);                                  // loading spinner suppressed
     act(() => { vi.advanceTimersByTime(2600); });                          // hold elapses (real-time)
     expect(el.play).toHaveBeenCalled();                                    // resume instantly
     expect(hook.result.current.activeCard).toBeNull();
+    expect(isSkipCardPaused()).toBe(false);                                // spinner re-enabled
     vi.useRealTimers();
   });
 

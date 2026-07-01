@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getChildLogger } from '../logging/singleton.js';
 import { resolveEffectiveCues, cuesActiveAt } from './contentFilter.js';
 import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from './filterEffects.js';
+import { setSkipCardPaused } from './skipCardState.js';
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
@@ -72,9 +73,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   const skipCardRef = useRef({ doneIds: new Set(), timer: null });
 
   // Clear a pending skip-card resume timer only on true unmount (not on every
-  // effect re-run — see the main effect's cleanup note).
+  // effect re-run — see the main effect's cleanup note). Also release the paused
+  // flag so the loading spinner isn't left suppressed if we unmount mid-card.
   useEffect(() => () => {
     if (skipCardRef.current.timer) { clearTimeout(skipCardRef.current.timer); skipCardRef.current.timer = null; }
+    setSkipCardPaused(false);
   }, []);
 
   useEffect(() => {
@@ -147,12 +150,14 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         skipCardRef.current.doneIds.add(sc.id);
         transport?.seek?.(sc.out + SKIP_EPSILON);
         try { el.pause?.(); } catch (_) { /* ignore */ }
+        setSkipCardPaused(true); // suppress the buffering spinner during the deliberate pause
         setActiveCard({ text: sc.text || 'Scene skipped.' });
         const holdMs = (typeof sc.holdSec === 'number' ? sc.holdSec : 2.5) * 1000;
         if (skipCardRef.current.timer) clearTimeout(skipCardRef.current.timer);
         skipCardRef.current.timer = setTimeout(() => {
           skipCardRef.current.timer = null;
           try { el.play?.(); } catch (_) { /* ignore */ }
+          setSkipCardPaused(false);
           setActiveCard(null);
         }, holdMs);
         logger().info?.('content-filter.skip-card', { cue: sc.id, in: +sc.in.toFixed(2), out: +sc.out.toFixed(2), holdSec: sc.holdSec });
