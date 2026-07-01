@@ -270,6 +270,7 @@ export function Producer() {
       <div className="piano-producer-mode__keys">
         <PianoKeyboard
           activeNotes={activeNotes}
+          loopNotes={loopNotes}
           startNote={kb.startNote}
           endNote={kb.endNote}
           onNoteOn={pressNote}
