@@ -705,7 +705,7 @@ const flags = {
 const VALUE_FLAGS = {
   '--limit': 'limit', '--out': 'out', '--section': 'section', '--delay': 'delay',
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
-  '--window': 'window', '--model': 'model'
+  '--window': 'window', '--model': 'model', '--cover-window': 'cover-window'
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1019,7 +1019,11 @@ async function main() {
     const overridePath = path.join(filterCacheDir(), 'overrides', `${rk}.yml`);
     const override = existsSync(overridePath) ? (yaml.load(readFileSync(overridePath, 'utf8')) || {}) : {};
     const off = override?.sync?.offsetSec || 0; // existing mutes are source-time; add off to compare in local time
-    const coverWin = Number(flags.window) || 1.5;
+    // Coverage radius: how close an existing mute must be to count as covering this
+    // word. Default 1.5s — do NOT inherit the shared --window default (6s, meant for
+    // snap/calibrate), which would treat a DIFFERENT nearby swear's mute as covering
+    // this one and skip a real gap (e.g. George's "damn" 4.5s from another "damn").
+    const coverWin = args.includes('--cover-window') ? (Number(flags['cover-window']) || 1.5) : 1.5;
 
     // EXACT whole-word forms — startsWith would false-match hello/christmas/assume
     // (the Scunthorpe problem). Emitting mutes demands precision.
