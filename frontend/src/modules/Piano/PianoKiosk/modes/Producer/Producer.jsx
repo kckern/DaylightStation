@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
@@ -9,6 +9,7 @@ import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { useLoopTransport } from '../../useLoopTransport.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
 import { RomanProgression } from '../../../components/roman/RomanProgression.jsx';
+import { detectKey } from '../../../../MusicNotation/index.js';
 import './Producer.scss';
 
 const ROLES = [
@@ -40,8 +41,10 @@ export function Producer() {
   const [keyShift, setKeyShift] = useState(0);
   const [role, setRole] = useState(null);
   const [text, setText] = useState('');
+  const [bpm, setBpm] = useState(100);
 
-  const bpm = base?.bpm || 100;
+  // Seed tempo from base when it changes
+  useEffect(() => { if (base?.bpm) setBpm(base.bpm); }, [base]);
   useEffect(() => { logger.info('piano.producer.mounted', {}); return () => logger.info('piano.producer.unmounted', {}); }, [logger]);
 
   const transportLayers = useMemo(
@@ -74,6 +77,13 @@ export function Producer() {
     if (layers[0]?.id === id) setBase(null);
   }, [layers]);
 
+  // Detect key from base layer notes
+  const detectedKey = useMemo(() => {
+    if (!base || !layers[0]?.notes) return 'C';
+    const pcs = layers[0].notes.notes.map((n) => n.midi % 12);
+    return detectKey(pcs);
+  }, [base, layers]);
+
   const candidates = useMemo(
     () => (base
       ? lib.rankFor(base, { ...(role ? { role } : {}), onlyStackable: true })
@@ -100,10 +110,14 @@ export function Producer() {
               {transport.isPlaying ? '◼ Stop' : '▶ Play'}
             </button>
             <div className="piano-producer-mode__meta">
-              <span>{bpm} BPM</span>
+              <span className="piano-producer-mode__tempo">
+                <button type="button" aria-label="tempo down" onClick={() => setBpm((b) => Math.max(40, b - 4))}>−</button>
+                <span aria-label="tempo">{bpm} BPM</span>
+                <button type="button" aria-label="tempo up" onClick={() => setBpm((b) => Math.min(220, b + 4))}>+</button>
+              </span>
               <span className="piano-producer-mode__key">
                 <button type="button" onClick={() => setKeyShift((k) => k - 1)} aria-label="key down">−</button>
-                Key {keyName(keyShift)}
+                Key {detectedKey}
                 <button type="button" onClick={() => setKeyShift((k) => k + 1)} aria-label="key up">+</button>
               </span>
             </div>
