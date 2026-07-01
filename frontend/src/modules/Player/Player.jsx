@@ -9,9 +9,7 @@ import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 import { PlayerOverlayStateDebug } from './components/PlayerOverlayStateDebug.jsx';
 import { PlayerOverlayAutoplayBlocked } from './components/PlayerOverlayAutoplayBlocked.jsx';
-import { PlayerOverlayStallExhausted } from './components/PlayerOverlayStallExhausted.jsx';
 import { useMediaResilience, mergeMediaResilienceConfig } from './hooks/useMediaResilience.js';
-import { useStallExhaustion } from './hooks/useStallExhaustion.js';
 import { useMediaErrorReporter } from './hooks/useMediaErrorReporter.js';
 import { usePlaybackSession } from './hooks/usePlaybackSession.js';
 import { resolveCollectionKey } from './utils/collectionKey.js';
@@ -754,7 +752,7 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery, retryFromExhausted } = useMediaResilience({
+  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
     maxVideoBitrate: effectiveMeta?.maxVideoBitrate
@@ -1046,41 +1044,6 @@ const Player = forwardRef(function Player(props, ref) {
 
   const suppressOverlaysForBlackout = effectiveShader === 'blackout';
 
-  const stallExhaustion = useStallExhaustion({
-    stalled: !!overlayProps?.stalled,
-    thresholdMs: 15000
-  });
-
-  const handleStallExhaustedRestart = useCallback(() => {
-    playbackLog('player.stall-exhausted-restart', {
-      secondsStalled: stallExhaustion.secondsStalled,
-      mediaIdentity
-    }, { level: 'warn' });
-    // Use retryFromExhausted (not requestRecovery): the recovery tracker is already
-    // at maxAttempts in the exhausted state, so requestRecovery('...') would hit the
-    // early-return and do nothing. retryFromExhausted clears the tracker, forces a
-    // fresh stream URL (refreshUrl:true), and escalates to a real React remount
-    // (forceRemount:true) — the only path proven to recover a reaped transcode session.
-    if (typeof retryFromExhausted === 'function') {
-      retryFromExhausted();
-    } else if (typeof requestRecovery === 'function') {
-      requestRecovery('user-requested-after-exhaustion');
-    }
-    // reset() (not dismiss()): restart a fresh exhaustion window so the banner
-    // reappears with a working Retry if the retried stream also stalls. dismiss()
-    // would permanently suppress the banner for the rest of this stall episode,
-    // leaving a dead screen when the retry doesn't recover.
-    stallExhaustion.reset();
-  }, [retryFromExhausted, requestRecovery, stallExhaustion, mediaIdentity]);
-
-  const handleStallExhaustedDismiss = useCallback(() => {
-    playbackLog('player.stall-exhausted-dismiss', {
-      secondsStalled: stallExhaustion.secondsStalled,
-      mediaIdentity
-    }, { level: 'info' });
-    stallExhaustion.dismiss();
-  }, [stallExhaustion, mediaIdentity]);
-
   const overlayElements = (overlayProps && !isSelfContainedFormat) ? (
     <>
       <PlayerOverlayLoading
@@ -1095,14 +1058,6 @@ const Player = forwardRef(function Player(props, ref) {
         onAutoplayResolved={mediaAccess.onAutoplayResolved}
         suppressForBlackout={suppressOverlaysForBlackout}
       />
-      {!suppressOverlaysForBlackout && (
-        <PlayerOverlayStallExhausted
-          exhausted={stallExhaustion.exhausted}
-          secondsStalled={stallExhaustion.secondsStalled}
-          onRestart={handleStallExhaustedRestart}
-          onDismiss={handleStallExhaustedDismiss}
-        />
-      )}
     </>
   ) : null;
 
@@ -1261,7 +1216,6 @@ export default Player;
 // Export components for external use
 export { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 export { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
-export { PlayerOverlayStallExhausted } from './components/PlayerOverlayStallExhausted.jsx';
 export { SinglePlayer } from './components/SinglePlayer.jsx';
 export { AudioPlayer } from './renderers/AudioPlayer.jsx';
 export { VideoPlayer } from './renderers/VideoPlayer.jsx';
