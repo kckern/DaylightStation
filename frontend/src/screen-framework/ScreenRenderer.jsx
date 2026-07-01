@@ -194,6 +194,20 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     return () => unsub?.();
   }, [releaseGate]);
 
+  // Viewport telemetry: report the WebView's actual CSS viewport + DPR once per
+  // mount. This is how we right-size a screen's fixed `resolution` to the real
+  // kiosk (e.g. the living-room Shield renders a 960x540 CSS viewport @ 2x DPR).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    getLogger().child({ component: 'ScreenRenderer', screenId }).info('screen.viewport', {
+      cssWidth: window.innerWidth,
+      cssHeight: window.innerHeight,
+      dpr: window.devicePixelRatio,
+      physicalWidth: Math.round(window.innerWidth * (window.devicePixelRatio || 1)),
+      physicalHeight: Math.round(window.innerHeight * (window.devicePixelRatio || 1)),
+    });
+  }, [screenId]);
+
   // Failsafe: digit 4 always reloads if the input system isn't actually handling input.
   // "Handling" means the adapter attached AND (where relevant) its keymap actually loaded.
   // If the keymap fetch failed or returned empty, NumpadAdapter silently drops every
