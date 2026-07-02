@@ -149,6 +149,20 @@ describe('DistanceChart panel', () => {
     const aXs = lines[0].getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[0]));
     expect(aXs.length).toBe(4); // frozen at index 3, NOT crawling to 7 samples
   });
+  it('decimates a long series so the vertex count stays bounded (~600/rider)', () => {
+    // A 2000-sample race must not plot 2000 vertices — geometry cost is capped. The
+    // final (tip) sample is always kept so the leading edge stays exact.
+    const series = Array.from({ length: 2000 }, (_, i) => (i + 1) * 2);
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 4000, distanceSeries: series } };
+    const { container } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" goalM={5000} elapsedS={1999} />
+    );
+    const line = container.querySelector('[data-testid="race-line"]');
+    const pts = line.getAttribute('points').trim().split(' ');
+    expect(pts.length).toBeLessThanOrEqual(601); // 600 decimated + the kept tip
+    expect(pts.length).toBeGreaterThan(300);      // still a meaningful line
+  });
   it('renders a header strip with the clock and goal label', () => {
     const { getByTestId } = render(
       <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 50, distanceSeries: [50] } }}

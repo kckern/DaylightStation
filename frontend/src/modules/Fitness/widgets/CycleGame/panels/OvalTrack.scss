@@ -47,11 +47,11 @@
     filter: drop-shadow(0 0 5px rgba(t.$cg-magenta, 0.7));
   }
 
-  // Markers glide between progress ticks rather than snapping.
+  // Markers glide between progress ticks on the shared motion clock (imperative
+  // transform writes) — NO CSS transition here. The old `transition: transform 0.9s
+  // linear` was one of the five desynced motion clocks (900ms vs the chart's 1000ms
+  // vs the needle's 180ms), and it spun a lap-wrapping marker the long way around.
   &__marker {
-    // Glide across the whole 1 Hz tick interval so motion reads continuous.
-    transition: transform 0.9s linear;
-
     &--ghost {
       opacity: 0.55;
     }

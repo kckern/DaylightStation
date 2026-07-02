@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
+import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
 import './CycleSpeedometer.scss';
 
 const VIEWBOX = 200;
@@ -50,6 +51,57 @@ export default function CycleSpeedometer({
   const badgeColor = multiplierColor || avatar.zoneColor || '#e67e22';
 
   const px = typeof size === 'number' ? size : 220;
+
+  // ── Motion clock: glide the needle + count the odometer between 1 Hz ticks ──
+  // Both are DATA-driven positions (rpm → needle angle, cumulative distance →
+  // odometer). React renders the CURRENT-tick value (so a no-rAF env shows the exact
+  // datum); the shared linear clock only ADJUSTS them from the previous tick toward
+  // the current one, imperatively — no per-frame React render, no CSS transition (the
+  // needle's 0.18s ease was one of the five desynced motion clocks).
+  const distM = Number.isFinite(distanceMeters) ? distanceMeters : 0;
+  const needleRef = useRef(null);
+  const odoValRef = useRef(null);
+  const clockRef = useRef(null);
+  if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: 1000 });
+  const motionRef = useRef({ prevDeg: needleDeg, curDeg: needleDeg, prevDist: distM, curDist: distM });
+  const prevDegRef = useRef(needleDeg);
+  const prevDistRef = useRef(distM);
+
+  useEffect(() => {
+    const clock = clockRef.current;
+    const unsub = clock.subscribe((f) => {
+      const m = motionRef.current;
+      if (needleRef.current) {
+        const deg = m.prevDeg + (m.curDeg - m.prevDeg) * f;
+        needleRef.current.style.transform = `rotate(${deg}deg)`;
+      }
+      if (odoValRef.current) {
+        const d = m.prevDist + (m.curDist - m.prevDist) * f;
+        odoValRef.current.textContent = formatDistance(d);
+      }
+    });
+    return () => { unsub(); clock.stop(); };
+  }, []);
+
+  // The odometer <span> is childless in JSX (React does NOT own its text) so the clock
+  // can rewrite its textContent every frame without fighting React's reconciler over a
+  // detached text node. This layout effect establishes the CURRENT-tick value
+  // synchronously each render (so a no-rAF env — and the very first paint — shows the
+  // exact distance); the clock's rAF then counts it up from the previous tick.
+  useLayoutEffect(() => {
+    if (odoValRef.current) odoValRef.current.textContent = formatDistance(distM);
+  }, [distM]);
+
+  // A new tick: snapshot prev→cur and re-arm the clock so both glide to the new datum.
+  useEffect(() => {
+    motionRef.current = {
+      prevDeg: prevDegRef.current, curDeg: needleDeg,
+      prevDist: prevDistRef.current, curDist: distM,
+    };
+    prevDegRef.current = needleDeg;
+    prevDistRef.current = distM;
+    clockRef.current.onTick(null);
+  }, [needleDeg, distM]);
 
   return (
     <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
@@ -122,6 +174,7 @@ export default function CycleSpeedometer({
             >{t.label}</text>
           ))}
           <g
+            ref={needleRef}
             className="cycle-speedometer__needle-group"
             style={{ transform: `rotate(${needleDeg}deg)`, transformOrigin: `${CENTER}px ${CENTER}px`, transformBox: 'view-box' }}
           >
@@ -168,7 +221,9 @@ export default function CycleSpeedometer({
 
       <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
         {isLeader && !finished && <span className="cycle-speedometer__leader-medal" aria-label="Current leader">🥇</span>}
-        {formatDistance(distanceMeters)}
+        {/* Childless — its text is owned by the motion clock (odometer count-up), with a
+            synchronous baseline set in useLayoutEffect above. */}
+        <span ref={odoValRef} className="cycle-speedometer__odometer-value" />
       </div>
     </div>
   );

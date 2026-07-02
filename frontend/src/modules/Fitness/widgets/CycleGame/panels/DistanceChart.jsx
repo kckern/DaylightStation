@@ -8,6 +8,7 @@ import { nextZoomLevel, gridValues } from '@/modules/Fitness/lib/cycleGame/chart
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { gapFrac } from '@/modules/Fitness/lib/cycleGame/chartScale.js';
+import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
 import './DistanceChart.scss';
 
 const X_BASE_S = 20;        // level-0 time window (seconds; 1 sample = 1s at the 1Hz tick)
@@ -17,16 +18,24 @@ const ZOOM_THRESHOLD = 0.9; // grow the window when data hits 90% of it
 const GRID_MIN_PX = 32;    // never draw gridlines closer than this (bottom cap)
 const ZOOM_ANIM_MS = 300;  // zoom-out camera ease duration
 const TICK_INTERP_MS = 1000; // glide the leading edge over one 1Hz tick interval
-
-const easeOutQuad = (t) => 1 - (1 - t) * (1 - t);
+const MAX_PLOT_POINTS = 600; // decimate longer series to bound per-tick geometry cost
 
 const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
+
+// Build an SVG points string from mapped coordinates.
+const ptsStr = (coords) => coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
 /**
  * Gradient-filled distance chart — one climbing lane per rider toward the goal,
  * with goal line, area fills, lane lines, and de-overlapped terminus tags.
  * Auto-scales linear→log when riders crowd together near the finish. Officiating
  * events (DNF / penalty) are re-projected onto the lane where they fired.
+ *
+ * Motion: the engine ticks at 1 Hz. Geometry (line coords, tag layout, markers) is
+ * computed ONCE per tick during render; the leading-edge tip, terminus tags,
+ * connectors, and event markers then GLIDE from their previous-tick position to the
+ * current one on a single shared linear rAF clock (motionClock), written to the DOM
+ * imperatively. React never re-renders per animation frame.
  */
 export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0 }) {
   const chartRef = useRef(null);
@@ -170,62 +179,36 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return Math.max(1, Math.min(series.length, idx + 1));
   };
 
-  // ── Smooth leading edge ────────────────────────────────────────────────────
-  // The engine ticks at 1 Hz, so each line's newest point jumps once per second
-  // while its terminus node glides (CSS transition). Glide the line tip too: lerp
-  // it from its previous-tick position to the current one across the tick interval
-  // via a rAF clock, so the line grows continuously instead of snapping.
-  const tickKey = `${maxSeriesLen}`;
-  const prevTipsRef = useRef({});
-  const lastTipsRef = useRef({});
-  const tickKeyRef = useRef(tickKey);
-  const tickAtRef = useRef(0);
-  const [tickFrac, setTickFrac] = useState(1);
-  const curTips = {};
-  riderIds.forEach((id) => {
-    const series = riders[id].distanceSeries || [];
-    const last = plottedLen(id) - 1;
-    if (last < 0) return;
-    curTips[id] = { x: xFor(last), y: yFor(series[last]) };
-  });
-  if (tickKeyRef.current !== tickKey) {
-    prevTipsRef.current = lastTipsRef.current;   // tip positions as of the prior tick
-    tickKeyRef.current = tickKey;
-    tickAtRef.current = (typeof performance !== 'undefined' ? performance.now() : 0);
-  }
-  lastTipsRef.current = curTips;                  // remember for next tick's prev
-  useEffect(() => {
-    setTickFrac(0);
-    if (typeof requestAnimationFrame === 'undefined') { setTickFrac(1); return undefined; }
-    let raf;
-    const step = () => {
-      const now = (typeof performance !== 'undefined' ? performance.now() : 0);
-      const f = TICK_INTERP_MS > 0 ? Math.min(1, (now - tickAtRef.current) / TICK_INTERP_MS) : 1;
-      setTickFrac(f);
-      if (f < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => { if (raf) cancelAnimationFrame(raf); };
-  }, [tickKey]);
-  const tipFrac = easeOutQuad(Math.min(1, Math.max(0, tickFrac)));
-  const tipFor = (id) => {
-    const cur = curTips[id];
-    if (!cur) return null;
-    const prev = prevTipsRef.current[id];
-    if (!prev) return cur;
-    return { x: prev.x + (cur.x - prev.x) * tipFrac, y: prev.y + (cur.y - prev.y) * tipFrac };
-  };
-  // Shared mapped coordinates for a rider's lane (area + line), tip interpolated.
-  const lineCoordsFor = (id) => {
+  // ── Per-tick lane geometry (computed ONCE per rider per tick) ───────────────
+  // Each lane's mapped coords, decimated so a long race can't grow the vertex count
+  // without bound. The LAST coord is the leading-edge tip — the imperative motion
+  // clock (below) rewrites just that point each frame to glide it; every other point
+  // is stable for the tick, so area + line share this single computation.
+  const lanes = useMemo(() => riderIds.map((id, idx) => {
     const series = riders[id].distanceSeries || [];
     const start = plotStartIndex(series);
     const end = plottedLen(id);
     if (start < 0 || start >= end) return null;
-    const coords = series.slice(start, end).map((d, i) => ({ x: xFor(start + i), y: yFor(d) }));
-    const tip = tipFor(id);
-    if (tip && coords.length) coords[coords.length - 1] = tip;
-    return { coords, start };
-  };
+    const n = end - start;
+    const stride = n > MAX_PLOT_POINTS ? Math.ceil(n / MAX_PLOT_POINTS) : 1;
+    const coords = [];
+    for (let i = start; i < end; i += stride) coords.push({ x: xFor(i), y: yFor(series[i]) });
+    const lastIdx = end - 1;
+    if ((lastIdx - start) % stride !== 0) coords.push({ x: xFor(lastIdx), y: yFor(series[lastIdx]) });
+    const tip = coords[coords.length - 1];
+    const baseStr = ptsStr(coords.slice(0, -1));
+    return {
+      id, idx,
+      color: LINE_COLORS[idx % LINE_COLORS.length],
+      isGhost: !!riders[id].isGhost,
+      coords, tip, baseStr, startX: coords[0].x,
+      pointsStr: ptsStr(coords),
+    };
+    // Recompute whenever the data advances (maxSeriesLen/elapsedS/leaderM) or the
+    // scale changes (Lx/Ly/useLog/D) or the panel height changes (chartH). All are
+    // per-tick / per-resize events, never per animation frame.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [riderIds, riders, maxSeriesLen, elapsedS, Lx, Ly, useLog, D, goalM, winCondition, chartH]).filter(Boolean);
 
   // leader (for emphasis) — furthest along
   const leaderId = riderIds.reduce(
@@ -295,6 +278,113 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const xGrid = gridValues(T, X_BASE_S, W, GRID_MIN_PX).map((t) => ({ t, x: xForTime(t) }));
   const yGrid = gridValues(D, Y_BASE_M, H, GRID_MIN_PX).map((d) => ({ d, y: yFor(d) }));
 
+  // ── One shared motion clock: glide tip / tags / connectors / markers ────────
+  // Every data-driven position interpolates prev-tick → current-tick on ONE linear
+  // rAF loop, written imperatively. React renders the CURRENT-tick positions (so a
+  // no-animation environment — jsdom/happy-dom — shows the exact tick geometry); the
+  // clock only ADJUSTS between ticks. No per-frame React state.
+  const lineEls = useRef({});
+  const areaEls = useRef({});
+  const tagEls = useRef({});
+  const connEls = useRef({});
+  const markerEls = useRef({});
+  const motionRef = useRef({ lanes: [], tags: [], conns: [], markers: [] });
+  const clockRef = useRef(null);
+  if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: TICK_INTERP_MS });
+
+  // Prev/last per-element snapshots for the interpolation start point. Rotated on
+  // each new data tick (tickKey = maxSeriesLen advances once per engine tick).
+  const tickKey = maxSeriesLen;
+  const tickKeyRef = useRef(tickKey);
+  const prevTip = useRef({});
+  const lastTip = useRef({});
+  const prevTag = useRef({});
+  const lastTag = useRef({});
+  const prevConn = useRef({});
+  const lastConn = useRef({});
+  const prevMark = useRef({});
+  const lastMark = useRef({});
+
+  const curTip = {};
+  lanes.forEach((l) => { curTip[l.id] = { x: l.tip.x, y: l.tip.y }; });
+  const curTag = {};
+  tagLayout.forEach((t) => { curTag[t.id] = { left: t.leftPct, top: t.topPct }; });
+  const curConn = {};
+  tagLayout.forEach((t) => {
+    if (Math.abs(t.topPct - t.rawTopPct) > 1.5) {
+      curConn[t.id] = { left: t.leftPct, top: Math.min(t.topPct, t.rawTopPct), height: Math.abs(t.topPct - t.rawTopPct) };
+    }
+  });
+  const curMark = {};
+  eventMarkers.forEach((m) => { curMark[m.id] = { left: m.leftPct, top: m.topPct }; });
+
+  if (tickKeyRef.current !== tickKey) {
+    prevTip.current = lastTip.current;
+    prevTag.current = lastTag.current;
+    prevConn.current = lastConn.current;
+    prevMark.current = lastMark.current;
+    tickKeyRef.current = tickKey;
+  }
+  lastTip.current = curTip;
+  lastTag.current = curTag;
+  lastConn.current = curConn;
+  lastMark.current = curMark;
+
+  // Build the imperative motion payload for the clock (read fresh each frame from the
+  // ref, so a mid-tick resize/zoom re-render is picked up without a stale closure).
+  motionRef.current = {
+    lanes: lanes.map((l) => ({ id: l.id, baseStr: l.baseStr, startX: l.startX, prev: prevTip.current[l.id] || l.tip, cur: l.tip })),
+    tags: tagLayout.map((t) => ({ id: t.id, prev: prevTag.current[t.id] || curTag[t.id], cur: curTag[t.id] })),
+    conns: Object.keys(curConn).map((id) => ({ id, prev: prevConn.current[id] || curConn[id], cur: curConn[id] })),
+    markers: eventMarkers.map((m) => ({ id: m.id, prev: prevMark.current[m.id] || curMark[m.id], cur: curMark[m.id] })),
+  };
+
+  // Subscribe the imperative writer once; tear the clock down on unmount.
+  useEffect(() => {
+    const clock = clockRef.current;
+    const lerp = (a, b, f) => a + (b - a) * f;
+    const unsub = clock.subscribe((f) => {
+      const m = motionRef.current;
+      m.lanes.forEach((l) => {
+        const lineEl = lineEls.current[l.id];
+        const areaEl = areaEls.current[l.id];
+        if (!lineEl && !areaEl) return;
+        const tx = lerp(l.prev.x, l.cur.x, f);
+        const ty = lerp(l.prev.y, l.cur.y, f);
+        const tipStr = `${tx.toFixed(1)},${ty.toFixed(1)}`;
+        const lineStr = l.baseStr ? `${l.baseStr} ${tipStr}` : tipStr;
+        if (lineEl) lineEl.setAttribute('points', lineStr);
+        if (areaEl) areaEl.setAttribute('points', `${l.startX.toFixed(1)},${H} ${lineStr} ${tx.toFixed(1)},${H}`);
+      });
+      m.tags.forEach((t) => {
+        const el = tagEls.current[t.id];
+        if (!el) return;
+        el.style.left = `${lerp(t.prev.left, t.cur.left, f)}%`;
+        el.style.top = `${lerp(t.prev.top, t.cur.top, f)}%`;
+      });
+      m.conns.forEach((c) => {
+        const el = connEls.current[c.id];
+        if (!el) return;
+        el.style.left = `${lerp(c.prev.left, c.cur.left, f)}%`;
+        el.style.top = `${lerp(c.prev.top, c.cur.top, f)}%`;
+        el.style.height = `${lerp(c.prev.height, c.cur.height, f)}%`;
+      });
+      m.markers.forEach((mk) => {
+        const el = markerEls.current[mk.id];
+        if (!el) return;
+        el.style.left = `${lerp(mk.prev.left, mk.cur.left, f)}%`;
+        el.style.top = `${lerp(mk.prev.top, mk.cur.top, f)}%`;
+      });
+    });
+    return () => { unsub(); clock.stop(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Kick the clock on each new data tick so tip/tags/markers glide to the new datum.
+  useEffect(() => {
+    clockRef.current.onTick(null);
+  }, [tickKey]);
+
   return (
     <div className="cg-chart" data-testid="distance-chart">
       <div className="cg-chart__header" data-testid="chart-header">
@@ -341,51 +431,38 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           ))}
         </g>
 
-        {/* area fills (under each lane) */}
-        {riderIds.map((id, idx) => {
-          // Skip the leading flat-zero run (e.g. a penalty-boxed late start): the
-          // fill begins where the rider first moves. No movement at all → no fill.
-          const lc = lineCoordsFor(id);
-          if (!lc) return null;
-          const linePts = lc.coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-          const startX = lc.coords[0].x.toFixed(1);
-          const lastX = lc.coords[lc.coords.length - 1].x.toFixed(1);
-          const area = `${startX},${H} ${linePts} ${lastX},${H}`;
+        {/* area fills (under each lane) — the tip point glides imperatively. */}
+        {lanes.map((l) => {
+          const area = `${l.startX.toFixed(1)},${H} ${l.pointsStr} ${l.tip.x.toFixed(1)},${H}`;
           return (
             <polygon
-              key={`area-${id}`}
+              key={`area-${l.id}`}
+              ref={(el) => { areaEls.current[l.id] = el; }}
               points={area}
-              fill={`url(#cg-fill-${idx})`}
-              opacity={riders[id].isGhost ? 0.4 : 1}
+              fill={`url(#cg-fill-${l.idx})`}
+              opacity={l.isGhost ? 0.4 : 1}
             />
           );
         })}
 
-        {/* lane lines */}
-        {riderIds.map((id, idx) => {
-          // Line begins at first movement — a rider boxed at the start emerges
-          // from the axis to the right of the origin, never a flat zero line.
-          const lc = lineCoordsFor(id);
-          if (!lc) return null;
-          const pts = lc.coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-          const color = LINE_COLORS[idx % LINE_COLORS.length];
-          const isGhost = !!riders[id].isGhost;
-          return (
-            <polyline
-              key={id}
-              data-testid="race-line"
-              points={pts}
-              fill="none"
-              stroke={color}
-              strokeWidth={isGhost ? 2 : 3}
-              strokeDasharray={isGhost ? '5 6' : undefined}
-              opacity={isGhost ? 0.8 : 1}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
+        {/* lane lines — a rider boxed at the start emerges from the axis (never a flat
+            zero line); the leading tip glides via the motion clock. */}
+        {lanes.map((l) => (
+          <polyline
+            key={l.id}
+            ref={(el) => { lineEls.current[l.id] = el; }}
+            data-testid="race-line"
+            points={l.pointsStr}
+            fill="none"
+            stroke={l.color}
+            strokeWidth={l.isGhost ? 2 : 3}
+            strokeDasharray={l.isGhost ? '5 6' : undefined}
+            opacity={l.isGhost ? 0.8 : 1}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
 
         {goalInView && (
           <line className="cycle-race-screen__goal"
@@ -412,13 +489,14 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       {/* Terminus markers: each line's tip carries the rider's avatar + running
           score (distance) + live HR. Distance is read here, not off a y-axis.
           Tags are de-overlapped vertically; a connector links a displaced tag
-          back to its true line endpoint. */}
+          back to its true line endpoint. Positions glide on the motion clock. */}
       <div className="cycle-race-screen__tags">
         {tagLayout.map((t) => {
           const displaced = Math.abs(t.topPct - t.rawTopPct) > 1.5;
           return displaced ? (
             <div
               key={`conn-${t.id}`}
+              ref={(el) => { connEls.current[t.id] = el; }}
               className="cycle-race-screen__tag-connector"
               style={{
                 left: `${t.leftPct}%`,
@@ -432,6 +510,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         {tagLayout.map((t) => (
           <div
             key={`tag-${t.id}`}
+            ref={(el) => { tagEls.current[t.id] = el; }}
             className={`cycle-race-screen__tag${t.isGhost ? ' is-ghost' : ''}${t.isLeader ? ' is-leader' : ''}`}
             style={{ left: `${t.leftPct}%`, top: `${t.topPct}%` }}
           >
@@ -448,6 +527,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           {eventMarkers.map((m) => (
             <div
               key={`evt-${m.id}`}
+              ref={(el) => { markerEls.current[m.id] = el; }}
               className={`cycle-race-screen__marker cycle-race-screen__marker--${m.type}`}
               data-testid={`race-event-marker-${m.type}`}
               style={{ left: `${m.leftPct}%`, top: `${m.topPct}%`, '--marker-color': m.color }}
