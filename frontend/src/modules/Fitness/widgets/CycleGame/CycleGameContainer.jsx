@@ -1202,6 +1202,11 @@ export default function CycleGameContainer({ onMount } = {}) {
       const meta = raceMetaRef.current;
       const engineState = controller?.getState?.()?.engineState;
       if (!controller || !meta || !engineState) return;
+      // Same zero-distance rule as the save effect and recovery path — never
+      // beacon a junk "0 m" record from a pagehide during the go hold.
+      const totalDistanceM = Object.values(engineState.riders || {})
+        .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
+      if (totalDistanceM <= 0) return;
       try {
         const record = buildRaceRecord(engineState, meta);
         const blob = new Blob([JSON.stringify({ record })], { type: 'application/json' });
