@@ -16,6 +16,17 @@ files) into a clean, canonical, queryable loop library.
 3. **Reorganize** into a role-first, kebab-case tree and emit a queryable
    `index.yml` (with roman-numeral progression signatures via the shared theory
    core).
+4. **Percussion (grooves)** — content-detected, no flag: tracks are
+   drum-detected via `shared/music/percussion.isDrumTrack` (channel 9
+   authoritative; ≥60% GM_DRUM pitch coverage as fallback — coverage-only
+   detections are tagged `drumDetection: coverage` for audit). A whole file
+   ingests as `type: groove` only when drum tracks carry ≥90% of its notes;
+   mixed drum+pitched files are skipped with a report line. Grooves land under
+   `percussion/`, get `feel` (`straight`/`swing` via `detectFeel`), `barSpan`,
+   and `bpm` (filename, else MIDI header tempo) — and NO key/roman/availableKeys
+   fields. They are copied verbatim (never transposed: shifting pitches would
+   remap drum pieces), and `loop-enrich.cli.mjs` skips them (no harmonic
+   content).
 
 ## Layout produced
 
@@ -23,7 +34,7 @@ files) into a clean, canonical, queryable loop library.
 media/midi/loops/
   chord-progressions/{niko,famous/<artist>}/<mood?>/<slug>.mid
   melodies/{starters,famous/<artist>}/<mood?>/<slug>.mid
-  basslines/… arps/… ideas/…
+  basslines/… arps/… ideas/… percussion/…
   index.yml
 ```
 

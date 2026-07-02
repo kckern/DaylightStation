@@ -56,6 +56,7 @@ const ROLE_DIR = {
   melody: 'melodies',
   bassline: 'basslines',
   idea: 'ideas',
+  groove: 'percussion',
 };
 
 const SOURCE_DIR = {
