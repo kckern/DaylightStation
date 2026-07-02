@@ -15,6 +15,7 @@ import { mapRaceRecordToCandidate, buildGhostFromCandidate } from '@/modules/Fit
 import { courseStartOverride, pickRival, ladderDelta } from '@/modules/Fitness/lib/cycleGame/ladder.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
+import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from '@/modules/Fitness/lib/cycleGame/raceCheckpoint.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
@@ -25,11 +26,17 @@ import CycleRaceScreen from './CycleRaceScreen.jsx';
 import CycleEventToast from './CycleEventToast.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
+import { StopSignIcon, TimeIcon, RaceFlagIcon } from './home/icons.jsx';
 import './CycleGameContainer.scss';
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
 const GO_HOLD_MS = 800; // hold the green light (engine already live) before the race screen
+// A rider's sensor-gap counter (gapTicksRef, feeds rpmDuringGap) crossing this
+// threshold means the hold has fully decayed to 0 — presumed genuinely
+// disconnected, not a broadcast blip. Drives the "sensor lost" chip + edge log
+// (audit game-design #6). Matches equipmentRpm.js's decay-to-zero tick.
+const SENSOR_LOST_GAP_TICKS = 9;
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -225,6 +232,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
   const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
   const [resultsSecondsLeft, setResultsSecondsLeft] = useState(null); // results auto-exit countdown
+  // Lobby banner text for a just-recovered crash checkpoint (audit C1 / T5
+  // follow-up — recovery previously only logged, with no user-visible notice).
+  // Set by the recovery effect on a successful save; cleared on its own 8s
+  // timeout below OR when a new race starts (whichever comes first).
+  const [recoveredNotice, setRecoveredNotice] = useState(null);
   const stagingDeadlineRef = useRef(0); // earliest wall-time staging may advance to countdown
   const preGreenPedalersRef = useRef(new Set()); // riders who pedalled BEFORE the green light
   const goHoldTimerRef = useRef(null); // green-light hold before the race screen appears
@@ -239,7 +251,15 @@ export default function CycleGameContainer({ onMount } = {}) {
   const raceMetaRef = useRef(null);
   const startCountdownRef = useRef(3);
   const savedRef = useRef(false);
+  // Mid-race crash recovery (audit C1): guards the recovery check to run
+  // exactly once — on the FIRST time the container reaches idle after mount
+  // (not every return-to-idle, e.g. after backToHome/onCancel).
+  const recoveryCheckedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
+  // Riders whose race was cut short by the clock/operator (mercy-kill window
+  // closing, or a forced finish) while still honestly riding — see
+  // CycleRaceController's `overtime` set. Distinct from prevDnfRef (idle-quit).
+  const prevOvertimeRef = useRef(new Set());
   const prevPenalizedRef = useRef(new Set());
   // Telemetry: track prior tick state so transitions (not steady state) are what
   // gets logged — penalty awaiting-stop edges, cadence connect/drop, phase, and
@@ -252,6 +272,16 @@ export default function CycleGameContainer({ onMount } = {}) {
   // cadence broadcast gap hold the last value instead of flatlining, while a
   // genuine downward-trend-to-zero is still honored. See rpmDuringGap.
   const rpmHistoryRef = useRef(new Map());
+  // Per-rider consecutive-gap-tick counter (userId → count), reset to 0 on any
+  // CONNECTED reading and incremented once per disconnected tick. Feeds
+  // rpmDuringGap's cap (hold → decay → 0) and, once it crosses
+  // SENSOR_LOST_GAP_TICKS, the "sensor lost" flag/chip below (audit
+  // game-design #6). Read directly at render time (riderLive assembly) — safe
+  // because it's mutated synchronously inside the same tick effect that drives
+  // the setSnapshot commit each tick, so it's always current by render.
+  const gapTicksRef = useRef(new Map());
+  // Edge-detection for the sensor-lost telemetry (mirrors prevDnfRef/prevCadenceRef).
+  const prevSensorLostRef = useRef(new Set());
   // Officiating events (DNF / hot-start penalty) accumulated over the race —
   // drives the persistent chart markers and the results legend.
   const [raceEvents, setRaceEvents] = useState([]);
@@ -317,14 +347,34 @@ export default function CycleGameContainer({ onMount } = {}) {
     const id = (eventIdRef.current += 1);
     setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
     const toast = type === 'dnf'
-      ? { id, variant: 'dnf', icon: '🛑', title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
-      : { id, variant: 'penalty', icon: '⏱️', title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
+      ? { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
+      : { id, variant: 'penalty', icon: <TimeIcon />, title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
     // Show now if the slot is free, otherwise queue behind the current toast.
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
       return toast;
     });
   }, [raceIdleDnfS, hotStartPenaltyS]);
+
+  // Race-closed toast: the mercy-kill window (or a forced finish) can cut several
+  // stragglers in the SAME tick — one summary toast, not a stack of per-rider
+  // "DNF" toasts, so the moment reads as "the race ended" rather than "you all
+  // failed" (audit game-design #7 — the riders it names are still credited their
+  // real distance in the results, not branded DNF).
+  const recordOvertimeEvent = useCallback((userIds) => {
+    const id = (eventIdRef.current += 1);
+    const n = userIds.length;
+    const toast = {
+      id,
+      variant: 'overtime',
+      icon: <RaceFlagIcon />,
+      title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
+    };
+    setEventToast((cur) => {
+      if (cur) { toastQueueRef.current.push(toast); return cur; }
+      return toast;
+    });
+  }, []);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -596,6 +646,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [phase]);
 
   const startRace = useCallback((override = null, ghostOverride = undefined) => {
+    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
     const ov = override && override.win_condition ? override : null;
     log.info('cycle_game.start_pressed', {
       raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
@@ -662,10 +713,13 @@ export default function CycleGameContainer({ onMount } = {}) {
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
     prevDnfRef.current = new Set();
+    prevOvertimeRef.current = new Set();
     prevPenalizedRef.current = new Set();
     prevAwaitingRef.current = new Set();
     prevCadenceRef.current = new Map();
     rpmHistoryRef.current = new Map();
+    gapTicksRef.current = new Map();
+    prevSensorLostRef.current = new Set();
     tickCountRef.current = 0;
     setRaceEvents([]);
     setSaveFailed(false);
@@ -845,19 +899,55 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase, applySnapshot, log]);
 
+  // ── engine-live span (wall clock) ────────────────────────────────────────
+  // True for the ENTIRE go+racing span — the exact window the race-tick effect
+  // below runs for. Used (instead of raw `phase`) as that effect's dependency
+  // so the go→racing flip does NOT tear the interval down and rebuild it (the
+  // audited bug — the effect's own comment claimed "once per racing phase" but
+  // `phase` was in the dep array, so React re-ran it on every phase value
+  // change, including go→racing).
+  const isEngineLive = phase === 'go' || phase === 'racing';
+  // performance.now() at the instant the engine went live (green light) — the
+  // wall-clock zero the race-tick interval below measures elapsed time against.
+  const raceStartMsRef = useRef(null);
+  useEffect(() => {
+    if (isEngineLive) {
+      raceStartMsRef.current = performance.now();
+    } else {
+      raceStartMsRef.current = null;
+    }
+    // This effect and the race-tick effect below share the isEngineLive
+    // dependency and settle in the same commit; the race-tick effect only
+    // reads the anchor lazily inside its own setInterval callback (which can't
+    // fire before both effects have run), so ordering between them is moot.
+  }, [isEngineLive]);
+
   // ── race interval ────────────────────────────────────────────────────────
   // Runs while racing AND during the brief green-light 'go' hold, so RPMs count from
-  // the moment the light turns green — before the race screen appears.
+  // the moment the light turns green — before the race screen appears. Anchored to
+  // WALL-CLOCK time (raceStartMsRef), not to setInterval fire count: each fire
+  // computes how many ticks are actually DUE against elapsed real time and runs
+  // the (single, shared) per-tick body that many times — so a "5:00" race takes
+  // 5 real minutes even under kiosk jank that delays/coalesces timer fires,
+  // instead of drifting by counting fires 1:1. Gated on isEngineLive so the
+  // effect is set up ONCE for the whole go→racing span (see above).
   useEffect(() => {
-    if (phase !== 'racing' && phase !== 'go') return undefined;
-    const id = setInterval(() => {
+    if (!isEngineLive) return undefined;
+    let tickedCount = 0; // wall-clock ticks already applied since raceStartMsRef anchor
+
+    // The per-tick body — resolves inputs, advances the engine, and diffs
+    // telemetry edges. Invoked once per DUE tick (possibly several times per
+    // interval fire during catch-up); returns true when the race is over (no
+    // more ticks should run this fire).
+    const runTick = () => {
       const controller = controllerRef.current;
-      if (!controller) return;
+      if (!controller) return true;
       const liveSession = sessionRef.current;
       const liveGetUserVitals = getUserVitalsRef.current;
       const before = controller.getState();
       const inputs = {};
       const cadenceConnected = {}; // userId → bool, for the firehose + drop detection
+      const sensorLostNow = new Set(); // userIds whose gap has crossed SENSOR_LOST_GAP_TICKS this tick
       Object.keys(before.engineState?.riders || {}).forEach((userId) => {
         const rider = before.engineState.riders[userId];
         // Ghosts replay recorded series — the engine ignores inputs for them, and
@@ -871,20 +961,33 @@ export default function CycleGameContainer({ onMount } = {}) {
         const vitals = liveGetUserVitals?.(userId);
         const { abuseMaxRpm } = resolveRpmLimits(bikeByIdRef.current.get(rider.equipmentId) || {});
         // Cadence gap tolerance (racing only — this loop runs only while racing).
-        // A connected reading (even 0) is the truth: use it + remember it. While
-        // the sensor is DROPPED, hold the last good reading through the broadcast
-        // gap instead of flatlining — unless the rider was trending down into the
-        // gap, in which case a real cooldown-to-stop is honored (rpmDuringGap).
+        // A connected reading (even 0) is the truth: use it + remember it, and
+        // reset the consecutive-gap counter. While the sensor is DROPPED, hold
+        // the last good reading through the broadcast gap instead of flatlining
+        // — unless the rider was trending down into the gap, in which case a
+        // real cooldown-to-stop is honored — but ONLY for a bounded number of
+        // ticks: rpmDuringGap caps the hold (decay, then 0) so a sensor that
+        // never comes back can't ride forever at a frozen RPM and can still
+        // idle-DNF (audit game-design #6). gapTicks is tracked only for riders
+        // with real equipment — a rider with none never had a "connected"
+        // reading to begin with, so it isn't a sensor loss.
         let rawRpm;
+        let gapTicks = 0;
         if (connected) {
           rawRpm = Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
           const hist = rpmHistoryRef.current.get(userId) || [];
           hist.push(rawRpm);
           if (hist.length > 4) hist.shift();
           rpmHistoryRef.current.set(userId, hist);
+          gapTicksRef.current.set(userId, 0);
         } else {
-          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || []);
+          if (rider.equipmentId) {
+            gapTicks = (gapTicksRef.current.get(userId) || 0) + 1;
+            gapTicksRef.current.set(userId, gapTicks);
+          }
+          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || [], gapTicks || 1);
         }
+        if (gapTicks >= SENSOR_LOST_GAP_TICKS) sensorLostNow.add(userId);
         inputs[userId] = {
           rpm: clampCountedRpm(rawRpm, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
@@ -910,6 +1013,32 @@ export default function CycleGameContainer({ onMount } = {}) {
         prevCadenceRef.current.set(userId, now);
       });
 
+      // ── Sensor-lost transitions (info) — edge-only (mirrors cadence_change
+      // above): fires once when a rider's gap crosses SENSOR_LOST_GAP_TICKS
+      // (the hold has fully decayed to 0 — presumed genuinely disconnected,
+      // not a broadcast blip), and once more when the sensor comes back.
+      sensorLostNow.forEach((userId) => {
+        if (!prevSensorLostRef.current.has(userId)) {
+          log.info('cycle_game.sensor_lost', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevSensorLostRef.current.forEach((userId) => {
+        if (!sensorLostNow.has(userId)) {
+          log.info('cycle_game.sensor_recovered', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevSensorLostRef.current = sensorLostNow;
+
       // DNF detection — diff the controller dnf set; a new entry logs + raises
       // an on-screen event (toast + persistent chart marker).
       const dnfSet = new Set(state.dnf || []);
@@ -924,6 +1053,22 @@ export default function CycleGameContainer({ onMount } = {}) {
         }
       });
       prevDnfRef.current = dnfSet;
+
+      // Overtime detection — diff the controller overtime set (mercy-kill window
+      // closing / forced finish). Log each rider's edge individually (mirrors the
+      // DNF edge log above) but raise ONE summary toast for the whole batch —
+      // several stragglers can land in `overtime` on the same tick.
+      const overtimeSet = new Set(state.overtime || []);
+      const newOvertime = [...overtimeSet].filter((userId) => !prevOvertimeRef.current.has(userId));
+      newOvertime.forEach((userId) => {
+        log.info('cycle_game.rider_overtime', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: state.engineState?.elapsedS ?? null
+        });
+      });
+      if (newOvertime.length > 0) recordOvertimeEvent(newOvertime);
+      prevOvertimeRef.current = overtimeSet;
 
       // ── Penalty box lifecycle (info) — entry, awaiting-stop edge, and clear.
       // Every entry is paired with its exit so a tester's "stuck in penalty" is
@@ -963,6 +1108,19 @@ export default function CycleGameContainer({ onMount } = {}) {
       // read from post-resolution engine state (correct for ghosts/penalty/finish).
       // Off by default in console; captured to the per-session JSONL for forensics.
       tickCountRef.current += 1;
+
+      // ── mid-race crash checkpoint (audit C1) — every 5th tick, snapshot the
+      // ALREADY-IN-HAND post-resolution state (no extra getState() call) so a
+      // reload/crash can be finalized into a saved record on next mount instead
+      // of losing the race outright. writeCheckpoint swallows storage errors.
+      if (tickCountRef.current % 5 === 0) {
+        writeCheckpoint(window.sessionStorage, {
+          raceMeta: raceMetaRef.current,
+          engineState: state.engineState,
+          savedAt: Date.now()
+        });
+      }
+
       const tickRiders = state.engineState?.riders || {};
       log.debug('cycle_game.tick', {
         raceId: raceMetaRef.current?.raceId,
@@ -998,16 +1156,75 @@ export default function CycleGameContainer({ onMount } = {}) {
           }))
         });
         applySnapshot(finalState);
-        return;
+        return true;
       }
       // During the green-light hold, advance the engine but keep showing the green
       // stoplight (don't flip render to 'racing' yet — the go-hold timer does that).
-      if (phase === 'go') setSnapshot(state); else applySnapshot(state);
+      // Read the render phase from the ref (not the `phase` closed over at effect
+      // creation) — this effect is now long-lived across the go→racing edge, so
+      // the closed-over `phase` would go stale the moment 'go' flips to 'racing'.
+      if (phaseRef.current === 'go') setSnapshot(state); else applySnapshot(state);
+      return false;
+    };
+
+    const id = setInterval(() => {
+      const anchorMs = raceStartMsRef.current;
+      const nowMs = performance.now();
+      // Defensive fallback (anchor missing): advance exactly one tick rather than
+      // stalling forever. Should not happen — the anchor effect above always
+      // settles in the same commit as isEngineLive flipping true.
+      let dueTicks = anchorMs == null ? 1 : Math.floor((nowMs - anchorMs) / RACE_TICK_MS) - tickedCount;
+      if (dueTicks < 0) dueTicks = 0;
+      const cappedTicks = Math.min(dueTicks, 30); // bound a resumed-from-freeze burst
+      if (dueTicks > 1) {
+        log.warn('cycle_game.tick_catchup', {
+          raceId: raceMetaRef.current?.raceId,
+          dueTicks,
+          ranTicks: cappedTicks
+        });
+      }
+      for (let i = 0; i < cappedTicks; i += 1) {
+        tickedCount += 1;
+        if (runTick()) break; // race finished mid-catch-up — stop for this fire
+      }
     }, RACE_TICK_MS);
     return () => clearInterval(id);
-    // Live data is read from refs (sessionRef/getUserVitalsRef) so the interval
-    // is set up once per racing phase and never starved by context churn.
-  }, [phase, applySnapshot, recordRaceEvent, log]);
+    // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
+    // interval is set up ONCE for the whole go→racing span and never starved by
+    // context churn or torn down by the go→racing phase edge.
+  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log]);
+
+  // ── pagehide best-effort save (audit C1) ─────────────────────────────────
+  // A reload/crash may not give the periodic checkpoint a chance to run again
+  // before the tab is gone. On pagehide (fires on reload/close/nav-away —
+  // unlike beforeunload, not blocked by kiosk browsers) fire a best-effort
+  // sendBeacon with the CURRENT engine state directly to the save endpoint.
+  // The checkpoint is left in place regardless (belt over the beacon's braces
+  // — double-submit is safe, the datastore overwrites by the same raceId).
+  useEffect(() => {
+    if (!isEngineLive) return undefined;
+    const onPageHide = () => {
+      if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+      const controller = controllerRef.current;
+      const meta = raceMetaRef.current;
+      const engineState = controller?.getState?.()?.engineState;
+      if (!controller || !meta || !engineState) return;
+      // Same zero-distance rule as the save effect and recovery path — never
+      // beacon a junk "0 m" record from a pagehide during the go hold.
+      const totalDistanceM = Object.values(engineState.riders || {})
+        .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
+      if (totalDistanceM <= 0) return;
+      try {
+        const record = buildRaceRecord(engineState, meta);
+        const blob = new Blob([JSON.stringify({ record })], { type: 'application/json' });
+        navigator.sendBeacon('/api/v1/fitness/cycle-races', blob);
+      } catch {
+        // best-effort only — pagehide is not a place to throw or retry.
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [isEngineLive]);
 
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
@@ -1043,7 +1260,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           raceId: meta.raceId, ok, attempt: result.attempt,
           ...(ok ? {} : { error: result.error })
         });
-        if (!ok) setSaveFailed(true);
+        if (ok) clearCheckpoint(window.sessionStorage); // race safely landed — the checkpoint is now redundant
+        else setSaveFailed(true);
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface
         // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
@@ -1083,6 +1301,75 @@ export default function CycleGameContainer({ onMount } = {}) {
     // arrays); adding them here is a no-op in practice because savedRef latches
     // this effect to run once per race, but keeps exhaustive-deps honest.
   }, [phase, log, fetchLadder, resolveDisplayName]);
+
+  // ── mid-race crash recovery (audit C1) ───────────────────────────────────
+  // A kiosk reload/crash mid-race previously discarded the whole race — the
+  // race-tick effect below checkpoints progress to sessionStorage every 5th
+  // tick; this runs ONCE on mount (guarded by recoveryCheckedRef, not a plain
+  // `phase === 'idle'` dependency, since the container returns to idle many
+  // times in a session — after results, after cancel) and finalizes any
+  // fresh checkpoint left behind by a race that never reached 'results'.
+  // Live resume of the running engine is explicitly out of scope — this only
+  // salvages the record. A successful save also raises `recoveredNotice`, a
+  // small self-dismissing lobby banner (CycleGameHome) — recovery used to be
+  // surfaced via the structured log only, invisible to the person who just
+  // watched the kiosk reload mid-race.
+  useEffect(() => {
+    if (phase !== 'idle') return;
+    if (recoveryCheckedRef.current) return;
+    recoveryCheckedRef.current = true;
+    const store = window.sessionStorage;
+    const checkpoint = readFreshCheckpoint(store, Date.now());
+    if (!checkpoint) {
+      // Covers both "nothing there" and "stale/corrupt" — clear defensively
+      // either way (removeItem on an absent key is a no-op).
+      clearCheckpoint(store);
+      log.debug('cycle_game.checkpoint_discarded', {});
+      return;
+    }
+    const { raceMeta, engineState } = checkpoint;
+    const totalDistanceM = Object.values(engineState.riders || {})
+      .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
+    if (totalDistanceM <= 0) {
+      clearCheckpoint(store);
+      log.info('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, skipped: 'zero_distance' });
+      return;
+    }
+    const record = buildRaceRecord(engineState, raceMeta);
+    (async () => {
+      try {
+        const result = await saveRaceRecord({ record });
+        log.info('cycle_game.race_recovered', {
+          raceId: raceMeta.raceId,
+          ok: result.ok,
+          ...(result.ok ? {} : { error: result.error })
+        });
+        if (result.ok) {
+          setRecoveredNotice('Recovered your interrupted race — saved to history');
+          clearCheckpoint(store);
+        }
+        // NOT ok → keep the checkpoint: a reload racing a still-booting backend
+        // (e.g. right after a redeploy) must not destroy the race — the next
+        // mount retries the recovery. Stale/corrupt/zero-distance paths above
+        // clear their own checkpoints.
+      } catch (err) {
+        // saveRaceRecord never throws — this net catches unexpected errors only.
+        log.error('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, error: err?.message || String(err) });
+      }
+    })();
+    // Runs exactly once (recoveryCheckedRef); `phase` is the trigger only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  // Belt-and-suspenders expiry for the recovered-race banner: CycleGameHome
+  // self-dismisses its own DOM after 8s regardless, but the container's own
+  // state should also let go so a remount (e.g. leaving/returning to idle)
+  // doesn't resurrect a stale notice.
+  useEffect(() => {
+    if (!recoveredNotice) return undefined;
+    const id = setTimeout(() => setRecoveredNotice(null), 8000);
+    return () => clearTimeout(id);
+  }, [recoveredNotice]);
 
   useEffect(() => {
     onMount?.();
@@ -1253,6 +1540,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
     controllerRef.current = null;
     raceMetaRef.current = null;
+    clearCheckpoint(window.sessionStorage); // an intentionally-cancelled race is not "crashed" — nothing to recover
     setSnapshot(null);
     setPhase('idle');
   }, [log, phase]);
@@ -1307,6 +1595,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           featured={featuredLadder}
           onRideFeatured={onRideFeatured}
           resolveName={resolveDisplayName}
+          recoveredNotice={recoveredNotice}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />
@@ -1372,6 +1661,10 @@ export default function CycleGameContainer({ onMount } = {}) {
     // controller exposes per-rider detail for the countdown bar / awaiting-stop cue.
     const penalizedNow = new Set(snapshot?.penalized || []);
     const dnfNow = new Set(snapshot?.dnf || []);
+    // Overtime = the mercy-kill/forced-finish window closed around an honest
+    // rider (T3) — distinct from dnfNow (idle-quit). The standings tower needs
+    // it live to dim/tag that row, same as RaceResults does after the race.
+    const overtimeNow = new Set(snapshot?.overtime || []);
     const penaltyInfo = snapshot?.penaltyInfo || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
@@ -1418,7 +1711,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: mult,
         finished: isFinished,
-        placement: isFinished ? (placementByUser[userId] ?? null) : null,
+        // Live rank for EVERY rider (not gated on isFinished) — engine.standings()
+        // ranks unfinished riders by distance every tick too, and the standings
+        // tower (audit UX §4.1) needs a live "I'm 2nd" readout mid-race, not just
+        // at the finish line.
+        placement: placementByUser[userId] ?? null,
         // Live leader (rank-1 in standings) once the race is underway. standings()
         // ranks un-finished riders by distance every tick, so this hops on each lead
         // change and lands on the eventual winner.
@@ -1428,9 +1725,14 @@ export default function CycleGameContainer({ onMount } = {}) {
         // (riderLive.rpm above) so the rider can see they must pedal down to 0.
         penalized: penalizedNow.has(userId),
         dnf: dnfNow.has(userId),
+        overtime: overtimeNow.has(userId),
         penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
         penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
-        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop
+        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop,
+        // Sensor presumed genuinely disconnected (not a broadcast blip) — see
+        // gapTicksRef/SENSOR_LOST_GAP_TICKS in the tick effect above. Ghosts
+        // replay a recording and never carry a live sensor, so never flagged.
+        sensorLost: !isGhostRider && (gapTicksRef.current.get(userId) || 0) >= SENSOR_LOST_GAP_TICKS
       };
     });
     return (
@@ -1449,7 +1751,6 @@ export default function CycleGameContainer({ onMount } = {}) {
             winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
             goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
           })}
-          ovalCircuitM={Number.isFinite(cycleGameConfig?.oval_circuit_m) ? cycleGameConfig.oval_circuit_m : 1000}
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
@@ -1472,6 +1773,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         riders={engineState.riders || {}}
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
+        overtime={snapshot?.overtime || []}
         penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
         lapLengthM={effectiveLapLength({
           lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,

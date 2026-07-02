@@ -205,6 +205,6 @@
     border-radius: 999px; padding: 7px 16px; color: t.$cg-text; font-size: 0.85rem;
     transition: border-color 0.15s ease, color 0.15s ease;
     &:hover { border-color: t.$cg-border-soft; }
-    &--clear:hover { border-color: #f87171; color: #f87171; }
+    &--clear:hover { border-color: t.$cg-danger; color: t.$cg-danger; }
   }
 }

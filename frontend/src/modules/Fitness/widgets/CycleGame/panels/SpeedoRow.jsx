@@ -52,6 +52,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             penaltyRemainingS={live.penaltyRemainingS}
             penaltyTotalS={live.penaltyTotalS}
             penaltyAwaitingStop={!!live.penaltyAwaitingStop}
+            sensorLost={!!live.sensorLost}
             size={speedoSize}
           />
         );

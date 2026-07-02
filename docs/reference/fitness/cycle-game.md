@@ -363,7 +363,7 @@ above the grid.
 engine getState()
   → CycleRaceScreen (5 panel factories)
   → RaceLayoutManager (fixed by fieldSize)
-  → panels: SpeedoRow · DistanceChart · SplitsChart · PovGrid · OvalTrack
+  → panels: SpeedoRow · DistanceChart · SplitsChart · PovGrid · StandingsTower
 ```
 
 ### 9.1 The two layouts (`RaceLayoutManager`)
@@ -376,9 +376,13 @@ in both modes.
 
 - **Sidebar mode (≤ 3 riders):** a main column — top row **splits │ distance chart**
   over a full-width **speedometer** band — beside a right **sidebar**: the **POV
-  grid** (top ~70%) over the **lap oval** (bottom ~30%).
+  grid** (top ~70%) over the **standings tower** (bottom ~30%) — the tower
+  REPLACES the old lap oval's slot; the oval's lap strip folds into the tower's
+  own header row instead.
 - **Wide mode (≥ 4 riders):** a top row of three equal columns — **splits │ chart │
-  POV** — over a full-width **speedometer** band. No oval.
+  POV** — over a full-width **speedometer** band, plus the **standings tower**
+  docked as a right-edge column spanning the full height (audit UX §4.2 — wide
+  mode used to lose all rank/lap info; it never does now). No oval.
 
 `showSpeedos={false}` omits the speedo factory (its zone renders empty).
 
@@ -425,12 +429,23 @@ avatar** — a pooled DOM label positioned by the render loop. Rider motion
 interpolates per-frame between 1 Hz ticks; React renders structure only — the
 rAF loop owns motion.
 
-### 9.5 OvalTrack & SpeedoRow
+### 9.5 StandingsTower & SpeedoRow
 
-- **OvalTrack** — avatars circling a velodrome where **one loop = the whole race**
-  (`ovalTrackModel.ovalProgressFor`: lap progress when laps are on, else fraction of
-  the goal/elapsed). `θ = −π/2 + progress·2π`, clockwise from top; ghosts dashed. A
-  "Lap N" label tracks the leader. Sidebar mode only.
+- **StandingsTower** — the persistent rank/gap ladder the audit found missing from
+  every live race (UX §4.1): rank ordinal (shared placements render the same
+  ordinal — a dead heat shows two "1st"), lane-color chip, a 32px avatar
+  (ghost-treated), the display name, and either a gap-to-next-above reading or —
+  for the group leader, a finisher, or an overtime/DNF row — their own
+  total/final metric. Distance races express the gap in metres; time races
+  project it through the pace of the rider immediately above into a
+  time-behind estimate. Finished riders pin to the top with a flag; overtime
+  and DNF riders sink to the bottom, dimmed. Its header line folds in what used
+  to be the oval's "Last / Now" lap strip ("Lap 3 · Last 0:42 · Now 0:12"),
+  fed by the same `riders[id].lapSplits` data. Renders in **both** layouts —
+  sidebar mode (replacing the oval's old slot) and wide mode (a docked
+  right-edge column). `OvalTrack` (`ovalTrackModel.ovalProgressFor`: one loop =
+  the whole race) stays in the codebase but is no longer part of the live
+  panel map.
 - **SpeedoRow** — one `CycleSpeedometer` per rider on a single line; gauge size is
   computed from the injected `zoneBox` (`gaugeRowSize`, fit-across-width capped by
   height), never self-measured. Caps: `maxGauge`/`minGauge` 360/220 for ≤ 3 riders,
@@ -774,9 +789,10 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   sits at 0. Not a bug, not backfillable. (Recap always shows 0 RPM by design.)
 - **Config is read at startup.** Changing `cycle_game` config (incl. courses, zones,
   `lap_length_m`, penalties, `results_dwell_s`) requires a **container restart**.
-- **Lap panels are config-gated.** Splits, the oval lap label, and lap splits only
-  appear when the **effective** lap length > 0 (per-course override or app config,
-  via `effectiveLapLength`). With laps off, the splits panel still shows a live order.
+- **Lap panels are config-gated.** Splits and the standings tower's "Lap N" header
+  only appear when the **effective** lap length > 0 (per-course override or app
+  config, via `effectiveLapLength`). With laps off, the splits panel still shows a
+  live order.
 - **`lap_length_m` default is 400, with a whole-race shortcut.** A distance race
   whose goal is shorter than the lap runs as a single lap (`effectiveLapLength`).
 - **Multi-sensor cadence is the fastest live sensor.** A bike with `cadence: [a, b]`
