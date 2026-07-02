@@ -4,7 +4,7 @@ import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
 import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
-import { AVATAR_RATIO, BADGE_RATIO, BADGE_GAP_RATIO, OVERLAY_FONT_RATIO } from '@/modules/Fitness/lib/cycleGame/speedometerOverlayLayout.js';
+import { AVATAR_RATIO, OVERLAY_FONT_RATIO, multiplierChipBox } from '@/modules/Fitness/lib/cycleGame/speedometerOverlayLayout.js';
 import { NoEntryIcon, RaceFlagIcon, MedalIcon } from './home/icons.jsx';
 import './CycleSpeedometer.scss';
 
@@ -57,13 +57,13 @@ export default function CycleSpeedometer({
   // wrapper's font-size is a fixed fraction of its own pixel size, so every
   // em-sized overlay child (rpm sub-line, speed hero) grows/shrinks in lockstep
   // with the dial instead of colliding at small sizes or looking lost at large
-  // ones. The avatar keeps its existing ratio; the multiplier badge is sized
-  // off the AVATAR (not the gauge) so it's always ≤30% of the avatar's own
-  // diameter — see speedometerOverlayLayout.js for the shared ratios.
+  // ones. The avatar keeps its existing ratio; the multiplier PILL is sized
+  // independent of the avatar (min-px floor + gauge-ratio growth) specifically
+  // so its text stays legible at the smallest gauge — see multiplierChipBox in
+  // speedometerOverlayLayout.js (2026-07-02 legibility fix).
   const overlayFontPx = px * OVERLAY_FONT_RATIO;
   const avatarPx = Math.round(px * AVATAR_RATIO);
-  const badgePx = Math.max(1, Math.round(px * BADGE_RATIO));
-  const badgeGapPx = Math.round(px * BADGE_GAP_RATIO);
+  const multiplierChip = useMemo(() => multiplierChipBox(px), [px]);
 
   // ── Motion clock: glide the needle + count the odometer between 1 Hz ticks ──
   // Both are DATA-driven positions (rpm → needle angle, cumulative distance →
@@ -207,19 +207,27 @@ export default function CycleSpeedometer({
             progress={avatar.progress}
             size={avatarPx}
           />
-          {showBadge && (
-            /* Color-only dot: T10 caps the badge at 30% of the avatar, which
-               leaves no room for 10-foot-legible text (T11's 1.1rem floor). The
-               numeric multiplier moved to the lower readout beside rpm; the dot
-               keeps the zone-boost glanceable at the avatar. */
-            <div
-              className="cycle-speedometer__multiplier"
-              data-testid="cycle-speedometer-multiplier"
-              aria-label={`multiplier ×${Number(multiplier).toFixed(1)}`}
-              style={{ background: badgeColor, width: badgePx, height: badgePx, marginLeft: badgeGapPx }}
-            />
-          )}
         </div>
+
+        {showBadge && (
+          /* Legible PILL, not a dot (2026-07-02 fix — the prior circular badge,
+             capped at 30% of the avatar, shrank to an unreadable ~11px at the
+             wide-mode floor). Positioned top-right of the GAUGE (not anchored to
+             the avatar), sized independently so "×1.4" stays readable at every
+             gauge size — see multiplierChipBox. */
+          <div
+            className="cycle-speedometer__multiplier"
+            data-testid="cycle-speedometer-multiplier"
+            aria-label={`multiplier ×${Number(multiplier).toFixed(1)}`}
+            style={{
+              background: badgeColor,
+              left: multiplierChip.x, top: multiplierChip.y,
+              width: multiplierChip.width, height: multiplierChip.height
+            }}
+          >
+            ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
+          </div>
+        )}
 
         {/* Speed + rpm now live TOGETHER in the free lower hemisphere (audit UX
             §3.1-3.2) — the dial's ticks/labels only ever occupy the top half
@@ -238,14 +246,7 @@ export default function CycleSpeedometer({
             {sensorLost ? (
               <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
             ) : (
-              <>
-                {Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span>
-                {showBadge && (
-                  <span className="cycle-speedometer__multiplier-text" data-testid="cycle-speedometer-multiplier-text">
-                    {' '}· ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
-                  </span>
-                )}
-              </>
+              <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
             )}
           </div>
         </div>
