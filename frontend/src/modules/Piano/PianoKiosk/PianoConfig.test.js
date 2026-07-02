@@ -117,6 +117,25 @@ describe('studio config', () => {
   });
 });
 
+describe('producer config', () => {
+  it('defaults producer to null (onboard GM unverified)', () => {
+    expect(resolvePianoConfig({}, 'default').producer).toBeNull();
+  });
+
+  it('passes the producer block through (voiceTiers capability flags)', () => {
+    const raw = { producer: { voiceTiers: { onboardGm: true } } };
+    expect(resolvePianoConfig(raw, 'default').producer).toEqual({ voiceTiers: { onboardGm: true } });
+  });
+
+  it('lets a per-piano producer block override the shared one', () => {
+    const raw = {
+      producer: { voiceTiers: { onboardGm: false } },
+      pianos: { upstairs: { producer: { voiceTiers: { onboardGm: true } } } },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').producer.voiceTiers.onboardGm).toBe(true);
+  });
+});
+
 describe('resolvePianoConfig — whoIsPlayingMinutes + autoRecord', () => {
   it('resolves who-is-playing + auto-record defaults and per-piano overrides', () => {
     const base = resolvePianoConfig({}, 'default');
