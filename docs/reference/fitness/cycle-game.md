@@ -559,6 +559,7 @@ race:
   # time_cap_s: 300           # time races
   interval_seconds: 1
   background_plex_id: null
+  course_id: null           # featured-course id for ladder rides; null for lobby races
 participants:
   <userId>:
     display_name: "Milo"
@@ -649,7 +650,9 @@ current week); an out-of-range or malformed value is a `400`. Response:
 ```
 
 No featured course configured → `404`. No qualifying races in the window → `200`
-with `standings: []` and `allTimeRecord: null`.
+with `standings: []`; `allTimeRecord` reflects all-time history independent of the
+window and may still be populated; it is `null` only when the course has no
+qualifying race in its entire history.
 
 **`GET /cycle-races/personal-bests?userId=&courseId=`** — both params required
 (missing either is a `400`). Response:
