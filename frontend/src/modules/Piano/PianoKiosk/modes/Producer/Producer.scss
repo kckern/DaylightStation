@@ -314,47 +314,8 @@
   }
 }
 
-// Layer row (interim — Task 4.5 replaces with full ChannelStrips).
-.piano-layer {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 8px;
-  border: 1px solid var(--piano-border, #2c2c3a);
-  background: var(--piano-surface, #16161f);
-  &.is-muted { opacity: 0.5; }
-
-  &__glyph { flex: 0 0 auto; border-radius: 6px; }
-  &__role {
-    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--piano-muted, #99c); min-width: 4.5rem;
-  }
-  &__name { font-weight: 600; color: var(--piano-fg, #eef); flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__remove {
-    min-width: 3rem; min-height: 3rem;
-    background: none; border: none; color: var(--piano-danger, #a66); font-size: 1.1rem; cursor: pointer;
-  }
-
-  // M (Mute) / S (Solo) latching taps: ≥48px targets.
-  &__m, &__s {
-    min-width: 3rem;
-    min-height: 3rem;
-    border-radius: 6px;
-    border: 1px solid var(--piano-border, #2c2c3a);
-    background: var(--piano-surface, #16161f);
-    color: var(--piano-muted, #99a);
-    font-weight: 700;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
-    &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
-  }
-  // Push the M/S/✕ cluster to the row's right edge.
-  &__m { margin-left: auto; }
-}
+// Layer rows are full ChannelStrips (producer/ChannelStrip.jsx) — their
+// styles (plus GainStrip + VoicePicker) live in producer/ChannelStrip.scss.
 
 .piano-producer-mode__list li { position: relative; }
 

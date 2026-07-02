@@ -3,8 +3,9 @@
  *
  * Band 1: TransportBar (play/stop · bar:beat · BPM/tap · key · click · rec stub)
  * Band 2: Stage — Mix | Song tabs. Mix = front-door entry cards when the
- *         workspace is empty, layer rows once it isn't (Task 4.5 swaps the row
- *         component for full ChannelStrips). Song = placeholder (Task 7.2).
+ *         workspace is empty, DAW-style ChannelStrips once it isn't (glyph,
+ *         voice chip → VoicePicker, M/S, GainStrip, 2-tap remove).
+ *         Song = placeholder (Task 7.2).
  *         The library surface is a full-bleed overlay (LibraryOverlay — an
  *         interim port of the old browse; Task 5.1 replaces that ONE import).
  * Band 3: PianoKeyboard, always live — the person's OWN playing goes through
@@ -30,13 +31,13 @@ import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
-import { RomanProgression } from '../../../components/roman/RomanProgression.jsx';
 import { detectKey } from '../../../../MusicNotation/index.js';
 import { detectChords } from '../Lessons/theory/theoryEngine.js';
 import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers,
-  addLayer, removeLayer, toggleMute, toggleSolo, nudgeKey, setBpm, toggleMetronome,
+  addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
+  nudgeKey, setBpm, toggleMetronome,
 } from '../../producer/workspaceReducer.js';
 import { useProducerTransport } from '../../producer/useProducerTransport.js';
 import { createVoiceRouter } from '../../producer/voiceRouter.js';
@@ -44,52 +45,14 @@ import { createOnboardGmTier } from '../../producer/tiers/onboardGmTier.js';
 import { createGmSynthTier } from '../../producer/tiers/gmSynthTier.js';
 import { createGmSynth } from '../../producer/gmSynth.js';
 import { makeLoopNotesTap } from '../../producer/noteTapFilter.js';
-import { MaterialGlyph } from '../../producer/MaterialGlyph.jsx';
 import { TransportBar } from '../../producer/TransportBar.jsx';
+import { ChannelStrip } from '../../producer/ChannelStrip.jsx';
 import { LibraryOverlay } from '../../producer/LibraryOverlay.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 /** detectKey() names → pitch class, for shifting the label by keyShift. */
 const KEY_PC = { C: 0, G: 7, D: 2, A: 9, E: 4, B: 11, 'F#': 6, F: 5, Bb: 10, Eb: 3, Ab: 8, Db: 1, Gb: 6 };
-
-/**
- * One workspace layer as a simple Mix row. Task 4.5 swaps THIS component for
- * the full ChannelStrip (voice chip, gain strip) — the shell markup around it
- * (list, handlers) stays put, so keep the prop shape stable.
- */
-function LayerRow({ layer, onToggleMute, onToggleSolo, onRemove }) {
-  const entry = layer.source?.kind === 'library' ? layer.source.entry : null;
-  return (
-    <div className={`piano-layer${layer.muted ? ' is-muted' : ''}`}>
-      <MaterialGlyph
-        material={entry ?? { kind: 'take', id: layer.id }}
-        size={40}
-        className="piano-layer__glyph"
-        title={entry?.title || entry?.slug || layer.id}
-      />
-      <span className="piano-layer__role">{layer.role}</span>
-      {entry?.roman?.length
-        ? <RomanProgression roman={entry.roman} inline />
-        : <span className="piano-layer__name">{entry?.title || entry?.slug || layer.id}</span>}
-      <button
-        type="button"
-        className={`piano-layer__m${layer.muted ? ' is-on' : ''}`}
-        aria-pressed={layer.muted}
-        aria-label="mute"
-        onClick={() => onToggleMute(layer.id)}
-      >M</button>
-      <button
-        type="button"
-        className={`piano-layer__s${layer.soloed ? ' is-on' : ''}`}
-        aria-pressed={layer.soloed}
-        aria-label="solo"
-        onClick={() => onToggleSolo(layer.id)}
-      >S</button>
-      <button type="button" className="piano-layer__remove" aria-label="remove layer" onClick={() => onRemove(layer.id)}>✕</button>
-    </div>
-  );
-}
 
 export function Producer() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer' }), []);
@@ -336,6 +299,14 @@ export function Producer() {
 
   const handleToggleMute = useCallback((id) => dispatch(toggleMute(id)), []);
   const handleToggleSolo = useCallback((id) => dispatch(toggleSolo(id)), []);
+  const handleSetGain = useCallback((id, gain) => dispatch(setGain(id, gain)), []);
+  // Voice select is a user gesture — a fine moment to unlock audio, so the
+  // newly picked program is audible immediately (the configureLayer diff
+  // effect pushes it to the router as the reducer state lands).
+  const handleSetVoice = useCallback((id, program) => {
+    ensureAudio();
+    dispatch(setVoice(id, program));
+  }, [ensureAudio]);
 
   // ── display derivations ─────────────────────────────────────────────────────
   const splitNote = useMemo(() => Math.floor((kb.startNote + kb.endNote) / 2), [kb.startNote, kb.endNote]);
@@ -368,6 +339,13 @@ export function Producer() {
 
   const pillMaterials = useMemo(
     () => state.layers.map((l) => (l.source?.kind === 'library' ? l.source.entry : { kind: 'take', id: l.id })),
+    [state.layers],
+  );
+
+  // Shared-drum-channel honesty (ChannelStrip): >1 groove → gain edits on one
+  // groove strip audibly affect all of them (they share synth channel 9).
+  const grooveCount = useMemo(
+    () => state.layers.filter((l) => l.role === 'groove').length,
     [state.layers],
   );
 
@@ -446,12 +424,16 @@ export function Producer() {
                 <div className="piano-producer-mode__mix">
                   <div className="piano-producer-mode__layers">
                     {state.layers.map((l) => (
-                      <LayerRow
+                      <ChannelStrip
                         key={l.id}
                         layer={l}
+                        grooveCount={grooveCount}
+                        onboardGm={onboardEnabled}
                         onToggleMute={handleToggleMute}
                         onToggleSolo={handleToggleSolo}
                         onRemove={handleRemove}
+                        onGain={handleSetGain}
+                        onVoice={handleSetVoice}
                       />
                     ))}
                   </div>

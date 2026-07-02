@@ -179,7 +179,7 @@ async function openLibrary() {
 async function addDmLayer() {
   await openLibrary();
   fireEvent.click(await screen.findByRole('button', { name: 'Dm C · F Gm' }));
-  await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(1));
+  await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1));
 }
 
 describe('Producer shell (three bands)', () => {
@@ -230,7 +230,7 @@ describe('Producer shell (three bands)', () => {
     // Overlay closed, three bands back.
     expect(screen.queryByRole('dialog', { name: 'loop library' })).toBeNull();
     // Row: glyph + role + roman identity + M/S + remove.
-    const row = document.querySelector('.piano-layer');
+    const row = document.querySelector('.piano-channel-strip');
     expect(row.querySelector('.piano-material-glyph')).toBeTruthy();
     expect(screen.getByText('chords')).toBeInTheDocument();
     expect(row.querySelector('.roman-progression')).toBeTruthy();
@@ -254,7 +254,7 @@ describe('Producer shell (three bands)', () => {
     const solo = screen.getByLabelText('solo');
     fireEvent.click(solo);
     await waitFor(() => expect(screen.getByLabelText('solo')).toHaveAttribute('aria-pressed', 'true'));
-    expect(document.querySelector('.piano-layer__s.is-on')).toBeTruthy();
+    expect(document.querySelector('.piano-channel-strip__s.is-on')).toBeTruthy();
   });
 
   it('feeds loaded notes to the transport as channel-tagged layers (memoized seam)', async () => {
@@ -272,6 +272,17 @@ describe('Producer shell (three bands)', () => {
     render(<Producer />);
     await addDmLayer();
     expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 });
+  });
+
+  it('picking a new voice reaches router.configureLayer via the diff effect (SET_VOICE wiring)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    routerMock.configureLayer.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'voice' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'E-Piano' }));
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
+    // The chip reflects the workspace state round-trip.
+    expect(screen.getByRole('button', { name: 'voice' })).toHaveTextContent('E-Piano');
   });
 
   it('play tap unlocks audio (gmSynth created once) and starts the transport', async () => {
@@ -306,7 +317,7 @@ describe('Producer shell (three bands)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Broken Melody' }));
     // The optimistic row must NOT survive the empty load — front doors return.
     await waitFor(() => expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument());
-    expect(document.querySelectorAll('.piano-layer').length).toBe(0);
+    expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0);
     const toast = screen.getByRole('alert');
     expect(toast.textContent).toMatch(/couldn't load/i);
     expect(toast.textContent).toContain('Broken Melody');
@@ -325,8 +336,10 @@ describe('Producer shell (three bands)', () => {
   it('removing the last layer returns the front doors', async () => {
     render(<Producer />);
     await addDmLayer();
+    // Remove is a 2-tap confirm (arm, then remove).
     fireEvent.click(screen.getByLabelText('remove layer'));
-    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(0));
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
     expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
   });
@@ -336,9 +349,10 @@ describe('Producer shell (three bands)', () => {
     await addDmLayer();
     fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
     fireEvent.click(await screen.findByRole('button', { name: 'Catchy Hook' }));
-    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(2));
-    fireEvent.click(document.querySelector('.piano-layer__remove'));
-    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(1));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
+    fireEvent.click(document.querySelector('.piano-channel-strip__remove'));
+    fireEvent.click(document.querySelector('.piano-channel-strip__remove'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1));
     expect(screen.getByRole('button', { name: /\+ add layer/i })).toBeInTheDocument();
   });
 
