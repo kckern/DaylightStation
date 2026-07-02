@@ -104,18 +104,33 @@ function gradeSpecificity(slots) {
  * MAX_SLOTS (corrupt durations) throws a RangeError — batch callers should
  * catch per-file and flag.
  *
+ * When `opts.rootOverride` (pitch class 0..11) is present, root detection is
+ * skipped entirely: slots normalize relative to the override and `root`
+ * reports it verbatim. Use when the caller holds ground truth (e.g. the loop
+ * library's declared canonical key) that outranks the heuristic. A fractional
+ * override floors; a non-finite one, or one outside 0..11 after flooring,
+ * throws a TypeError (loud, per engine philosophy — never silently fall back
+ * to detection).
+ *
  * @param {Array<{ticks:number,durationTicks:number,midi:number}>} notes
  * @param {number} ppq ticks per quarter note
- * @param {{slotsPerBar?:number, timeSig?:[number,number]}} [opts]
+ * @param {{slotsPerBar?:number, timeSig?:[number,number], rootOverride?:number}} [opts]
  * @returns {{slots:number[][], root:number, specificity:'root'|'fifth'|'triad'|'extended'}}
  */
 export function harmonicTimeline(notes, ppq, opts = {}) {
-  const { slotsPerBar = 4, timeSig = [4, 4] } = opts;
+  const { slotsPerBar = 4, timeSig = [4, 4], rootOverride } = opts;
+  let forcedRoot = null;
+  if (rootOverride !== undefined) {
+    forcedRoot = Number.isFinite(rootOverride) ? Math.floor(rootOverride) : null;
+    if (forcedRoot === null || forcedRoot < 0 || forcedRoot > 11) {
+      throw new TypeError(`harmonicTimeline: invalid rootOverride ${rootOverride} (want pitch class 0..11)`);
+    }
+  }
   if (!Number.isFinite(ppq) || ppq <= 0) {
     throw new RangeError(`harmonicTimeline: invalid ppq ${ppq}`);
   }
   if (!Array.isArray(notes) || notes.length === 0) {
-    return { slots: [], root: 0, specificity: 'root' };
+    return { slots: [], root: forcedRoot ?? 0, specificity: 'root' };
   }
 
   const [beats, beatType] = timeSig;
@@ -139,7 +154,7 @@ export function harmonicTimeline(notes, ppq, opts = {}) {
     }
   }
 
-  const root = detectRoot(notes, slotTicks);
+  const root = forcedRoot ?? detectRoot(notes, slotTicks);
   const slots = occupancy.map((set) => [...set].map((pc) => mod12(pc - root)).sort((a, b) => a - b));
   return { slots, root, specificity: gradeSpecificity(slots) };
 }

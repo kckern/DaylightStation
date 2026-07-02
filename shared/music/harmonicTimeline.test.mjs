@@ -186,4 +186,60 @@ describe('harmonicTimeline', () => {
     assert.equal(r.root, 9);
     assert.deepEqual(r.slots[0], [0, 3, 7]); // minor triad relative to A
   });
+
+  describe('rootOverride', () => {
+    it('agreeing override: G-major triad loop with rootOverride 7 matches detection exactly', () => {
+      const notes = chord([55, 59, 62], 0, BAR); // G3 B3 D4
+      const detected = harmonicTimeline(notes, PPQ);
+      const overridden = harmonicTimeline(notes, PPQ, { rootOverride: 7 });
+      assert.equal(detected.root, 7); // sanity: detection agrees here
+      assert.deepEqual(overridden, detected);
+      assert.equal(overridden.root, 7);
+    });
+
+    it('disagreeing override renormalizes: C–G–Am–Dm shape stays C-relative under override 0', () => {
+      // Duration-weighted detection favors D on this progression shape (D sounds
+      // in both G and Dm, held long); the declared canonical key says C.
+      const notes = [
+        ...chord([48, 55, 60, 64], 0, PPQ * 2), // C: C3 G3 C4 E4, half note
+        ...chord([50, 55, 59, 62], PPQ * 2, PPQ * 2), // G: D3 G3 B3 D4
+        ...chord([57, 60, 64], BAR, PPQ), // Am
+        ...chord([50, 53, 57, 62], BAR + PPQ, PPQ * 3), // Dm: D3 F3 A3 D4, held
+      ];
+      const detected = harmonicTimeline(notes, PPQ);
+      assert.notEqual(detected.root, 0); // the heuristic miss this test guards against
+      const r = harmonicTimeline(notes, PPQ, { rootOverride: 0 });
+      assert.equal(r.root, 0);
+      assert.deepEqual(r.slots[0], [0, 4, 7]); // C major triad, C-relative
+      assert.deepEqual(r.slots[4], [0, 4, 9]); // Am = A C E → {9, 0, 4} relative to C
+    });
+
+    it('override changes only normalization, not occupancy (rotation identity)', () => {
+      const notes = chord([57, 60, 64], 0, BAR); // Am: detection roots at A (9)
+      const detected = harmonicTimeline(notes, PPQ); // A-relative [0,3,7]
+      const r = harmonicTimeline(notes, PPQ, { rootOverride: 0 }); // C-relative
+      assert.deepEqual(r.slots[0], [0, 4, 9]);
+      // same pc set, rotated by the root delta
+      const rotated = detected.slots[0].map((pc) => (pc + detected.root - 0 + 12) % 12).sort((a, b) => a - b);
+      assert.deepEqual(r.slots[0], rotated);
+    });
+
+    it('empty notes with rootOverride returns the override as root', () => {
+      assert.deepEqual(
+        harmonicTimeline([], PPQ, { rootOverride: 5 }),
+        { slots: [], root: 5, specificity: 'root' },
+      );
+    });
+
+    it('throws TypeError on invalid rootOverride (non-finite or out of 0..11 after floor)', () => {
+      const notes = chord([48], 0, BAR);
+      for (const bad of [-1, 12, -0.5, NaN, Infinity, '7', null]) {
+        assert.throws(() => harmonicTimeline(notes, PPQ, { rootOverride: bad }), TypeError, `expected throw for ${bad}`);
+      }
+      // fractional overrides floor into range (spec: invalid = out of 0..11 AFTER floor)
+      assert.equal(harmonicTimeline(notes, PPQ, { rootOverride: 7.5 }).root, 7);
+      // undefined = absent = detection path, no throw
+      assert.equal(harmonicTimeline(notes, PPQ, { rootOverride: undefined }).root, 0);
+    });
+  });
 });
