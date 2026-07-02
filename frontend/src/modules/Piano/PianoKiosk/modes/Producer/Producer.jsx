@@ -6,8 +6,8 @@
  *         workspace is empty, DAW-style ChannelStrips once it isn't (glyph,
  *         voice chip → VoicePicker, M/S, GainStrip, 2-tap remove).
  *         Song = placeholder (Task 7.2).
- *         The library surface is a full-bleed overlay (LibraryOverlay — an
- *         interim port of the old browse; Task 5.1 replaces that ONE import).
+ *         The library surface is full-bleed (LibraryBrowser — consonance
+ *         guardrails, facets, "goes with →" pivot; Task 5.1).
  * Band 3: PianoKeyboard, always live — the person's OWN playing goes through
  *         the untouched pressNote/releaseNote path; loop playback is a
  *         separate path entirely (workspaceReducer → toTransportLayers →
@@ -47,7 +47,7 @@ import { createGmSynth } from '../../producer/gmSynth.js';
 import { makeLoopNotesTap } from '../../producer/noteTapFilter.js';
 import { TransportBar } from '../../producer/TransportBar.jsx';
 import { ChannelStrip } from '../../producer/ChannelStrip.jsx';
-import { LibraryOverlay } from '../../producer/LibraryOverlay.jsx';
+import { LibraryBrowser } from '../../producer/LibraryBrowser.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -260,8 +260,8 @@ export function Producer() {
     ensureAudio();
     setOverlay(null);
     setLoadError(null);
-    // Interim overlay keeps ids == entry.path (no duplicates), so notesById
-    // stays keyed 1:1 with layers. Duplicate stacking arrives with 5.1.
+    // Layer ids == entry.path (the browser filters already-stacked entries
+    // from its grid), so notesById stays keyed 1:1 with layers.
     if (stateRef.current.layers.some((l) => l.id === entry.path)) return;
     const role = (entry.type === 'groove' || entry.kind === 'groove') ? 'groove' : roleOf(entry);
     dispatch(addLayer({ source: { kind: 'library', entry }, role, bpmHint: entry.bpm }));
@@ -478,7 +478,7 @@ export function Producer() {
       )}
 
       {lib.loops && overlayOpen && (
-        <LibraryOverlay
+        <LibraryBrowser
           lib={lib}
           layers={state.layers}
           initialRole={overlay.role}

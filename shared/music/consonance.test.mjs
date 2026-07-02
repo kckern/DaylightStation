@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable } from './consonance.mjs';
+import { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable, makeStackableGate } from './consonance.mjs';
 
 /** Timeline literal helper — only `slots` matters to stackable (loops are
  *  key-conformed upstream, so root is irrelevant to the union test). */
@@ -200,5 +200,30 @@ describe('stackable', () => {
     const a = tl([[0, 4, 7], [2, 7, 11], [0, 4, 9], [0, 5, 9]]);
     const b = tl([[2, 5, 9], [2, 7, 11], [0, 4, 7]]);
     assert.deepEqual(stackable(a, b), stackable(b, a));
+  });
+});
+
+describe('makeStackableGate (curried hot-path form)', () => {
+  // stackable() delegates to the gate, so the fixture suite above IS the
+  // gate's behavior suite; these pin the curried seam itself.
+  it('one gate scores many candidates identically to per-pair stackable calls', () => {
+    const base = tl([[0, 4, 7], [2, 7, 11], [0, 4, 9], [0, 5, 9]]);
+    const gate = makeStackableGate(base);
+    const candidates = [
+      tl([[0], [7], [0], [7]]),
+      tl([[0, 3, 6, 9]]),
+      tl([[2, 5, 9], [2, 7, 11], [0, 4, 7]]), // 3 vs 4 slots → LCM 12 frame
+      { slots: [], root: 0, specificity: 'root' },
+      tl([[12, 16, 19]]), // out-of-range pcs normalize mod 12
+    ];
+    for (const cand of candidates) {
+      assert.deepEqual(gate(cand), stackable(base, cand));
+    }
+  });
+
+  it('validates timelineA at creation, timelineB at call time (same errors, same order)', () => {
+    assert.throws(() => makeStackableGate({}), { name: 'TypeError', message: /timelineA/ });
+    const gate = makeStackableGate(tl([[0, 4, 7]]));
+    assert.throws(() => gate(null), { name: 'TypeError', message: /timelineB/ });
   });
 });

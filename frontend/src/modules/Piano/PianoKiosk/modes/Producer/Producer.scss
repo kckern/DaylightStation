@@ -1,6 +1,6 @@
 // Producer — three-band jam shell (transport / stage / keys), design §7.
 // Dark stage, Roboto Condensed, ≥48px touch targets, tap-first (no drags).
-// Also styles the producer/ band components (TransportBar, LibraryOverlay) —
+// Also styles the producer/ band components (TransportBar, LibraryBrowser) —
 // they only ever render inside this surface.
 
 .piano-producer-mode {
@@ -210,6 +210,67 @@
 
   &__roles { display: flex; gap: 0.5rem; flex-wrap: wrap; .piano-chip { min-height: 3rem; } }
 
+  // Facet stack (store / kind / mood / feel chip rows) — pinned under search.
+  &__facets { display: flex; flex-direction: column; gap: 0.45rem; flex: 0 0 auto; }
+
+  // Guardrail indicator: "Showing what fits your jam · N" + Show all escape.
+  &__gate {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex: 0 0 auto;
+    .piano-chip { min-height: 3rem; }
+  }
+  &__gate-note { font-size: 0.95rem; color: var(--piano-accent-text, #7c9); }
+
+  // "Goes with →" pivot breadcrumb (✕ returns to the workspace-anchored browse).
+  &__crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    align-self: flex-start;
+    padding: 0.3rem 0.45rem 0.3rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface-2, #12211a);
+    color: var(--piano-fg, #dfe);
+  }
+  &__crumb-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--piano-muted, #9ab); }
+  &__crumb-name { font-weight: 600; }
+  &__crumb-clear {
+    min-width: 3rem;
+    min-height: 3rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--piano-fg, #cce);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  // Stub-store ("Ours"/"Prefabs") + no-results empty states.
+  &__library-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    color: var(--piano-muted, #99a);
+    font-size: 1.05rem;
+    .piano-chip { min-height: 3rem; }
+  }
+
+  // Honest render cap: 120 cards, then invite refinement (no virtualization).
+  &__list-footer {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0.6rem 0 0.2rem;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--piano-muted, #889);
+  }
+
   &__search {
     flex: 1 1 auto;
     width: 100%;
@@ -275,8 +336,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  // Reserve a footer strip for the mood tag so card content never collides.
-  padding: 0.55rem 0.7rem 2.1rem;
+  // Reserve a footer strip for the mood tag + pivot button so card content
+  // never collides with either.
+  padding: 0.55rem 0.7rem 3.1rem;
   border-radius: 8px;
   border: 1px solid var(--piano-border, #2a2a36);
   background: var(--piano-surface, #15151d);
@@ -303,6 +365,51 @@
     border-radius: 4px; padding: 0.05rem 0.35rem; margin-right: 0.3rem;
   }
 
+  // Glyph row: identity glyph left, ⚠ clash marker (show-all mode) right.
+  &__head { display: flex; align-items: flex-start; justify-content: space-between; }
+  &__warn { font-size: 1.05rem; color: #e6b84a; line-height: 1; }
+
+  // Groove identity: honest feel/bpm chips (grooves carry no harmonic
+  // timeline — no fake onset rows).
+  &__chips { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  &__chip {
+    font-size: 0.78rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: var(--piano-stage-panel, #191922);
+    color: var(--piano-muted, #aab);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  // Subdued debug-ish caption: the slug for untitled melodic/groove material.
+  // NEVER styled as a name — the glyph (+ staff/chips) is the identity.
+  &__caption {
+    font-size: 0.68rem;
+    color: var(--piano-muted, #778);
+    opacity: 0.6;
+    font-family: monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // "goes with →" pivot affordance (sibling of the card button; 48px target).
+  &__pivot {
+    position: absolute;
+    right: 0.4rem;
+    bottom: 0.3rem;
+    min-height: 3rem;
+    padding: 0.2rem 0.6rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--piano-accent-text, #7c9);
+    font: 0.8rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { background: var(--piano-stage-panel, #18241c); }
+  }
+
   // Melody contour: a compact staff STRIP (not a full-height staff).
   &__staff {
     display: block;
@@ -321,10 +428,12 @@
 
 // Focus outlines for all interactive Producer elements.
 .piano-loop:focus-visible,
+.piano-loop__pivot:focus-visible,
 .piano-chip:focus-visible,
 .piano-producer-mode__door:focus-visible,
 .piano-producer-mode__add-layer:focus-visible,
 .piano-producer-mode__pill:focus-visible,
+.piano-producer-mode__crumb-clear:focus-visible,
 .piano-producer-mode__overlay-close:focus-visible {
   outline: 2px solid var(--piano-accent, #2ec46f);
   outline-offset: 2px;
