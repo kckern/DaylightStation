@@ -1,7 +1,7 @@
 # Cycle Game — Weekly Time-Trial Ladder (Race Weekend, sub-project 1)
 
 **Date:** 2026-07-01
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented
 **Parent initiative:** "Race Weekend" package (weekly TT ladder → Tour de Garage → podium receipts → career layer). Each sub-project gets its own spec/plan cycle; this is the first and lays the data foundation the others reuse.
 
 ## Goal
