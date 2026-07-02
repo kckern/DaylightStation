@@ -70,9 +70,10 @@ describe('PovGrid (three.js shell)', () => {
     expect(getByTestId('race-pov')).toBeTruthy();
   });
 
-  it('renders one card per moved, non-DNF rider', () => {
+  it('renders a card per non-DNF rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
+    // audit C5: everyone lines up at z=0 from mount so the road is never empty at GO.
     const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={riders} riderLive={{}} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(2); // c has 0 distance
+    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) now parked on the line
   });
 
   it('excludes DNF riders', () => {
@@ -87,9 +88,21 @@ describe('PovGrid (three.js shell)', () => {
     expect(getByTestId('pov-marker').className).toContain('is-ghost');
   });
 
-  it('shows a distance label per card', () => {
-    const { getByText } = render(<PovGrid riderIds={['a']} riders={{ a: { displayName: 'Ada', cumulativeDistanceM: 120 } }} riderLive={{}} />);
-    expect(getByText(/120/)).toBeTruthy();
+  it('shows a fixed-size rank + gap badge per card (no depth-scaled distance label)', () => {
+    const field = {
+      a: { displayName: 'Ada', cumulativeDistanceM: 120 },
+      b: { displayName: 'Ben', cumulativeDistanceM: 80 },
+    };
+    const riderLive = { a: { placement: 1 }, b: { placement: 2 } };
+    const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={field} riderLive={riderLive} />);
+    const badges = getAllByTestId('pov-badge').map((el) => el.textContent);
+    expect(badges).toContain('1st · 120 m'); // leader shows total
+    expect(badges).toContain('2nd · −40 m'); // chaser shows gap-to-next
+  });
+
+  it('renders a horizon leader chip element', () => {
+    const { getByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+    expect(getByTestId('pov-horizon-chip')).toBeTruthy();
   });
 
   it('applies the canonical cg-ghost class to ghost markers on the POV', () => {
