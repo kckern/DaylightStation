@@ -5,6 +5,8 @@ import {
   initialDraft,
   ActionTypes,
   promote,
+  applyTemplate,
+  slotFill,
   openSection,
   setArrangement,
   setRepeats,
@@ -19,8 +21,11 @@ import {
   setMeta,
   resolveSectionStack,
   toSchedulerInputs,
+  sectionProgramMap,
+  draftReferencesLayer,
   sectionGlyphSeeds,
 } from './draftReducer.js';
+import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import { seedFor } from './MaterialGlyph.jsx';
 import { compileArrangement } from '@shared-music/arrangementScheduler.mjs';
 
@@ -353,6 +358,98 @@ describe('PROMOTE (replace / re-promote)', () => {
     }));
     expect(s.carriedLayers[GROOVE]).toBeDefined();
     expect(resolveSectionStack(s, 'sec-2').some((l) => l.id === GROOVE)).toBe(true);
+  });
+});
+
+// ── APPLY_TEMPLATE ───────────────────────────────────────────────────────────
+
+const POP = STRUCTURE_TEMPLATES.find((t) => t.id === 'pop');
+
+describe('APPLY_TEMPLATE', () => {
+  it('materializes a null draft: empty named sections, index-resolved arrangement, meta seeded from the workspace', () => {
+    const s = run(applyTemplate(POP, ws([], { keyShift: -2, bpm: 90 })));
+    expect(s.meta).toEqual({ title: null, author: null, keyShift: -2, bpm: 90 });
+    expect(s.sections.map((x) => [x.id, x.name, x.lengthBars])).toEqual([
+      ['sec-1', 'Intro', 4], ['sec-2', 'Verse', 8], ['sec-3', 'Chorus', 8], ['sec-4', 'Outro', 4],
+    ]);
+    expect(s.sections.every((x) => x.stack.length === 0)).toBe(true);
+    expect(s.arrangement).toEqual([
+      { sectionId: 'sec-1', repeats: 1 },
+      { sectionId: 'sec-2', repeats: 2 },
+      { sectionId: 'sec-3', repeats: 2 },
+      { sectionId: 'sec-2', repeats: 1 },
+      { sectionId: 'sec-3', repeats: 1 },
+      { sectionId: 'sec-4', repeats: 1 },
+    ]);
+    expect(s.carriedLayers).toEqual({});
+  });
+
+  it('is a documented no-op on a draft with sections (templates never overwrite material)', () => {
+    const base = twoSectionDraft();
+    expect(draftReducer(deepFreeze(base), applyTemplate(POP))).toBe(base);
+  });
+
+  it('applies into an EMPTIED draft (all sections deleted), preserving meta', () => {
+    const emptied = run(
+      promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)], { keyShift: 2, bpm: 120 }), notesById }),
+      deleteSection('sec-1'),
+    );
+    const s = draftReducer(deepFreeze(emptied), applyTemplate(POP, ws([], { keyShift: 9, bpm: 60 })));
+    expect(s.meta).toEqual({ title: null, author: null, keyShift: 2, bpm: 120 }); // NOT re-seeded
+    expect(s.sections).toHaveLength(4);
+  });
+
+  it('rejects malformed templates wholesale (missing sections, dangling section index)', () => {
+    expect(run(applyTemplate(null))).toBeNull();
+    expect(run(applyTemplate({ sections: [], arrangement: [{ section: 0 }] }))).toBeNull();
+    expect(run(applyTemplate({
+      sections: [{ name: 'A', lengthBars: 4 }],
+      arrangement: [{ section: 5, repeats: 1 }],
+    }))).toBeNull();
+    const base = twoSectionDraft();
+    const emptied = draftReducer(deepFreeze(
+      draftReducer(deepFreeze(base), deleteSection('sec-1'))), deleteSection('sec-2'));
+    expect(draftReducer(deepFreeze(emptied), applyTemplate({ sections: [], arrangement: [] }))).toBe(emptied);
+  });
+});
+
+// ── SLOT_FILL ────────────────────────────────────────────────────────────────
+
+describe('SLOT_FILL', () => {
+  const templated = () => run(applyTemplate(POP, ws([], { keyShift: 0, bpm: 100 })));
+
+  it('fills an EMPTY slot from the jam via the PROMOTE-replace path (deep copies, carried handling)', () => {
+    const s = draftReducer(deepFreeze(templated()), slotFill({
+      sectionId: 'sec-2', // Verse
+      workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0), carriedGroove()]),
+      notesById,
+    }));
+    const stack = resolveSectionStack(s, 'sec-2');
+    expect(stack.map((l) => l.id)).toEqual([CHORDS_A, GROOVE]);
+    expect(s.carriedLayers[GROOVE]).toBeDefined();
+    // Structural template choices survive: name, lengthBars, arrangement.
+    expect(s.sections[1].name).toBe('Verse');
+    expect(s.sections[1].lengthBars).toBe(8); // NOT re-derived from the 2-bar jam
+    expect(s.arrangement).toEqual(templated().arrangement);
+  });
+
+  it('a NON-empty target is a no-op (overwriting built material is re-promote territory)', () => {
+    const filled = draftReducer(deepFreeze(templated()), slotFill({
+      sectionId: 'sec-2', workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById,
+    }));
+    expect(draftReducer(deepFreeze(filled), slotFill({
+      sectionId: 'sec-2', workspaceState: ws([wsLayer(CHORDS_B, 'chords', 0)]), notesById,
+    }))).toBe(filled);
+  });
+
+  it('unknown section and null draft are no-ops', () => {
+    const base = templated();
+    expect(draftReducer(deepFreeze(base), slotFill({
+      sectionId: 'ghost', workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById,
+    }))).toBe(base);
+    expect(draftReducer(null, slotFill({
+      sectionId: 'sec-1', workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById,
+    }))).toBeNull();
   });
 });
 
@@ -786,6 +883,69 @@ describe('toSchedulerInputs', () => {
   });
 });
 
+describe('draftReferencesLayer', () => {
+  it('sees direct stack entries AND carriedRef placeholders; false for unknown ids and null drafts', () => {
+    const draft = twoSectionDraft();
+    expect(draftReferencesLayer(draft, CHORDS_A)).toBe(true); // direct copy in sec-1
+    expect(draftReferencesLayer(draft, GROOVE)).toBe(true); // carriedRef in both
+    expect(draftReferencesLayer(draft, 'ghost')).toBe(false);
+    expect(draftReferencesLayer(null, CHORDS_A)).toBe(false);
+  });
+
+  it('stops referencing once the section is deleted', () => {
+    const s = draftReducer(deepFreeze(twoSectionDraft()), deleteSection('sec-1'));
+    expect(draftReferencesLayer(s, CHORDS_A)).toBe(false);
+    expect(draftReferencesLayer(s, GROOVE)).toBe(true); // sec-2 still refs it
+  });
+});
+
+describe('sectionProgramMap', () => {
+  it('maps resolved layers to {channel, program, gain}; grooves report program null but keep gain', () => {
+    const draft = run(promote({
+      workspaceState: ws([
+        wsLayer(CHORDS_A, 'chords', 0, { gmProgram: 4, gain: 0.8 }),
+        carriedGroove(),
+      ]),
+      notesById,
+    }));
+    expect(sectionProgramMap(draft, 'sec-1')).toEqual([
+      { channel: 0, program: 4, gain: 0.8 },
+      { channel: 9, program: null, gain: 1 },
+    ]);
+  });
+
+  it('uses the SAME repaired channels as toSchedulerInputs (a configured program lands where events play)', () => {
+    const draft = {
+      sections: [{
+        id: 'sec-1',
+        name: 'A',
+        lengthBars: 2,
+        stack: [
+          wsLayer(CHORDS_A, 'chords', 0, { gmProgram: 10 }),
+          wsLayer(CHORDS_B, 'melody', 0, { gmProgram: 20 }), // duplicate claim
+        ],
+      }],
+      carriedLayers: {},
+      arrangement: [{ sectionId: 'sec-1', repeats: 1 }],
+      meta: { title: null, author: null, keyShift: 0, bpm: 100 },
+    };
+    const map = sectionProgramMap(deepFreeze(draft), 'sec-1');
+    const { sections } = toSchedulerInputs(deepFreeze(draft), notesById);
+    expect(map.map((e) => e.channel)).toEqual(sections[0].stack.map((l) => l.channel));
+    expect(map).toEqual([
+      { channel: 0, program: 10, gain: 1 },
+      { channel: 1, program: 20, gain: 1 },
+    ]);
+  });
+
+  it('includes layers whose notes are not loaded, and returns [] for unknown/null', () => {
+    const draft = run(promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById: {} }));
+    expect(sectionProgramMap(draft, 'sec-1')).toHaveLength(1);
+    expect(sectionProgramMap(draft, 'ghost')).toEqual([]);
+    expect(sectionProgramMap(null, 'sec-1')).toEqual([]);
+  });
+});
+
 describe('sectionGlyphSeeds', () => {
   it('yields library entries and take stubs as MaterialGlyph child materials (carried refs expanded)', () => {
     const draft = run(promote({
@@ -824,6 +984,8 @@ describe('action creators', () => {
   it('every creator emits a type registered in ActionTypes', () => {
     const samples = [
       promote({ workspaceState: ws([]) }),
+      applyTemplate(POP, ws([])),
+      slotFill({ sectionId: 'sec-1', workspaceState: ws([]) }),
       openSection('sec-1'),
       setArrangement([]), setRepeats(0, 1), moveEntry(0, 1), addEntry('sec-1'), removeEntry(0),
       setSectionLength('sec-1', 4), renameSection('sec-1', 'A'), deleteSection('sec-1'),

@@ -156,6 +156,7 @@ function emptyMidiBuffer() {
 beforeEach(() => {
   vi.clearAllMocks();
   transportMock.isPlaying = false;
+  transportMock.pendingJumpRef.current = null;
   transportArgs.last = null;
   Object.assign(midiMock, {
     activeNotes: new Map(),
@@ -367,11 +368,14 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByRole('button', { name: /\+ add layer/i })).toBeInTheDocument();
   });
 
-  it('the Song tab shows the arrangement placeholder (Task 7.2 fills it)', async () => {
+  it('the Song tab shows the template picker + jam door while no draft exists', async () => {
     render(<Producer />);
     await screen.findByRole('tab', { name: 'Song' });
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
-    expect(screen.getByText(/build sections from your jam/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /pop/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /12-bar/i })).toBeInTheDocument();
+    // No jam layers yet → the promote door is disabled.
+    expect(screen.getByRole('button', { name: /start from your jam/i })).toBeDisabled();
     // Back to Mix — state preserved.
     fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
     expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
@@ -483,5 +487,210 @@ describe('Producer shell (three bands)', () => {
     expect(transportMock.stop).toHaveBeenCalled();
     expect(routerMock.dispose).toHaveBeenCalled();
     expect(synthMock.dispose).toHaveBeenCalled();
+  });
+});
+
+// ── Song builder wiring (Task 7.2) ───────────────────────────────────────────
+
+/** Jam one layer (notes fully loaded) and promote it — lands on the Song tab. */
+async function jamAndPromote() {
+  await addDmLayer();
+  await waitFor(() => expect(transportArgs.last.layers.length).toBe(1)); // notes loaded
+  fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
+  await screen.findByRole('button', { name: 'A slot 1' });
+}
+
+/** Flip the mocked transport to "playing" and force a re-render (via the
+ * benign Roman toggle — twice, so its own state is unchanged) so the shell's
+ * isPlaying edge effects observe the change WITHOUT touching the active tab:
+ * the sticky-mode lock latches armedMode on the rising-edge render, and a tab
+ * change in that same render would corrupt what real playback would capture
+ * (the real transport flips isPlaying synchronously inside play()). */
+function setPlaying(playing) {
+  transportMock.isPlaying = playing;
+  fireEvent.click(screen.getByRole('button', { name: 'roman' }));
+  fireEvent.click(screen.getByRole('button', { name: 'roman' }));
+}
+
+describe('Song builder wiring (Task 7.2)', () => {
+  it('FULL LOOP: jam → Add to song → Song tab slot card; the transport receives the compiled-arrangement input shape', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    // Auto-switched to the Song tab with one slot (`A ×1 · 4 bars`).
+    const slot = screen.getByRole('button', { name: 'A slot 1' });
+    expect(slot.textContent).toContain('×1 · 4 bars');
+    // Armed for song playback: the arrangement prop has toSchedulerInputs shape.
+    const arr = transportArgs.last.arrangement;
+    expect(arr).not.toBeNull();
+    expect(arr.arrangement).toEqual([{ sectionId: 'sec-1', repeats: 1 }]);
+    expect(arr.sections).toHaveLength(1);
+    expect(arr.sections[0]).toMatchObject({ id: 'sec-1', lengthBars: 4 });
+    const layer = arr.sections[0].stack[0];
+    expect(layer.channel).toBe(0);
+    expect(layer.notes.length).toBeGreaterThan(0);
+    expect(layer).not.toHaveProperty('gmProgram'); // program map is the shell's job
+    // Song bpm rides draft.meta (seeded from the jam's adopted 120).
+    expect(transportArgs.last.bpm).toBe(120);
+    // Play starts the transport in this armed mode.
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    expect(transportMock.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('playback MODE IS STICKY: switching to Mix mid-song-play keeps the arrangement input; stop releases it', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    setPlaying(true); // rising edge on the Song tab → locks 'song'
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    // Mix tab while the song plays: the transport still holds the arrangement.
+    expect(transportArgs.last.arrangement).not.toBeNull();
+    // Stop → the lock releases; on the Mix tab the transport is stack-armed.
+    setPlaying(false);
+    await waitFor(() => expect(transportArgs.last.arrangement).toBeNull());
+  });
+
+  it('a refused play() strands no mode lock — arming stays tab-driven while idle', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    // The mocked play() never starts playback (== the real transport refusing,
+    // e.g. totalMs 0). No rising edge → no lock → tabs keep re-arming.
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    expect(transportArgs.last.arrangement).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    expect(transportArgs.last.arrangement).not.toBeNull();
+  });
+
+  it('Edit in Mix loads the section WITH the song key/tempo (the loadStack seam) and shows the editing badge', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByLabelText('key up')); // jam keyShift 1
+    await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to song' })); // meta: bpm 120, keyShift 1
+    await screen.findByRole('button', { name: 'A slot 1' });
+    // Drift the workspace key AFTER promotion…
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByLabelText('key down'));
+    fireEvent.click(screen.getByLabelText('key down'));
+    await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(-1));
+    // …then open the section: the workspace snaps back to the SONG's key.
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    // Landed in Mix: strip present, badge up, promote door relabeled.
+    expect(screen.getByRole('button', { name: /browse|add layer/i })).toBeInTheDocument();
+    expect(screen.getByRole('status').textContent).toContain('Editing section A');
+    expect(screen.getByRole('button', { name: 'Update section' })).toBeInTheDocument();
+    await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(1));
+    expect(transportArgs.last.bpm).toBe(120);
+  });
+
+  it('Update re-promotes and clears the badge; Discard clears ONLY the badge (workspace keeps the stack)', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    // Re-open and discard: badge clears, the strip (workspace stack) survives.
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1);
+  });
+
+  it('program-map effect: an onBlock section change pushes the section voices via configureLayer (diffed)', async () => {
+    render(<Producer />);
+    await jamAndPromote(); // section sec-1 holds program 0 on channel 0
+    // Drift the WORKSPACE voice so the section's program actually differs.
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'voice' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'E-Piano' }));
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
+    // Start the song and land on block 0 / sec-1.
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    setPlaying(true);
+    routerMock.configureLayer.mockClear();
+    act(() => { transportArgs.last.onBlock(0, { sectionId: 'sec-1' }); });
+    // The incoming section's program map wins back the channel (0 ≠ 4).
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 }));
+    // Same section again → no re-push (shared applied map already matches).
+    routerMock.configureLayer.mockClear();
+    act(() => { transportArgs.last.onBlock(0, { sectionId: 'sec-1' }); });
+    expect(routerMock.configureLayer).not.toHaveBeenCalled();
+  });
+
+  it('scene launch: tapping another slot mid-play queues a jump to its first block and chips the target', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    // Second section → arrangement [sec-1 ×1, sec-2 ×1]; entry 1 starts at
+    // block 1. (Only the FIRST promote auto-switches tabs — go back manually.)
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    await screen.findByRole('button', { name: 'B slot 2' });
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    setPlaying(true);
+    act(() => { transportArgs.last.onBlock(0, { sectionId: 'sec-1' }); }); // active: slot 1
+    transportMock.queueJump.mockImplementation(() => {
+      transportMock.pendingJumpRef.current = { targetIdx: 1 };
+    });
+    const slotB = screen.getByRole('button', { name: 'B slot 2' });
+    fireEvent.pointerDown(slotB);
+    fireEvent.pointerUp(slotB);
+    expect(transportMock.queueJump).toHaveBeenCalledWith(1, 'repeat');
+    expect(screen.getByText('next →')).toBeInTheDocument();
+    // The jump lands (pendingJumpRef drained + onBlock) → the chip clears.
+    transportMock.pendingJumpRef.current = null;
+    act(() => { transportArgs.last.onBlock(1, { sectionId: 'sec-2' }); });
+    expect(screen.queryByText('next →')).toBeNull();
+    expect(screen.getByRole('button', { name: 'B slot 2' }).className).toContain('is-active');
+  });
+
+  it('an open capture session forces STACK arming (the card records against the jam, never the arrangement)', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    expect(transportArgs.last.arrangement).not.toBeNull(); // Song tab, armed for song
+    fireEvent.click(screen.getByLabelText('record'));
+    expect(transportArgs.last.arrangement).toBeNull(); // capture → jam stack
+    fireEvent.click(screen.getByLabelText('record')); // close restores
+    expect(transportArgs.last.arrangement).not.toBeNull();
+  });
+
+  it('removing a PROMOTED layer from the workspace keeps its notes for the song (no silent sections)', async () => {
+    render(<Producer />);
+    await jamAndPromote();
+    // Clean the jam out from under the song…
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
+    // …the arrangement input still carries the section's notes.
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    const arr = transportArgs.last.arrangement;
+    expect(arr).not.toBeNull();
+    expect(arr.sections[0].stack).toHaveLength(1);
+    expect(arr.sections[0].stack[0].notes.length).toBeGreaterThan(0);
+  });
+
+  it('template apply from the shell: Pop renders six fillable slots and "Use current jam" fills one', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    await waitFor(() => expect(transportArgs.last.layers.length).toBe(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: /pop/i }));
+    expect(screen.getAllByRole('listitem')).toHaveLength(6);
+    expect(document.querySelectorAll('.piano-song-view__slot--empty')).toHaveLength(6);
+    // Fill the Verse from the jam → the slot stops being empty.
+    fireEvent.click(screen.getByRole('button', { name: 'Verse slot 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use current jam' }));
+    await waitFor(() => (
+      expect(document.querySelectorAll('.piano-song-view__slot--empty')).toHaveLength(4) // both Verse slots filled
+    ));
+    expect(screen.getByRole('button', { name: 'Verse slot 2' }).textContent).toContain('×2 · 8 bars');
   });
 });

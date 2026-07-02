@@ -1,0 +1,232 @@
+// SongView — structure rail + scene launch (design §7 Song view).
+// Dark stage, Roboto Condensed, ≥48px touch targets, tap-first.
+
+.piano-song-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  font-family: 'Roboto Condensed', sans-serif;
+
+  // ── structure rail: slot cards in play order, horizontal scroll ───────────
+  &__rail {
+    display: flex;
+    gap: 0.6rem;
+    overflow-x: auto;
+    padding: 0.35rem 0.15rem 0.6rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  &__slot-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  &__slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 8.5rem;
+    min-height: 8rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 12px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-fg, #dde);
+    cursor: pointer;
+    font-family: inherit;
+
+    &--empty {
+      border-style: dashed;
+      border-color: var(--piano-muted, #556);
+      color: var(--piano-muted, #99a);
+      background: transparent;
+    }
+    &.is-open { border-color: var(--piano-fg, #aab); }
+    // Active slot glow: the playing section during arrangement playback.
+    &.is-active {
+      border-color: var(--piano-accent, #2ec46f);
+      box-shadow: 0 0 14px rgba(46, 196, 111, 0.45), inset 0 0 0 1px var(--piano-accent, #2ec46f);
+    }
+  }
+
+  &__slot-glyph { border-radius: 8px; }
+  &__slot-name {
+    font-weight: 700;
+    font-size: 1.02rem;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__slot-meta {
+    font-size: 0.8rem;
+    color: var(--piano-muted, #99a);
+    font-variant-numeric: tabular-nums;
+  }
+  &__slot-stack {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    justify-content: center;
+    .piano-material-glyph { border-radius: 3px; }
+  }
+
+  &__fill-hint { font-size: 1.6rem; line-height: 1; }
+  &__fill-label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  // Queued scene-launch target chip.
+  &__next-chip {
+    position: absolute;
+    top: -0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: var(--piano-accent, #2ec46f);
+    color: var(--piano-accent-ink, #06210f);
+    font: 700 0.72rem 'Roboto Condensed', sans-serif;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+
+  // ── slot sheet (fill menu / section actions) ───────────────────────────────
+  &__sheet {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface-2, #101018);
+
+    button {
+      min-height: 3rem;
+      padding: 0.4rem 0.95rem;
+      border-radius: 999px;
+      border: 1px solid var(--piano-border, #3a3a48);
+      background: var(--piano-surface, #16161e);
+      color: var(--piano-fg, #dde);
+      font: 600 0.92rem 'Roboto Condensed', sans-serif;
+      cursor: pointer;
+      &:disabled { opacity: 0.45; cursor: default; }
+    }
+  }
+  &__sheet-title {
+    font-weight: 700;
+    color: var(--piano-fg, #eef);
+    margin-right: 0.2rem;
+  }
+  &__stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--piano-muted, #aab);
+    font-variant-numeric: tabular-nums;
+    button { min-width: 3rem; border-radius: 50%; padding: 0.4rem 0; }
+  }
+  &__rename {
+    min-height: 3rem;
+    width: 8.5rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-bg, #0e0e12);
+    color: var(--piano-fg, #eef);
+    font: 600 0.95rem 'Roboto Condensed', sans-serif;
+  }
+  &__delete.is-armed {
+    border-color: var(--piano-danger, #e05a4f) !important;
+    background: var(--piano-surface, #241618) !important;
+    color: var(--piano-danger, #f7a29a) !important;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    button {
+      min-height: 3rem;
+      padding: 0.4rem 1.1rem;
+      border-radius: 999px;
+      border: 1px solid var(--piano-border, #2c2c3a);
+      background: var(--piano-surface, #16161f);
+      color: var(--piano-muted, #99a);
+      font: 600 0.9rem 'Roboto Condensed', sans-serif;
+      &:disabled { opacity: 0.55; cursor: default; }
+    }
+  }
+
+  // ── empty state: template picker grid + jam door ───────────────────────────
+  &--empty { gap: 1rem; }
+  &__empty-blurb { margin: 0; color: var(--piano-muted, #aab); }
+
+  &__templates {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.6rem;
+  }
+  &__template {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 5.5rem;
+    padding: 0.7rem 0.8rem;
+    border-radius: 12px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-fg, #dde);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+  }
+  &__template-name { font-weight: 700; font-size: 1.05rem; }
+  &__template-shape {
+    display: flex;
+    gap: 3px;
+    min-height: 1.6rem;
+  }
+  &__template-slot {
+    flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+    // Four hue stops keyed off the template's section index — pure
+    // visualization; real sections get seeded glyph colors once created.
+    &--s0 { background: #2e6f8f; }
+    &--s1 { background: #3d8f5f; }
+    &--s2 { background: #8f6f3d; }
+    &--s3 { background: #6f4f8f; }
+  }
+
+  &__from-jam {
+    align-self: flex-start;
+    min-height: 3rem;
+    padding: 0.5rem 1.3rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface, #1c2a24);
+    color: var(--piano-accent-text, #5fe39a);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+}
+
+.piano-song-view__slot:focus-visible,
+.piano-song-view__template:focus-visible,
+.piano-song-view__from-jam:focus-visible,
+.piano-song-view__sheet button:focus-visible,
+.piano-song-view__rename:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
+}

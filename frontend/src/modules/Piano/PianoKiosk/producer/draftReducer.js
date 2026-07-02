@@ -71,6 +71,8 @@ export const initialDraftState = null;
 
 export const ActionTypes = Object.freeze({
   PROMOTE: 'PROMOTE',
+  APPLY_TEMPLATE: 'APPLY_TEMPLATE',
+  SLOT_FILL: 'SLOT_FILL',
   OPEN_SECTION: 'OPEN_SECTION',
   SET_ARRANGEMENT: 'SET_ARRANGEMENT',
   SET_REPEATS: 'SET_REPEATS',
@@ -282,8 +284,11 @@ export function initialDraft(workspaceState = {}) {
 // ── reducer ──────────────────────────────────────────────────────────────────
 
 export function draftReducer(state, action) {
-  // Only PROMOTE may materialize a null draft; every other verb needs one.
-  if (state == null && action.type !== ActionTypes.PROMOTE) return state ?? null;
+  // Only PROMOTE and APPLY_TEMPLATE may materialize a null draft (the
+  // bottom-up and top-down doors); every other verb needs one.
+  if (state == null
+    && action.type !== ActionTypes.PROMOTE
+    && action.type !== ActionTypes.APPLY_TEMPLATE) return state ?? null;
 
   switch (action.type) {
     case ActionTypes.PROMOTE: {
@@ -339,6 +344,55 @@ export function draftReducer(state, action) {
         // is immediately playable (first promote: a one-section song plays).
         arrangement: [...base.arrangement, { sectionId: section.id, repeats: 1 }],
       };
+    }
+
+    case ActionTypes.APPLY_TEMPLATE: {
+      // Top-down door (design §7 Song empty state): mint the template's EMPTY
+      // sections + arrangement. ONLY an empty draft may take a template —
+      // null, or a draft whose sections were all deleted (meta survives).
+      // Applying over real material would silently orphan sections; that is
+      // a rebuild, not a verb — documented no-op.
+      const t = action.template;
+      if (!t || !Array.isArray(t.sections) || !t.sections.length
+        || !Array.isArray(t.arrangement) || !t.arrangement.length) {
+        return state ?? null;
+      }
+      if (state != null && state.sections.length > 0) return state;
+      // Meta seeding matches PROMOTE: first materialization captures the
+      // workspace's key/tempo; an existing (emptied) draft keeps its meta.
+      const base = state ?? initialDraft(action.workspaceState ?? {});
+      const sections = t.sections.map((s, i) => ({
+        id: `sec-${i + 1}`,
+        // Template names are structural labels ('Intro', 'Verse', …) in the
+        // same §3.1 sense as the auto 'A'/'B' marks — never human titles.
+        name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : labelFor(i),
+        lengthBars: clampBars(Number.isFinite(s.lengthBars) ? s.lengthBars : 1),
+        stack: [],
+      }));
+      const arrangement = [];
+      for (const e of t.arrangement) {
+        const target = sections[e?.section];
+        if (!target) return state ?? null; // malformed template — reject wholesale
+        arrangement.push({ sectionId: target.id, repeats: coerceRepeats(e.repeats) });
+      }
+      return { ...base, sections, arrangement, carriedLayers: base.carriedLayers ?? {} };
+    }
+
+    case ActionTypes.SLOT_FILL: {
+      // Fill an EMPTY structure slot from the live jam: exactly a PROMOTE
+      // replace targeting the section (deep copies, carried handling, GC —
+      // one code path). A non-empty target is a no-op: overwriting built
+      // material is re-promote-from-edit territory, not a slot fill. The
+      // section keeps its TEMPLATE lengthBars (structural choice — a 2-bar
+      // jam tiles to fill an 8-bar Verse), same rule as any re-promote.
+      const target = state.sections.find((s) => s.id === action.sectionId);
+      if (!target || target.stack.length > 0) return state;
+      return draftReducer(state, {
+        type: ActionTypes.PROMOTE,
+        workspaceState: action.workspaceState,
+        notesById: action.notesById,
+        sectionId: action.sectionId,
+      });
     }
 
     case ActionTypes.OPEN_SECTION:
@@ -507,6 +561,12 @@ export function draftReducer(state, action) {
 export const promote = ({ workspaceState, notesById, sectionId, name, lengthBars } = {}) => (
   { type: ActionTypes.PROMOTE, workspaceState, notesById, sectionId, name, lengthBars }
 );
+export const applyTemplate = (template, workspaceState) => (
+  { type: ActionTypes.APPLY_TEMPLATE, template, workspaceState }
+);
+export const slotFill = ({ sectionId, workspaceState, notesById } = {}) => (
+  { type: ActionTypes.SLOT_FILL, sectionId, workspaceState, notesById }
+);
 export const openSection = (sectionId) => ({ type: ActionTypes.OPEN_SECTION, sectionId });
 export const setArrangement = (entries) => ({ type: ActionTypes.SET_ARRANGEMENT, entries });
 export const setRepeats = (index, repeats) => ({ type: ActionTypes.SET_REPEATS, index, repeats });
@@ -602,6 +662,45 @@ export function toSchedulerInputs(draft, notesById = {}) {
     return { id: section.id, lengthBars: section.lengthBars, stack };
   });
   return { sections, arrangement: draft.arrangement };
+}
+
+/**
+ * True when any section stack holds this layer id — directly or through a
+ * carriedRef. The shell uses it to keep lazily-loaded NOTES alive: notesById
+ * is the only notes store for library layers, so pruning an entry the draft
+ * still references (jam promoted, then the workspace layer removed) would
+ * silently drop that layer from song playback.
+ */
+export function draftReferencesLayer(draft, layerId) {
+  if (!draft) return false;
+  for (const s of draft.sections) {
+    for (const e of s.stack) {
+      if (e && (e.carriedRef === layerId || e.id === layerId)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The per-section program/gain map the COMPONENT applies at block boundaries
+ * (toSchedulerInputs deliberately strips gmProgram — event scheduling only
+ * needs channels). Channels here go through the SAME repairStackChannels pass
+ * as toSchedulerInputs, so a configured program always lands on the channel
+ * the scheduler will actually drive. Layers are included whether or not their
+ * notes are loaded (configuring a silent channel is harmless; dropping it
+ * would leave a stale program when the notes arrive). Grooves report program
+ * null (GM drums ignore programs) but still carry gain — channel 9's synth
+ * gain is shared, last groove wins, same honesty as the Mix view.
+ *
+ * @returns {Array<{channel:number, program:number|null, gain:number}>}
+ */
+export function sectionProgramMap(draft, sectionId) {
+  const layers = repairStackChannels(resolveSectionStack(draft, sectionId) ?? []);
+  return layers.map((l) => ({
+    channel: l.channel,
+    program: l.role === 'groove' ? null : (l.gmProgram ?? null),
+    gain: Number.isFinite(l.gain) ? l.gain : 1,
+  }));
 }
 
 /**

@@ -4,14 +4,44 @@
  * Band 1: TransportBar (play/stop · bar:beat · BPM/tap · key · click · record)
  * Band 2: Stage — Mix | Song tabs. Mix = front-door entry cards when the
  *         workspace is empty, DAW-style ChannelStrips once it isn't (glyph,
- *         voice chip → VoicePicker, M/S, GainStrip, 2-tap remove).
- *         Song = placeholder (Task 7.2).
+ *         voice chip → VoicePicker, M/S, carry pin, GainStrip, 2-tap remove),
+ *         plus the promote door ("Add to song" / "Update section").
+ *         Song = the structure rail (SongView, Task 7.2): template picker,
+ *         slot fill, section sheets, scene-launch jumps.
  *         The library surface is full-bleed (LibraryBrowser — consonance
  *         guardrails, facets, "goes with →" pivot; Task 5.1).
  * Band 3: PianoKeyboard, always live — the person's OWN playing goes through
  *         the untouched pressNote/releaseNote path; loop playback is a
  *         separate path entirely (workspaceReducer → toTransportLayers →
  *         useProducerTransport → voiceRouter → tiers).
+ *
+ * SONG PLAYBACK MODE IS STICKY (documented design call): what the play button
+ * starts depends on the ACTIVE TAB at play time — Song tab with a playable
+ * arrangement plays the SONG, anything else plays the jam stack — and the
+ * chosen mode is then locked (`lockedMode`) until stop. Switching tabs
+ * mid-play must NOT flip the transport's mode (a mode flip is a hard content
+ * restart); browsing the Mix while the song plays is a read, not a command.
+ * Exception: an open CAPTURE SESSION forces stack mode (the capture card's
+ * geometry reads transport.lengthMs as the jam cycle; you record against the
+ * workspace) — closing it restores whatever mode was armed/locked.
+ *
+ * SONG-MODE PROGRAM MAP: toSchedulerInputs deliberately strips gmProgram, so
+ * the shell owns voice config. ONE shared last-applied map (`appliedCfgRef`)
+ * has two writers: the workspace writer (stack mode / idle — configures the
+ * jam layers' channels) and the song writer (on every onBlock section change
+ * — configures the incoming section's sectionProgramMap). Both diff against
+ * the same map, so a mode handoff re-pushes exactly the channels whose
+ * program/gain actually differ, and neither writer leaves the other's stale
+ * values behind.
+ *
+ * DRAFT ↔ WORKSPACE SEAMS: "Add to song" PROMOTEs the live jam (first promote
+ * materializes the draft and auto-switches to the Song tab); opening a section
+ * LOAD_STACKs its resolved stack WITH draft.meta.bpm/keyShift (section stacks
+ * carry no key/tempo) and tags editingSectionId — the Mix badge then offers
+ * Update (re-promote into that section) / Discard (clears ONLY the badge; the
+ * workspace keeps the stack for further jamming — clearing sound out from
+ * under someone is never the answer). Crystallize/persistence is Task 8.x
+ * (SongView renders a disabled Save stub).
  *
  * "Every surface earns its pixels": while the overlay is open the transport
  * and keyboard bands unmount; a now-playing pill floats if the jam is looping.
@@ -37,8 +67,13 @@ import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
-  toggleCarried, nudgeKey, setBpm, toggleMetronome,
+  toggleCarried, nudgeKey, setBpm, toggleMetronome, loadStack, setEditingSection,
 } from '../../producer/workspaceReducer.js';
+import {
+  draftReducer, promote, applyTemplate, slotFill,
+  resolveSectionStack, toSchedulerInputs, sectionProgramMap, draftReferencesLayer,
+} from '../../producer/draftReducer.js';
+import { SongView } from '../../producer/SongView.jsx';
 import { useProducerTransport } from '../../producer/useProducerTransport.js';
 import { createVoiceRouter } from '../../producer/voiceRouter.js';
 import { createOnboardGmTier } from '../../producer/tiers/onboardGmTier.js';
@@ -68,7 +103,18 @@ export function Producer() {
   const stateRef = useRef(state); stateRef.current = state;
   /** layerId → { notes, ppq, barSpan } — loaded lazily per pick; pruned on remove. */
   const [notesById, setNotesById] = useState({});
+  const notesByIdRef = useRef(notesById); notesByIdRef.current = notesById;
   const [tab, setTab] = useState('mix'); // 'mix' | 'song'
+  // ── draft (song) state — materializes on first PROMOTE / template ──────────
+  const [draft, draftDispatch] = useReducer(draftReducer, null);
+  const draftRef = useRef(draft); draftRef.current = draft;
+  /** Sticky playback mode: 'stack' | 'song' while playing, null when idle
+   * (see the header — tab switches must not flip a playing transport). */
+  const [lockedMode, setLockedMode] = useState(null);
+  /** Live arrangement position from onBlock: which compiled block/section. */
+  const [songPos, setSongPos] = useState({ blockIndex: -1, sectionId: null });
+  /** Queued scene-launch target (block index) for the SongView "next" chip. */
+  const [pendingTarget, setPendingTarget] = useState(null);
   const [overlay, setOverlay] = useState(null); // null | { role: null|'chords' }
   const [showRoman, setShowRoman] = useState(false);
   // Capture session (Task 6.2): the card overlays the STAGE band only.
@@ -164,24 +210,20 @@ export function Producer() {
     synthRef.current.resume().catch(() => {});
   }, [logger, onboardTier]);
 
-  // ── configureLayer on add / voice / gain changes (diffed per channel) ──────
-  const cfgRef = useRef({ router: null, map: new Map() });
-  useEffect(() => {
-    const cfg = cfgRef.current;
-    if (cfg.router !== router) { cfg.router = router; cfg.map = new Map(); }
-    const next = new Map();
-    for (const l of state.layers) {
-      next.set(l.channel, { program: l.gmProgram, gain: l.gain });
-      const prev = cfg.map.get(l.channel);
-      if (!prev || prev.program !== l.gmProgram || prev.gain !== l.gain) {
-        router.configureLayer(l.channel, {
-          ...(l.gmProgram != null ? { program: l.gmProgram } : {}),
-          gain: l.gain,
-        });
-      }
-    }
-    cfg.map = next;
-  }, [state.layers, router]);
+  // ── channel config: ONE shared last-applied map, two writers ───────────────
+  // (See the header's SONG-MODE PROGRAM MAP note.) applyChannelCfg diffs a
+  // channel's {program, gain} against what was last pushed to THIS router and
+  // only calls configureLayer on real change — the workspace writer (below)
+  // and the song-section writer (after the transport) both go through it.
+  const appliedCfgRef = useRef({ router: null, map: new Map() });
+  const applyChannelCfg = useCallback((channel, program, gain) => {
+    const a = appliedCfgRef.current;
+    if (a.router !== router) { a.router = router; a.map = new Map(); }
+    const prev = a.map.get(channel);
+    if (prev && prev.program === program && prev.gain === gain) return;
+    router.configureLayer(channel, { ...(program != null ? { program } : {}), gain });
+    a.map.set(channel, { program, gain });
+  }, [router]);
 
   // Visible channels for the keyboard feed follow the non-groove layers.
   useEffect(() => {
@@ -215,18 +257,99 @@ export function Producer() {
     () => toTransportLayers({ layers: state.layers, keyShift: state.keyShift }, notesById),
     [state.layers, state.keyShift, notesById],
   );
+  // Song inputs (memoized: identity churn queues transport swaps every bar).
+  const songInputs = useMemo(() => toSchedulerInputs(draft, notesById), [draft, notesById]);
+  /** Playable song = an arrangement referencing at least one FILLED section
+   * (empty template slots compile to zero-length blocks — no time, no play). */
+  const songPlayable = useMemo(() => {
+    if (!draft || !draft.arrangement.length) return false;
+    const referenced = new Set(draft.arrangement.map((e) => e.sectionId));
+    return draft.sections.some((s) => referenced.has(s.id) && s.stack.length > 0);
+  }, [draft]);
+  // What a play() started THIS render would play: the sticky lockedMode while
+  // playing; otherwise the active tab decides (Song tab + playable song →
+  // arrangement, else jam stack). A CAPTURE SESSION forces the jam stack
+  // regardless — the capture card's whole geometry (bar dial, "match jam",
+  // punch-at-loop) reads transport.lengthMs as the STACK cycle; recording
+  // happens against the workspace, never against the arrangement.
+  const armedMode = captureOpen
+    ? 'stack'
+    : (lockedMode ?? ((tab === 'song' && songPlayable) ? 'song' : 'stack'));
+  const armedModeRef = useRef(armedMode); armedModeRef.current = armedMode;
+
+  /** onBlock: track the sounding block/section for the SongView glow and the
+   * program-map writer; a landed jump (pendingJumpRef drained) clears the
+   * "next" chip. Fires only at block boundaries — cheap enough for setState. */
+  const handleBlock = useCallback((blockIndex, block) => {
+    setSongPos((prev) => (
+      prev.blockIndex === blockIndex && prev.sectionId === (block?.sectionId ?? null)
+        ? prev
+        : { blockIndex, sectionId: block?.sectionId ?? null }
+    ));
+    if (!transportRef.current?.pendingJumpRef?.current) {
+      setPendingTarget((p) => (p === null ? p : null));
+    }
+  }, []);
+
   const transport = useProducerTransport({
     router,
     layers: transportLayers,
-    bpm: state.bpm,
+    // Arrangement mode iff armed for song: the shell decides the mode, the
+    // transport keeps it bar-aligned. While playing, armedMode is locked, so
+    // tab switches can't flip this prop mid-play (no accidental mode flip).
+    arrangement: armedMode === 'song' ? songInputs : null,
+    // Key/tempo are SONG-GLOBAL once a draft exists (design §1) — song
+    // playback runs at the draft's meta bpm; the jam stack keeps its own.
+    bpm: armedMode === 'song' && draft ? draft.meta.bpm : state.bpm,
     metronome: state.metronome,
     // Count-in only applies while a capture session is open — the capture
     // card's metronome path starts the transport with it. (A Play tap during
     // card setup also gets the count-in; harmless — they're about to record.)
     countInBars: captureOpen ? recCountIn : 0,
+    onBlock: handleBlock,
   });
   const transportRef = useRef(transport); transportRef.current = transport;
   useKeepScreenAwake('producer', transport.isPlaying);
+
+  // The sticky lock rides isPlaying EDGES: the rising edge latches the mode
+  // that was armed when playback actually started (play() can refuse — e.g. a
+  // song armed before its notes load compiles to totalMs 0 — and a lock
+  // without playback would freeze the tab-driven arming while idle); the
+  // falling edge (user stop OR the transport stopping itself on a degenerate
+  // arrangement) releases it and clears song-position UI state.
+  useEffect(() => {
+    if (transport.isPlaying) {
+      setLockedMode((m) => m ?? armedModeRef.current);
+      return;
+    }
+    setLockedMode((m) => (m === null ? m : null));
+    setSongPos((p) => (p.blockIndex === -1 && p.sectionId === null ? p : { blockIndex: -1, sectionId: null }));
+    setPendingTarget((p) => (p === null ? p : null));
+  }, [transport.isPlaying]);
+
+  const songActive = transport.isPlaying && lockedMode === 'song';
+
+  // Workspace writer: configure the jam layers' channels whenever they change
+  // — paused while a song plays (the song writer owns the router then; the
+  // songActive dep re-runs this on handback, re-pushing real differences).
+  useEffect(() => {
+    if (songActive) return;
+    for (const l of state.layers) {
+      applyChannelCfg(l.channel, l.role === 'groove' ? null : (l.gmProgram ?? null), l.gain);
+    }
+  }, [state.layers, songActive, applyChannelCfg]);
+
+  // Song writer: on every block-boundary section change, configure the
+  // incoming section's program map (repaired channels — the same ones the
+  // scheduler drives). `draft` in the deps re-applies live edits to the
+  // sounding section (e.g. MUTATE_CARRIED gain) without waiting for a
+  // boundary.
+  useEffect(() => {
+    if (!songActive || !songPos.sectionId) return;
+    for (const e of sectionProgramMap(draftRef.current, songPos.sectionId)) {
+      applyChannelCfg(e.channel, e.program, e.gain);
+    }
+  }, [songActive, songPos.sectionId, draft, applyChannelCfg]);
 
   // Keys lit by a stopped transport are stale — clear the tap's sounding set.
   useEffect(() => {
@@ -251,9 +374,103 @@ export function Producer() {
       return;
     }
     ensureAudio();
-    logger.info('piano.producer.play', { layers: stateRef.current.layers.length });
+    // play() installs the CURRENT render's inputs, which armedMode already
+    // shaped (idle → lockedMode null → the tab decided). The sticky lock
+    // itself latches on the isPlaying rising edge (effect above), so a
+    // refused play() never strands a lock.
+    logger.info('piano.producer.play', {
+      layers: stateRef.current.layers.length, mode: armedModeRef.current,
+    });
     transportRef.current.play();
   }, [ensureAudio, logger]);
+
+  // ── draft verbs (Task 7.2): promote / template / slot fill / open / jump ───
+  /** "Add to song" / "Update section" / "Start from your jam": PROMOTE the
+   * live jam — into editingSectionId when set (re-promote), else a new
+   * section. First promote materializes the draft and shows the Song tab. */
+  const handlePromote = useCallback(() => {
+    const wsState = stateRef.current;
+    if (!wsState.layers.length) return;
+    const editing = wsState.editingSectionId;
+    const isFirst = draftRef.current == null;
+    logger.info('piano.producer.promote', {
+      layers: wsState.layers.length, sectionId: editing ?? null, first: isFirst,
+    });
+    draftDispatch(promote({
+      workspaceState: wsState,
+      notesById: notesByIdRef.current,
+      sectionId: editing ?? undefined,
+    }));
+    if (editing) dispatch(setEditingSection(null));
+    if (isFirst) setTab('song');
+  }, [logger]);
+
+  /** Discard the editing badge ONLY — the workspace keeps the loaded stack
+   * (documented design call: the person may want to keep jamming on it;
+   * clearing sound out from under them is never the answer). */
+  const handleDiscardEditing = useCallback(() => {
+    logger.info('piano.producer.editing-discard', { sectionId: stateRef.current.editingSectionId });
+    dispatch(setEditingSection(null));
+  }, [logger]);
+
+  const handleApplyTemplate = useCallback((template) => {
+    logger.info('piano.producer.template-apply', { template: template?.id });
+    // The workspace state seeds meta key/tempo iff this materializes the draft.
+    draftDispatch(applyTemplate(template, stateRef.current));
+  }, [logger]);
+
+  const handleUseJam = useCallback((sectionId) => {
+    const wsState = stateRef.current;
+    if (!wsState.layers.length) return;
+    logger.info('piano.producer.slot-fill', { sectionId, layers: wsState.layers.length });
+    draftDispatch(slotFill({ sectionId, workspaceState: wsState, notesById: notesByIdRef.current }));
+  }, [logger]);
+
+  /** Restore notes for section layers whose lazy-loaded notes were pruned
+   * (e.g. the layer was removed from the workspace since). Keyed by layer id;
+   * the landing guard mirrors handlePick's. */
+  const ensureLayerNotes = useCallback((layers) => {
+    for (const l of layers) {
+      if (l.source?.kind !== 'library' || notesByIdRef.current[l.id]) continue;
+      const entry = l.source.entry;
+      lib.loadNotes(entry).then((notes) => {
+        if (!notes?.notes?.length) return;
+        if (!stateRef.current.layers.some((x) => x.id === l.id)) return;
+        setNotesById((prev) => (prev[l.id]
+          ? prev
+          : { ...prev, [l.id]: { notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan } }));
+      }).catch(() => {
+        logger.warn('piano.producer.section-notes-load-failed', { id: l.id });
+      });
+    }
+  }, [lib, logger]);
+
+  /** Open a section for editing: LOAD_STACK its resolved stack WITH the
+   * song's key/tempo (the resolveSectionStack doc seam — stacks carry
+   * neither), tag editingSectionId, land in Mix. Works for EMPTY template
+   * sections too ("Open in Mix to build" clears the stage). */
+  const handleOpenSection = useCallback((sectionId) => {
+    const d = draftRef.current;
+    const stack = resolveSectionStack(d, sectionId);
+    if (!stack) return;
+    logger.info('piano.producer.section-open', { sectionId, layers: stack.length });
+    dispatch(loadStack({
+      layers: stack,
+      bpm: d.meta.bpm,
+      keyShift: d.meta.keyShift,
+      editingSectionId: sectionId,
+    }));
+    ensureLayerNotes(stack);
+    setTab('mix');
+  }, [ensureLayerNotes, logger]);
+
+  /** Scene launch: queue the jump, and show the chip only if the transport
+   * accepted it (it no-ops unless playing the arrangement). */
+  const handleQueueJump = useCallback((blockIndex, jumpMode) => {
+    logger.info('piano.producer.jump-request', { blockIndex, mode: jumpMode });
+    transportRef.current.queueJump(blockIndex, jumpMode);
+    if (transportRef.current.pendingJumpRef?.current) setPendingTarget(blockIndex);
+  }, [logger]);
 
   // ── capture session (Task 6.2) ──────────────────────────────────────────────
   const openCapture = useCallback((via) => {
@@ -339,6 +556,10 @@ export function Producer() {
     dispatch(removeLayer(id));
     setNotesById((prev) => {
       if (!(id in prev)) return prev;
+      // Keep the notes when the SONG still references this layer — notesById
+      // is the only notes store for library layers; pruning here would make
+      // the section play silently (draftReferencesLayer doc).
+      if (draftReferencesLayer(draftRef.current, id)) return prev;
       const rest = { ...prev };
       delete rest[id];
       return rest;
@@ -407,6 +628,10 @@ export function Producer() {
 
   const overlayOpen = overlay !== null;
 
+  const editingSectionName = state.editingSectionId
+    ? (draft?.sections.find((s) => s.id === state.editingSectionId)?.name ?? state.editingSectionId)
+    : null;
+
   return (
     <section className="piano-mode piano-producer-mode">
       {lib.loading && <PianoEmpty loading />}
@@ -416,7 +641,10 @@ export function Producer() {
         <>
           <TransportBar
             isPlaying={transport.isPlaying}
-            canPlay={state.layers.length > 0}
+            // While playing, the button is Stop — it must stay tappable even
+            // if the content that made it playable was just removed.
+            canPlay={transport.isPlaying
+              || (armedMode === 'song' ? songPlayable : state.layers.length > 0)}
             onTogglePlay={handleTogglePlay}
             positionRef={transport.positionRef}
             bpm={state.bpm}
@@ -463,6 +691,18 @@ export function Producer() {
               <p className="piano-producer-mode__toast" role="alert">{loadError}</p>
             )}
 
+            {tab === 'mix' && state.editingSectionId && (
+              <div className="piano-producer-mode__editing" role="status">
+                <span className="piano-producer-mode__editing-label">
+                  Editing section {editingSectionName}
+                </span>
+                <button type="button" onClick={handlePromote} disabled={state.layers.length === 0}>
+                  Update
+                </button>
+                <button type="button" onClick={handleDiscardEditing}>Discard</button>
+              </div>
+            )}
+
             {tab === 'mix' && (
               state.layers.length === 0 ? (
                 <div className="piano-producer-mode__doors">
@@ -501,11 +741,18 @@ export function Producer() {
                       />
                     ))}
                   </div>
-                  <button
-                    type="button"
-                    className="piano-producer-mode__add-layer"
-                    onClick={() => openOverlay(null, null)}
-                  >+ Add layer</button>
+                  <div className="piano-producer-mode__mix-actions">
+                    <button
+                      type="button"
+                      className="piano-producer-mode__add-layer"
+                      onClick={() => openOverlay(null, null)}
+                    >+ Add layer</button>
+                    <button
+                      type="button"
+                      className="piano-producer-mode__promote"
+                      onClick={handlePromote}
+                    >{state.editingSectionId ? 'Update section' : 'Add to song'}</button>
+                  </div>
                   {state.lastError === 'channels-exhausted' && (
                     <p className="piano-producer-mode__toast" role="alert">
                       All 15 voice channels are in use — remove a layer to add another.
@@ -516,9 +763,19 @@ export function Producer() {
             )}
 
             {tab === 'song' && (
-              <div className="piano-producer-mode__song-placeholder">
-                Build sections from your jam — coming next
-              </div>
+              <SongView
+                draft={draft}
+                dispatch={draftDispatch}
+                hasJamLayers={state.layers.length > 0}
+                onStartFromJam={handlePromote}
+                onApplyTemplate={handleApplyTemplate}
+                onUseJam={handleUseJam}
+                onOpenSection={handleOpenSection}
+                isSongPlaying={songActive}
+                activeBlockIndex={songPos.blockIndex}
+                pendingBlockIndex={pendingTarget}
+                onQueueJump={handleQueueJump}
+              />
             )}
           </div>
 
