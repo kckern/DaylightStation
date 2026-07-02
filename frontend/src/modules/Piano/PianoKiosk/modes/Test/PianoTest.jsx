@@ -12,6 +12,7 @@ import { createSimState, stepSim, TEST_DEFAULTS } from './pianoTestStream.js';
 import { EffectAudit } from './effectAudit/EffectAudit.jsx';
 import { EffectProbe } from './effectProbe/EffectProbe.jsx';
 import { GmProbe } from './GmProbe.jsx';
+import { GmSynthScene } from './GmSynthScene.jsx';
 
 /**
  * Piano performance test harness — self-driving, no human at the keyboard.
@@ -32,6 +33,10 @@ import { GmProbe } from './GmProbe.jsx';
  *       (multi-timbral PC on ch2, GM drums on ch10). Human listens and records
  *       the verdict in piano config (`producer.voiceTiers.onboardGm`). See
  *       GmProbe.jsx.
+ *   gm-synth                   — manual browser-GM-synth probe (webaudiofont
+ *       tier-2 voice output): load & play a staggered piano/bass/strings
+ *       arpeggio and a drum bar; human judges latency + polyphony on the
+ *       tablet. See GmSynthScene.jsx.
  */
 const pct = (arr, p) => {
   if (!arr.length) return 0;
@@ -269,6 +274,10 @@ export default function PianoTest() {
 
   if (params.scene === 'gm-probe') {
     return <GmProbe />;
+  }
+
+  if (params.scene === 'gm-synth') {
+    return <GmSynthScene />;
   }
 
   if (params.scene === 'waterfall') {
