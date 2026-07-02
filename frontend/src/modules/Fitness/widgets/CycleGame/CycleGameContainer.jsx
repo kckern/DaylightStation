@@ -987,7 +987,15 @@ export default function CycleGameContainer({ onMount } = {}) {
           }
           rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || [], gapTicks || 1);
         }
-        if (gapTicks >= SENSOR_LOST_GAP_TICKS) sensorLostNow.add(userId);
+        // A rider who has NEVER had a single connected reading since the race
+        // started hasn't lost a sensor — they simply haven't started pedaling
+        // yet (mounting the bike, clipping in), which raceStartGraceS already
+        // covers gracefully at the DNF layer. The SENSOR chip must only fire
+        // for a genuine mid-race disconnect: was connected, then dropped.
+        // Otherwise every race opened with an alarming false "SENSOR" warning
+        // for the first ~9s, before the rider's first pedal stroke landed.
+        const everConnected = (rpmHistoryRef.current.get(userId) || []).length > 0;
+        if (gapTicks >= SENSOR_LOST_GAP_TICKS && everConnected) sensorLostNow.add(userId);
         inputs[userId] = {
           rpm: clampCountedRpm(rawRpm, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
@@ -1753,10 +1761,13 @@ export default function CycleGameContainer({ onMount } = {}) {
         penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
         penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
         penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop,
-        // Sensor presumed genuinely disconnected (not a broadcast blip) — see
-        // gapTicksRef/SENSOR_LOST_GAP_TICKS in the tick effect above. Ghosts
-        // replay a recording and never carry a live sensor, so never flagged.
-        sensorLost: !isGhostRider && (gapTicksRef.current.get(userId) || 0) >= SENSOR_LOST_GAP_TICKS
+        // Sensor presumed genuinely disconnected (not a broadcast blip, and not
+        // simply "hasn't started pedaling yet" — see the everConnected gate in
+        // the tick effect above). Ghosts replay a recording and never carry a
+        // live sensor, so never flagged.
+        sensorLost: !isGhostRider
+          && (gapTicksRef.current.get(userId) || 0) >= SENSOR_LOST_GAP_TICKS
+          && (rpmHistoryRef.current.get(userId) || []).length > 0
       };
     });
     return (
