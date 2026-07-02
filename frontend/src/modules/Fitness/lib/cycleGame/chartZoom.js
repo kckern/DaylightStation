@@ -1,20 +1,22 @@
-// Stepped zoom-out "camera" math for the race distance chart. Pure, no DOM.
+// Continuous zoom-out "camera" math for the race distance chart. Pure, no DOM.
 //
-// The chart shows a window T = xBaseS·2^L (time) and D = yBaseM·2^L (distance).
-// nextZoomLevel returns the smallest level L >= prevLevel that keeps BOTH the
-// leader's distance and the elapsed time under `threshold` of their windows — so
-// the window doubles in 2x steps as the data approaches the edges, and never
-// re-tightens mid-race (monotonic).
-export function nextZoomLevel(prevLevel, { leaderDistanceM = 0, elapsedS = 0, xBaseS = 30, yBaseM = 250, threshold = 0.9 } = {}) {
-  let L = Math.max(0, Math.floor(Number.isFinite(prevLevel) ? prevLevel : 0));
-  const fits = (lvl) => {
-    const T = xBaseS * 2 ** lvl;
-    const D = yBaseM * 2 ** lvl;
-    return elapsedS < threshold * T && leaderDistanceM < threshold * D;
-  };
-  let guard = 0;
-  while (!fits(L) && guard < 32) { L += 1; guard += 1; }
-  return L;
+// The chart used to grow its window in stepped 2× doublings (a `nextZoomLevel`
+// integer level → window = base·2^L). Those doublings rug-pulled every lane to
+// half height once per threshold crossing (audit UX 2.6/2.7). The window now
+// grows CONTINUOUSLY with the data via `continuousWindow`, so past points drift
+// smoothly instead of snapping. (Distance races don't zoom Y at all — the Y
+// window is pinned to the goal; only the time axis, and a time race's distance
+// axis, use this.)
+
+// continuousWindow: the visible span that keeps `dataMax` at `fillFrac` of the
+// window, never smaller than `base`. Because data (elapsed time / leader
+// distance) is monotonic, the returned span is monotonic too — the camera only
+// ever zooms OUT, in tiny per-tick increments, never in 2× jumps.
+export function continuousWindow(dataMax, { base = 150, fillFrac = 0.85 } = {}) {
+  const d = Number.isFinite(dataMax) && dataMax > 0 ? dataMax : 0;
+  const b = Number.isFinite(base) && base > 0 ? base : 1;
+  const frac = fillFrac > 0 && fillFrac <= 1 ? fillFrac : 0.85;
+  return Math.max(b, d / frac);
 }
 
 // gridUnit: gridline spacing in data units = baseUnit·2^k, the smallest k whose
@@ -37,4 +39,18 @@ export function gridValues(windowSpan, baseUnit, pxSpan, minPx = 32) {
   return out;
 }
 
-export default { nextZoomLevel, gridUnit, gridValues };
+// pickAxisTicks: down-sample a sorted gridline-value array to at most `maxCount`
+// LABELS, always keeping the first and last so the axis is anchored at both ends.
+// Used to place 2-3 readable HTML axis labels on the gridlines (audit UX 2.1).
+export function pickAxisTicks(values, maxCount = 3) {
+  const vals = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
+  const dedupe = (arr) => arr.filter((v, i) => arr.indexOf(v) === i);
+  if (vals.length <= maxCount) return dedupe(vals);
+  const n = Math.max(2, maxCount);
+  const step = (vals.length - 1) / (n - 1);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(vals[Math.round(i * step)]);
+  return dedupe(out);
+}
+
+export default { continuousWindow, gridUnit, gridValues, pickAxisTicks };
