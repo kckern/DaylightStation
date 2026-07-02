@@ -102,8 +102,6 @@ export default function CycleGameHome({
           <p className="cycle-game-home__subtitle">Pick a race, line up the riders, and go.</p>
         </header>
 
-        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
-
         <RaceTypePicker
           raceType={raceType}
           onSelectRaceType={onSelectRaceType}
@@ -148,6 +146,11 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
+        {/* Weekly ladder lives in the records rail — NEVER in the main column,
+            where its height displaced the picker/grid/start on the fixed-height
+            (unscrollable) garage touchscreen and made the lobby unusable. */}
+        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
+
         <HighScores highScores={highScores} onSelectRecord={onSelectRecord} />
 
         <div className="cgh-section-label">History</div>

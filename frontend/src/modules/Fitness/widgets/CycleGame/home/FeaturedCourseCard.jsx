@@ -39,7 +39,8 @@ export default function FeaturedCourseCard({ ladder = null, onRide = null, resol
         <div className="cgh-empty">No rides yet this week — set the first time.</div>
       ) : (
         <ol className="cgh-featured__rows">
-          {standings.map((row, i) => (
+          {/* Rail real estate is scarce: top 3 rungs only, one-line overflow. */}
+          {standings.slice(0, 3).map((row, i) => (
             <li key={row.userId} className="cgh-featured__row" data-testid={`featured-row-${row.userId}`}>
               <span className="cgh-featured__rank">{i + 1}</span>
               <img
@@ -52,6 +53,11 @@ export default function FeaturedCourseCard({ ladder = null, onRide = null, resol
               <span className="cgh-featured__value">{fmtVal(row.bestValue)}</span>
             </li>
           ))}
+          {standings.length > 3 && (
+            <li className="cgh-featured__more" data-testid="featured-more">
+              +{standings.length - 3} more this week
+            </li>
+          )}
         </ol>
       )}
 
