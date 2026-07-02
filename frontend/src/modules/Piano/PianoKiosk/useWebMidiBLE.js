@@ -310,6 +310,16 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  // Independent channel-aware note-off, pairing with a duration-less sendNote:
+  // the Producer's onboard voice tier holds notes for arbitrary lengths (loop
+  // playback), so it can't use sendNote's schedule-the-off-up-front durationMs.
+  const sendNoteOff = useCallback((note, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0x80 | (channel & 0x0f), note & 0x7f, 0]);
+    return true;
+  }, []);
+
   /** Schedule an array of {t, type:'note_on'|'note_off', note, velocity} events (t in ms from now). */
   const scheduleNotes = useCallback((events, channel = 0) => {
     const out = outputRef.current;
@@ -390,12 +400,13 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     sendControlChange,
     sendPanic,
     sendNote,
+    sendNoteOff,
     scheduleNotes,
     subscribe,
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
