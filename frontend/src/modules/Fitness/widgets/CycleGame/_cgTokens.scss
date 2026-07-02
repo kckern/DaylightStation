@@ -21,6 +21,19 @@ $cg-lane-1:      #5dff9b;
 $cg-lane-2:      #ffb13d;
 $cg-lane-3:      #b072ff;
 
+// ── Semantic state tokens (audit UX §6.2) ───────────────────────────────────
+// Three unrelated reds (#ff5a5a/#ff6b6b/#f87171/#ff5a52) and three unrelated
+// greens (#5dff9b/#46e08a/#2ecc71) were scattered across the cycle-game SCSS,
+// each meaning the same thing (danger/failure vs success/go) with no shared
+// name. Consolidated to one token per meaning; $cg-danger/$cg-success alias
+// the existing $cg-lane tokens where the visual intent already matched
+// (danger picks the dominant stoplight/needle red; success reuses $cg-lane-1
+// since it was already the "is-go" green; warn reuses $cg-lane-2, already the
+// staging "wait" amber).
+$cg-danger:      #ff5a5a;
+$cg-success:     $cg-lane-1;
+$cg-warn:        $cg-lane-2;
+
 // Legacy aliases kept so existing consumers don't break mid-migration
 $cg-accent:      $cg-cyan;
 $cg-gold:        #ffd54a;

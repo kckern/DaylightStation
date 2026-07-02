@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
+import { StopSignIcon, TimeIcon, RaceFlagIcon } from '../home/icons.jsx';
 import { plotStartIndex } from '@/modules/Fitness/lib/cycleGame/chartTrim.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from './useFitGuard.js';
@@ -21,7 +22,8 @@ const LOG_TWEEN_MS = 400;   // lin↔log flip crossfade duration (audit UX 2.7)
 const MAX_PLOT_POINTS = 600; // decimate longer series to bound per-tick geometry cost
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 
-const EVENT_GLYPH = { dnf: '🛑', penalty: '⏱️' };
+// Officiating-event marker icons (audit UX §6.3 — 🛑/⏱️ emoji → icon set).
+const EVENT_GLYPH = { dnf: StopSignIcon, penalty: TimeIcon };
 
 // ── SVG plot geometry (fixed viewBox) ──────────────────────────────────────
 const W = 600, H = 200;
@@ -251,7 +253,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return {
       id: e.id,
       type: e.type,
-      glyph: EVENT_GLYPH[e.type] || '•',
+      Glyph: EVENT_GLYPH[e.type] || null,
       leftPct: (xFor(e.seriesIndex) / W) * 100,
       topPct: (yFor(e.distanceM) / H) * 100,
       color: LINE_COLORS[idx % LINE_COLORS.length]
@@ -525,7 +527,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           data-testid="chart-goal-label"
           style={{ top: `${(yFor(goalM) / H) * 100}%` }}
         >
-          <span className="cycle-race-screen__goal-flag" aria-hidden="true">🏁</span> {formatDistance(goalM)}
+          <span className="cycle-race-screen__goal-flag" aria-hidden="true"><RaceFlagIcon /></span> {formatDistance(goalM)}
         </div>
       )}
 
@@ -586,7 +588,9 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
               data-testid={`race-event-marker-${m.type}`}
               style={{ left: `${m.leftPct}%`, top: `${m.topPct}%`, '--marker-color': m.color }}
             >
-              <span className="cycle-race-screen__marker-glyph" aria-hidden="true">{m.glyph}</span>
+              <span className="cycle-race-screen__marker-glyph" aria-hidden="true">
+                {m.Glyph ? <m.Glyph /> : null}
+              </span>
             </div>
           ))}
         </div>

@@ -26,6 +26,7 @@ import CycleRaceScreen from './CycleRaceScreen.jsx';
 import CycleEventToast from './CycleEventToast.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
+import { StopSignIcon, TimeIcon, RaceFlagIcon } from './home/icons.jsx';
 import './CycleGameContainer.scss';
 
 const RACE_TICK_MS = 1000;
@@ -346,8 +347,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     const id = (eventIdRef.current += 1);
     setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
     const toast = type === 'dnf'
-      ? { id, variant: 'dnf', icon: '🛑', title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
-      : { id, variant: 'penalty', icon: '⏱️', title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
+      ? { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
+      : { id, variant: 'penalty', icon: <TimeIcon />, title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
     // Show now if the slot is free, otherwise queue behind the current toast.
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
@@ -366,7 +367,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     const toast = {
       id,
       variant: 'overtime',
-      icon: '🏁',
+      icon: <RaceFlagIcon />,
       title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
     };
     setEventToast((cur) => {

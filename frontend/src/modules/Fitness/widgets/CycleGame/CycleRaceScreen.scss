@@ -50,11 +50,16 @@
     margin-top: 10px; padding: 8px 20px;
     border-radius: 999px;
     background: rgba(120, 12, 12, 0.92);
-    border: 1px solid #ff5a5a;
+    border: 1px solid cg.$cg-danger;
     box-shadow: 0 8px 26px rgba(180, 0, 0, 0.4);
     animation: cg-penalty-banner-pulse 0.7s ease-in-out infinite;
   }
-  &__penalty-icon { font-size: 1.3rem; line-height: 1; }
+  // SVG glyph (audit UX §6.3 — no-entry emoji → icon set); sized to what the
+  // ⛔ glyph used to render at.
+  &__penalty-icon {
+    display: flex; line-height: 1; color: cg.$cg-danger;
+    svg { width: 1.3rem; height: 1.3rem; display: block; }
+  }
   &__penalty-text {
     color: #ffe3e3; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.01em; // was 0.96rem
   }
@@ -91,9 +96,15 @@
     letter-spacing: 0.04em;
     color: cg.$cg-gold; white-space: nowrap; pointer-events: none;
   }
-  &__goal-flag { font-size: 1.1rem; line-height: 1; }
-  &__gridline { stroke: rgba(122, 162, 255, 0.14); stroke-width: 1; }
-  &__gridline--y { stroke: rgba(122, 162, 255, 0.18); }
+  // SVG glyph (audit UX §6.3 — checkered-flag emoji → the shared RaceFlagIcon).
+  &__goal-flag {
+    display: inline-flex; line-height: 1; color: cg.$cg-gold;
+    svg { width: 1.1rem; height: 1.1rem; display: block; }
+  }
+  // Legacy indigo (#7aa2ff) purged — gridlines now ride the telemetry cyan
+  // family instead of a leftover indigo accent (audit UX §6.2).
+  &__gridline { stroke: rgba(cg.$cg-cyan, 0.14); stroke-width: 1; }
+  &__gridline--y { stroke: rgba(cg.$cg-cyan, 0.18); }
 
   // Terminus tags — a 28px rider AVATAR riding each line's tip + a gap-behind-leader
   // readout (the leader shows total distance) so distance is read here, not off a
@@ -140,15 +151,19 @@
     // one-shot STATE transition (a new event fired) and stays as a CSS animation.
     animation: cg-marker-pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
   }
+  // SVG glyph (audit UX §6.3 — 🛑/⏱️ emoji → icon set); the chip's own text-size
+  // is kept as an explicit floor so a future glyph swap can't regress under
+  // 1.1rem (T11).
   &__marker-glyph {
     display: flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; border-radius: 50%;
     font-size: 1.1rem; line-height: 1; // was 0.95rem
     background: cg.$cg-panel-2;
     box-shadow: 0 0 0 2px var(--marker-color, #{cg.$cg-accent}), 0 2px 8px rgba(0, 0, 0, 0.6);
+    svg { width: 0.95em; height: 0.95em; display: block; }
   }
-  &__marker--dnf &__marker-glyph { box-shadow: 0 0 0 2px #ff5a52, 0 2px 8px rgba(0, 0, 0, 0.6); }
-  &__marker--penalty &__marker-glyph { box-shadow: 0 0 0 2px cg.$cg-gold, 0 2px 8px rgba(0, 0, 0, 0.6); }
+  &__marker--dnf &__marker-glyph { color: cg.$cg-danger; box-shadow: 0 0 0 2px cg.$cg-danger, 0 2px 8px rgba(0, 0, 0, 0.6); }
+  &__marker--penalty &__marker-glyph { color: cg.$cg-gold; box-shadow: 0 0 0 2px cg.$cg-gold, 0 2px 8px rgba(0, 0, 0, 0.6); }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never

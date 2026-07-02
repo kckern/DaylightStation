@@ -38,7 +38,9 @@
     color: #f8fafc;
     background: linear-gradient(180deg, lighten(cg.$cg-accent, 4%), cg.$cg-accent);
     border: 1px solid cg.$cg-accent;
-    box-shadow: 0 10px 26px rgba(122, 162, 255, 0.3);
+    // Legacy indigo (#7aa2ff) purged — the glow now matches the button's own
+    // cyan chrome instead of a leftover indigo accent (audit UX §6.2).
+    box-shadow: 0 10px 26px rgba(cg.$cg-accent, 0.3);
 
     &:hover { transform: translateY(-1px); }
     &:active { transform: translateY(0); }
@@ -55,7 +57,7 @@
     border: 1px solid cg.$cg-border;
     backdrop-filter: blur(4px);
 
-    &:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+    &:hover { color: cg.$cg-danger; border-color: rgba(cg.$cg-danger, 0.5); }
   }
 
   &__finish {
@@ -66,7 +68,7 @@
     padding: 8px 16px; border-radius: 999px;
     font-family: cg.$cg-display; font-weight: 800; letter-spacing: 0.04em;
     font-size: 1.1rem; // renders during racing — 10-foot floor (T11)
-    color: cg.$cg-bg; background: cg.$cg-lane-1; border: none;
+    color: cg.$cg-bg; background: cg.$cg-success; border: none;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     &:hover { filter: brightness(1.08); }
   }
@@ -96,29 +98,31 @@
   &__count {
     font-family: cg.$cg-display; font-weight: 800; font-size: 6rem; line-height: 1;
     color: cg.$cg-accent; font-variant-numeric: tabular-nums;
-    text-shadow: 0 0 36px rgba(122, 162, 255, 0.4);
+    // Legacy indigo (#7aa2ff) purged — glow matches the numeral's own cyan
+    // color instead of a leftover indigo accent (audit UX §6.2).
+    text-shadow: 0 0 36px rgba(cg.$cg-accent, 0.4);
   }
   // Held past the buffer, waiting for a bike to stop.
   &__count--wait {
-    font-size: 2.6rem; color: #ffb13d; text-shadow: 0 0 28px rgba(255, 177, 61, 0.4);
+    font-size: 2.6rem; color: cg.$cg-warn; text-shadow: 0 0 28px rgba(cg.$cg-warn, 0.4);
   }
   &__bar {
     width: min(420px, 70vw); height: 8px; border-radius: 999px;
     background: rgba(255, 255, 255, 0.08); overflow: hidden;
     span {
       display: block; height: 100%; width: 100%; border-radius: 999px;
-      background: linear-gradient(90deg, cg.$cg-accent, #46e08a);
+      background: linear-gradient(90deg, cg.$cg-accent, cg.$cg-success);
       transform-origin: left center;
       animation: cg-staging-drain linear forwards;
     }
   }
   // Indeterminate diagonal-striped "loading" bar while we wait for bikes to stop.
   &__bar--waiting {
-    background-color: rgba(255, 177, 61, 0.18);
+    background-color: rgba(cg.$cg-warn, 0.18);
     background-image: repeating-linear-gradient(
       45deg,
-      rgba(255, 177, 61, 0.95) 0, rgba(255, 177, 61, 0.95) 12px,
-      rgba(255, 177, 61, 0.3) 12px, rgba(255, 177, 61, 0.3) 24px
+      rgba(cg.$cg-warn, 0.95) 0, rgba(cg.$cg-warn, 0.95) 12px,
+      rgba(cg.$cg-warn, 0.3) 12px, rgba(cg.$cg-warn, 0.3) 24px
     );
     background-size: 34px 100%;
     animation: cg-staging-stripes 0.6s linear infinite;

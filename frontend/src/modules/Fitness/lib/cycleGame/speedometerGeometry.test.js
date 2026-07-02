@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTicks, buildBandArcs, needleAngleDeg, bandForRpm, tickStepsFor, scaleBands } from './speedometerGeometry.js';
+import { buildTicks, buildBandArcs, needleAngleDeg, bandForRpm, tickStepsFor, scaleBands, DEFAULT_CADENCE_BANDS } from './speedometerGeometry.js';
 
 const BANDS = [
   { id: 'warmup',   min: 0,  color: '#5b6470' },
@@ -79,6 +79,25 @@ describe('needleAngleDeg', () => {
   it('clamps out-of-range rpm to the endpoints', () => {
     expect(needleAngleDeg(-10, 120)).toBeCloseTo(-90, 3);
     expect(needleAngleDeg(999, 120)).toBeCloseTo(90, 3);
+  });
+});
+
+// audit UX §6.2 — the default bands used to be the flat FlatUI set
+// (#2ecc71/#f1c40f/#e67e22/#e74c3c), clashing with the synthwave gauge chrome.
+// Neon-shifted, but the green→yellow→orange→red semantic order and thresholds
+// must be unchanged.
+describe('DEFAULT_CADENCE_BANDS', () => {
+  it('keeps ids, names and thresholds in warmup→cruising→pushing→hard→sprint order', () => {
+    expect(DEFAULT_CADENCE_BANDS.map((b) => b.id)).toEqual(['warmup', 'cruising', 'pushing', 'hard', 'sprint']);
+    expect(DEFAULT_CADENCE_BANDS.map((b) => b.min)).toEqual([0, 40, 70, 90, 105]);
+  });
+  it('moved off the flat FlatUI colors onto the neon family', () => {
+    const FLAT_UI = ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'];
+    const colors = DEFAULT_CADENCE_BANDS.map((b) => b.color.toLowerCase());
+    FLAT_UI.forEach((c) => expect(colors).not.toContain(c));
+  });
+  it('sprint red matches the app-wide danger token ($cg-danger, #ff5a5a)', () => {
+    expect(DEFAULT_CADENCE_BANDS.find((b) => b.id === 'sprint').color).toBe('#ff5a5a');
   });
 });
 

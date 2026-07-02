@@ -6,6 +6,7 @@ import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.j
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { ordinal, gapToAboveText, finishedMetricText } from '@/modules/Fitness/lib/cycleGame/standingsFormat.js';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
+import { RaceFlagIcon } from '../home/icons.jsx';
 import './StandingsTower.scss';
 
 const AVATAR_BASE = '/api/v1/static/img/users';
@@ -149,7 +150,7 @@ export default function StandingsTower({
             </span>
             <span className="cg-tower__name">{r.displayName}</span>
             <span className="cg-tower__metric" data-testid="tower-metric">
-              {kind === 'finished' && <span className="cg-tower__flag" aria-hidden="true">🏁</span>}
+              {kind === 'finished' && <span className="cg-tower__flag" aria-hidden="true"><RaceFlagIcon /></span>}
               <span className="cg-tower__metric-text">{displayText}</span>
               {kind === 'overtime' && <span className="cg-tower__ot-tag" aria-label="overtime">OT</span>}
             </span>

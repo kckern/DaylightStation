@@ -99,15 +99,15 @@ describe('CycleSpeedometer', () => {
     expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
   });
   it('renders the leader medal in the odometer only when isLeader is true', () => {
-    const { getByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+    const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
+    expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();
     rerender(<CycleSpeedometer {...baseProps} isLeader={true} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).toContain('🥇');
+    expect(queryByTestId('cycle-speedometer-leader-medal')).not.toBeNull();
   });
 
   it('suppresses the leader medal once the rider has finished (the finished overlay marks the winner)', () => {
-    const { getByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
+    expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();
   });
 
   // audit game-design #6 — a dead sensor must be visibly flagged, not silently

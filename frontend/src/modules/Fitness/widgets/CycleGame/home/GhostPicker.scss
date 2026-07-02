@@ -7,7 +7,7 @@
   border-radius: 10px; padding: 10px; color: t.$cg-muted;
   transition: border-color 0.15s ease, color 0.15s ease;
 
-  &:hover { border-color: #f87171; color: #f87171; }
+  &:hover { border-color: t.$cg-danger; color: t.$cg-danger; }
 }
 
 // ── Ghost picker: day columns + two-stage cards ───────────────────────────

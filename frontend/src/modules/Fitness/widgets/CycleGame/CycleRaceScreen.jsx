@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
+import { laneColorVars } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import {
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR,
   SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
@@ -12,6 +13,7 @@ import PovGrid from './panels/PovGrid.jsx';
 import StandingsTower from './panels/StandingsTower.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
+import { NoEntryIcon } from './home/icons.jsx';
 import './CycleRaceScreen.scss';
 
 /**
@@ -82,8 +84,15 @@ export default function CycleRaceScreen({
     } : {})
   };
 
+  // Rider-lane CSS custom props (--cg-lane-0…N), injected once at the root so
+  // SCSS can reference `var(--cg-lane-N)` for any lane-tinted chrome instead
+  // of re-declaring hex literals (audit UX §6.2). Every consumer today still
+  // reads LINE_COLORS directly in JS; this is the SSOT for a future SCSS
+  // consumer to key off without duplicating the palette.
+  const laneVars = laneColorVars(riderIds);
+
   return (
-    <div className="cycle-race-screen" data-testid="cycle-race-screen">
+    <div className="cycle-race-screen" data-testid="cycle-race-screen" style={laneVars}>
       {/* Ambient background video — only mounts when a Plex id is configured (null = no video). */}
       {backgroundPlexId && (
         <video
@@ -101,7 +110,7 @@ export default function CycleRaceScreen({
 
       {penalizedNames.length > 0 && (
         <div className="cycle-race-screen__penalty-banner" data-testid="cycle-race-penalty-banner" role="alert">
-          <span className="cycle-race-screen__penalty-icon" aria-hidden="true">⛔</span>
+          <span className="cycle-race-screen__penalty-icon" aria-hidden="true"><NoEntryIcon /></span>
           <span className="cycle-race-screen__penalty-text">
             False start — {penalizedNames.join(', ')} jumped the gun (meter locked)
           </span>
