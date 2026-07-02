@@ -1,0 +1,169 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, act } from '@testing-library/react';
+
+// ── mocks (mirrors CycleGameContainer.test.jsx) ────────────────────────────
+const logSpy = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+vi.mock('@/lib/logging/Logger.js', () => ({
+  default: () => ({ child: () => logSpy })
+}));
+
+let mockCtx;
+vi.mock('@/context/FitnessContext.jsx', () => ({
+  useFitnessContext: () => mockCtx
+}));
+
+vi.mock('@/modules/Fitness/nav/usePersistentVolume.js', () => ({
+  usePersistentVolume: () => ({ volume: 1, muted: false, setVolume: vi.fn(), toggleMute: vi.fn() })
+}));
+
+import CycleGameContainer from './CycleGameContainer.jsx';
+
+// Production constants mirrored here (not exported) — see CycleGameContainer.jsx.
+const RACE_TICK_MS = 1000;
+const COUNTDOWN_TICK_MS = 1000;
+const GO_HOLD_MS = 800;
+const START_COUNTDOWN_S = 3;
+
+function makeCtx(overrides = {}) {
+  const riders = { cycle_ace: 'kckern', tricycle: 'felix' };
+  const vitals = {
+    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    felix: { name: 'Felix', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
+  };
+  return {
+    equipment: [
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
+    ],
+    configuredUsers: [
+      { id: 'kckern', name: 'KC' },
+      { id: 'felix', name: 'Felix' }
+    ],
+    zones: [
+      { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
+      { id: 'hot', distance_multiplier: 2, color: 'orange' }
+    ],
+    cycleGameConfig: {
+      default_win_condition: 'distance',
+      distance_goal_default_m: 3000,
+      time_cap_default_s: 300,
+      hrless_multiplier: 1.0,
+      start_countdown_s: START_COUNTDOWN_S,
+      staging_buffer_ms: 0, // skip the "to your bikes" buffer — straight to countdown
+      cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }]
+    },
+    fitnessSessionInstance: {
+      getEquipmentRider: (id) => riders[id] || null,
+      getEquipmentCadence: () => ({ rpm: 100, connected: true })
+    },
+    getUserVitals: (id) => vitals[id] || null,
+    getDisplayName: (id) => id,
+    getUserByName: (id) => ({ name: vitals[id]?.name || id }),
+    setGovernanceSuspended: vi.fn(),
+    ...overrides
+  };
+}
+
+// Drive the container from the home screen to the 'go' phase (green light —
+// the engine is already live, before the race screen mounts). Returns the
+// render helpers. Caller controls performance.now() beforehand via the
+// nowRef so the anchor effect captures a known value.
+function driveToGo(renderApi) {
+  const { getByTestId } = renderApi;
+  act(() => { fireEvent.click(getByTestId('course-distance')); });
+  act(() => { fireEvent.click(getByTestId('cycle-game-start')); });
+  // 3 countdown ticks (start_countdown_s = 3) flips controller phase to
+  // 'racing' on the last one, which the container renders as 'go'.
+  act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
+}
+
+describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
+  let nowMs;
+
+  beforeEach(() => {
+    mockCtx = makeCtx();
+    Object.values(logSpy).forEach((fn) => fn.mockClear());
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.useFakeTimers();
+    nowMs = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('catches up to wall-clock elapsed time when a fire is late (one late fire ⇒ ~5 ticks)', () => {
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0; // anchor value the 'go' transition below will capture
+    driveToGo(renderApi);
+
+    // Simulate the browser tab freezing for ~5s: real time jumps 5000ms ahead
+    // but the fake-timer engine only fires the 1000ms race interval ONCE.
+    nowMs = 5000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    const tickCalls = logSpy.debug.mock.calls.filter(([event]) => event === 'cycle_game.tick');
+    expect(tickCalls.length).toBe(5);
+    expect(tickCalls.map(([, payload]) => payload.tick)).toEqual([1, 2, 3, 4, 5]);
+
+    expect(logSpy.warn).toHaveBeenCalledWith(
+      'cycle_game.tick_catchup',
+      expect.objectContaining({ dueTicks: 5, ranTicks: 5 })
+    );
+  });
+
+  it('caps catch-up at 30 ticks per fire on an extreme freeze', () => {
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    nowMs = 60000; // 60 real seconds elapsed in one jump
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    const tickCalls = logSpy.debug.mock.calls.filter(([event]) => event === 'cycle_game.tick');
+    expect(tickCalls.length).toBe(30);
+    expect(logSpy.warn).toHaveBeenCalledWith(
+      'cycle_game.tick_catchup',
+      expect.objectContaining({ dueTicks: 60, ranTicks: 30 })
+    );
+  });
+
+  it('does not tear down / recreate the race interval on the go→racing transition', () => {
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(global, 'clearInterval');
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+    expect(renderApi.queryByTestId('countdown-stoplight')).toBeTruthy(); // still on the green-light screen ('go')
+
+    const setCallsAtGo = setIntervalSpy.mock.calls.length;
+    const clearCallsAtGo = clearIntervalSpy.mock.calls.length;
+
+    // Advance through the go-hold (< RACE_TICK_MS, so no tick fires here either —
+    // isolates the assertion to interval churn, not tick behavior).
+    act(() => { vi.advanceTimersByTime(GO_HOLD_MS); });
+
+    expect(setIntervalSpy.mock.calls.length).toBe(setCallsAtGo);
+    expect(clearIntervalSpy.mock.calls.length).toBe(clearCallsAtGo);
+  });
+
+  it('keeps ticking continuously across the go→racing edge (no dead/duplicated ticks)', () => {
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    // Cross into 'racing' (GO_HOLD_MS), then let one full wall-clock second pass.
+    act(() => { vi.advanceTimersByTime(GO_HOLD_MS); });
+    nowMs = 1000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS - GO_HOLD_MS); });
+
+    const tickCalls = logSpy.debug.mock.calls.filter(([event]) => event === 'cycle_game.tick');
+    // Exactly one tick — the wall clock advanced exactly one interval's worth,
+    // not two (which a torn-down/recreated interval double-arming could cause)
+    // and not zero (which a dropped interval would cause).
+    expect(tickCalls.length).toBe(1);
+    expect(logSpy.warn).not.toHaveBeenCalledWith('cycle_game.tick_catchup', expect.anything());
+  });
+});
