@@ -109,8 +109,10 @@ export function usePeek({ router, lib, bpm, keyShift = 0, isJamPlaying = false, 
    * Stop the current peek: cancel the loop, silence the peek's notes, clear
    * the visual state. `onlyId` (belt-and-braces for multi-touch): only stop
    * if the CURRENT peek is that entry — a stale card's release must not kill
-   * a newer peek. No-op stops never bump the token (that would freeze a live
-   * run whose tick checks it).
+   * a newer peek. An onlyId-mismatch no-op returns BEFORE the token bump, so
+   * it can't invalidate the newer peek's live run or in-flight load; an
+   * unconditional stop with no current peek still bumps, which is harmless
+   * (no peek ⇒ no run and no load to invalidate).
    *
    * Silencing is per-note FIRST (the run tracks exactly what it holds), then
    * allNotesOff(15) as belt-and-braces (15 is exclusively ours). Channel 9 is
@@ -171,6 +173,14 @@ export function usePeek({ router, lib, bpm, keyShift = 0, isJamPlaying = false, 
         beginRun(entry, loaded, isGroove, token);
       }).catch((err) => {
         logger().sampled('peek.load-miss', { slug: entry.slug, error: err?.message }, SAMPLE_OPTS);
+        // Same cleanup as the null-load path: without it a REJECTED load
+        // leaves the card visually "peeking" forever (peekRef + peekingId
+        // stuck). Token-guarded so a rejection landing after a newer peek
+        // started can't clear that newer peek's state.
+        if (token === tokenRef.current) {
+          peekRef.current = null;
+          setPeekingId(null);
+        }
       });
     } catch (err) {
       logger().error('peek.start-failed', { error: err?.message });
