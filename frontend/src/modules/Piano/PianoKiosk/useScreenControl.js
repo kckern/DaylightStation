@@ -11,6 +11,19 @@ function logger() {
 }
 
 /**
+ * Map a failed turnOffScreen() result to a short operator-facing message.
+ * Shared by both call sites so the wording stays consistent.
+ *
+ * @param {{lever?: string}} [res]
+ * @returns {string}
+ */
+export function screenOffFailureMessage(res) {
+  return res?.lever === 'none'
+    ? 'No screen control available'
+    : "Couldn't reach the screen";
+}
+
+/**
  * useScreenControl — single source of truth for the manual "turn off the screen"
  * burn-in kill switch, shared by the connect gate and the settings sheet.
  *

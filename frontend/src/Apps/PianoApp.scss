@@ -444,6 +444,9 @@
     cursor: pointer;
 
     &:active { background: var(--piano-surface-2); color: var(--piano-fg); }
+
+    // Armed (awaiting confirm) — warn colour signals it's live.
+    &.is-armed { border-color: var(--piano-warn); color: var(--piano-warn); font-weight: 700; }
   }
 }
 
@@ -1827,6 +1830,7 @@
     // Armed (awaiting confirm) — signal it's live with the warn colour.
     &.is-armed { border-color: var(--piano-warn); color: var(--piano-warn); font-weight: 700; }
   }
+  &__screen-error { margin: 0.5rem 0 0; color: var(--piano-warn); font-size: 0.9rem; }
 
   &__foot { flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border); }
   &__reload {

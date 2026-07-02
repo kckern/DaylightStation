@@ -16,7 +16,10 @@ vi.mock('./PianoSoundContext.jsx', () => ({
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({ config: { bluetooth: null }, pianoId: 'default' }),
 }));
-vi.mock('./useScreenControl.js', () => ({ useScreenControl: () => ({ turnOffScreen }) }));
+vi.mock('./useScreenControl.js', () => ({
+  useScreenControl: () => ({ turnOffScreen }),
+  screenOffFailureMessage: (res) => (res?.lever === 'none' ? 'No screen control available' : "Couldn't reach the screen"),
+}));
 vi.mock('../../../lib/fkb.js', () => ({ launchAndroidTarget: vi.fn() }));
 vi.mock('./PianoMidiMonitor.jsx', () => ({ default: () => null }));
 vi.mock('./PianoKeyboardPanel.jsx', () => ({ default: () => null }));
@@ -59,5 +62,15 @@ describe('PianoSettingsSheet — screen-off action', () => {
     act(() => { vi.advanceTimersByTime(3000); });
     expect(screen.getByRole('button', { name: /Turn off screen/i })).toBeTruthy();
     expect(turnOffScreen).not.toHaveBeenCalled();
+  });
+
+  it('shows an inline failure note when turnOffScreen reports no path', async () => {
+    turnOffScreen.mockResolvedValue({ ok: false, lever: 'none' });
+    openMidiTab();
+    fireEvent.click(screen.getByRole('button', { name: /Turn off screen/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Tap again to confirm/i }));
+    // Flush the awaited turnOffScreen() promise + resulting setState.
+    await act(async () => {});
+    expect(screen.getByText(/No screen control available/i)).toBeTruthy();
   });
 });

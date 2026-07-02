@@ -20,6 +20,7 @@ vi.mock('../modules/Piano/PianoKiosk/PianoConfig.jsx', () => ({
 }));
 vi.mock('../modules/Piano/PianoKiosk/useScreenControl.js', () => ({
   useScreenControl: () => ({ turnOffScreen: h.turnOffScreen }),
+  screenOffFailureMessage: (res) => (res?.lever === 'none' ? 'No screen control available' : "Couldn't reach the screen"),
 }));
 vi.mock('../lib/fkb.js', () => ({ launchAndroidTarget: (...a) => h.launchAndroidTarget(...a) }));
 
@@ -42,10 +43,23 @@ describe('ConnectGate redesign', () => {
     expect(connect).toHaveBeenCalled();
   });
 
-  it('shows a turn-off-screen button wired to turnOffScreen', () => {
+  it('turn-off-screen requires arm→confirm (2-tap) before firing', () => {
+    render(<ConnectGate><div>content</div></ConnectGate>);
+    // First tap arms — does NOT fire (a stray tap here is unrecoverable).
+    fireEvent.click(screen.getByRole('button', { name: /Turn off screen/i }));
+    expect(turnOffScreen).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Tap again to confirm/i })).toBeTruthy();
+    // Second tap fires and disarms.
+    fireEvent.click(screen.getByRole('button', { name: /Tap again to confirm/i }));
+    expect(turnOffScreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a failure message in the status line when turnOffScreen fails', async () => {
+    turnOffScreen.mockResolvedValue({ ok: false, lever: 'none' });
     render(<ConnectGate><div>content</div></ConnectGate>);
     fireEvent.click(screen.getByRole('button', { name: /Turn off screen/i }));
-    expect(turnOffScreen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Tap again to confirm/i }));
+    expect(await screen.findByText(/No screen control available/i)).toBeTruthy();
   });
 
   it('the continue-without-piano link reveals children', () => {

@@ -13,7 +13,8 @@ import {
 import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
-import { useScreenControl } from '../modules/Piano/PianoKiosk/useScreenControl.js';
+import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
+import { useArmedAction } from '../modules/Piano/PianoKiosk/useArmedAction.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
@@ -54,10 +55,26 @@ export function ConnectGate({ children }) {
   const { config } = usePianoKioskConfig();
   const { turnOffScreen } = useScreenControl();
   const [dismissed, setDismissed] = useState(false);
+  const [screenError, setScreenError] = useState(null);
 
   useEffect(() => {
     if (status === 'idle') connect();
   }, [status, connect]);
+
+  // 2-tap arm/confirm even here — the connect screen is the highest lock-out-risk
+  // surface (no piano paired → no BLE/MIDI wake; once the backlight is off, touch
+  // is dead → only FKB REST recovers it), so a stray tap must not blank it.
+  const { armed: screenArmed, trigger: triggerScreenOff } = useArmedAction(async () => {
+    const res = await turnOffScreen();
+    setScreenError(res?.ok === false ? screenOffFailureMessage(res) : null);
+  }, { armMs: 3000 });
+
+  // Auto-clear the transient failure note.
+  useEffect(() => {
+    if (!screenError) return undefined;
+    const t = setTimeout(() => setScreenError(null), 4000);
+    return () => clearTimeout(t);
+  }, [screenError]);
 
   if (status === 'connected' || dismissed) return children;
 
@@ -73,7 +90,8 @@ export function ConnectGate({ children }) {
     <div className="piano-connect-gate">
       <div className="piano-connect-gate__card">
         <h1 className="piano-connect-gate__title">Piano</h1>
-        <p className="piano-connect-gate__status" role="status" aria-live="polite">{message}</p>
+        {/* Status line doubles as the transient screen-off failure surface. */}
+        <p className="piano-connect-gate__status" role="status" aria-live="polite">{screenError || message}</p>
 
         <div className="piano-connect-gate__actions">
           {status !== 'unsupported' && (
@@ -101,14 +119,16 @@ export function ConnectGate({ children }) {
 
         {/* Device action — burn-in kill switch. This gate can sit lit for a long
             time waiting on a pairing, so offer a manual screen-off. Separated by
-            a divider because it is a device action, not a connect action. */}
+            a divider because it is a device action, not a connect action. 2-tap
+            arm/confirm guards against an unrecoverable stray-tap blackout. */}
         <div className="piano-connect-gate__device">
           <button
             type="button"
-            className="piano-connect-gate__screen-off"
-            onClick={() => turnOffScreen()}
+            className={`piano-connect-gate__screen-off${screenArmed ? ' is-armed' : ''}`}
+            aria-live="polite"
+            onClick={triggerScreenOff}
           >
-            Turn off screen
+            {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
           </button>
         </div>
       </div>
