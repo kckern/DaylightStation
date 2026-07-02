@@ -282,6 +282,32 @@ describe('usePeek — resilience', () => {
     expect(rafCbs.size).toBe(0);
   });
 
+  it('a REJECTED loadNotes clears the stuck peeking state (no forever-lit card)', async () => {
+    let reject;
+    const lib = { loadNotes: vi.fn(() => new Promise((_, rej) => { reject = rej; })) };
+    const { result } = mount({ lib });
+    act(() => result.current.startPeek(MELODY));
+    expect(result.current.peekingId).toBe(MELODY.path);
+    await act(async () => { reject(new Error('network down')); });
+    expect(result.current.peekingId).toBeNull();
+    expect(rafCbs.size).toBe(0); // no run ever started
+  });
+
+  it('a stale rejection landing after a newer peek started does NOT clear the newer peek', async () => {
+    const pending = []; // per-call {resolve, reject}
+    const lib = {
+      loadNotes: vi.fn(() => new Promise((resolve, reject) => { pending.push({ resolve, reject }); })),
+    };
+    const { result, router } = mount({ lib });
+    act(() => result.current.startPeek(MELODY));    // load #1 (will reject late)
+    act(() => result.current.startPeek(BASSLINE));  // supersedes → bumps token
+    await act(async () => { pending[1].resolve(NOTES_C); }); // newer peek runs
+    await act(async () => { pending[0].reject(new Error('slow fail')); }); // stale rejection
+    expect(result.current.peekingId).toBe(BASSLINE.path); // survived
+    frameAt(10);
+    expect(onCalls(router, PEEK_CHANNEL)).toHaveLength(1); // and it plays
+  });
+
   it('startPeek never throws on a degenerate bpm — it sanitizes and plays', async () => {
     const { result, router, resolveLoad } = mount({ bpm: NaN, isJamPlaying: false });
     act(() => result.current.startPeek(MELODY));
