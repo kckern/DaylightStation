@@ -87,7 +87,9 @@ test.describe('Cycle Game — POV marker avatar + grid', () => {
     // Measure every POV marker avatar for 1:1 aspect using offsetWidth/offsetHeight
     // (layout coordinates, NOT getBoundingClientRect which returns the distorted
     // 2D projection of the 3D-rotated .cg-pov__plane and would always be non-square).
-    // Also confirm the horizontal depth-lines (hlines) render.
+    // Also confirm the road renders: the depth grid moved from DOM `.cg-pov__hline`
+    // elements to the three.js shader (pre-Phase-2 rewrite), so the modern
+    // equivalents are the GL canvas plus the pooled DOM metre-mark labels.
     const m = await page.evaluate(() => {
       const ratios = [];
       document.querySelectorAll('.cg-pov__marker').forEach((marker) => {
@@ -101,7 +103,8 @@ test.describe('Cycle Game — POV marker avatar + grid', () => {
       });
       return {
         ratios,
-        hlineCount: document.querySelectorAll('.cg-pov__hline').length,
+        glCanvasCount: document.querySelectorAll('.cg-pov canvas').length,
+        markLabelCount: document.querySelectorAll('.cg-pov__mark-label').length,
       };
     });
 
@@ -113,6 +116,7 @@ test.describe('Cycle Game — POV marker avatar + grid', () => {
       expect(r.ratio, `${r.sel} is ~1:1 (was ${r.w}x${r.h})`).toBeGreaterThan(0.95);
       expect(r.ratio, `${r.sel} is ~1:1 (was ${r.w}x${r.h})`).toBeLessThan(1.05);
     }
-    expect(m.hlineCount, 'horizontal depth-lines (hlines) render in the POV grid').toBeGreaterThan(0);
+    expect(m.glCanvasCount, 'the three.js road canvas renders in the POV grid').toBeGreaterThan(0);
+    expect(m.markLabelCount, 'metre-mark labels render along the POV road').toBeGreaterThan(0);
   });
 });
