@@ -292,6 +292,42 @@ describe('saveSong → loadSong round trip', () => {
   });
 });
 
+// ── 'Ours' facet loaders ──────────────────────────────────────────────────────
+describe('loadCrateStack / getFull (Ours facet)', () => {
+  it('getFull returns a kept loop record with its embedded notes', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    const loop = { id: 'l1', kind: 'groove', notes: [{ ticks: 0, durationTicks: 240, midi: 36 }], ppq: 480, lengthBars: 4 };
+    api.mockImplementation((path) => (path.endsWith('/producer/loops/l1') ? Promise.resolve(loop) : Promise.resolve({})));
+    let rec;
+    await act(async () => { rec = await result.current.getFull('loops', 'l1'); });
+    expect(rec.notes).toEqual([{ ticks: 0, durationTicks: 240, midi: 36 }]);
+  });
+
+  it('loadCrateStack resolves loop refs into embedded-note take layers', async () => {
+    mockLists();
+    const { result } = await mountStore();
+    const crate = {
+      id: 'c1', kind: 'stack',
+      layers: [
+        { id: 'lib1', role: 'chords', channel: 0, source: { kind: 'library', entry: { path: 'lib1', slug: 'lib1', barSpan: 4 } } },
+        { id: 'take-x', role: 'bass', channel: 1, source: { kind: 'loop', loopId: 'l7' } },
+      ],
+    };
+    const loop = { id: 'l7', kind: 'bass', notes: [{ ticks: 0, durationTicks: 480, midi: 40 }], ppq: 480, lengthBars: 2 };
+    api.mockImplementation((path) => {
+      if (path.endsWith('/producer/crate/c1')) return Promise.resolve(crate);
+      if (path.endsWith('/producer/loops/l7')) return Promise.resolve(loop);
+      return Promise.resolve({});
+    });
+    let loaded;
+    await act(async () => { loaded = await result.current.loadCrateStack('c1'); });
+    expect(loaded.layers[0].source.kind).toBe('library'); // untouched
+    expect(loaded.layers[1].source.kind).toBe('take');
+    expect(loaded.layers[1].source.notes).toEqual([{ ticks: 0, durationTicks: 480, midi: 40 }]);
+  });
+});
+
 // ── remove / rename ───────────────────────────────────────────────────────────
 describe('remove and rename', () => {
   it('remove() DELETEs and drops the item from the list', async () => {

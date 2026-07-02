@@ -50,6 +50,12 @@
  * @param {number} [props.keyShift] - workspace keyShift the peek conforms to
  * @param {() => void} [props.onAudioGesture] - audio unlock, called on card
  *   pointer-down (the hold TIMER callback is not a browser gesture context)
+ * @param {{loops:Array, crate:Array}} [props.ours] - household pool light
+ *   listings for the 'Ours' facet (Task 8.2). In the ADD-LAYER context only
+ *   LOOPS and STACKS are addable; SECTIONS are a SongView/Crate concern and are
+ *   excluded here (documented scoping).
+ * @param {(kind:'loop'|'stack', item:object) => void} [props.onPickOurs] - add a
+ *   kept loop or load a kept stack.
  */
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
@@ -274,6 +280,8 @@ export function LibraryBrowser({
   bpm,
   keyShift = 0,
   onAudioGesture,
+  ours = { loops: [], crate: [] },
+  onPickOurs,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
   const [store, setStore] = useState('curated');
@@ -407,9 +415,24 @@ export function LibraryBrowser({
     ? (pivot.title || (pivot.roman?.length ? pivot.roman.join(' ') : pivot.type))
     : null;
 
-  const storeStub = store === 'ours'
-    ? 'Nothing kept yet — record or save something'
-    : store === 'prefabs' ? 'Prefabs are coming soon' : null;
+  // Prefabs remain a stub (Task 9.1); 'Ours' now renders real kept material.
+  const storeStub = store === 'prefabs' ? 'Prefabs are coming soon' : null;
+
+  // 'Ours' cards: kept LOOPS + kept STACKS (crate kind==='stack'). Sections are
+  // a SongView/Crate concern (they fill song slots, not the mix), so they're
+  // excluded from the ADD-LAYER surface. Filtered by search text only.
+  const oursCards = useMemo(() => {
+    if (store !== 'ours') return [];
+    const q = text.trim().toLowerCase();
+    const match = (label) => !q || String(label || '').toLowerCase().includes(q);
+    const loops = (ours.loops || [])
+      .filter((it) => match(it.title || it.kind || it.id))
+      .map((it) => ({ ...it, _family: 'loop' }));
+    const stacks = (ours.crate || [])
+      .filter((it) => it.kind === 'stack' && match(it.title || it.id))
+      .map((it) => ({ ...it, _family: 'stack' }));
+    return [...stacks, ...loops];
+  }, [store, ours, text]);
 
   return (
     <div className="piano-producer-mode__overlay" role="dialog" aria-label="loop library">
@@ -486,7 +509,7 @@ export function LibraryBrowser({
         </div>
       )}
 
-      {gateActive && !storeStub && (
+      {gateActive && store === 'curated' && (
         <div className="piano-producer-mode__gate">
           <span className="piano-producer-mode__gate-note">
             {gateLifted
@@ -499,7 +522,38 @@ export function LibraryBrowser({
         </div>
       )}
 
-      {storeStub ? (
+      {store === 'ours' ? (
+        oursCards.length === 0 ? (
+          <div className="piano-producer-mode__library-empty">
+            <p>Nothing kept yet — record a loop or keep a stack to the Crate.</p>
+          </div>
+        ) : (
+          <ul className="piano-producer-mode__list piano-producer-mode__list--ours">
+            {oursCards.map((item) => (
+              <li key={`${item._family}:${item.id}`}>
+                <button
+                  type="button"
+                  className="piano-loop"
+                  aria-label={item.title || `${item._family} ${item.id}`}
+                  onClick={() => onPickOurs && onPickOurs(item._family, item)}
+                >
+                  <span className="piano-loop__head">
+                    <MaterialGlyph seed={`ours:${item._family}:${item.id}`} size={44} />
+                  </span>
+                  <span className="piano-loop__name">
+                    {item.title || (item._family === 'stack' ? 'Kept stack' : (item.kind || 'Loop'))}
+                  </span>
+                  <span className="piano-loop__why">
+                    {item._family === 'stack'
+                      ? `${item.layerCount ?? 0} layers`
+                      : [item.kind, item.author].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : storeStub ? (
         <div className="piano-producer-mode__library-empty">
           <p>{storeStub}</p>
         </div>

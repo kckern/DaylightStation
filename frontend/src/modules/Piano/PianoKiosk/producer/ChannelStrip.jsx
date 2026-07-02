@@ -45,6 +45,9 @@ const REMOVE_ARM_MS = 3000;
  * @param {(id:string, gain:number) => void} props.onGain
  * @param {(id:string, program:number) => void} props.onVoice
  * @param {(id:string) => void} [props.onToggleCarried] - carry pin (absent → no pin)
+ * @param {(layer:object) => void} [props.onKeepToCrate] - persist a RECORDED
+ *   (take-sourced) layer to the household loop pool (Task 8.2). Only recorded
+ *   material shows this — library loops already live in the library.
  */
 export function ChannelStrip({
   layer,
@@ -56,9 +59,12 @@ export function ChannelStrip({
   onGain,
   onVoice,
   onToggleCarried,
+  onKeepToCrate,
 }) {
   const entry = layer.source?.kind === 'library' ? layer.source.entry : null;
+  const isTake = layer.source?.kind === 'take';
   const isGroove = layer.role === 'groove';
+  const [kept, setKept] = useState(false);
   const title = entry?.title || entry?.slug || layer.id;
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -139,6 +145,17 @@ export function ChannelStrip({
           <span className="piano-channel-strip__drums-hint">all drums</span>
         )}
       </div>
+
+      {isTake && onKeepToCrate && (
+        <button
+          type="button"
+          className={`piano-channel-strip__keep${kept ? ' is-kept' : ''}`}
+          aria-label="keep to crate"
+          title="Keep this recording to the Crate"
+          disabled={kept}
+          onClick={() => { onKeepToCrate(layer); setKept(true); }}
+        >{kept ? 'Kept' : 'Keep'}</button>
+      )}
 
       <button
         type="button"

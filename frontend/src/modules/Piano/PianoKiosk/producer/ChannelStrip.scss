@@ -120,6 +120,21 @@
       color: var(--piano-danger, #f7a29a);
     }
   }
+
+  // Keep a recorded (take) layer to the household loop pool (Task 8.2).
+  &__keep {
+    flex: 0 0 auto;
+    min-height: 3rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    background: none;
+    border: 1px solid var(--piano-border, #3a3a48);
+    color: var(--piano-muted, #bbc);
+    font: 600 0.85rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-text, #cfe); }
+    &.is-kept, &:disabled { opacity: 0.6; cursor: default; border-style: dashed; }
+  }
 }
 
 // ── GainStrip: segmented tap-to-set gain ─────────────────────────────────────

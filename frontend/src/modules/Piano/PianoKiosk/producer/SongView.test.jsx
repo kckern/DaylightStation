@@ -269,6 +269,37 @@ describe('section action sheet', () => {
 
 // ── scene launch (playback) ──────────────────────────────────────────────────
 
+describe('persistence wiring (Task 8.2)', () => {
+  it('footer Save enabled when onSaveSong is provided; passes the inline title', () => {
+    const onSaveSong = vi.fn();
+    const { getByRole } = renderView(filledDraft(), { onSaveSong });
+    const input = getByRole('textbox', { name: 'song title' });
+    fireEvent.change(input, { target: { value: '  My Tune  ' } });
+    fireEvent.click(getByRole('button', { name: 'Save song' }));
+    expect(onSaveSong).toHaveBeenCalledWith('My Tune'); // trimmed
+  });
+
+  it('keeps the disabled "coming soon" stub when onSaveSong is absent', () => {
+    const { getByRole } = renderView(filledDraft());
+    expect(getByRole('button', { name: /save song — coming soon/i })).toBeDisabled();
+  });
+
+  it('a filled section exposes "Keep to Crate" when onKeepSection is provided', () => {
+    const onKeepSection = vi.fn();
+    const { getByRole } = renderView(filledDraft(), { onKeepSection });
+    fireEvent.click(getByRole('button', { name: 'Verse slot 1' }));
+    fireEvent.click(getByRole('button', { name: 'Keep to Crate' }));
+    expect(onKeepSection).toHaveBeenCalledWith('sec-1');
+  });
+
+  it('the empty state offers "Load a saved song" when a picker is wired', () => {
+    const onOpenSongPicker = vi.fn();
+    const { getByRole } = renderView(null, { onOpenSongPicker });
+    fireEvent.click(getByRole('button', { name: 'Load a saved song' }));
+    expect(onOpenSongPicker).toHaveBeenCalled();
+  });
+});
+
 describe('scene launch during arrangement playback', () => {
   it('the slot containing activeBlockIndex glows (entry 1 owns blocks 2..4 under repeats [2,3])', () => {
     const { container } = renderView(filledDraft(), { isSongPlaying: true, activeBlockIndex: 2 });
