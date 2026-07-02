@@ -5,6 +5,7 @@ import {
   initialDraft,
   ActionTypes,
   promote,
+  hydrate,
   applyTemplate,
   slotFill,
   openSection,
@@ -980,10 +981,118 @@ describe('sectionGlyphSeeds', () => {
 
 // ── action creator / type consistency ────────────────────────────────────────
 
+describe('HYDRATE', () => {
+  it('materializes a whole saved song from null', () => {
+    const payload = {
+      sections: [{ id: 'sec-1', name: 'Verse', lengthBars: 8, stack: [wsLayer(CHORDS_A, 'chords', 0)] }],
+      arrangement: [{ sectionId: 'sec-1', repeats: 2 }],
+      carriedLayers: {},
+      meta: { title: 'My Song', author: 'kc', keyShift: 2, bpm: 96 },
+    };
+    const next = draftReducer(null, hydrate(payload));
+    expect(next.sections).toHaveLength(1);
+    expect(next.sections[0].name).toBe('Verse');
+    expect(next.sections[0].lengthBars).toBe(8);
+    expect(next.arrangement).toEqual([{ sectionId: 'sec-1', repeats: 2 }]);
+    expect(next.meta).toEqual({ title: 'My Song', author: 'kc', keyShift: 2, bpm: 96 });
+  });
+
+  it('round-trips a draft built through the verbs (save → load identity)', () => {
+    // Build a real draft: promote a carried groove + a chords layer, add a section.
+    const built = run(
+      promote({ workspaceState: ws([carriedGroove(), wsLayer(CHORDS_A, 'chords', 0)]), notesById }),
+    );
+    // Serialize exactly what useProducerStore persists as the structural payload.
+    const payload = {
+      sections: built.sections,
+      arrangement: built.arrangement,
+      carriedLayers: built.carriedLayers,
+      meta: built.meta,
+    };
+    const roundTripped = draftReducer(null, hydrate(JSON.parse(JSON.stringify(payload))));
+    expect(roundTripped.sections).toEqual(built.sections);
+    expect(roundTripped.arrangement).toEqual(built.arrangement);
+    expect(roundTripped.carriedLayers).toEqual(built.carriedLayers);
+    expect(roundTripped.meta).toEqual(built.meta);
+    // And the scheduler inputs match — it plays identically.
+    expect(toSchedulerInputs(roundTripped, notesById))
+      .toEqual(toSchedulerInputs(built, notesById));
+  });
+
+  it('replaces an existing draft wholesale', () => {
+    const existing = run(promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById }));
+    const payload = {
+      sections: [{ id: 'sec-9', name: 'Chorus', lengthBars: 4, stack: [] }],
+      arrangement: [{ sectionId: 'sec-9', repeats: 1 }],
+      carriedLayers: {},
+      meta: { title: null, author: null, keyShift: 0, bpm: 120 },
+    };
+    const next = draftReducer(deepFreeze(existing), hydrate(payload));
+    expect(next.sections).toHaveLength(1);
+    expect(next.sections[0].id).toBe('sec-9');
+    expect(next.meta.bpm).toBe(120);
+  });
+
+  it('deep-clones the payload so the caller cannot alias reducer state', () => {
+    const stack = [wsLayer(CHORDS_A, 'chords', 0)];
+    const payload = {
+      sections: [{ id: 'sec-1', name: 'A', lengthBars: 4, stack }],
+      arrangement: [{ sectionId: 'sec-1', repeats: 1 }],
+      carriedLayers: {},
+      meta: {},
+    };
+    const next = draftReducer(null, hydrate(payload));
+    stack[0].gain = 0.1; // mutate the source array after hydration
+    expect(next.sections[0].stack[0].gain).toBe(1); // reducer state untouched
+  });
+
+  it('drops arrangement entries pointing at missing sections', () => {
+    const payload = {
+      sections: [{ id: 'sec-1', name: 'A', lengthBars: 4, stack: [] }],
+      arrangement: [{ sectionId: 'sec-1', repeats: 1 }, { sectionId: 'ghost', repeats: 2 }],
+      carriedLayers: {},
+      meta: {},
+    };
+    const next = draftReducer(null, hydrate(payload));
+    expect(next.arrangement).toEqual([{ sectionId: 'sec-1', repeats: 1 }]);
+  });
+
+  it('sweeps carried layers no surviving section references', () => {
+    const payload = {
+      sections: [{ id: 'sec-1', name: 'A', lengthBars: 4, stack: [] }],
+      arrangement: [],
+      carriedLayers: { [GROOVE]: carriedGroove() },
+      meta: {},
+    };
+    const next = draftReducer(null, hydrate(payload));
+    expect(next.carriedLayers).toEqual({});
+  });
+
+  it('coerces meta defensively and defaults missing fields', () => {
+    const next = draftReducer(null, hydrate({
+      sections: [{ id: 'sec-1', name: 'A', lengthBars: 4, stack: [] }],
+      arrangement: [],
+      meta: { keyShift: 3.9, bpm: 9999 },
+    }));
+    expect(next.meta.keyShift).toBe(3); // truncated
+    expect(next.meta.bpm).toBe(220); // clamped to BPM_MAX
+    expect(next.meta.title).toBeNull();
+    expect(next.meta.author).toBeNull();
+  });
+
+  it('is a no-op on a malformed payload (null stays null)', () => {
+    expect(draftReducer(null, hydrate(null))).toBeNull();
+    expect(draftReducer(null, hydrate({ sections: 'nope', arrangement: [] }))).toBeNull();
+    const existing = run(promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById }));
+    expect(draftReducer(existing, hydrate({ sections: {} }))).toBe(existing);
+  });
+});
+
 describe('action creators', () => {
   it('every creator emits a type registered in ActionTypes', () => {
     const samples = [
       promote({ workspaceState: ws([]) }),
+      hydrate({ sections: [], arrangement: [] }),
       applyTemplate(POP, ws([])),
       slotFill({ sectionId: 'sec-1', workspaceState: ws([]) }),
       openSection('sec-1'),
