@@ -18,7 +18,7 @@
     font-size: 1.1rem; // was 1rem — 10-foot floor (audit UX §7)
     animation: cg-fade-up 0.4s ease both;
   }
-  &.is-go &__eyebrow { color: cg.$cg-lane-1; letter-spacing: 0.4em; }
+  &.is-go &__eyebrow { color: cg.$cg-success; letter-spacing: 0.4em; }
 
   // Big number sits inside a pulsing accent ring.
   &__stage {
@@ -47,13 +47,15 @@
   &__ring {
     position: absolute; inset: 0;
     border-radius: 50%;
-    border: 3px solid rgba(122, 162, 255, 0.25);
-    box-shadow: inset 0 0 60px rgba(122, 162, 255, 0.12), 0 0 50px rgba(0, 0, 0, 0.6);
+    // Legacy indigo (#7aa2ff) purged — the waiting ring now rides the same
+    // telemetry cyan as the rest of the countdown chrome (audit UX §6.2).
+    border: 3px solid rgba(cg.$cg-cyan, 0.25);
+    box-shadow: inset 0 0 60px rgba(cg.$cg-cyan, 0.12), 0 0 50px rgba(0, 0, 0, 0.6);
     animation: cg-ring-pulse 1s ease-in-out infinite;
   }
   &.is-go &__ring {
-    border-color: rgba(46, 204, 113, 0.7);
-    box-shadow: inset 0 0 80px rgba(46, 204, 113, 0.25), 0 0 70px rgba(46, 204, 113, 0.4);
+    border-color: rgba(cg.$cg-success, 0.7);
+    box-shadow: inset 0 0 80px rgba(cg.$cg-success, 0.25), 0 0 70px rgba(cg.$cg-success, 0.4);
     animation: cg-ring-burst 0.5s ease-out forwards;
   }
 
@@ -71,10 +73,10 @@
   }
   &.is-go &__number {
     font-size: 7rem; letter-spacing: 0.04em;
-    color: cg.$cg-lane-1;
+    color: cg.$cg-success;
     text-shadow:
-      0 0 56px rgba(93, 255, 155, 0.85),
-      0 0 28px rgba(93, 255, 155, 0.6);
+      0 0 56px rgba(cg.$cg-success, 0.85),
+      0 0 28px rgba(cg.$cg-success, 0.6);
     animation: cg-go-pop 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
   }
 
@@ -87,9 +89,9 @@
     transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
   }
   &__lamp.is-on { transform: scale(1.12); }
-  &__lamp--red.is-on    { background: #ff5a5a; opacity: 1; box-shadow: 0 0 18px #ff5a5a, 0 0 36px rgba(255, 90, 90, 0.7); }
-  &__lamp--yellow.is-on { background: cg.$cg-lane-2; opacity: 1; box-shadow: 0 0 18px cg.$cg-lane-2, 0 0 36px rgba(255, 177, 61, 0.7); }
-  &__lamp--green.is-on  { background: cg.$cg-lane-1; opacity: 1; box-shadow: 0 0 18px cg.$cg-lane-1, 0 0 36px rgba(93, 255, 155, 0.7); }
+  &__lamp--red.is-on    { background: cg.$cg-danger; opacity: 1; box-shadow: 0 0 18px cg.$cg-danger, 0 0 36px rgba(cg.$cg-danger, 0.7); }
+  &__lamp--yellow.is-on { background: cg.$cg-warn; opacity: 1; box-shadow: 0 0 18px cg.$cg-warn, 0 0 36px rgba(cg.$cg-warn, 0.7); }
+  &__lamp--green.is-on  { background: cg.$cg-success; opacity: 1; box-shadow: 0 0 18px cg.$cg-success, 0 0 36px rgba(cg.$cg-success, 0.7); }
 }
 
 @keyframes cg-count-punch {

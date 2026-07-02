@@ -5,6 +5,7 @@ import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.j
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
 import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
 import { AVATAR_RATIO, BADGE_RATIO, BADGE_GAP_RATIO, OVERLAY_FONT_RATIO } from '@/modules/Fitness/lib/cycleGame/speedometerOverlayLayout.js';
+import { NoEntryIcon, RaceFlagIcon, MedalIcon } from './home/icons.jsx';
 import './CycleSpeedometer.scss';
 
 const VIEWBOX = 200;
@@ -120,7 +121,7 @@ export default function CycleSpeedometer({
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px, fontSize: overlayFontPx }}>
         {penalized && !finished && (
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
-            <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
+            <span className="cycle-speedometer__penalty-icon" aria-hidden="true"><NoEntryIcon /></span>
             <span className="cycle-speedometer__penalty-title">False start</span>
             {penaltyAwaitingStop ? (
               // Timer served — they just need to stop pedalling to clear the box.
@@ -144,7 +145,7 @@ export default function CycleSpeedometer({
         )}
         {finished && (
           <div className="cycle-speedometer__finished" data-testid="cycle-speedometer-finished">
-            <span className="cycle-speedometer__finished-flag" aria-hidden="true">🏁</span>
+            <span className="cycle-speedometer__finished-flag" aria-hidden="true"><RaceFlagIcon /></span>
             <span className="cycle-speedometer__finished-place">
               {Number.isFinite(placement) ? ordinal(placement) : 'Finished'}
             </span>
@@ -251,7 +252,11 @@ export default function CycleSpeedometer({
       </div>
 
       <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
-        {isLeader && !finished && <span className="cycle-speedometer__leader-medal" aria-label="Current leader">🥇</span>}
+        {isLeader && !finished && (
+          <span className="cycle-speedometer__leader-medal" data-testid="cycle-speedometer-leader-medal" aria-label="Current leader">
+            <MedalIcon />
+          </span>
+        )}
         {/* Childless — its text is owned by the motion clock (odometer count-up), with a
             synchronous baseline set in useLayoutEffect above. */}
         <span ref={odoValRef} className="cycle-speedometer__odometer-value" />

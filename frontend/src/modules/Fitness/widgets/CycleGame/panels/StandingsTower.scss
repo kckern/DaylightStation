@@ -116,17 +116,21 @@
     white-space: nowrap;
   }
 
-  &__flag { font-size: 1.1rem; }
+  // SVG glyph (audit UX §6.3 — 🏁 emoji → the shared RaceFlagIcon).
+  &__flag {
+    display: inline-flex; color: t.$cg-gold;
+    svg { width: 1.1rem; height: 1.1rem; display: block; }
+  }
 
   &__ot-tag {
     font-size: 1.1rem;
     font-weight: 800;
-    color: #ffb13d;
+    color: t.$cg-warn;
     letter-spacing: 0.04em;
   }
 
   // Overtime dims to a neutral muted tone (still honestly riding); DNF reuses
   // the danger red the penalty/sensor-lost chips use elsewhere in the HUD.
   &__row--dim &__metric { color: t.$cg-muted; }
-  &__row[data-kind='dnf'] &__metric-text { color: #ff6b6b; }
+  &__row[data-kind='dnf'] &__metric-text { color: t.$cg-danger; }
 }

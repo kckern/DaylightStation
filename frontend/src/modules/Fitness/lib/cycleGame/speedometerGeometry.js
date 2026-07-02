@@ -14,12 +14,17 @@ const BAND_REFERENCE_RPM = 120;
 // Used whenever the config supplies no `cadence_zones` so the speedometer always
 // shows its green→yellow→orange→red intensity zones instead of a bare arc.
 // Thresholds are RPM mins; scaleBands() stretches them to the actual gauge.
+//
+// Audit UX §6.2: the original FlatUI set (#2ecc71/#f1c40f/#e67e22/#e74c3c) was a
+// flat, non-neon palette that clashed with the synthwave gauge chrome around it.
+// Neon-shifted to the same family as the rest of the HUD (sprint red matches
+// $cg-danger) while keeping the green→yellow→orange→red semantic order intact.
 export const DEFAULT_CADENCE_BANDS = [
   { id: 'warmup',   name: 'Warm-up',  min: 0,   color: '#5b6470' }, // grey base
-  { id: 'cruising', name: 'Cruising', min: 40,  color: '#2ecc71' }, // green
-  { id: 'pushing',  name: 'Pushing',  min: 70,  color: '#f1c40f' }, // yellow
-  { id: 'hard',     name: 'Hard',     min: 90,  color: '#e67e22' }, // orange
-  { id: 'sprint',   name: 'Sprint',   min: 105, color: '#e74c3c' }  // red
+  { id: 'cruising', name: 'Cruising', min: 40,  color: '#46e08a' }, // neon green
+  { id: 'pushing',  name: 'Pushing',  min: 70,  color: '#ffd93d' }, // neon yellow
+  { id: 'hard',     name: 'Hard',     min: 90,  color: '#ff9f43' }, // neon orange
+  { id: 'sprint',   name: 'Sprint',   min: 105, color: '#ff5a5a' }  // neon red ($cg-danger)
 ];
 
 // Pick a tick/label spacing that keeps the dial legible at any gauge max — aim
