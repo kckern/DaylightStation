@@ -92,6 +92,7 @@ beforeEach(() => {
   transport = {
     isPlaying: false,
     play: vi.fn(),
+    stop: vi.fn(),
     lengthMs: 0,
     positionRef: { current: { normalized: 0, bar: 0, beat: 0, blockIndex: -1 } },
   };
@@ -193,6 +194,23 @@ describe('setup and arm paths', () => {
     renderCard({ hasLayers: true });
     arm();
     expect(captureMock.arm.mock.calls[0][0].anchorWallMs).toBe(NOW + 800);
+  });
+
+  it('arming during a transport COUNT-IN (pos.bar < 0) routes to the metronome branch', () => {
+    // Mid-count-in: isPlaying is true but content has not started — normalized
+    // is 0 and bar is negative. Next-bar math would mint a garbage anchor and
+    // real notes would drop as count-in; play() is restart-safe instead.
+    transport.isPlaying = true;
+    transport.lengthMs = 8000;
+    transport.positionRef.current = { normalized: 0, bar: -1, beat: 0, blockIndex: -1 };
+    renderCard({ hasLayers: true, countInBars: 1, metronome: false });
+    arm();
+    expect(transport.play).toHaveBeenCalledTimes(1); // restart with fresh count-in
+    expect(onSetMetronome).toHaveBeenCalledWith(true);
+    expect(captureMock.arm).toHaveBeenCalledWith(expect.objectContaining({
+      anchorWallMs: NOW + BAR_MS, // metronome-branch anchor: now + ci×barMs
+      countInBars: 1,
+    }));
   });
 
   it('jam path exactly ON a boundary waits to the NEXT phase-aligned bar (never in the past)', () => {
@@ -415,6 +433,48 @@ describe('close and teardown', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Crash' }));
     unmount();
     expect(router.noteOff).toHaveBeenCalledWith(9, 49);
+  });
+
+  it('metronome-path session closed with an EMPTY workspace stops the transport (no silent zombie playback)', () => {
+    const { unmount } = renderCard({ hasLayers: false, metronome: false });
+    arm(); // metronome branch → this session started the transport
+    expect(transport.play).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(transport.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT stop the transport when a layer was kept during the session', () => {
+    const view = renderCard({ hasLayers: false, metronome: false });
+    arm();
+    // A keep landed a layer → parent re-renders the card with hasLayers=true.
+    view.rerender(
+      <CaptureCard
+        bpm={120}
+        timeSig={[4, 4]}
+        transport={transport}
+        router={router}
+        subscribeMidi={subscribeMidi}
+        metronome={false}
+        onSetMetronome={onSetMetronome}
+        countInBars={1}
+        onCountInBars={onCountInBars}
+        hasLayers
+        onKeep={onKeep}
+        onClose={onClose}
+      />,
+    );
+    view.unmount();
+    expect(transport.stop).not.toHaveBeenCalled();
+  });
+
+  it('does NOT stop the transport after a jam-path session (this session never started it)', () => {
+    transport.isPlaying = true;
+    transport.lengthMs = 8000;
+    const { unmount } = renderCard({ hasLayers: true });
+    arm(); // jam branch
+    expect(transport.play).not.toHaveBeenCalled();
+    unmount();
+    expect(transport.stop).not.toHaveBeenCalled();
   });
 
   it('✕ in setup closes without arming anything', () => {

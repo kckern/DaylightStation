@@ -308,6 +308,48 @@ export const loadStack = ({ layers, bpm, keyShift, editingSectionId }) => (
 export const clearWorkspace = () => ({ type: ActionTypes.CLEAR });
 export const setEditingSection = (id) => ({ type: ActionTypes.SET_EDITING_SECTION, id });
 
+/**
+ * Capture keep → ADD_LAYER source (Task 6.2 review follow-up).
+ *
+ * KEY NORMALIZATION: the recorder hears the TRANSPOSED jam but plays REAL
+ * pitches; toTransportLayers then applies keyShift to every non-groove layer.
+ * Storing the played pitches verbatim would transpose the take AGAIN on
+ * playback (keyShift semitones high). So the stored take is normalized to
+ * CANONICAL pitch (midi − keyShift), exactly like library loops — the
+ * single-transpose rule stays uniform. Grooves are untouched (drum-map
+ * pitches are instrument slots; toTransportLayers gives grooves transpose 0).
+ *
+ * The harmonic timeline was computed from the PLAYED pitches, so its root
+ * shifts with the notes: root − keyShift (mod 12). Slots are root-relative
+ * and unchanged.
+ *
+ * CITIZENSHIP: timeline + drumMode ride on the source so later phases
+ * (sections, Crate saves) inherit the enrichment instead of recomputing.
+ *
+ * @param {{takeId, notes, ppq, lengthBars, kind, drumMode, timeline}} take  keep() output
+ * @param {number} [keyShift=0]  workspace keyShift at keep time
+ */
+export function takeToSource(take, keyShift = 0) {
+  const isGroove = take.kind === 'groove';
+  const shift = isGroove ? 0 : Math.trunc(Number.isFinite(keyShift) ? keyShift : 0);
+  const notes = shift === 0
+    ? take.notes
+    : take.notes.map((n) => ({ ...n, midi: n.midi - shift }));
+  let timeline = take.timeline ?? null;
+  if (timeline && shift !== 0 && Number.isFinite(timeline.root)) {
+    timeline = { ...timeline, root: (((timeline.root - shift) % 12) + 12) % 12 };
+  }
+  return {
+    kind: 'take',
+    takeId: take.takeId,
+    notes,
+    ppq: take.ppq,
+    lengthBars: take.lengthBars,
+    timeline,
+    drumMode: !!take.drumMode,
+  };
+}
+
 // ── selectors ────────────────────────────────────────────────────────────────
 
 /** True when any layer is soloed. */

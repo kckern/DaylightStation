@@ -27,6 +27,9 @@
  * @param {() => void} props.onToggleMetronome
  * @param {boolean} [props.recActive] - a capture session is open (pulse red)
  * @param {() => void} [props.onRecord] - open/close the capture card
+ * @param {boolean} [props.locked] - capture session open: tempo/tap/key are
+ *   disabled ("Locked while recording") — the capture engine freezes its
+ *   geometry at arm, and a key nudge would desync heard-vs-stored pitch
  * @param {() => number} [props.now] - clock seam for the tap-tempo window
  *   (tests script it; defaults to performance.now)
  */
@@ -39,6 +42,8 @@ const READOUT_MS = 250;
 const TAP_RESET_MS = 2000;
 /** Average over at most this many recent intervals (5 timestamps). */
 const TAP_MAX_INTERVALS = 4;
+/** Tooltip for tempo/key controls disabled during a capture session. */
+const LOCKED_TITLE = 'Locked while recording';
 
 export function TransportBar({
   isPlaying,
@@ -53,6 +58,7 @@ export function TransportBar({
   onToggleMetronome,
   recActive = false,
   onRecord,
+  locked = false,
   now = () => performance.now(),
 }) {
   // ── bar:beat readout: rAF poll ONLY while playing, ≤4Hz state writes ───────
@@ -114,16 +120,16 @@ export function TransportBar({
       </span>
 
       <span className="piano-producer-mode__tempo">
-        <button type="button" aria-label="tempo down" onClick={() => onBpm(bpm - BPM_STEP)}>−</button>
+        <button type="button" aria-label="tempo down" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onClick={() => onBpm(bpm - BPM_STEP)}>−</button>
         <span aria-label="tempo">{bpm} BPM</span>
-        <button type="button" aria-label="tempo up" onClick={() => onBpm(bpm + BPM_STEP)}>+</button>
-        <button type="button" className="piano-producer-mode__tap" aria-label="tap tempo" onClick={handleTap}>TAP</button>
+        <button type="button" aria-label="tempo up" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onClick={() => onBpm(bpm + BPM_STEP)}>+</button>
+        <button type="button" className="piano-producer-mode__tap" aria-label="tap tempo" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onClick={handleTap}>TAP</button>
       </span>
 
       <span className="piano-producer-mode__key">
-        <button type="button" aria-label="key down" onClick={() => onKeyNudge(-1)}>−</button>
+        <button type="button" aria-label="key down" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onClick={() => onKeyNudge(-1)}>−</button>
         <span aria-label="key">Key {keyLabel}</span>
-        <button type="button" aria-label="key up" onClick={() => onKeyNudge(1)}>+</button>
+        <button type="button" aria-label="key up" disabled={locked} title={locked ? LOCKED_TITLE : undefined} onClick={() => onKeyNudge(1)}>+</button>
       </span>
 
       <button

@@ -35,7 +35,7 @@ import { detectKey } from '../../../../MusicNotation/index.js';
 import { detectChords } from '../Lessons/theory/theoryEngine.js';
 import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
-  workspaceReducer, initialWorkspace, toTransportLayers,
+  workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
   nudgeKey, setBpm, toggleMetronome,
 } from '../../producer/workspaceReducer.js';
@@ -274,19 +274,20 @@ export function Producer() {
   }, []);
 
   /** Confirmed take → workspace layer (channel assigned per kind by the
-   * reducer: groove → 9, melodic/harmonic → lowest free). */
+   * reducer: groove → 9, melodic/harmonic → lowest free). takeToSource
+   * normalizes non-groove pitches to canonical (midi − keyShift, timeline
+   * root shifted with them) — the recorder heard the transposed jam but
+   * played real pitches, and toTransportLayers transposes on playback; a
+   * verbatim store would transpose TWICE. It also carries timeline+drumMode
+   * on the source (citizenship for sections/Crate). */
   const handleCaptureKeep = useCallback((take) => {
+    const keyShift = stateRef.current.keyShift;
     logger.info('piano.producer.capture-keep', {
-      takeId: take.takeId, kind: take.kind, notes: take.notes.length, lengthBars: take.lengthBars,
+      takeId: take.takeId, kind: take.kind, notes: take.notes.length,
+      lengthBars: take.lengthBars, keyShift,
     });
     dispatch(addLayer({
-      source: {
-        kind: 'take',
-        takeId: take.takeId,
-        notes: take.notes,
-        ppq: take.ppq,
-        lengthBars: take.lengthBars,
-      },
+      source: takeToSource(take, keyShift),
       role: take.kind === 'groove' ? 'groove' : take.kind,
     }));
   }, [logger]);
@@ -422,8 +423,13 @@ export function Producer() {
             onToggleMetronome={() => dispatch(toggleMetronome())}
             recActive={captureOpen}
             onRecord={() => (captureOpen ? closeCapture() : openCapture('record-arm'))}
+            // Tempo/tap/key are locked during a capture session: the engine
+            // freezes geometry at arm (a mid-capture change would shear
+            // ticks), and a key nudge would desync heard-vs-stored pitch.
+            locked={captureOpen}
           />
 
+          <div className="piano-producer-mode__stage-wrap">
           <div className="piano-producer-mode__stage">
             <div className="piano-producer-mode__tabs" role="tablist">
               <button
@@ -509,25 +515,28 @@ export function Producer() {
                 Build sections from your jam — coming next
               </div>
             )}
+          </div>
 
-            {captureOpen && (
-              // Overlay card above the stage ONLY — the keyboard band stays
-              // playable (you record BY playing) and the transport stays live.
-              <CaptureCard
-                bpm={state.bpm}
-                transport={transport}
-                router={router}
-                subscribeMidi={midi.subscribe}
-                metronome={state.metronome}
-                onSetMetronome={handleSetMetronome}
-                countInBars={recCountIn}
-                onCountInBars={setRecCountIn}
-                hasLayers={state.layers.length > 0}
-                onKeep={handleCaptureKeep}
-                onClose={closeCapture}
-                onAudioGesture={ensureAudio}
-              />
-            )}
+          {captureOpen && (
+            // Overlay card above the stage ONLY — the keyboard band stays
+            // playable (you record BY playing) and the transport stays live.
+            // Mounted on the stage WRAP (not the scrollable stage itself) so
+            // a scrolled stage can never carry the scrim/card out of view.
+            <CaptureCard
+              bpm={state.bpm}
+              transport={transport}
+              router={router}
+              subscribeMidi={midi.subscribe}
+              metronome={state.metronome}
+              onSetMetronome={handleSetMetronome}
+              countInBars={recCountIn}
+              onCountInBars={setRecCountIn}
+              hasLayers={state.layers.length > 0}
+              onKeep={handleCaptureKeep}
+              onClose={closeCapture}
+              onAudioGesture={ensureAudio}
+            />
+          )}
           </div>
 
           <div className="piano-producer-mode__keys">
