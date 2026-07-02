@@ -61,6 +61,36 @@ own). Healthy steady-state on this tablet is **~60 fps**. Cron it to catch regre
 > (4) Do NOT test via `injectJsCode` experiments containing `history.pushState`: FKB re-evaluates the
 > injected JS on history changes, so such probes multiply into an instance storm on an SPA.
 
+### The 2026-07-01 finding: an OS-level input-recency throttle (page-side unfixable)
+
+Late-evening conclusion after instrumented elimination. The SM-T590 clamps the WebView's
+**main-thread frame delivery to ~4-8 fps** when there has been no **touch** input for a while:
+
+- **Everything main-thread** (rAF, React commits, key highlights) hits a hard ~120-250 ms/frame
+  floor; **compositor-thread CSS animations stay smooth at 60** (visibly: the header pill is
+  butter while the app janks) — so "the CSS driver looks fine" proves nothing about the app.
+- **BLE-MIDI is NOT user activity** to Android/Chromium — only touch/keys are. A piano kiosk is
+  "idle" *while being played*: measured MIDI→pixels lag ≈ 250 ms avg / 0.8 s worst during play.
+- **Real touch lifts it to 60 fps instantly** (adb `input tap` test: idle 2.5 → 60 fps, 0% janky);
+  load/navigation and reboot give a temporary boost window — which is why fresh-page probes lie.
+
+**Page-side levers all FAILED** (each verified live via the always-on telemetry): compositor CSS
+animation ✗, playing muted video (silent-AAC track, exempt from the video-only power-pause) ✗,
+30 Hz `setInterval` canvas main-thread paint damage ✗, **unmuted audible playback** (subsonic
+40 Hz @ −35 dB, FKB `autoplayAudio=true`) ✗. The keep-alive stack in `KeepAliveVideo.jsx` is kept
+(harmless, and it still covers the older starvation modes), but no page content defeats this
+throttle.
+
+**Next steps (require a one-time USB/ADB session at the tablet):**
+1. Re-enable adb-over-wifi (`adb tcpip 5555`) — it does not survive reboots.
+2. During throttle, capture mechanism: `dumpsys gfxinfo`, CPU freqs (`cat /sys/devices/system/cpu/*/cpufreq/scaling_cur_freq`),
+   renderer cgroup/priority — distinguishes Chromium renderer scheduling vs Samsung touch-boost DVFS.
+3. Try WebView command-line flags (`/data/local/tmp/webview-command-line`).
+4. **The designed fix:** add an `AccessibilityService` to the piano-bridge APK that `dispatchGesture`s
+   a 1-px corner tap when MIDI notes flow (it already owns `MidiManager`) — playing the piano becomes
+   the OS-level input that un-throttles the UI, precisely when latency matters. Periodic idle ticks
+   optional for the screensaver-era wake paths.
+
 ### The 2026-07-01 regression: removing the keep-alive video
 
 Commit `7de308f70` ("gut KeepAliveVideo to CSS-only vsync driver") shipped in the 12:31 build on
