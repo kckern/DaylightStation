@@ -37,7 +37,12 @@
   }
   &__tick { stroke: rgba(255,255,255,0.4); stroke-width: 1.2; }
   &__tick--major { stroke: rgba(255,255,255,0.8); stroke-width: 2; }
-  &__tick-label { fill: cg.$cg-muted; font-size: 12px; font-weight: 600; font-family: inherit; }
+  // Was a fixed 12px (didn't scale with the gauge at all, unlike the rest of the
+  // T10 em-cascade, and sat well under the 1.1rem 10-foot floor at every size).
+  // `em` ties it to the gauge's own ambient font-size (inherited from
+  // `.cycle-speedometer__gauge`'s inline fontSize) so it scales 96px→360px like
+  // the rest of the overlay; `max()` guarantees the floor at the small end.
+  &__tick-label { fill: cg.$cg-muted; font-size: max(0.6em, 1.1rem); font-weight: 600; font-family: inherit; }
   // Cyan telemetry needle with a neon glow.
   &__needle { stroke: cg.$cg-cyan; stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(33, 230, 255, 0.8)); }
   // Needle rotation is driven imperatively by the shared motion clock (linear lerp
@@ -85,23 +90,33 @@
     gap: 0.05em;
     pointer-events: none;
   }
+  // Every em-scaled size below is wrapped in max(…, 1.1rem) — audit UX §7 /
+  // T11: at the 96px wide-mode floor gauge, overlayFontPx = 96 * 0.16 =
+  // 15.36px, so even the 1em hero drops under the 17.6px 10-foot floor before
+  // the clamp. Above roughly a 110px gauge the em term already wins and these
+  // clamps are no-ops — the em cascade is otherwise untouched.
   &__speed {
     @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: 1em; line-height: 1; color: cg.$cg-text;
+    font-size: max(1em, 1.1rem); line-height: 1; color: cg.$cg-text;
     text-shadow: 0 0 10px rgba(33, 230, 255, 0.35);
   }
-  &__speed-unit { color: cg.$cg-muted; font-weight: 500; font-size: 0.5em; font-style: normal; }
+  &__speed-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, 1.1rem); font-style: normal; }
   &__rpm {
     @include cg.cg-numeral(cg.$cg-muted);
-    font-size: 0.55em; line-height: 1; color: cg.$cg-muted;
+    // T10 carried this MUST forward: the rpm sub-line lost its explicit
+    // 1.1rem floor when it moved into the em-scaled overlay. Restored here.
+    font-size: max(0.55em, 1.1rem); line-height: 1; color: cg.$cg-muted;
   }
-  &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: 0.75em; font-style: normal; }
+  &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, 1.1rem); font-style: normal; }
   // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
   // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
   // Warm/danger red, matching the penalty overlay's palette, so it reads as
-  // "something's wrong" the same way a false-start does.
+  // "something's wrong" the same way a false-start does. Same T10-carried MUST
+  // as __rpm above — explicit floor so "SENSOR" never renders below 17.6px
+  // even though it inherits __rpm's (also-floored) computed size.
   &__sensor-lost-chip {
     display: inline-block;
+    font-size: max(1em, 1.1rem);
     color: #ff6b6b; font-weight: 800; letter-spacing: 0.12em;
     text-transform: uppercase; text-shadow: 0 0 8px rgba(255, 90, 90, 0.6);
   }
@@ -137,7 +152,7 @@
   &__finished-flag { font-size: 1.8rem; line-height: 1; }
   &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
   &__finished-label {
-    color: cg.$cg-text; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: cg.$cg-text; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
   }
 
   // FALSE START — a rider pedalling at the green light. Their meter is locked
@@ -153,7 +168,7 @@
   }
   &__penalty-icon { font-size: 1.7rem; line-height: 1; }
   &__penalty-title { color: #ff6b6b; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
-  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; }
+  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.14em; text-transform: uppercase; } // was 0.66rem
   // Draining countdown bar — fill width = remaining/total, so it empties as the
   // mandatory window runs down.
   &__penalty-bar {
@@ -167,7 +182,7 @@
   }
   // Timer served, still pedalling — the gate is now "return to RPM 0".
   &__penalty-stop {
-    color: #fff; font-weight: 900; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: #fff; font-weight: 900; font-size: 1.1rem; letter-spacing: 0.1em; text-transform: uppercase; // was 0.78rem
     margin-top: 3px; padding: 2px 8px; border-radius: 6px;
     background: rgba(255, 60, 60, 0.32); border: 1px solid rgba(255, 120, 120, 0.7);
     animation: cg-penalty-pulse 0.5s ease-in-out infinite;

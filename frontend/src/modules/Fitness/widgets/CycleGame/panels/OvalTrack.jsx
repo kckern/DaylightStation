@@ -120,7 +120,6 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
           const color = LINE_COLORS[idx % LINE_COLORS.length];
           const p = ovalPoint(progress[id] || 0, RX, RY);
           const isGhost = !!riders[id]?.isGhost;
-          const initial = (riders[id]?.displayName || id || '?').trim().charAt(0).toUpperCase() || '?';
           return (
             <g
               key={`oval-marker-${id}`}
@@ -133,6 +132,10 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
               // renders the current-tick point; the clock glides it between ticks.
               style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
             >
+              {/* No in-dot initial letter (audit UX §7 / T11): a 9px marker dot
+                  can't earn even the relaxed 1rem recap-surface floor without a
+                  redesign, and the lap strip below already carries a lane dot +
+                  full rider name — removed rather than shrunk further. */}
               <circle
                 className="cg-oval-track__dot"
                 r="9"
@@ -140,9 +143,6 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
                 stroke={color}
                 strokeDasharray={isGhost ? '3 3' : undefined}
               />
-              <text className="cg-oval-track__initial" x="0" y="0" textAnchor="middle" dominantBaseline="central">
-                {initial}
-              </text>
             </g>
           );
         })}

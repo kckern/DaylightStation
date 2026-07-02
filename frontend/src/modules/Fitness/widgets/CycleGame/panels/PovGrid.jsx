@@ -13,7 +13,14 @@ const RACE_TICK_MS = 1000;   // matches RACE_TICK_MS data cadence
 const ROAD_HALF_W = 4;       // road spans x ∈ [-4, +4] world units
 const LANE_INSET = 0.85;     // riders spread across ±halfW*inset
 const GRID_MINOR_M = 1;      // minor metre mark spacing
-const GRID_MAJOR_M = 10;     // major (labelled) every 10 m
+const GRID_MAJOR_M = 10;     // shader road-stripe spacing (visual grid density — unrelated to labels)
+// DOM metre-label spacing (audit UX §7): widened from every 10 m to every
+// 100 m so the label can earn the 1.1rem 10-foot floor without crowding the
+// narrow rider-anchored strip (a 10 m cadence would stack 5-6+ labels in the
+// typical ~55 m visible span at the bumped font size). Deliberately a
+// SEPARATE constant from GRID_MAJOR_M — that one still feeds the shader's
+// uMajor uniform (road-surface line density), which this does not touch.
+const LABEL_MAJOR_M = 100;
 const AHEAD_M = 25;          // road drawn ahead of the leader (frames leader high)
 const BEHIND_M = 30;         // road drawn behind last place (rider-anchored marks/gates)
 const MIN_SPAN_M = 20;       // min framed span → max-zoom cap
@@ -375,7 +382,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       const worldAt = (t, now, framingMoved) => povWorld({
         riders: t.riders, frac: tickFraction(now, t.tickAt, RACE_TICK_MS), laneCount: t.riders.length,
         lapLengthM: gateCfgRef.current.lapLengthM, finishM: gateCfgRef.current.finishM,
-        aheadM: AHEAD_M, behindM: BEHIND_M, gridMinorM: GRID_MINOR_M, gridMajorM: GRID_MAJOR_M,
+        aheadM: AHEAD_M, behindM: BEHIND_M, gridMinorM: GRID_MINOR_M, gridMajorM: LABEL_MAJOR_M,
         roadHalfW: ROAD_HALF_W, laneInset: LANE_INSET, framingMoved,
       });
 

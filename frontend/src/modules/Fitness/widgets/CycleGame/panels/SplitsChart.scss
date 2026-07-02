@@ -1,5 +1,7 @@
 @use '../cgTokens' as cg;
 
+// RESULTS surface (rendered inside RaceResults, close-viewing) — floor is
+// 1rem here, not the racing-screen 1.1rem (audit UX §7 / T11 acceptance).
 .cg-splits {
   width: 100%; height: 100%; min-height: 0;
   overflow-y: auto; overflow-x: hidden;
@@ -8,10 +10,10 @@
 
   &__empty {
     display: flex; align-items: center; justify-content: center; height: 100%;
-    color: cg.$cg-faint; font-size: 0.9rem;
+    color: cg.$cg-faint; font-size: 1rem; // was 0.9rem
   }
 
-  &__table { width: 100%; border-collapse: collapse; font-family: cg.$cg-mono; font-size: 0.78rem; }
+  &__table { width: 100%; border-collapse: collapse; font-family: cg.$cg-mono; font-size: 1rem; } // was 0.78rem
 
   // Sticky rider header (top) + pinned current-lap row (bottom). Sticky on the cells
   // (not the section element) is the reliable cross-browser form; opaque backgrounds
@@ -24,7 +26,7 @@
     border-top: 1px solid cg.$cg-border-soft;
   }
 
-  &__corner { text-align: left; color: cg.$cg-faint; font-size: 0.62rem; padding: 2px 4px; }
+  &__corner { text-align: left; color: cg.$cg-faint; font-size: 1rem; padding: 2px 4px; } // was 0.62rem
   &__rider { text-align: right; color: cg.$cg-muted; font-weight: 600; padding: 2px 4px;
              border-bottom: 1px solid cg.$cg-border-soft; white-space: nowrap; }
   &__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
@@ -34,9 +36,9 @@
   &__cell--best { color: cg.$cg-lane-1; font-weight: 700; }
   &__row--current .cg-splits__cell--current { color: cg.$cg-gold; }
 
-  &__livehdr { font-family: cg.$cg-mono; font-size: 0.62rem; color: cg.$cg-faint; text-transform: uppercase; padding: 4px 4px 2px; }
+  &__livehdr { font-family: cg.$cg-mono; font-size: 1rem; color: cg.$cg-faint; text-transform: uppercase; padding: 4px 4px 2px; } // was 0.62rem
   &__live { list-style: none; margin: 0; padding: 0 4px; }
-  &__live-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-family: cg.$cg-mono; font-size: 0.85rem; border-bottom: 1px solid cg.$cg-border-soft; }
+  &__live-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-family: cg.$cg-mono; font-size: 1rem; border-bottom: 1px solid cg.$cg-border-soft; } // was 0.85rem
   &__live-pos { color: cg.$cg-faint; font-weight: 700; min-width: 1.2em; }
   &__live-name { flex: 1; color: cg.$cg-text; }
   &__live-gap { color: cg.$cg-cyan; font-weight: 700; }
