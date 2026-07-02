@@ -299,14 +299,18 @@ export function Producer() {
 
   const handleToggleMute = useCallback((id) => dispatch(toggleMute(id)), []);
   const handleToggleSolo = useCallback((id) => dispatch(toggleSolo(id)), []);
-  const handleSetGain = useCallback((id, gain) => dispatch(setGain(id, gain)), []);
+  const handleSetGain = useCallback((id, gain) => {
+    logger.sampled('piano.producer.gain-set', { id, gain }, { maxPerMinute: 20, aggregate: true });
+    dispatch(setGain(id, gain));
+  }, [logger]);
   // Voice select is a user gesture — a fine moment to unlock audio, so the
   // newly picked program is audible immediately (the configureLayer diff
   // effect pushes it to the router as the reducer state lands).
   const handleSetVoice = useCallback((id, program) => {
+    logger.info('piano.producer.voice-set', { id, program });
     ensureAudio();
     dispatch(setVoice(id, program));
-  }, [ensureAudio]);
+  }, [ensureAudio, logger]);
 
   // ── display derivations ─────────────────────────────────────────────────────
   const splitNote = useMemo(() => Math.floor((kb.startNote + kb.endNote) / 2), [kb.startNote, kb.endNote]);
