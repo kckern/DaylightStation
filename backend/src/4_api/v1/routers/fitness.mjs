@@ -29,6 +29,8 @@
  * - GET  /api/fitness/simulate/status - Get simulation status
  * - GET  /api/fitness/provider/webhook - Provider subscription validation
  * - POST /api/fitness/provider/webhook - Provider webhook events
+ * - GET  /api/fitness/cycle-races/ladder - Get the current week's cycle-game ladder
+ * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
  */
 import express from 'express';
 import path from 'path';
@@ -424,6 +426,37 @@ export function createFitnessRouter(config) {
     } catch (err) {
       logger.error?.('fitness.cycle_races.save.error', { error: err?.message });
       return res.status(400).json({ error: err?.message || 'save failed' });
+    }
+  });
+
+  // NOTE: /ladder and /personal-bests MUST precede /cycle-races/:raceId or
+  // Express matches them as raceIds.
+  router.get('/cycle-races/ladder', async (req, res) => {
+    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
+    try {
+      const ladder = await cycleRaceService.getLadder({ cycleGameConfig, week: req.query.week ?? null, householdId });
+      if (!ladder) return res.status(404).json({ error: 'no featured courses configured' });
+      return res.json(ladder);
+    } catch (err) {
+      if (err?.code === 'BAD_WEEK') return res.status(400).json({ error: 'invalid week (expected YYYY-Www)' });
+      logger.error?.('fitness.cycle_races.ladder.error', { error: err?.message });
+      return res.status(500).json({ error: 'ladder failed' });
+    }
+  });
+
+  router.get('/cycle-races/personal-bests', async (req, res) => {
+    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    const { userId, courseId } = req.query;
+    if (!userId || !courseId) return res.status(400).json({ error: 'userId and courseId required' });
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
+    try {
+      return res.json(await cycleRaceService.getPersonalBest({ cycleGameConfig, userId, courseId, householdId }));
+    } catch (err) {
+      logger.error?.('fitness.cycle_races.pb.error', { error: err?.message });
+      return res.status(500).json({ error: 'personal-best failed' });
     }
   });
 
