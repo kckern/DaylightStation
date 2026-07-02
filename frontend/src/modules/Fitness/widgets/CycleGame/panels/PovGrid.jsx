@@ -401,10 +401,19 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       // --- rAF loop ---
       let last = performance.now();
       let lastCamLog = 0;
+      // Frame-pacing forensics: "it looked janky" reports need numbers. The GL
+      // draw loop runs continuously during a race, so its inter-frame gaps ARE
+      // the screen's pacing. Logged ~every 30s at info (survives to the session
+      // JSONL, unlike the debug camera trace).
+      let paceWindowStart = performance.now();
+      let paceFrames = 0;
+      let paceMaxGapMs = 0;
       const draw = () => {
         if (!alive) return;
         const now = performance.now();
         const dt = Math.min(0.064, (now - last) / 1000);
+        paceFrames += 1;
+        paceMaxGapMs = Math.max(paceMaxGapMs, now - last);
         last = now;
         const t = tickRef.current;
         // Frame moved riders only once the start grace has elapsed — before that,
@@ -446,12 +455,27 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         if (world.riders.length && now - lastCamLog >= 1000) {
           lastCamLog = now;
           controls.getTarget(s._cs);
-          logRef.current.debug('cycle_game.pov.camera', {
+          // sampled → persists at info (rate-limited + aggregated) so camera
+          // framing disputes ("the leader vanished") are corroborable from the
+          // session JSONL without flipping the kiosk to debug.
+          logRef.current.sampled?.('cycle_game.pov.camera', {
             camX: +camera.position.x.toFixed(1), camY: +camera.position.y.toFixed(1), camZ: +camera.position.z.toFixed(1),
             tgtX: +s._cs.x.toFixed(1), tgtY: +s._cs.y.toFixed(1), tgtZ: +s._cs.z.toFixed(1),
             distance: +controls.distance.toFixed(1), fov: camera.fov,
             leaderDistM: Math.round(-world.leaderZ), riderCount: world.riders.length,
+          }, { maxPerMinute: 6, aggregate: true });
+        }
+        // ~30s pacing snapshot: fps + the worst frame gap in the window. A
+        // healthy kiosk reads ~60fps / gap <50ms; jank reports should show up
+        // as sub-30 fps or 100ms+ gaps here.
+        if (now - paceWindowStart >= 30000) {
+          const fps = Math.round((paceFrames * 1000) / (now - paceWindowStart));
+          logRef.current.info('cycle_game.render_pacing', {
+            fps, maxFrameGapMs: Math.round(paceMaxGapMs), riderCount: world.riders.length,
           });
+          paceWindowStart = now;
+          paceFrames = 0;
+          paceMaxGapMs = 0;
         }
         raf = requestAnimationFrame(draw);
       };
