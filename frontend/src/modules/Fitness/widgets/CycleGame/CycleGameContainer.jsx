@@ -225,7 +225,6 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
   const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
   const [resultsSecondsLeft, setResultsSecondsLeft] = useState(null); // results auto-exit countdown
-  const stagingTimerRef = useRef(null);
   const stagingDeadlineRef = useRef(0); // earliest wall-time staging may advance to countdown
   const preGreenPedalersRef = useRef(new Set()); // riders who pedalled BEFORE the green light
   const goHoldTimerRef = useRef(null); // green-light hold before the race screen appears
@@ -483,13 +482,15 @@ export default function CycleGameContainer({ onMount } = {}) {
         if (!datesResp.ok) return;
         const { dates = [] } = await datesResp.json();
         const recent = [...dates].sort().reverse().slice(0, 5);
-        const all = [];
-        for (const date of recent) {
+        // Parallel per-day fetches — sequential round-trips made lobby entry
+        // wait ~5x longer than needed on the kiosk.
+        const perDay = await Promise.all(recent.map(async (date) => {
           const r = await fetch(`/api/v1/fitness/cycle-races?date=${encodeURIComponent(date)}`);
-          if (!r.ok) continue;
+          if (!r.ok) return [];
           const { races = [] } = await r.json();
-          all.push(...races);
-        }
+          return races;
+        }));
+        const all = perDay.flat();
         if (!cancelled) {
           setPastRaces(all);
           log.info('cycle_game.history_loaded', { dates: recent.length, races: all.length });
@@ -738,8 +739,12 @@ export default function CycleGameContainer({ onMount } = {}) {
   useEffect(() => {
     const api = {
       ready: true,
-      startRace: ({ winCondition, value } = {}) =>
-        startRaceRef.current(buildAutoStartCourse({ winCondition, value })),
+      startRace: ({ winCondition, value } = {}) => {
+        // Guard: a programmatic start mid-race would replace the controller and
+        // orphan the running race. Only the lobby may start one.
+        if (phaseRef.current !== 'idle') return null;
+        return startRaceRef.current(buildAutoStartCourse({ winCondition, value }));
+      },
       getPhase: () => phaseRef.current,
       // Per-rider race readback so a driver (sim panel / tests) can close the loop:
       // see who is penalty-boxed (false start) and whether distance is advancing,
@@ -1114,7 +1119,6 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Silence everything (and cancel any pending staging) when the game unmounts.
   useEffect(() => () => {
     stopMusic();
-    if (stagingTimerRef.current) clearTimeout(stagingTimerRef.current);
     if (goHoldTimerRef.current) clearTimeout(goHoldTimerRef.current);
   }, [stopMusic]);
 
@@ -1204,13 +1208,12 @@ export default function CycleGameContainer({ onMount } = {}) {
   const onSetRaceValue = useCallback((value) => {
     if (ghost) return; // ghost locks the value
     if (!Number.isFinite(value)) return;
-    setRaceType((current) => {
-      log.info('cycle_game.race_value_set', { type: current, value, control: 'lobby.value-step' });
-      if (current === 'time') setRaceValueS(value);
-      else setRaceValueM(value);
-      return current;
-    });
-  }, [ghost, log]);
+    // Read raceType from the closure — updaters must stay pure (StrictMode
+    // double-invokes them; logging/setState inside one is the classic footgun).
+    log.info('cycle_game.race_value_set', { type: raceType, value, control: 'lobby.value-step' });
+    if (raceType === 'time') setRaceValueS(value);
+    else setRaceValueM(value);
+  }, [ghost, raceType, log]);
 
   const onAssign = useCallback((bikeId, userId) => {
     log.info('cycle_game.rider_assigned', { equipmentId: bikeId, userId, control: 'lobby.rider-picker' });
@@ -1245,7 +1248,6 @@ export default function CycleGameContainer({ onMount } = {}) {
   const onCancel = useCallback(() => {
     const controller = controllerRef.current;
     const raceId = raceMetaRef.current?.raceId || null;
-    if (stagingTimerRef.current) { clearTimeout(stagingTimerRef.current); stagingTimerRef.current = null; }
     if (goHoldTimerRef.current) { clearTimeout(goHoldTimerRef.current); goHoldTimerRef.current = null; }
     if (controller) controller.cancel();
     log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
