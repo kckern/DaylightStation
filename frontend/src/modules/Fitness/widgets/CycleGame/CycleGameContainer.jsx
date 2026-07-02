@@ -6,6 +6,7 @@ import { buildRaceConfigFromCourse, formatClock as fmtClock } from '@/modules/Fi
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
 import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
+import { saveRaceRecord } from '@/modules/Fitness/lib/cycleGame/saveRaceRecord.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { buildHighScores } from '@/modules/Fitness/lib/cycleGame/highScores.js';
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
@@ -505,6 +506,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [featuredLadder, setFeaturedLadder] = useState(null);
   const ladderBeforeRef = useRef(null); // snapshot at race start, for results movement (Task 10)
   const [ladderNotes, setLadderNotes] = useState([]); // results-board movement callouts (Task 10)
+  const [saveFailed, setSaveFailed] = useState(false); // all save retries exhausted → results badge
 
   const fetchLadder = useCallback(async () => {
     const resp = await fetch('/api/v1/fitness/cycle-races/ladder');
@@ -665,6 +667,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     rpmHistoryRef.current = new Map();
     tickCountRef.current = 0;
     setRaceEvents([]);
+    setSaveFailed(false);
     setLadderNotes([]);
     setEventToast(null);
     toastQueueRef.current = [];
@@ -1024,13 +1027,18 @@ export default function CycleGameContainer({ onMount } = {}) {
     const record = buildRaceRecord(engineState, meta);
     (async () => {
       try {
-        const resp = await fetch('/api/v1/fitness/cycle-races', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ record })
+        // Retry transient failures (flaky kiosk WiFi) with backoff; a dropped
+        // POST must not silently lose the race. Exhaustion → results badge.
+        const result = await saveRaceRecord({
+          record,
+          onAttempt: ({ attempt, error }) => log.warn('cycle_game.race_save_retry', { raceId: meta.raceId, attempt, error })
         });
-        const ok = resp.ok;
-        log.info('cycle_game.race_saved', { raceId: meta.raceId, ok });
+        const ok = result.ok;
+        log.info('cycle_game.race_saved', {
+          raceId: meta.raceId, ok, attempt: result.attempt,
+          ...(ok ? {} : { error: result.error })
+        });
+        if (!ok) setSaveFailed(true);
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface
         // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
@@ -1061,7 +1069,9 @@ export default function CycleGameContainer({ onMount } = {}) {
           }
         }
       } catch (err) {
+        // saveRaceRecord never throws — this net catches unexpected errors only.
         log.error('cycle_game.race_saved', { raceId: meta.raceId, ok: false, error: err?.message || String(err) });
+        setSaveFailed(true);
       }
     })();
     // fetchLadder/resolveDisplayName are stable useCallbacks (see their own dep
@@ -1468,6 +1478,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         })}
         elapsedS={engineState.elapsedS || 0}
         secondsLeft={resultsSecondsLeft}
+        saveFailed={saveFailed}
         onExit={backToHome}
         ladderNotes={ladderNotes}
       />
