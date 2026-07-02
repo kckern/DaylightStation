@@ -474,6 +474,11 @@ describe('CycleGameHome', () => {
     );
     fireEvent.click(getByTestId('featured-ride'));
     expect(onRideFeatured).toHaveBeenCalledTimes(1);
+    // REGRESSION GUARD: the card must live inside the records rail, NEVER the
+    // main column — there it displaced the picker/grid/start on the fixed-height
+    // unscrollable garage touchscreen and made the lobby unusable (2026-07-02).
+    const card = getByTestId('featured-course-card');
+    expect(getByTestId('cycle-game-records').contains(card)).toBe(true);
   });
 
   it('renders no featured card when the ladder is unavailable', () => {
