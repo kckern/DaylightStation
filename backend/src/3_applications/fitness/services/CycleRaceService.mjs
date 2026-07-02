@@ -1,12 +1,19 @@
+import {
+  currentWeekWindow, isoWeekOf, parseIsoWeekParam,
+  resolveFeaturedCourse, computeLadder, computePersonalBest
+} from '#domains/fitness/services/cycleLadder.mjs';
+
 /**
  * CycleRaceService - application service for cycle-game races.
  * Thin orchestration over YamlCycleRaceDatastore: save/get/list + ghost-candidate
- * lookup (filtered by course, or by win-condition+goal for custom races).
+ * lookup (filtered by course, or by win-condition+goal for custom races), plus
+ * weekly-ladder and personal-best queries built on the pure cycleLadder domain module.
  */
 export class CycleRaceService {
-  constructor({ datastore } = {}) {
+  constructor({ datastore, logger = null } = {}) {
     if (!datastore) throw new Error('CycleRaceService requires datastore');
     this.datastore = datastore;
+    this.logger = logger;
   }
 
   save(record, householdId) {
@@ -37,6 +44,49 @@ export class CycleRaceService {
       }
     }
     return matches;
+  }
+
+  /** Weekly ladder for the featured course. null = no featured courses configured. */
+  async getLadder({ cycleGameConfig = {}, week = null, householdId } = {}) {
+    let window;
+    let weekNo;
+    if (week != null) {
+      const parsed = parseIsoWeekParam(week);
+      if (!parsed) {
+        const err = new Error(`invalid week: ${week}`);
+        err.code = 'BAD_WEEK';
+        throw err;
+      }
+      window = parsed.window;
+      weekNo = parsed.week;
+    } else {
+      const now = new Date();
+      window = currentWeekWindow(now);
+      weekNo = isoWeekOf(now).week;
+    }
+    const course = resolveFeaturedCourse(cycleGameConfig, weekNo);
+    if (!course) return null;
+    const t0 = Date.now();
+    const entries = await this.datastore.listIndexEntries(householdId);
+    const ladder = computeLadder({ course, entries, weekStart: window.start, weekEnd: window.end });
+    this.logger?.debug?.('fitness.cycle_races.ladder.computed', {
+      courseId: course.id, entries: entries.length, rungs: ladder.standings.length, ms: Date.now() - t0
+    });
+    return ladder;
+  }
+
+  /** All-time personal best on a course. Course def from config, else inferred from history. */
+  async getPersonalBest({ cycleGameConfig = {}, userId, courseId, householdId } = {}) {
+    const entries = await this.datastore.listIndexEntries(householdId);
+    let course = (Array.isArray(cycleGameConfig?.featured_courses) ? cycleGameConfig.featured_courses : [])
+      .find((c) => c?.id === courseId) || null;
+    if (!course) {
+      const sample = entries.find((e) => e.course_id === courseId);
+      course = sample
+        ? { id: courseId, win_condition: sample.win_condition, goal_m: sample.goal_m, time_cap_s: sample.time_cap_s }
+        : { id: courseId, win_condition: 'distance', goal_m: null, time_cap_s: null };
+    }
+    return computePersonalBest({ entries, course, userId });
   }
 }
 
