@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
+import { useScreenControl } from './useScreenControl.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
@@ -31,9 +32,29 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const { connected, inputName, status, connect } = usePianoMidi();
   const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
   const { config, pianoId } = usePianoKioskConfig();
+  const { turnOffScreen } = useScreenControl();
   const bluetooth = config?.bluetooth || null;
   const [tab, setTab] = useState('sound');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // 2-tap confirm for screen-off — avoids an accidental mid-play blackout on a
+  // touch kiosk. First tap arms; a second tap within 3s fires; else it disarms.
+  const [screenArmed, setScreenArmed] = useState(false);
+  const screenArmTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(screenArmTimer.current), []);
+
+  const handleScreenOff = () => {
+    if (!screenArmed) {
+      setScreenArmed(true);
+      clearTimeout(screenArmTimer.current);
+      screenArmTimer.current = setTimeout(() => setScreenArmed(false), 3000);
+      return;
+    }
+    clearTimeout(screenArmTimer.current);
+    setScreenArmed(false);
+    logger.info('piano.settings.screen-off', {});
+    turnOffScreen();
+  };
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -128,6 +149,19 @@ export default function PianoSettingsSheet({ open, onClose }) {
               </button>
             )}
           </div>
+        </section>
+
+        {/* ── Display (manual screen-off — burn-in kill switch) ── */}
+        <section className="piano-settings__section">
+          <h3 className="piano-settings__eyebrow">Display</h3>
+          <button
+            type="button"
+            className={`piano-settings__screen-off${screenArmed ? ' is-armed' : ''}`}
+            aria-pressed={screenArmed}
+            onClick={handleScreenOff}
+          >
+            {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
+          </button>
         </section>
 
         {/* ── MIDI monitor ── */}

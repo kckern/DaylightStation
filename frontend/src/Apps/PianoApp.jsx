@@ -13,6 +13,7 @@ import {
 import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
+import { useScreenControl } from '../modules/Piano/PianoKiosk/useScreenControl.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
@@ -48,9 +49,10 @@ import './PianoApp.scss';
  * Connect-gate: BLE pairing is an OS concern, so the browser only sees already-
  * paired ports. Until Web MIDI is connected, show a tap-to-connect screen.
  */
-function ConnectGate({ children }) {
+export function ConnectGate({ children }) {
   const { status, connect } = usePianoMidi();
   const { config } = usePianoKioskConfig();
+  const { turnOffScreen } = useScreenControl();
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -69,29 +71,47 @@ function ConnectGate({ children }) {
 
   return (
     <div className="piano-connect-gate">
-      <h1>Piano</h1>
-      <p>{message}</p>
-      {status !== 'unsupported' && (
-        <button type="button" className="piano-connect-gate__btn" onClick={connect}>
-          Connect piano
-        </button>
-      )}
-      {config?.bluetooth && (
-        <button
-          type="button"
-          className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
-          onClick={() => launchAndroidTarget(config.bluetooth)}
-        >
-          Open Bluetooth settings
-        </button>
-      )}
-      <button
-        type="button"
-        className="piano-connect-gate__skip"
-        onClick={() => setDismissed(true)}
-      >
-        Continue without piano
-      </button>
+      <div className="piano-connect-gate__card">
+        <h1 className="piano-connect-gate__title">Piano</h1>
+        <p className="piano-connect-gate__status" role="status" aria-live="polite">{message}</p>
+
+        <div className="piano-connect-gate__actions">
+          {status !== 'unsupported' && (
+            <button type="button" className="piano-connect-gate__btn piano-connect-gate__btn--primary" onClick={connect}>
+              Connect piano
+            </button>
+          )}
+          {config?.bluetooth && (
+            <button
+              type="button"
+              className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
+              onClick={() => launchAndroidTarget(config.bluetooth)}
+            >
+              Open Bluetooth settings
+            </button>
+          )}
+          <button
+            type="button"
+            className="piano-connect-gate__skip"
+            onClick={() => setDismissed(true)}
+          >
+            Continue without piano
+          </button>
+        </div>
+
+        {/* Device action — burn-in kill switch. This gate can sit lit for a long
+            time waiting on a pairing, so offer a manual screen-off. Separated by
+            a divider because it is a device action, not a connect action. */}
+        <div className="piano-connect-gate__device">
+          <button
+            type="button"
+            className="piano-connect-gate__screen-off"
+            onClick={() => turnOffScreen()}
+          >
+            Turn off screen
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
