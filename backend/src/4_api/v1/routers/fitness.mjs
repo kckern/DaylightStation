@@ -29,6 +29,9 @@
  * - GET  /api/fitness/simulate/status - Get simulation status
  * - GET  /api/fitness/provider/webhook - Provider subscription validation
  * - POST /api/fitness/provider/webhook - Provider webhook events
+ * - POST /api/fitness/cycle-races - Save a cycle-game race record
+ * - GET  /api/fitness/cycle-races/:raceId - Get one cycle-game race record
+ * - GET  /api/fitness/cycle-races - List cycle-game races (by date, course/win-condition, or dates)
  * - GET  /api/fitness/cycle-races/ladder - Get the current week's cycle-game ladder
  * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
  */

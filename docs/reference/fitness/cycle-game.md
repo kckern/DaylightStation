@@ -86,9 +86,23 @@ Results / recap / events ──────────────────�
   lib/cycleGame/playSound.js                    one-shot SFX helper
 
 Persistence (backend) ──────────────────────────────────────────────────────────
-  1_adapters/persistence/yaml/YamlCycleRaceDatastore.mjs   YAML read/write
-  3_applications/fitness/services/CycleRaceService.mjs      save/get/list/ghosts
-  4_api/v1/routers/fitness.mjs                              /cycle-races routes
+  1_adapters/persistence/yaml/YamlCycleRaceDatastore.mjs   YAML read/write +
+                                                            _index/{YYYY-MM}.json shards
+  3_applications/fitness/services/CycleRaceService.mjs      save/get/list/ghosts/
+                                                            ladder/personal-bests
+  4_api/v1/routers/fitness.mjs                              /cycle-races routes incl.
+                                                            ladder + personal-bests
+  2_domains/fitness/services/cycleLadder.mjs                pure ladder domain: week
+                                                            window, ISO week, course
+                                                            rotation, matching, ranking
+
+Weekly ladder (frontend) ────────────────────────────────────────────────────────
+  widgets/CycleGame/home/FeaturedCourseCard.jsx  "This week's course" lobby card
+  lib/cycleGame/ladder.js                        pure helpers: courseStartOverride,
+                                                  pickRival, ladderDelta, daysLeft
+  lib/cycleGame/ghostCandidate.js                mapRaceRecordToCandidate /
+                                                  buildGhostFromCandidate — shared by
+                                                  GhostPicker and Ride It
 ```
 
 **Entry / registration.** `index.jsx` exports `CycleGameContainer` and a manifest
@@ -569,18 +583,145 @@ disagree), built from **local** time — there is **no UTC foldering bug**.
 | Route | Purpose |
 |---|---|
 | `POST /cycle-races` | save `{ record, household? }` → `{ ok, raceId, file }` |
+| `GET /cycle-races/ladder?week=YYYY-Www` | this week's (or a specified week's) featured-course ladder — see §16 |
+| `GET /cycle-races/personal-bests?userId=&courseId=` | a rider's all-time PB on a course — see §16 |
 | `GET /cycle-races/:raceId` | one race |
 | `GET /cycle-races?date=YYYY-MM-DD` | races on a day |
 | `GET /cycle-races?courseId=… \| winCondition=…&goalM/timeCapS=…` | ghost candidates |
 | `GET /cycle-races` | list date folders |
 
 `CycleRaceService` is a thin wrapper over `YamlCycleRaceDatastore`
-(`save / get / listByDate / listDates / findGhostCandidates`). Wired in
-`bootstrap.mjs`.
+(`save / get / listByDate / listDates / findGhostCandidates`), plus the ladder /
+personal-best queries described next. Wired in `bootstrap.mjs`.
+
+> `ladder` and `personal-bests` are registered **before** `/:raceId` in the router —
+> otherwise Express would swallow them as a raceId lookup.
 
 ---
 
-## 16. Ghost system end-to-end
+## 16. Weekly ladder
+
+A **featured course** rotates weekly: everyone on the household rides it
+asynchronously through the week, a live ladder ranks best attempts, and the lobby's
+**"This week's course"** card offers a one-tap **Ride It** that pre-arms a rival
+ghost. Results then call out ladder movement. Built on the same records and index
+as the rest of persistence (§15) — there is no separate ladder datastore.
+
+### Config (`cycle_game` app config)
+
+| Key | Default | Purpose |
+|---|---|---|
+| `featured_courses` | `[]` | Ordered list of course presets: `{ id, label, win_condition, goal_m \| time_cap_s }` (plus any of the usual course keys, e.g. `lap_length_m`, `background_plex_id`) |
+| `featured_course_override` | `null` | Course `id` to pin as this week's course, bypassing rotation |
+
+A course with no `id` is skipped. An empty (or all-skipped) `featured_courses` list
+means no featured course — the ladder card doesn't render and the ladder endpoint
+returns `404`.
+
+### Rotation
+
+The active course is `featured_courses[isoWeekNumber % length]` — the **ISO-8601
+week number** of the current date modulo the list length, so the rotation is
+**deterministic** (no cron, no stored "current course" state; the same week number
+always resolves the same course). `featured_course_override` **wins** over
+rotation when it names a course present in the list.
+
+**Week window:** local **Monday 00:00 → the following Monday 00:00, exclusive** —
+the same local-day convention the datastore already uses for its `{YYYY-MM-DD}`
+folders, so there's no timezone disagreement between "this week" and where a race
+actually filed.
+
+### Endpoints
+
+**`GET /cycle-races/ladder?week=YYYY-Www`** — `week` is optional (defaults to the
+current week); an out-of-range or malformed value is a `400`. Response:
+
+```json
+{
+  "course": { "id": "sprint-1500m", "label": "Sprint 1500", "win_condition": "distance", "goal_m": 1500 },
+  "week": { "start": "2026-06-29", "end": "2026-07-06" },
+  "standings": [
+    { "userId": "kckern", "bestValue": 148.2, "raceId": "20260630091200", "attempts": 3 },
+    { "userId": "milo",   "bestValue": 161.4, "raceId": "20260629174501", "attempts": 1 }
+  ],
+  "allTimeRecord": { "userId": "kckern", "bestValue": 141.0, "raceId": "20260512080000", "date": "2026-05-12" }
+}
+```
+
+No featured course configured → `404`. No qualifying races in the window → `200`
+with `standings: []` and `allTimeRecord: null`.
+
+**`GET /cycle-races/personal-bests?userId=&courseId=`** — both params required
+(missing either is a `400`). Response:
+
+```json
+{ "userId": "milo", "courseId": "sprint-1500m",
+  "best": { "bestValue": 161.4, "raceId": "20260630174501", "date": "2026-06-30" } }
+```
+
+`best` is `null` when the rider has no qualifying attempt. If `courseId` isn't in
+`featured_courses`, the course definition (win condition / goal) is inferred from
+any matching index entry — so a rider's PB on a *retired* featured course still
+resolves.
+
+### Ladder semantics
+
+- **Matching a race to a course:** `race.course_id === course.id`, **or** (legacy
+  fallback, for races predating `course_id`) `win_condition` matches **and** the
+  goal matches — `goal_m` for a distance course, `time_cap_s` for a time course.
+- **Attempt value:** a **distance** course ranks by `final_time_s` (lower is
+  better; a participant with a null `final_time_s` — DNF or unfinished — doesn't
+  qualify). A **time** course ranks by `final_distance_m` (higher is better; any
+  value `> 0` qualifies).
+- **Best per rider:** each rider's single best qualifying attempt in the window;
+  `attempts` counts all their qualifying attempts (not just the best). A
+  multi-rider race counts every live participant independently.
+- **Eligibility:** ghosts (`ghost:*` participant ids) never qualify. Guests do —
+  the ladder has no household-only restriction.
+- **Ties:** the earlier attempt (smaller/earlier raceId) holds the rung.
+- **All-time record:** the same matching/ranking rules over full history, no week
+  window.
+- Ranking runs entirely off the month-shard **index** (§15/§2) — never a full scan
+  of the YAML race files.
+
+### Lobby & results UX
+
+- **"This week's course" card** (`FeaturedCourseCard`, lobby) shows the course
+  label, a days-remaining chip, the ranked standings (avatar, name, formatted best
+  value), and the all-time record. It fetches the ladder on lobby mount; a fetch
+  failure hides the card and logs a `warn` — riders can still race the featured
+  course manually, since matching is by `course_id`, not by entry point.
+- **Ride It** builds the race through the normal `buildRaceConfigFromCourse` path
+  (which sets `course_id` for free) and **pre-arms a rival ghost**:
+  - the rider directly assigned to the first bike, if **ranked** on the ladder →
+    the rider **one rung above** becomes the ghost;
+  - if that rider is the **leader** → their own **all-time personal best**
+    (via the personal-bests endpoint) becomes the ghost;
+  - if **unranked** (or no rider assigned yet) → the **tail** (lowest-ranked)
+    rider becomes the ghost;
+  - no ladder data at all → no ghost; the race proceeds plain.
+  Ghost lookups are best-effort: any fetch failure just starts the race without a
+  ghost, never blocking Ride It. The ghost is armed through the same
+  record-to-candidate / candidate-to-ghost pipeline the Ghost Picker uses (§17),
+  not a separate mechanism.
+- **Results ladder-movement callout.** After a race whose `course_id` matches the
+  ladder snapshot taken at Ride It time, and a successful save, the ladder is
+  refetched and diffed per live (non-ghost) rider against that snapshot. Each
+  mover gets a one-line note on the results board — a lead ("Ladder lead this
+  week!") or a rank + gap to the rung above ("2nd this week — 0:04 behind Dad").
+  A refetch/diff failure is logged and silently skipped; it never blocks the
+  results board.
+
+### Index shards
+
+The ladder reads from the same self-healing index the datastore already
+maintains: `household[-{id}]/history/fitness/cycle-races/_index/{YYYY-MM}.json`.
+Shards are **disposable** — deleting one just forces a rebuild (per-day mtime
+check) on the next read; nothing else depends on their presence.
+
+---
+
+## 17. Ghost system end-to-end
 
 1. **Record** a race → saved with `distance/hr/rpm/zone` series per participant.
 2. **Discover** — the lobby loads recent races; each becomes a ghost candidate
@@ -593,7 +734,7 @@ disagree), built from **local** time — there is **no UTC foldering bug**.
 
 ---
 
-## 17. Telemetry & logging
+## 18. Telemetry & logging
 
 All cycle-game logging goes through the structured framework (`getLogger().child`,
 component `cycle-game` / `cycle-game-ui` / `cycle-event-toast` / `cycle-distance-chart`
@@ -618,7 +759,7 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 
 ---
 
-## 18. Nuances & gotchas
+## 19. Nuances & gotchas
 
 - **Layout is static, not director-driven.** The old per-tick `raceDirector` /
   `racePanels` zone-assignment engine (and the `Rankings` / `LapTable` / `CameraZoom`
@@ -663,7 +804,7 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 
 ---
 
-## 19. Testing
+## 20. Testing
 
 - **Pure logic (vitest):** `lapModel`, `distanceModel`, `CycleRaceEngine` (incl. lap
   splits), `effectiveLapLength`, `cycleGameLobby`, `raceRecord`, `formatDistance`,
