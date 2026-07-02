@@ -117,6 +117,14 @@ describe('filenameToLoopMeta', () => {
     assert.match(m.descriptor, /Beautiful/);
   });
 
+  it('maps the generated Starter_Grooves pack and pulls BPM from the filename', () => {
+    const m = filenameToLoopMeta('Starter_Grooves/Brush_Swing_110BPM.mid');
+    assert.equal(m.source, 'groove-starters');
+    assert.equal(m.bpm, 110);
+    assert.equal(m.key, null);
+    assert.equal(m.slug, 'brush-swing-110bpm');
+  });
+
   it('always yields a kebab slug and the original path', () => {
     const rel = 'FamousMIDI_Bonus/Classics/EMaj_C#Min/Metallica/One_Chorus_E-A-G-F#m_100BPM.mid';
     const m = filenameToLoopMeta(rel);

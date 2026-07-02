@@ -63,6 +63,7 @@ const SOURCE_DIR = {
   'niko-chord': 'niko',
   'niko-master': 'niko',
   'melody-starters': 'starters',
+  'groove-starters': 'starters',
   famous: 'famous',
 };
 
