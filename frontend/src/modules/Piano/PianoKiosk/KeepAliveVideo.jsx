@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+// 2KB near-black H.264 loop. Imported (not public/) ON PURPOSE: it is under
+// Vite's 4KB assetsInlineLimit, so it ships INSIDE the bundle as a data: URI —
+// no HTTP fetch. The backend hangs on GET /*.mp4 (media-route interceptor), so
+// a public/ asset would reproduce the old "no supported sources" failure.
+import keepAliveSrc from './vsyncKeepalive.mp4';
 
 /**
  * Keep-alive driver — the fix for the SM-T590 WebView frame-clock stall.
@@ -73,7 +78,7 @@ export default function KeepAliveVideo() {
       <video
         ref={ref}
         className="piano-keepalive-video"
-        src="/vsync-keepalive.mp4"
+        src={keepAliveSrc}
         muted
         loop
         autoPlay
