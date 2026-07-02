@@ -7,11 +7,10 @@ import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
 import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
-import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
-import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { buildHighScores } from '@/modules/Fitness/lib/cycleGame/highScores.js';
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
+import { mapRaceRecordToCandidate, buildGhostFromCandidate } from '@/modules/Fitness/lib/cycleGame/ghostCandidate.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
@@ -499,73 +498,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   // ghost replays the whole field. Goal vs score are inverted by win condition
   // (distance race → goal=distance, score=time; time race → goal=time, score=distance).
   const ghostCandidates = useMemo(() => {
-    const fmtMs = (s) => {
-      if (!Number.isFinite(s)) return '—';
-      const m = Math.floor(s / 60);
-      return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
-    };
-    return (Array.isArray(pastRaces) ? pastRaces : []).map((rec) => {
-      const race = rec?.race || {};
-      const winCondition = race.win_condition || 'distance';
-      const partEntries = Object.entries(rec?.participants || {});
-      // 2+ riders → show the household relational label ("Dad"/"Mom") exactly like
-      // a live race; a solo replay keeps the given name. getDisplayLabel is the SSOT.
-      const preferGroupLabel = partEntries.length >= 2;
-      const participants = partEntries
-        .map(([id, p]) => {
-          // Ghosts are persisted as `ghost:<raceId>:<sourceId>` — resolve to the
-          // real face/name so the records rail doesn't fall back to the guest avatar.
-          const ident = resolveParticipantIdentity(id, p.display_name);
-          const displayName = getDisplayLabel
-            ? (getDisplayLabel(ident.displayName, { userId: ident.sourceId, preferGroupLabel }) || ident.displayName)
-            : ident.displayName;
-          return {
-            id,
-            isGhost: ident.isGhost,
-            displayName,
-            avatarSrc: ident.avatarSrc,
-            equipment: p.equipment || null,
-            // Gauge scale of the recording equipment, resolved here (the recap
-            // has no bikes config). Default 120 for records predating the field.
-            gaugeMaxRpm: resolveRpmLimits(bikeById.get(p.equipment) || {}).gaugeMaxRpm,
-            distanceSeries: p.distance_series || null,
-            hrSeries: p.hr_series || null,
-            rpmSeries: p.rpm_series || null,
-            zoneSeries: p.zone_series || null,
-            finalDistanceM: p.final_distance_m ?? null,
-            finalTimeS: p.final_time_s ?? null,
-            placement: p.placement ?? null
-          };
-        })
-        .sort((a, b) => (a.placement || 99) - (b.placement || 99));
-      if (participants.length === 0) return null;
-      const winner = participants[0];
-      // Derive calendar day + time-of-day from the YYYYMMDDHHmmss raceId.
-      const rid = String(race.id || '');
-      const day = rid.length >= 8 ? `${rid.slice(0, 4)}-${rid.slice(4, 6)}-${rid.slice(6, 8)}` : 'unknown';
-      const hh = rid.length >= 12 ? parseInt(rid.slice(8, 10), 10) : 0;
-      const mm = rid.length >= 12 ? rid.slice(10, 12) : '00';
-      const timeOfDay = rid.length >= 12
-        ? `${((hh % 12) || 12)}:${mm} ${hh < 12 ? 'am' : 'pm'}`
-        : '';
-      return {
-        raceId: race.id,
-        date: race.date || null,
-        day,
-        timeOfDay,
-        winCondition,
-        goalM: race.goal_m ?? null,
-        timeCapS: race.time_cap_s ?? null,
-        intervalSeconds: race.interval_seconds || 1,
-        participants,
-        winnerName: winner.displayName,
-        // goal = what the race was set to; score = the winner's achieved metric
-        goalKind: winCondition === 'distance' ? 'distance' : 'time',
-        goalLabel: winCondition === 'distance' ? formatDistance(race.goal_m || 0) : fmtMs(race.time_cap_s),
-        scoreKind: winCondition === 'distance' ? 'time' : 'distance',
-        scoreLabel: winCondition === 'distance' ? fmtMs(winner.finalTimeS) : formatDistance(winner.finalDistanceM || 0)
-      };
-    }).filter(Boolean);
+    const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+    return (Array.isArray(pastRaces) ? pastRaces : [])
+      .map((rec) => mapRaceRecordToCandidate(rec, { getDisplayLabel, resolveGaugeMaxRpm }))
+      .filter(Boolean);
   }, [pastRaces, getDisplayLabel, bikeById]);
 
   // History table rows: winner + both metric columns + which is the goal + when.
@@ -1118,24 +1054,8 @@ export default function CycleGameContainer({ onMount } = {}) {
   // + value to that recording.
   const onSelectGhost = useCallback((candidate) => {
     if (!candidate) return;
-    const riders = (candidate.participants || []).map((p) => {
-      // Flatten ghost-of-a-ghost: reference the ORIGINAL source user so we never
-      // mint `ghost:R2:ghost:R1:user` (which 404s the avatar). resolveParticipantIdentity
-      // returns the final source slug for nested ids; for a real id it's the id itself.
-      const { sourceId } = resolveParticipantIdentity(p.id, p.displayName);
-      const baseName = String(p.displayName || sourceId).replace(/\s*👻\s*$/, '');
-      return {
-        userId: `ghost:${candidate.raceId}:${sourceId}`,
-        displayName: `${baseName} 👻`,
-        equipmentId: p.equipment || null,
-        ghostSeries: SessionSerializerV3.decodeSeries(p.distanceSeries) || [],
-        ghostHrSeries: SessionSerializerV3.decodeSeries(p.hrSeries) || [],
-        ghostRpmSeries: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
-        ghostZoneSeries: SessionSerializerV3.decodeSeries(p.zoneSeries) || [],
-        ghostIntervalS: candidate.intervalSeconds || 1
-      };
-    }).filter((r) => r.ghostSeries.length > 0);
-    if (riders.length === 0) {
+    const built = buildGhostFromCandidate(candidate);
+    if (!built) {
       log.warn('cycle_game.ghost_empty', { raceId: candidate.raceId });
       return;
     }
@@ -1143,7 +1063,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // no rpm" is diagnosable (old records carry distance+HR only).
     log.info('cycle_game.ghost_rider', {
       raceId: candidate.raceId,
-      riders: riders.map((r) => ({
+      riders: built.riders.map((r) => ({
         userId: r.userId,
         distancePts: r.ghostSeries.length,
         hrPts: r.ghostHrSeries.length,
@@ -1151,19 +1071,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         zonePts: r.ghostZoneSeries.length
       }))
     });
-    setGhost({
-      sourceRaceId: candidate.raceId,
-      winCondition: candidate.winCondition,
-      goalM: candidate.goalM,
-      timeCapS: candidate.timeCapS,
-      riderCount: riders.length,
-      displayName: candidate.winnerName + (riders.length > 1 ? ` +${riders.length - 1}` : ''),
-      riders
-    });
+    setGhost(built.ghost);
     setRaceType(candidate.winCondition);
     if (candidate.winCondition === 'time') setRaceValueS(candidate.timeCapS);
     else setRaceValueM(candidate.goalM);
-    log.info('cycle_game.ghost_selected', { raceId: candidate.raceId, winCondition: candidate.winCondition, riders: riders.length });
+    log.info('cycle_game.ghost_selected', { raceId: candidate.raceId, winCondition: candidate.winCondition, riders: built.riders.length });
   }, [log]);
 
   const onClearGhost = useCallback(() => {
