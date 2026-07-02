@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, within, fireEvent } from '@testing-library/react';
+import { render, within, fireEvent, screen } from '@testing-library/react';
 import RaceResults from './RaceResults.jsx';
 
 const standings = [
@@ -48,5 +48,14 @@ describe('RaceResults', () => {
     );
     fireEvent.click(getByTestId('race-results-exit'));
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+  it('renders ladder notes when provided, nothing otherwise', () => {
+    const { rerender } = render(<RaceResults standings={[]} riders={{}}
+      ladderNotes={['Milo: 2nd this week — 0:04 behind Dad', 'Dad: Ladder lead this week!']} />);
+    const box = screen.getByTestId('race-results-ladder');
+    expect(box.textContent).toContain('Milo: 2nd this week');
+    expect(box.textContent).toContain('Ladder lead');
+    rerender(<RaceResults standings={[]} riders={{}} ladderNotes={[]} />);
+    expect(screen.queryByTestId('race-results-ladder')).toBeNull();
   });
 });

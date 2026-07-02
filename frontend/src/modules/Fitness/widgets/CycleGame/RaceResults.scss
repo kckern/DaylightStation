@@ -82,6 +82,22 @@
     .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
   }
 
+  // Weekly-ladder movement callouts (e.g. "Milo: 2nd this week — 0:04 behind
+  // Dad") — sits right under the podium, ahead of the splits table.
+  &__ladder {
+    margin: 0.6rem auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 1.15rem;
+  }
+  &__ladder-note {
+    font-family: cg.$cg-display;
+    font-weight: 700;
+    color: cg.$cg-cyan;
+    text-shadow: 0 0 8px rgba(33, 230, 255, 0.35);
+  }
+
   // Full lap splits table below the podium — sizes to its content and caps at a
   // fraction of the viewport (it owns its own sticky header / scroll), so it never
   // grows into a big empty box or pushes the podium off-screen.

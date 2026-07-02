@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from '@/modules/Fitness/lib/cycleGame/CycleRaceController.js';
-import { buildRaceConfigFromCourse } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
+import { buildRaceConfigFromCourse, formatClock as fmtClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
 import { buildRaceRecord } from '@/modules/Fitness/lib/cycleGame/raceRecord.js';
 import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta } from '@/modules/Fitness/lib/cycleGame/distanceModel.js';
 import { playSound } from '@/modules/Fitness/lib/cycleGame/playSound.js';
@@ -11,7 +11,8 @@ import { buildHighScores } from '@/modules/Fitness/lib/cycleGame/highScores.js';
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from '@/modules/Fitness/lib/cycleGame/ghostCandidate.js';
-import { courseStartOverride, pickRival } from '@/modules/Fitness/lib/cycleGame/ladder.js';
+import { courseStartOverride, pickRival, ladderDelta } from '@/modules/Fitness/lib/cycleGame/ladder.js';
+import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
@@ -503,6 +504,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   // configured (or the fetch failed) — the card simply hides.
   const [featuredLadder, setFeaturedLadder] = useState(null);
   const ladderBeforeRef = useRef(null); // snapshot at race start, for results movement (Task 10)
+  const [ladderNotes, setLadderNotes] = useState([]); // results-board movement callouts (Task 10)
 
   const fetchLadder = useCallback(async () => {
     const resp = await fetch('/api/v1/fitness/cycle-races/ladder');
@@ -663,6 +665,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     rpmHistoryRef.current = new Map();
     tickCountRef.current = 0;
     setRaceEvents([]);
+    setLadderNotes([]);
     setEventToast(null);
     toastQueueRef.current = [];
 
@@ -1028,11 +1031,43 @@ export default function CycleGameContainer({ onMount } = {}) {
         });
         const ok = resp.ok;
         log.info('cycle_game.race_saved', { raceId: meta.raceId, ok });
+        // The race just saved may have shuffled this week's featured-course
+        // ladder — refetch and diff against the pre-race snapshot to surface
+        // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
+        if (ok && meta.courseId && meta.courseId === ladderBeforeRef.current?.course?.id) {
+          try {
+            const after = await fetchLadder();
+            if (after?.course?.id === meta.courseId) {
+              const course = after.course;
+              const fmtVal = course.win_condition === 'distance' ? fmtClock : formatDistance;
+              const before = ladderBeforeRef.current?.standings || [];
+              const liveIds = Object.keys(engineState.riders || {}).filter((id) => !id.startsWith('ghost:'));
+              const notes = liveIds
+                .map((userId) => ({ userId, d: ladderDelta({ before, after: after.standings || [], userId }) }))
+                .filter(({ d }) => d)
+                .slice(0, 3)
+                .map(({ userId, d }) => {
+                  const name = resolveDisplayName(userId);
+                  if (d.isLead) return `${name}: Ladder lead this week!`;
+                  const ord = ['', '1st', '2nd', '3rd'][d.rank] || `${d.rank}th`;
+                  return `${name}: ${ord} this week — ${fmtVal(d.gapToAbove)} behind ${resolveDisplayName(d.aboveUserId)}`;
+                });
+              setLadderNotes(notes);
+              setFeaturedLadder(after);
+              log.info('cycle_game.ladder_movement', { raceId: meta.raceId, notes: notes.length });
+            }
+          } catch (err) {
+            log.warn('cycle_game.ladder_movement_error', { error: err?.message || String(err) });
+          }
+        }
       } catch (err) {
         log.error('cycle_game.race_saved', { raceId: meta.raceId, ok: false, error: err?.message || String(err) });
       }
     })();
-  }, [phase, log]);
+    // fetchLadder/resolveDisplayName are stable useCallbacks (see their own dep
+    // arrays); adding them here is a no-op in practice because savedRef latches
+    // this effect to run once per race, but keeps exhaustive-deps honest.
+  }, [phase, log, fetchLadder, resolveDisplayName]);
 
   useEffect(() => {
     onMount?.();
@@ -1434,6 +1469,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         elapsedS={engineState.elapsedS || 0}
         secondsLeft={resultsSecondsLeft}
         onExit={backToHome}
+        ladderNotes={ladderNotes}
       />
       <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
         Back to home

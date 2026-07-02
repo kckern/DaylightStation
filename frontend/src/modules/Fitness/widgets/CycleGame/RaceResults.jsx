@@ -98,7 +98,8 @@ ResultRow.propTypes = {
  */
 export default function RaceResults({
   standings = [], riders = {}, winCondition = 'distance', dnf = [], penalized = [],
-  lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null
+  lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null,
+  ladderNotes = []
 }) {
   const dnfSet = new Set(dnf);
   const penalizedSet = new Set(penalized);
@@ -120,6 +121,14 @@ export default function RaceResults({
             dnfSet={dnfSet} penalizedSet={penalizedSet} index={i} animate={animate} />
         ))}
       </ol>
+
+      {ladderNotes.length > 0 && (
+        <div className="race-results__ladder" data-testid="race-results-ladder">
+          {ladderNotes.map((note) => (
+            <div key={note} className="race-results__ladder-note">{note}</div>
+          ))}
+        </div>
+      )}
 
       {showSplits && (
         <div className="race-results__splits" data-testid="race-results-splits">
@@ -165,5 +174,6 @@ RaceResults.propTypes = {
   elapsedS: PropTypes.number,
   secondsLeft: PropTypes.number,
   animate: PropTypes.bool,
-  onExit: PropTypes.func
+  onExit: PropTypes.func,
+  ladderNotes: PropTypes.arrayOf(PropTypes.string)
 };
