@@ -62,8 +62,10 @@ export function loopLengthTicks(notes, ppq, timeSig = { beats: 4, beatType: 4 })
   return bars * barTicks;
 }
 
-/** Harmonic cycle length in ms: barSpan bars when known, else the note-derived length. */
-function layerLengthMs(layer, bpm, timeSig) {
+/** Harmonic cycle length in ms: barSpan bars when known, else the note-derived
+ * length. Exported for arrangementScheduler, which forces section lengths but
+ * must tile layers by the exact same natural-length rule. */
+export function layerLengthMs(layer, bpm, timeSig) {
   const { beats = 4, beatType = 4 } = timeSig || {};
   if (layer.barSpan) {
     const barMs = (60000 / bpm) * (4 / beatType) * beats;
@@ -104,4 +106,4 @@ export function buildLoopCycle(layers, opts) {
   return { events, lengthMs };
 }
 
-export default { loopToEvents, loopLengthTicks, buildLoopCycle };
+export default { loopToEvents, loopLengthTicks, layerLengthMs, buildLoopCycle };
