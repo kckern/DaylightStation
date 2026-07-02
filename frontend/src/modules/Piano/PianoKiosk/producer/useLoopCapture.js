@@ -23,11 +23,20 @@
  * EVENT FEED: `usePianoMidi().subscribe(fn)` already emits
  * `{type:'note_on'|'note_off', note, velocity, time}` (see useWebMidiBLE's
  * raw note-event tap, built for the studio recorder). The Producer wires that
- * straight into noteOn/noteOff here — no MIDI-layer extension needed. NOTE:
- * that tap stamps `time` with Date.now(); the Producer must pass capture an
- * anchor on the SAME clock (Date.now at the transport's content-start), or
- * translate. Either way the hook doesn't care — it only compares wallMs
- * deltas against its own anchor.
+ * straight into noteOn/noteOff here — no MIDI-layer extension needed.
+ *
+ * INTEGRATION PRESCRIPTION (clock domain — the hook only compares wallMs
+ * deltas against its own anchor, so every injected time MUST share ONE
+ * monotonic domain):
+ *   (a) the anchor and every tick() MUST come from performance.now() —
+ *       monotonic; Date.now() can NTP-step mid-capture and shear every
+ *       recorded tick;
+ *   (b) in the MIDI subscribe callback, IGNORE evt.time (Date.now domain) and
+ *       RE-STAMP with performance.now() — emit fires synchronously from the
+ *       MIDI message handler, so nothing is lost in the re-stamp;
+ *   (c) never mix the rAF callback's timestamp ARGUMENT with a Date.now
+ *       anchor — the rAF arg is performance.now-domain, and the mismatch is a
+ *       silent stuck-in-'counting' failure (wallMs forever < anchorMs).
  *
  * BOUNDARY DETECTION is lazy: rolls are computed from whatever wallMs arrives
  * next (note event OR the explicit `tick(wallMs)` the capture card's rAF
@@ -244,7 +253,10 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
       passesRef.current = [];
     }
 
-    geomRef.current = { anchorMs: anchorWallMs, cycleMs, cycleTicks, ticksPerMs, lengthBars: bars };
+    geomRef.current = {
+      anchorMs: anchorWallMs, cycleMs, cycleTicks, ticksPerMs, lengthBars: bars,
+      timeSig: [beats, beatType], // frozen at arm — keep()'s timeline uses THIS, never live props
+    };
     passNotesRef.current = [];
     pendingRef.current.clear();
     cyclesRolledRef.current = 0;
@@ -389,8 +401,11 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
     let timeline = null;
     if (!isDrum && notes.length > 0) {
       try {
-        const [beats, beatType] = sanitizeTimeSig(timeSigRef.current);
-        timeline = harmonicTimeline(notes, PPQ, { timeSig: [beats, beatType] });
+        // "Frozen at arm" doctrine: the ticks were laid out on the ARMED
+        // geometry, so the timeline reads the armed timeSig snapshot — a live
+        // timeSig prop change after arm must not reinterpret them. notes.length
+        // > 0 implies an arm happened, so g.timeSig exists (belt: fall back).
+        timeline = harmonicTimeline(notes, PPQ, { timeSig: g?.timeSig ?? sanitizeTimeSig(timeSigRef.current) });
       } catch (err) {
         logger().warn('capture.timeline-failed', { error: err?.message });
       }

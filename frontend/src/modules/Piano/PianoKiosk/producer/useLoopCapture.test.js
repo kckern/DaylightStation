@@ -359,6 +359,20 @@ describe('drum mode', () => {
       { ticks: 0, durationTicks: 240, midi: GM_DRUM.kick, velocity: 110 },
     ]);
   });
+
+  it('drum mode toggled OFF between noteOn and noteOff still pairs the pending note', () => {
+    // Safe by construction (pending is keyed by the ORIGINAL key and holds the
+    // remapped midi) — pinned so a refactor can't regress it.
+    const hook = armedHook();
+    act(() => { hook.result.current.setDrumMode(true); });
+    act(() => { hook.result.current.noteOn(36, 110, 1000); }); // kick opened under drum mode
+    act(() => { hook.result.current.setDrumMode(false); });    // mode flips mid-hold
+    act(() => { hook.result.current.noteOff(36, 1250); });     // pairs by original key regardless
+    roll(hook, 5000);
+    expect(kept(hook).notes).toEqual([
+      { ticks: 0, durationTicks: 240, midi: GM_DRUM.kick, velocity: 110 },
+    ]);
+  });
 });
 
 // ── keep(): snap, kind, shape ────────────────────────────────────────────────
@@ -442,6 +456,21 @@ describe('keep()', () => {
     expect(a.takeId).toBeTruthy();
     expect(b.takeId).toBeTruthy();
     expect(a.takeId).not.toBe(b.takeId);
+  });
+
+  it('timeline uses the timeSig SNAPSHOTTED at arm, not the live prop (frozen-at-arm doctrine)', () => {
+    const hook = renderHook(
+      ({ timeSig }) => useLoopCapture({ bpm: 120, timeSig }),
+      { initialProps: { timeSig: [4, 4] } },
+    );
+    act(() => { hook.result.current.arm({ lengthBars: 2, anchorWallMs: ANCHOR }); });
+    play(hook, 60, 1000, 3000); // 2000ms = exactly one 4/4 bar: ticks 0..1920
+    roll(hook, 5000);
+    hook.rerender({ timeSig: [3, 4] }); // live prop shifts AFTER arm
+    const take = kept(hook);
+    // Armed 4/4 (barTicks 1920): the note spans 1 bar → 4 slots. A live-read
+    // [3,4] (barTicks 1440) would reinterpret the same ticks as 2 bars → 8.
+    expect(take.timeline.slots).toHaveLength(4);
   });
 
   it('non-groove takes carry a harmonic-timeline citizenship analysis', () => {
