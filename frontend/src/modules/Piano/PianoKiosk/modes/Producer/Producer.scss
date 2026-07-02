@@ -1,42 +1,32 @@
-// Producer — MIDI loop-layering jam surface.
+// Producer — three-band jam shell (transport / stage / keys), design §7.
+// Dark stage, Roboto Condensed, ≥48px touch targets, tap-first (no drags).
+// Also styles the producer/ band components (TransportBar, LibraryOverlay) —
+// they only ever render inside this surface.
 
 .piano-producer-mode {
+  position: relative; // the library overlay goes full-bleed inside the mode
   display: flex;
   flex-direction: column;
   height: 100%;
   font-family: 'Roboto Condensed', sans-serif;
   color: var(--piano-fg, #e8e8ee);
 
-  &__body {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding: 1rem 1.25rem 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-  }
-
-  &__deck {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: var(--piano-bg, #0e0e12);
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
-    padding-bottom: 0.25rem;
-  }
-
-  &__controls {
+  // ── Band 1: transport bar ──────────────────────────────────────────────────
+  &__transport {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
     flex-wrap: wrap;
+    padding: 0.6rem 1.25rem;
+    background: var(--piano-bg, #0e0e12);
+    border-bottom: 1px solid var(--piano-border, #22222e);
   }
 
   &__play {
     font: 600 1.05rem 'Roboto Condensed', sans-serif;
+    min-height: 3rem;
+    min-width: 6.5rem;
     padding: 0.5rem 1.6rem;
     border-radius: 999px;
     border: 1px solid var(--piano-accent, #2ec46f);
@@ -48,31 +38,182 @@
     &:disabled { opacity: 0.4; cursor: default; }
   }
 
-  &__meta {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    font-size: 1rem;
-    color: var(--piano-muted, #aab);
+  &__pos {
+    min-width: 3.4rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--piano-fg, #dde);
+    text-align: center;
   }
+
   &__tempo, &__key {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     white-space: nowrap;
     line-height: 1;
+    font-size: 1rem;
+    color: var(--piano-muted, #aab);
     button {
-      width: 1.9rem; height: 1.9rem; border-radius: 50%;
+      width: 3rem; height: 3rem; border-radius: 50%;
       border: 1px solid var(--piano-border, #334); background: var(--piano-surface, #1a1a22);
-      color: var(--piano-fg, #cce); cursor: pointer; font-size: 1.1rem; line-height: 1;
+      color: var(--piano-fg, #cce); cursor: pointer; font-size: 1.2rem; line-height: 1;
       display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
     }
   }
 
-  &__roles { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  &__tap {
+    // Latching tap pad — wider than the round steppers, same height.
+    width: auto !important;
+    min-width: 3.6rem;
+    border-radius: 999px !important;
+    font: 700 0.85rem 'Roboto Condensed', sans-serif !important;
+    letter-spacing: 0.06em;
+  }
+
+  &__metro, &__rec {
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-muted, #99a);
+    font: 700 0.9rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+    &:disabled { opacity: 0.35; cursor: default; }
+  }
+  &__rec { color: var(--piano-danger, #e05a4f); font-size: 1.1rem; }
+
+  // ── Band 2: stage ──────────────────────────────────────────────────────────
+  &__stage {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 0.85rem 1.25rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  &__tabs {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    .piano-chip { min-height: 3rem; min-width: 4.5rem; }
+  }
+  &__roman-toggle { margin-left: auto; }
+
+  // Front-door entry cards (empty workspace).
+  &__doors {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0.75rem;
+    align-content: start;
+  }
+  &__door {
+    min-height: 7rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 1rem 1.2rem;
+    text-align: left;
+    border-radius: 12px;
+    border: 1px solid var(--piano-border, #2a2a36);
+    background: var(--piano-surface, #15151d);
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    &:hover { border-color: var(--piano-border, #4a4a66); background: var(--piano-surface-2, #1b1b27); }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+  &__door-title { font: 700 1.2rem 'Roboto Condensed', sans-serif; color: var(--piano-fg, #e8e8f2); }
+  &__door-blurb { font-size: 0.92rem; color: var(--piano-muted, #99a); }
+
+  &__mix { display: flex; flex-direction: column; gap: 0.7rem; align-items: flex-start; }
+  &__layers { display: flex; flex-direction: column; gap: 0.45rem; width: 100%; }
+
+  &__add-layer {
+    min-height: 3rem;
+    padding: 0.5rem 1.4rem;
+    border-radius: 999px;
+    border: 1px dashed var(--piano-border, #3a3a48);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-muted, #bbc);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-text, #cfe); }
+  }
+
+  &__toast {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-danger, #e05a4f);
+    background: var(--piano-surface, #241618);
+    color: var(--piano-danger, #f7a29a);
+    font-size: 0.92rem;
+  }
+
+  &__song-placeholder {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 8rem;
+    border-radius: 12px;
+    border: 1px dashed var(--piano-border, #2a2a36);
+    color: var(--piano-muted, #99a);
+    font-size: 1.05rem;
+  }
+
+  // ── Band 3: keys ───────────────────────────────────────────────────────────
+  &__keys {
+    flex: 0 0 auto;
+    width: 100%;
+    background: var(--piano-surface-2, #14141b);
+    .piano-keyboard { height: 9rem; }
+  }
+
+  // ── Library overlay (full-bleed; transport + keys bands are unmounted) ─────
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 1rem 1.25rem;
+    background: var(--piano-bg, #0e0e12);
+    overflow: hidden;
+    .piano-producer-mode__list { flex: 1 1 auto; overflow-y: auto; }
+  }
+  &__overlay-top {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+  &__overlay-close {
+    flex: 0 0 auto;
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-fg, #cce);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  &__roles { display: flex; gap: 0.5rem; flex-wrap: wrap; .piano-chip { min-height: 3rem; } }
 
   &__search {
+    flex: 1 1 auto;
     width: 100%;
+    min-height: 3rem;
     padding: 0.55rem 0.8rem;
     border-radius: 8px;
     border: 1px solid var(--piano-border, #334);
@@ -91,17 +232,29 @@
     align-content: start;
   }
 
-  &__h { margin: 0.5rem 0 0; font-size: 1rem; color: var(--piano-muted, #99a); text-transform: uppercase; letter-spacing: 0.05em; }
-
-  &__layers { display: flex; flex-direction: column; gap: 0.45rem; }
-
-  &__keys {
-    flex: 0 0 auto;
-    width: 100%;
-    background: var(--piano-surface-2, #14141b);
-    .piano-keyboard { height: 9rem; }
+  // Floating now-playing pill (the jam keeps looping under the overlay).
+  &__pill {
+    position: absolute;
+    right: 1.25rem;
+    bottom: 1.1rem;
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 3rem;
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface-2, #12211a);
+    color: var(--piano-accent-text, #7c9);
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
   }
+  &__pill-glyphs { display: inline-flex; gap: 0.25rem; align-items: center; }
+  &__pill-pos { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 }
+
+// ── Shared vocabulary (chips, loop cards, layer rows) ─────────────────────────
 
 .piano-chip {
   padding: 0.35rem 0.9rem;
@@ -122,8 +275,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  // Reserve a footer strip (bottom) for the mood tag + peek button so card
-  // content never collides with them.
+  // Reserve a footer strip for the mood tag so card content never collides.
   padding: 0.55rem 0.7rem 2.1rem;
   border-radius: 8px;
   border: 1px solid var(--piano-border, #2a2a36);
@@ -133,8 +285,7 @@
   transition: border-color 0.12s, background 0.12s;
   &:hover { border-color: var(--piano-border, #4a4a66); background: var(--piano-surface-2, #1b1b27); }
 
-  // Roman progression as a card headline: wrap long progressions to new rows
-  // (never clip / overflow), leaving room at the bottom-right for the peek button.
+  // Roman progression as a card headline: wrap long progressions, never clip.
   .roman-progression {
     flex-wrap: wrap;
     row-gap: 0.3rem;
@@ -142,7 +293,6 @@
   }
 
   &__name { font-weight: 600; font-size: 0.98rem; color: var(--piano-fg, #e8e8f2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); font-variant-numeric: tabular-nums; }
   &__tag {
     position: absolute; left: 0.7rem; bottom: 0.6rem;
     font-size: 0.72rem; color: var(--piano-muted, #b9a); text-transform: uppercase; letter-spacing: 0.04em;
@@ -153,7 +303,7 @@
     border-radius: 4px; padding: 0.05rem 0.35rem; margin-right: 0.3rem;
   }
 
-  // Melody contour: a compact staff STRIP (not a full-height staff), so cards stay small.
+  // Melody contour: a compact staff STRIP (not a full-height staff).
   &__staff {
     display: block;
     height: 2.4rem;
@@ -164,6 +314,7 @@
   }
 }
 
+// Layer row (interim — Task 4.5 replaces with full ChannelStrips).
 .piano-layer {
   display: flex;
   align-items: center;
@@ -172,22 +323,23 @@
   border-radius: 8px;
   border: 1px solid var(--piano-border, #2c2c3a);
   background: var(--piano-surface, #16161f);
-  &.is-base { border-color: var(--piano-accent, #2ec46f); }
   &.is-muted { opacity: 0.5; }
 
-  &__mute { background: none; border: none; font-size: 1.1rem; cursor: pointer; }
+  &__glyph { flex: 0 0 auto; border-radius: 6px; }
   &__role {
     font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--piano-muted, #99c); min-width: 4.5rem;
   }
   &__name { font-weight: 600; color: var(--piano-fg, #eef); flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__sum { font-size: 0.9rem; color: var(--piano-muted, #8ad); margin-left: auto; font-variant-numeric: tabular-nums; }
-  &__remove { background: none; border: none; color: var(--piano-danger, #a66); font-size: 1rem; cursor: pointer; }
+  &__remove {
+    min-width: 3rem; min-height: 3rem;
+    background: none; border: none; color: var(--piano-danger, #a66); font-size: 1.1rem; cursor: pointer;
+  }
 
-  // M (Mute) and S (Solo) tap targets: chunky, ≥2.4rem for reliable touch.
+  // M (Mute) / S (Solo) latching taps: ≥48px targets.
   &__m, &__s {
-    min-width: 2.4rem;
-    min-height: 2.4rem;
+    min-width: 3rem;
+    min-height: 3rem;
     border-radius: 6px;
     border: 1px solid var(--piano-border, #2c2c3a);
     background: var(--piano-surface, #16161f);
@@ -200,72 +352,25 @@
     &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
     &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
   }
+  // Push the M/S/✕ cluster to the row's right edge.
+  &__m { margin-left: auto; }
 }
 
-// Playhead: thin accent bar that sweeps from left (0%) to right (100%).
-.piano-producer-mode__playhead {
-  width: 100%;
-  height: 3px;
-  background: var(--piano-border, #2c2c3a);
-  border-radius: 2px;
-  margin-top: 0.5rem;
-
-  &-fill {
-    height: 100%;
-    width: 0%;
-    background: var(--piano-accent, #2ec46f);
-    border-radius: 2px;
-    transition: none; // updated by rAF, not CSS transition
-  }
-}
-
-// Roman row: the base loop's progression chips shown while playing.
-.piano-producer-mode__roman-row {
-  margin-top: 0.35rem;
-}
-
-// First-run on-ramp hint.
-.piano-producer-mode__hint {
-  font-size: 0.92rem;
-  color: var(--piano-muted, #99a);
-  margin: 0 0 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  background: var(--piano-surface, #15151d);
-  border: 1px dashed var(--piano-border, #2a2a36);
-}
-
-// Each browse/candidate row is a positioned <li> so the peek button can tuck
-// into the card's bottom-right corner instead of floating below it.
 .piano-producer-mode__list li { position: relative; }
-
-// Peek button on each browse row: tucked bottom-right, accent-colored.
-.piano-loop__peek {
-  position: absolute;
-  bottom: 0.45rem;
-  right: 0.45rem;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  border: 1px solid var(--piano-accent, #2ec46f);
-  background: var(--piano-surface-2, #12211a);
-  color: var(--piano-accent-text, #7c9);
-  cursor: pointer;
-  font-size: 0.8rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  &:focus-visible { outline: 2px solid var(--piano-accent, #2ec46f); outline-offset: 2px; }
-}
 
 // Focus outlines for all interactive Producer elements.
 .piano-loop:focus-visible,
-.piano-chip:focus-visible {
+.piano-chip:focus-visible,
+.piano-producer-mode__door:focus-visible,
+.piano-producer-mode__add-layer:focus-visible,
+.piano-producer-mode__pill:focus-visible,
+.piano-producer-mode__overlay-close:focus-visible {
   outline: 2px solid var(--piano-accent, #2ec46f);
   outline-offset: 2px;
 }
 
 .piano-producer-mode__play:focus-visible,
+.piano-producer-mode__metro:focus-visible,
 .piano-producer-mode__tempo button:focus-visible,
 .piano-producer-mode__key button:focus-visible {
   outline: 2px solid var(--piano-accent, #2ec46f);

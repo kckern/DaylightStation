@@ -1,22 +1,82 @@
+/**
+ * Producer shell tests (Task 4.4) — WIRING tests, not audio tests.
+ *
+ * gmSynth / voiceRouter / useProducerTransport are mocked (they carry their
+ * own suites in producer/); these tests assert the shell wires them right:
+ * front doors → overlay → ADD_LAYER → rows → transport inputs → teardown.
+ *
+ * Delta from the old suite (single-stack jam): the tap-▶ peek preview test is
+ * gone deliberately — the interim LibraryOverlay drops preview; Task 5.2
+ * brings press-to-peek. The "transport fires pressNote" test became "play
+ * routes through useProducerTransport" — loop sound goes through the
+ * voiceRouter now, never pressNote (the user's own path). Everything else has
+ * an equivalent here.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { Midi } from '@tonejs/midi';
 
-// Mock the kiosk contexts the Producer depends on.
+// ── kiosk context mocks ───────────────────────────────────────────────────────
 const pressNote = vi.fn();
 const releaseNote = vi.fn();
-vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ activeNotes: new Map(), pressNote, releaseNote, subscribe: () => () => {} }),
-}));
+const midiMock = vi.hoisted(() => ({}));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => midiMock }));
 vi.mock('../../PianoConfig.jsx', () => ({
-  usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }),
+  usePianoKioskConfig: () => ({
+    config: {
+      keyboard: { startNote: 21, endNote: 108 },
+      producer: { voiceTiers: { onboardGm: false } },
+    },
+  }),
 }));
 vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake: () => {} }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 
+// ── sound-engine mocks (wiring focus) ─────────────────────────────────────────
+const synthMock = vi.hoisted(() => ({
+  dispose: vi.fn(),
+  resume: vi.fn(() => Promise.resolve()),
+  load: vi.fn(() => Promise.resolve()),
+  loadDrums: vi.fn(() => Promise.resolve()),
+  noteOn: vi.fn(),
+  noteOff: vi.fn(),
+  setChannelProgram: vi.fn(),
+  setChannelGain: vi.fn(),
+  allNotesOff: vi.fn(),
+}));
+const createGmSynth = vi.hoisted(() => vi.fn(() => synthMock));
+vi.mock('../../producer/gmSynth.js', () => ({ createGmSynth, default: createGmSynth }));
+
+const routerMock = vi.hoisted(() => ({
+  noteOn: vi.fn(),
+  noteOff: vi.fn(),
+  configureLayer: vi.fn(),
+  allNotesOff: vi.fn(),
+  panic: vi.fn(),
+  dispose: vi.fn(),
+}));
+const createVoiceRouter = vi.hoisted(() => vi.fn(() => routerMock));
+vi.mock('../../producer/voiceRouter.js', () => ({ createVoiceRouter, default: createVoiceRouter }));
+
+const transportMock = vi.hoisted(() => ({
+  isPlaying: false,
+  play: vi.fn(),
+  stop: vi.fn(),
+  toggle: vi.fn(),
+  positionRef: { current: { normalized: 0, bar: 0, beat: 0, blockIndex: -1 } },
+  queueJump: vi.fn(),
+  pendingJumpRef: { current: null },
+  lengthMs: 0,
+}));
+const transportArgs = vi.hoisted(() => ({ last: null }));
+vi.mock('../../producer/useProducerTransport.js', () => ({
+  useProducerTransport: (args) => { transportArgs.last = args; return transportMock; },
+  default: (args) => { transportArgs.last = args; return transportMock; },
+}));
+
 import { Producer } from './Producer.jsx';
 
-// A small but valid loop library + a real MIDI buffer for note loading.
+// ── fixture library ───────────────────────────────────────────────────────────
 const INDEX_YML = `
 - slug: dm-c-f-gm
   path: chord-progressions/niko/dm-c-f-gm.mid
@@ -67,170 +127,216 @@ function midiBuffer() {
 }
 
 beforeEach(() => {
-  pressNote.mockClear();
+  vi.clearAllMocks();
+  transportMock.isPlaying = false;
+  transportArgs.last = null;
+  Object.assign(midiMock, {
+    activeNotes: new Map(),
+    pressNote,
+    releaseNote,
+    connected: false,
+    subscribe: () => () => {},
+    sendNote: vi.fn(),
+    sendNoteOff: vi.fn(),
+    sendProgramChange: vi.fn(),
+    sendControlChange: vi.fn(),
+  });
+  // ensureAudio path: createGmSynth is mocked, but the shell still constructs
+  // a real-looking AudioContext first.
+  global.window.AudioContext = class { close() { return Promise.resolve(); } };
   global.fetch = vi.fn((url) => {
     if (url.endsWith('index.yml')) return Promise.resolve({ text: () => Promise.resolve(INDEX_YML) });
     return Promise.resolve({ arrayBuffer: () => Promise.resolve(midiBuffer().buffer) });
   });
 });
 
-describe('Producer (loop-layering)', () => {
-  it('loads the loop library and lists browseable loops', async () => {
+/** Open the library via the Browse front door. */
+async function openLibrary() {
+  fireEvent.click(await screen.findByRole('button', { name: /browse the library/i }));
+  await screen.findByRole('dialog', { name: 'loop library' });
+}
+
+/** Front door → overlay → pick the Dm chord loop; waits for its row. */
+async function addDmLayer() {
+  await openLibrary();
+  fireEvent.click(await screen.findByRole('button', { name: 'Dm C · F Gm' }));
+  await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(1));
+}
+
+describe('Producer shell (three bands)', () => {
+  it('renders the four front-door entry cards when the workspace is empty', async () => {
     render(<Producer />);
-    // After 5.3, the primary label is title (or slug if no title), not raw slug
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: /browse the library/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /start from a loop/i })).toBeEnabled();
+    const record = screen.getByRole('button', { name: /record my own/i });
+    expect(record).toBeDisabled();
+    const songs = screen.getByRole('button', { name: /songs & resume/i });
+    expect(songs).toBeDisabled();
+  });
+
+  it('play is disabled with no layers; the keyboard band is always live', async () => {
+    render(<Producer />);
+    expect(await screen.findByRole('button', { name: /play/i })).toBeDisabled();
+    expect(screen.getByTestId('keyboard')).toBeInTheDocument();
+  });
+
+  it('opening the library hides the transport bar and keyboard bands (full-bleed)', async () => {
+    render(<Producer />);
+    await screen.findByRole('button', { name: /browse the library/i });
+    expect(screen.getByRole('button', { name: /play/i })).toBeInTheDocument();
+    await openLibrary();
+    expect(screen.queryByRole('button', { name: /play/i })).toBeNull();
+    expect(screen.queryByTestId('keyboard')).toBeNull();
+  });
+
+  it('lists browseable loops in the overlay (title + roman, never the slug)', async () => {
+    render(<Producer />);
+    await openLibrary();
+    expect(await screen.findByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument();
     expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
-    // roman progression rendered via RomanProgression component
-    expect(document.querySelector('.roman-progression')).toBeTruthy();
-  });
-
-  it('picks a base and shows it as the base layer plus ranked layer suggestions', async () => {
-    render(<Producer />);
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-
-    // base now appears in the layer rack with its role…
-    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
-    expect(screen.getAllByText('chords').length).toBeGreaterThan(0); // base role label
-    // …and the complementary melody is offered as a layer suggestion.
-    expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
-  });
-
-  it('starts the transport when Play is pressed (fires loop notes through pressNote)', async () => {
-    render(<Producer />);
-    fireEvent.click((await screen.findByRole('button', { name: 'Dm C · F Gm' })).closest('button'));
-    const play = await screen.findByText(/Play/);
-    fireEvent.click(play);
-    await waitFor(() => expect(pressNote).toHaveBeenCalled());
-  });
-
-  // Task 5.3: title + roman notation replaces slug labels
-  it('labels a loop by title + roman, not the slug', async () => {
-    render(<Producer />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
     expect(screen.queryByText('dm-c-f-gm')).toBeNull();
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 
-  // Task 5.5: detected key + editable tempo
-  it('shows the detected key and an editable tempo, defaulting to base bpm', async () => {
-    render(<Producer />);
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-    // After picking a base (bpm 120), the tempo display updates to 120
-    await waitFor(() => {
-      const tempoEl = document.querySelector('[aria-label="tempo"]');
-      expect(tempoEl).toBeTruthy();
-      expect(tempoEl.textContent).toContain('120');
-    });
-    // key control is present in the deck
-    expect(document.querySelector('.piano-producer-mode__key')).toBeTruthy();
-  });
-
-  // Task 5.6: per-layer Mute + Solo
-  it('solo isolates a layer — M and S buttons present on each layer row', async () => {
-    render(<Producer />);
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
-    // Add the catchy hook as a second layer
-    const layerBtn = await screen.findByText('Catchy Hook');
-    fireEvent.click(layerBtn.closest('button'));
-    await waitFor(() => {
-      // Both M and S buttons should be present (one per layer)
-      const soloButtons = document.querySelectorAll('[aria-label="solo"]');
-      expect(soloButtons.length).toBeGreaterThan(0);
-      const muteButtons = document.querySelectorAll('[aria-label="mute"]');
-      expect(muteButtons.length).toBeGreaterThan(0);
-    });
-    // Clicking solo on the first layer: the S button becomes aria-pressed=true
-    const soloBtn = document.querySelector('[aria-label="solo"]');
-    fireEvent.click(soloBtn);
-    await waitFor(() => {
-      expect(document.querySelector('[aria-label="solo"].is-on')).toBeTruthy();
-    });
-  });
-
-  // Task 5.8: peek preview — doesn't add to stack
-  it('peek previews a loop without adding it to the stack', async () => {
-    render(<Producer />);
-    // In browse mode (no base), all rows have a peek button
-    await waitFor(() => expect(document.querySelector('.piano-loop__peek')).toBeTruthy());
-    // Click peek on a row
-    const peekBtn = document.querySelector('.piano-loop__peek');
-    fireEvent.click(peekBtn);
-    // layers (the real stack) should still be empty — peek doesn't commit
-    await waitFor(() => {
-      expect(document.querySelectorAll('.piano-layer').length).toBe(0);
-    });
-  });
-
-  // Task 5.7: base-swap keeps stack + browse library affordance
-  it('removing the base promotes the next layer instead of clearing the stack', async () => {
-    render(<Producer />);
-    // Pick base
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
-    // Add catchy hook as second layer — it's harmonically compatible (melody, null roman wildcard)
-    const layerBtn = await screen.findByText('Catchy Hook');
-    fireEvent.click(layerBtn.closest('button'));
-    await waitFor(() => {
-      const layers = document.querySelectorAll('.piano-layer');
-      expect(layers.length).toBe(2);
-    });
-    // Remove the base (first layer's ✕ button)
-    const removeBtn = document.querySelector('.piano-layer__remove');
-    fireEvent.click(removeBtn);
-    await waitFor(() => {
-      // Stack should still have 1 layer (Catchy Hook promoted to base), not 0
-      const layers = document.querySelectorAll('.piano-layer');
-      expect(layers.length).toBe(1);
-      // The "Add a layer" section is still visible (base still set)
-      expect(screen.getByText('Add a layer')).toBeInTheDocument();
-    });
-  });
-
-  it('a "Browse library" affordance is present while a base is set', async () => {
-    render(<Producer />);
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
-    // A browse library button should be present
-    expect(screen.getByRole('button', { name: /browse library|add from library/i })).toBeTruthy();
-  });
-
-  // Task 5.11: showRoman toggle chip is present in the deck
-  it('has a Roman toggle chip in the deck', async () => {
-    render(<Producer />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /roman/i })).toBeTruthy();
-  });
-
-  // Task 5.12: on-ramp hint before base is chosen
-  it('shows a one-line on-ramp before a base is chosen', async () => {
-    render(<Producer />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument());
-    expect(screen.getByText(/pick a base loop/i)).toBeTruthy();
-  });
-
-  // Task 5.12: staff thumbnails for melodic loops
   it('shows a staff thumbnail for a melodic loop with no roman', async () => {
     render(<Producer />);
-    await waitFor(() => expect(screen.getByText('Catchy Hook')).toBeInTheDocument());
-    // Catchy Hook has type:melody, roman:null → should render a staff element
-    expect(document.querySelector('.action-staff, svg')).toBeTruthy();
+    await openLibrary();
+    await screen.findByText('Catchy Hook');
+    expect(document.querySelector('.piano-loop__staff svg, .piano-loop__staff .action-staff')).toBeTruthy();
   });
 
-  // Task 5.4: harmonically-incompatible candidates excluded from suggestions
-  it('omits harmonically-incompatible candidates from suggestions', async () => {
+  it('browse → tap a loop: overlay closes, a layer row appears with glyph + role, play enables', async () => {
     render(<Producer />);
-    // Pick the dm-c-f-gm base (signature i-bVII-bIII-iv)
-    const baseBtn = await screen.findByRole('button', { name: 'Dm C · F Gm' });
-    fireEvent.click(baseBtn.closest('button'));
-    // After base is picked, the "Add a layer" section appears
-    await waitFor(() => expect(screen.getByText('Add a layer')).toBeInTheDocument());
-    // "Different Progression Loop" has signature ii-V-I — must NOT appear as a candidate
+    await addDmLayer();
+    // Overlay closed, three bands back.
+    expect(screen.queryByRole('dialog', { name: 'loop library' })).toBeNull();
+    // Row: glyph + role + roman identity + M/S + remove.
+    const row = document.querySelector('.piano-layer');
+    expect(row.querySelector('.piano-material-glyph')).toBeTruthy();
+    expect(screen.getByText('chords')).toBeInTheDocument();
+    expect(row.querySelector('.roman-progression')).toBeTruthy();
+    // Play is now enabled.
+    expect(screen.getByRole('button', { name: /play/i })).toBeEnabled();
+  });
+
+  it('adopts the first layer\'s bpm (bpmHint) into the transport bar', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    expect(screen.getByLabelText('tempo').textContent).toContain('120');
+  });
+
+  it('M and S latch through the reducer (aria-pressed reflects workspace state)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    const mute = screen.getByLabelText('mute');
+    expect(mute).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(mute);
+    await waitFor(() => expect(screen.getByLabelText('mute')).toHaveAttribute('aria-pressed', 'true'));
+    const solo = screen.getByLabelText('solo');
+    fireEvent.click(solo);
+    await waitFor(() => expect(screen.getByLabelText('solo')).toHaveAttribute('aria-pressed', 'true'));
+    expect(document.querySelector('.piano-layer__s.is-on')).toBeTruthy();
+  });
+
+  it('feeds loaded notes to the transport as channel-tagged layers (memoized seam)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    await waitFor(() => expect(transportArgs.last.layers.length).toBe(1));
+    const layer = transportArgs.last.layers[0];
+    expect(layer.channel).toBe(0);
+    expect(layer.notes.length).toBeGreaterThan(0);
+    expect(transportArgs.last.router).toBe(routerMock);
+    expect(transportArgs.last.bpm).toBe(120);
+  });
+
+  it('configures the router voice for an added layer (program + gain)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 });
+  });
+
+  it('play tap unlocks audio (gmSynth created once) and starts the transport', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    expect(createGmSynth).toHaveBeenCalledTimes(1);
+    expect(synthMock.resume).toHaveBeenCalled();
+    expect(transportMock.play).toHaveBeenCalledTimes(1);
+    // While "playing", the button becomes Stop and stops the transport.
+    transportMock.isPlaying = true;
+    fireEvent.click(screen.getByRole('button', { name: /play|stop/i }));
+    expect(transportMock.stop).toHaveBeenCalled();
+  });
+
+  it('"+ Add layer" reopens the library ranked to stackable candidates only', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    await screen.findByRole('dialog', { name: 'loop library' });
+    // Compatible complement offered…
+    expect(await screen.findByText('Catchy Hook')).toBeInTheDocument();
+    // …incompatible signature (ii-V-I vs i-bVII-bIII-iv) excluded, and the
+    // already-stacked base is not re-offered.
     expect(screen.queryByText('Different Progression Loop')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
+  });
+
+  it('removing the last layer returns the front doors', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(0));
+    expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
+  });
+
+  it('removing one of two layers keeps the jam going (no stack wipe)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Catchy Hook' }));
+    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(2));
+    fireEvent.click(document.querySelector('.piano-layer__remove'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-layer').length).toBe(1));
+    expect(screen.getByRole('button', { name: /\+ add layer/i })).toBeInTheDocument();
+  });
+
+  it('the Song tab shows the arrangement placeholder (Task 7.2 fills it)', async () => {
+    render(<Producer />);
+    await screen.findByRole('tab', { name: 'Song' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    expect(screen.getByText(/build sections from your jam/i)).toBeInTheDocument();
+    // Back to Mix — state preserved.
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
+  });
+
+  it('has a Roman toggle chip and a record-arm stub in the shell', async () => {
+    render(<Producer />);
+    await screen.findByRole('button', { name: /browse the library/i });
+    expect(screen.getByRole('button', { name: 'roman' })).toBeInTheDocument();
+    const rec = screen.getByLabelText('record');
+    expect(rec).toBeDisabled();
+    expect(rec).toHaveAttribute('title', 'Recording arrives soon');
+  });
+
+  it('shows the now-playing pill in the overlay while the jam loops (tap closes)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    transportMock.isPlaying = true;
+    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    const pill = await screen.findByRole('button', { name: 'now playing' });
+    fireEvent.click(pill);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'loop library' })).toBeNull());
+  });
+
+  it('unmount tears the sound path down: transport stop, router dispose, synth dispose', async () => {
+    const { unmount } = render(<Producer />);
+    await addDmLayer(); // pick gesture ran ensureAudio → synth exists
+    expect(createGmSynth).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(transportMock.stop).toHaveBeenCalled();
+    expect(routerMock.dispose).toHaveBeenCalled();
+    expect(synthMock.dispose).toHaveBeenCalled();
   });
 });
