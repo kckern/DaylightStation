@@ -107,6 +107,9 @@ export function Producer() {
   const [tab, setTab] = useState('mix'); // 'mix' | 'song'
   const [overlay, setOverlay] = useState(null); // null | { role: null|'chords' }
   const [showRoman, setShowRoman] = useState(false);
+  // Transient pick-failure toast (mirrors the reducer's lastError pattern:
+  // set on failure, cleared by the next pick attempt — nothing else reads it).
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     logger.info('piano.producer.mounted', {});
@@ -293,22 +296,33 @@ export function Producer() {
   const handlePick = useCallback(async (entry) => {
     ensureAudio();
     setOverlay(null);
+    setLoadError(null);
     // Interim overlay keeps ids == entry.path (no duplicates), so notesById
     // stays keyed 1:1 with layers. Duplicate stacking arrives with 5.1.
     if (stateRef.current.layers.some((l) => l.id === entry.path)) return;
     const role = (entry.type === 'groove' || entry.kind === 'groove') ? 'groove' : roleOf(entry);
     dispatch(addLayer({ source: { kind: 'library', entry }, role, bpmHint: entry.bpm }));
-    const notes = await lib.loadNotes(entry);
+    let notes = null;
+    try { notes = await lib.loadNotes(entry); } catch { notes = null; }
+    if (!notes?.notes?.length) {
+      // Failed/empty load would leave a zombie row with a dead Play — the
+      // layer never joins the cycle (toTransportLayers omits it). Remove it
+      // and say why instead.
+      logger.warn('piano.producer.layer-load-failed', { path: entry.path, role });
+      dispatch(removeLayer(entry.path));
+      setLoadError(`Couldn't load "${entry.title || entry.slug || 'that loop'}" — try another.`);
+      return;
+    }
     // Guard the async landing: if the layer was removed while its notes were
     // in flight, don't strand an orphan entry in notesById (memory hygiene —
     // the lib's own cache still makes a re-add instant).
-    if (notes?.notes?.length && stateRef.current.layers.some((l) => l.id === entry.path)) {
+    if (stateRef.current.layers.some((l) => l.id === entry.path)) {
       setNotesById((prev) => ({
         ...prev,
         [entry.path]: { notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan },
       }));
     }
-  }, [ensureAudio, lib]);
+  }, [ensureAudio, lib, logger]);
 
   const handleRemove = useCallback((id) => {
     dispatch(removeLayer(id));
@@ -403,6 +417,10 @@ export function Producer() {
                 onClick={() => setShowRoman((v) => !v)}
               >Roman</button>
             </div>
+
+            {tab === 'mix' && loadError && (
+              <p className="piano-producer-mode__toast" role="alert">{loadError}</p>
+            )}
 
             {tab === 'mix' && (
               state.layers.length === 0 ? (
