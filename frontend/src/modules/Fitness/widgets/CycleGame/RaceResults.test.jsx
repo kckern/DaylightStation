@@ -58,4 +58,10 @@ describe('RaceResults', () => {
     rerender(<RaceResults standings={[]} riders={{}} ladderNotes={[]} />);
     expect(screen.queryByTestId('race-results-ladder')).toBeNull();
   });
+  it('shows the not-saved banner only when saveFailed', () => {
+    const { rerender } = render(<RaceResults standings={[]} riders={{}} saveFailed />);
+    expect(screen.getByTestId('race-results-save-failed').textContent).toContain('could not be saved');
+    rerender(<RaceResults standings={[]} riders={{}} saveFailed={false} />);
+    expect(screen.queryByTestId('race-results-save-failed')).toBeNull();
+  });
 });
