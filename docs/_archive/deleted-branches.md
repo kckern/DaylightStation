@@ -107,3 +107,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-06-30 | feat/piano-effect-audit | 3ffd1bcee | Autonomous piano effect-audit harness + analyzer (merged) |
 | 2026-06-30 | feature/picker-display-names | 61c0aeeb9 | Moved display-name SSOT to core (frontend/src/lib/userDisplayName.js) with back-compat shim; generalized context to abstract familyContext (+ hasFamilyContext) so the Who's-playing picker shows Dad/Mom when kids are present and drops the subtitle; rebalanced picker columns (6→3×2, 9→3×3) and made the sheet hug content. Rebased onto origin/main (5 effect-audit commits landed mid-work) and fast-forward merged + pushed. Branch deleted. |
 | 2026-07-01 | worktree-cycle-tt-ladder | f511cdf21 | Cycle game weekly TT ladder (merged as 25b5b001e) |
+| 2026-07-01 | worktree-cycle-phase0 | 9ac5357cb | Cycle game audit Phase 0 fixes (merged as c6e4fdd92) |
