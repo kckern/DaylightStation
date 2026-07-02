@@ -2,6 +2,10 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
+import {
+  SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR,
+  SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
+} from '@/modules/Fitness/lib/cycleGame/layoutSizing.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import PovGrid from './panels/PovGrid.jsx';
@@ -72,7 +76,8 @@ export default function CycleRaceScreen({
       speedoRow: (slot) => (
         <SpeedoRow riderIds={riderIds} riders={riders} riderLive={riderLive}
           cadenceBands={cadenceBands} zoneBox={slot?.zoneBox}
-          maxGauge={fieldSize <= 3 ? 360 : 280} minGauge={fieldSize <= 3 ? 220 : 96} />
+          maxGauge={fieldSize <= 3 ? SPEEDO_MAX_GAUGE_SIDEBAR : SPEEDO_MAX_GAUGE_WIDE}
+          minGauge={fieldSize <= 3 ? SPEEDO_MIN_GAUGE_SIDEBAR : SPEEDO_MIN_GAUGE_WIDE} />
       )
     } : {})
   };

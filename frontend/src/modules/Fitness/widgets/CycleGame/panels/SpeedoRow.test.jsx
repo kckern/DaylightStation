@@ -32,7 +32,7 @@ describe('SpeedoRow panel', () => {
       <SpeedoRow riderIds={['a']} riders={riders} riderLive={{ a: { rpm: 0 } }} cadenceBands={[]}
         zoneBox={{ width: 900, height: 600 }} maxGauge={420} />
     );
-    // byHeight = 600-50 = 550, byWidth = 900 → raw 550, clamped to the raised 420 cap.
+    // byHeight = 600-68 (honest chrome budget) = 532, byWidth = 900 → raw 532, clamped to the raised 420 cap.
     const gauge = container.querySelector('.cycle-speedometer');
     expect(gauge.style.width).toBe('420px');
   });
