@@ -2,8 +2,11 @@ import { CycleRaceEngine } from './CycleRaceEngine.js';
 
 /**
  * Lifecycle state machine for a cycle race. Wraps CycleRaceEngine and adds the
- * countdown and idle→DNF handling. Pure (caller drives countdownTick/tick).
- * Phases: staged → countdown → racing → finished → results; cancelled (any).
+ * countdown, idle→DNF handling, and the mercy-kill/forced-finish→overtime
+ * handling (a rider cut off by the clock/operator while still honestly riding
+ * is `overtime`, not `dnf` — see `overtime` on getState()). Pure (caller drives
+ * countdownTick/tick). Phases: staged → countdown → racing → finished → results;
+ * cancelled (any).
  */
 export class CycleRaceController {
   constructor(config = {}) {
@@ -20,6 +23,12 @@ export class CycleRaceController {
     this.raceStartGraceS = Number.isFinite(config.raceStartGraceS) ? config.raceStartGraceS : 30;
     this.engine = null;
     this.dnf = new Set();
+    // Riders whose race was cut short by the CLOCK/OPERATOR (mercy-kill window
+    // closing, or a forced finish) while they were still honestly riding — distinct
+    // from `dnf` (idle-quit). They keep their real distance in the results, not the
+    // "DNF" label (audit game-design #7 — mercy-kill must not brand an honest
+    // finisher a failure).
+    this.overtime = new Set();
     this._idle = new Map();
     this._started = new Set(); // riders that have registered rpm > 0 at least once
     // Hot-start penalty ("penalty box"): a rider already pedalling at the green
@@ -140,10 +149,13 @@ export class CycleRaceController {
     return this.getState();
   }
 
-  // Distance-race mercy-kill: once the first rider has finished, forfeit (DNF)
-  // every still-racing non-ghost rider after raceMercyAfterWinnerS seconds. The
-  // subsequent _isFinished() check then ends the race. No-op when disabled, for
-  // time races, or before anyone has crossed the line.
+  // Distance-race mercy-kill: once the first rider has finished, close the race
+  // for every still-racing non-ghost rider after raceMercyAfterWinnerS seconds —
+  // they land in `overtime` (real distance kept), NOT `dnf`; an idle-quitter who
+  // was already flagged `dnf` before the window closed stays `dnf` (they quit,
+  // the clock didn't cut them off). The subsequent _isFinished() check then ends
+  // the race. No-op when disabled, for time races, or before anyone has crossed
+  // the line.
   _applyMercyKill() {
     if (this.raceMercyAfterWinnerS <= 0 || this.config.winCondition === 'time') return;
     const s = this.engine.getState();
@@ -155,19 +167,25 @@ export class CycleRaceController {
     if (s.elapsedS - firstFinish < this.raceMercyAfterWinnerS) return;
     Object.values(s.riders).forEach((r) => {
       if (this.ghosts.has(r.userId)) return;
-      if (r.finishTimeS == null) this.dnf.add(r.userId);
+      if (r.finishTimeS != null) return;
+      if (this.dnf.has(r.userId)) return; // already forfeited (idle-quit) — stays DNF
+      this.overtime.add(r.userId);
     });
   }
 
-  // Operator-driven end: mark every non-ghost rider who hasn't crossed the line
-  // as a forfeit (DNF) and end the race. Distinct from cancel() — the race is
-  // finalized and saved, not discarded. No-op outside the racing phase.
+  // Operator-driven end: close the race for every non-ghost rider who hasn't
+  // crossed the line — landing in `overtime` (real distance kept), same rule as
+  // the mercy-kill above; an already-dnf idle-quitter stays `dnf`. Distinct from
+  // cancel() — the race is finalized and saved, not discarded. No-op outside the
+  // racing phase.
   finishNow() {
     if (this.phase !== 'racing' || !this.engine) return this.getState();
     const s = this.engine.getState();
     Object.values(s.riders).forEach((r) => {
       if (this.ghosts.has(r.userId)) return;
-      if (r.finishTimeS == null) this.dnf.add(r.userId);
+      if (r.finishTimeS != null) return;
+      if (this.dnf.has(r.userId)) return; // already forfeited (idle-quit) — stays DNF
+      this.overtime.add(r.userId);
     });
     this.phase = 'finished';
     return this.getState();
@@ -177,7 +195,7 @@ export class CycleRaceController {
     const s = this.engine.getState();
     if (this.config.winCondition === 'time') return s.finished;
     return Object.values(s.riders).every(
-      (r) => r.finishTimeS != null || this.dnf.has(r.userId)
+      (r) => r.finishTimeS != null || this.dnf.has(r.userId) || this.overtime.has(r.userId)
     );
   }
 
@@ -206,6 +224,7 @@ export class CycleRaceController {
       phase: this.phase,
       countdownRemaining: this.countdownRemaining,
       dnf: [...this.dnf],
+      overtime: [...this.overtime],
       penalized: [...this._penalty.keys()],
       penaltyInfo,
       engineState: this.engine ? this.engine.getState() : null

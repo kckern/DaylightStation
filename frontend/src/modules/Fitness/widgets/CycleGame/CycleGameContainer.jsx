@@ -240,6 +240,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   const startCountdownRef = useRef(3);
   const savedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
+  // Riders whose race was cut short by the clock/operator (mercy-kill window
+  // closing, or a forced finish) while still honestly riding — see
+  // CycleRaceController's `overtime` set. Distinct from prevDnfRef (idle-quit).
+  const prevOvertimeRef = useRef(new Set());
   const prevPenalizedRef = useRef(new Set());
   // Telemetry: track prior tick state so transitions (not steady state) are what
   // gets logged — penalty awaiting-stop edges, cadence connect/drop, phase, and
@@ -325,6 +329,26 @@ export default function CycleGameContainer({ onMount } = {}) {
       return toast;
     });
   }, [raceIdleDnfS, hotStartPenaltyS]);
+
+  // Race-closed toast: the mercy-kill window (or a forced finish) can cut several
+  // stragglers in the SAME tick — one summary toast, not a stack of per-rider
+  // "DNF" toasts, so the moment reads as "the race ended" rather than "you all
+  // failed" (audit game-design #7 — the riders it names are still credited their
+  // real distance in the results, not branded DNF).
+  const recordOvertimeEvent = useCallback((userIds) => {
+    const id = (eventIdRef.current += 1);
+    const n = userIds.length;
+    const toast = {
+      id,
+      variant: 'overtime',
+      icon: '🏁',
+      title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
+    };
+    setEventToast((cur) => {
+      if (cur) { toastQueueRef.current.push(toast); return cur; }
+      return toast;
+    });
+  }, []);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -662,6 +686,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
     prevDnfRef.current = new Set();
+    prevOvertimeRef.current = new Set();
     prevPenalizedRef.current = new Set();
     prevAwaitingRef.current = new Set();
     prevCadenceRef.current = new Map();
@@ -960,6 +985,22 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevDnfRef.current = dnfSet;
 
+      // Overtime detection — diff the controller overtime set (mercy-kill window
+      // closing / forced finish). Log each rider's edge individually (mirrors the
+      // DNF edge log above) but raise ONE summary toast for the whole batch —
+      // several stragglers can land in `overtime` on the same tick.
+      const overtimeSet = new Set(state.overtime || []);
+      const newOvertime = [...overtimeSet].filter((userId) => !prevOvertimeRef.current.has(userId));
+      newOvertime.forEach((userId) => {
+        log.info('cycle_game.rider_overtime', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: state.engineState?.elapsedS ?? null
+        });
+      });
+      if (newOvertime.length > 0) recordOvertimeEvent(newOvertime);
+      prevOvertimeRef.current = overtimeSet;
+
       // ── Penalty box lifecycle (info) — entry, awaiting-stop edge, and clear.
       // Every entry is paired with its exit so a tester's "stuck in penalty" is
       // fully reconstructable. recordRaceEvent (toast + chart marker) fires once,
@@ -1069,7 +1110,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRaceEvent, log]);
+  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log]);
 
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
@@ -1534,6 +1575,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         riders={engineState.riders || {}}
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
         dnf={snapshot?.dnf || []}
+        overtime={snapshot?.overtime || []}
         penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
         lapLengthM={effectiveLapLength({
           lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
