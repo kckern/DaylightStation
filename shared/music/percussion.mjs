@@ -31,22 +31,36 @@ export const GM_DRUM = Object.freeze({
 /** Fixed click length: each metronome hit's note_off lands this many ms after its note_on. */
 const METRONOME_HIT_MS = 30;
 
+/** Sanitize a MIDI channel to an integer 0..15 (same rule as loopScheduler's
+ * private helper, duplicated so both event producers clamp identically). */
+function sanitizeChannel(channel) {
+  const n = Math.floor(Number(channel));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(15, n);
+}
+
 /**
  * Build metronome click events: one hit per beat, beat 1 of each bar accented
  * (higher velocity, optionally a different note). Times in ms from 0.
  *
- * @param {number} bars number of bars to click; ≤ 0 → []
+ * @param {number} bars number of bars to click; ≤ 0 → []. Fractional bars
+ *   floor to whole bars, so bars < 1 also yields [].
  * @param {object} opts
  * @param {number} opts.bpm tempo (quarter-note BPM)
- * @param {[number, number]} [opts.timeSig=[4,4]] beats per bar / beat unit
- * @param {number} [opts.channel=9] MIDI channel (9 = GM drums)
+ * @param {[number, number]} [opts.timeSig=[4,4]] beats per bar / beat unit —
+ *   NOTE: array form, not loopScheduler's {beats, beatType} object
+ * @param {number} [opts.channel=9] MIDI channel (9 = GM drums), sanitized to 0..15
  * @param {number} [opts.accentNote=GM_DRUM.hatClosed] pitch for beat 1
  * @param {number} [opts.tickNote=GM_DRUM.hatClosed] pitch for other beats
  * @param {number} [opts.accentVelocity=110]
  * @param {number} [opts.tickVelocity=70]
  * @returns {Array<{t:number,type:'note_on'|'note_off',note:number,velocity:number,channel:number}>}
  *   sorted by t; same event shape as loopScheduler's loopToEvents
- * @throws {TypeError} when bpm is not a finite positive number
+ * @throws {TypeError} when bpm is not a finite positive number, or timeSig is
+ *   not a 2-element array of finite positive numbers (a short array like [4]
+ *   would otherwise produce NaN timestamps that poison the transport's merged
+ *   stream; the {beats, beatType} object form is rejected loudly for the same
+ *   reason)
  */
 export function metronomeEvents(bars, opts = {}) {
   const {
@@ -61,9 +75,18 @@ export function metronomeEvents(bars, opts = {}) {
   if (typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm <= 0) {
     throw new TypeError(`metronomeEvents: bpm must be a finite positive number (got ${bpm})`);
   }
+  if (
+    !Array.isArray(timeSig) || timeSig.length !== 2
+    || !timeSig.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  ) {
+    throw new TypeError(
+      `metronomeEvents: timeSig must be a 2-element array of finite positive numbers, e.g. [4, 4] (got ${JSON.stringify(timeSig)})`,
+    );
+  }
   if (!(bars > 0)) return [];
 
   const [beatsPerBar, beatUnit] = timeSig;
+  const ch = sanitizeChannel(channel);
   const beatMs = (60000 / bpm) * (4 / beatUnit);
   const events = [];
   const totalBeats = Math.floor(bars) * beatsPerBar;
@@ -71,8 +94,8 @@ export function metronomeEvents(bars, opts = {}) {
     const accent = beat % beatsPerBar === 0;
     const t = beat * beatMs;
     const note = accent ? accentNote : tickNote;
-    events.push({ t, type: 'note_on', note, velocity: accent ? accentVelocity : tickVelocity, channel });
-    events.push({ t: t + METRONOME_HIT_MS, type: 'note_off', note, velocity: 0, channel });
+    events.push({ t, type: 'note_on', note, velocity: accent ? accentVelocity : tickVelocity, channel: ch });
+    events.push({ t: t + METRONOME_HIT_MS, type: 'note_off', note, velocity: 0, channel: ch });
   }
   return events.sort((a, b) => a.t - b.t);
 }

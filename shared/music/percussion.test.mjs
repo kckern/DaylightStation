@@ -99,6 +99,20 @@ describe('metronomeEvents', () => {
     assert.throws(() => metronomeEvents(2, { bpm: 0 }), TypeError);
     assert.throws(() => metronomeEvents(2, { bpm: NaN }), TypeError);
   });
+
+  it('throws TypeError on malformed timeSig (short array, zero unit, object form, junk)', () => {
+    // [4] would otherwise make beatMs NaN → t:NaN events poisoning the transport's merged stream
+    assert.throws(() => metronomeEvents(2, { bpm: 120, timeSig: [4] }), /timeSig/);
+    assert.throws(() => metronomeEvents(2, { bpm: 120, timeSig: [4, 0] }), /timeSig/);
+    assert.throws(() => metronomeEvents(2, { bpm: 120, timeSig: { beats: 4, beatType: 4 } }), /timeSig/);
+    assert.throws(() => metronomeEvents(2, { bpm: 120, timeSig: 'x' }), /timeSig/);
+  });
+
+  it('sanitizes channel into 0..15 like loopScheduler', () => {
+    assert.equal(metronomeEvents(1, { bpm: 120, channel: -1 })[0].channel, 0);
+    assert.equal(metronomeEvents(1, { bpm: 120, channel: 16.7 })[0].channel, 15);
+    assert.equal(metronomeEvents(1, { bpm: 120, channel: 'x' })[0].channel, 0);
+  });
 });
 
 describe('isDrumTrack', () => {
@@ -160,6 +174,12 @@ describe('detectFeel', () => {
   it('single onset → straight', () => {
     assert.equal(detectFeel([320], 480), 'straight');
     assert.equal(detectFeel([], 480), 'straight');
+  });
+
+  it('pins the swung-window edges @ ppq 480: 288 exclusive → straight, 368 inclusive → swing', () => {
+    // window is (ppq/2 + tol, 2ppq/3 + tol] = (288, 368]; two offbeat onsets each for evidence
+    assert.equal(detectFeel([0, 288, 480, 768], 480), 'straight'); // 768 mod 480 = 288, on the open edge
+    assert.equal(detectFeel([0, 368, 480, 848], 480), 'swing'); // 848 mod 480 = 368, on the closed edge
   });
 
   it('works at other resolutions (ppq 960)', () => {
