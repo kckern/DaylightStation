@@ -207,16 +207,16 @@ export default function CycleSpeedometer({
             size={avatarPx}
           />
           {showBadge && (
+            /* Color-only dot: T10 caps the badge at 30% of the avatar, which
+               leaves no room for 10-foot-legible text (T11's 1.1rem floor). The
+               numeric multiplier moved to the lower readout beside rpm; the dot
+               keeps the zone-boost glanceable at the avatar. */
             <div
               className="cycle-speedometer__multiplier"
               data-testid="cycle-speedometer-multiplier"
-              style={{
-                background: badgeColor, width: badgePx, height: badgePx,
-                fontSize: Math.max(9, Math.round(badgePx * 0.48)), marginLeft: badgeGapPx
-              }}
-            >
-              ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
-            </div>
+              aria-label={`multiplier ×${Number(multiplier).toFixed(1)}`}
+              style={{ background: badgeColor, width: badgePx, height: badgePx, marginLeft: badgeGapPx }}
+            />
           )}
         </div>
 
@@ -237,7 +237,14 @@ export default function CycleSpeedometer({
             {sensorLost ? (
               <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
             ) : (
-              <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
+              <>
+                {Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span>
+                {showBadge && (
+                  <span className="cycle-speedometer__multiplier-text" data-testid="cycle-speedometer-multiplier-text">
+                    {' '}· ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -47,11 +47,15 @@ describe('CycleSpeedometer', () => {
     rerender(<CycleSpeedometer {...baseProps} rpm={75} />);
     expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#f1c40f'); // pushing
   });
-  it('shows the multiplier badge only when multiplier > 1', () => {
+  it('shows the multiplier badge dot + readout text only when multiplier > 1', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} multiplier={2} />);
-    expect(queryByTestId('cycle-speedometer-multiplier').textContent).toContain('2');
+    // The dot itself is color-only (T10's 30%-of-avatar cap leaves no room for
+    // floor-legible text); the number lives in the lower readout beside rpm.
+    expect(queryByTestId('cycle-speedometer-multiplier')).not.toBeNull();
+    expect(queryByTestId('cycle-speedometer-multiplier-text').textContent).toContain('×2');
     rerender(<CycleSpeedometer {...baseProps} multiplier={1} />);
     expect(queryByTestId('cycle-speedometer-multiplier')).toBeNull();
+    expect(queryByTestId('cycle-speedometer-multiplier-text')).toBeNull();
   });
   it('renders the HR value via the embedded avatar', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
