@@ -37,7 +37,7 @@ import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
-  nudgeKey, setBpm, toggleMetronome,
+  toggleCarried, nudgeKey, setBpm, toggleMetronome,
 } from '../../producer/workspaceReducer.js';
 import { useProducerTransport } from '../../producer/useProducerTransport.js';
 import { createVoiceRouter } from '../../producer/voiceRouter.js';
@@ -347,6 +347,10 @@ export function Producer() {
 
   const handleToggleMute = useCallback((id) => dispatch(toggleMute(id)), []);
   const handleToggleSolo = useCallback((id) => dispatch(toggleSolo(id)), []);
+  const handleToggleCarried = useCallback((id) => {
+    logger.info('piano.producer.carry-toggle', { id });
+    dispatch(toggleCarried(id));
+  }, [logger]);
   const handleSetGain = useCallback((id, gain) => {
     logger.sampled('piano.producer.gain-set', { id, gain }, { maxPerMinute: 20, aggregate: true });
     dispatch(setGain(id, gain));
@@ -490,6 +494,7 @@ export function Producer() {
                         onboardGm={onboardEnabled}
                         onToggleMute={handleToggleMute}
                         onToggleSolo={handleToggleSolo}
+                        onToggleCarried={handleToggleCarried}
                         onRemove={handleRemove}
                         onGain={handleSetGain}
                         onVoice={handleSetVoice}

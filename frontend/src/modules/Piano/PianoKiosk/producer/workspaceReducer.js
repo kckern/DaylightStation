@@ -24,7 +24,9 @@
  *     gain,       // 0..1 (loopScheduler: scales velocity; ≤0 emits nothing)
  *     muted,      // dropped from the cycle entirely (including its length)
  *     soloed,     // solo semantics: anySolo && !soloed → effectively muted
- *     carried,    // reserved for the draft tree (§4.1 continuity); stored only
+ *     carried,    // §4.1 continuity pin (TOGGLE_CARRIED): PROMOTE stores a
+ *                 //   carried layer ONCE in the draft's shared pool instead
+ *                 //   of copying it per section
  *   }
  *
  * Error mechanism (kept tiny): a failed ADD_LAYER (channel pool exhausted)
@@ -64,6 +66,7 @@ export const ActionTypes = Object.freeze({
   TOGGLE_MUTE: 'TOGGLE_MUTE',
   TOGGLE_SOLO: 'TOGGLE_SOLO',
   SET_VOICE: 'SET_VOICE',
+  TOGGLE_CARRIED: 'TOGGLE_CARRIED',
   SET_KEY: 'SET_KEY',
   NUDGE_KEY: 'NUDGE_KEY',
   SET_BPM: 'SET_BPM',
@@ -242,6 +245,14 @@ export function workspaceReducer(state, action) {
         l.role === 'groove' ? l : { ...l, gmProgram: action.gmProgram }
       ));
 
+    case ActionTypes.TOGGLE_CARRIED:
+      // The §4.1 continuity flag: a carried layer is stored ONCE in the
+      // draft's shared pool at PROMOTE time and referenced by every section
+      // promoted while the pin is on. Toggling affects FUTURE promotes only —
+      // sections already holding a copy/ref are untouched (the draft never
+      // reaches back into the workspace, and vice versa).
+      return mapLayer(state, action.id, (l) => ({ ...l, carried: !l.carried }));
+
     case ActionTypes.SET_KEY: {
       if (!Number.isFinite(action.shift)) return state;
       return { ...state, keyShift: Math.trunc(action.shift), lastError: null };
@@ -298,6 +309,7 @@ export const setGain = (id, gain) => ({ type: ActionTypes.SET_GAIN, id, gain });
 export const toggleMute = (id) => ({ type: ActionTypes.TOGGLE_MUTE, id });
 export const toggleSolo = (id) => ({ type: ActionTypes.TOGGLE_SOLO, id });
 export const setVoice = (id, gmProgram) => ({ type: ActionTypes.SET_VOICE, id, gmProgram });
+export const toggleCarried = (id) => ({ type: ActionTypes.TOGGLE_CARRIED, id });
 export const setKey = (shift) => ({ type: ActionTypes.SET_KEY, shift });
 export const nudgeKey = (delta) => ({ type: ActionTypes.NUDGE_KEY, delta });
 export const setBpm = (bpm) => ({ type: ActionTypes.SET_BPM, bpm });

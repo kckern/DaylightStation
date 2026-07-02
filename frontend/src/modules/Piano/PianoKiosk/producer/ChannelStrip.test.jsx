@@ -137,6 +137,29 @@ describe('ChannelStrip wiring', () => {
   });
 });
 
+describe('carry pin (§4.1 continuity)', () => {
+  it('renders only when onToggleCarried is provided; latches via aria-pressed with the carry title', () => {
+    renderStrip(); // no onToggleCarried prop
+    expect(screen.queryByLabelText('carry')).toBeNull();
+
+    renderStrip(chordLayer, { onToggleCarried: vi.fn() });
+    const pin = screen.getByLabelText('carry');
+    expect(pin).toHaveAttribute('aria-pressed', 'false');
+    expect(pin).toHaveAttribute('title', 'Carry across sections');
+  });
+
+  it('tap dispatches onToggleCarried(id); a carried layer shows the pin latched', () => {
+    const onToggleCarried = vi.fn();
+    renderStrip(chordLayer, { onToggleCarried });
+    fireEvent.click(screen.getByLabelText('carry'));
+    expect(onToggleCarried).toHaveBeenCalledWith(chordLayer.id);
+
+    renderStrip({ ...chordLayer, carried: true }, { onToggleCarried: vi.fn() });
+    const pins = screen.getAllByLabelText('carry');
+    expect(pins[pins.length - 1]).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
 describe('remove 2-tap confirm', () => {
   it('first tap arms ("Sure?") without removing; second tap removes', () => {
     const { onRemove } = renderStrip();
