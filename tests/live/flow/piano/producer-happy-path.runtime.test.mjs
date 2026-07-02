@@ -157,6 +157,13 @@ test.describe('Piano Producer Happy Path', () => {
     const romanCount = await romanCards.count();
     console.log(`Chord-progression cards visible: ${romanCount}`);
 
+    // Capture the EXACT roman identity of the card we're about to pick, so we
+    // can prove the resulting strip carries THIS loop — not merely that some
+    // roman element rendered (a wrong loop loading would otherwise green-pass).
+    const pickedRoman = (await romanCards.first().locator('.roman-progression').textContent())?.trim();
+    expect(pickedRoman, 'picked card should have a non-empty roman progression').toBeTruthy();
+    console.log(`Picking chord loop with roman identity: "${pickedRoman}"`);
+
     await romanCards.first().click();
 
     // Overlay closes; a ChannelStrip appears in the Mix carrying the loop's
@@ -164,10 +171,16 @@ test.describe('Piano Producer Happy Path', () => {
     await expect(overlay, 'library overlay should close after picking').toBeHidden({ timeout: 10000 });
     const strip = sharedPage.locator('.piano-channel-strip');
     await expect(strip.first(), 'a ChannelStrip should appear for the picked loop').toBeVisible({ timeout: 15000 });
+    const stripRoman = strip.first().locator('.roman-progression');
     await expect(
-      strip.first().locator('.roman-progression'),
+      stripRoman,
       'the strip should show the chord loop\'s roman identity',
     ).toBeVisible({ timeout: 5000 });
+    // Cross-check identity: the strip's roman MUST equal the picked card's.
+    await expect(
+      stripRoman,
+      'the strip\'s roman identity must match the picked chord loop',
+    ).toHaveText(pickedRoman, { timeout: 5000 });
 
     // Guard against the zombie-row path (failed note load removes the layer).
     await sharedPage.waitForTimeout(1500);
@@ -314,12 +327,14 @@ test.describe('Piano Producer Happy Path', () => {
 
   // ── STEP 8 ────────────────────────────────────────────────────────────────
   test('8. play the loaded arrangement → isPlaying', async () => {
-    // Give the arrangement's library-layer notes time to re-fetch (ensureLayerNotes).
-    await sharedPage.waitForTimeout(3000);
-
     const play = sharedPage.locator('.piano-producer-mode__play');
     const pos = sharedPage.locator('.piano-producer-mode__pos');
-    await expect(play, 'play should be enabled for the loaded arrangement').toBeEnabled({ timeout: 10000 });
+
+    // Play becomes enabled only once the arrangement is playable — i.e. after
+    // ensureLayerNotes has re-fetched the section layers' notes (canPlay =
+    // songPlayable). Poll on that instead of a fixed sleep: waits exactly as
+    // long as the re-fetch needs, no more, no less.
+    await expect(play, 'play should become enabled once the loaded arrangement is playable').toBeEnabled({ timeout: 15000 });
     await expect(play).toHaveText(/Play/);
 
     await play.click();
