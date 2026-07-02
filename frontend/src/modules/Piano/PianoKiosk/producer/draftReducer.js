@@ -71,6 +71,7 @@ export const initialDraftState = null;
 
 export const ActionTypes = Object.freeze({
   PROMOTE: 'PROMOTE',
+  HYDRATE: 'HYDRATE',
   APPLY_TEMPLATE: 'APPLY_TEMPLATE',
   SLOT_FILL: 'SLOT_FILL',
   OPEN_SECTION: 'OPEN_SECTION',
@@ -284,11 +285,13 @@ export function initialDraft(workspaceState = {}) {
 // ── reducer ──────────────────────────────────────────────────────────────────
 
 export function draftReducer(state, action) {
-  // Only PROMOTE and APPLY_TEMPLATE may materialize a null draft (the
-  // bottom-up and top-down doors); every other verb needs one.
+  // Only PROMOTE, APPLY_TEMPLATE, and HYDRATE may materialize a null draft (the
+  // bottom-up door, the top-down door, and loading a saved song); every other
+  // verb needs one.
   if (state == null
     && action.type !== ActionTypes.PROMOTE
-    && action.type !== ActionTypes.APPLY_TEMPLATE) return state ?? null;
+    && action.type !== ActionTypes.APPLY_TEMPLATE
+    && action.type !== ActionTypes.HYDRATE) return state ?? null;
 
   switch (action.type) {
     case ActionTypes.PROMOTE: {
@@ -344,6 +347,45 @@ export function draftReducer(state, action) {
         // is immediately playable (first promote: a one-section song plays).
         arrangement: [...base.arrangement, { sectionId: section.id, repeats: 1 }],
       };
+    }
+
+    case ActionTypes.HYDRATE: {
+      // Load a whole saved song back into the draft tree (Task 8.2): the
+      // useProducerStore has already resolved persisted loop refs back into
+      // embedded-note take sources, so this is a straight structural replace.
+      // Round-trip invariant: a payload built from an existing draft's
+      // { sections, arrangement, meta, carriedLayers } must HYDRATE to a draft
+      // that plays identically (deep-cloned so the caller's object can't alias
+      // reducer state, numerics coerced defensively for hand-authored prefabs).
+      const p = action.payload;
+      if (!p || typeof p !== 'object'
+        || !Array.isArray(p.sections) || !Array.isArray(p.arrangement)) {
+        return state ?? null; // malformed → no-op (null stays null)
+      }
+      const sections = p.sections.map((s, i) => ({
+        id: typeof s?.id === 'string' && s.id ? s.id : `sec-${i + 1}`,
+        name: typeof s?.name === 'string' && s.name.trim() ? s.name.trim() : labelFor(i),
+        lengthBars: clampBars(Number.isFinite(s?.lengthBars) ? s.lengthBars : 1),
+        stack: Array.isArray(s?.stack) ? deepClone(s.stack) : [],
+      }));
+      const known = new Set(sections.map((s) => s.id));
+      // Drop arrangement entries pointing at sections the payload didn't carry
+      // (compileArrangement throws on a dangling ref — never store one).
+      const arrangement = p.arrangement
+        .filter((e) => known.has(e?.sectionId))
+        .map((e) => ({ sectionId: e.sectionId, repeats: coerceRepeats(e.repeats) }));
+      const carriedLayers = (p.carriedLayers && typeof p.carriedLayers === 'object')
+        ? deepClone(p.carriedLayers) : {};
+      const m = (p.meta && typeof p.meta === 'object') ? p.meta : {};
+      const meta = {
+        title: m.title != null ? m.title : null,
+        author: m.author != null ? m.author : null,
+        keyShift: Number.isFinite(m.keyShift) ? Math.trunc(m.keyShift) : 0,
+        bpm: Number.isFinite(m.bpm) ? clampBpm(m.bpm) : DEFAULT_BPM,
+      };
+      // GC any carried entries no surviving section references (a payload with
+      // a trimmed arrangement/section set shouldn't drag orphans along).
+      return { sections, carriedLayers: sweepCarried(sections, carriedLayers), arrangement, meta };
     }
 
     case ActionTypes.APPLY_TEMPLATE: {
@@ -564,6 +606,7 @@ export const promote = ({ workspaceState, notesById, sectionId, name, lengthBars
 export const applyTemplate = (template, workspaceState) => (
   { type: ActionTypes.APPLY_TEMPLATE, template, workspaceState }
 );
+export const hydrate = (payload) => ({ type: ActionTypes.HYDRATE, payload });
 export const slotFill = ({ sectionId, workspaceState, notesById } = {}) => (
   { type: ActionTypes.SLOT_FILL, sectionId, workspaceState, notesById }
 );
