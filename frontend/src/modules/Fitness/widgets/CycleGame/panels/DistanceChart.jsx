@@ -54,6 +54,43 @@ function mapPoint(t, d, win) {
 
 const ptsStr = (coords) => coords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
+// De-overlap a set of {id, rawTopPct} tags vertically (push-down pass, then a
+// pull-up pass if the stack overflows the bottom) — pure, no rider/window
+// knowledge. Shared by the tick-boundary layout AND the per-frame remap so
+// both use the IDENTICAL stacking rule.
+function deoverlapTops(items, minSepPct) {
+  const sorted = [...items].sort((a, b) => a.rawTopPct - b.rawTopPct);
+  let prev = -Infinity;
+  sorted.forEach((t) => { t.topPct = Math.max(t.rawTopPct, prev + minSepPct); prev = t.topPct; });
+  const maxTop = 88;
+  if (sorted.length && sorted[sorted.length - 1].topPct > maxTop) {
+    let next = Infinity;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const t = sorted[i];
+      t.topPct = Math.min(t.topPct, i === sorted.length - 1 ? maxTop : next - minSepPct);
+      next = t.topPct;
+    }
+  }
+  sorted.forEach((t) => { if (t.topPct < 11) t.topPct = 11; });
+  return sorted;
+}
+
+// Terminus tag layout under a given (t,d)-per-rider + window — pure. Called
+// BOTH for the tick-boundary render (tip = the rider's last plotted sample,
+// win = curWin) AND every animation frame (tip = the lerped prev→cur tip,
+// win = the eased winF) — the SAME formula, so a tag can never trace a
+// different path than the line tip sitting beneath it during an active zoom
+// (the bug this fixes: tags used to lerp between two STATIC percentages each
+// computed under a DIFFERENT tick's window, instead of re-deriving position
+// from the window that's actually active on screen right now).
+function layoutTags(tips, win, minSepPct) {
+  const raw = tips.map((r) => {
+    const { x, y } = mapPoint(r.t, r.d, win);
+    return { ...r, leftPct: (x / W) * 100, rawTopPct: (y / H) * 100 };
+  });
+  return deoverlapTops(raw, minSepPct);
+}
+
 /**
  * Finish-line distance chart — one climbing lane per rider toward the goal, built
  * to answer "how much is left" at a glance.
@@ -201,61 +238,53 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const leaderDistM = leaderId != null ? (riders[leaderId].cumulativeDistanceM || 0) : 0;
 
   // ── Terminus tags: avatar + gap-behind-leader (leader shows total) ──────────
+  // Position comes from layoutTags (shared with the per-frame remap below);
+  // display-only fields (avatar/name/color/gap text) are tick-scoped — they
+  // don't need per-frame smoothing, only the position does. Reuses each
+  // lane's tip datum directly (same rider, same "last plotted sample") so a
+  // tag can never disagree with its own line about where that sample is.
   const minSepPct = Math.min(38, (46 / Math.max(80, chartH)) * 100);
-  const tagLayout = (() => {
-    const raw = riderIds.map((id, idx) => {
-      const series = riders[id].distanceSeries || [];
-      const last = plottedLen(id) - 1;
-      if (last < 0) return null;
-      const distanceM = riders[id].cumulativeDistanceM || 0;
-      const isLeader = id === leaderId;
-      const ident = resolveParticipantIdentity(riders[id].userId || id, riders[id].displayName);
-      const avatarSrc = (riderLive[id] || {}).avatarSrc || riders[id].avatarSrc || ident.avatarSrc || FALLBACK_AVATAR;
-      const gapText = isLeader
-        ? formatDistance(distanceM)
-        : `−${formatDistance(Math.max(0, leaderDistM - distanceM))}`;
-      return {
-        id,
-        idx,
-        leftPct: (xFor(last) / W) * 100,
-        rawTopPct: (yFor(series[last]) / H) * 100,
-        color: LINE_COLORS[idx % LINE_COLORS.length],
-        isGhost: !!riders[id].isGhost,
-        avatarSrc,
-        distanceM,
-        displayName: riders[id].displayName,
-        gapText,
-        isLeader
-      };
-    }).filter(Boolean).sort((a, b) => a.rawTopPct - b.rawTopPct);
-
-    // forward pass — push down to keep min separation
-    let prev = -Infinity;
-    raw.forEach((t) => { t.topPct = Math.max(t.rawTopPct, prev + minSepPct); prev = t.topPct; });
-    // backward pass — if the stack overflowed the bottom, pull it up
-    const maxTop = 88;
-    if (raw.length && raw[raw.length - 1].topPct > maxTop) {
-      let next = Infinity;
-      for (let i = raw.length - 1; i >= 0; i--) {
-        const t = raw[i];
-        t.topPct = Math.min(t.topPct, i === raw.length - 1 ? maxTop : next - minSepPct);
-        next = t.topPct;
-      }
-    }
-    raw.forEach((t) => { if (t.topPct < 11) t.topPct = 11; });
-    return raw;
-  })();
+  const laneById = {};
+  lanes.forEach((l) => { laneById[l.id] = l; });
+  const tagTips = riderIds.map((id) => {
+    const l = laneById[id];
+    return l ? { id, t: l.curTipData.t, d: l.curTipData.d } : null;
+  }).filter(Boolean);
+  const tagPositions = layoutTags(tagTips, curWin, minSepPct);
+  const tagLayout = tagPositions.map((p) => {
+    const id = p.id;
+    const idx = riderIds.indexOf(id);
+    const distanceM = riders[id].cumulativeDistanceM || 0;
+    const isLeader = id === leaderId;
+    const ident = resolveParticipantIdentity(riders[id].userId || id, riders[id].displayName);
+    const avatarSrc = (riderLive[id] || {}).avatarSrc || riders[id].avatarSrc || ident.avatarSrc || FALLBACK_AVATAR;
+    const gapText = isLeader
+      ? formatDistance(distanceM)
+      : `−${formatDistance(Math.max(0, leaderDistM - distanceM))}`;
+    return {
+      id, idx, leftPct: p.leftPct, rawTopPct: p.rawTopPct, topPct: p.topPct,
+      color: LINE_COLORS[idx % LINE_COLORS.length],
+      isGhost: !!riders[id].isGhost,
+      avatarSrc, distanceM, displayName: riders[id].displayName, gapText, isLeader
+    };
+  });
 
   // Officiating-event markers (DNF / penalty), re-projected onto their lane point.
+  // t/d are the FIXED historical datum (a past event never moves); only the
+  // window is eased, so the per-frame writer re-derives position from these
+  // via mapPoint(t, d, winF) directly — no prev/cur lerp needed on the datum.
   const eventMarkers = events.map((e) => {
     const idx = riderIds.indexOf(e.riderId);
     if (idx < 0) return null;
+    const t = e.seriesIndex * stepS;
+    const d = e.distanceM;
     return {
       id: e.id,
       type: e.type,
       Glyph: EVENT_GLYPH[e.type] || null,
-      leftPct: (xFor(e.seriesIndex) / W) * 100,
-      topPct: (yFor(e.distanceM) / H) * 100,
+      t, d,
+      leftPct: (xForTime(t) / W) * 100,
+      topPct: (yFor(d) / H) * 100,
       color: LINE_COLORS[idx % LINE_COLORS.length]
     };
   }).filter(Boolean);
@@ -298,62 +327,45 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     logTargetRef.current = nextTarget;
   }
 
-  // Prev/last per-tick snapshots for the interpolation start point. Rotated when a
-  // new engine tick arrives (tickKey advances once per tick).
+  // Prev/last per-tick tip snapshots for the interpolation start point (LINES
+  // and TAGS share these — a tag's tip IS its lane's tip, see tagTips above).
+  // Rotated when a new engine tick arrives (tickKey advances once per tick).
   const tickKey = maxSeriesLen;
   const tickKeyRef = useRef(tickKey);
   const prevTipData = useRef({});
   const lastTipData = useRef({});
   const prevWinRef = useRef(curWin);
   const lastWinRef = useRef(curWin);
-  const prevTag = useRef({});
-  const lastTag = useRef({});
-  const prevConn = useRef({});
-  const lastConn = useRef({});
-  const prevMark = useRef({});
-  const lastMark = useRef({});
 
   const curTipData = {};
   lanes.forEach((l) => { curTipData[l.id] = l.curTipData; });
-  const curTag = {};
-  tagLayout.forEach((t) => { curTag[t.id] = { left: t.leftPct, top: t.topPct }; });
-  const curConn = {};
-  tagLayout.forEach((t) => {
-    if (Math.abs(t.topPct - t.rawTopPct) > 1.5) {
-      curConn[t.id] = { left: t.leftPct, top: Math.min(t.topPct, t.rawTopPct), height: Math.abs(t.topPct - t.rawTopPct) };
-    }
-  });
-  const curMark = {};
-  eventMarkers.forEach((m) => { curMark[m.id] = { left: m.leftPct, top: m.topPct }; });
 
   if (tickKeyRef.current !== tickKey) {
     prevTipData.current = lastTipData.current;
     prevWinRef.current = lastWinRef.current;
-    prevTag.current = lastTag.current;
-    prevConn.current = lastConn.current;
-    prevMark.current = lastMark.current;
     tickKeyRef.current = tickKey;
   }
   lastTipData.current = curTipData;
   lastWinRef.current = curWin;
-  lastTag.current = curTag;
-  lastConn.current = curConn;
-  lastMark.current = curMark;
 
   // Imperative motion payload (read fresh each frame from the ref → a mid-tick
-  // resize/rescale re-render is picked up without a stale closure).
+  // resize/rescale re-render is picked up without a stale closure). Tags and
+  // markers carry only IDENTITY + raw tip data here — their SCREEN POSITION is
+  // recomputed fresh every frame in the subscriber below (via layoutTags /
+  // mapPoint under the live eased window), not lerped between two stale
+  // per-tick percentages, so a tag/marker can never trace a different path
+  // than the line/data point it's attached to (2026-07-02 desync fix).
   motionRef.current = {
     prevWin: prevWinRef.current,
     curWin,
+    minSepPct,
     lanes: lanes.map((l) => ({
       id: l.id,
       samples: l.samples,
       prevTipData: prevTipData.current[l.id] || l.curTipData,
       curTipData: l.curTipData,
     })),
-    tags: tagLayout.map((t) => ({ id: t.id, prev: prevTag.current[t.id] || curTag[t.id], cur: curTag[t.id] })),
-    conns: Object.keys(curConn).map((id) => ({ id, prev: prevConn.current[id] || curConn[id], cur: curConn[id] })),
-    markers: eventMarkers.map((m) => ({ id: m.id, prev: prevMark.current[m.id] || curMark[m.id], cur: curMark[m.id] })),
+    markers: eventMarkers.map((mk) => ({ id: mk.id, t: mk.t, d: mk.d })),
   };
 
   // Subscribe the imperative writer once; tear the clock down on unmount.
@@ -373,17 +385,21 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         kGap: lerp(pw.kGap, cw.kGap, f),
         mix: logMixRef.current,
       };
+      const frameTips = [];
       m.lanes.forEach((l) => {
         const lineEl = lineEls.current[l.id];
         const areaEl = areaEls.current[l.id];
-        if (!lineEl && !areaEl) return;
         const base = l.samples;
         let str = '';
-        for (let i = 0; i < base.length - 1; i++) {
-          const p = mapPoint(base[i].t, base[i].d, winF);
-          str += `${p.x.toFixed(1)},${p.y.toFixed(1)} `;
+        if (lineEl || areaEl) {
+          for (let i = 0; i < base.length - 1; i++) {
+            const p = mapPoint(base[i].t, base[i].d, winF);
+            str += `${p.x.toFixed(1)},${p.y.toFixed(1)} `;
+          }
         }
         const td = { t: lerp(l.prevTipData.t, l.curTipData.t, f), d: lerp(l.prevTipData.d, l.curTipData.d, f) };
+        frameTips.push({ id: l.id, ...td });
+        if (!lineEl && !areaEl) return;
         const tp = mapPoint(td.t, td.d, winF);
         const tipStr = `${tp.x.toFixed(1)},${tp.y.toFixed(1)}`;
         const lineStr = str ? `${str}${tipStr}` : tipStr;
@@ -393,24 +409,36 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           areaEl.setAttribute('points', `${s0.x.toFixed(1)},${H} ${lineStr} ${tp.x.toFixed(1)},${H}`);
         }
       });
-      m.tags.forEach((t) => {
+
+      // Tags/connectors: SAME formula as the tick-boundary layout (layoutTags),
+      // fed the lerped tip + the live eased window — never a lerp between two
+      // stale snapshots. This is what keeps a tag glued to its own line tip
+      // through an active zoom instead of "catching up" after the fact.
+      const frameTags = layoutTags(frameTips, winF, m.minSepPct);
+      frameTags.forEach((t) => {
         const el = tagEls.current[t.id];
-        if (!el) return;
-        el.style.left = `${lerp(t.prev.left, t.cur.left, f)}%`;
-        el.style.top = `${lerp(t.prev.top, t.cur.top, f)}%`;
+        if (el) { el.style.left = `${t.leftPct}%`; el.style.top = `${t.topPct}%`; }
+        const connEl = connEls.current[t.id];
+        if (connEl) {
+          const displaced = Math.abs(t.topPct - t.rawTopPct) > 1.5;
+          if (displaced) {
+            connEl.style.display = '';
+            connEl.style.left = `${t.leftPct}%`;
+            connEl.style.top = `${Math.min(t.topPct, t.rawTopPct)}%`;
+            connEl.style.height = `${Math.abs(t.topPct - t.rawTopPct)}%`;
+          } else {
+            connEl.style.display = 'none';
+          }
+        }
       });
-      m.conns.forEach((c) => {
-        const el = connEls.current[c.id];
-        if (!el) return;
-        el.style.left = `${lerp(c.prev.left, c.cur.left, f)}%`;
-        el.style.top = `${lerp(c.prev.top, c.cur.top, f)}%`;
-        el.style.height = `${lerp(c.prev.height, c.cur.height, f)}%`;
-      });
+
+      // Markers pin to a FIXED historical (t,d) — only the window moves them.
       m.markers.forEach((mk) => {
         const el = markerEls.current[mk.id];
         if (!el) return;
-        el.style.left = `${lerp(mk.prev.left, mk.cur.left, f)}%`;
-        el.style.top = `${lerp(mk.prev.top, mk.cur.top, f)}%`;
+        const p = mapPoint(mk.t, mk.d, winF);
+        el.style.left = `${(p.x / W) * 100}%`;
+        el.style.top = `${(p.y / H) * 100}%`;
       });
     });
     return () => { unsub(); clock.stop(); };
