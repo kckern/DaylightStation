@@ -17,20 +17,14 @@
 import { readFileSync, mkdirSync, existsSync, writeFileSync, statSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Single source of truth for the preset lists, shared with the runtime
+// (gmSynth.js) so the downloader and the synth can never drift.
+import { GM_PROGRAMS, DRUM_NOTES } from '../src/modules/Piano/PianoKiosk/producer/presetManifest.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = join(__dirname, '..');
 const outDir = join(frontendRoot, 'public', 'webaudiofont');
 const force = process.argv.includes('--force');
-
-// Starter set (GM program numbers): acoustic grand, e-piano 1, nylon guitar,
-// steel guitar, acoustic bass, fingered bass, string ensemble, synth pad 1.
-const PROGRAMS = [0, 4, 24, 25, 32, 33, 48, 88];
-// GM percussion pitches (one webaudiofont file per drum piece): kick, snare,
-// closed hat, low tom, open hat, mid tom, crash, high tom, ride.
-// Keep in sync with DRUM_NOTES in
-// frontend/src/modules/Piano/PianoKiosk/producer/gmSynth.js.
-const DRUM_PITCHES = [36, 38, 42, 45, 46, 47, 49, 50, 51];
 
 // ── obtain the loader catalog from the npm dist (no exports → Function eval) ──
 const distPath = join(frontendRoot, 'node_modules', 'webaudiofont', 'npm', 'dist', 'WebAudioFontPlayer.js');
@@ -40,11 +34,11 @@ const WebAudioFontPlayer = new Function(`${source}\n;return WebAudioFontPlayer;`
 const loader = new WebAudioFontPlayer().loader;
 
 const targets = [
-  ...PROGRAMS.map((program) => {
+  ...GM_PROGRAMS.map((program) => {
     const info = loader.instrumentInfo(loader.findInstrument(program));
     return { label: `program ${program} (${info.title})`, url: info.url, variable: info.variable };
   }),
-  ...DRUM_PITCHES.map((pitch) => {
+  ...DRUM_NOTES.map((pitch) => {
     const info = loader.drumInfo(loader.findDrum(pitch));
     return { label: `drum ${pitch} (${info.title})`, url: info.url, variable: info.variable };
   }),

@@ -43,6 +43,7 @@
  * webaudiofont's queueWaveTable also calls resume() internally as a backstop.
  */
 import getLogger from '../../../../lib/logging/Logger.js';
+import { DRUM_NOTES } from './presetManifest.js';
 
 let _logger;
 function logger() {
@@ -55,10 +56,11 @@ export const DRUM_CHANNEL = 9;
 
 /**
  * Starter GM drum kit — the pitches loadDrums() fetches (webaudiofont ships a
- * separate preset file per drum piece): kick, snare, closed/open hat, crash,
- * ride, low/mid/high toms.
+ * separate preset file per drum piece). Defined in presetManifest.js — the
+ * single source of truth shared with the dev-time downloader script — and
+ * re-exported here for API consumers.
  */
-export const DRUM_NOTES = [36, 38, 42, 45, 46, 47, 49, 50, 51];
+export { DRUM_NOTES };
 
 /** Melodic notes are queued this long, then released via noteOff → cancel(). */
 const MAX_NOTE_SECONDS = 30;
@@ -91,12 +93,18 @@ async function defaultPlayerFactory() {
 }
 
 /** Wait until every zone of a preset has a decoded AudioBuffer. */
-function waitForZoneBuffers(preset, timeoutMs) {
+function waitForZoneBuffers(preset, timeoutMs, shouldAbort = () => false) {
   const ready = () => preset.zones.every((z) => !!z.buffer);
   if (ready()) return Promise.resolve();
+  if (shouldAbort()) return Promise.reject(new Error('gm-synth: disposed during preset decode'));
   return new Promise((resolve, reject) => {
     const t0 = Date.now();
     const id = setInterval(() => {
+      if (shouldAbort()) {
+        clearInterval(id);
+        reject(new Error('gm-synth: disposed during preset decode'));
+        return;
+      }
       if (ready()) { clearInterval(id); resolve(); return; }
       if (Date.now() - t0 > timeoutMs) {
         clearInterval(id);
@@ -188,7 +196,7 @@ export function createGmSynth({
       throw new Error(`gm-synth: ${variableName} missing or malformed in ${url}`);
     }
     player.adjustPreset(audioContext, preset);
-    await waitForZoneBuffers(preset, BUFFER_WAIT_MS);
+    await waitForZoneBuffers(preset, BUFFER_WAIT_MS, () => disposed);
     const ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 10) / 10;
     logger().info('gm-synth.load-success', { kind, ms, zones: preset.zones.length, ...meta });
     return preset;
@@ -207,6 +215,7 @@ export function createGmSynth({
       const pl = await ensurePlayer();
       const info = pl.loader.instrumentInfo(pl.loader.findInstrument(program));
       const preset = await fetchAndDecode('instrument', fileUrlFor(info.url), info.variable, { program });
+      if (disposed) return;
       presets.set(program, preset);
     })();
     loading.set(program, p);
@@ -230,6 +239,7 @@ export function createGmSynth({
       const results = await Promise.allSettled(DRUM_NOTES.map(async (pitch) => {
         const info = pl.loader.drumInfo(pl.loader.findDrum(pitch));
         const preset = await fetchAndDecode('drum', fileUrlFor(info.url), info.variable, { pitch });
+        if (disposed) return;
         drumPresets.set(pitch, preset);
       }));
       const failed = results.filter((r) => r.status === 'rejected');
@@ -288,10 +298,21 @@ export function createGmSynth({
     }
     const key = `${channel}:${note}`;
     // Retrigger: release any still-ringing voice on the same channel+note.
+    // Pitch guard: webaudiofont POOLS envelope objects — once a voice's queued
+    // duration expires, its envelope can be reused by a later queueWaveTable
+    // call (findEnvelope in the dist). A stale activeVoices entry may therefore
+    // point at an envelope that is now sounding a DIFFERENT pitch; cancelling
+    // it would kill the wrong note. queueWaveTable stamps `envelope.pitch`
+    // (and we re-stamp below), so only cancel when the pitch still matches.
     const prior = activeVoices.get(key);
-    if (prior) { try { prior.cancel(); } catch (_) { /* voice already dead */ } }
+    if (prior && prior.pitch === note) {
+      try { prior.cancel(); } catch (_) { /* voice already dead */ }
+    }
     const envelope = player.queueWaveTable(audioContext, state.gainNode, preset, 0, note, MAX_NOTE_SECONDS, volume);
-    if (envelope) activeVoices.set(key, envelope);
+    if (envelope) {
+      envelope.pitch = note; // defensive re-stamp (real queueWaveTable sets it too)
+      activeVoices.set(key, envelope);
+    }
   }
 
   /**
@@ -305,6 +326,9 @@ export function createGmSynth({
     const envelope = activeVoices.get(key);
     if (!envelope) return;
     activeVoices.delete(key);
+    // Pitch guard (see noteOn): if the pooled envelope was reused for another
+    // pitch after this voice expired naturally, don't cancel the new voice.
+    if (envelope.pitch !== note) return;
     try { envelope.cancel(); } catch (_) { /* voice already dead */ }
   }
 
@@ -335,6 +359,10 @@ export function createGmSynth({
     for (const [key, envelope] of activeVoices) {
       if (key.startsWith(prefix)) {
         activeVoices.delete(key);
+        // Pitch guard (see noteOn): only cancel envelopes still voicing the
+        // pitch they were stored under — a pooled envelope may have been
+        // reused for a different note since.
+        if (envelope.pitch !== Number(key.slice(prefix.length))) continue;
         try { envelope.cancel(); } catch (_) { /* voice already dead */ }
       }
     }
@@ -358,6 +386,8 @@ export function createGmSynth({
     loading.clear();
     drumPresets.clear();
     activeVoices.clear();
+    player = null;
+    playerPromise = null;
     logger().info('gm-synth.disposed', {});
   }
 
