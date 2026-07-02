@@ -1,0 +1,168 @@
+// CaptureCard — recording overlay card (Task 6.2, design §5/§7).
+// A prominent card OVER the stage band (not full-screen): the keyboard band
+// stays visible/playable below and the transport bar above. Dark stage,
+// Roboto Condensed, ≥48px touch targets — the kiosk vocabulary.
+
+.piano-capture-card__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(8, 8, 12, 0.72); // stage content dimmed behind the card
+}
+
+.piano-capture-card {
+  width: min(46rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1.2rem 1.2rem;
+  border-radius: 14px;
+  border: 1px solid var(--piano-danger, #e05a4f);
+  background: var(--piano-bg, #12121a);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  font-family: 'Roboto Condensed', sans-serif;
+  color: var(--piano-fg, #e8e8ee);
+
+  &__top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  &__title { margin: 0; font: 700 1.25rem 'Roboto Condensed', sans-serif; }
+  &__close {
+    min-width: 3rem; min-height: 3rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-fg, #cce);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  &__setup, &__live { display: flex; flex-direction: column; gap: 0.7rem; }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    .piano-chip { min-height: 3rem; }
+  }
+  &__label {
+    min-width: 4.6rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--piano-muted, #99a);
+  }
+  &__hint { font-size: 0.85rem; color: var(--piano-accent-text, #7c9); }
+
+  &__arm {
+    align-self: stretch;
+    min-height: 3.6rem;
+    border-radius: 12px;
+    border: 1px solid var(--piano-danger, #e05a4f);
+    background: var(--piano-surface, #2a1c1c);
+    color: var(--piano-danger, #f99);
+    font: 700 1.2rem 'Roboto Condensed', sans-serif;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+
+  // ── cycling ────────────────────────────────────────────────────────────────
+  &__dial-row { display: flex; align-items: baseline; gap: 1rem; }
+  &__dial {
+    font: 800 2.6rem 'Roboto Condensed', sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--piano-fg, #f2f2f8);
+    &.is-countin { color: var(--piano-danger, #f99); animation: piano-capture-pulse 1s ease-in-out infinite; }
+  }
+  &__passes { font-size: 1.05rem; color: var(--piano-muted, #aab); font-variant-numeric: tabular-nums; }
+
+  &__pass-buttons { display: flex; gap: 0.6rem; }
+  &__pass-btn {
+    flex: 1 1 0;
+    min-height: 3.4rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-border, #334);
+    background: var(--piano-surface, #1a1a22);
+    color: var(--piano-fg, #dde);
+    font: 700 1.05rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:disabled { opacity: 0.35; cursor: default; }
+    &--keep {
+      border-color: var(--piano-accent, #2ec46f);
+      background: var(--piano-surface, #1c2a24);
+      color: var(--piano-accent-text, #5fe39a);
+    }
+  }
+
+  &__confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.6rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface-2, #12211a);
+    .piano-chip { min-height: 3rem; }
+  }
+  &__confirm-btn {
+    margin-left: auto;
+    min-height: 3rem;
+    padding: 0.4rem 1.3rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-accent, #2ec46f);
+    color: var(--piano-accent-ink, #06210f);
+    font: 700 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+  }
+
+  &__done {
+    margin-left: auto;
+    min-height: 3rem;
+    padding: 0.4rem 1.4rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-fg, #dde);
+    font: 700 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+  }
+
+  // ── drum pads ──────────────────────────────────────────────────────────────
+  &__pads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(4.2rem, 1fr));
+    gap: 0.5rem;
+  }
+  &__pad {
+    min-height: 4rem; // ≥48px finger pads
+    border-radius: 10px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface-2, #1b1b27);
+    color: var(--piano-fg, #dde);
+    font: 700 0.9rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    touch-action: none; // pads are pure hit targets — never a scroll gesture
+    user-select: none;
+    &:active { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); }
+  }
+}
+
+@keyframes piano-capture-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.piano-capture-card__close:focus-visible,
+.piano-capture-card__arm:focus-visible,
+.piano-capture-card__pass-btn:focus-visible,
+.piano-capture-card__confirm-btn:focus-visible,
+.piano-capture-card__done:focus-visible,
+.piano-capture-card__pad:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
+}

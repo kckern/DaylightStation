@@ -196,8 +196,7 @@ describe('Producer shell (three bands)', () => {
     render(<Producer />);
     expect(await screen.findByRole('button', { name: /browse the library/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /start from a loop/i })).toBeEnabled();
-    const record = screen.getByRole('button', { name: /record my own/i });
-    expect(record).toBeDisabled();
+    expect(screen.getByRole('button', { name: /record my own/i })).toBeEnabled();
     const songs = screen.getByRole('button', { name: /songs & resume/i });
     expect(songs).toBeDisabled();
   });
@@ -378,13 +377,33 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
   });
 
-  it('has a Roman toggle chip and a record-arm stub in the shell', async () => {
+  it('has a Roman toggle chip and a live record-arm button in the shell', async () => {
     render(<Producer />);
     await screen.findByRole('button', { name: /browse the library/i });
     expect(screen.getByRole('button', { name: 'roman' })).toBeInTheDocument();
-    const rec = screen.getByLabelText('record');
-    expect(rec).toBeDisabled();
-    expect(rec).toHaveAttribute('title', 'Recording arrives soon');
+    expect(screen.getByLabelText('record')).toBeEnabled();
+  });
+
+  it('the record-arm button opens the capture card (and pulses); tapping again closes it', async () => {
+    render(<Producer />);
+    await screen.findByRole('button', { name: /browse the library/i });
+    fireEvent.click(screen.getByLabelText('record'));
+    expect(screen.getByRole('dialog', { name: 'capture' })).toBeInTheDocument();
+    expect(screen.getByLabelText('record')).toHaveClass('is-armed');
+    // Transport + keyboard bands stay live under the card (performance surface).
+    expect(screen.getByRole('button', { name: /play/i })).toBeInTheDocument();
+    expect(screen.getByTestId('keyboard')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('record'));
+    expect(screen.queryByRole('dialog', { name: 'capture' })).toBeNull();
+  });
+
+  it('the "Record my own" front door opens the capture card', async () => {
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: /record my own/i }));
+    expect(screen.getByRole('dialog', { name: 'capture' })).toBeInTheDocument();
+    // Zero layers → no "match jam" chip; metronome path setup offered.
+    expect(screen.queryByRole('button', { name: /match jam/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /arm/i })).toBeInTheDocument();
   });
 
   it('shows the now-playing pill in the overlay while the jam loops (tap closes)', async () => {
