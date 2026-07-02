@@ -1,7 +1,8 @@
 # Piano Producer Overhaul — Design
 
 **Date:** 2026-07-01
-**Status:** Validated design (brainstormed + approved section-by-section)
+**Status:** Implemented (feature/piano-producer-overhaul) — see the architecture
+reference `docs/reference/piano/producer.md`. This doc is the frozen design intent.
 **Requirements:** `2026-07-01-piano-producer-song-builder-requirements.md`
 **Scope:** Full rewrite of `frontend/src/modules/Piano/PianoKiosk/modes/Producer/`
 plus supporting engine (`shared/music/`), backend API, CLI enrichment, and
