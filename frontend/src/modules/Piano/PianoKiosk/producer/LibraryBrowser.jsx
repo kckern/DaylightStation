@@ -56,6 +56,12 @@
  *   excluded here (documented scoping).
  * @param {(kind:'loop'|'stack', item:object) => void} [props.onPickOurs] - add a
  *   kept loop or load a kept stack.
+ * @param {{stacks:Array}} [props.prefabs] - curated prefab light listings for
+ *   the 'Prefabs' facet (Task 9.1). Only STACKS surface here — prefab SONGS are
+ *   a SongPicker concern (sections/arrangements aren't layers), documented
+ *   scoping mirroring 'Ours'. Read-only: no Delete affordance.
+ * @param {(item:object) => void} [props.onPickPrefab] - load a prefab stack
+ *   (same load path + non-empty-workspace confirm as an 'Ours' stack).
  */
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
@@ -282,6 +288,8 @@ export function LibraryBrowser({
   onAudioGesture,
   ours = { loops: [], crate: [] },
   onPickOurs,
+  prefabs = { stacks: [] },
+  onPickPrefab,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
   const [store, setStore] = useState('curated');
@@ -415,8 +423,15 @@ export function LibraryBrowser({
     ? (pivot.title || (pivot.roman?.length ? pivot.roman.join(' ') : pivot.type))
     : null;
 
-  // Prefabs remain a stub (Task 9.1); 'Ours' now renders real kept material.
-  const storeStub = store === 'prefabs' ? 'Prefabs are coming soon' : null;
+  // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
+  // sections/arrangements aren't addable layers, documented scoping). Filtered
+  // by search text; always present (curated content ships with the app).
+  const prefabCards = useMemo(() => {
+    if (store !== 'prefabs') return [];
+    const q = text.trim().toLowerCase();
+    const match = (label) => !q || String(label || '').toLowerCase().includes(q);
+    return (prefabs.stacks || []).filter((it) => match(it.title || it.id));
+  }, [store, prefabs, text]);
 
   // 'Ours' cards: kept LOOPS + kept STACKS (crate kind==='stack'). Sections are
   // a SongView/Crate concern (they fill song slots, not the mix), so they're
@@ -553,10 +568,33 @@ export function LibraryBrowser({
             ))}
           </ul>
         )
-      ) : storeStub ? (
-        <div className="piano-producer-mode__library-empty">
-          <p>{storeStub}</p>
-        </div>
+      ) : store === 'prefabs' ? (
+        prefabCards.length === 0 ? (
+          <div className="piano-producer-mode__library-empty">
+            <p>No prefabs match that search.</p>
+          </div>
+        ) : (
+          <ul className="piano-producer-mode__list piano-producer-mode__list--ours">
+            {prefabCards.map((item) => (
+              <li key={`prefab:${item.id}`}>
+                <button
+                  type="button"
+                  className="piano-loop"
+                  aria-label={item.title || `prefab ${item.id}`}
+                  onClick={() => onPickPrefab && onPickPrefab(item)}
+                >
+                  <span className="piano-loop__head">
+                    <MaterialGlyph seed={`prefab:stack:${item.id}`} size={44} />
+                  </span>
+                  <span className="piano-loop__name">{item.title || 'Prefab stack'}</span>
+                  <span className="piano-loop__why">
+                    {[`${item.layerCount ?? 0} layers`, 'curated'].join(' · ')}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
       ) : visible.length === 0 ? (
         <div className="piano-producer-mode__library-empty">
           <p>No loops match those filters.</p>

@@ -74,6 +74,8 @@ import {
   resolveSectionStack, toSchedulerInputs, sectionProgramMap, draftReferencesLayer,
 } from '../../producer/draftReducer.js';
 import { useProducerStore } from '../../producer/useProducerStore.js';
+import { usePrefabs } from '../../producer/usePrefabs.js';
+import { resolvePrefabStack, resolvePrefabSong } from '../../producer/prefabHydrate.js';
 import { useResumeSnapshot } from '../../producer/useResumeSnapshot.js';
 import { SongView } from '../../producer/SongView.jsx';
 import { SongPicker } from '../../producer/SongPicker.jsx';
@@ -131,10 +133,13 @@ export function Producer() {
   const [loadError, setLoadError] = useState(null);
   // ── persistence (Task 8.2): household pool store + resume net ───────────────
   const store = useProducerStore();
+  // ── prefabs (Task 9.1): curated read-only stacks/songs from the media tree ──
+  const prefabs = usePrefabs();
   const [songPicker, setSongPicker] = useState(false); // saved-song front door
-  // A kept stack awaiting a "replace current jam?" confirm — loading one
-  // REPLACES the workspace, and an idle unsaved jam only snapshots while
-  // playing, so a silent replace could lose work. Null unless armed.
+  // A stack awaiting a "replace current jam?" confirm — loading one REPLACES
+  // the workspace, and an idle unsaved jam only snapshots while playing, so a
+  // silent replace could lose work. Holds { item, source:'user'|'prefab' } so
+  // the confirm resolves from the right place. Null unless armed.
   const [pendingReplaceStack, setPendingReplaceStack] = useState(null);
   const [saveToast, setSaveToast] = useState(null); // transient save/keep confirm
   const toastTimerRef = useRef(null);
@@ -555,11 +560,21 @@ export function Producer() {
     }
   }, [store, resume, showToast, logger]);
 
-  /** Load a saved song → resolve loop refs → HYDRATE the draft → re-fetch the
-   * library layers' notes → land on the Song tab. */
-  const handleLoadSong = useCallback(async (id) => {
+  /** Load a song → resolve refs → HYDRATE the draft → re-fetch the library
+   * layers' notes → land on the Song tab. `source` selects where the record
+   * comes from: 'user' = the household API (store.loadSong, resolves persisted
+   * loop refs), 'prefab' = a curated media-tree payload (resolvePrefabSong
+   * against the live loop index). Both yield the SAME draft shape → identical
+   * HYDRATE path (Task 9.1). */
+  const loadSongBySource = useCallback(async (id, source) => {
     try {
-      const { draft: loaded } = await store.loadSong(id);
+      let loaded;
+      if (source === 'prefab') {
+        const payload = await prefabs.getFull('songs', id);
+        ({ draft: loaded } = resolvePrefabSong(payload, lib.loops || []));
+      } else {
+        ({ draft: loaded } = await store.loadSong(id));
+      }
       draftDispatch(hydrate(loaded));
       // Library layers (across sections, carried refs expanded) re-fetch notes;
       // take layers carry theirs embedded from the resolved loop records.
@@ -570,12 +585,15 @@ export function Producer() {
       setSongPicker(false);
       setTab('song');
       resume.clear();
-      logger.info('piano.producer.load-song', { id, sections: loaded.sections?.length ?? 0 });
+      logger.info('piano.producer.load-song', { id, source, sections: loaded.sections?.length ?? 0 });
     } catch (err) {
-      logger.error('piano.producer.load-song-failed', { id, error: err?.message });
+      logger.error('piano.producer.load-song-failed', { id, source, error: err?.message });
       showToast('Load failed — try again');
     }
-  }, [store, ensureLayerNotes, resume, showToast, logger]);
+  }, [store, prefabs, lib, ensureLayerNotes, resume, showToast, logger]);
+
+  const handleLoadSong = useCallback((id) => loadSongBySource(id, 'user'), [loadSongBySource]);
+  const handleLoadExample = useCallback((id) => loadSongBySource(id, 'prefab'), [loadSongBySource]);
 
   /** Apply the resume snapshot: restore the workspace stack + draft + notes.
    * A user act — the chip is only a prompt, never auto-applied. */
@@ -635,27 +653,48 @@ export function Producer() {
     }
   }, [store, showToast, logger]);
 
-  /** Fetch + LOAD_STACK a kept stack (loop refs resolved to takes; library
-   * layers re-fetch). REPLACES the workspace — callers gate with the confirm. */
-  const doLoadOursStack = useCallback(async (item) => {
+  /** Fetch + LOAD_STACK a stack, from EITHER source. 'user' = a household Crate
+   * stack (loop refs resolved to takes; library layers re-fetch). 'prefab' = a
+   * curated media-tree stack (resolvePrefabStack against the live loop index —
+   * prefabs hold only library refs, so no API loop fetch). Both yield the same
+   * workspace-ready layers → one LOAD_STACK path. REPLACES the workspace —
+   * callers gate with the confirm. */
+  const doLoadStack = useCallback(async (item, source) => {
     ensureAudio();
     setOverlay(null);
     setPendingReplaceStack(null);
     setLoadError(null);
     try {
-      const { layers } = await store.loadCrateStack(item.id);
+      let layers;
+      if (source === 'prefab') {
+        const payload = await prefabs.getFull('stacks', item.id);
+        ({ layers } = resolvePrefabStack(payload, lib.loops || []));
+      } else {
+        ({ layers } = await store.loadCrateStack(item.id));
+      }
       dispatch(loadStack({ layers, bpm: stateRef.current.bpm, keyShift: stateRef.current.keyShift }));
       ensureLayerNotes(layers);
-      logger.info('piano.producer.ours-pick', { kind: 'stack', id: item.id, layers: layers.length });
+      logger.info('piano.producer.stack-pick', { source, id: item.id, layers: layers.length });
     } catch (err) {
-      logger.error('piano.producer.ours-pick-failed', { kind: 'stack', id: item.id, error: err?.message });
-      setLoadError("Couldn't load that from the Crate.");
+      logger.error('piano.producer.stack-pick-failed', { source, id: item.id, error: err?.message });
+      setLoadError(source === 'prefab' ? "Couldn't load that prefab." : "Couldn't load that from the Crate.");
     }
-  }, [store, ensureAudio, ensureLayerNotes, logger]);
+  }, [store, prefabs, lib, ensureAudio, ensureLayerNotes, logger]);
+
+  /** Arm the destructive stack load: an existing jam gets a "Replace?" confirm
+   * (holding the source); an empty workspace loads immediately. */
+  const armStackLoad = useCallback((item, source) => {
+    if (stateRef.current.layers.length > 0) {
+      setOverlay(null);
+      setPendingReplaceStack({ item, source });
+      logger.info('piano.producer.stack-replace-arm', { source, id: item.id });
+      return;
+    }
+    doLoadStack(item, source);
+  }, [doLoadStack, logger]);
 
   /** 'Ours' library facet pick: add a kept loop (embedded notes, non-destructive)
-   * or load a kept stack. A stack REPLACES the jam, so a non-empty workspace
-   * arms a "Replace current jam?" confirm first; an empty one loads immediately. */
+   * or load a kept stack (arms the replace confirm when there's a jam to lose). */
   const handlePickOurs = useCallback(async (kind, item) => {
     if (kind === 'loop') {
       ensureAudio();
@@ -678,15 +717,13 @@ export function Producer() {
       }
       return;
     }
-    // stack: guard the destructive replace when there's a jam to lose.
-    if (stateRef.current.layers.length > 0) {
-      setOverlay(null);
-      setPendingReplaceStack(item);
-      logger.info('piano.producer.ours-replace-arm', { id: item.id });
-      return;
-    }
-    doLoadOursStack(item);
-  }, [store, ensureAudio, doLoadOursStack, logger]);
+    armStackLoad(item, 'user');
+  }, [store, ensureAudio, armStackLoad, logger]);
+
+  /** 'Prefabs' library facet pick: load a curated stack (same confirm gate). */
+  const handlePickPrefab = useCallback((item) => {
+    armStackLoad(item, 'prefab');
+  }, [armStackLoad]);
 
   // ── capture session (Task 6.2) ──────────────────────────────────────────────
   const openCapture = useCallback((via) => {
@@ -935,12 +972,12 @@ export function Producer() {
             {tab === 'mix' && pendingReplaceStack && (
               <div className="piano-producer-mode__replace-confirm" role="alertdialog" aria-label="replace jam">
                 <span className="piano-producer-mode__replace-label">
-                  Replace your current jam with “{pendingReplaceStack.title || 'kept stack'}”?
+                  Replace your current jam with “{pendingReplaceStack.item.title || (pendingReplaceStack.source === 'prefab' ? 'prefab stack' : 'kept stack')}”?
                 </span>
                 <button
                   type="button"
                   className="piano-producer-mode__replace-go"
-                  onClick={() => doLoadOursStack(pendingReplaceStack)}
+                  onClick={() => doLoadStack(pendingReplaceStack.item, pendingReplaceStack.source)}
                 >Replace</button>
                 <button
                   type="button"
@@ -1098,6 +1135,8 @@ export function Producer() {
           onAudioGesture={ensureAudio}
           ours={{ loops: store.loops, crate: store.crate }}
           onPickOurs={handlePickOurs}
+          prefabs={{ stacks: prefabs.stacks }}
+          onPickPrefab={handlePickPrefab}
         />
       )}
 
@@ -1111,6 +1150,8 @@ export function Producer() {
           hasResume={resume.hasResume}
           onResume={handleApplyResume}
           onDismissResume={resume.dismiss}
+          examples={prefabs.songs}
+          onLoadExample={handleLoadExample}
         />
       )}
     </section>

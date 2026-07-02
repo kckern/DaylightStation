@@ -8,6 +8,11 @@
  * glyph seeds from its meta signature when present, else its id — deterministic,
  * no network.
  *
+ * PREFAB SONGS surface HERE, not in the LibraryBrowser (Task 9.1 scoping): a
+ * song is sections + an arrangement, not an addable layer, so it belongs with
+ * saved songs. They render as a read-only "Examples" group (no Delete) and load
+ * through the SAME loadSong→HYDRATE path via `onLoadExample`.
+ *
  * @param {object} props
  * @param {Array} props.songs - light song listings (id, title?, author, created, sectionCount, meta?)
  * @param {boolean} [props.loading]
@@ -17,6 +22,8 @@
  * @param {boolean} [props.hasResume] - a resume snapshot is available
  * @param {() => void} [props.onResume] - apply the resume snapshot
  * @param {() => void} [props.onDismissResume] - clear the resume snapshot
+ * @param {Array} [props.examples] - curated prefab song listings (id, title?, author, sectionCount)
+ * @param {(id:string) => void} [props.onLoadExample] - load + hydrate a prefab song
  */
 import { useMemo, useRef, useState, useEffect } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
@@ -89,9 +96,11 @@ export function SongPicker({
   hasResume = false,
   onResume,
   onDismissResume,
+  examples = [],
+  onLoadExample,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-song-picker' }), []);
-  useEffect(() => { logger.info('song-picker.open', { songs: songs.length, hasResume }); }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { logger.info('song-picker.open', { songs: songs.length, examples: examples.length, hasResume }); }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="piano-producer-mode__overlay piano-song-picker" role="dialog" aria-label="saved songs">
@@ -125,6 +134,19 @@ export function SongPicker({
             <SongRow key={song.id} song={song} onLoad={onLoad} onRemove={onRemove} />
           ))}
         </ul>
+      )}
+
+      {examples.length > 0 && (
+        <div className="piano-song-picker__examples">
+          <span className="piano-song-picker__group-heading">Examples</span>
+          <ul className="piano-song-picker__list">
+            {examples.map((song) => (
+              // Read-only: no onRemove → no Delete affordance (the only catalog
+              // difference from saved songs, design §4).
+              <SongRow key={`ex:${song.id}`} song={song} onLoad={onLoadExample || onLoad} />
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

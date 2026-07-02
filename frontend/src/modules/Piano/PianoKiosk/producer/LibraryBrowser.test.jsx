@@ -250,10 +250,40 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(onPickOurs).toHaveBeenCalledWith('loop', expect.objectContaining({ id: 'l1' }));
   });
 
-  it("'Prefabs' facet is a stub marked coming soon", async () => {
-    renderBrowser();
+  it("'Prefabs' facet renders curated stacks (never an empty state) and picks them", async () => {
+    const onPickPrefab = vi.fn();
+    renderBrowser({
+      prefabs: {
+        stacks: [
+          { id: 'pop-1-5-6-4', title: 'Pop I–V–vi–IV', layerCount: 2 },
+          { id: 'lofi-groove-bed', title: 'Lo-fi groove bed', layerCount: 2 },
+        ],
+      },
+      onPickPrefab,
+    });
     fireEvent.click(await screen.findByRole('button', { name: 'Prefabs' }));
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    // curated content ALWAYS ships → cards, never the "coming soon" stub
+    expect(screen.queryByText(/coming soon/i)).toBeNull();
+    expect(screen.getByText('Pop I–V–vi–IV')).toBeInTheDocument();
+    expect(screen.getByText('Lo-fi groove bed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Pop I–V–vi–IV' }));
+    expect(onPickPrefab).toHaveBeenCalledWith(expect.objectContaining({ id: 'pop-1-5-6-4' }));
+  });
+
+  it("'Prefabs' facet filters by search text", async () => {
+    renderBrowser({
+      prefabs: {
+        stacks: [
+          { id: 'pop-1-5-6-4', title: 'Pop I–V–vi–IV', layerCount: 2 },
+          { id: 'lofi-groove-bed', title: 'Lo-fi groove bed', layerCount: 2 },
+        ],
+      },
+      onPickPrefab: vi.fn(),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Prefabs' }));
+    fireEvent.change(screen.getByPlaceholderText(/Search loops/i), { target: { value: 'lo-fi' } });
+    expect(screen.queryByText('Pop I–V–vi–IV')).toBeNull();
+    expect(screen.getByText('Lo-fi groove bed')).toBeInTheDocument();
   });
 
   it('caps the grid at 120 cards with a "refine to see more" footer', async () => {
