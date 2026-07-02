@@ -11,6 +11,10 @@
 import { mod12 } from './transpose.mjs';
 import { loopLengthTicks } from './loopScheduler.mjs';
 
+/** Sanity cap on timeline length: a loop longer than this many slots (128 bars
+ *  at the default resolution) is treated as corrupt input, not music. */
+export const MAX_SLOTS = 512;
+
 /**
  * Detect the loop's root pitch class (0..11, absolute).
  *
@@ -33,6 +37,9 @@ function detectRoot(notes, slotTicks) {
   for (const n of notes) {
     const pc = mod12(n.midi);
     const dur = n.durationTicks || 0;
+    // NOTE: the strong-beat bonus assumes quantized (tick-exact) starts; on a
+    // humanized recording nothing lands exactly on a boundary, so it no-ops
+    // and scoring degrades gracefully to pure duration weighting.
     const onBeat = n.ticks % slotTicks === 0;
     score[pc] += onBeat ? dur * 1.5 : dur;
   }
@@ -91,6 +98,11 @@ function gradeSpecificity(slots) {
  * absolute pitch class. See `detectRoot` for the (deterministic) heuristic.
  *
  * Degenerate input (no notes) returns `{ slots: [], root: 0, specificity: 'root' }`.
+ * Malformed input is contained, not propagated (this runs in batch over
+ * thousands of real-world MIDI files): negative note ticks clamp to slot 0;
+ * an invalid `ppq` (non-finite or ≤ 0) or a computed slot count above
+ * MAX_SLOTS (corrupt durations) throws a RangeError — batch callers should
+ * catch per-file and flag.
  *
  * @param {Array<{ticks:number,durationTicks:number,midi:number}>} notes
  * @param {number} ppq ticks per quarter note
@@ -99,6 +111,9 @@ function gradeSpecificity(slots) {
  */
 export function harmonicTimeline(notes, ppq, opts = {}) {
   const { slotsPerBar = 4, timeSig = [4, 4] } = opts;
+  if (!Number.isFinite(ppq) || ppq <= 0) {
+    throw new RangeError(`harmonicTimeline: invalid ppq ${ppq}`);
+  }
   if (!Array.isArray(notes) || notes.length === 0) {
     return { slots: [], root: 0, specificity: 'root' };
   }
@@ -108,10 +123,13 @@ export function harmonicTimeline(notes, ppq, opts = {}) {
   const slotTicks = barTicks / slotsPerBar;
   const totalTicks = loopLengthTicks(notes, ppq, { beats, beatType });
   const slotCount = Math.round(totalTicks / slotTicks);
+  if (!Number.isFinite(slotCount) || slotCount > MAX_SLOTS) {
+    throw new RangeError(`harmonicTimeline: slot count ${slotCount} exceeds MAX_SLOTS (${MAX_SLOTS}) — corrupt note durations?`);
+  }
 
   const occupancy = Array.from({ length: slotCount }, () => new Set());
   for (const n of notes) {
-    const startSlot = Math.floor(n.ticks / slotTicks);
+    const startSlot = Math.max(0, Math.floor(n.ticks / slotTicks)); // clamp negative ticks into slot 0
     const end = n.ticks + (n.durationTicks || 0);
     // ceil() makes a boundary-exact end exclusive; max() keeps zero-duration
     // (and sub-slot) notes registering in their start slot.
