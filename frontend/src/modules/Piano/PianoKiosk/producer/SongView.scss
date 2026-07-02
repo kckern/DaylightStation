@@ -141,10 +141,12 @@
     color: var(--piano-fg, #eef);
     font: 600 0.95rem 'Roboto Condensed', sans-serif;
   }
-  &__delete.is-armed {
-    border-color: var(--piano-danger, #e05a4f) !important;
-    background: var(--piano-surface, #241618) !important;
-    color: var(--piano-danger, #f7a29a) !important;
+  // Armed delete goes hot. Nested under the sheet so this outranks the
+  // generic `&__sheet button` styling by specificity — no !important needed.
+  &__sheet &__delete.is-armed {
+    border-color: var(--piano-danger, #e05a4f);
+    background: var(--piano-surface, #241618);
+    color: var(--piano-danger, #f7a29a);
   }
 
   &__footer {

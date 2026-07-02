@@ -661,6 +661,65 @@ describe('Song builder wiring (Task 7.2)', () => {
     expect(transportArgs.last.arrangement).not.toBeNull();
   });
 
+  it('capture over a PLAYING song hands channel config back to the workspace writer (and back on close)', async () => {
+    render(<Producer />);
+    await jamAndPromote(); // section sec-1: program 0 on channel 0
+    // Drift the WORKSPACE voice so workspace vs section programs differ.
+    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'voice' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'E-Piano' }));
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
+    // Play the song; block 0 puts the SECTION's program (0) in charge.
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    fireEvent.click(screen.getByRole('button', { name: /play/i }));
+    setPlaying(true);
+    act(() => { transportArgs.last.onBlock(0, { sectionId: 'sec-1' }); });
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 }));
+    // Open the capture card mid-play: the transport flips to stack content,
+    // and the WORKSPACE writer must re-push the jam's programs in lockstep.
+    routerMock.configureLayer.mockClear();
+    fireEvent.click(screen.getByLabelText('record'));
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
+    // Close: the song writer takes the channel back (section program 0).
+    routerMock.configureLayer.mockClear();
+    fireEvent.click(screen.getByLabelText('record'));
+    await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 0, gain: 1 }));
+  });
+
+  it('a section layer removed from the workspace MID-FETCH still lands its notes (draft-aware landing guard)', async () => {
+    // Gate the Dm loop's MIDI fetch so the test controls when notes land.
+    let releaseDm;
+    const dmGate = new Promise((res) => { releaseDm = res; });
+    const baseFetch = global.fetch;
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('dm-c-f-gm')) {
+        return dmGate.then(() => ({ arrayBuffer: () => Promise.resolve(midiBuffer().buffer) }));
+      }
+      return baseFetch(url);
+    });
+    render(<Producer />);
+    await addDmLayer(); // optimistic strip; notes still gated
+    expect(transportArgs.last.layers).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
+    await screen.findByRole('button', { name: 'A slot 1' });
+    // Open the section — ensureLayerNotes starts a (gated) fetch…
+    fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    // …then remove the layer from the WORKSPACE before the fetch resolves.
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    fireEvent.click(screen.getByLabelText('remove layer'));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
+    // The landing must still be accepted: the DRAFT references the layer.
+    await act(async () => { releaseDm(); });
+    fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
+    await waitFor(() => {
+      const arr = transportArgs.last.arrangement;
+      expect(arr).not.toBeNull();
+      expect(arr.sections[0].stack).toHaveLength(1);
+      expect(arr.sections[0].stack[0].notes.length).toBeGreaterThan(0);
+    });
+  });
+
   it('removing a PROMOTED layer from the workspace keeps its notes for the song (no silent sections)', async () => {
     render(<Producer />);
     await jamAndPromote();

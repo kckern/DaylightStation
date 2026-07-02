@@ -39,6 +39,7 @@
  * through shell callbacks.
  */
 import { useEffect, useRef, useState } from 'react';
+import getLogger from '../../../../lib/logging/Logger.js';
 import { MaterialGlyph, seedFor } from './MaterialGlyph.jsx';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import {
@@ -46,6 +47,12 @@ import {
   deleteSection, cloneSection, addEntry, sectionGlyphSeeds,
 } from './draftReducer.js';
 import './SongView.scss';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'piano-song-view' });
+  return _logger;
+}
 
 /** Long-press threshold for 'bar'-mode scene launches. */
 const HOLD_MS = 500;
@@ -216,6 +223,7 @@ export function SongView({
 
   const handleClone = (section, entryIdx) => {
     const cloneId = nextSectionIdOf(sections);
+    logger().info('piano.producer.section-clone', { sectionId: section.id, cloneId, at: entryIdx + 1 });
     dispatch(cloneSection(section.id));
     dispatch(addEntry(cloneId, entryIdx + 1));
     setOpenIdx(null);
@@ -230,6 +238,9 @@ export function SongView({
     }
     clearTimeout(disarmTimerRef.current);
     const lastRef = !arrangement.some((e, i) => i !== entryIdx && e.sectionId === section.id);
+    logger().info('piano.producer.slot-delete', {
+      sectionId: section.id, entryIdx, sectionDeleted: lastRef,
+    });
     dispatch(removeEntry(entryIdx));
     // Never orphan invisible material: when this was the section's only slot,
     // the section goes with it (its carried refs are swept by the reducer).
@@ -238,11 +249,27 @@ export function SongView({
   };
 
   const handleMove = (entryIdx, delta) => {
+    logger().info('piano.producer.entry-move', { from: entryIdx, to: entryIdx + delta });
     dispatch(moveEntry(entryIdx, entryIdx + delta));
     setOpenIdx(entryIdx + delta); // the sheet follows its slot
   };
 
-  const commitRename = (section, value) => dispatch(renameSection(section.id, value));
+  const handleRepeats = (entryIdx, entry, delta) => {
+    const repeats = coerceRepeats(entry.repeats) + delta;
+    logger().info('piano.producer.section-repeats', { index: entryIdx, repeats });
+    dispatch(setRepeats(entryIdx, repeats));
+  };
+
+  const handleBars = (section, delta) => {
+    const lengthBars = section.lengthBars + delta;
+    logger().info('piano.producer.section-bars', { sectionId: section.id, lengthBars });
+    dispatch(setSectionLength(section.id, lengthBars));
+  };
+
+  const commitRename = (section, value) => {
+    logger().info('piano.producer.section-rename', { sectionId: section.id, name: value });
+    dispatch(renameSection(section.id, value));
+  };
 
   const openEntry = openIdx != null ? arrangement[openIdx] : null;
   const openSection = openEntry ? sectionsById.get(openEntry.sectionId) : null;
@@ -351,13 +378,13 @@ export function SongView({
               type="button"
               aria-label="repeats down"
               disabled={coerceRepeats(openEntry.repeats) <= 1}
-              onClick={() => dispatch(setRepeats(openIdx, coerceRepeats(openEntry.repeats) - 1))}
+              onClick={() => handleRepeats(openIdx, openEntry, -1)}
             >−</button>
             <span>×{coerceRepeats(openEntry.repeats)}</span>
             <button
               type="button"
               aria-label="repeats up"
-              onClick={() => dispatch(setRepeats(openIdx, coerceRepeats(openEntry.repeats) + 1))}
+              onClick={() => handleRepeats(openIdx, openEntry, 1)}
             >+</button>
           </span>
           <span className="piano-song-view__stepper">
@@ -365,13 +392,13 @@ export function SongView({
               type="button"
               aria-label="bars down"
               disabled={openSection.lengthBars <= 1}
-              onClick={() => dispatch(setSectionLength(openSection.id, openSection.lengthBars - 1))}
+              onClick={() => handleBars(openSection, -1)}
             >−</button>
             <span>{openSection.lengthBars} bars</span>
             <button
               type="button"
               aria-label="bars up"
-              onClick={() => dispatch(setSectionLength(openSection.id, openSection.lengthBars + 1))}
+              onClick={() => handleBars(openSection, 1)}
             >+</button>
           </span>
           <button type="button" onClick={() => handleClone(openSection, openIdx)}>Clone</button>
