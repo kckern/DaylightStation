@@ -123,9 +123,10 @@ export function stackable(timelineA, timelineB) // → { ok, worstSlot, score }
 ```
 - `slotConsonant`: union must be a subset of a nameable chord-quality template on the
   shared root. Template table (root-relative pc sets): maj `{0,4,7}`, min `{0,3,7}`,
-  maj7 `{0,4,7,11}`, dom7 `{0,4,7,10}`, min7 `{0,3,7,10}`, sus2 `{0,2,7}`, sus4
-  `{0,5,7}`, add9 variants `{0,2,4,7}`/`{0,2,3,7}`, 9ths `{0,2,4,7,10|11}`, dim
-  `{0,3,6}`, dim7 `{0,3,6,9}`, aug `{0,4,8}`, power `{0,7}`, root `{0}`.
+  maj7 `{0,4,7,11}`, dom7 `{0,4,7,10}`, min7 `{0,3,7,10}`, m7b5 `{0,3,6,10}`, sus2
+  `{0,2,7}`, sus4 `{0,5,7}`, add9 variants `{0,2,4,7}`/`{0,2,3,7}`, 9ths maj9/dom9
+  `{0,2,4,7,11|10}` + min9 `{0,2,3,7,10}`, dim `{0,3,6}`, dim7 `{0,3,6,9}`, aug
+  `{0,4,8}`, power `{0,7}`, root `{0}`.
 - `stackable`: phase-align timelines (tile shorter to LCM of lengths — same whole-bar
   logic as `loopLengthTicks`), per-slot union, **worst slot decides** (`ok = every slot
   consonant`), score = fraction of consonant slots (for ranking near-misses later).

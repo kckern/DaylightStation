@@ -161,6 +161,14 @@ describe('stackable', () => {
     assert.deepEqual(r, { ok: false, worstSlot: 1, score: 0.5 });
   });
 
+  it('throws TypeError on a missing/invalid timeline (hard gate must be loud)', () => {
+    const valid = tl([[0, 4, 7]]);
+    for (const bad of [undefined, null, {}, { slots: 'nope' }, { slots: 42 }]) {
+      assert.throws(() => stackable(bad, valid), { name: 'TypeError', message: /timelineA/ });
+      assert.throws(() => stackable(valid, bad), { name: 'TypeError', message: /timelineB/ });
+    }
+  });
+
   it('is symmetric', () => {
     const a = tl([[0, 4, 7], [2, 7, 11], [0, 4, 9], [0, 5, 9]]);
     const b = tl([[2, 5, 9], [2, 7, 11], [0, 4, 7]]);
