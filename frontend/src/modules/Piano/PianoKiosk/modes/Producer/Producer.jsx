@@ -487,6 +487,14 @@ export function Producer() {
           isPlaying={transport.isPlaying}
           positionRef={transport.positionRef}
           pillMaterials={pillMaterials}
+          // Press-and-hold audition (Task 5.2): the peek rides the SAME
+          // router on reserved channels while the jam keeps looping, and
+          // conforms to the live key/tempo. ensureAudio unlocks the gmSynth
+          // in the card's pointer-down gesture context.
+          router={router}
+          bpm={state.bpm}
+          keyShift={state.keyShift}
+          onAudioGesture={ensureAudio}
         />
       )}
     </section>

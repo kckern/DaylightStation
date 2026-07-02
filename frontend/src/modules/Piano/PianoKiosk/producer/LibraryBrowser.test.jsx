@@ -7,8 +7,8 @@
  * Timelines reuse the hand-built consonance-vocabulary fixtures: I-I-V-I base,
  * roots-only stackable candidate, dim7 wall dissonant against it.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { facets } from '@shared-music/loopQuery.mjs';
 import { LibraryBrowser } from './LibraryBrowser.jsx';
 
@@ -259,5 +259,143 @@ describe('LibraryBrowser — chrome', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'close library' }));
     expect(props.onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── press-and-hold audition (Task 5.2) ───────────────────────────────────────
+// Pointer choreography only — the peek ENGINE (channels, transpose, metronome,
+// token guard) is covered in usePeek.test.js. Assertions here lean on the
+// engine's synchronous side effects: configureLayer(15, …) proves a peek
+// started; allNotesOff(15) proves it was silenced.
+
+describe('LibraryBrowser — press-and-hold audition', () => {
+  const makeRouter = () => ({
+    noteOn: vi.fn(), noteOff: vi.fn(), allNotesOff: vi.fn(), configureLayer: vi.fn(), panic: vi.fn(),
+  });
+
+  /**
+   * This jsdom has no PointerEvent — fireEvent.pointerDown would construct a
+   * plain Event and silently DROP clientX/pointerId (GainStrip.test.jsx has
+   * the same workaround). Build the Event and assign the pointer props.
+   */
+  function pointerEvent(type, { pointerId = 1, clientX = 50, clientY = 50 } = {}) {
+    const ev = new Event(type, { bubbles: true, cancelable: true });
+    Object.assign(ev, { pointerId, clientX, clientY });
+    return ev;
+  }
+  const down = (el, opts) => fireEvent(el, pointerEvent('pointerdown', opts));
+  const up = (el, opts) => fireEvent(el, pointerEvent('pointerup', opts));
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  function renderPeek(overrides = {}) {
+    const router = makeRouter();
+    return { router, ...renderBrowser({ router, bpm: 120, keyShift: 0, ...overrides }) };
+  }
+
+  const hold = async (ms) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
+
+  it('hold 150ms → the peek starts and the card pulses (is-peeking)', async () => {
+    const { router, props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    expect(card.classList.contains('is-peeking')).toBe(false); // still arming
+    await hold(150);
+    expect(card.classList.contains('is-peeking')).toBe(true);
+    expect(router.configureLayer).toHaveBeenCalledWith(15, { program: 0, gain: 1 });
+    expect(props.onPick).not.toHaveBeenCalled();
+  });
+
+  it('quick tap (release inside the arm window) → onPick, no peek ever starts', async () => {
+    const { router, props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    await hold(100);
+    up(card);
+    expect(props.onPick).toHaveBeenCalledWith(FRIEND);
+    await hold(200); // the armed timer must be dead
+    expect(router.configureLayer).not.toHaveBeenCalled();
+    expect(card.classList.contains('is-peeking')).toBe(false);
+  });
+
+  it('hold-release → silence, and the release must NOT add the loop (add takes a fresh tap)', async () => {
+    const { router, props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    await hold(200);
+    up(card);
+    expect(router.allNotesOff).toHaveBeenCalledWith(15);
+    expect(props.onPick).not.toHaveBeenCalled();
+    expect(card.classList.contains('is-peeking')).toBe(false);
+  });
+
+  it('move > 12px during the arm window → neither peek nor pick (it was a scroll)', async () => {
+    const { router, props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    fireEvent(card, pointerEvent('pointermove', { clientX: 70 })); // 20px drift
+    await hold(300);
+    expect(card.classList.contains('is-peeking')).toBe(false);
+    expect(router.configureLayer).not.toHaveBeenCalled();
+    up(card);
+    expect(props.onPick).not.toHaveBeenCalled();
+  });
+
+  it('small drift (< 12px) does not cancel the arm — the peek still starts', async () => {
+    const { router } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    fireEvent(card, pointerEvent('pointermove', { clientX: 58 })); // 8px jitter
+    await hold(150);
+    expect(card.classList.contains('is-peeking')).toBe(true);
+    expect(router.configureLayer).toHaveBeenCalledWith(15, { program: 0, gain: 1 });
+  });
+
+  it('pointercancel mid-peek (browser claimed the gesture) silences it', async () => {
+    const { router, props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    await hold(150);
+    expect(card.classList.contains('is-peeking')).toBe(true);
+    fireEvent(card, pointerEvent('pointercancel'));
+    expect(router.allNotesOff).toHaveBeenCalledWith(15);
+    expect(card.classList.contains('is-peeking')).toBe(false);
+    expect(props.onPick).not.toHaveBeenCalled();
+  });
+
+  it('pressing a second card while peeking stops the first; the stale release cannot kill the second', async () => {
+    const { router, props } = renderPeek();
+    const first = screen.getByRole('button', { name: 'Root Notes' });
+    const second = screen.getByRole('button', { name: 'Basic Rock' });
+    down(first, { pointerId: 1 });
+    await hold(150);
+    expect(first.classList.contains('is-peeking')).toBe(true);
+
+    down(second, { pointerId: 2, clientX: 200 });
+    await hold(150);
+    expect(router.allNotesOff).toHaveBeenCalledWith(15); // first peek silenced
+    expect(first.classList.contains('is-peeking')).toBe(false);
+    expect(second.classList.contains('is-peeking')).toBe(true);
+
+    // The first finger lifts late — a stale release, not a stop for the second.
+    up(first, { pointerId: 1 });
+    expect(second.classList.contains('is-peeking')).toBe(true);
+    expect(props.onPick).not.toHaveBeenCalled();
+  });
+
+  it('keyboard activation (click with detail 0, no pointer gesture) still picks', async () => {
+    const { props } = renderPeek();
+    fireEvent.click(screen.getByRole('button', { name: 'Root Notes' }), { detail: 0 });
+    expect(props.onPick).toHaveBeenCalledWith(FRIEND);
+  });
+
+  it('the ghost click after a touch tap (detail > 0) does not double-pick', async () => {
+    const { props } = renderPeek();
+    const card = screen.getByRole('button', { name: 'Root Notes' });
+    down(card);
+    up(card); // tap picked once
+    fireEvent.click(card, { detail: 1 }); // browser compatibility click
+    expect(props.onPick).toHaveBeenCalledTimes(1);
   });
 });

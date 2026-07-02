@@ -21,7 +21,13 @@
  *   fake onset rows). Title only when a REAL title exists; the glyph+roman IS
  *   the identity (requirements §3.1). For melodic/groove material without a
  *   title the slug appears only as a subdued debug caption, never as a name.
- * - Tap card = onPick(entry). NO audition here — Task 5.2 adds press-to-peek.
+ * - Tap card = onPick(entry). Press-AND-HOLD (150ms arm) = peek audition
+ *   (design §7): the entry sounds over the jam if it's playing, solo +
+ *   metronome if not, conformed to the current key/tempo (usePeek). Release
+ *   silences it and NEVER adds — a peek is a listen, adding takes a fresh
+ *   tap. Scroll safety mirrors GainStrip (touch-action pan-y + >12px drift
+ *   cancels the arm), but the commit points differ: peek starts on the HOLD
+ *   TIMER, tap commits on pointer-up.
  * - Perf: the compatible set is built on open + base/pivot change (memo),
  *   NEVER per keystroke — search/facets filter the already-built set. Render
  *   is capped at 120 cards with a "refine to see more" footer instead of
@@ -39,14 +45,20 @@
  * @param {boolean} [props.isPlaying] - shows the floating now-playing pill
  * @param {{current:{bar:number,beat:number}}} [props.positionRef]
  * @param {Array<object>} [props.pillMaterials] - materials for the pill's glyph stack
+ * @param {object} [props.router] - voiceRouter for the press-and-hold peek (no router → taps only)
+ * @param {number} [props.bpm] - workspace tempo the peek conforms to
+ * @param {number} [props.keyShift] - workspace keyShift the peek conforms to
+ * @param {() => void} [props.onAudioGesture] - audio unlock, called on card
+ *   pointer-down (the hold TIMER callback is not a browser gesture context)
  */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 import { SvgStaffRenderer } from '../../../MusicNotation/index.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
 import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { buildCompatibleSet, rankCompatible, timelineOf, entryIdentity } from './libraryRanking.js';
+import { usePeek } from './usePeek.js';
 
 const STORES = [
   { key: 'curated', label: 'Library' },
@@ -69,6 +81,10 @@ const CARD_CAP = 120;
 const MOOD_TOP = 8;
 /** How often the pill readout syncs from positionRef (≤4Hz — no per-frame state). */
 const PILL_READOUT_MS = 250;
+/** Press-and-hold arm delay: shorter reads as a laggy tap, longer feels dead. */
+const HOLD_MS = 150;
+/** Drift beyond this during the arm window = the gesture is a scroll (GainStrip's rule). */
+const MOVE_CANCEL_PX = 12;
 
 /**
  * Lazily loads notes for a melodic entry and renders a staff thumbnail
@@ -129,21 +145,89 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
 /**
  * One library card: glyph-forward identity + kind display + pivot affordance.
  * The pivot is a SIBLING button (nested buttons are invalid HTML).
+ *
+ * Pointer choreography (Task 5.2 press-to-peek):
+ * - pointer-down arms a HOLD_MS timer (and captures the pointer);
+ * - >MOVE_CANCEL_PX drift before it fires = scroll → cancel, neither tap nor peek;
+ * - up before it fires = TAP → onPick (commit on up, GainStrip's scroll-safe rule);
+ * - timer fires = PEEK starts (onPeekStart; the card pulses via is-peeking);
+ * - up/cancel/leave after that = onPeekStop, and the pick is SUPPRESSED — a
+ *   hold was a listen, not an add; adding takes a fresh tap (design §7).
+ * - onClick handles ONLY keyboard activation (detail === 0): the pointer flow
+ *   owns taps, and the guard swallows the browser's post-tap ghost click.
  */
-function LoopCard({ result, warn, lib, onPick, onPivot }) {
+function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
   const { entry, reasons = [] } = result;
   const isGroove = entry.type === 'groove';
   const hasRoman = !!entry.roman?.length;
   const label = entry.title || entry.slug; // accessible name only — never rendered as a title
+
+  const holdRef = useRef(null); // { pointerId, x, y, timer, peeking } | null
+
+  const clearHold = () => {
+    if (holdRef.current) clearTimeout(holdRef.current.timer);
+    holdRef.current = null;
+  };
+
+  // A card unmounting mid-gesture (grid re-filter) must not leak its timer or
+  // leave a peek sounding with no releasing pointer handler left to stop it.
+  useEffect(() => () => {
+    const hold = holdRef.current;
+    holdRef.current = null;
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    if (hold.peeking) onPeekStop(entry);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePointerDown = (e) => {
+    if (holdRef.current) return; // one gesture per card at a time
+    if (typeof e.preventDefault === 'function') {
+      e.preventDefault(); // interaction isolation (GainStrip's pattern)
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* jsdom / old WebView */ }
+    }
+    onAudioGesture?.(); // unlock audio HERE — the hold timer is not a gesture context
+    const hold = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, peeking: false, timer: 0 };
+    hold.timer = setTimeout(() => {
+      hold.peeking = true;
+      onPeekStart(entry);
+    }, HOLD_MS);
+    holdRef.current = hold;
+  };
+
+  const handlePointerMove = (e) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointerId !== e.pointerId || hold.peeking) return;
+    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > MOVE_CANCEL_PX) clearHold(); // scroll
+  };
+
+  const handlePointerUp = (e) => {
+    const hold = holdRef.current;
+    if (!hold || hold.pointerId !== e.pointerId) return;
+    clearHold();
+    if (hold.peeking) onPeekStop(entry); // hold-release = silence, NEVER add
+    else onPick(result); // quick tap = add
+  };
+
+  /** pointercancel (browser claimed the scroll) or pointerleave mid-hold. */
+  const handlePointerHalt = () => {
+    const hold = holdRef.current;
+    if (!hold) return;
+    clearHold();
+    if (hold.peeking) onPeekStop(entry);
+  };
+
   return (
     <li>
       <button
         type="button"
-        className="piano-loop"
+        className={`piano-loop${isPeeking ? ' is-peeking' : ''}`}
         aria-label={label}
-        onClick={() => onPick(result)}
-        // TODO(Task 5.2 press-to-peek): onPointerDown/Up here become the
-        // press-and-hold audition (hear it over the stack); tap stays = add.
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerHalt}
+        onPointerLeave={handlePointerHalt}
+        onClick={(e) => { if (e.detail === 0 && !holdRef.current) onPick(result); }}
       >
         <span className="piano-loop__head">
           <MaterialGlyph material={entry} size={44} />
@@ -186,6 +270,10 @@ export function LibraryBrowser({
   isPlaying = false,
   positionRef,
   pillMaterials,
+  router = null,
+  bpm,
+  keyShift = 0,
+  onAudioGesture,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
   const [store, setStore] = useState('curated');
@@ -196,6 +284,16 @@ export function LibraryBrowser({
   const [moodsExpanded, setMoodsExpanded] = useState(false);
   const [pivot, setPivot] = useState(null); // "goes with →" anchor, overrides the workspace base
   const [gateLifted, setGateLifted] = useState(false);
+
+  // Press-and-hold audition engine (Task 5.2). isPlaying doubles as the
+  // "jam is looping underneath" signal: peeks ride over the stack when true,
+  // solo + metronome when false.
+  const { peekingId, startPeek, stopPeek } = usePeek({
+    router, lib, bpm, keyShift, isJamPlaying: isPlaying, layers,
+  });
+  // Identity-scoped stop (multi-touch belt-and-braces): a stale card's
+  // release must only stop ITS OWN peek, never a newer one.
+  const handlePeekStop = useCallback((entry) => stopPeek(entryIdentity(entry)), [stopPeek]);
 
   const entries = lib.loops || [];
   const workspaceBase = useMemo(
@@ -241,7 +339,7 @@ export function LibraryBrowser({
   const filtered = useMemo(() => {
     const q = text.trim().toLowerCase();
     return pool.filter(({ entry }) => {
-      if (existingIds.has(entry.path)) return false;
+      if (existingIds.has(entryIdentity(entry))) return false; // layer ids follow the same path||slug rule
       if (kind === 'groove') { if (entry.type !== 'groove') return false; }
       else if (kind && roleOf(entry) !== kind) return false;
       if (mood && (entry.mood || '') !== mood) return false;
@@ -421,6 +519,10 @@ export function LibraryBrowser({
                 lib={lib}
                 onPick={handlePick}
                 onPivot={handlePivot}
+                isPeeking={peekingId != null && peekingId === entryIdentity(result.entry)}
+                onPeekStart={startPeek}
+                onPeekStop={handlePeekStop}
+                onAudioGesture={onAudioGesture}
               />
             ))}
           </ul>

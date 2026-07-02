@@ -100,10 +100,11 @@ export function buildCompatibleSet({ entries, baseEntry }) {
 
 /**
  * THE BLEND: sort key = layerMatch compatibility score + fit × FIT_WEIGHT.
- * layerMatch's mood-match weight is 2; a Δfit of 0.5 must beat it (design:
- * "a 1.0-fit melody outranks a 0.5-fit one with slightly better mood match"),
- * so the weight must be > 4 — at exactly 4 the canonical case ties. 5 gives
- * fit the deciding vote without drowning mood/complement signals entirely.
+ * Invariant: a Δfit of 0.5 must outrank a full mood-match edge (layerMatch's
+ * mood weight is 2) — a clearly better-fitting melody beats one that merely
+ * shares the mood tag. That requires FIT_WEIGHT > 4 (at exactly 4 the case
+ * ties); 5 gives fit the deciding vote without drowning mood/complement
+ * signals entirely.
  */
 const FIT_WEIGHT = 5;
 
