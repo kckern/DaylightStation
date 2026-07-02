@@ -405,3 +405,142 @@ describe('arrangement mode', () => {
     expect(result.current.pendingJumpRef.current).toBeNull();
   });
 });
+
+// ── seam regressions (review fast-follow) ────────────────────────────────────
+
+describe('seam regressions', () => {
+  it('arrangement-input bar-swap: old blocks fire until the boundary, then the NEW block object is announced via onBlock, held notes released at the seam', () => {
+    const router = makeRouter();
+    const onBlock = vi.fn();
+    const secC = {
+      id: 'c',
+      lengthBars: 1,
+      stack: [{ notes: [{ ticks: 0, durationTicks: 1920, midi: 64 }], ppq: 480, channel: 0 }],
+    };
+    const secD = {
+      id: 'd',
+      lengthBars: 1,
+      stack: [{ notes: [{ ticks: 0, durationTicks: 1920, midi: 65 }], ppq: 480, channel: 1 }],
+    };
+    const { result, rerender } = mount({
+      router,
+      ...BASE,
+      layers: [],
+      arrangement: { sections: [secA, secB], arrangement: [{ sectionId: 'a' }, { sectionId: 'b' }] },
+      onBlock,
+    });
+    play(result);
+
+    frameAt(100); // old block a sounding, held for its whole bar
+    expect(router.noteOn).toHaveBeenCalledWith(0, 60, 90);
+    expect(onBlock).toHaveBeenLastCalledWith(0, expect.objectContaining({ sectionId: 'a' }));
+
+    now = 300; // mutate the arrangement mid-block
+    rerender({
+      router,
+      ...BASE,
+      layers: [],
+      arrangement: { sections: [secC, secD], arrangement: [{ sectionId: 'c' }, { sectionId: 'd' }] },
+      onBlock,
+    });
+
+    frameAt(1900); // OLD arrangement still sounding until the boundary
+    expect(router.noteOff).not.toHaveBeenCalled();
+    expect(onBlock).toHaveBeenCalledTimes(1);
+
+    frameAt(2050); // boundary: swap applies, position preserved in ms → block d
+    expect(router.noteOff).toHaveBeenCalledWith(0, 60); // seam release of the held note
+    expect(onBlock).toHaveBeenLastCalledWith(1, expect.objectContaining({ sectionId: 'd' })); // NEW block object, immediately
+    expect(router.noteOn).toHaveBeenCalledWith(1, 65, 90); // new layout sounding
+    expect(router.noteOn.mock.calls.some((c) => c[1] === 72)).toBe(false); // old block b never plays
+  });
+
+  it('tempo swap (120→90): onBar stays monotonic across the boundary, post-swap bars run at 90bpm, and the first post-swap bar keeps its accent', () => {
+    const router = makeRouter();
+    const onBar = vi.fn();
+    const layersFixed = [layer(60)]; // stable identity — ONLY bpm changes
+    const { result, rerender } = mount({
+      router, bpm: 120, timeSig: [4, 4], layers: layersFixed, metronome: true, onBar,
+    });
+    play(result);
+
+    frameAt(100);
+    expect(onBar).toHaveBeenLastCalledWith(0);
+    const accents = () => router.noteOn.mock.calls.filter((c) => c[0] === 9 && c[2] === 110).length;
+    expect(accents()).toBe(1);
+
+    now = 300;
+    rerender({ router, bpm: 90, timeSig: [4, 4], layers: layersFixed, metronome: true, onBar });
+
+    frameAt(2050); // swap at the bar 1 boundary (still the OLD grid's 2000ms)
+    expect(onBar).toHaveBeenLastCalledWith(1);
+    expect(accents()).toBe(2); // first post-swap bar keeps its beat-1 accent
+    expect(onCalls(router, 0)).toHaveLength(2); // 1-bar cycle re-enters at the boundary
+
+    frameAt(4100); // 90bpm bar = 2666.67ms → bar 2 has NOT arrived at old-grid 4000
+    expect(onBar).toHaveBeenLastCalledWith(1);
+    expect(onCalls(router, 0)).toHaveLength(2);
+
+    frameAt(4700); // 2000 + 2666.67 = 4666.67 → bar 2, cycle wraps
+    expect(onBar).toHaveBeenLastCalledWith(2);
+    expect(onCalls(router, 0)).toHaveLength(3);
+    // monotonic: no skipped or repeated bar indices across the tempo seam
+    expect(onBar.mock.calls.map((c) => c[0])).toEqual([0, 1, 2]);
+  });
+
+  it('mode flip mid-play (stack → arrangement): pre-flip actives all released, clean restart, isPlaying stays true', () => {
+    const router = makeRouter();
+    const onBlock = vi.fn();
+    const { result, rerender } = mount({
+      router, ...BASE, layers: [layer(60, { dur: 1920 })], onBlock, // held whole bar
+    });
+    play(result);
+    frameAt(100);
+    expect(router.noteOn).toHaveBeenCalledWith(0, 60, 90);
+
+    now = 300;
+    rerender({
+      router,
+      ...BASE,
+      layers: [layer(60, { dur: 1920 })],
+      arrangement: { sections: [secB], arrangement: [{ sectionId: 'b' }] },
+      onBlock,
+    });
+    // flip releases everything sounding IMMEDIATELY (no stuck notes)
+    expect(router.noteOff).toHaveBeenCalledWith(0, 60);
+    expect(result.current.isPlaying).toBe(true);
+
+    frameAt(350); // clean restart at the flip instant: arrangement bar 0
+    expect(onBlock).toHaveBeenLastCalledWith(0, expect.objectContaining({ sectionId: 'b' }));
+    expect(router.noteOn).toHaveBeenCalledWith(1, 72, 90);
+    expect(result.current.isPlaying).toBe(true);
+  });
+
+  it('stack fast-forward after a huge frame gap resumes SILENTLY at phase (no full-cycle event burst)', () => {
+    const router = makeRouter();
+    const fourNotes = [{
+      notes: [
+        { ticks: 0, durationTicks: 240, midi: 60 },
+        { ticks: 480, durationTicks: 240, midi: 62 },
+        { ticks: 960, durationTicks: 240, midi: 64 },
+        { ticks: 1440, durationTicks: 240, midi: 65 },
+      ],
+      ppq: 480,
+      channel: 0,
+      barSpan: 1,
+    }];
+    const { result } = mount({ router, ...BASE, layers: fourNotes });
+    play(result);
+    frameAt(10);
+    expect(router.noteOn).toHaveBeenCalledTimes(1); // beat-1 note
+
+    frameAt(20700); // ~10-cycle gap (tab background) — rebased to phase 700ms
+    // silent resume: no burst of skipped ons; only the stale held note is cut
+    expect(router.noteOn).toHaveBeenCalledTimes(1);
+    expect(router.noteOff).toHaveBeenCalledWith(0, 60);
+
+    frameAt(21100); // phase 1100ms: the beat-3 note (t=1000) fires normally
+    expect(router.noteOn).toHaveBeenCalledWith(0, 64, 90);
+    expect(router.noteOn).toHaveBeenCalledTimes(2);
+  });
+});

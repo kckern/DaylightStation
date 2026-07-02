@@ -20,7 +20,11 @@
  *    zero-length degenerate blocks are skipped without spinning (guarded
  *    walk); the whole arrangement loops (loopArrangement always true for
  *    now); onBlock fires at content start and every boundary; queueJump
- *    relocates live via nextJumpPoint with the seam released like a bar-swap;
+ *    relocates live via nextJumpPoint with the seam released like a bar-swap.
+ *    Across an arrangement-input swap the playhead is preserved in
+ *    MILLISECONDS (old position mod new total), not bar-proportionally — so
+ *    after a tempo change the same ms instant lands wherever it falls in the
+ *    new layout's bars;
  *  - METRONOME: ONE one-bar click stream (metronomeEvents — ARRAY timeSig
  *    form, it throws on {beats,beatType}) fired bar-locally in both modes.
  *    Built once per bpm/timeSig change; zero per-bar allocation at runtime.
@@ -343,6 +347,10 @@ export function useProducerTransport({
       // Arrangement bars are position-derived, not wall-derived — realign the
       // click to the landing position's bar.
       metroBarIdxRef.current = Math.floor((landPos + EPS) / swap.barMs);
+      // Announce the landing block: the UI must not keep highlighting a stale
+      // block object from the OLD compiled arrangement until the next
+      // natural boundary.
+      if (onBlockRef.current) onBlockRef.current(idx, blocks[idx]);
     }
     logger().sampled('transport.bar-swap', { atBar: swap.atBar, mode: swap.mode }, SAMPLE_OPTS);
   }
@@ -392,12 +400,17 @@ export function useProducerTransport({
       if (metronomeOnRef.current) runMetronome(now, bar, barStartWall);
       else if (metroBarIdxRef.current !== null) flushMetroOffs();
 
-      // Fast-forward pathological frame gaps (≥ 2 full cycles) without replay.
+      // Fast-forward pathological frame gaps (≥ 2 full cycles) as a SILENT
+      // resume: rebase into [0, lengthMs) and re-enter at the current phase
+      // point — never replay a cycle's worth of events as a burst (that would
+      // flood the BLE tier on tab-foreground). Notes whose on-instant fell
+      // inside the gap stay silent until the next pass.
       let elapsed = now - cycleStartWallRef.current;
       if (lengthMs > 0 && elapsed >= 2 * lengthMs) {
         releaseActive();
-        cycleStartWallRef.current += (Math.floor(elapsed / lengthMs) - 1) * lengthMs;
-        firedIdxRef.current = 0;
+        cycleStartWallRef.current += Math.floor(elapsed / lengthMs) * lengthMs;
+        elapsed = now - cycleStartWallRef.current;
+        firedIdxRef.current = firstIndexAtOrAfter(events, elapsed);
       }
       let guard = 4;
       while (guard-- > 0) {
@@ -511,6 +524,10 @@ export function useProducerTransport({
   stopRef.current = stop;
 
   const play = useCallback(() => {
+    // Restart while already playing: send offs for everything sounding BEFORE
+    // the active set is cleared below — a restart affordance must not strand
+    // held notes on the synth.
+    if (isPlayingRef.current) releaseActive();
     installLive(latestInputsRef.current); // start from the CURRENT inputs, always
     const liveMode = modeRef.current;
     const ci = Math.max(0, Math.floor(Number(countInBarsRef.current) || 0));
@@ -595,6 +612,7 @@ export function useProducerTransport({
         blockStartWallRef.current = contentStartWallRef.current;
         blockFiredIdxRef.current = 0;
         pendingSwapRef.current = null;
+        pendingJumpRef.current = null; // its timing referenced the replaced layout
       }
       return;
     }
