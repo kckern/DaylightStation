@@ -24,6 +24,24 @@ describe('RaceResults', () => {
     expect(getByTestId('result-row-felix').textContent).toContain('DNF');
     expect(getByTestId('race-results-legend').textContent).toContain('Did Not Finish');
   });
+  it('shows an overtime rider their REAL distance plus an OT tag, and an OT legend — never DNF', () => {
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} overtime={['felix']} animate={false} />
+    );
+    const row = getByTestId('result-row-felix');
+    expect(row.textContent).toContain('2.71 km'); // real distance (2710 m), not masked
+    expect(row.textContent).not.toContain('DNF');
+    expect(row.textContent).toContain('OT');
+    expect(getByTestId('race-results-legend').textContent).toContain('Still riding when the race closed');
+  });
+  it('DNF still wins over overtime if a rider is somehow flagged both (defensive) — renders DNF, no OT tag', () => {
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['felix']} overtime={['felix']} animate={false} />
+    );
+    const row = getByTestId('result-row-felix');
+    expect(row.textContent).toContain('DNF');
+    expect(row.textContent).not.toContain('OT');
+  });
   it('flags penalized riders with a badge and a false-start legend', () => {
     const { getByTestId } = render(
       <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} penalized={['felix']} />

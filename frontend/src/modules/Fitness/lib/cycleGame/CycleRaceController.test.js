@@ -206,6 +206,7 @@ describe('CycleRaceController — ghost rider', () => {
     const s = c.getState();
     expect(s.dnf).toContain('a');
     expect(s.dnf).not.toContain('g');
+    expect(s.overtime).not.toContain('g'); // ghost exempt from overtime too
     expect(s.phase).toBe('finished');
   });
 });
@@ -225,7 +226,7 @@ describe('CycleRaceController — time race', () => {
 });
 
 describe('CycleRaceController — finishNow (forfeit)', () => {
-  it('marks unfinished non-ghost riders as DNF and ends the race; finishers + ghosts untouched', () => {
+  it('marks unfinished non-ghost riders as OVERTIME (not DNF) and ends the race; finishers + ghosts untouched', () => {
     const c = new CycleRaceController(distConfig({
       startCountdownS: 0, goalM: 21,
       riders: [
@@ -239,9 +240,11 @@ describe('CycleRaceController — finishNow (forfeit)', () => {
     c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 1 } });
     const s = c.finishNow();
     expect(s.phase).toBe('finished');
-    expect(s.dnf).toContain('b');     // unfinished real rider → forfeit
-    expect(s.dnf).not.toContain('a'); // already finished → not a forfeit
-    expect(s.dnf).not.toContain('g'); // ghost → never forfeits
+    expect(s.overtime).toContain('b');     // unfinished real rider → overtime (real distance kept)
+    expect(s.dnf).not.toContain('b');      // NOT branded DNF — it was cut off, not a quit
+    expect(s.overtime).not.toContain('a'); // already finished → not overtime
+    expect(s.overtime).not.toContain('g'); // ghost → never forfeits
+    expect(s.dnf).not.toContain('g');
   });
 
   it('is a no-op when not racing', () => {
@@ -255,7 +258,7 @@ describe('CycleRaceController — distance-race mercy-kill (issue 2)', () => {
   // 'b' crawls at rpm 1 and never reaches the line.
   const crossFast = (c) => c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 1 } });
 
-  it('ends the race the configured seconds after the first finisher, DNFing stragglers', () => {
+  it('ends the race the configured seconds after the first finisher, putting stragglers in OVERTIME (not DNF)', () => {
     const c = new CycleRaceController(distConfig({ startCountdownS: 0, raceMercyAfterWinnerS: 10 }));
     c.startCountdown();
     crossFast(c); // elapsed 5s: 'a' finishes
@@ -265,7 +268,34 @@ describe('CycleRaceController — distance-race mercy-kill (issue 2)', () => {
     expect(c.phase).toBe('racing');
     c.tick({ b: { rpm: 1 } }); // elapsed 15s — 10s since winner → mercy fires
     expect(c.phase).toBe('finished');
+    expect(c.getState().overtime).toContain('b'); // cut off by the clock, not a quit
+    expect(c.getState().dnf).not.toContain('b');  // never branded DNF
+  });
+
+  it('does not overtime-tag a rider who was already DNF (idle-quit) before the mercy window closes', () => {
+    // 'a' finishes fast; 'b' never pedals (idle-quit → dnf via the start-grace
+    // clock); 'c' crawls the whole way and survives to the mercy cut.
+    const c = new CycleRaceController(distConfig({
+      startCountdownS: 0, raceMercyAfterWinnerS: 10, raceIdleDnfS: 5, raceStartGraceS: 5,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 2.1 },
+        { userId: 'b', wheelCircumferenceM: 2.1 },
+        { userId: 'c', wheelCircumferenceM: 2.1 }
+      ]
+    }));
+    c.startCountdown();
+    c.tick({ a: { rpm: 60, zoneId: 'hot' }, b: { rpm: 0 }, c: { rpm: 1 } }); // elapsed 5s: a finishes; b no-show 5s → dnf
     expect(c.getState().dnf).toContain('b');
+    expect(c.phase).toBe('racing'); // 'c' still going
+    c.tick({ b: { rpm: 0 }, c: { rpm: 1 } }); // elapsed 10s — only 5s since winner (< 10)
+    expect(c.phase).toBe('racing');
+    c.tick({ b: { rpm: 0 }, c: { rpm: 1 } }); // elapsed 15s — 10s since winner → mercy fires
+    expect(c.phase).toBe('finished');
+    const s = c.getState();
+    expect(s.dnf).toContain('b');
+    expect(s.overtime).not.toContain('b'); // already dnf — not double-tagged
+    expect(s.overtime).toContain('c');     // cut off by the clock, not a quit
+    expect(s.dnf).not.toContain('c');
   });
 
   it('does not mercy-end before the configured grace elapses', () => {

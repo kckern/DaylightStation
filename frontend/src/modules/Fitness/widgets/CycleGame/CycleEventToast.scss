@@ -32,6 +32,7 @@
 
   &--dnf { --cycle-event-accent: #ff5a52; }
   &--penalty { --cycle-event-accent: #{cg.$cg-gold}; }
+  &--overtime { --cycle-event-accent: #{cg.$cg-lane-2}; }
   &--info { --cycle-event-accent: #{cg.$cg-accent}; }
 
   &--entered {

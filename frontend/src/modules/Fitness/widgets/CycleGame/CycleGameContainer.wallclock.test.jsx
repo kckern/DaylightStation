@@ -166,4 +166,48 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(tickCalls.length).toBe(1);
     expect(logSpy.warn).not.toHaveBeenCalledWith('cycle_game.tick_catchup', expect.anything());
   });
+
+  it('logs a rider_overtime edge (never rider_dnf) for a mercy-kill straggler (audit game-design #7)', () => {
+    // kckern (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
+    // felix (tricycle) crawls the whole time (rpm > 0 — never idle-quits) and is
+    // still short of the line when the mercy window closes 3s after the winner.
+    mockCtx = makeCtx({
+      cycleGameConfig: {
+        default_win_condition: 'distance',
+        distance_goal_default_m: 3000,
+        time_cap_default_s: 300,
+        hrless_multiplier: 1.0,
+        start_countdown_s: START_COUNTDOWN_S,
+        staging_buffer_ms: 0,
+        cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
+        race_mercy_after_winner_s: 3
+      },
+      fitnessSessionInstance: {
+        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 100, connected: true } : { rpm: 1, connected: true })
+      }
+    });
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    act(() => { fireEvent.click(renderApi.getByTestId('course-distance')); });
+    act(() => { fireEvent.click(renderApi.getByTestId('tier-flash')); }); // 100 m goal — fast to resolve
+    act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-start')); });
+    act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
+
+    // 20 wall-clock seconds: enough for kckern to cross the line (~15 ticks) and
+    // for the 3s mercy window to close on felix afterward.
+    nowMs = 20000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    const overtimeCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_overtime');
+    expect(overtimeCalls.length).toBe(1);
+    expect(overtimeCalls[0][1]).toMatchObject({ userId: 'felix' });
+
+    // The whole point of the audit fix: felix rode the entire time — the closure
+    // must never be logged (or later rendered) as a DNF.
+    const dnfCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_dnf');
+    expect(dnfCalls).toHaveLength(0);
+
+    expect(renderApi.getByTestId('race-results')).toBeTruthy();
+  });
 });
