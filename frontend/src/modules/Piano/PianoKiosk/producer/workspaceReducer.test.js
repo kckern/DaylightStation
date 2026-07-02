@@ -347,6 +347,15 @@ describe('LOAD_STACK', () => {
       gmProgram: 33, gain: 1, muted: false, soloed: false, carried: false,
     });
   });
+
+  it('more than 15 non-groove layers: the overflow is dropped and lastError is set', () => {
+    const layers = Array.from({ length: 16 }, (_, i) => mkLayer(`l${i}`, 'chords', undefined));
+    const s = run(loadStack({ layers }));
+    expect(s.layers).toHaveLength(15);
+    expect(s.layers.map((l) => l.id)).toEqual(Array.from({ length: 15 }, (_, i) => `l${i}`));
+    expect(s.layers.map((l) => l.channel)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]);
+    expect(s.lastError).toBe('channels-exhausted');
+  });
 });
 
 // ── CLEAR / SET_EDITING_SECTION ──────────────────────────────────────────────
@@ -373,6 +382,13 @@ describe('lastError', () => {
     expect(errored.lastError).toBe('channels-exhausted');
     const healed = workspaceReducer(deepFreeze(errored), toggleMetronome());
     expect(healed.lastError).toBeNull();
+  });
+
+  it('is RETAINED across no-op actions (unknown-id edits are not "successful actions")', () => {
+    const errored = workspaceReducer(deepFreeze(fullMelodicState()), addChords(99));
+    expect(errored.lastError).toBe('channels-exhausted');
+    expect(workspaceReducer(deepFreeze(errored), removeLayer('ghost')).lastError).toBe('channels-exhausted');
+    expect(workspaceReducer(deepFreeze(errored), setGain('ghost', 0.5)).lastError).toBe('channels-exhausted');
   });
 });
 

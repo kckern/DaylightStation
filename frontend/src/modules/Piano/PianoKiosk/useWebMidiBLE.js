@@ -313,6 +313,10 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   // Independent channel-aware note-off, pairing with a duration-less sendNote:
   // the Producer's onboard voice tier holds notes for arbitrary lengths (loop
   // playback), so it can't use sendNote's schedule-the-off-up-front durationMs.
+  // CONTRACT (Producer transport): stop/pause must never rely on a lone
+  // terminal sendNoteOff — the BLE one-turn-late bug can swallow it; transports
+  // silence via router.panic(), which routes CC123 through the flushed
+  // sendPanic path instead.
   const sendNoteOff = useCallback((note, channel = 0) => {
     const out = outputRef.current;
     if (!out) return false;
