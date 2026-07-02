@@ -111,3 +111,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-02 | worktree-cycle-phase12 | 989c9e7ff | Cycle game audit Phases 1+2 (merged as 69adc532b) |
 | 2026-07-02 | worktree-cycle-phase12 | 69be4059b | Cycle game audit Phases 1+2 (merged as 69adc532b + e3f9f6fc2) |
 | 2026-07-02 | worktree-cycle-logging-gaps | 5fd47a47b | Cycle game forensic logging (merged as 0e236f2b3) |
+| 2026-07-02 | worktree-ladder-card-fix | 2786685fd | Ladder card rail placement fix (merged) |
