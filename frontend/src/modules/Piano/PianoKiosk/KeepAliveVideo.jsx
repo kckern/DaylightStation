@@ -77,7 +77,16 @@ export default function KeepAliveVideo() {
     if (!v) return undefined;
     const logger = getLogger().child({ component: 'piano-keepalive' });
 
-    v.muted = true; // property AND attribute — both matter for autoplay policy
+    // UNMUTED on purpose (2026-07-01, driver evolution v4): muted/silent media is
+    // invisible to Chromium's scheduler. Pages with AUDIBLE playback get the
+    // audio-priority scheduling exemption — the last page-side lever after
+    // compositor animation, playing video, and main-thread canvas damage all
+    // failed to prevent the idle throttle (fps 4 with all three live). The
+    // track is a 40Hz sine at -35dB: digitally audible to the scheduler,
+    // physically unreproducible by the tablet speaker. FKB's autoplayVideos +
+    // autoplayAudio embedder overrides allow unmuted autoplay w/o a gesture.
+    v.muted = false;
+    v.volume = 1; // quietness lives in the track (-35dB subsonic), not the element
     let everPlayed = false;
     const play = () => v.play().then(() => {
       if (!everPlayed) { everPlayed = true; logger.info('keepalive.playing', {}); }
@@ -111,7 +120,6 @@ export default function KeepAliveVideo() {
         ref={ref}
         className="piano-keepalive-video"
         src={keepAliveSrc}
-        muted
         loop
         autoPlay
         playsInline
