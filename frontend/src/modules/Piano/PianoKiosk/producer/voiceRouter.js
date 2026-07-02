@@ -21,6 +21,10 @@
  *   supports() has since flipped false (a tier flapping mid-note must not
  *   orphan the note-off / leave a stuck voice). Unknown note-offs go
  *   best-effort to the first supporting tier (duplicate offs are harmless).
+ *   Cross-tier retrigger: if a re-noteOn of a held channel+note lands on a
+ *   DIFFERENT tier (the old one flapped), the old tier gets a best-effort
+ *   noteOff first so its voice can't be orphaned; same-tier retriggers get no
+ *   synthetic off (tiers like gmSynth handle within-tier retrigger natively).
  * - configureLayer fans program/gain to EVERY supporting tier, so a tier that
  *   later takes over a channel already holds the right program (idempotent,
  *   cheap calls).
@@ -95,13 +99,15 @@ export function createVoiceRouter({ tiers = [], onNotes } = {}) {
   }
 
   /**
-   * Play a note. Velocity 0 → noteOff (normalized here, per gmSynth contract).
+   * Play a note. Velocity 0 — or anything that isn't a finite number > 0
+   * (undefined/null/NaN) — is normalized to noteOff here, per gmSynth's
+   * contract that tiers only ever see velocity 1..127 on noteOn.
    * Dispatches to the first supporting tier; on tier error, fails over to the
    * next supporting tier, remembering whichever tier actually accepted it.
    */
   function noteOn(channel, note, velocity) {
     if (disposed) return;
-    if (velocity === 0) {
+    if (!(Number.isFinite(velocity) && velocity > 0)) {
       noteOff(channel, note);
       return;
     }
@@ -120,7 +126,20 @@ export function createVoiceRouter({ tiers = [], onNotes } = {}) {
       logger().sampled('voice-router.note-dropped', { op: 'noteOn', channel, note }, SAMPLE_OPTS);
       return;
     }
-    noteMemory.set(keyOf(channel, note), accepted);
+    const key = keyOf(channel, note);
+    // Cross-tier retrigger: a still-held note re-accepted by a DIFFERENT tier
+    // (the old one flapped) would orphan the old tier's sounding voice when the
+    // memory overwrites — cut it with a best-effort off first. Same tier: skip;
+    // tiers handle within-tier retrigger natively (see gmSynth).
+    const prior = noteMemory.get(key);
+    if (prior && prior !== accepted) {
+      try {
+        prior.noteOff(channel, note);
+      } catch (err) {
+        tierError(prior, 'noteOff', channel, note, err);
+      }
+    }
+    noteMemory.set(key, accepted);
     emitTap('on', channel, note);
   }
 
