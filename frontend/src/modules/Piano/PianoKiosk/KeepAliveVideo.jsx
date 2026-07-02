@@ -1,10 +1,14 @@
 import { useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-// 2KB near-black H.264 loop. Imported (not public/) ON PURPOSE: it is under
-// Vite's 4KB assetsInlineLimit, so it ships INSIDE the bundle as a data: URI —
-// no HTTP fetch. The backend hangs on GET /*.mp4 (media-route interceptor), so
-// a public/ asset would reproduce the old "no supported sources" failure.
-import keepAliveSrc from './vsyncKeepalive.mp4';
+// 3KB near-black H.264 loop WITH a silent AAC track. Both details are load-
+// bearing on this device:
+//  - `?inline` ships it INSIDE the bundle as a data: URI — no HTTP fetch. The
+//    backend hangs on GET /*.mp4 (media-route interceptor), so a public/ asset
+//    would reproduce the old "no supported sources" failure.
+//  - The silent audio track exempts it from Chromium's power intervention that
+//    pauses VIDEO-ONLY media ("video-only background media was paused to save
+//    power" — observed live 2026-07-01). Muted playback keeps autoplay legal.
+import keepAliveSrc from './vsyncKeepalive.mp4?inline';
 
 /**
  * Keep-alive driver — the fix for the SM-T590 WebView frame-clock stall.
