@@ -11,6 +11,7 @@ import { buildHighScores } from '@/modules/Fitness/lib/cycleGame/highScores.js';
 import { buildRecordRow } from '@/modules/Fitness/lib/cycleGame/recordRow.js';
 import { resolveParticipantIdentity } from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from '@/modules/Fitness/lib/cycleGame/ghostCandidate.js';
+import { courseStartOverride, pickRival } from '@/modules/Fitness/lib/cycleGame/ladder.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
@@ -180,7 +181,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
 
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
-  const buildRiders = useCallback(() => {
+  // ghostOverride lets a caller (e.g. onRideFeatured) supply an explicit ghost
+  // for THIS build without touching the `ghost` state; undefined (the default)
+  // preserves prior behavior by falling back to the current `ghost` state.
+  const buildRiders = useCallback((ghostOverride) => {
+    const g = ghostOverride === undefined ? ghost : ghostOverride;
     const riders = [];
     bikes.forEach((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id) || null;
@@ -193,21 +198,21 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
     });
     // A selected ghost replays its whole recorded field as competitors.
-    if (ghost && Array.isArray(ghost.riders)) {
-      ghost.riders.forEach((g) => {
+    if (g && Array.isArray(g.riders)) {
+      g.riders.forEach((r) => {
         riders.push({
-          userId: g.userId,
-          displayName: g.displayName,
+          userId: r.userId,
+          displayName: r.displayName,
           // The recording equipment — drives the gauge's maxRpm and the synth-rpm
           // wheel size. Distance still replays from the recorded series (the ghost
           // branch in the engine), so this never double-applies wheel physics.
-          equipmentId: g.equipmentId || null,
+          equipmentId: r.equipmentId || null,
           wheelCircumferenceM: 0,
-          ghostSeries: g.ghostSeries,
-          ghostHrSeries: g.ghostHrSeries,
-          ghostRpmSeries: g.ghostRpmSeries,
-          ghostZoneSeries: g.ghostZoneSeries,
-          ghostIntervalS: g.ghostIntervalS
+          ghostSeries: r.ghostSeries,
+          ghostHrSeries: r.ghostHrSeries,
+          ghostRpmSeries: r.ghostRpmSeries,
+          ghostZoneSeries: r.ghostZoneSeries,
+          ghostIntervalS: r.ghostIntervalS
         });
       });
     }
@@ -494,6 +499,34 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => { cancelled = true; };
   }, [phase, log]);
 
+  // Weekly featured-course ladder (lobby card). null = no featured course
+  // configured (or the fetch failed) — the card simply hides.
+  const [featuredLadder, setFeaturedLadder] = useState(null);
+  const ladderBeforeRef = useRef(null); // snapshot at race start, for results movement (Task 10)
+
+  const fetchLadder = useCallback(async () => {
+    const resp = await fetch('/api/v1/fitness/cycle-races/ladder');
+    if (!resp.ok) return null; // 404 = no featured courses configured — card just hides
+    return resp.json();
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'idle') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ladder = await fetchLadder();
+        if (!cancelled) {
+          setFeaturedLadder(ladder);
+          if (ladder) log.info('cycle_game.ladder_loaded', { courseId: ladder.course?.id, rungs: ladder.standings?.length || 0 });
+        }
+      } catch (err) {
+        if (!cancelled) log.warn('cycle_game.ladder_error', { error: err?.message || String(err) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [phase, fetchLadder, log]);
+
   // Ghost candidates: each past race with ALL its participants, so racing a
   // ghost replays the whole field. Goal vs score are inverted by win condition
   // (distance race → goal=distance, score=time; time race → goal=time, score=distance).
@@ -557,7 +590,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  const startRace = useCallback((override = null) => {
+  const startRace = useCallback((override = null, ghostOverride = undefined) => {
     const ov = override && override.win_condition ? override : null;
     log.info('cycle_game.start_pressed', {
       raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
@@ -581,7 +614,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       goal_m: goalM,
       time_cap_s: timeCapS
     };
-    const riders = buildRiders();
+    const riders = buildRiders(ghostOverride);
     if (riders.length === 0) {
       log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
       return;
@@ -1083,6 +1116,46 @@ export default function CycleGameContainer({ onMount } = {}) {
     log.info('cycle_game.ghost_cleared', {});
   }, [log]);
 
+  // Ride It on the featured-course card: arm a rival ghost (ranked rider → the
+  // rung above; leader → their own PB; unranked → the tail rung) and start the
+  // course. Ghost lookups are best-effort — a fetch failure never blocks the
+  // race, it just starts without a ghost. The ghost is passed explicitly to
+  // startRace (never through `ghost` state) so a previously-selected lobby
+  // ghost can't leak into a ladder ride.
+  const onRideFeatured = useCallback(async () => {
+    const ladder = featuredLadder;
+    const course = ladder?.course;
+    if (!course) return;
+    const firstRider = bikes.map((b) => session?.getEquipmentRider?.(b.id)).find(Boolean) || null;
+    const rival = pickRival({ standings: ladder.standings || [], riderId: firstRider });
+    let rivalRaceId = rival.raceId;
+    if (rival.kind === 'self-pb' && firstRider) {
+      try {
+        const resp = await fetch(`/api/v1/fitness/cycle-races/personal-bests?userId=${encodeURIComponent(firstRider)}&courseId=${encodeURIComponent(course.id)}`);
+        if (resp.ok) rivalRaceId = (await resp.json())?.best?.raceId || null;
+      } catch { /* PB lookup is best-effort; race proceeds plain */ }
+    }
+    let ghostOverride = null;
+    if (rivalRaceId) {
+      try {
+        const resp = await fetch(`/api/v1/fitness/cycle-races/${encodeURIComponent(rivalRaceId)}`);
+        if (resp.ok) {
+          const { race } = await resp.json();
+          const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+          const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
+          const built = candidate ? buildGhostFromCandidate(candidate) : null;
+          if (built) { ghostOverride = built.ghost; setGhost(built.ghost); }
+        }
+      } catch { /* ghost is optional — never block the start */ }
+    }
+    log.info('cycle_game.ride_featured', {
+      courseId: course.id, rider: firstRider, rivalKind: rival.kind,
+      rivalRaceId: rivalRaceId || null, ghostArmed: !!ghostOverride
+    });
+    ladderBeforeRef.current = ladder;
+    startRace(courseStartOverride(course), ghostOverride ?? null);
+  }, [featuredLadder, bikes, session, bikeById, getDisplayLabel, startRace, log]);
+
   const onSetRaceValue = useCallback((value) => {
     if (ghost) return; // ghost locks the value
     if (!Number.isFinite(value)) return;
@@ -1184,6 +1257,9 @@ export default function CycleGameContainer({ onMount } = {}) {
           onSetMasterVolume={onSetMasterVolume}
           onStart={startRace}
           canStart={canStart}
+          featured={featuredLadder}
+          onRideFeatured={onRideFeatured}
+          resolveName={resolveDisplayName}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />

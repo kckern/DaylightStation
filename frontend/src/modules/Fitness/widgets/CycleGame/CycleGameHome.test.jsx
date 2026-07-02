@@ -461,6 +461,28 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
   });
 
+  it('renders the featured-course card and forwards Ride It', () => {
+    const onRideFeatured = vi.fn();
+    const featured = {
+      course: { id: 'sprint-1500m', label: 'Sprint 1500', win_condition: 'distance', goal_m: 1500 },
+      week: { start: '2026-06-29', end: '2026-07-06' },
+      standings: [{ userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 1 }],
+      allTimeRecord: null
+    };
+    const { getByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} featured={featured} onRideFeatured={onRideFeatured} />
+    );
+    fireEvent.click(getByTestId('featured-ride'));
+    expect(onRideFeatured).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no featured card when the ladder is unavailable', () => {
+    const { queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} featured={null} />
+    );
+    expect(queryByTestId('featured-course-card')).toBeNull();
+  });
+
   it('applies is-focused class on the first-tapped ghost card', () => {
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',

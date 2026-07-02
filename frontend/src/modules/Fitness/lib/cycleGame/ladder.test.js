@@ -23,6 +23,10 @@ describe('pickRival', () => {
     expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'milo' });
     expect(pickRival({ standings: [], riderId: 'dad' })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
   });
+
+  it('with no rider assigned (riderId: null), arms the bottom rung (tail) — accepted: startRace no-ops with a no_riders warn when no bike is claimed, so an armed-but-unused ghost is harmless', () => {
+    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'milo' });
+  });
 });
 
 describe('ladderDelta', () => {

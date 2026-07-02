@@ -9,6 +9,7 @@ import GhostPicker from './home/GhostPicker.jsx';
 import VolumeModal from './home/VolumeModal.jsx';
 import HighScores from './home/HighScores.jsx';
 import HistoryTable from './home/HistoryTable.jsx';
+import FeaturedCourseCard from './home/FeaturedCourseCard.jsx';
 import './CycleGameHome.scss';
 
 /**
@@ -38,7 +39,10 @@ export default function CycleGameHome({
   masterMuted = false,
   onSetMasterVolume,
   onStart,
-  canStart = false
+  canStart = false,
+  featured = null,
+  onRideFeatured = null,
+  resolveName = (id) => id
 }) {
   const [pickerBike, setPickerBike] = useState(null);
   const [showGhostPicker, setShowGhostPicker] = useState(false);
@@ -77,6 +81,8 @@ export default function CycleGameHome({
           <h2 className="cycle-game-home__title">Cycle Race</h2>
           <p className="cycle-game-home__subtitle">Pick a race, line up the riders, and go.</p>
         </header>
+
+        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
 
         <RaceTypePicker
           raceType={raceType}
@@ -181,5 +187,8 @@ CycleGameHome.propTypes = {
   masterMuted: PropTypes.bool,
   onSetMasterVolume: PropTypes.func,
   onStart: PropTypes.func,
-  canStart: PropTypes.bool
+  canStart: PropTypes.bool,
+  featured: PropTypes.object,
+  onRideFeatured: PropTypes.func,
+  resolveName: PropTypes.func
 };
