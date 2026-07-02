@@ -1,7 +1,7 @@
 import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 
 export function buildRaceRecord(state, meta = {}) {
-  const { raceId, date, mode, winCondition, goalM, timeCapS, intervalSeconds, backgroundPlexId = null } = meta;
+  const { raceId, date, mode, winCondition, goalM, timeCapS, intervalSeconds, backgroundPlexId = null, courseId = null } = meta;
   const placeByUser = Object.fromEntries((state?.standings || []).map((s) => [s.userId, s.placement]));
 
   const participants = {};
@@ -26,7 +26,8 @@ export function buildRaceRecord(state, meta = {}) {
     win_condition: winCondition,
     ...(winCondition === 'distance' ? { goal_m: goalM } : { time_cap_s: timeCapS }),
     interval_seconds: intervalSeconds,
-    background_plex_id: backgroundPlexId
+    background_plex_id: backgroundPlexId,
+    course_id: courseId
   };
 
   return { version: 1, race, participants };
