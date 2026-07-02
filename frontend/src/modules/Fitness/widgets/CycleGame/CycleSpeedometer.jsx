@@ -4,6 +4,7 @@ import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from '@/modules/Fitness/lib/cycleGame/speedometerGeometry.js';
 import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
+import { AVATAR_RATIO, BADGE_RATIO, BADGE_GAP_RATIO, OVERLAY_FONT_RATIO } from '@/modules/Fitness/lib/cycleGame/speedometerOverlayLayout.js';
 import './CycleSpeedometer.scss';
 
 const VIEWBOX = 200;
@@ -51,6 +52,17 @@ export default function CycleSpeedometer({
   const badgeColor = multiplierColor || avatar.zoneColor || '#e67e22';
 
   const px = typeof size === 'number' ? size : 220;
+  // Overlay typography scales with the gauge (audit UX §3.1-3.2): the gauge
+  // wrapper's font-size is a fixed fraction of its own pixel size, so every
+  // em-sized overlay child (rpm sub-line, speed hero) grows/shrinks in lockstep
+  // with the dial instead of colliding at small sizes or looking lost at large
+  // ones. The avatar keeps its existing ratio; the multiplier badge is sized
+  // off the AVATAR (not the gauge) so it's always ≤30% of the avatar's own
+  // diameter — see speedometerOverlayLayout.js for the shared ratios.
+  const overlayFontPx = px * OVERLAY_FONT_RATIO;
+  const avatarPx = Math.round(px * AVATAR_RATIO);
+  const badgePx = Math.max(1, Math.round(px * BADGE_RATIO));
+  const badgeGapPx = Math.round(px * BADGE_GAP_RATIO);
 
   // ── Motion clock: glide the needle + count the odometer between 1 Hz ticks ──
   // Both are DATA-driven positions (rpm → needle angle, cumulative distance →
@@ -105,7 +117,7 @@ export default function CycleSpeedometer({
 
   return (
     <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
-      <div className="cycle-speedometer__gauge" style={{ width: px, height: px }}>
+      <div className="cycle-speedometer__gauge" style={{ width: px, height: px, fontSize: overlayFontPx }}>
         {penalized && !finished && (
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
             <span className="cycle-speedometer__penalty-icon" aria-hidden="true">⛔</span>
@@ -192,30 +204,42 @@ export default function CycleSpeedometer({
             zoneId={avatar.zoneId}
             zoneColor={avatar.zoneColor}
             progress={avatar.progress}
-            size={Math.round(px * 0.4)}
+            size={avatarPx}
           />
           {showBadge && (
-            <div className="cycle-speedometer__multiplier" data-testid="cycle-speedometer-multiplier" style={{ background: badgeColor }}>
+            <div
+              className="cycle-speedometer__multiplier"
+              data-testid="cycle-speedometer-multiplier"
+              style={{
+                background: badgeColor, width: badgePx, height: badgePx,
+                fontSize: Math.max(9, Math.round(badgePx * 0.48)), marginLeft: badgeGapPx
+              }}
+            >
               ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
             </div>
           )}
         </div>
 
-        {/* Cadence (rpm) is secondary now — the needle + lit band already show it,
-            so the digits sit small above the avatar. A lost sensor (broadcast gap
-            that's run past the hold+decay window — see rpmDuringGap/gapTicksRef)
-            takes over this same slot with a "SENSOR" chip instead of a frozen/
-            decayed number that would otherwise look like real telemetry. */}
-        <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
-          {sensorLost ? (
-            <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
-          ) : (
-            <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
-          )}
-        </div>
-        {/* Effective speed (rpm × wheel size × boost) is the hero readout below the avatar. */}
-        <div className="cycle-speedometer__speed" data-testid="cycle-speedometer-speed">
-          {Math.round(Number.isFinite(speedKmh) ? speedKmh : 0)}<span className="cycle-speedometer__speed-unit"> km/h</span>
+        {/* Speed + rpm now live TOGETHER in the free lower hemisphere (audit UX
+            §3.1-3.2) — the dial's ticks/labels only ever occupy the top half
+            (rpmToAngle sweeps 9 o'clock through 12 to 3 o'clock), so this block
+            can never collide with the 12-o'clock mid-scale tick label the way the
+            old fixed `top: 8%` rpm readout did. Speed is the hero; rpm is a
+            sub-line beneath it — a lost sensor (broadcast gap that's run past the
+            hold+decay window — see rpmDuringGap/gapTicksRef) swaps that sub-line
+            for a "SENSOR" chip instead of a frozen/decayed number that would
+            otherwise look like real telemetry. */}
+        <div className="cycle-speedometer__lower-readout">
+          <div className="cycle-speedometer__speed" data-testid="cycle-speedometer-speed">
+            {Math.round(Number.isFinite(speedKmh) ? speedKmh : 0)}<span className="cycle-speedometer__speed-unit"> km/h</span>
+          </div>
+          <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
+            {sensorLost ? (
+              <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
+            ) : (
+              <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
+            )}
+          </div>
         </div>
       </div>
 

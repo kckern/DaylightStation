@@ -4,7 +4,12 @@
   // PanelSlot wrapper — must fill its grid cell so panels that use height:100% work.
   &__slot { display: block; width: 100%; height: 100%; min-height: 0; }
   &__zone--empty { display: none; }
-  &__zone--speedo { overflow: visible; padding: 6px 8px 10px; box-sizing: border-box; }
+  // overflow: hidden (audit UX §3.3) — the band's height budget is now honest
+  // (layoutSizing.CHROME_BELOW_GAUGE_PX + re-derived minGauge floors, see
+  // layoutSizing.js), so this is a backstop, not a crutch: a correctly-sized
+  // gauge never needs the overflow, but a mis-measured one gets clipped instead
+  // of bleeding into the chart zone above it.
+  &__zone--speedo { overflow: hidden; padding: 6px 8px 10px; box-sizing: border-box; }
 
   // fr columns (not 68%/32%) so the 8px gap is subtracted from the tracks instead
   // of overflowing the row; minmax(0,…) lets the chart/pov SVGs shrink below their
