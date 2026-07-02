@@ -42,6 +42,10 @@ describe('displayGap (gap compression)', () => {
   it('matches the spec formula beyond the window', () => {
     expect(displayGap(300)).toBeCloseTo(100 + 40 * Math.log1p((300 - 100) / 40));
   });
+  it('has no kink at the compression boundary (continuity)', () => {
+    expect(displayGap(100)).toBe(100);
+    expect(displayGap(100.001)).toBeCloseTo(100.001, 2);
+  });
 });
 
 describe('displayDist', () => {
@@ -211,5 +215,31 @@ describe('povBadges (rank + gap-to-next)', () => {
     const badges = povBadges({ riderIds: ['a', 'b', 'c'], riders, riderLive });
     expect(badges.b.gapText).toBe('DNF');
     expect(badges.c.gapText).toBe('50 m'); // overtime shows real distance
+  });
+
+  // T9 review: a finished (non-DNF, non-overtime) rider's badge always showed
+  // formatDistance(distanceM) — but every finisher in a distance race has
+  // covered the SAME distance (the goal line), so all finishers displayed the
+  // identical "3000 m" instead of what actually differentiates them: finish
+  // time. The tower (StandingsTower.jsx) already branched correctly; the POV
+  // badge must match.
+  it('shows a finished rider their finish TIME in a distance race, not the identical goal distance', () => {
+    const finishRiders = {
+      a: { displayName: 'Ada', cumulativeDistanceM: 3000, finishTimeS: 272 }, // 4:32
+      b: { displayName: 'Ben', cumulativeDistanceM: 3000, finishTimeS: 310 }, // 5:10
+    };
+    const riderLive = { a: { placement: 1, finished: true }, b: { placement: 2, finished: true } };
+    const badges = povBadges({ riderIds: ['a', 'b'], riders: finishRiders, riderLive, winCondition: 'distance' });
+    expect(badges.a.text).toBe('1st · 4:32');
+    expect(badges.b.text).toBe('2nd · 5:10');
+  });
+
+  it('shows a finished rider their distance covered in a time race (everyone shares the same finish TIME instead)', () => {
+    const finishRiders = {
+      a: { displayName: 'Ada', cumulativeDistanceM: 820, finishTimeS: 600 },
+    };
+    const riderLive = { a: { placement: 1, finished: true } };
+    const badges = povBadges({ riderIds: ['a'], riders: finishRiders, riderLive, winCondition: 'time' });
+    expect(badges.a.text).toBe('1st · 820 m');
   });
 });

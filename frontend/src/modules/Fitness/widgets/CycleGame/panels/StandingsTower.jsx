@@ -4,26 +4,17 @@ import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import resolveParticipantIdentity from '@/modules/Fitness/lib/cycleGame/participantIdentity.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
+import { ordinal, gapToAboveText, finishedMetricText } from '@/modules/Fitness/lib/cycleGame/standingsFormat.js';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import './StandingsTower.scss';
 
 const AVATAR_BASE = '/api/v1/static/img/users';
 const FALLBACK_AVATAR = `${AVATAR_BASE}/user`;
 
-/** 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th", … (mirrors CycleSpeedometer's local helper — no shared module exists yet). */
-export function ordinal(n) {
-  if (!Number.isFinite(n)) return '';
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
-}
-
-const fmtTime = (s) => {
-  if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2, '0')}`;
-};
+// Re-exported for backward compatibility (existing tests import these named
+// exports from this module) — the implementations now live in the shared
+// lib/cycleGame/standingsFormat.js so PovGrid's badges can never drift.
+export { ordinal, gapToAboveText };
 
 /**
  * Pure classification: split riders into pinned-finished / actively-racing /
@@ -67,25 +58,6 @@ export function buildStandingsGroups({ riderIds = [], riders = {}, riderLive = {
 }
 
 /**
- * Gap-to-next-above text for an actively-racing row (audit UX §4.1 — "I'm 2nd,
- * 12 m behind Dad"). Distance races are chasing a fixed LINE, so a raw metre
- * gap is the honest live readout. Time races close on a fixed CLOCK instead —
- * a metre gap alone doesn't say how far behind that puts you, so it's
- * projected through the pace of the rider immediately above (their current
- * speed) into a time-behind estimate: how long it would take, at that pace,
- * to close the gap. Falls back to a metre gap if the pace above isn't usable
- * (e.g. they're stopped/boxed).
- */
-export function gapToAboveText({ winCondition, gapM, abovePaceKmh }) {
-  const g = Math.max(0, Number(gapM) || 0);
-  if (winCondition === 'time') {
-    const mps = (Number(abovePaceKmh) || 0) / 3.6;
-    if (mps > 0.15) return `−${formatClock(g / mps)}`;
-  }
-  return `−${formatDistance(g)}`;
-}
-
-/**
  * Persistent standings tower — the always-on rank/gap ladder the audit found
  * nowhere on the race screen (UX §4.1). One row per rider: rank ordinal
  * (shared placements render the same ordinal, e.g. two "1st"), lane-color
@@ -111,7 +83,7 @@ export default function StandingsTower({
     rankCounter += 1;
     displayRows.push({
       r, rank: r.placement ?? rankCounter, kind: 'finished',
-      displayText: winCondition === 'distance' ? fmtTime(r.finishTimeS) : formatDistance(r.distanceM)
+      displayText: finishedMetricText({ winCondition, finishTimeS: r.finishTimeS, distanceM: r.distanceM })
     });
   });
   activeRows.forEach((r, i) => {
