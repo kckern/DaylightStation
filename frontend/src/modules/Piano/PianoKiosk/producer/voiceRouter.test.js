@@ -98,6 +98,51 @@ describe('createVoiceRouter', () => {
       expect(b.noteOff).toHaveBeenCalledWith(0, 60);
     });
 
+    it('cross-tier retrigger: the OLD tier gets a best-effort noteOff before the memory moves to the new tier', () => {
+      let aSupports = true;
+      const a = makeTier('a', { supports: () => aSupports });
+      const b = makeTier('b');
+      const router = createVoiceRouter({ tiers: [a, b] });
+
+      router.noteOn(0, 60, 100); // held on A
+      aSupports = false;         // A flaps
+      router.noteOn(0, 60, 90);  // retrigger lands on B
+
+      // A's sounding voice was cut (even though its supports() is now false),
+      // before B's memory took over.
+      expect(a.noteOff).toHaveBeenCalledWith(0, 60);
+      expect(b.noteOn).toHaveBeenCalledWith(0, 60, 90);
+
+      router.noteOff(0, 60); // sticky off now belongs to B
+      expect(b.noteOff).toHaveBeenCalledWith(0, 60);
+      expect(a.noteOff).toHaveBeenCalledTimes(1); // only the synthetic cut
+    });
+
+    it('same-tier retrigger does NOT get a synthetic off (tier handles it natively)', () => {
+      const a = makeTier('a');
+      const router = createVoiceRouter({ tiers: [a] });
+
+      router.noteOn(0, 60, 100);
+      router.noteOn(0, 60, 90); // retrigger on the same tier
+
+      expect(a.noteOn).toHaveBeenCalledTimes(2);
+      expect(a.noteOff).not.toHaveBeenCalled();
+    });
+
+    it('cross-tier retrigger survives the old tier throwing on the synthetic off', () => {
+      let aSupports = true;
+      const a = makeTier('a', { supports: () => aSupports });
+      a.noteOff.mockImplementation(() => { throw new Error('boom'); });
+      const b = makeTier('b');
+      const router = createVoiceRouter({ tiers: [a, b] });
+
+      router.noteOn(0, 60, 100);
+      aSupports = false;
+      expect(() => router.noteOn(0, 60, 90)).not.toThrow();
+      expect(b.noteOn).toHaveBeenCalledWith(0, 60, 90);
+      expect(sampledEvents()).toContain('voice-router.tier-error');
+    });
+
     it('routes an unknown noteOff (no remembered on) to the first supporting tier', () => {
       const a = makeTier('a');
       const b = makeTier('b');
@@ -126,6 +171,23 @@ describe('createVoiceRouter', () => {
       expect(a.noteOn).toHaveBeenCalledTimes(1); // vel-0 never reaches tier noteOn
       expect(b.noteOn).not.toHaveBeenCalled();
       expect(onNotes).toHaveBeenLastCalledWith({ type: 'off', channel: 0, note: 60 });
+    });
+
+    it('treats non-finite velocity (undefined/null/NaN) as noteOff too', () => {
+      const a = makeTier('a');
+      const onNotes = vi.fn();
+      const router = createVoiceRouter({ tiers: [a], onNotes });
+
+      router.noteOn(0, 60, 100);
+      router.noteOn(0, 60, undefined);
+
+      expect(a.noteOff).toHaveBeenCalledWith(0, 60);
+      expect(a.noteOn).toHaveBeenCalledTimes(1); // undefined never reaches tier noteOn
+      expect(onNotes).toHaveBeenLastCalledWith({ type: 'off', channel: 0, note: 60 });
+
+      router.noteOn(1, 61, null);
+      router.noteOn(1, 61, NaN);
+      expect(a.noteOn).toHaveBeenCalledTimes(1); // still only the one real noteOn
     });
   });
 
