@@ -61,7 +61,7 @@ export default function CycleRaceScreen({
     ),
     povGrid: () => (
       <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive}
-        lapLengthM={povLapM} finishM={povFinishM} />
+        lapLengthM={povLapM} finishM={povFinishM} winCondition={winCondition} />
     ),
     standingsTower: () => (
       <StandingsTower riderIds={riderIds} riders={riders} riderLive={riderLive}

@@ -29,9 +29,43 @@
     }
     &.is-ghost { opacity: 0.6; }
   }
-  &__dist {
-    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.62rem; color: cg.$cg-cyan;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); white-space: nowrap;
+
+  // Fixed-screen-size rank + gap badge ("2nd · −12 m"). NOT depth-scaled — it
+  // rides below each card at a constant size (positioned imperatively) so the
+  // "who am I chasing" readout stays legible even for a tiny, far, compressed
+  // leader. Replaces the old depth-scaled absolute-distance label.
+  &__badges { position: absolute; inset: 0; pointer-events: none; }
+  &__badge {
+    position: absolute; top: 0; left: 0;
+    display: inline-block; white-space: nowrap;
+    font-family: cg.$cg-display; font-weight: 800; font-style: italic;
+    font-size: 1.2rem; line-height: 1; letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    color: cg.$cg-text;
+    padding: 0.18em 0.5em; border-radius: 6px;
+    background: rgba(10, 10, 20, 0.82);
+    border: 1px solid var(--cg-pov-color, #{cg.$cg-cyan});
+    box-shadow: 0 0 12px -4px var(--cg-pov-color, #{cg.$cg-cyan});
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    will-change: transform, opacity;
+    &.is-ghost { filter: saturate(0.4) brightness(0.9); }
+  }
+
+  // Horizon leader chip — pinned high-centre, fixed size, plate-styled.
+  &__horizon-chip {
+    position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+    font-family: cg.$cg-display; font-weight: 800; font-style: italic;
+    font-size: 1.4rem; line-height: 1; letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    color: cg.$cg-gold;
+    padding: 0.3em 0.7em; border-radius: 8px;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid cg.$cg-gold;
+    box-shadow: 0 0 18px -4px cg.$cg-gold;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    white-space: nowrap; pointer-events: none;
+    will-change: opacity;
+    transition: opacity 0.25s ease;
   }
 
   &__mark-label {
