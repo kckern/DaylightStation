@@ -16,6 +16,7 @@ let currentUser = 'kc';
 vi.mock('../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser }) }));
 
 import { useProducerStore, FALLBACK_AUTHOR } from './useProducerStore.js';
+import { draftReducer, hydrate, resolveSectionStack } from './draftReducer.js';
 
 /** Default: the three list GETs resolve empty; tests override per call. */
 function mockLists({ loops = [], crate = [], songs = [] } = {}) {
@@ -289,6 +290,77 @@ describe('saveSong → loadSong round trip', () => {
     expect(restored.source.notes).toEqual(takeLayer.source.notes);
     expect(restored.gain).toBe(0.8);
     expect(loaded.draft.meta.bpm).toBe(100);
+  });
+});
+
+// ── carried-take round trip (highest-risk data-loss path) ─────────────────────
+describe('carried-take round trip (save → load → HYDRATE)', () => {
+  // A take carried across sections: the take source lives ONCE in
+  // draft.carriedLayers; each section holds a { carriedRef } placeholder.
+  const carriedTake = {
+    id: 'take-1', role: 'groove', channel: 9, gain: 0.7, muted: false, soloed: false, carried: true,
+    source: { kind: 'take', takeId: 'take-1', notes: [{ ticks: 0, durationTicks: 240, midi: 36 }], ppq: 480, lengthBars: 2, drumMode: true },
+  };
+  const draft = () => ({
+    sections: [
+      { id: 'sec-1', name: 'A', lengthBars: 4, stack: [{ carriedRef: 'take-1' }] },
+      { id: 'sec-2', name: 'B', lengthBars: 4, stack: [{ carriedRef: 'take-1' }] },
+    ],
+    arrangement: [{ sectionId: 'sec-1', repeats: 1 }, { sectionId: 'sec-2', repeats: 1 }],
+    carriedLayers: { 'take-1': carriedTake },
+    meta: { title: null, author: 'kc', keyShift: 0, bpm: 100 },
+  });
+
+  it('persists the carried take as ONE loop, leaves both placeholders untouched, and restores through HYDRATE', async () => {
+    mockLists();
+    const { result } = await mountStore();
+
+    // Capture the saved records, then serve them back on load.
+    let savedSong; let savedLoop;
+    api.mockImplementation((path, data, method) => {
+      if (method === 'POST' && path.endsWith('/producer/loops')) {
+        savedLoop = { id: 'loop-1', ...data }; return Promise.resolve(savedLoop);
+      }
+      if (method === 'POST' && path.endsWith('/producer/songs')) {
+        savedSong = { id: 'song1', ...data }; return Promise.resolve(savedSong);
+      }
+      if (path.endsWith('/producer/songs/song1')) return Promise.resolve(savedSong);
+      if (path.endsWith('/producer/loops/loop-1')) return Promise.resolve(savedLoop);
+      return Promise.resolve({});
+    });
+
+    await act(async () => { await result.current.saveSong(draft()); });
+
+    // Exactly ONE loop POST — the carried take is stored once, not per section.
+    const loopPosts = api.mock.calls.filter(([p, , m]) => m === 'POST' && p.endsWith('/producer/loops'));
+    expect(loopPosts).toHaveLength(1);
+    expect(loopPosts[0][1].notes).toEqual(carriedTake.source.notes);
+
+    // Both section placeholders survive verbatim; the carried entry now refs the loop.
+    expect(savedSong.sections[0].stack[0]).toEqual({ carriedRef: 'take-1' });
+    expect(savedSong.sections[1].stack[0]).toEqual({ carriedRef: 'take-1' });
+    expect(savedSong.carriedLayers['take-1'].source).toEqual({ kind: 'loop', loopId: 'loop-1' });
+    expect(savedSong.carriedLayers['take-1'].source.notes).toBeUndefined();
+
+    // Load restores the carried take's notes and keeps both refs.
+    let loaded;
+    await act(async () => { loaded = await result.current.loadSong('song1'); });
+    const restoredCarried = loaded.draft.carriedLayers['take-1'];
+    expect(restoredCarried.source.kind).toBe('take');
+    expect(restoredCarried.source.notes).toEqual(carriedTake.source.notes);
+    expect(restoredCarried.gain).toBe(0.7); // mix knobs preserved
+    expect(loaded.draft.sections[0].stack[0]).toEqual({ carriedRef: 'take-1' });
+    expect(loaded.draft.sections[1].stack[0]).toEqual({ carriedRef: 'take-1' });
+
+    // HYDRATE keeps the shared carried layer — BOTH sections resolve it with notes.
+    const hydrated = draftReducer(null, hydrate(loaded.draft));
+    const a = resolveSectionStack(hydrated, 'sec-1');
+    const b = resolveSectionStack(hydrated, 'sec-2');
+    expect(a[0].source.notes).toEqual(carriedTake.source.notes);
+    expect(b[0].source.notes).toEqual(carriedTake.source.notes);
+    // It IS the same shared layer (one entry, two references).
+    expect(hydrated.carriedLayers['take-1'].source.notes).toEqual(carriedTake.source.notes);
+    expect(Object.keys(hydrated.carriedLayers)).toEqual(['take-1']);
   });
 });
 

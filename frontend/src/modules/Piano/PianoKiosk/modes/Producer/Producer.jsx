@@ -132,6 +132,10 @@ export function Producer() {
   // ── persistence (Task 8.2): household pool store + resume net ───────────────
   const store = useProducerStore();
   const [songPicker, setSongPicker] = useState(false); // saved-song front door
+  // A kept stack awaiting a "replace current jam?" confirm — loading one
+  // REPLACES the workspace, and an idle unsaved jam only snapshots while
+  // playing, so a silent replace could lose work. Null unless armed.
+  const [pendingReplaceStack, setPendingReplaceStack] = useState(null);
   const [saveToast, setSaveToast] = useState(null); // transient save/keep confirm
   const toastTimerRef = useRef(null);
   const showToast = useCallback((msg) => {
@@ -631,14 +635,33 @@ export function Producer() {
     }
   }, [store, showToast, logger]);
 
-  /** 'Ours' library facet pick: add a kept loop (embedded notes) or load a kept
-   * stack (loop refs resolved to takes; library layers re-fetch). */
-  const handlePickOurs = useCallback(async (kind, item) => {
+  /** Fetch + LOAD_STACK a kept stack (loop refs resolved to takes; library
+   * layers re-fetch). REPLACES the workspace — callers gate with the confirm. */
+  const doLoadOursStack = useCallback(async (item) => {
     ensureAudio();
     setOverlay(null);
+    setPendingReplaceStack(null);
     setLoadError(null);
     try {
-      if (kind === 'loop') {
+      const { layers } = await store.loadCrateStack(item.id);
+      dispatch(loadStack({ layers, bpm: stateRef.current.bpm, keyShift: stateRef.current.keyShift }));
+      ensureLayerNotes(layers);
+      logger.info('piano.producer.ours-pick', { kind: 'stack', id: item.id, layers: layers.length });
+    } catch (err) {
+      logger.error('piano.producer.ours-pick-failed', { kind: 'stack', id: item.id, error: err?.message });
+      setLoadError("Couldn't load that from the Crate.");
+    }
+  }, [store, ensureAudio, ensureLayerNotes, logger]);
+
+  /** 'Ours' library facet pick: add a kept loop (embedded notes, non-destructive)
+   * or load a kept stack. A stack REPLACES the jam, so a non-empty workspace
+   * arms a "Replace current jam?" confirm first; an empty one loads immediately. */
+  const handlePickOurs = useCallback(async (kind, item) => {
+    if (kind === 'loop') {
+      ensureAudio();
+      setOverlay(null);
+      setLoadError(null);
+      try {
         const rec = await store.getFull('loops', item.id);
         if (!rec?.notes?.length) { setLoadError("That kept loop is empty."); return; }
         dispatch(addLayer({
@@ -649,17 +672,21 @@ export function Producer() {
           role: rec.kind === 'groove' ? 'groove' : (rec.kind || 'idea'),
         }));
         logger.info('piano.producer.ours-pick', { kind, id: rec.id });
-      } else if (kind === 'stack') {
-        const { layers } = await store.loadCrateStack(item.id);
-        dispatch(loadStack({ layers, bpm: stateRef.current.bpm, keyShift: stateRef.current.keyShift }));
-        ensureLayerNotes(layers);
-        logger.info('piano.producer.ours-pick', { kind, id: item.id, layers: layers.length });
+      } catch (err) {
+        logger.error('piano.producer.ours-pick-failed', { kind, id: item.id, error: err?.message });
+        setLoadError("Couldn't load that from the Crate.");
       }
-    } catch (err) {
-      logger.error('piano.producer.ours-pick-failed', { kind, id: item.id, error: err?.message });
-      setLoadError("Couldn't load that from the Crate.");
+      return;
     }
-  }, [store, ensureAudio, ensureLayerNotes, logger]);
+    // stack: guard the destructive replace when there's a jam to lose.
+    if (stateRef.current.layers.length > 0) {
+      setOverlay(null);
+      setPendingReplaceStack(item);
+      logger.info('piano.producer.ours-replace-arm', { id: item.id });
+      return;
+    }
+    doLoadOursStack(item);
+  }, [store, ensureAudio, doLoadOursStack, logger]);
 
   // ── capture session (Task 6.2) ──────────────────────────────────────────────
   const openCapture = useCallback((via) => {
@@ -902,6 +929,24 @@ export function Producer() {
                   Update
                 </button>
                 <button type="button" onClick={handleDiscardEditing}>Discard</button>
+              </div>
+            )}
+
+            {tab === 'mix' && pendingReplaceStack && (
+              <div className="piano-producer-mode__replace-confirm" role="alertdialog" aria-label="replace jam">
+                <span className="piano-producer-mode__replace-label">
+                  Replace your current jam with “{pendingReplaceStack.title || 'kept stack'}”?
+                </span>
+                <button
+                  type="button"
+                  className="piano-producer-mode__replace-go"
+                  onClick={() => doLoadOursStack(pendingReplaceStack)}
+                >Replace</button>
+                <button
+                  type="button"
+                  className="piano-producer-mode__replace-cancel"
+                  onClick={() => setPendingReplaceStack(null)}
+                >Cancel</button>
               </div>
             )}
 
