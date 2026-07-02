@@ -25,6 +25,13 @@ describe('fmtTime', () => {
     expect(fmtTime(272)).toBe('4:32');
     expect(fmtTime(310)).toBe('5:10');
   });
+  it('never renders ":60" for fractional times near a minute boundary', () => {
+    // Interpolated finishes are fractional; floor-minutes/round-remainder
+    // rendered 119.6 as "1:60". Total-seconds rounding gives "2:00".
+    expect(fmtTime(119.6)).toBe('2:00');
+    expect(fmtTime(59.7)).toBe('1:00');
+    expect(fmtTime(119.4)).toBe('1:59');
+  });
   it('returns an em dash for non-finite input', () => {
     expect(fmtTime(null)).toBe('—');
     expect(fmtTime(undefined)).toBe('—');
