@@ -291,6 +291,10 @@
     grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 0.5rem;
     align-content: start;
+    // Press-to-peek scroll safety (GainStrip's rule): the browser keeps
+    // vertical scrolling and fires pointercancel when it claims the gesture —
+    // the card then drops its pending tap/peek.
+    touch-action: pan-y;
   }
 
   // Floating now-playing pill (the jam keeps looping under the overlay).
@@ -410,6 +414,15 @@
     &:hover { background: var(--piano-stage-panel, #18241c); }
   }
 
+  // Press-and-hold audition (Task 5.2): the peeked card pulses while it
+  // sounds. Subtle box-shadow breath, not a transform — the grid must not
+  // reflow under the held finger.
+  &.is-peeking {
+    border-color: var(--piano-accent, #2ec46f);
+    background: var(--piano-surface-2, #1b1b27);
+    animation: piano-loop-peek-pulse 1.2s ease-in-out infinite;
+  }
+
   // Melody contour: a compact staff STRIP (not a full-height staff).
   &__staff {
     display: block;
@@ -419,6 +432,11 @@
     opacity: 0.85;
     svg, .action-staff { height: 2.4rem !important; width: auto; display: block; }
   }
+}
+
+@keyframes piano-loop-peek-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(46, 196, 111, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(46, 196, 111, 0.12); }
 }
 
 // Layer rows are full ChannelStrips (producer/ChannelStrip.jsx) — their
