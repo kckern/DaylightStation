@@ -1,5 +1,5 @@
 import { formatDistance } from './formatDistance.js';
-import { formatClock } from './cycleGameLobby.js';
+import { ordinal, gapToAboveText, finishedMetricText } from './standingsFormat.js';
 
 const lerp = (a, b, f) => a + (b - a) * (f || 0);
 
@@ -33,31 +33,16 @@ export function displayDist(m, anchorM) {
   return anchorM + displayGap(m - anchorM);
 }
 
-/** 1 → "1st", 2 → "2nd" … (mirrors the local helper in StandingsTower / CycleSpeedometer — no shared module exists yet). */
-function ordinal(n) {
-  if (!Number.isFinite(n)) return '';
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
-}
-
-/** Gap-to-next-above text, mirroring StandingsTower.gapToAboveText (distance vs time race). */
-function gapToNextText(winCondition, gapM, abovePaceKmh) {
-  const g = Math.max(0, Number(gapM) || 0);
-  if (winCondition === 'time') {
-    const mps = (Number(abovePaceKmh) || 0) / 3.6;
-    if (mps > 0.15) return `−${formatClock(g / mps)}`;
-  }
-  return `−${formatDistance(g)}`;
-}
-
 /**
  * Per-rider fixed-screen-size badge text: rank ordinal + gap-to-next-above
  * ("2nd · −12 m"), mirroring the StandingsTower (T8) standings so the two
  * panels can never disagree. Rank prefers the container-forwarded live
  * `standings()` placement, falling back to live distance order. The group
- * leader / a finisher / an out-of-contention rider shows their own metric
- * instead of a gap. Pure — unit-tested.
+ * leader / an out-of-contention rider shows their own metric instead of a
+ * gap; a genuinely finished (non-DNF, non-overtime) rider shows the
+ * win-condition-appropriate metric via the shared `finishedMetricText` (a
+ * distance race finishes everyone at the same distance, so only finish TIME
+ * differentiates finishers — T9 review). Pure — unit-tested.
  *
  * @returns {{ [id]: { rank, ordinal, gapText, text } }}
  */
@@ -68,6 +53,7 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
     return {
       id,
       distanceM: Math.max(0, rider.cumulativeDistanceM || 0),
+      finishTimeS: Number.isFinite(rider.finishTimeS) ? rider.finishTimeS : null,
       placement: Number.isFinite(live.placement) ? live.placement : null,
       speedKmh: Number.isFinite(live.speedKmh) ? live.speedKmh : 0,
       dnf: !!live.dnf,
@@ -88,14 +74,18 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
     const useRank = r.placement ?? rank;
     const above = active[i - 1];
     const gapText = above
-      ? gapToNextText(winCondition, above.distanceM - r.distanceM, above.speedKmh)
+      ? gapToAboveText({ winCondition, gapM: above.distanceM - r.distanceM, abovePaceKmh: above.speedKmh })
       : formatDistance(r.distanceM);
     out[r.id] = { rank: useRank, ordinal: ordinal(useRank), gapText, text: `${ordinal(useRank)} · ${gapText}` };
   });
   rows.filter((r) => r.finished || r.overtime || r.dnf).forEach((r) => {
     const useRank = r.placement ?? null;
     const ord = useRank ? ordinal(useRank) : '';
-    const gapText = r.dnf ? 'DNF' : formatDistance(r.distanceM);
+    const gapText = r.dnf
+      ? 'DNF'
+      : r.overtime
+        ? formatDistance(r.distanceM)
+        : finishedMetricText({ winCondition, finishTimeS: r.finishTimeS, distanceM: r.distanceM });
     out[r.id] = { rank: useRank, ordinal: ord, gapText, text: ord ? `${ord} · ${gapText}` : gapText };
   });
   return out;
