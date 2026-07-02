@@ -1,0 +1,144 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { harmonicTimeline } from './harmonicTimeline.mjs';
+
+const PPQ = 480;
+const BAR = PPQ * 4;
+
+/** Chord helper: one note object per midi, all sharing start/duration. */
+function chord(midis, ticks, durationTicks) {
+  return midis.map((midi) => ({ ticks, durationTicks, midi }));
+}
+
+describe('harmonicTimeline', () => {
+  it('octave loop on C → every slot [0], root 0, specificity root', () => {
+    const notes = [
+      { ticks: 0, durationTicks: BAR, midi: 36 }, // C2
+      { ticks: 0, durationTicks: BAR, midi: 48 }, // C3
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0], [0], [0], [0]]);
+    assert.equal(r.root, 0);
+    assert.equal(r.specificity, 'root');
+  });
+
+  it('open fifth (C+G whole notes) → slots [0,7], specificity fifth', () => {
+    const notes = chord([48, 55], 0, BAR); // C3 + G3
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0, 7], [0, 7], [0, 7], [0, 7]]);
+    assert.equal(r.root, 0);
+    assert.equal(r.specificity, 'fifth');
+  });
+
+  it('C–F–G–C triads one per beat → per-slot relative triads, root 0, triad', () => {
+    const notes = [
+      ...chord([60, 64, 67], 0, PPQ), // C
+      ...chord([65, 69, 72], PPQ, PPQ), // F
+      ...chord([67, 71, 74], PPQ * 2, PPQ), // G
+      ...chord([60, 64, 67], PPQ * 3, PPQ), // C
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0, 4, 7], [0, 5, 9], [2, 7, 11], [0, 4, 7]]);
+    assert.equal(r.root, 0);
+    assert.equal(r.specificity, 'triad');
+  });
+
+  it('sustained Cmaj7 whole note → all slots [0,4,7,11], specificity extended', () => {
+    const notes = chord([60, 64, 67, 71], 0, BAR);
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0, 4, 7, 11], [0, 4, 7, 11], [0, 4, 7, 11], [0, 4, 7, 11]]);
+    assert.equal(r.specificity, 'extended');
+  });
+
+  it('root detection: same triad loop transposed to G → root 7, identical relative slots', () => {
+    const up = (ns) => ns.map((n) => ({ ...n, midi: n.midi + 7 }));
+    const notes = [
+      ...up(chord([60, 64, 67], 0, PPQ)),
+      ...up(chord([65, 69, 72], PPQ, PPQ)),
+      ...up(chord([67, 71, 74], PPQ * 2, PPQ)),
+      ...up(chord([60, 64, 67], PPQ * 3, PPQ)),
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.equal(r.root, 7);
+    assert.deepEqual(r.slots, [[0, 4, 7], [0, 5, 9], [2, 7, 11], [0, 4, 7]]);
+  });
+
+  it('a note spanning slots contributes to each; boundary-exact end does not bleed', () => {
+    // Half note C: sounds through slots 0 and 1, ends exactly on the slot-2 boundary.
+    const notes = [{ ticks: 0, durationTicks: PPQ * 2, midi: 60 }];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0], [0], [], []]);
+  });
+
+  it('a note starting mid-slot contributes to that slot', () => {
+    const notes = [
+      { ticks: 0, durationTicks: BAR, midi: 48 }, // C anchor
+      { ticks: PPQ + 240, durationTicks: 120, midi: 64 }, // E, inside slot 1 only
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0], [0, 4], [0], [0]]);
+  });
+
+  it('a zero-duration note still registers in its start slot', () => {
+    const notes = [
+      { ticks: 0, durationTicks: BAR, midi: 48 },
+      { ticks: PPQ * 2, durationTicks: 0, midi: 67 }, // G hit at slot 2 boundary
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0], [0], [0, 7], [0]]);
+  });
+
+  it('empty notes → documented degenerate return', () => {
+    assert.deepEqual(harmonicTimeline([], PPQ), { slots: [], root: 0, specificity: 'root' });
+  });
+
+  it('2-bar loop → 8 slots', () => {
+    const notes = [
+      { ticks: 0, durationTicks: BAR, midi: 48 },
+      { ticks: BAR, durationTicks: BAR, midi: 48 },
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.equal(r.slots.length, 8);
+    assert.deepEqual(r.slots[7], [0]);
+  });
+
+  it('a partial second bar rounds up to whole bars (loopLengthTicks parity)', () => {
+    const notes = [{ ticks: 0, durationTicks: BAR + PPQ, midi: 48 }]; // 5 beats
+    const r = harmonicTimeline(notes, PPQ);
+    assert.equal(r.slots.length, 8);
+    assert.deepEqual(r.slots[4], [0]);
+    assert.deepEqual(r.slots[5], []);
+  });
+
+  it('is ppq-independent (same music at ppq 96 and 960)', () => {
+    const make = (ppq) => [
+      ...chord([60, 64, 67], 0, ppq),
+      ...chord([65, 69, 72], ppq, ppq),
+      ...chord([67, 71, 74], ppq * 2, ppq),
+      ...chord([60, 64, 67], ppq * 3, ppq),
+    ];
+    const a = harmonicTimeline(make(96), 96);
+    const b = harmonicTimeline(make(960), 960);
+    assert.deepEqual(a, b);
+  });
+
+  it('honors slotsPerBar and timeSig options', () => {
+    // 3/4 bar, one slot per beat: three quarter-note Cs → 3 slots.
+    const notes = [
+      { ticks: 0, durationTicks: PPQ, midi: 48 },
+      { ticks: PPQ, durationTicks: PPQ, midi: 48 },
+      { ticks: PPQ * 2, durationTicks: PPQ, midi: 48 },
+    ];
+    const r = harmonicTimeline(notes, PPQ, { slotsPerBar: 3, timeSig: [3, 4] });
+    assert.deepEqual(r.slots, [[0], [0], [0]]);
+  });
+
+  it('root detection ties break toward the bass of slot 0 (Am vs C)', () => {
+    // A minor triad in root position: A is the lowest sounding note at slot 0,
+    // so the tie among equally-weighted pcs resolves to A (9), not C (0).
+    const notes = chord([57, 60, 64], 0, BAR); // A3 C4 E4
+    const r = harmonicTimeline(notes, PPQ);
+    assert.equal(r.root, 9);
+    assert.deepEqual(r.slots[0], [0, 3, 7]); // minor triad relative to A
+  });
+});
