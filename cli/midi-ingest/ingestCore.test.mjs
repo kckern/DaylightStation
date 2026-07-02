@@ -65,4 +65,10 @@ describe('targetPath', () => {
       'chord-progressions/famous/metallica/one-chorus.mid',
     );
   });
+  it('routes grooves under percussion/', () => {
+    assert.equal(
+      targetPath({ type: 'groove', source: 'niko-master', mood: null, slug: 'four-on-floor' }),
+      'percussion/niko/four-on-floor.mid',
+    );
+  });
 });
