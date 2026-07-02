@@ -15,12 +15,15 @@ export function ordinal(n) {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
-/** m:ss for a finish time in seconds (e.g. 92 → "1:32"). */
+/** m:ss for a finish time in seconds (e.g. 92 → "1:32"). Round the TOTAL
+ * seconds before splitting — flooring minutes then rounding the remainder
+ * renders "1:60" for 119.6s (fractional finish times exist since the
+ * interpolated-finish change). */
 export function fmtTime(s) {
   if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2, '0')}`;
+  const total = Math.round(s);
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
 }
 
 /**

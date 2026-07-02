@@ -1344,12 +1344,17 @@ export default function CycleGameContainer({ onMount } = {}) {
           ok: result.ok,
           ...(result.ok ? {} : { error: result.error })
         });
-        if (result.ok) setRecoveredNotice('Recovered your interrupted race — saved to history');
+        if (result.ok) {
+          setRecoveredNotice('Recovered your interrupted race — saved to history');
+          clearCheckpoint(store);
+        }
+        // NOT ok → keep the checkpoint: a reload racing a still-booting backend
+        // (e.g. right after a redeploy) must not destroy the race — the next
+        // mount retries the recovery. Stale/corrupt/zero-distance paths above
+        // clear their own checkpoints.
       } catch (err) {
         // saveRaceRecord never throws — this net catches unexpected errors only.
         log.error('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, error: err?.message || String(err) });
-      } finally {
-        clearCheckpoint(store);
       }
     })();
     // Runs exactly once (recoveryCheckedRef); `phase` is the trigger only.

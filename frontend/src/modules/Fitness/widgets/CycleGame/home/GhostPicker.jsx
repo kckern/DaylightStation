@@ -7,8 +7,9 @@ import { formatDayHeader, formatDistance } from './formatters.js';
 // mm:ss clock (per-rider finish time). '—' for a missing/DNF time.
 function fmtClock(s) {
   if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const total = Math.round(s); // round total first — else 119.6 → "1:60"
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
 }
 
 // Each rider's OWN result, by race format: a time race scores distance covered;

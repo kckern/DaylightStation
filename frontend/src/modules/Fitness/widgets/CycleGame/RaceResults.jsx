@@ -12,9 +12,11 @@ const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
 const fmtTime = (s) => {
   if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2, '0')}`;
+  // Round TOTAL seconds first — floor-minutes/round-remainder renders "1:60"
+  // for 119.6s, and the count-up animation passes through 59.5-60 every race.
+  const total = Math.round(s);
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
 };
 
 // Count a number up from 0 to target with an ease-out, unless the user prefers
