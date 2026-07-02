@@ -92,6 +92,23 @@ describe('TransportBar', () => {
     expect(screen.getByLabelText('metronome')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('locked (capture open): tempo steppers, tap, and key steppers disable with the lock tooltip', () => {
+    const props = baseProps();
+    const { rerender } = render(<TransportBar {...props} />);
+    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
+      expect(screen.getByLabelText(label)).toBeEnabled();
+    }
+    rerender(<TransportBar {...props} locked />);
+    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
+      const btn = screen.getByLabelText(label);
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Locked while recording');
+    }
+    // Play, click, and record stay live — only pitch/tempo geometry is frozen.
+    expect(screen.getByLabelText('metronome')).toBeEnabled();
+    expect(screen.getByLabelText('record')).toBeEnabled();
+  });
+
   it('record button fires onRecord and pulses (is-armed) while a capture session is open', () => {
     const props = { ...baseProps(), onRecord: vi.fn() };
     const { rerender } = render(<TransportBar {...props} />);

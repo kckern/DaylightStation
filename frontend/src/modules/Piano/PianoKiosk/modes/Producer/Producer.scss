@@ -95,11 +95,20 @@
   }
 
   // ── Band 2: stage ──────────────────────────────────────────────────────────
-  &__stage {
-    position: relative; // the CaptureCard scrim overlays the STAGE only —
-                        // transport + keyboard bands stay live (design §5:
-                        // you record BY playing)
+  // The wrap is the CaptureCard scrim's positioning parent: it does NOT
+  // scroll, so a scrolled stage can never carry the scrim/card out of view.
+  // The scrim overlays the STAGE band only — transport + keyboard bands stay
+  // live (design §5: you record BY playing).
+  &__stage-wrap {
+    position: relative;
     flex: 1 1 auto;
+    min-height: 0; // let the inner stage scroll instead of growing the band
+    display: flex;
+    flex-direction: column;
+  }
+  &__stage {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.85rem 1.25rem 1rem;
     display: flex;

@@ -23,15 +23,18 @@
  *       top instead; the wait shows as −N on the dial. Count-in is IGNORED on
  *       this path — the jam IS the click. positionRef is rAF-fresh (≤1 frame
  *       stale); the engine's 100ms early-hit grace absorbs that.
- *     · not playing: transport.play() with the workspace countInBars +
- *       metronome forced ON for the session (restored on close). The anchor is
- *       the transport's content-start instant, derived INDEPENDENTLY as
- *       performance.now() + countInBars×barMs — the transport computes the
- *       same sum internally µs later; both are wall-clock, and the grace
- *       window swallows the sub-ms skew. (The metronome-set → play() ordering
- *       race on the transport's render-assigned ref is harmless here: count-in
- *       clicks fire unconditionally, and the content-phase metronome check
- *       happens bars later, long after the forced state has rendered.)
+ *     · not playing (or the transport is still mid-count-in, pos.bar < 0):
+ *       transport.play() with the workspace countInBars + metronome forced ON
+ *       for the session (restored on close). The anchor is the transport's
+ *       content-start instant, derived INDEPENDENTLY as performance.now() +
+ *       countInBars×barMs — the transport computes the same sum internally µs
+ *       later, so OUR anchor sits µs EARLY and hits read a hair LATE (µs-
+ *       scale, musically moot). Note the 100ms grace window is for genuinely
+ *       EARLY anticipatory hits — it is not what absorbs this skew. (The
+ *       metronome-set → play() ordering race on the transport's
+ *       render-assigned ref is harmless here: count-in clicks fire
+ *       unconditionally, and the content-phase metronome check happens bars
+ *       later, long after the forced state has rendered.)
  *   cycling → bar dial (−N during count-in, then "bar N of M"), pass counter,
  *            three big pass buttons (Undo pass / Clear / Keep — Undo and Keep
  *            disabled until passCount ≥ 1 per the engine prescription), snap
@@ -155,7 +158,14 @@ export function CaptureCard({
   const geomRef = useRef(null);
   /** true when WE turned the metronome on for this session (restore on close). */
   const forcedMetroRef = useRef(false);
+  /** true when THIS session started the transport (metronome path) — if the
+   * workspace is still empty at close, the transport would be left "playing"
+   * a silent empty cycle; we stop it (see the unmount cleanup). */
+  const startedTransportRef = useRef(false);
+  const armPathRef = useRef(null); // 'jam' | 'metronome' (logging)
   const onSetMetronomeRef = useRef(onSetMetronome); onSetMetronomeRef.current = onSetMetronome;
+  const transportRef = useRef(transport); transportRef.current = transport;
+  const hasLayersRef = useRef(hasLayers); hasLayersRef.current = hasLayers;
   /** Sounding drum monitors: original key → mapped GM note. Kept OUTSIDE the
    * drum-mode gate so a note-off after a mode flip still silences ch 9. */
   const soundingDrumsRef = useRef(new Map());
@@ -171,7 +181,13 @@ export function CaptureCard({
     const now = performance.now(); // PRESCRIPTION (a): monotonic anchor, never Date.now
     let anchorWallMs;
     let ci;
-    if (transport.isPlaying && transport.lengthMs > 0) {
+    const pos = transport.positionRef?.current;
+    // Jam path only once CONTENT is rolling. During a transport count-in
+    // (pos.bar < 0) normalized is 0 and the bar is negative — the next-bar
+    // math would mint a garbage anchor and real notes would drop as
+    // count-in. Route to the metronome branch instead: play() is
+    // restart-safe (releases sounding notes, restarts with a fresh count-in).
+    if (transport.isPlaying && transport.lengthMs > 0 && (pos?.bar ?? 0) >= 0) {
       // Jam playing: count-in ignored — the jam IS the click. Anchor at the
       // next bar boundary WHOSE GLOBAL BAR ≡ 0 (mod lengthBars): playback
       // re-enters a cycle at globalBar % bars (useProducerTransport's
@@ -179,13 +195,13 @@ export function CaptureCard({
       // plays back ROTATED relative to what was performed (a chord take
       // recorded from mid-cycle would sit under the wrong chords). This is
       // the DAW punch-at-loop-top rule; the dial shows the wait as −N bars.
-      const pos = transport.positionRef?.current;
       const posMs = (pos?.normalized ?? 0) * transport.lengthMs;
       const toNextBar = barMs - (posMs % barMs);
       const nextBar = (pos?.bar ?? 0) + 1;
       const barsToWait = ((lengthBars - (nextBar % lengthBars)) % lengthBars + lengthBars) % lengthBars;
       anchorWallMs = now + toNextBar + barsToWait * barMs;
       ci = 0;
+      armPathRef.current = 'jam';
     } else {
       // Silence: the transport provides the click. Force the metronome for
       // the session (restored on close) and start with the count-in; the
@@ -196,7 +212,9 @@ export function CaptureCard({
       }
       ci = countInBars;
       anchorWallMs = now + ci * barMs;
+      startedTransportRef.current = true; // we own this playback (see close)
       transport.play();
+      armPathRef.current = 'metronome';
     }
     geomRef.current = { anchorMs: anchorWallMs, barMs, lengthBars };
     capture.arm({ lengthBars, anchorWallMs, countInBars: ci });
@@ -206,7 +224,7 @@ export function CaptureCard({
     setDial(barsOut >= 1 ? { phase: 'countin', bar: barsOut } : { phase: 'cycling', bar: 1, of: lengthBars });
     logger().info('capture-ui.arm', {
       lengthBars, countInBars: ci, drumMode: drumModeRef.current,
-      path: transport.isPlaying ? 'jam' : 'metronome', snap,
+      path: armPathRef.current, snap,
     });
   }, [transport, barMs, lengthBars, countInBars, metronome, onSetMetronome, capture, snap, onAudioGesture]);
 
@@ -276,13 +294,19 @@ export function CaptureCard({
     lastPassRef.current = capture.passCount;
   }, [capture.passCount, capture.takeNoteCount]);
 
-  // ── close/unmount: silence pads, restore metronome (transport keeps playing) ─
+  // ── close/unmount: silence pads, restore metronome. The transport keeps
+  // playing (the jam outlives the session) EXCEPT when this session started
+  // it and nothing was kept — then it's a silent empty cycle, stop it. ──────
   useEffect(() => () => {
     for (const mapped of soundingDrumsRef.current.values()) {
       routerRef.current?.noteOff(DRUM_CHANNEL, mapped);
     }
     soundingDrumsRef.current.clear();
     if (forcedMetroRef.current) onSetMetronomeRef.current?.(false);
+    if (startedTransportRef.current && !hasLayersRef.current) {
+      logger().info('capture-ui.stop-orphan-transport', {});
+      transportRef.current?.stop();
+    }
   }, []);
 
   const handleClose = useCallback(() => {

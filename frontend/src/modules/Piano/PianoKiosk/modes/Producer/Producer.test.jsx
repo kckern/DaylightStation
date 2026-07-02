@@ -13,7 +13,7 @@
  * an equivalent here.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { Midi } from '@tonejs/midi';
 
 // ── kiosk context mocks ───────────────────────────────────────────────────────
@@ -395,6 +395,65 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByTestId('keyboard')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('record'));
     expect(screen.queryByRole('dialog', { name: 'capture' })).toBeNull();
+  });
+
+  it('locks tempo/tap/key while the capture card is open, unlocks on close', async () => {
+    render(<Producer />);
+    await screen.findByRole('button', { name: /browse the library/i });
+    expect(screen.getByLabelText('tempo up')).toBeEnabled();
+    fireEvent.click(screen.getByLabelText('record'));
+    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
+      const btn = screen.getByLabelText(label);
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Locked while recording');
+    }
+    fireEvent.click(screen.getByLabelText('record')); // toggle-close
+    expect(screen.getByLabelText('tempo up')).toBeEnabled();
+  });
+
+  it('a kept take is stored at CANONICAL pitch (midi − keyShift) so playback transposes once', async () => {
+    // Real capture engine + real card; MIDI callback captured from the mock
+    // context; rAF stubbed out (note events drive the engine's lazy advance).
+    let midiCb = null;
+    midiMock.subscribe = (fn) => { midiCb = fn; return () => {}; };
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(100000);
+    try {
+      render(<Producer />);
+      await screen.findByRole('button', { name: /browse the library/i });
+      // keyShift +3 BEFORE opening (steppers lock during capture).
+      fireEvent.click(screen.getByLabelText('key up'));
+      fireEvent.click(screen.getByLabelText('key up'));
+      fireEvent.click(screen.getByLabelText('key up'));
+      fireEvent.click(screen.getByLabelText('record'));
+      fireEvent.click(screen.getByRole('button', { name: /arm/i }));
+      // bpm 100 → barMs 2400; count-in 1 → anchor 102400; 4 bars → cycle 9600ms.
+      act(() => {
+        nowSpy.mockReturnValue(102400);
+        midiCb({ type: 'note_on', note: 60, velocity: 90, time: 1 });
+        nowSpy.mockReturnValue(102900);
+        midiCb({ type: 'note_off', note: 60, velocity: 0, time: 2 });
+        // Next event past the cycle boundary rolls pass 1 (lazy advance).
+        nowSpy.mockReturnValue(112500);
+        midiCb({ type: 'note_on', note: 62, velocity: 70, time: 3 });
+        midiCb({ type: 'note_off', note: 62, velocity: 0, time: 4 });
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+      // The layer landed, and the transport sees CANONICAL pitch (57 = 60 − 3)
+      // with the single transpose (keyShift 3) applied at schedule time —
+      // played 60 while hearing +3 must NOT come back at 63.
+      await waitFor(() => expect(transportArgs.last.layers.length).toBe(1));
+      const layer = transportArgs.last.layers[0];
+      expect(layer.notes).toHaveLength(1);
+      expect(layer.notes[0].midi).toBe(57);
+      expect(layer.transpose).toBe(3);
+      expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+      nowSpy.mockRestore();
+    }
   });
 
   it('the "Record my own" front door opens the capture card', async () => {

@@ -19,6 +19,7 @@ import {
   anySolo,
   effectiveMuted,
   toTransportLayers,
+  takeToSource,
   DRUM_CHANNEL,
 } from './workspaceReducer.js';
 
@@ -497,5 +498,62 @@ describe('action creators', () => {
     const types = new Set(Object.values(ActionTypes));
     for (const a of samples) expect(types.has(a.type)).toBe(true);
     expect(new Set(samples.map((a) => a.type)).size).toBe(samples.length);
+  });
+});
+
+// ── takeToSource (capture keep → canonical layer source) ─────────────────────
+
+describe('takeToSource', () => {
+  const baseTake = (over = {}) => ({
+    takeId: 'take-1',
+    notes: [{ ticks: 0, durationTicks: 480, midi: 60, velocity: 90 }],
+    ppq: 480,
+    lengthBars: 4,
+    kind: 'chords',
+    drumMode: false,
+    timeline: { root: 3, slots: [[0], [0], [0], [0]], specificity: 'root' },
+    ...over,
+  });
+
+  it('normalizes non-groove notes to canonical pitch (midi − keyShift)', () => {
+    // Played at keyShift 3: heard 3 up, played real 60 → canonical 57 so the
+    // single-transpose rule (toTransportLayers adds keyShift) stays uniform.
+    const src = takeToSource(baseTake(), 3);
+    expect(src.notes[0].midi).toBe(57);
+    expect(src.notes[0]).toMatchObject({ ticks: 0, durationTicks: 480, velocity: 90 });
+    expect(src.kind).toBe('take');
+    expect(src.takeId).toBe('take-1');
+  });
+
+  it('keyShift 0 leaves the note array untouched (same reference, no churn)', () => {
+    const take = baseTake();
+    expect(takeToSource(take, 0).notes).toBe(take.notes);
+  });
+
+  it('shifts the timeline root with the notes (slots are root-relative, unchanged)', () => {
+    const src = takeToSource(baseTake(), 3);
+    expect(src.timeline.root).toBe(0); // 3 − 3
+    expect(src.timeline.slots).toEqual([[0], [0], [0], [0]]);
+    // Wraps mod 12 for negative results.
+    expect(takeToSource(baseTake(), 5).timeline.root).toBe(10);
+  });
+
+  it('groove takes are untouched: no pitch shift, no timeline shift, drumMode carried', () => {
+    const src = takeToSource(
+      baseTake({ kind: 'groove', drumMode: true, timeline: null, notes: [{ ticks: 0, durationTicks: 1, midi: 36, velocity: 110 }] }),
+      3,
+    );
+    expect(src.notes[0].midi).toBe(36);
+    expect(src.timeline).toBeNull();
+    expect(src.drumMode).toBe(true);
+  });
+
+  it('carries citizenship: timeline + drumMode land on the source, and the source round-trips through ADD_LAYER', () => {
+    const src = takeToSource(baseTake(), 0);
+    expect(src.timeline).toEqual({ root: 3, slots: [[0], [0], [0], [0]], specificity: 'root' });
+    expect(src.drumMode).toBe(false);
+    const state = workspaceReducer(initialWorkspace, addLayer({ source: src, role: 'chords' }));
+    expect(state.layers[0].source.timeline.root).toBe(3);
+    expect(state.layers[0].source.drumMode).toBe(false);
   });
 });
