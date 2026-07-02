@@ -45,4 +45,40 @@ describe('rpmDuringGap', () => {
   it('holds a single steady reading', () => {
     expect(rpmDuringGap([150])).toBe(150);
   });
+
+  // Backward-compatible default: gapTicks omitted ⇒ behaves as tick 1 (the
+  // pre-cap hold), so any other caller/test that doesn't pass gapTicks is
+  // unaffected by the cap.
+  it('defaults gapTicks to 1 (full hold) when omitted', () => {
+    expect(rpmDuringGap([186, 180, 175])).toBe(rpmDuringGap([186, 180, 175], 1));
+  });
+
+  it('holds the full value through ticks 1-5 of a gap', () => {
+    for (let t = 1; t <= 5; t += 1) {
+      expect(rpmDuringGap([186, 180, 175], t)).toBe(175);
+    }
+  });
+
+  it('decays the held value by half per tick across ticks 6-8', () => {
+    expect(rpmDuringGap([100], 6)).toBe(50);
+    expect(rpmDuringGap([100], 7)).toBe(25);
+    expect(rpmDuringGap([100], 8)).toBe(12.5);
+  });
+
+  it('goes to 0 at tick 9 and beyond — a dead sensor stops riding forever (audit game-design #6)', () => {
+    expect(rpmDuringGap([100], 9)).toBe(0);
+    expect(rpmDuringGap([100], 20)).toBe(0);
+    expect(rpmDuringGap([100], 500)).toBe(0);
+  });
+
+  it('still honors the cooldown heuristic during the hold/decay phase (decelerating ⇒ 0 at any tick)', () => {
+    expect(rpmDuringGap([186, 120, 60], 1)).toBe(0);
+    expect(rpmDuringGap([186, 120, 60], 5)).toBe(0);
+    expect(rpmDuringGap([186, 120, 60], 7)).toBe(0); // 0 held ⇒ decay of 0 is still 0
+  });
+
+  it('never resurrects a rider once already at rest, regardless of gapTicks', () => {
+    expect(rpmDuringGap([0], 1)).toBe(0);
+    expect(rpmDuringGap([], 9)).toBe(0);
+  });
 });

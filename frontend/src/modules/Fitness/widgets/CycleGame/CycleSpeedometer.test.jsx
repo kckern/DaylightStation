@@ -105,4 +105,22 @@ describe('CycleSpeedometer', () => {
     const { getByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
     expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
   });
+
+  // audit game-design #6 — a dead sensor must be visibly flagged, not silently
+  // hold a frozen RPM forever.
+  it('shows a SENSOR chip in place of the rpm digits when sensorLost is true', () => {
+    const { getByTestId, queryByText, container } = render(<CycleSpeedometer {...baseProps} sensorLost />);
+    const rpmSlot = getByTestId('cycle-speedometer-rpm');
+    expect(rpmSlot.textContent).toContain('SENSOR');
+    expect(rpmSlot.textContent).not.toContain('92'); // the real (frozen/decaying) rpm digits are replaced, not appended
+    expect(queryByText('92')).toBeNull();
+    expect(container.querySelector('.cycle-speedometer--sensor-lost')).not.toBeNull();
+  });
+
+  it('does not show the SENSOR chip while the sensor is connected', () => {
+    const { queryByTestId, getByTestId, container } = render(<CycleSpeedometer {...baseProps} sensorLost={false} />);
+    expect(queryByTestId('cycle-speedometer-sensor-lost')).toBeNull();
+    expect(getByTestId('cycle-speedometer-rpm').textContent).toContain('92');
+    expect(container.querySelector('.cycle-speedometer--sensor-lost')).toBeNull();
+  });
 });

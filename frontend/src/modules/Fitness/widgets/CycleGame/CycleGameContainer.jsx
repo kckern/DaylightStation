@@ -30,6 +30,11 @@ import './CycleGameContainer.scss';
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
 const GO_HOLD_MS = 800; // hold the green light (engine already live) before the race screen
+// A rider's sensor-gap counter (gapTicksRef, feeds rpmDuringGap) crossing this
+// threshold means the hold has fully decayed to 0 — presumed genuinely
+// disconnected, not a broadcast blip. Drives the "sensor lost" chip + edge log
+// (audit game-design #6). Matches equipmentRpm.js's decay-to-zero tick.
+const SENSOR_LOST_GAP_TICKS = 9;
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -256,6 +261,16 @@ export default function CycleGameContainer({ onMount } = {}) {
   // cadence broadcast gap hold the last value instead of flatlining, while a
   // genuine downward-trend-to-zero is still honored. See rpmDuringGap.
   const rpmHistoryRef = useRef(new Map());
+  // Per-rider consecutive-gap-tick counter (userId → count), reset to 0 on any
+  // CONNECTED reading and incremented once per disconnected tick. Feeds
+  // rpmDuringGap's cap (hold → decay → 0) and, once it crosses
+  // SENSOR_LOST_GAP_TICKS, the "sensor lost" flag/chip below (audit
+  // game-design #6). Read directly at render time (riderLive assembly) — safe
+  // because it's mutated synchronously inside the same tick effect that drives
+  // the setSnapshot commit each tick, so it's always current by render.
+  const gapTicksRef = useRef(new Map());
+  // Edge-detection for the sensor-lost telemetry (mirrors prevDnfRef/prevCadenceRef).
+  const prevSensorLostRef = useRef(new Set());
   // Officiating events (DNF / hot-start penalty) accumulated over the race —
   // drives the persistent chart markers and the results legend.
   const [raceEvents, setRaceEvents] = useState([]);
@@ -691,6 +706,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     prevAwaitingRef.current = new Set();
     prevCadenceRef.current = new Map();
     rpmHistoryRef.current = new Map();
+    gapTicksRef.current = new Map();
+    prevSensorLostRef.current = new Set();
     tickCountRef.current = 0;
     setRaceEvents([]);
     setSaveFailed(false);
@@ -918,6 +935,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       const before = controller.getState();
       const inputs = {};
       const cadenceConnected = {}; // userId → bool, for the firehose + drop detection
+      const sensorLostNow = new Set(); // userIds whose gap has crossed SENSOR_LOST_GAP_TICKS this tick
       Object.keys(before.engineState?.riders || {}).forEach((userId) => {
         const rider = before.engineState.riders[userId];
         // Ghosts replay recorded series — the engine ignores inputs for them, and
@@ -931,20 +949,33 @@ export default function CycleGameContainer({ onMount } = {}) {
         const vitals = liveGetUserVitals?.(userId);
         const { abuseMaxRpm } = resolveRpmLimits(bikeByIdRef.current.get(rider.equipmentId) || {});
         // Cadence gap tolerance (racing only — this loop runs only while racing).
-        // A connected reading (even 0) is the truth: use it + remember it. While
-        // the sensor is DROPPED, hold the last good reading through the broadcast
-        // gap instead of flatlining — unless the rider was trending down into the
-        // gap, in which case a real cooldown-to-stop is honored (rpmDuringGap).
+        // A connected reading (even 0) is the truth: use it + remember it, and
+        // reset the consecutive-gap counter. While the sensor is DROPPED, hold
+        // the last good reading through the broadcast gap instead of flatlining
+        // — unless the rider was trending down into the gap, in which case a
+        // real cooldown-to-stop is honored — but ONLY for a bounded number of
+        // ticks: rpmDuringGap caps the hold (decay, then 0) so a sensor that
+        // never comes back can't ride forever at a frozen RPM and can still
+        // idle-DNF (audit game-design #6). gapTicks is tracked only for riders
+        // with real equipment — a rider with none never had a "connected"
+        // reading to begin with, so it isn't a sensor loss.
         let rawRpm;
+        let gapTicks = 0;
         if (connected) {
           rawRpm = Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
           const hist = rpmHistoryRef.current.get(userId) || [];
           hist.push(rawRpm);
           if (hist.length > 4) hist.shift();
           rpmHistoryRef.current.set(userId, hist);
+          gapTicksRef.current.set(userId, 0);
         } else {
-          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || []);
+          if (rider.equipmentId) {
+            gapTicks = (gapTicksRef.current.get(userId) || 0) + 1;
+            gapTicksRef.current.set(userId, gapTicks);
+          }
+          rawRpm = rpmDuringGap(rpmHistoryRef.current.get(userId) || [], gapTicks || 1);
         }
+        if (gapTicks >= SENSOR_LOST_GAP_TICKS) sensorLostNow.add(userId);
         inputs[userId] = {
           rpm: clampCountedRpm(rawRpm, abuseMaxRpm),
           zoneId: vitals?.zoneId || null,
@@ -969,6 +1000,32 @@ export default function CycleGameContainer({ onMount } = {}) {
         }
         prevCadenceRef.current.set(userId, now);
       });
+
+      // ── Sensor-lost transitions (info) — edge-only (mirrors cadence_change
+      // above): fires once when a rider's gap crosses SENSOR_LOST_GAP_TICKS
+      // (the hold has fully decayed to 0 — presumed genuinely disconnected,
+      // not a broadcast blip), and once more when the sensor comes back.
+      sensorLostNow.forEach((userId) => {
+        if (!prevSensorLostRef.current.has(userId)) {
+          log.info('cycle_game.sensor_lost', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevSensorLostRef.current.forEach((userId) => {
+        if (!sensorLostNow.has(userId)) {
+          log.info('cycle_game.sensor_recovered', {
+            raceId: raceMetaRef.current?.raceId,
+            userId,
+            equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+            elapsedS: state.engineState?.elapsedS ?? null
+          });
+        }
+      });
+      prevSensorLostRef.current = sensorLostNow;
 
       // DNF detection — diff the controller dnf set; a new entry logs + raises
       // an on-screen event (toast + persistent chart marker).
@@ -1533,7 +1590,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         dnf: dnfNow.has(userId),
         penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
         penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
-        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop
+        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop,
+        // Sensor presumed genuinely disconnected (not a broadcast blip) — see
+        // gapTicksRef/SENSOR_LOST_GAP_TICKS in the tick effect above. Ghosts
+        // replay a recording and never carry a live sensor, so never flagged.
+        sensorLost: !isGhostRider && (gapTicksRef.current.get(userId) || 0) >= SENSOR_LOST_GAP_TICKS
       };
     });
     return (

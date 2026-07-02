@@ -71,6 +71,16 @@
     pointer-events: none;
   }
   &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: 0.62rem; font-style: normal; }
+  // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
+  // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
+  // Warm/danger red, matching the penalty overlay's palette, so it reads as
+  // "something's wrong" the same way a false-start does. Sized ≥1.1rem (the
+  // race-screen text floor) unlike the rpm digits it replaces.
+  &__sensor-lost-chip {
+    display: inline-block;
+    color: #ff6b6b; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.12em;
+    text-transform: uppercase; text-shadow: 0 0 8px rgba(255, 90, 90, 0.6);
+  }
 
   // Effective speed — the hero readout in the lower portion of the gauge, where rpm
   // used to be. Cyan telemetry numeral.

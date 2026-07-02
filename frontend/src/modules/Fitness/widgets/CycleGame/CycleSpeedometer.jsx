@@ -21,7 +21,7 @@ export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, penalized = false, isLeader = false,
-  penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false
+  penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false, sensorLost = false
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
   // explicit tickStep/labelStep props still override when provided.
@@ -52,7 +52,7 @@ export default function CycleSpeedometer({
   const px = typeof size === 'number' ? size : 220;
 
   return (
-    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px }}>
         {penalized && !finished && (
           <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
@@ -149,9 +149,16 @@ export default function CycleSpeedometer({
         </div>
 
         {/* Cadence (rpm) is secondary now — the needle + lit band already show it,
-            so the digits sit small above the avatar. */}
+            so the digits sit small above the avatar. A lost sensor (broadcast gap
+            that's run past the hold+decay window — see rpmDuringGap/gapTicksRef)
+            takes over this same slot with a "SENSOR" chip instead of a frozen/
+            decayed number that would otherwise look like real telemetry. */}
         <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
-          {Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span>
+          {sensorLost ? (
+            <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
+          ) : (
+            <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
+          )}
         </div>
         {/* Effective speed (rpm × wheel size × boost) is the hero readout below the avatar. */}
         <div className="cycle-speedometer__speed" data-testid="cycle-speedometer-speed">
@@ -191,5 +198,6 @@ CycleSpeedometer.propTypes = {
   isLeader: PropTypes.bool,
   penaltyRemainingS: PropTypes.number,
   penaltyTotalS: PropTypes.number,
-  penaltyAwaitingStop: PropTypes.bool
+  penaltyAwaitingStop: PropTypes.bool,
+  sensorLost: PropTypes.bool
 };

@@ -210,4 +210,102 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
 
     expect(renderApi.getByTestId('race-results')).toBeTruthy();
   });
+
+  it('a permanently dead sensor rides through the capped hold, gets flagged sensor_lost, then idle-DNFs (audit game-design #6)', () => {
+    // felix's sensor connects for the first two ticks (so he "starts" — registers
+    // movement — before it dies), then never reconnects. With the pre-fix
+    // unbounded hold, rpmDuringGap would keep returning his last rpm forever:
+    // infinite counted distance, and the idle-DNF clock (fed a real 0) could
+    // never fire. race_idle_dnf_s is lowered to 5 purely to keep the fixture's
+    // tick count small — the mechanism under test is the CAP, not the threshold.
+    let felixConnected = true;
+    mockCtx = makeCtx({
+      cycleGameConfig: {
+        default_win_condition: 'distance',
+        distance_goal_default_m: 3000,
+        time_cap_default_s: 300,
+        hrless_multiplier: 1.0,
+        start_countdown_s: START_COUNTDOWN_S,
+        staging_buffer_ms: 0,
+        cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
+        race_idle_dnf_s: 5
+      },
+      fitnessSessionInstance: {
+        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentCadence: (id) => {
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides on, unaffected
+          return { rpm: 100, connected: felixConnected };
+        }
+      }
+    });
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    // Two connected ticks — felix registers movement (past the start-grace path).
+    nowMs = 2000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    felixConnected = false;
+    // 13 more ticks: gap ticks 1-5 hold, 6-8 decay, 9-13 are true zeros — the
+    // 5th consecutive zero (race_idle_dnf_s: 5) trips the idle-DNF at gap tick 13.
+    nowMs = 2000 + 13000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    const sensorLostCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_lost');
+    expect(sensorLostCalls).toHaveLength(1); // edge-only, not once per tick
+    expect(sensorLostCalls[0][1]).toMatchObject({ userId: 'felix', equipmentId: 'tricycle' });
+
+    // kckern's sensor never dropped — never flagged.
+    expect(sensorLostCalls.some(([, p]) => p.userId === 'kckern')).toBe(false);
+
+    // The consequence the audit demanded: the hold now expires to a real 0,
+    // so the controller's existing idle-DNF clock (previously starved by the
+    // infinite hold) finally fires for felix.
+    const dnfCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_dnf');
+    expect(dnfCalls.map(([, p]) => p.userId)).toContain('felix');
+  });
+
+  it('clears the sensor_lost flag and logs sensor_recovered once the sensor reconnects', () => {
+    let felixConnected = true;
+    mockCtx = makeCtx({
+      cycleGameConfig: {
+        default_win_condition: 'distance',
+        distance_goal_default_m: 3000,
+        time_cap_default_s: 300,
+        hrless_multiplier: 1.0,
+        start_countdown_s: START_COUNTDOWN_S,
+        staging_buffer_ms: 0,
+        cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
+        race_idle_dnf_s: 5
+      },
+      fitnessSessionInstance: {
+        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentCadence: (id) => {
+          if (id === 'cycle_ace') return { rpm: 100, connected: true };
+          return { rpm: 100, connected: felixConnected };
+        }
+      }
+    });
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    nowMs = 2000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    felixConnected = false;
+    // Cross SENSOR_LOST_GAP_TICKS (9) but stop short of the idle-DNF window.
+    nowMs = 2000 + 9000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    expect(logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_lost')).toHaveLength(1);
+
+    felixConnected = true;
+    nowMs = 2000 + 9000 + 1000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    const recoveredCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_recovered');
+    expect(recoveredCalls).toHaveLength(1);
+    expect(recoveredCalls[0][1]).toMatchObject({ userId: 'felix', equipmentId: 'tricycle' });
+  });
 });
