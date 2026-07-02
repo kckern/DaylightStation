@@ -17,7 +17,10 @@
   .race-layout__main-top { display: grid; grid-template-columns: 1fr; gap: 8px; min-height: 0; }
   .race-layout__sidebar { display: grid; min-height: 0; grid-template-rows: 7fr 3fr; gap: 8px; }
 
-  &--wide { display: grid; height: 100%; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
-  &--wide.race-layout--no-speedo { grid-template-rows: 1fr; }
+  // Wide mode: main column (chart/pov row + speedo band) beside a standings
+  // tower docked as a right-edge column spanning the full height.
+  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 26%); grid-template-rows: 1fr; gap: 8px; }
+  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
+  .race-layout__wide-main--no-speedo { grid-template-rows: 1fr; }
   .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }
 }

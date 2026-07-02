@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { uiLog } from './home/uiLog.js';
 import { RaceFlagIcon, VolumeIcon } from './home/icons.jsx';
@@ -11,6 +11,10 @@ import HighScores from './home/HighScores.jsx';
 import HistoryTable from './home/HistoryTable.jsx';
 import FeaturedCourseCard from './home/FeaturedCourseCard.jsx';
 import './CycleGameHome.scss';
+
+// How long the "recovered your interrupted race" banner stays up before it
+// self-dismisses (audit C1 follow-up — recovery used to be log-only).
+const RECOVERED_NOTICE_DURATION_MS = 8000;
 
 /**
  * Cycle-game home (the `idle` lifecycle state). A designed lobby: race-type
@@ -42,11 +46,22 @@ export default function CycleGameHome({
   canStart = false,
   featured = null,
   onRideFeatured = null,
-  resolveName = (id) => id
+  resolveName = (id) => id,
+  recoveredNotice = null
 }) {
   const [pickerBike, setPickerBike] = useState(null);
   const [showGhostPicker, setShowGhostPicker] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
+  // Self-dismissing: a fresh notice text re-arms the timer; the container also
+  // clears its own state on timeout/race-start, but the DOM here hides itself
+  // independently so a stale prop can never linger visually past 8s.
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  useEffect(() => {
+    if (!recoveredNotice) { setNoticeVisible(false); return undefined; }
+    setNoticeVisible(true);
+    const id = setTimeout(() => setNoticeVisible(false), RECOVERED_NOTICE_DURATION_MS);
+    return () => clearTimeout(id);
+  }, [recoveredNotice]);
 
   const peopleById = useMemo(() => {
     const map = new Map();
@@ -66,6 +81,11 @@ export default function CycleGameHome({
 
   return (
     <div className="cycle-game-home" data-testid="cycle-game-home">
+      {noticeVisible && recoveredNotice && (
+        <div className="cgh-recovered-banner" data-testid="cycle-recovered-banner" role="status" aria-live="polite">
+          {recoveredNotice}
+        </div>
+      )}
       <button
         type="button"
         className={`cgh-volume-fab cgh-volume-fab--corner${masterMuted ? ' is-muted' : ''}`}
@@ -190,5 +210,6 @@ CycleGameHome.propTypes = {
   canStart: PropTypes.bool,
   featured: PropTypes.object,
   onRideFeatured: PropTypes.func,
-  resolveName: PropTypes.func
+  resolveName: PropTypes.func,
+  recoveredNotice: PropTypes.string
 };
