@@ -199,6 +199,13 @@ export function Producer() {
       let onboard = false;
       try { onboard = !!onboardTier.supports(0); } catch { onboard = false; }
       logger.info('piano.producer.tier-availability', { onboardGm: onboard, gmSynth: true });
+      // INVARIANT: this loop deliberately BYPASSES appliedCfgRef /
+      // applyChannelCfg. The shared map records these exact values as already
+      // applied (they were — to the facade, which no-op'd without a synth),
+      // so routing through the diff would SKIP the push and the freshly
+      // created synth would never hear them. Pushing the same values directly
+      // re-materializes them on the real synth while leaving the map's
+      // records true — both writers stay coherent.
       for (const l of stateRef.current.layers) {
         routerRef.current.configureLayer(l.channel, {
           ...(l.gmProgram != null ? { program: l.gmProgram } : {}),
@@ -327,7 +334,13 @@ export function Producer() {
     setPendingTarget((p) => (p === null ? p : null));
   }, [transport.isPlaying]);
 
-  const songActive = transport.isPlaying && lockedMode === 'song';
+  // NOTE the capture gate: opening a capture over a playing song flips the
+  // TRANSPORT to stack content (armedMode above), so channel-config ownership
+  // must hand back to the workspace writer in the same breath — otherwise the
+  // jam layers and kept takes would sound with the stale section's programs
+  // for the whole session. lockedMode stays 'song' throughout; closing the
+  // card hands both content and config back to the song.
+  const songActive = transport.isPlaying && lockedMode === 'song' && !captureOpen;
 
   // Workspace writer: configure the jam layers' channels whenever they change
   // — paused while a song plays (the song writer owns the router then; the
@@ -427,15 +440,19 @@ export function Producer() {
   }, [logger]);
 
   /** Restore notes for section layers whose lazy-loaded notes were pruned
-   * (e.g. the layer was removed from the workspace since). Keyed by layer id;
-   * the landing guard mirrors handlePick's. */
+   * (e.g. the layer was removed from the workspace since). Keyed by layer id.
+   * The landing guard extends handlePick's: notes land while the layer lives
+   * in the WORKSPACE **or** is still referenced by the DRAFT — a section
+   * layer removed from the workspace mid-fetch must not lose its notes (the
+   * song would play that section silently, forever). */
   const ensureLayerNotes = useCallback((layers) => {
     for (const l of layers) {
       if (l.source?.kind !== 'library' || notesByIdRef.current[l.id]) continue;
       const entry = l.source.entry;
       lib.loadNotes(entry).then((notes) => {
         if (!notes?.notes?.length) return;
-        if (!stateRef.current.layers.some((x) => x.id === l.id)) return;
+        if (!stateRef.current.layers.some((x) => x.id === l.id)
+          && !draftReferencesLayer(draftRef.current, l.id)) return;
         setNotesById((prev) => (prev[l.id]
           ? prev
           : { ...prev, [l.id]: { notes: notes.notes, ppq: notes.ppq, barSpan: entry.barSpan } }));
