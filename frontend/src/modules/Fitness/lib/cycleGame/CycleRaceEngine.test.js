@@ -23,12 +23,15 @@ describe('CycleRaceEngine — distance race', () => {
     const e = distRace();
     e.tick(hotInputs); e.tick(hotInputs); e.tick(hotInputs);
     let s = e.getState();
+    // a lands exactly on the boundary (42 -> 63, goal 63): frac 1, no fraction.
     expect(s.riders.a.finishTimeS).toBe(15);
     expect(s.riders.b.finishTimeS).toBeNull();
     expect(s.finished).toBe(false);
     e.tick(hotInputs); e.tick(hotInputs); e.tick(hotInputs);
     s = e.getState();
-    expect(s.riders.b.finishTimeS).toBe(30);
+    // b overshoots (60 -> 72, goal 63): interpolated within the crossing tick,
+    // not the whole-tick quantized 30.
+    expect(s.riders.b.finishTimeS).toBeCloseTo(26.25, 2);
     expect(s.finished).toBe(true);
     expect(s.standings[0].userId).toBe('a');
     expect(s.standings[0].placement).toBe(1);
@@ -55,12 +58,13 @@ describe('CycleRaceEngine — distance finish-line lock', () => {
     expect(s.riders.b.cumulativeDistanceM).toBe(48);
   });
   it('clamps an overshooting crossing to goalM (no overshoot recorded)', () => {
-    // b crosses on tick 6 (72 >= 63) — must record 63, not 72.
+    // b crosses on tick 6 (72 >= 63) — must record 63, not 72; the finish time is
+    // interpolated to the crossing instant within tick 6, not stamped at tick end.
     const e = distRace();
     for (let i = 0; i < 6; i++) e.tick(hotInputs);
     const s = e.getState();
     expect(s.riders.b.cumulativeDistanceM).toBe(63);
-    expect(s.riders.b.finishTimeS).toBe(30);
+    expect(s.riders.b.finishTimeS).toBeCloseTo(26.25, 2);
     expect(s.riders.b.distanceSeries[s.riders.b.distanceSeries.length - 1]).toBe(63);
   });
   it('records rpm 0 / zone null for a parked finished rider', () => {
@@ -76,10 +80,102 @@ describe('CycleRaceEngine — distance finish-line lock', () => {
       winCondition: 'distance', goalM: 25, intervalMs: 1000,
       riders: [{ userId: 'g', ghostSeries: [10, 20, 30, 40], ghostIntervalS: 1 }]
     });
-    e.tick({}); e.tick({}); e.tick({}); // t=3s → recorded 30 ≥ 25 → clamp 25, finish at 3
+    // t=3s → recorded 30 ≥ 25 → clamp 25; crossing interpolated between t=2 (20m)
+    // and t=3 (30m): frac (25-20)/(30-20)=0.5 → finish at 2.5s, not the tick-end 3.
+    e.tick({}); e.tick({}); e.tick({});
     const s = e.getState();
     expect(s.riders.g.cumulativeDistanceM).toBe(25);
-    expect(s.riders.g.finishTimeS).toBe(3);
+    expect(s.riders.g.finishTimeS).toBeCloseTo(2.5, 2);
+  });
+});
+
+describe('CycleRaceEngine — dead-heat standings (audit game-design #8)', () => {
+  it('gives same-tick crossings distinct interpolated times ordered by within-tick fraction, not bike order', () => {
+    // 'a' is inserted first (would win a bike-slot tiebreak); 'z' is inserted
+    // second but pedals harder and crosses EARLIER within the same tick — the
+    // interpolated finish time, not Map insertion order, must decide standings.
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 100, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 1 }, // d1=150 -> frac 0.667 -> t≈0.667
+        { userId: 'z', wheelCircumferenceM: 1 }  // d1=200 -> frac 0.5   -> t=0.5
+      ]
+    });
+    e.tick({ a: { rpm: 4500, zoneId: 'hot' }, z: { rpm: 6000, zoneId: 'hot' } });
+    const s = e.getState();
+    expect(s.riders.z.finishTimeS).toBeCloseTo(0.5, 3);
+    expect(s.riders.a.finishTimeS).toBeCloseTo(0.6667, 3);
+    expect(s.riders.z.finishTimeS).not.toBeCloseTo(s.riders.a.finishTimeS, 2);
+    expect(s.standings[0].userId).toBe('z');
+    expect(s.standings[0].placement).toBe(1);
+    expect(s.standings[1].userId).toBe('a');
+    expect(s.standings[1].placement).toBe(2);
+  });
+
+  it('shares placement for finishers within 50ms and skips the next placement (1,1,3)', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 100, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      riders: [
+        { userId: 'p', wheelCircumferenceM: 1 }, // d1=100 exact -> t=1.0
+        { userId: 'q', wheelCircumferenceM: 1 }, // d1=105 -> frac .95238 -> t≈0.9524 (Δ .0476 vs p)
+        { userId: 'r', wheelCircumferenceM: 1 }  // 50m/tick -> finishes tick 2 at t=2.0
+      ]
+    });
+    e.tick({ p: { rpm: 3000, zoneId: 'hot' }, q: { rpm: 3150, zoneId: 'hot' }, r: { rpm: 1500, zoneId: 'hot' } });
+    e.tick({ r: { rpm: 1500, zoneId: 'hot' } });
+    const s = e.getState();
+    expect(s.riders.p.finishTimeS).toBeCloseTo(1.0, 3);
+    expect(s.riders.q.finishTimeS).toBeCloseTo(0.9524, 3);
+    expect(s.riders.r.finishTimeS).toBeCloseTo(2.0, 3);
+    expect(Math.abs(s.riders.p.finishTimeS - s.riders.q.finishTimeS)).toBeLessThan(0.05);
+    const byUser = Object.fromEntries(s.standings.map((row) => [row.userId, row]));
+    expect(byUser.q.placement).toBe(1);
+    expect(byUser.p.placement).toBe(1); // dead heat with q — same placement
+    expect(byUser.r.placement).toBe(3); // skips 2, since two riders share 1st
+  });
+
+  it('gives distinct placements when the gap is just over the 50ms dead-heat threshold', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 100, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      riders: [
+        { userId: 'p', wheelCircumferenceM: 1 }, // d1=100 exact -> t=1.0
+        { userId: 'm', wheelCircumferenceM: 1 }  // d1=110 -> frac .9091 -> t≈0.9091 (Δ ≈.0909 vs p)
+      ]
+    });
+    e.tick({ p: { rpm: 3000, zoneId: 'hot' }, m: { rpm: 3300, zoneId: 'hot' } });
+    const s = e.getState();
+    expect(Math.abs(s.riders.p.finishTimeS - s.riders.m.finishTimeS)).toBeGreaterThan(0.05);
+    const byUser = Object.fromEntries(s.standings.map((row) => [row.userId, row]));
+    expect(byUser.m.placement).toBe(1);
+    expect(byUser.p.placement).toBe(2);
+  });
+
+  it('orders unfinished riders by distance after finishers', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'distance', goalM: 1000, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      riders: [
+        { userId: 'w', wheelCircumferenceM: 1 }, // d1=1200 -> finishes, overshoots goal
+        { userId: 'x', wheelCircumferenceM: 1 }, // d1=50 -> unfinished
+        { userId: 'y', wheelCircumferenceM: 1 }  // d1=30 -> unfinished, behind x
+      ]
+    });
+    e.tick({
+      w: { rpm: 36000, zoneId: 'hot' },
+      x: { rpm: 1500, zoneId: 'hot' },
+      y: { rpm: 900, zoneId: 'hot' }
+    });
+    const s = e.getState();
+    expect(s.riders.w.finishTimeS).not.toBeNull();
+    expect(s.riders.x.finishTimeS).toBeNull();
+    expect(s.riders.y.finishTimeS).toBeNull();
+    expect(s.standings[0].userId).toBe('w');
+    expect(s.standings[0].placement).toBe(1);
+    expect(s.standings[1].userId).toBe('x');
+    expect(s.standings[1].placement).toBe(2);
+    expect(s.standings[1].distanceM).toBe(50);
+    expect(s.standings[2].userId).toBe('y');
+    expect(s.standings[2].placement).toBe(3);
+    expect(s.standings[2].distanceM).toBe(30);
   });
 });
 
@@ -266,7 +362,8 @@ describe('CycleRaceEngine — display speedKmh', () => {
     expect(e.getState().riders.g.speedKmh).toBeGreaterThan(0);
     e.tick({});
     const s = e.getState();
-    expect(s.riders.g.finishTimeS).toBe(3);
+    // Interpolated crossing (20 -> 30 spans t=2..3, goal 25 at frac 0.5) → 2.5s.
+    expect(s.riders.g.finishTimeS).toBeCloseTo(2.5, 2);
     expect(s.riders.g.speedKmh).toBe(0);
   });
 

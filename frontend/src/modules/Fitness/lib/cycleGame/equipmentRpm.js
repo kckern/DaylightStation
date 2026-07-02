@@ -26,17 +26,32 @@ export function clampCountedRpm(rpm, abuseMaxRpm) {
 // hold the last good reading through the gap. BUT if the rider was already
 // decelerating (a downward trend into the gap), a real cooldown-to-stop is the
 // likelier story, so we honor the zero instead of holding a stale high value.
+//
+// The hold is CAPPED — a sensor that never comes back must not ride forever at
+// a frozen RPM (audit game-design #6: a dead sensor was an unlimited-distance
+// cheat AND blocked the idle-DNF clock from ever firing). Ticks 1-5 of a gap
+// behave as the original hold; ticks 6-8 decay the held value by half each
+// tick (a "coasting to a stop" read, not an abrupt cliff); tick 9+ goes to 0,
+// at which point the normal idle-DNF machinery (fed 0 rpm) takes back over.
 //   recentRpms: the last few CONNECTED readings, oldest → newest.
+//   gapTicks: 1-based count of consecutive ticks the sensor has been gapped
+//     for (1 = the first disconnected tick). Defaults to 1 for callers that
+//     don't track gap length — same as the pre-cap behavior.
 // Returns the RPM to count for this gap tick.
 const GAP_COOLDOWN_RATIO = 0.7; // newest < 70% of recent peak ⇒ treat as cooldown
-export function rpmDuringGap(recentRpms = []) {
+const GAP_HOLD_TICKS = 5;   // ticks 1-5: full hold (cooldown heuristic applies)
+const GAP_DECAY_TICKS = 8;  // ticks 6-8: hold decays by half per tick
+export function rpmDuringGap(recentRpms = [], gapTicks = 1) {
   const list = Array.isArray(recentRpms) ? recentRpms.filter((r) => Number.isFinite(r)) : [];
   if (list.length === 0) return 0;
   const last = list[list.length - 1];
   if (!(last > 0)) return 0;                    // already at/below zero — nothing to hold
   const peak = Math.max(...list);
-  if (peak > 0 && last < peak * GAP_COOLDOWN_RATIO) return 0; // decelerating → honor the drop
-  return last;                                  // steady/high then cut → sensor gap → hold
+  const held = (peak > 0 && last < peak * GAP_COOLDOWN_RATIO) ? 0 : last; // decelerating → honor the drop
+  const ticks = Number.isFinite(gapTicks) && gapTicks >= 1 ? gapTicks : 1;
+  if (ticks <= GAP_HOLD_TICKS) return held;
+  if (ticks <= GAP_DECAY_TICKS) return held * (0.5 ** (ticks - GAP_HOLD_TICKS));
+  return 0;                                     // gap has run long enough — presume disconnected
 }
 
 export default { resolveRpmLimits, clampCountedRpm, rpmDuringGap };

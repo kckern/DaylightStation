@@ -57,7 +57,7 @@
     gap: 8px;
     color: t.$cg-muted;
 
-    &:hover { border-color: #f87171; color: #f87171; }
+    &:hover { border-color: t.$cg-danger; color: t.$cg-danger; }
   }
 
   &__clear-glyph {

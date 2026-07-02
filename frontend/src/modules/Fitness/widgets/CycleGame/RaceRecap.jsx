@@ -79,6 +79,10 @@ export default function RaceRecap({ candidate, onClose }) {
       cumulativeDistanceM: distNow,
       distanceSeries: p.dist.slice(0, t + 1),
       finishTimeS: p.finalTimeS,
+      // Persisted placement so the standings tower ranks the replay by the
+      // recorded result, not participant-array order (which merely happens
+      // to be placement-sorted today).
+      placement: p.placement ?? null,
       isGhost: p.isGhost
     };
     const hr = p.hr.length ? p.hr[Math.min(t, p.hr.length - 1)] : null;

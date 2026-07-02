@@ -16,11 +16,11 @@
   &__save-failed {
     margin: 0 auto 14px;
     padding: 0.35rem 0.9rem;
-    border: 1px solid rgba(255, 107, 107, 0.5);
+    border: 1px solid rgba(cg.$cg-danger, 0.5);
     border-radius: 8px;
     font-family: cg.$cg-display;
     font-size: 1rem;
-    color: #ff6b6b;
+    color: cg.$cg-danger;
     animation: cg-rr-in 0.4s ease both;
   }
   &__title {
@@ -63,6 +63,22 @@
     text-shadow: 0 0 8px rgba(33, 230, 255, 0.4);
   }
   &__metric--dnf { color: cg.$cg-faint; }
+  // "OT" badge — the rider kept riding until the race closed around them; a real
+  // metric, just tagged, never the grey "DNF" treatment above.
+  &__ot-tag {
+    display: inline-block;
+    margin-left: 0.5em;
+    padding: 0.05em 0.55em;
+    border-radius: 999px;
+    font-family: cg.$cg-display;
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+    color: cg.$cg-warn;
+    border: 1px solid rgba(cg.$cg-warn, 0.5);
+    background: rgba(cg.$cg-warn, 0.14);
+  }
 
   // Medal accents.
   &__row--p1 .race-results__place {

@@ -47,11 +47,15 @@ describe('CycleSpeedometer', () => {
     rerender(<CycleSpeedometer {...baseProps} rpm={75} />);
     expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#f1c40f'); // pushing
   });
-  it('shows the multiplier badge only when multiplier > 1', () => {
+  it('shows the multiplier badge dot + readout text only when multiplier > 1', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} multiplier={2} />);
-    expect(queryByTestId('cycle-speedometer-multiplier').textContent).toContain('2');
+    // The dot itself is color-only (T10's 30%-of-avatar cap leaves no room for
+    // floor-legible text); the number lives in the lower readout beside rpm.
+    expect(queryByTestId('cycle-speedometer-multiplier')).not.toBeNull();
+    expect(queryByTestId('cycle-speedometer-multiplier-text').textContent).toContain('×2');
     rerender(<CycleSpeedometer {...baseProps} multiplier={1} />);
     expect(queryByTestId('cycle-speedometer-multiplier')).toBeNull();
+    expect(queryByTestId('cycle-speedometer-multiplier-text')).toBeNull();
   });
   it('renders the HR value via the embedded avatar', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
@@ -95,14 +99,32 @@ describe('CycleSpeedometer', () => {
     expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
   });
   it('renders the leader medal in the odometer only when isLeader is true', () => {
-    const { getByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+    const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
+    expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();
     rerender(<CycleSpeedometer {...baseProps} isLeader={true} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).toContain('🥇');
+    expect(queryByTestId('cycle-speedometer-leader-medal')).not.toBeNull();
   });
 
   it('suppresses the leader medal once the rider has finished (the finished overlay marks the winner)', () => {
-    const { getByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
-    expect(getByTestId('cycle-speedometer-odometer').textContent).not.toContain('🥇');
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} isLeader={true} finished={true} placement={1} />);
+    expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();
+  });
+
+  // audit game-design #6 — a dead sensor must be visibly flagged, not silently
+  // hold a frozen RPM forever.
+  it('shows a SENSOR chip in place of the rpm digits when sensorLost is true', () => {
+    const { getByTestId, queryByText, container } = render(<CycleSpeedometer {...baseProps} sensorLost />);
+    const rpmSlot = getByTestId('cycle-speedometer-rpm');
+    expect(rpmSlot.textContent).toContain('SENSOR');
+    expect(rpmSlot.textContent).not.toContain('92'); // the real (frozen/decaying) rpm digits are replaced, not appended
+    expect(queryByText('92')).toBeNull();
+    expect(container.querySelector('.cycle-speedometer--sensor-lost')).not.toBeNull();
+  });
+
+  it('does not show the SENSOR chip while the sensor is connected', () => {
+    const { queryByTestId, getByTestId, container } = render(<CycleSpeedometer {...baseProps} sensorLost={false} />);
+    expect(queryByTestId('cycle-speedometer-sensor-lost')).toBeNull();
+    expect(getByTestId('cycle-speedometer-rpm').textContent).toContain('92');
+    expect(container.querySelector('.cycle-speedometer--sensor-lost')).toBeNull();
   });
 });

@@ -20,17 +20,20 @@
   background: rgba(10, 11, 15, 0.55);
   transition: border-color 0.18s ease, background 0.18s ease;
 
-  &__name { font-weight: 700; font-size: 1rem; color: #eef2f8; }
+  // Race-adjacent surface (audit UX §7 / T11): staged riders read this strip
+  // from the bikes just like the race screen, so it carries the same 1.1rem
+  // floor as the racing panels.
+  &__name { font-weight: 700; font-size: 1.1rem; color: #eef2f8; } // was 1rem
   &__rpm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 1.25rem; color: #eef2f8; line-height: 1; }
-  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: 0.7rem; }
+  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: 1.1rem; } // was 0.7rem
 
   &__status {
     display: inline-flex; align-items: center; gap: 5px;
     margin-top: 2px; padding: 3px 12px;
     border-radius: 999px;
-    font-weight: 800; font-size: 0.82rem; letter-spacing: 0.08em;
+    font-weight: 800; font-size: 1.1rem; letter-spacing: 0.08em; // was 0.82rem
   }
-  &__status-icon { font-size: 0.95rem; }
+  &__status-icon { font-size: 1.1rem; } // was 0.95rem
 
   // Compliant — calm green, low alarm.
   &.is-compliant {

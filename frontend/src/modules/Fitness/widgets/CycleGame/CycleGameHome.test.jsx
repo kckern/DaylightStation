@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import CycleGameHome from './CycleGameHome.jsx';
 
 const bikes = [
@@ -497,5 +497,28 @@ describe('CycleGameHome', () => {
     expect(card.classList.contains('is-focused')).toBe(false); // nothing focused yet
     fireEvent.click(card);                               // first tap focuses
     expect(card.classList.contains('is-focused')).toBe(true);
+  });
+
+  it('shows the recovered-race banner and self-dismisses after 8s (audit C1 follow-up)', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByTestId, queryByTestId } = render(
+        <CycleGameHome bikes={bikes} people={people} records={[]}
+          recoveredNotice="Recovered your interrupted race — saved to history" />
+      );
+      const banner = getByTestId('cycle-recovered-banner');
+      expect(banner.textContent).toContain('Recovered your interrupted race');
+      act(() => { vi.advanceTimersByTime(7999); });
+      expect(queryByTestId('cycle-recovered-banner')).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(2); });
+      expect(queryByTestId('cycle-recovered-banner')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders no banner when recoveredNotice is absent', () => {
+    const { queryByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={[]} />);
+    expect(queryByTestId('cycle-recovered-banner')).toBeNull();
   });
 });
