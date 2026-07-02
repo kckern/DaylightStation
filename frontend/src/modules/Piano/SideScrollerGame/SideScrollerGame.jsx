@@ -63,11 +63,13 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     return () => { delete window.__SIDE_SCROLLER_DEBUG__; };
   }, [game.phase, game.world, game.level, game.targets, game.score, game.health, game.matchedActions, activeNotes]);
 
-  // Performance diagnostics during gameplay
+  // Performance diagnostics during gameplay: temporarily raise the always-on
+  // app-wide cadence (60s, started by PianoShell) to 5s, and hand it back on
+  // exit rather than stopping it (startDiagnostics re-arms in place).
   useEffect(() => {
     if (game.phase === 'PLAYING') {
       getLogger().startDiagnostics({ intervalMs: 5000 });
-      return () => getLogger().stopDiagnostics();
+      return () => getLogger().startDiagnostics({ intervalMs: 60000 });
     }
   }, [game.phase]);
 

@@ -96,7 +96,13 @@ export function useRenderWatchdog({
             // Episode begins once jank is sustained — log once, optionally self-heal.
             if (!inEpisode && jankSeconds >= sustainSeconds) {
               inEpisode = true;
-              logger.warn('piano.watchdog.jank-start', { fps: Math.round(fps), minFps, sustainSeconds });
+              // visibility distinguishes real jank from the ~1fps rAF throttle
+              // that applies while the backlight/page is off (screen-off events
+              // polluted the 2026-07-01 investigation).
+              logger.warn('piano.watchdog.jank-start', {
+                fps: Math.round(fps), minFps, sustainSeconds,
+                visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+              });
               if (restart) {
                 logger.warn('piano.watchdog.restart', { fps: Math.round(fps), minFps, sustainSeconds });
                 restart();
