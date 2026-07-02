@@ -132,3 +132,13 @@ Per house rules, structured logging at each seam: ladder fetch ok/fail + duratio
 - **Not blocked on** the audit remediation roadmap, but two audit items materially improve this feature and should land nearby: C6 (ghosts visible on the start line — makes the pre-armed rival feel real) and C1 (save retry — a lost save means a lost ladder attempt).
 - Sub-projects 2–4 (Tour, receipts, career) consume this index and these semantics; endpoint shapes above are designed to extend (e.g. Tour adds stage aggregation over the same index rows).
 - Config lives in the household fitness config served by `getHouseholdAppConfig` (the audit-noted live file, not the stale `apps/{app}/config.yml` duplicate).
+
+## Known issues / follow-ups (from final branch review, 2026-07-01)
+
+- Card omits the delta-to-rung-above the spec listed for standings rows (delta does appear in results callouts).
+- `fetchLadder` hides the card silently on HTTP 5xx (only network throws warn); add a warn on non-404 `!ok`.
+- Index shard rebuilds are not logged from the datastore (service logs entries+duration instead).
+- Legacy `(win_condition, goal)` fallback can cross-match two configured courses sharing the same goal — constraint to respect when authoring `featured_courses`; revisit for Tour (sub-project 2).
+- Index self-heal's pure-mtime (out-of-band file) path and INDEX_VERSION-mismatch branch lack direct tests.
+- Ride It with no rider assigned still fetches a rival and arms a ghost before startRace no-ops (benign; one-line guard).
+- Results ladder callout fires only for Ride It entries; manual featured-course rides rank but get no callout.
