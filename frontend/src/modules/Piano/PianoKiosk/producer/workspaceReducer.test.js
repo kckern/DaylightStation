@@ -9,6 +9,7 @@ import {
   toggleMute,
   toggleSolo,
   setVoice,
+  toggleCarried,
   setKey,
   nudgeKey,
   setBpm,
@@ -264,6 +265,21 @@ describe('SET_VOICE', () => {
   });
 });
 
+describe('TOGGLE_CARRIED', () => {
+  it('flips the §4.1 continuity pin on the targeted layer only', () => {
+    const s = run(addChords(1), addChords(2), toggleCarried('loops/chords-1.mid'));
+    expect(s.layers[0].carried).toBe(true);
+    expect(s.layers[1].carried).toBe(false);
+    const off = workspaceReducer(deepFreeze(s), toggleCarried('loops/chords-1.mid'));
+    expect(off.layers[0].carried).toBe(false);
+  });
+
+  it('unknown id is a no-op (same state reference)', () => {
+    const s = run(addChords(1));
+    expect(workspaceReducer(deepFreeze(s), toggleCarried('ghost'))).toBe(s);
+  });
+});
+
 // ── global knobs ─────────────────────────────────────────────────────────────
 
 describe('SET_KEY / NUDGE_KEY', () => {
@@ -492,7 +508,7 @@ describe('action creators', () => {
     const samples = [
       addLayer({ source: librarySource('a'), role: 'chords' }),
       removeLayer('a'), setGain('a', 1), toggleMute('a'), toggleSolo('a'),
-      setVoice('a', 0), setKey(0), nudgeKey(1), setBpm(100), toggleMetronome(),
+      setVoice('a', 0), toggleCarried('a'), setKey(0), nudgeKey(1), setBpm(100), toggleMetronome(),
       loadStack({ layers: [] }), clearWorkspace(), setEditingSection(null),
     ];
     const types = new Set(Object.values(ActionTypes));

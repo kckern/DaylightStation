@@ -23,9 +23,16 @@
  * placeholder instead of a copy. All sections referencing the same id SHARE
  * the layer: a carried groove/bass persists — and mutates everywhere at once
  * via MUTATE_CARRIED — while the harmony changes around it. Re-promoting a
- * carried layer OVERWRITES the shared entry (latest edit wins everywhere).
- * A carried layer is garbage-collected as soon as NO section references it
- * (swept on every PROMOTE and DELETE_SECTION).
+ * carried layer OVERWRITES the shared entry (latest edit wins everywhere) —
+ * EXCEPT its channel, which is STRUCTURAL and keeps the existing entry's
+ * value (the same lock MUTATE_CARRIED applies): a workspace where the layer
+ * drifted onto another channel must not re-seat the shared layer under every
+ * section that already references it. A carried layer is garbage-collected
+ * as soon as NO section references it (swept on every PROMOTE and
+ * DELETE_SECTION). A carried layer REMOVED from the workspace does NOT join
+ * later promotes — PROMOTE reads only the layers present in
+ * `workspaceState.layers`; the shared entry lives on solely for the sections
+ * that already reference it (until the GC sweep).
  *
  * KEY/TEMPO ARE SONG-GLOBAL: sections store layers only. keyShift/bpm live at
  * `meta`, seeded from the workspace at first promotion and never re-seeded —
@@ -53,6 +60,8 @@
  */
 
 // ── constants (mirror workspaceReducer's global-knob ranges) ─────────────────
+
+import { DRUM_CHANNEL } from './workspaceReducer.js';
 
 const BPM_MIN = 40;
 const BPM_MAX = 220;
@@ -172,6 +181,65 @@ function buildStackEntries(layers) {
   return { stack, carried };
 }
 
+/** Merge freshly promoted carried entries over the existing shared pool.
+ * CHANNEL IS STRUCTURAL (the same lock MUTATE_CARRIED enforces): when a
+ * promote refreshes an entry that already exists, the EXISTING channel is
+ * preserved — otherwise a workspace channel drift would re-seat the shared
+ * layer inside every section that references it, colliding with those
+ * sections' own channel claims. Everything else (gain, mute, program, notes)
+ * takes the fresh value: latest edit wins everywhere. */
+function mergeCarried(base, fresh) {
+  const out = { ...base };
+  for (const [id, layer] of Object.entries(fresh)) {
+    out[id] = base[id] ? { ...layer, channel: base[id].channel } : layer;
+  }
+  return out;
+}
+
+/**
+ * Per-section duplicate-channel repair for playback inputs, mirroring
+ * workspaceReducer's repairChannels policy: grooves pinned to 9; the FIRST
+ * valid claim of a channel wins; duplicates / out-of-range squatters get the
+ * lowest free channel; an unplaceable layer (no free channel) is dropped.
+ * Section stacks built purely through the verbs can't collide, but a shared
+ * carried layer plus historical drafts make collisions possible — playback
+ * must never double-drive one channel with two programs.
+ */
+function repairStackChannels(layers) {
+  const used = new Set();
+  for (const l of layers) {
+    if (l.role !== 'groove' && Number.isInteger(l.channel)
+      && l.channel >= 0 && l.channel <= 15 && l.channel !== DRUM_CHANNEL && !used.has(l.channel)) {
+      used.add(l.channel);
+    }
+  }
+  const claimed = new Set();
+  const out = [];
+  for (const l of layers) {
+    if (l.role === 'groove') {
+      out.push(l.channel === DRUM_CHANNEL ? l : { ...l, channel: DRUM_CHANNEL });
+      continue;
+    }
+    const valid = Number.isInteger(l.channel) && l.channel >= 0 && l.channel <= 15
+      && l.channel !== DRUM_CHANNEL && !claimed.has(l.channel);
+    if (valid) {
+      claimed.add(l.channel);
+      out.push(l);
+      continue;
+    }
+    let ch = null;
+    for (let c = 0; c <= 15; c += 1) {
+      if (c === DRUM_CHANNEL || used.has(c) || claimed.has(c)) continue;
+      ch = c;
+      break;
+    }
+    if (ch == null) continue; // unplaceable — dropped (mirrors repairChannels)
+    claimed.add(ch);
+    out.push({ ...l, channel: ch });
+  }
+  return out;
+}
+
 /** Drop carriedLayers entries no section references anymore (the GC).
  * Returns the SAME map when nothing changed, so no-op sweeps don't churn. */
 function sweepCarried(sections, carriedLayers) {
@@ -251,7 +319,7 @@ export function draftReducer(state, action) {
           sections,
           // Merge fresh carried entries first, THEN sweep: a replace can both
           // refresh shared layers and orphan previously-referenced ones.
-          carriedLayers: sweepCarried(sections, { ...base.carriedLayers, ...carried }),
+          carriedLayers: sweepCarried(sections, mergeCarried(base.carriedLayers, carried)),
         };
       }
 
@@ -266,7 +334,7 @@ export function draftReducer(state, action) {
       return {
         ...base,
         sections: [...base.sections, section],
-        carriedLayers: { ...base.carriedLayers, ...carried },
+        carriedLayers: mergeCarried(base.carriedLayers, carried),
         // EVERY new section joins the arrangement once — a promoted section
         // is immediately playable (first promote: a one-section song plays).
         arrangement: [...base.arrangement, { sectionId: section.id, repeats: 1 }],
@@ -459,8 +527,11 @@ export const setMeta = (patch) => ({ type: ActionTypes.SET_META, patch });
 /**
  * A section's stack with { carriedRef } placeholders expanded into the SHARED
  * carried layers — the caller feeds this to the workspace's LOAD_STACK when
- * opening a section for editing. Returns null for an unknown section (or a
- * null draft) so callers can distinguish "no such section" from "empty".
+ * opening a section for editing. SECTION STACKS CARRY NO KEY/TEMPO: callers
+ * opening a section MUST pass `draft.meta.bpm` and `draft.meta.keyShift` to
+ * loadStack alongside these layers, or the workspace keeps its stale jam
+ * key/tempo and the section plays wrong. Returns null for an unknown section
+ * (or a null draft) so callers can distinguish "no such section" from "empty".
  * A dangling carriedRef is skipped defensively — the GC sweep should make
  * that impossible, but a missing layer must never crash playback.
  * NOTE: carried entries are the LIVE shared objects — treat them read-only
@@ -492,14 +563,24 @@ export function resolveSectionStack(draft, sectionId) {
  * - layers with no loaded notes are omitted (take layers fall back to the
  *   notes embedded in their source);
  * - muted applies PER-SECTION solo semantics: muted || (sectionHasSolo &&
- *   !soloed) — a solo scopes to the stack it lives in.
+ *   !soloed) — a solo scopes to the stack it lives in;
+ * - channels pass through a per-section duplicate repair (repairStackChannels
+ *   — first claim wins, dupes get lowest-free, grooves pinned 9), so playback
+ *   never double-drives one channel with two layers' programs;
+ * - a section whose layers are ALL unloaded (or whose stack is empty — a
+ *   template slot) compiles to an empty stack, which buildSectionCycle turns
+ *   into ZERO-LENGTH blocks; the transport's guarded block walk skips them
+ *   without spinning, so an unfilled slot simply takes no time;
+ * - scheduler inputs carry NO gmProgram: the program map is the COMPONENT's
+ *   job (configureLayer per channel on block boundaries — see
+ *   sectionProgramMap); the scheduler only needs channels for event routing.
  * Call as: compileArrangement(sections, arrangement, { bpm: draft.meta.bpm }).
  */
 export function toSchedulerInputs(draft, notesById = {}) {
   if (!draft) return { sections: [], arrangement: [] };
   const keyShift = Number.isFinite(draft.meta?.keyShift) ? draft.meta.keyShift : 0;
   const sections = draft.sections.map((section) => {
-    const layers = resolveSectionStack(draft, section.id) ?? [];
+    const layers = repairStackChannels(resolveSectionStack(draft, section.id) ?? []);
     const sectionHasSolo = layers.some((l) => l.soloed);
     const stack = [];
     for (const layer of layers) {

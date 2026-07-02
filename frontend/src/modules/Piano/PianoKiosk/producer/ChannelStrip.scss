@@ -65,8 +65,8 @@
     &:disabled { opacity: 0.55; cursor: default; }
   }
 
-  // M (Mute) / S (Solo) latching taps: ≥48px targets.
-  &__m, &__s {
+  // M (Mute) / S (Solo) / carry-pin latching taps: ≥48px targets.
+  &__m, &__s, &__carry {
     flex: 0 0 auto;
     min-width: 3rem;
     min-height: 3rem;
@@ -82,6 +82,9 @@
   }
   &__m.is-on { background: var(--piano-danger, #e05a4f); color: #fff; border-color: var(--piano-danger, #e05a4f); }
   &__s.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+  // Carry pin: continuity across sections (§4.1) — cool blue, not the
+  // accent green, so a pinned layer never reads as "soloed".
+  &__carry.is-on { background: var(--piano-info, #3d7bd9); color: #fff; border-color: var(--piano-info, #3d7bd9); }
 
   &__gain {
     position: relative;
@@ -269,6 +272,7 @@
 .piano-channel-strip__voice:focus-visible,
 .piano-channel-strip__m:focus-visible,
 .piano-channel-strip__s:focus-visible,
+.piano-channel-strip__carry:focus-visible,
 .piano-channel-strip__remove:focus-visible,
 .piano-voice-picker__voice:focus-visible,
 .piano-voice-picker__family-head:focus-visible,

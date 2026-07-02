@@ -270,6 +270,35 @@ describe('PROMOTE (carried layers)', () => {
     expect(s2.carriedLayers[GROOVE].gain).toBe(0.7);
     expect(resolveSectionStack(s2, 'sec-2').find((l) => l.id === GROOVE).gain).toBe(0.7);
   });
+
+  it('a carried-entry overwrite preserves the EXISTING channel (channel is structural, like MUTATE_CARRIED)', () => {
+    const BASS = 'loops/bass.mid';
+    const carriedBass = (channel, extra = {}) => wsLayer(BASS, 'bass', channel, { carried: true, gmProgram: 33, ...extra });
+    // sec-1 promotes the carried bass on channel 2; the workspace then drifts
+    // it onto channel 0 (e.g. after layers were removed and re-added).
+    const base = run(
+      promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0), carriedBass(2)]), notesById }),
+      promote({ workspaceState: ws([wsLayer(CHORDS_B, 'chords', 1), carriedBass(0, { gain: 0.6 })]), notesById }),
+    );
+    // Channel stays 2 (sec-1's stack already claims 0 for its chords); the
+    // mix edit (gain) still wins everywhere.
+    expect(base.carriedLayers[BASS].channel).toBe(2);
+    expect(base.carriedLayers[BASS].gain).toBe(0.6);
+
+    // Replace path too: re-promote sec-1 with the drifted channel.
+    const replaced = draftReducer(deepFreeze(base), promote({
+      workspaceState: ws([carriedBass(5, { gain: 0.3 })]), sectionId: 'sec-1', notesById,
+    }));
+    expect(replaced.carriedLayers[BASS].channel).toBe(2);
+    expect(replaced.carriedLayers[BASS].gain).toBe(0.3);
+  });
+
+  it('a NEW carried entry adopts the promoting workspace channel as-is', () => {
+    const s = run(promote({
+      workspaceState: ws([wsLayer('loops/bass.mid', 'bass', 3, { carried: true })]), notesById,
+    }));
+    expect(s.carriedLayers['loops/bass.mid'].channel).toBe(3);
+  });
 });
 
 describe('PROMOTE (replace / re-promote)', () => {
@@ -682,6 +711,50 @@ describe('toSchedulerInputs', () => {
     }));
     const { sections } = toSchedulerInputs(draft, notesById);
     expect(sections[0].stack.map((l) => l.muted)).toEqual([false, true]);
+  });
+
+  describe('per-section channel repair', () => {
+    it('repairs duplicate/squatting channels (first claim wins, dupes → lowest free, grooves pinned 9)', () => {
+      // Hand-built draft (a historical save from before channel locking): the
+      // stack claims ch0 twice and holds a groove squatting off the drum channel.
+      const draft = {
+        sections: [{
+          id: 'sec-1',
+          name: 'A',
+          lengthBars: 2,
+          stack: [
+            wsLayer(CHORDS_A, 'chords', 0),
+            wsLayer(CHORDS_B, 'melody', 0), // duplicate claim
+            wsLayer(GROOVE, 'groove', 4), // groove off 9
+          ],
+        }],
+        carriedLayers: {},
+        arrangement: [{ sectionId: 'sec-1', repeats: 1 }],
+        meta: { title: null, author: null, keyShift: 0, bpm: 100 },
+      };
+      const { sections } = toSchedulerInputs(deepFreeze(draft), notesById);
+      expect(sections[0].stack.map((l) => l.channel)).toEqual([0, 1, 9]);
+    });
+
+    it('a shared carried layer colliding with a section-local claim comes out collision-free', () => {
+      const BASS = 'loops/bass.mid';
+      const nb = { ...notesById, [BASS]: { notes: wholeNote(40), ppq: 480, barSpan: 2 } };
+      const s = run(
+        promote({ workspaceState: ws([wsLayer(BASS, 'bass', 2, { carried: true })]), notesById: nb }),
+        // Workspace drifted: the carried bass now sits on 0 while a melody
+        // claims 2 — the shared entry keeps ch2 (structural), so sec-2's
+        // resolved stack holds TWO ch2 layers until the repair pass.
+        promote({
+          workspaceState: ws([wsLayer(BASS, 'bass', 0, { carried: true }), wsLayer(CHORDS_B, 'melody', 2)]),
+          notesById: nb,
+        }),
+      );
+      expect(s.carriedLayers[BASS].channel).toBe(2);
+      const { sections } = toSchedulerInputs(s, nb);
+      // Stack order is promote order: carried bass first → it keeps its valid
+      // claim of 2; the melody dupe is reassigned lowest-free (0).
+      expect(sections[1].stack.map((l) => l.channel)).toEqual([2, 0]);
+    });
   });
 
   it('INTEGRATION: compiles through the real compileArrangement — carried groove sounds in every section', () => {

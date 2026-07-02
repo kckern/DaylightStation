@@ -19,6 +19,11 @@
  * Remove is a 2-tap confirm: first tap arms ("Sure?") for 3 s, second tap
  * within the window removes. Touch kiosks get accidental taps, and remove is
  * the one destructive control on the strip.
+ *
+ * Carry pin (§4.1 continuity): a small latching toggle next to M/S. Pinned
+ * layers are stored ONCE in the song draft on promote and SHARED across
+ * every section promoted while the pin is on (a groove/bass that persists
+ * while the harmony changes). Affects future promotes only.
  */
 import { useEffect, useRef, useState } from 'react';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
@@ -39,6 +44,7 @@ const REMOVE_ARM_MS = 3000;
  * @param {(id:string) => void} props.onRemove
  * @param {(id:string, gain:number) => void} props.onGain
  * @param {(id:string, program:number) => void} props.onVoice
+ * @param {(id:string) => void} [props.onToggleCarried] - carry pin (absent → no pin)
  */
 export function ChannelStrip({
   layer,
@@ -49,6 +55,7 @@ export function ChannelStrip({
   onRemove,
   onGain,
   onVoice,
+  onToggleCarried,
 }) {
   const entry = layer.source?.kind === 'library' ? layer.source.entry : null;
   const isGroove = layer.role === 'groove';
@@ -110,6 +117,16 @@ export function ChannelStrip({
         aria-label="solo"
         onClick={() => onToggleSolo(layer.id)}
       >S</button>
+      {onToggleCarried && (
+        <button
+          type="button"
+          className={`piano-channel-strip__carry${layer.carried ? ' is-on' : ''}`}
+          aria-pressed={!!layer.carried}
+          aria-label="carry"
+          title="Carry across sections"
+          onClick={() => onToggleCarried(layer.id)}
+        >⇉</button>
+      )}
 
       <div className="piano-channel-strip__gain">
         <GainStrip
