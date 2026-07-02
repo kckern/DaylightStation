@@ -6,8 +6,8 @@
  * front doors → overlay → ADD_LAYER → rows → transport inputs → teardown.
  *
  * Delta from the old suite (single-stack jam): the tap-▶ peek preview test is
- * gone deliberately — the interim LibraryOverlay drops preview; Task 5.2
- * brings press-to-peek. The "transport fires pressNote" test became "play
+ * gone deliberately — the library surface (LibraryBrowser) has no audition;
+ * Task 5.2 brings press-to-peek. The "transport fires pressNote" test became "play
  * routes through useProducerTransport" — loop sound goes through the
  * voiceRouter now, never pressNote (the user's own path). Everything else has
  * an equivalent here.
@@ -89,6 +89,9 @@ const INDEX_YML = `
   signature: i-bVII-bIII-iv
   barSpan: 4
   bpm: 120
+  timeline: [[0, 3, 7], [10, 2, 5], [3, 7, 10], [5, 8, 0]]
+  timelineRoot: 2
+  specificity: triad
 - slug: catchy-hook-5-6-1
   path: melodies/starters/catchy/catchy-hook-5-6-1.mid
   type: melody
@@ -96,6 +99,9 @@ const INDEX_YML = `
   mood: Catchy
   degrees: [5, 6, 1]
   title: "Catchy Hook"
+  timeline: [[0], [3], [7], [5]]
+  timelineRoot: 2
+  specificity: root
 - slug: am-f-g-am
   path: chord-progressions/other/am-f-g-am.mid
   type: chord-progression
@@ -116,6 +122,9 @@ const INDEX_YML = `
   signature: ii-V-I
   barSpan: 3
   bpm: 120
+  timeline: [[2, 5, 9], [7, 11, 2], [0, 4, 7]]
+  timelineRoot: 0
+  specificity: triad
 - slug: broken-melody
   path: melodies/other/broken-melody.mid
   type: melody
@@ -298,15 +307,18 @@ describe('Producer shell (three bands)', () => {
     expect(transportMock.stop).toHaveBeenCalled();
   });
 
-  it('"+ Add layer" reopens the library ranked to stackable candidates only', async () => {
+  it('"+ Add layer" reopens the library gated to consonance-stackable candidates', async () => {
     render(<Producer />);
     await addDmLayer();
     fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
     await screen.findByRole('dialog', { name: 'loop library' });
-    // Compatible complement offered…
+    // The guardrail indicator is up, and the compatible complement is offered…
+    expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
     expect(await screen.findByText('Catchy Hook')).toBeInTheDocument();
-    // …incompatible signature (ii-V-I vs i-bVII-bIII-iv) excluded, and the
-    // already-stacked base is not re-offered.
+    // …the harmonically clashing loop (its slot-unions vs the base spell no
+    // nameable chord) is excluded, and the already-stacked base is not
+    // re-offered. (Ported from the interim overlay's stackable-filter test —
+    // the gate is now union-consonance, not roman-signature matching.)
     expect(screen.queryByText('Different Progression Loop')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
   });

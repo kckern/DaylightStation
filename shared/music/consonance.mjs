@@ -7,8 +7,9 @@
 // near-misses.
 //
 // Supersedes harmonicSignature's `areStackable` (roman-label matching) as the
-// stacking gate per design §4b; areStackable remains only as a legacy ranking
-// signal in layerMatch until Task 5.1 rewires.
+// stacking gate per design §4b; Task 5.1 rewired the browse gate onto this
+// module (producer/libraryRanking.js) — areStackable survives only inside
+// layerMatch as a same-signature RANKING signal, never as a gate.
 //
 // KEY-CONFORMED ASSUMPTION (important): timelines carry ROOT-RELATIVE pitch
 // classes (see harmonicTimeline.mjs), and the app transposes loops to a shared
@@ -106,11 +107,13 @@ function gcd(a, b) {
 
 /**
  * Phase-align two slot arrays by tiling each to the LCM of their lengths
- * (4 vs 8 → 8 pairs; 4 vs 6 → 12). Shared by `stackable` here and
- * `melodyFit` (melodyFit.mjs) so the two scorers can never disagree on
- * alignment. Element type is opaque — pairs hold REFERENCES to the original
- * elements (pc arrays here; melodyFit tiles precomputed Sets), not copies.
- * Either input empty → [] (callers decide what an empty alignment means).
+ * (4 vs 8 → 8 pairs; 4 vs 6 → 12). This is the REFERENCE implementation of
+ * the alignment rule; the hot paths (`makeStackableGate` here, the scorer in
+ * melodyFit.mjs) use the identical index math (i % len over the LCM frame)
+ * without materializing the pair array — the equivalence tests in both suites
+ * keep them honest. Element type is opaque — pairs hold REFERENCES to the
+ * original elements, not copies. Either input empty → [] (callers decide what
+ * an empty alignment means).
  *
  * @template A, B
  * @param {A[]} a slot array (harmonicTimeline.mjs `slots` shape, or per-slot derivatives)
@@ -121,6 +124,58 @@ export function alignSlots(a, b) {
   if (a.length === 0 || b.length === 0) return [];
   const alignedLength = (a.length * b.length) / gcd(a.length, b.length);
   return Array.from({ length: alignedLength }, (_, i) => [a[i % a.length], b[i % b.length]]);
+}
+
+// Memoized verdicts for union masks: only 4096 possible 12-bit masks exist,
+// and a library-scale gate run (3.2k candidates × LCM-tiled slots) hits the
+// same unions constantly. Index = mask, value = boolean (or undefined =
+// unknown). Purely an evaluation cache — semantics identical to slotConsonant.
+const MASK_VERDICTS = new Array(4096);
+
+/** slotConsonant, on a prebuilt 12-bit mask, through the verdict cache. */
+function maskConsonant(mask) {
+  let v = MASK_VERDICTS[mask];
+  if (v === undefined) {
+    v = mask === 0 || ROTATED_MAXIMAL_MASKS.some((t) => (mask & t) === mask);
+    MASK_VERDICTS[mask] = v;
+  }
+  return v;
+}
+
+/**
+ * Curried stacking gate: precompute timelineA's slot masks ONCE, then test
+ * many candidates against it. This is the hot-path form for the library
+ * browser (one fixed base × thousands of candidates × LCM-tiled slots): per
+ * aligned slot the work collapses to a bitwise OR + cached verdict lookup.
+ * Return value and error behavior are IDENTICAL to `stackable` (which
+ * delegates here) — see its doc below.
+ *
+ * @param {{slots:number[][]}} timelineA harmonicTimeline.mjs shape
+ * @returns {(timelineB:{slots:number[][]}) => {ok:boolean, worstSlot:number, score:number}}
+ * @throws {TypeError} when timelineA lacks an array `slots` (at creation);
+ *   the returned gate throws the same for a bad timelineB
+ */
+export function makeStackableGate(timelineA) {
+  if (!Array.isArray(timelineA?.slots)) {
+    throw new TypeError('stackable: timelineA is not a harmonic timeline (missing array `slots`)');
+  }
+  const masksA = timelineA.slots.map(toMask);
+  return function gate(timelineB) {
+    if (!Array.isArray(timelineB?.slots)) {
+      throw new TypeError('stackable: timelineB is not a harmonic timeline (missing array `slots`)');
+    }
+    const masksB = timelineB.slots.map(toMask);
+    if (masksA.length === 0 || masksB.length === 0) return { ok: true, worstSlot: -1, score: 1 };
+
+    const alignedLength = (masksA.length * masksB.length) / gcd(masksA.length, masksB.length);
+    let worstSlot = -1;
+    let consonantCount = 0;
+    for (let i = 0; i < alignedLength; i += 1) {
+      if (maskConsonant(masksA[i % masksA.length] | masksB[i % masksB.length])) consonantCount += 1;
+      else if (worstSlot === -1) worstSlot = i;
+    }
+    return { ok: worstSlot === -1, worstSlot, score: consonantCount / alignedLength };
+  };
 }
 
 /**
@@ -150,23 +205,9 @@ export function alignSlots(a, b) {
  * @throws {TypeError} when either argument lacks an array `slots`
  */
 export function stackable(timelineA, timelineB) {
-  if (!Array.isArray(timelineA?.slots)) {
-    throw new TypeError('stackable: timelineA is not a harmonic timeline (missing array `slots`)');
-  }
-  if (!Array.isArray(timelineB?.slots)) {
-    throw new TypeError('stackable: timelineB is not a harmonic timeline (missing array `slots`)');
-  }
-  const pairs = alignSlots(timelineA.slots, timelineB.slots);
-  if (pairs.length === 0) return { ok: true, worstSlot: -1, score: 1 };
-
-  let worstSlot = -1;
-  let consonantCount = 0;
-  for (let i = 0; i < pairs.length; i += 1) {
-    const [slotA, slotB] = pairs[i];
-    if (slotConsonant([...slotA, ...slotB])) consonantCount += 1;
-    else if (worstSlot === -1) worstSlot = i;
-  }
-  return { ok: worstSlot === -1, worstSlot, score: consonantCount / pairs.length };
+  // Delegates to the curried gate (identical alignment: index math over the
+  // LCM frame == alignSlots' tiling) so the two forms can never disagree.
+  return makeStackableGate(timelineA)(timelineB);
 }
 
-export default { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable };
+export default { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable, makeStackableGate };

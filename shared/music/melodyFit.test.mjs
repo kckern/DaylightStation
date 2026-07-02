@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { melodyFit } from './melodyFit.mjs';
+import { melodyFit, makeMelodyFitScorer } from './melodyFit.mjs';
 
 /** Timeline literal helper — only `slots` matters to melodyFit (loops are
  *  key-conformed upstream, so root is irrelevant to the scoring). */
@@ -95,6 +95,26 @@ describe('melodyFit', () => {
       assert.throws(() => melodyFit(bad, valid), { name: 'TypeError', message: /melodyTimeline/ });
       assert.throws(() => melodyFit(valid, bad), { name: 'TypeError', message: /harmonyTimeline/ });
     }
+  });
+
+  it('makeMelodyFitScorer: curried form scores identically to the two-arg form', () => {
+    const harmony = tl([[0, 4, 7], [2, 7, 11], [], [5, 9, 0]]);
+    const scorer = makeMelodyFitScorer(harmony);
+    const melodies = [
+      tl([[0], [2], [4], [5]]),
+      tl([[1], [6], [10], [3]]),
+      tl([[], [], [], []]),
+      tl([[0, 4], [11], [9], []]),
+    ];
+    for (const melody of melodies) {
+      assert.equal(scorer(melody), melodyFit(melody, harmony));
+    }
+  });
+
+  it('makeMelodyFitScorer: harmony validated at creation, melody at call time', () => {
+    assert.throws(() => makeMelodyFitScorer({}), { name: 'TypeError', message: /harmonyTimeline/ });
+    const scorer = makeMelodyFitScorer(tl([[0, 4, 7]]));
+    assert.throws(() => scorer(null), { name: 'TypeError', message: /melodyTimeline/ });
   });
 
   it('score is always in [0, 1] across mixed fixtures', () => {
