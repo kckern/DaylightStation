@@ -433,7 +433,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     <div className="cg-chart" data-testid="distance-chart">
       <div className="cg-chart__header" data-testid="chart-header">
         <span className="cg-chart__clock-label">{winCondition === 'time' ? 'Time left' : 'Elapsed'}</span>
-        <span className="cg-chart__clock">{formatClock(clockSeconds)}</span>
+        <span className="cg-chart__clock" data-testid="race-clock">{formatClock(clockSeconds)}</span>
         <span className="cg-chart__goal">
           {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `Leader ${formatDistance(maxDistanceM)}`}
         </span>

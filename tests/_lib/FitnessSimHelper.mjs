@@ -242,6 +242,9 @@ export async function waitForCycleState(page, targets, { timeoutMs = 30000, poll
  * List equipment as the simulator sees it.
  */
 export async function getEquipment(page) {
+  // Synchronize with async controller registration (cold-server race) so
+  // callers never destructure an empty [] from a not-yet-booted app.
+  await page.waitForFunction(() => window.__fitnessSimController, { timeout: 15000 });
   return page.evaluate(() => {
     const ctl = window.__fitnessSimController;
     return ctl ? ctl.getEquipment() : [];
@@ -275,6 +278,9 @@ export async function setHR(page, deviceId, bpm) {
  * it to the session.
  */
 export async function setEquipmentRider(page, equipmentId, userId) {
+  // The controller registers asynchronously after app boot — a cold dev server
+  // can lose this race, so synchronize instead of dereferencing blind.
+  await page.waitForFunction(() => window.__fitnessSimController, { timeout: 15000 });
   return page.evaluate(
     ([eq, u]) => window.__fitnessSimController.setEquipmentRider(eq, u),
     [equipmentId, userId]
