@@ -6,6 +6,10 @@
 // the pair (worst slot decides); `score` survives as a ranking signal for
 // near-misses.
 //
+// Supersedes harmonicSignature's `areStackable` (roman-label matching) as the
+// stacking gate per design §4b; areStackable remains only as a legacy ranking
+// signal in layerMatch until Task 5.1 rewires.
+//
 // KEY-CONFORMED ASSUMPTION (important): timelines carry ROOT-RELATIVE pitch
 // classes (see harmonicTimeline.mjs), and the app transposes loops to a shared
 // root BEFORE stacking. `stackable` therefore unions the root-relative sets
@@ -69,8 +73,9 @@ function rotateMask(mask, r) {
 
 // OPTIMIZATION (behavior-preserving): under subset semantics, matching against
 // a template covers all of its subsets, so only MAXIMAL templates (those not
-// contained in another) need checking — maj9/dom9/min9/dim7/m7b5/aug/sus4.
-// Derived programmatically so edits to CHORD_TEMPLATES can't drift out of sync.
+// contained in another) need checking — currently the three 9ths plus the
+// qualities no 9th contains. The set is derived programmatically from
+// CHORD_TEMPLATES, so table edits can't drift out of sync with matching.
 const TEMPLATE_MASKS = Object.values(CHORD_TEMPLATES).map(toMask);
 const MAXIMAL_MASKS = TEMPLATE_MASKS.filter(
   (m) => !TEMPLATE_MASKS.some((other) => other !== m && (m & other) === m),
@@ -108,8 +113,14 @@ function gcd(a, b) {
  * Assumes both timelines are key-conformed (see module header): slot sets are
  * unioned directly, `root`/`specificity` are ignored.
  *
- * A zero-length timeline (empty `slots`) is trivially stackable — nothing
+ * A zero-length timeline (empty `slots: []`) is trivially stackable — nothing
  * sounding clashes with nothing — and returns { ok: true, worstSlot: -1, score: 1 }.
+ * A MISSING timeline is different: this is a HARD gate, so a non-object or an
+ * object without an array `slots` throws a TypeError rather than silently
+ * passing. Consumers (Task 5.1 browser, Task 2.1 enrichment CLI) exclude
+ * unenriched entries upstream; reaching stackable without a timeline is a
+ * pipeline bug that must be loud (matching harmonicTimeline's RangeError
+ * philosophy on corrupt input).
  *
  * @param {{slots:number[][]}} timelineA harmonicTimeline.mjs shape
  * @param {{slots:number[][]}} timelineB harmonicTimeline.mjs shape
@@ -117,10 +128,17 @@ function gcd(a, b) {
  *   slot consonant; `worstSlot` = index (in the aligned/tiled frame) of the
  *   first dissonant slot, or -1; `score` = fraction of consonant slots (0..1),
  *   for ranking near-misses.
+ * @throws {TypeError} when either argument lacks an array `slots`
  */
 export function stackable(timelineA, timelineB) {
-  const a = timelineA?.slots ?? [];
-  const b = timelineB?.slots ?? [];
+  if (!Array.isArray(timelineA?.slots)) {
+    throw new TypeError('stackable: timelineA is not a harmonic timeline (missing array `slots`)');
+  }
+  if (!Array.isArray(timelineB?.slots)) {
+    throw new TypeError('stackable: timelineB is not a harmonic timeline (missing array `slots`)');
+  }
+  const a = timelineA.slots;
+  const b = timelineB.slots;
   if (a.length === 0 || b.length === 0) return { ok: true, worstSlot: -1, score: 1 };
 
   const alignedLength = (a.length * b.length) / gcd(a.length, b.length);
