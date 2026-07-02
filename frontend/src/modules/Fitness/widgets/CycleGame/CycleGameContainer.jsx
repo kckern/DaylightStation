@@ -15,6 +15,7 @@ import { mapRaceRecordToCandidate, buildGhostFromCandidate } from '@/modules/Fit
 import { courseStartOverride, pickRival, ladderDelta } from '@/modules/Fitness/lib/cycleGame/ladder.js';
 import { formatDistance } from '@/modules/Fitness/lib/cycleGame/formatDistance.js';
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitness/lib/cycleGame/equipmentRpm.js';
+import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from '@/modules/Fitness/lib/cycleGame/raceCheckpoint.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
@@ -244,6 +245,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   const raceMetaRef = useRef(null);
   const startCountdownRef = useRef(3);
   const savedRef = useRef(false);
+  // Mid-race crash recovery (audit C1): guards the recovery check to run
+  // exactly once — on the FIRST time the container reaches idle after mount
+  // (not every return-to-idle, e.g. after backToHome/onCancel).
+  const recoveryCheckedRef = useRef(false);
   const prevDnfRef = useRef(new Set());
   // Riders whose race was cut short by the clock/operator (mercy-kill window
   // closing, or a forced finish) while still honestly riding — see
@@ -1096,6 +1101,19 @@ export default function CycleGameContainer({ onMount } = {}) {
       // read from post-resolution engine state (correct for ghosts/penalty/finish).
       // Off by default in console; captured to the per-session JSONL for forensics.
       tickCountRef.current += 1;
+
+      // ── mid-race crash checkpoint (audit C1) — every 5th tick, snapshot the
+      // ALREADY-IN-HAND post-resolution state (no extra getState() call) so a
+      // reload/crash can be finalized into a saved record on next mount instead
+      // of losing the race outright. writeCheckpoint swallows storage errors.
+      if (tickCountRef.current % 5 === 0) {
+        writeCheckpoint(window.sessionStorage, {
+          raceMeta: raceMetaRef.current,
+          engineState: state.engineState,
+          savedAt: Date.now()
+        });
+      }
+
       const tickRiders = state.engineState?.riders || {};
       log.debug('cycle_game.tick', {
         raceId: raceMetaRef.current?.raceId,
@@ -1169,6 +1187,33 @@ export default function CycleGameContainer({ onMount } = {}) {
     // context churn or torn down by the go→racing phase edge.
   }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log]);
 
+  // ── pagehide best-effort save (audit C1) ─────────────────────────────────
+  // A reload/crash may not give the periodic checkpoint a chance to run again
+  // before the tab is gone. On pagehide (fires on reload/close/nav-away —
+  // unlike beforeunload, not blocked by kiosk browsers) fire a best-effort
+  // sendBeacon with the CURRENT engine state directly to the save endpoint.
+  // The checkpoint is left in place regardless (belt over the beacon's braces
+  // — double-submit is safe, the datastore overwrites by the same raceId).
+  useEffect(() => {
+    if (!isEngineLive) return undefined;
+    const onPageHide = () => {
+      if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+      const controller = controllerRef.current;
+      const meta = raceMetaRef.current;
+      const engineState = controller?.getState?.()?.engineState;
+      if (!controller || !meta || !engineState) return;
+      try {
+        const record = buildRaceRecord(engineState, meta);
+        const blob = new Blob([JSON.stringify({ record })], { type: 'application/json' });
+        navigator.sendBeacon('/api/v1/fitness/cycle-races', blob);
+      } catch {
+        // best-effort only — pagehide is not a place to throw or retry.
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [isEngineLive]);
+
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
     if (phase !== 'results') return;
@@ -1203,7 +1248,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           raceId: meta.raceId, ok, attempt: result.attempt,
           ...(ok ? {} : { error: result.error })
         });
-        if (!ok) setSaveFailed(true);
+        if (ok) clearCheckpoint(window.sessionStorage); // race safely landed — the checkpoint is now redundant
+        else setSaveFailed(true);
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface
         // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
@@ -1243,6 +1289,58 @@ export default function CycleGameContainer({ onMount } = {}) {
     // arrays); adding them here is a no-op in practice because savedRef latches
     // this effect to run once per race, but keeps exhaustive-deps honest.
   }, [phase, log, fetchLadder, resolveDisplayName]);
+
+  // ── mid-race crash recovery (audit C1) ───────────────────────────────────
+  // A kiosk reload/crash mid-race previously discarded the whole race — the
+  // race-tick effect below checkpoints progress to sessionStorage every 5th
+  // tick; this runs ONCE on mount (guarded by recoveryCheckedRef, not a plain
+  // `phase === 'idle'` dependency, since the container returns to idle many
+  // times in a session — after results, after cancel) and finalizes any
+  // fresh checkpoint left behind by a race that never reached 'results'.
+  // Live resume of the running engine is explicitly out of scope — this only
+  // salvages the record. A lobby-appropriate toast surface doesn't exist
+  // today (the event-toast system is race-screen only); recovery is
+  // surfaced via the structured log only.
+  useEffect(() => {
+    if (phase !== 'idle') return;
+    if (recoveryCheckedRef.current) return;
+    recoveryCheckedRef.current = true;
+    const store = window.sessionStorage;
+    const checkpoint = readFreshCheckpoint(store, Date.now());
+    if (!checkpoint) {
+      // Covers both "nothing there" and "stale/corrupt" — clear defensively
+      // either way (removeItem on an absent key is a no-op).
+      clearCheckpoint(store);
+      log.debug('cycle_game.checkpoint_discarded', {});
+      return;
+    }
+    const { raceMeta, engineState } = checkpoint;
+    const totalDistanceM = Object.values(engineState.riders || {})
+      .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
+    if (totalDistanceM <= 0) {
+      clearCheckpoint(store);
+      log.info('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, skipped: 'zero_distance' });
+      return;
+    }
+    const record = buildRaceRecord(engineState, raceMeta);
+    (async () => {
+      try {
+        const result = await saveRaceRecord({ record });
+        log.info('cycle_game.race_recovered', {
+          raceId: raceMeta.raceId,
+          ok: result.ok,
+          ...(result.ok ? {} : { error: result.error })
+        });
+      } catch (err) {
+        // saveRaceRecord never throws — this net catches unexpected errors only.
+        log.error('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, error: err?.message || String(err) });
+      } finally {
+        clearCheckpoint(store);
+      }
+    })();
+    // Runs exactly once (recoveryCheckedRef); `phase` is the trigger only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   useEffect(() => {
     onMount?.();
@@ -1413,6 +1511,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
     controllerRef.current = null;
     raceMetaRef.current = null;
+    clearCheckpoint(window.sessionStorage); // an intentionally-cancelled race is not "crashed" — nothing to recover
     setSnapshot(null);
     setPhase('idle');
   }, [log, phase]);
