@@ -116,6 +116,17 @@ const INDEX_YML = `
   signature: ii-V-I
   barSpan: 3
   bpm: 120
+- slug: broken-melody
+  path: melodies/other/broken-melody.mid
+  type: melody
+  sources: [other]
+  title: "Broken Melody"
+- slug: basic-rock
+  path: grooves/basic-rock.mid
+  type: groove
+  feel: rock
+  title: "Basic Rock"
+  barSpan: 2
 `;
 
 function midiBuffer() {
@@ -124,6 +135,13 @@ function midiBuffer() {
   tr.addNote({ midi: 62, time: 0, duration: 0.5 });
   tr.addNote({ midi: 65, time: 0.5, duration: 0.5 });
   return m.toArray(); // Uint8Array
+}
+
+/** A structurally valid MIDI file with ZERO notes — the "load lands empty" case. */
+function emptyMidiBuffer() {
+  const m = new Midi();
+  m.addTrack();
+  return m.toArray();
 }
 
 beforeEach(() => {
@@ -146,6 +164,7 @@ beforeEach(() => {
   global.window.AudioContext = class { close() { return Promise.resolve(); } };
   global.fetch = vi.fn((url) => {
     if (url.endsWith('index.yml')) return Promise.resolve({ text: () => Promise.resolve(INDEX_YML) });
+    if (url.includes('broken-melody')) return Promise.resolve({ arrayBuffer: () => Promise.resolve(emptyMidiBuffer().buffer) });
     return Promise.resolve({ arrayBuffer: () => Promise.resolve(midiBuffer().buffer) });
   });
 });
@@ -279,6 +298,28 @@ describe('Producer shell (three bands)', () => {
     // already-stacked base is not re-offered.
     expect(screen.queryByText('Different Progression Loop')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
+  });
+
+  it('a failed/empty note load removes the layer (no zombie row) and toasts why', async () => {
+    render(<Producer />);
+    await openLibrary();
+    fireEvent.click(await screen.findByRole('button', { name: 'Broken Melody' }));
+    // The optimistic row must NOT survive the empty load — front doors return.
+    await waitFor(() => expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument());
+    expect(document.querySelectorAll('.piano-layer').length).toBe(0);
+    const toast = screen.getByRole('alert');
+    expect(toast.textContent).toMatch(/couldn't load/i);
+    expect(toast.textContent).toContain('Broken Melody');
+    expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
+  });
+
+  it('groove cards are name-only — no drum-pitches-on-a-treble-staff thumb', async () => {
+    render(<Producer />);
+    await openLibrary();
+    const card = await screen.findByRole('button', { name: 'Basic Rock' });
+    expect(card.textContent).toContain('Basic Rock');
+    expect(card.querySelector('.piano-loop__staff')).toBeNull();
+    expect(card.querySelector('svg.action-staff, .piano-loop__staff svg')).toBeNull();
   });
 
   it('removing the last layer returns the front doors', async () => {

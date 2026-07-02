@@ -164,7 +164,11 @@ export function LibraryOverlay({
                 : (
                   <>
                     <span className="piano-loop__name">{entry.title || entry.slug}</span>
-                    <span className="piano-loop__staff"><MelodicStaffThumb entry={entry} lib={lib} /></span>
+                    {/* Grooves carry drum-map pitches, not notes — a treble
+                        staff of them is nonsense. Name-only card. */}
+                    {entry.type !== 'groove' && (
+                      <span className="piano-loop__staff"><MelodicStaffThumb entry={entry} lib={lib} /></span>
+                    )}
                   </>
                 )}
               {reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
