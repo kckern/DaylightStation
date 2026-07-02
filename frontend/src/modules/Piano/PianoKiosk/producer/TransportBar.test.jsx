@@ -92,11 +92,17 @@ describe('TransportBar', () => {
     expect(screen.getByLabelText('metronome')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('record arm is a visible disabled stub', () => {
-    render(<TransportBar {...baseProps()} />);
+  it('record button fires onRecord and pulses (is-armed) while a capture session is open', () => {
+    const props = { ...baseProps(), onRecord: vi.fn() };
+    const { rerender } = render(<TransportBar {...props} />);
     const rec = screen.getByLabelText('record');
-    expect(rec).toBeDisabled();
-    expect(rec).toHaveAttribute('title', 'Recording arrives soon');
+    expect(rec).toBeEnabled();
+    expect(rec).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(rec);
+    expect(props.onRecord).toHaveBeenCalledTimes(1);
+    rerender(<TransportBar {...props} recActive />);
+    expect(screen.getByLabelText('record')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('record')).toHaveClass('is-armed');
   });
 
   it('reads bar:beat from positionRef while playing (1-based display)', async () => {

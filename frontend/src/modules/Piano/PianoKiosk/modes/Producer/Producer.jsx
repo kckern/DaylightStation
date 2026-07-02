@@ -1,7 +1,7 @@
 /**
  * Producer — the three-band, workspace-driven jam shell (Task 4.4, design §7).
  *
- * Band 1: TransportBar (play/stop · bar:beat · BPM/tap · key · click · rec stub)
+ * Band 1: TransportBar (play/stop · bar:beat · BPM/tap · key · click · record)
  * Band 2: Stage — Mix | Song tabs. Mix = front-door entry cards when the
  *         workspace is empty, DAW-style ChannelStrips once it isn't (glyph,
  *         voice chip → VoicePicker, M/S, GainStrip, 2-tap remove).
@@ -48,6 +48,7 @@ import { makeLoopNotesTap } from '../../producer/noteTapFilter.js';
 import { TransportBar } from '../../producer/TransportBar.jsx';
 import { ChannelStrip } from '../../producer/ChannelStrip.jsx';
 import { LibraryBrowser } from '../../producer/LibraryBrowser.jsx';
+import { CaptureCard } from '../../producer/CaptureCard.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -70,6 +71,12 @@ export function Producer() {
   const [tab, setTab] = useState('mix'); // 'mix' | 'song'
   const [overlay, setOverlay] = useState(null); // null | { role: null|'chords' }
   const [showRoman, setShowRoman] = useState(false);
+  // Capture session (Task 6.2): the card overlays the STAGE band only.
+  const [captureOpen, setCaptureOpen] = useState(false);
+  // Count-in lives HERE (not in the card) because the transport's play() reads
+  // it from a render-assigned ref — the card's chip tap must land a render
+  // BEFORE the arm tap calls play(). Two separate gestures guarantee that.
+  const [recCountIn, setRecCountIn] = useState(1);
   // Transient pick-failure toast (mirrors the reducer's lastError pattern:
   // set on failure, cleared by the next pick attempt — nothing else reads it).
   const [loadError, setLoadError] = useState(null);
@@ -213,6 +220,10 @@ export function Producer() {
     layers: transportLayers,
     bpm: state.bpm,
     metronome: state.metronome,
+    // Count-in only applies while a capture session is open — the capture
+    // card's metronome path starts the transport with it. (A Play tap during
+    // card setup also gets the count-in; harmless — they're about to record.)
+    countInBars: captureOpen ? recCountIn : 0,
   });
   const transportRef = useRef(transport); transportRef.current = transport;
   useKeepScreenAwake('producer', transport.isPlaying);
@@ -243,6 +254,42 @@ export function Producer() {
     logger.info('piano.producer.play', { layers: stateRef.current.layers.length });
     transportRef.current.play();
   }, [ensureAudio, logger]);
+
+  // ── capture session (Task 6.2) ──────────────────────────────────────────────
+  const openCapture = useCallback((via) => {
+    logger.info('piano.producer.capture-open', { via });
+    if (via === 'record-door') logger.info('piano.producer.front-door', { door: 'record' });
+    setCaptureOpen(true);
+  }, [logger]);
+
+  const closeCapture = useCallback(() => {
+    logger.info('piano.producer.capture-close', {});
+    setCaptureOpen(false);
+  }, [logger]);
+
+  /** Set-semantics facade over the reducer's TOGGLE (the card forces the
+   * click on for metronome sessions and restores it on close). */
+  const handleSetMetronome = useCallback((on) => {
+    if (stateRef.current.metronome !== on) dispatch(toggleMetronome());
+  }, []);
+
+  /** Confirmed take → workspace layer (channel assigned per kind by the
+   * reducer: groove → 9, melodic/harmonic → lowest free). */
+  const handleCaptureKeep = useCallback((take) => {
+    logger.info('piano.producer.capture-keep', {
+      takeId: take.takeId, kind: take.kind, notes: take.notes.length, lengthBars: take.lengthBars,
+    });
+    dispatch(addLayer({
+      source: {
+        kind: 'take',
+        takeId: take.takeId,
+        notes: take.notes,
+        ppq: take.ppq,
+        lengthBars: take.lengthBars,
+      },
+      role: take.kind === 'groove' ? 'groove' : take.kind,
+    }));
+  }, [logger]);
 
   const openOverlay = useCallback((role, door) => {
     // door is one of the four entry cards; the "+ Add layer" path passes null.
@@ -373,6 +420,8 @@ export function Producer() {
             onKeyNudge={(delta) => dispatch(nudgeKey(delta))}
             metronome={state.metronome}
             onToggleMetronome={() => dispatch(toggleMetronome())}
+            recActive={captureOpen}
+            onRecord={() => (captureOpen ? closeCapture() : openCapture('record-arm'))}
           />
 
           <div className="piano-producer-mode__stage">
@@ -415,9 +464,9 @@ export function Producer() {
                     <span className="piano-producer-mode__door-title">Start from a loop</span>
                     <span className="piano-producer-mode__door-blurb">Pick a chord loop, stack from there</span>
                   </button>
-                  <button type="button" className="piano-producer-mode__door" disabled title="Recording arrives soon">
+                  <button type="button" className="piano-producer-mode__door" onClick={() => openCapture('record-door')}>
                     <span className="piano-producer-mode__door-title">Record my own</span>
-                    <span className="piano-producer-mode__door-blurb">Coming soon</span>
+                    <span className="piano-producer-mode__door-blurb">Loop-record over a metronome</span>
                   </button>
                   <button type="button" className="piano-producer-mode__door" disabled title="Saved songs arrive soon">
                     <span className="piano-producer-mode__door-title">Songs &amp; Resume</span>
@@ -459,6 +508,25 @@ export function Producer() {
               <div className="piano-producer-mode__song-placeholder">
                 Build sections from your jam — coming next
               </div>
+            )}
+
+            {captureOpen && (
+              // Overlay card above the stage ONLY — the keyboard band stays
+              // playable (you record BY playing) and the transport stays live.
+              <CaptureCard
+                bpm={state.bpm}
+                transport={transport}
+                router={router}
+                subscribeMidi={midi.subscribe}
+                metronome={state.metronome}
+                onSetMetronome={handleSetMetronome}
+                countInBars={recCountIn}
+                onCountInBars={setRecCountIn}
+                hasLayers={state.layers.length > 0}
+                onKeep={handleCaptureKeep}
+                onClose={closeCapture}
+                onAudioGesture={ensureAudio}
+              />
             )}
           </div>
 

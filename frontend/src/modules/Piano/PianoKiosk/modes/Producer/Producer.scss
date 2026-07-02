@@ -88,9 +88,17 @@
     &:disabled { opacity: 0.35; cursor: default; }
   }
   &__rec { color: var(--piano-danger, #e05a4f); font-size: 1.1rem; }
+  &__rec.is-armed {
+    border-color: var(--piano-danger, #e05a4f);
+    background: var(--piano-surface, #2a1c1c);
+    animation: piano-rec-pulse 1.1s ease-in-out infinite;
+  }
 
   // ── Band 2: stage ──────────────────────────────────────────────────────────
   &__stage {
+    position: relative; // the CaptureCard scrim overlays the STAGE only —
+                        // transport + keyboard bands stay live (design §5:
+                        // you record BY playing)
     flex: 1 1 auto;
     overflow-y: auto;
     padding: 0.85rem 1.25rem 1rem;
@@ -432,6 +440,11 @@
     opacity: 0.85;
     svg, .action-staff { height: 2.4rem !important; width: auto; display: block; }
   }
+}
+
+@keyframes piano-rec-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 90, 79, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(224, 90, 79, 0.12); }
 }
 
 @keyframes piano-loop-peek-pulse {

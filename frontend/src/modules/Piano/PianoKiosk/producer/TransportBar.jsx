@@ -2,8 +2,9 @@
  * TransportBar — Band 1 of the Producer's three-band shell (design §7).
  *
  * Play/stop, bar:beat readout, BPM stepper + tap-tempo pad, key stepper,
- * metronome toggle, and a record-arm STUB (Task 6.2 wires recording). All
- * discrete latching taps, ≥48px targets, no drags.
+ * metronome toggle, and the record button (opens/closes the CaptureCard;
+ * pulses red while a capture session is open). All discrete latching taps,
+ * ≥48px targets, no drags.
  *
  * Deliberately dumb: every control emits through a callback prop; the shell
  * owns the workspace reducer. The ONLY internal state is the bar:beat readout
@@ -24,6 +25,8 @@
  * @param {(delta:number) => void} props.onKeyNudge
  * @param {boolean} props.metronome
  * @param {() => void} props.onToggleMetronome
+ * @param {boolean} [props.recActive] - a capture session is open (pulse red)
+ * @param {() => void} [props.onRecord] - open/close the capture card
  * @param {() => number} [props.now] - clock seam for the tap-tempo window
  *   (tests script it; defaults to performance.now)
  */
@@ -48,6 +51,8 @@ export function TransportBar({
   onKeyNudge,
   metronome,
   onToggleMetronome,
+  recActive = false,
+  onRecord,
   now = () => performance.now(),
 }) {
   // ── bar:beat readout: rAF poll ONLY while playing, ≤4Hz state writes ───────
@@ -133,10 +138,10 @@ export function TransportBar({
 
       <button
         type="button"
-        className="piano-producer-mode__rec"
+        className={`piano-producer-mode__rec${recActive ? ' is-armed' : ''}`}
         aria-label="record"
-        title="Recording arrives soon"
-        disabled
+        aria-pressed={recActive}
+        onClick={onRecord}
       >
         ●
       </button>
