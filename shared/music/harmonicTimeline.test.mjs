@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { harmonicTimeline } from './harmonicTimeline.mjs';
+import { harmonicTimeline, MAX_SLOTS } from './harmonicTimeline.mjs';
 
 const PPQ = 480;
 const BAR = PPQ * 4;
@@ -131,6 +131,51 @@ describe('harmonicTimeline', () => {
     ];
     const r = harmonicTimeline(notes, PPQ, { slotsPerBar: 3, timeSig: [3, 4] });
     assert.deepEqual(r.slots, [[0], [0], [0]]);
+  });
+
+  it('alternating C/G quarter notes grade as fifth across separate slots', () => {
+    const notes = [
+      { ticks: 0, durationTicks: PPQ, midi: 48 }, // C3
+      { ticks: PPQ, durationTicks: PPQ, midi: 55 }, // G3
+      { ticks: PPQ * 2, durationTicks: PPQ, midi: 48 },
+      { ticks: PPQ * 3, durationTicks: PPQ, midi: 55 },
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r, { slots: [[0], [7], [0], [7]], root: 0, specificity: 'fifth' });
+  });
+
+  it('a negative-tick note clamps into the early slots without throwing', () => {
+    const notes = [
+      { ticks: 0, durationTicks: BAR, midi: 48 }, // C anchor
+      { ticks: -120, durationTicks: 600, midi: 64 }, // E, pickup crossing tick 0
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.deepEqual(r.slots, [[0, 4], [0], [0], [0]]); // E sounds through slot 0 only
+  });
+
+  it('throws RangeError on invalid ppq instead of returning an empty timeline', () => {
+    const notes = [{ ticks: 0, durationTicks: 480, midi: 60 }];
+    for (const bad of [0, -480, NaN, Infinity, undefined]) {
+      assert.throws(() => harmonicTimeline(notes, bad), RangeError);
+    }
+  });
+
+  it('throws RangeError when corrupt durations push slot count past MAX_SLOTS', () => {
+    const notes = [{ ticks: 0, durationTicks: 1e12, midi: 60 }];
+    assert.throws(() => harmonicTimeline(notes, PPQ), RangeError);
+    // Right at the cap is still accepted.
+    const atCap = [{ ticks: 0, durationTicks: MAX_SLOTS * PPQ, midi: 60 }];
+    assert.equal(harmonicTimeline(atCap, PPQ).slots.length, MAX_SLOTS);
+  });
+
+  it('root detection falls back to the lower pitch class when no note starts in slot 0', () => {
+    const notes = [
+      { ticks: PPQ, durationTicks: PPQ, midi: 64 }, // E
+      { ticks: PPQ * 2, durationTicks: PPQ, midi: 62 }, // D — equal score, lower pc
+    ];
+    const r = harmonicTimeline(notes, PPQ);
+    assert.equal(r.root, 2); // no bass anchor → tie resolves to the lower pc (D)
+    assert.deepEqual(r.slots, [[], [2], [0], []]);
   });
 
   it('root detection ties break toward the bass of slot 0 (Am vs C)', () => {
