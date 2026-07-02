@@ -68,4 +68,11 @@ describe('buildRaceRecord', () => {
     expect(SessionSerializerV3.decodeSeries(rec.participants.a.rpm_series)).toEqual([80, 92]);
     expect(SessionSerializerV3.decodeSeries(rec.participants.a.zone_series)).toEqual(['warm', 'hot']);
   });
+  it('persists course_id from meta, null when absent', () => {
+    const state = { standings: [], riders: {} };
+    const base = { raceId: '20260701080000', date: 'D', mode: 'simultaneous',
+      winCondition: 'distance', goalM: 1500, intervalSeconds: 1 };
+    expect(buildRaceRecord(state, { ...base, courseId: 'sprint-1500m' }).race.course_id).toBe('sprint-1500m');
+    expect(buildRaceRecord(state, base).race.course_id).toBeNull();
+  });
 });

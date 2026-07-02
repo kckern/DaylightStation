@@ -681,7 +681,9 @@ export default function CycleGameContainer({ onMount } = {}) {
       goalM: cfg.goalM,
       timeCapS: cfg.timeCapS,
       intervalSeconds: cfg.intervalMs / 1000,
-      backgroundPlexId: cfg.backgroundPlexId
+      backgroundPlexId: cfg.backgroundPlexId,
+      // Real course identity only — 'custom'/'ghost' lobby races persist null.
+      courseId: ov?.id ?? null
     };
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
