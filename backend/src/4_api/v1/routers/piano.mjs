@@ -151,6 +151,132 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
     res.json({ ok: true, id: req.params.id });
   });
 
+  // ── Producer (household pool, author-tagged) ────────────────────────────────
+  // Unlike Studio (per-user), the Producer crate is a shared household pool: loops,
+  // stacks/sections, and crystallized songs anyone kept, each tagged with the author
+  // (current-player userId from the kiosk — trusted from the body per design §6).
+  // Stored under <householdDataDir>/apps/piano/producer/{family}/{id}.yml.
+  //
+  // Ids MUST be dot-free ([a-z0-9-]): FileIO/DataService append `.yml` by inspecting
+  // the trailing extension, so a dot in the id would corrupt the filename (MEMORY.md).
+  // The same charset also blocks `/`, `\`, `..` and uppercase → no path traversal.
+  const PRODUCER_ID_RE = /^[a-z0-9-]{1,64}$/;
+  // Required top-level payload field per family (the "heavy" note/layer/section data).
+  const PRODUCER_REQUIRED = { loops: 'notes', crate: 'layers', songs: 'sections' };
+  const producerDir = (family) => configService.getHouseholdPath(path.join('apps', 'piano', 'producer', family));
+
+  // Light listing projector: identity + kind + author + a small family signature —
+  // never the heavy note/layer/section payload (those load on demand via GET :id).
+  const producerLight = (family, id, data) => {
+    const light = {
+      id,
+      kind: data.kind ?? null,
+      author: data.author ?? null,
+      created: data.created ?? null,
+    };
+    if (data.title != null) light.title = data.title;
+    if (typeof data.favorite === 'boolean') light.favorite = data.favorite;
+    if (family === 'loops') {
+      light.ppq = data.ppq ?? null;
+      light.lengthBars = data.lengthBars ?? null;
+      if (data.specificity != null) light.specificity = data.specificity;
+      if (data.drumMode != null) light.drumMode = data.drumMode;
+    } else if (family === 'crate') {
+      light.lengthBars = data.lengthBars ?? null;
+      light.layerCount = Array.isArray(data.layers) ? data.layers.length : 0;
+    } else if (family === 'songs') {
+      light.sectionCount = Array.isArray(data.sections) ? data.sections.length : 0;
+      if (data.meta != null) light.meta = data.meta;
+    }
+    return light;
+  };
+
+  // Register the CRUD quintet per family in a loop. Because only the three known
+  // families get routes, an unknown family (/producer/bogus) falls through to 404.
+  for (const family of ['loops', 'crate', 'songs']) {
+    const requiredField = PRODUCER_REQUIRED[family];
+    const bad = (res, error) => res.status(400).json({ error });
+
+    // GET /producer/{family} → light listing (household pool, no author filter).
+    router.get(`/producer/${family}`, (req, res) => {
+      try {
+        const dir = producerDir(family);
+        const items = listYamlFiles(dir).map((id) => {
+          const data = loadYaml(path.join(dir, id)) || {};
+          return producerLight(family, id, data);
+        });
+        res.json({ items });
+      } catch (err) {
+        logger.error?.('piano.producer.list.error', { family, error: err.message });
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // GET /producer/{family}/:id → full record.
+    router.get(`/producer/${family}/:id`, (req, res) => {
+      if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+      const data = loadYaml(path.join(producerDir(family), req.params.id));
+      if (!data) return res.status(404).json({ error: `${family} record not found` });
+      res.json(data);
+    });
+
+    // POST /producer/{family} → create (server-generated dot-free id).
+    router.post(`/producer/${family}`, (req, res) => {
+      try {
+        const payload = (req.body && typeof req.body === 'object') ? req.body : {};
+        const author = typeof payload.author === 'string' ? payload.author.trim() : '';
+        if (!author) return bad(res, 'author (non-empty string) required');
+        if (!Array.isArray(payload[requiredField]) || payload[requiredField].length === 0) {
+          return bad(res, `${requiredField} (non-empty array) required`);
+        }
+        // shortId() draws from a mixed-case charset; producer ids must be dot-free
+        // AND match [a-z0-9-], so lowercase it (collision-safe at 10 chars).
+        const id = shortId().toLowerCase();
+        const data = {
+          ...payload,
+          id,
+          author,
+          created: new Date().toISOString(),
+        };
+        saveYaml(path.join(producerDir(family), id), data);
+        logger.info?.('piano.producer.save', { family, id, author });
+        res.status(201).json(data);
+      } catch (err) {
+        logger.error?.('piano.producer.create.error', { family, error: err.message });
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // PATCH /producer/{family}/:id → partial curate (title/favorite + shallow merge).
+    router.patch(`/producer/${family}/:id`, (req, res) => {
+      try {
+        if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+        const file = path.join(producerDir(family), req.params.id);
+        const data = loadYaml(file);
+        if (!data) return res.status(404).json({ error: `${family} record not found` });
+        const patch = (req.body && typeof req.body === 'object') ? req.body : {};
+        // Never let a patch rewrite identity/provenance.
+        const { id: _id, author: _author, created: _created, ...mergeable } = patch;
+        Object.assign(data, mergeable);
+        if (typeof patch.title === 'string' && patch.title.trim()) data.title = patch.title.trim();
+        if (typeof patch.favorite === 'boolean') data.favorite = patch.favorite;
+        saveYaml(file, data);
+        res.json({ id: req.params.id, title: data.title ?? null, favorite: !!data.favorite });
+      } catch (err) {
+        logger.error?.('piano.producer.update.error', { family, error: err.message });
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // DELETE /producer/{family}/:id → { ok, id }.
+    router.delete(`/producer/${family}/:id`, (req, res) => {
+      if (!PRODUCER_ID_RE.test(req.params.id)) return bad(res, 'Invalid id');
+      const deleted = deleteYaml(path.join(producerDir(family), req.params.id));
+      if (!deleted) return res.status(404).json({ error: `${family} record not found` });
+      res.json({ ok: true, id: req.params.id });
+    });
+  }
+
   // ── Preferences (per-user opaque blob) ──────────────────────────────────────
   router.get('/users/:userId/preferences', (req, res) => {
     const dir = userPianoDir(req.params.userId);

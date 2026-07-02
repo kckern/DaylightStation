@@ -42,6 +42,8 @@ export function signatureKey(roman) {
 /**
  * Can `cand` be layered on `base`? True iff they share a harmonic signature, OR
  * the candidate has no harmony of its own (a bare melody conforms to any base).
+ * Retained for legacy layerMatch ranking; the stacking GATE is now
+ * consonance.stackable() (design §4b).
  */
 export function areStackable(baseRoman, candRoman) {
   const b = signatureKey(baseRoman);

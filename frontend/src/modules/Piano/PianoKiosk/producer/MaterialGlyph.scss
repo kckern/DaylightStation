@@ -1,0 +1,12 @@
+// MaterialGlyph — deterministic identity glyph for musical material.
+// The SVG carries its own seeded fill; this just gives it a quiet frame that
+// sits on the dark stage without competing with card content.
+
+.piano-material-glyph {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: var(--piano-stage-panel, #14141b);
+  padding: 2px;
+  box-sizing: content-box;
+}
