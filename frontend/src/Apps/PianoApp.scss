@@ -104,6 +104,22 @@
   z-index: 2147483646;
 }
 
+// Main-thread damage driver (KeepAliveVideo.jsx driver 3): a tiny canvas
+// repainted at 30Hz via setInterval. Dark pixels on dark chrome — visually
+// nothing, but genuine per-tick main-thread paint damage that keeps Chromium
+// from classifying the page as idle (idle pages get rAF/BeginMainFrame
+// throttled to ~7fps; MIDI input does NOT count as activity, only touch does).
+.piano-keepalive-canvas {
+  position: fixed;
+  top: 12px;
+  left: 33%;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 2147483646;
+}
+
 .piano-app {
   width: 100vw;
   height: 100vh;

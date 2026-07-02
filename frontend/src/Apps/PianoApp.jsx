@@ -254,6 +254,15 @@ export default function PianoApp() {
   // collapses, a reload won't clear it), restart the WebView via the Fully JS
   // Interface. No-op outside the kiosk. See useRenderWatchdog.js.
   useRenderWatchdog();
+  // Always-on frame telemetry (1/min): the 2026-07-01 jank hunt stalled because
+  // fps was only measured inside the side-scroller or via probes that reloaded
+  // the page (fresh pages read 60 while aged pages had decayed to ~10). This
+  // gives a continuous aged-page fps record in prod logs; the side-scroller
+  // temporarily re-arms it to 5s while PLAYING.
+  useEffect(() => {
+    getLogger().startDiagnostics({ intervalMs: 60000 });
+    return () => getLogger().stopDiagnostics();
+  }, []);
 
   return (
     <PianoConfigProvider>

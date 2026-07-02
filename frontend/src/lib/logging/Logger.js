@@ -319,6 +319,9 @@ function collectSnapshot() {
     sampleCount: count,
     heap,
     domNodes,
+    // rAF throttles to ~1fps when the page/backlight is off — without this
+    // field a dark screen is indistinguishable from real jank in the logs.
+    visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
   };
 }
 
@@ -326,14 +329,31 @@ function collectSnapshot() {
  * Start periodic performance diagnostics.
  * Emits 'perf.diagnostics' via the logger at the given interval.
  *
+ * Re-entrant: calling while already running with a DIFFERENT interval re-arms
+ * the reporting cadence in place (the rAF sampler keeps running) — so a
+ * fine-grained consumer (the side-scroller at 5s) can temporarily override an
+ * always-on coarse cadence (app-wide 60s) and hand it back on cleanup.
+ *
  * @param {object} [opts]
  * @param {number} [opts.intervalMs=5000] - How often to emit a snapshot
  */
 export const startDiagnostics = (opts = {}) => {
-  if (diagState.running) return;
   const intervalMs = opts.intervalMs ?? 5000;
+  if (diagState.running) {
+    if (diagState.intervalMs === intervalMs) return;
+    clearInterval(diagState.intervalId);
+    diagState.intervalMs = intervalMs;
+    diagState.intervalId = setInterval(() => {
+      const snap = collectSnapshot();
+      emit('info', 'perf.diagnostics', snap);
+      if (typeof window !== 'undefined') window.__PERF_DIAG__ = snap;
+    }, intervalMs);
+    emit('info', 'perf.diagnostics.rearmed', { intervalMs });
+    return;
+  }
 
   diagState.running = true;
+  diagState.intervalMs = intervalMs;
   diagState.frameTimes = new Float64Array(DIAG_MAX_SAMPLES);
   diagState.head = 0;
   diagState.count = 0;

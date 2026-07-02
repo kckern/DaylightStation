@@ -43,6 +43,34 @@ import keepAliveSrc from './vsyncKeepalive.mp4?inline';
  */
 export default function KeepAliveVideo() {
   const ref = useRef(null);
+  const canvasRef = useRef(null);
+
+  // Driver 3 (2026-07-01, the main-thread one): field data showed the compositor
+  // drivers above are NOT sufficient on Chrome 149 — the user saw the CSS pill
+  // animating smoothly while rAF/React sat at ~7fps, because compositor-thread
+  // animation is decoupled from MAIN-thread BeginFrame scheduling, which is what
+  // Chromium throttles when it deems the page idle. Crucially, BLE-MIDI input is
+  // NOT user activity to Chromium (only touch/keys are), so a piano kiosk is
+  // "idle" even mid-performance and key highlights lag by whole frames.
+  // Counter: repaint a tiny canvas at 30Hz from a setInterval — NOT rAF (rAF is
+  // the throttled victim; a timer isn't) — generating genuine main-thread paint
+  // damage every tick so the page never classifies as idle. Alternating fills
+  // defeat any identical-frame optimization. Validated via the always-on
+  // perf.diagnostics telemetry (PianoApp) — check aged-page fps in prod logs
+  // before touching any of the three drivers.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return undefined;
+    const ctx = c.getContext('2d', { alpha: false });
+    if (!ctx) return undefined;
+    let flip = false;
+    const id = setInterval(() => {
+      flip = !flip;
+      ctx.fillStyle = flip ? '#17171c' : '#18181d'; // near-identical darks — invisible, but real damage
+      ctx.fillRect(0, 0, c.width, c.height);
+    }, 33);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const v = ref.current;
@@ -92,6 +120,15 @@ export default function KeepAliveVideo() {
       />
       {/* Driver 2: compositor CSS animation (see .piano-vsync-driver). */}
       <div className="piano-vsync-driver" aria-hidden="true" />
+      {/* Driver 3: main-thread paint damage @30Hz (see effect above). Must be
+          on-screen and unoccluded or its damage can be culled with it. */}
+      <canvas
+        ref={canvasRef}
+        className="piano-keepalive-canvas"
+        width={24}
+        height={24}
+        aria-hidden="true"
+      />
     </>
   );
 }
