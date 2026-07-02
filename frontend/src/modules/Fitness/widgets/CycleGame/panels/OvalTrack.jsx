@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { formatClock } from '@/modules/Fitness/lib/cycleGame/cycleGameLobby.js';
+import { createTickLerp } from '@/modules/Fitness/lib/cycleGame/motionClock.js';
 import './OvalTrack.scss';
 
 // Oval geometry radii (SVG user units) — the track ellipse the markers ride on.
@@ -26,7 +27,7 @@ export function ovalPoint(progress, rx, ry) {
  * each lap, via `ovalProgressFor`); when laps are off it's a "whole-race track"
  * (one loop = the entire race, a finisher parking at the start/finish tick, a fast
  * time-racer wrapping past their circuit target). Synthwave HUD panel; lane-colored
- * markers glide via a CSS transform-property transition. Pure presentational component.
+ * markers glide on the shared linear motion clock (imperative transform writes).
  */
 export default function OvalTrack({ riderIds, riders, riderLive = {}, progress = {}, lapLabel = null, lapLengthM = 0, elapsedS = 0 }) {
   // Compact two-row lap strip under the oval (one column per rider): the previous
@@ -37,6 +38,60 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
   const splitsOf = (id) => riders[id]?.lapSplits || [];
   const prevLap = (id) => { const s = splitsOf(id); return s.length ? s[s.length - 1] - (s[s.length - 2] || 0) : null; };
   const curLap = (id) => { const s = splitsOf(id); return Math.max(0, elapsedS - (s[s.length - 1] || 0)); };
+
+  // ── Motion clock: glide each marker between 1 Hz progress ticks ─────────────
+  // The engine reports lap progress once per second; without interpolation the
+  // markers would jump around the oval. React renders the CURRENT-tick position (so a
+  // no-rAF env shows the exact datum); the shared linear clock only ADJUSTS them from
+  // the previous tick toward the current — imperatively, with no CSS transition (the
+  // old 0.9s transform transition was one of the five desynced motion clocks, and it
+  // also spun a lap-wrapping marker the long way around).
+  const markerEls = useRef({});
+  const clockRef = useRef(null);
+  if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: 1000 });
+  const motionRef = useRef({});          // { id: { prev, cur } } progress (0..1+)
+  const prevProgRef = useRef({});        // last tick's progress per rider
+
+  // Shortest-path fraction blend on the circle so a lap wrap (0.98 → 0.02) glides
+  // FORWARD across the start line, not backward around the whole oval.
+  const blendProgress = (prev, cur, f) => {
+    let delta = cur - prev;
+    if (delta > 0.5) delta -= 1;
+    if (delta < -0.5) delta += 1;
+    return prev + delta * f;
+  };
+
+  useEffect(() => {
+    const clock = clockRef.current;
+    const unsub = clock.subscribe((f) => {
+      const m = motionRef.current;
+      Object.keys(m).forEach((id) => {
+        const el = markerEls.current[id];
+        if (!el) return;
+        const p = blendProgress(m[id].prev, m[id].cur, f);
+        const pt = ovalPoint(p, RX, RY);
+        el.style.transform = `translate(${pt.x}px, ${pt.y}px)`;
+      });
+    });
+    return () => { unsub(); clock.stop(); };
+  }, []);
+
+  // Signature of the current progress tuple — re-arm the clock only when it changes.
+  const progressKey = riderIds.map((id) => `${id}:${progress[id] || 0}`).join('|');
+  useEffect(() => {
+    const next = {};
+    riderIds.forEach((id) => {
+      const cur = progress[id] || 0;
+      const prev = Number.isFinite(prevProgRef.current[id]) ? prevProgRef.current[id] : cur;
+      next[id] = { prev, cur };
+    });
+    motionRef.current = next;
+    const snapshot = {};
+    riderIds.forEach((id) => { snapshot[id] = progress[id] || 0; });
+    prevProgRef.current = snapshot;
+    clockRef.current.onTick(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressKey]);
 
   return (
     <div className="cg-oval-track" data-testid="oval-track">
@@ -69,11 +124,13 @@ export default function OvalTrack({ riderIds, riders, riderLive = {}, progress =
           return (
             <g
               key={`oval-marker-${id}`}
+              ref={(el) => { markerEls.current[id] = el; }}
               className={`cg-oval-track__marker${isGhost ? ' cg-oval-track__marker--ghost' : ''}`}
               data-testid="oval-marker"
-              // CSS transform PROPERTY (not the SVG attribute) so the glide transition
-              // in OvalTrack.scss actually animates on the Firefox kiosk. px == user units
-              // for a translate, so the ellipse coordinates carry over unchanged.
+              // CSS transform PROPERTY (not the SVG attribute) so the shared motion
+              // clock can rewrite it imperatively each frame. px == user units for a
+              // translate, so the ellipse coordinates carry over unchanged. React
+              // renders the current-tick point; the clock glides it between ticks.
               style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
             >
               <circle

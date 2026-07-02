@@ -95,16 +95,18 @@
   // Terminus nodes — a small lettered disc riding each line's tip (avatars live
   // in the roster). De-overlapped vertically; a connector links a displaced node
   // back to its true line endpoint.
+  // Tag / connector / marker positions are driven imperatively by the shared motion
+  // clock (DistanceChart) — NO CSS position transition here (that was one of the five
+  // desynced clocks: the tag sprinted in 300ms while its own line tip glided for
+  // 1000ms, visibly detaching once per second). They now glide on the same linear rAF.
   &__tags { position: absolute; inset: 0; pointer-events: none; }
   &__tag-connector {
     position: absolute; width: 2px; transform: translateX(-50%);
     opacity: 0.55; border-radius: 1px;
-    transition: top 0.3s linear, height 0.3s linear;
   }
   &__tag {
     position: absolute;
     transform: translate(-50%, -50%);
-    transition: left 0.3s linear, top 0.3s linear;
   }
   &__node {
     display: flex; align-items: center; justify-content: center;
@@ -125,7 +127,8 @@
   &__marker {
     position: absolute;
     transform: translate(-50%, -50%);
-    transition: left 0.3s linear, top 0.3s linear;
+    // Position glides on the shared motion clock (imperative); the pop-in is a
+    // one-shot STATE transition (a new event fired) and stays as a CSS animation.
     animation: cg-marker-pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
   }
   &__marker-glyph {

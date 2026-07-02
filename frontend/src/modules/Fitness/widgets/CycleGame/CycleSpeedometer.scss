@@ -40,13 +40,16 @@
   &__tick-label { fill: cg.$cg-muted; font-size: 12px; font-weight: 600; font-family: inherit; }
   // Cyan telemetry needle with a neon glow.
   &__needle { stroke: cg.$cg-cyan; stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(33, 230, 255, 0.8)); }
-  &__needle-group { transition: transform 0.18s ease; }
+  // Needle rotation is driven imperatively by the shared motion clock (linear lerp
+  // across the 1 Hz tick) — NO CSS transition here. The old `transition: transform
+  // 0.18s ease` was one of the five desynced motion clocks (it also restarted on every
+  // React render, causing velocity discontinuities).
   &__hub { fill: cg.$cg-cyan; }
 
   // Avatar centered in the gauge. Promoted to its own compositor layer so the
-  // needle's per-tick repaint (it carries a drop-shadow filter, which repaints its
-  // region each frame of the 0.18s transition) does not flush/flicker the avatar
-  // image overlaid on the same SVG — the avatar DOM is otherwise fully stable.
+  // needle's per-frame repaint (it carries a drop-shadow filter, which repaints its
+  // region each animation frame) does not flush/flicker the avatar image overlaid on
+  // the same SVG — the avatar DOM is otherwise fully stable.
   &__avatar {
     position: relative; display: flex; align-items: center; justify-content: center;
     transform: translateZ(0); will-change: transform; backface-visibility: hidden;
