@@ -1,12 +1,11 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { ovalProgressFor } from '@/modules/Fitness/lib/cycleGame/ovalTrackModel.js';
 import { lapCount } from '@/modules/Fitness/lib/cycleGame/lapModel.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import DistanceChart from './panels/DistanceChart.jsx';
 import PovGrid from './panels/PovGrid.jsx';
-import OvalTrack from './panels/OvalTrack.jsx';
+import StandingsTower from './panels/StandingsTower.jsx';
 import SpeedoRow from './panels/SpeedoRow.jsx';
 import RaceLayoutManager from './RaceLayoutManager.jsx';
 import './CycleRaceScreen.scss';
@@ -14,15 +13,18 @@ import './CycleRaceScreen.scss';
 /**
  * Presentational race screen — a velodrome broadcast HUD. RaceLayoutManager picks a
  * fixed layout by field size: ≤3 riders → sidebar mode (distance chart over the
- * speedometers, with a POV grid + lap oval in a right sidebar); ≥4 riders → wide
- * mode (chart 2× | POV across the top, speedometers full-width, no oval). The
- * race clock lives inside the chart's header. Pure — the live container feeds it
- * engine state + per-rider metrics.
+ * speedometers, with a POV grid + standings tower in a right sidebar); ≥4 riders →
+ * wide mode (chart 2× | POV across the top, speedometers full-width, standings
+ * tower docked as a right-edge column). The race clock lives inside the chart's
+ * header; the standings tower (audit UX §4.1-4.2) is the always-on rank/gap
+ * readout in BOTH layouts and absorbs the old oval's lap strip into its header.
+ * `OvalTrack` stays in the codebase but is no longer part of this live panel map.
+ * Pure — the live container feeds it engine state + per-rider metrics.
  */
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true, lapLengthM = 0, events = [], ovalCircuitM = 1000
+  showSpeedos = true, lapLengthM = 0, events = []
 }) {
   const riderIds = Object.keys(riders);
 
@@ -46,9 +48,6 @@ export default function CycleRaceScreen({
   const leaderLap = lapLengthM > 0
     ? lapCount(Math.max(0, ...riderIds.map((id) => riders[id]?.cumulativeDistanceM || 0)), lapLengthM) + 1
     : 0;
-  const ovalProgress = Object.fromEntries(riderIds.map((id) => [
-    id, ovalProgressFor({ winCondition, distanceM: riders[id]?.cumulativeDistanceM || 0, goalM, ovalCircuitM, lapLengthM })
-  ]));
 
   // Each factory receives the PanelSlot-injected slot props ({ zoneBox }) and
   // MUST forward zoneBox to panels that size from it (DistanceChart's fit-guard,
@@ -64,9 +63,9 @@ export default function CycleRaceScreen({
       <PovGrid riderIds={riderIds} riders={riders} riderLive={riderLive}
         lapLengthM={povLapM} finishM={povFinishM} />
     ),
-    ovalTrack: () => (
-      <OvalTrack riderIds={riderIds} riders={riders} riderLive={riderLive}
-        progress={ovalProgress} lapLabel={leaderLap > 0 ? `Lap ${leaderLap}` : null}
+    standingsTower: () => (
+      <StandingsTower riderIds={riderIds} riders={riders} riderLive={riderLive}
+        winCondition={winCondition} lapLabel={leaderLap > 0 ? `Lap ${leaderLap}` : null}
         lapLengthM={lapLengthM} elapsedS={elapsedS} />
     ),
     ...(showSpeedos ? {
@@ -120,7 +119,6 @@ CycleRaceScreen.propTypes = {
   backgroundPlexId: PropTypes.string,
   showSpeedos: PropTypes.bool,
   lapLengthM: PropTypes.number,
-  ovalCircuitM: PropTypes.number,
   events: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.number,
     type: PropTypes.oneOf(['dnf', 'penalty']),

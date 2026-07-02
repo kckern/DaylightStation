@@ -231,6 +231,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const [phase, setPhase] = useState('idle'); // idle | staging | countdown | racing | results
   const [stagingSeconds, setStagingSeconds] = useState(0); // "to your bikes" countdown
   const [resultsSecondsLeft, setResultsSecondsLeft] = useState(null); // results auto-exit countdown
+  // Lobby banner text for a just-recovered crash checkpoint (audit C1 / T5
+  // follow-up — recovery previously only logged, with no user-visible notice).
+  // Set by the recovery effect on a successful save; cleared on its own 8s
+  // timeout below OR when a new race starts (whichever comes first).
+  const [recoveredNotice, setRecoveredNotice] = useState(null);
   const stagingDeadlineRef = useRef(0); // earliest wall-time staging may advance to countdown
   const preGreenPedalersRef = useRef(new Set()); // riders who pedalled BEFORE the green light
   const goHoldTimerRef = useRef(null); // green-light hold before the race screen appears
@@ -640,6 +645,7 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [phase]);
 
   const startRace = useCallback((override = null, ghostOverride = undefined) => {
+    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
     const ov = override && override.win_condition ? override : null;
     log.info('cycle_game.start_pressed', {
       raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
@@ -1303,9 +1309,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   // times in a session — after results, after cancel) and finalizes any
   // fresh checkpoint left behind by a race that never reached 'results'.
   // Live resume of the running engine is explicitly out of scope — this only
-  // salvages the record. A lobby-appropriate toast surface doesn't exist
-  // today (the event-toast system is race-screen only); recovery is
-  // surfaced via the structured log only.
+  // salvages the record. A successful save also raises `recoveredNotice`, a
+  // small self-dismissing lobby banner (CycleGameHome) — recovery used to be
+  // surfaced via the structured log only, invisible to the person who just
+  // watched the kiosk reload mid-race.
   useEffect(() => {
     if (phase !== 'idle') return;
     if (recoveryCheckedRef.current) return;
@@ -1336,6 +1343,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           ok: result.ok,
           ...(result.ok ? {} : { error: result.error })
         });
+        if (result.ok) setRecoveredNotice('Recovered your interrupted race — saved to history');
       } catch (err) {
         // saveRaceRecord never throws — this net catches unexpected errors only.
         log.error('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, error: err?.message || String(err) });
@@ -1346,6 +1354,16 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Runs exactly once (recoveryCheckedRef); `phase` is the trigger only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
+
+  // Belt-and-suspenders expiry for the recovered-race banner: CycleGameHome
+  // self-dismisses its own DOM after 8s regardless, but the container's own
+  // state should also let go so a remount (e.g. leaving/returning to idle)
+  // doesn't resurrect a stale notice.
+  useEffect(() => {
+    if (!recoveredNotice) return undefined;
+    const id = setTimeout(() => setRecoveredNotice(null), 8000);
+    return () => clearTimeout(id);
+  }, [recoveredNotice]);
 
   useEffect(() => {
     onMount?.();
@@ -1571,6 +1589,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           featured={featuredLadder}
           onRideFeatured={onRideFeatured}
           resolveName={resolveDisplayName}
+          recoveredNotice={recoveredNotice}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />
@@ -1636,6 +1655,10 @@ export default function CycleGameContainer({ onMount } = {}) {
     // controller exposes per-rider detail for the countdown bar / awaiting-stop cue.
     const penalizedNow = new Set(snapshot?.penalized || []);
     const dnfNow = new Set(snapshot?.dnf || []);
+    // Overtime = the mercy-kill/forced-finish window closed around an honest
+    // rider (T3) — distinct from dnfNow (idle-quit). The standings tower needs
+    // it live to dim/tag that row, same as RaceResults does after the race.
+    const overtimeNow = new Set(snapshot?.overtime || []);
     const penaltyInfo = snapshot?.penaltyInfo || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
@@ -1682,7 +1705,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: mult,
         finished: isFinished,
-        placement: isFinished ? (placementByUser[userId] ?? null) : null,
+        // Live rank for EVERY rider (not gated on isFinished) — engine.standings()
+        // ranks unfinished riders by distance every tick too, and the standings
+        // tower (audit UX §4.1) needs a live "I'm 2nd" readout mid-race, not just
+        // at the finish line.
+        placement: placementByUser[userId] ?? null,
         // Live leader (rank-1 in standings) once the race is underway. standings()
         // ranks un-finished riders by distance every tick, so this hops on each lead
         // change and lands on the eventual winner.
@@ -1692,6 +1719,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // (riderLive.rpm above) so the rider can see they must pedal down to 0.
         penalized: penalizedNow.has(userId),
         dnf: dnfNow.has(userId),
+        overtime: overtimeNow.has(userId),
         penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
         penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
         penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop,
@@ -1717,7 +1745,6 @@ export default function CycleGameContainer({ onMount } = {}) {
             winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
             goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
           })}
-          ovalCircuitM={Number.isFinite(cycleGameConfig?.oval_circuit_m) ? cycleGameConfig.oval_circuit_m : 1000}
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
