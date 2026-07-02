@@ -845,14 +845,49 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase, applySnapshot, log]);
 
+  // ── engine-live span (wall clock) ────────────────────────────────────────
+  // True for the ENTIRE go+racing span — the exact window the race-tick effect
+  // below runs for. Used (instead of raw `phase`) as that effect's dependency
+  // so the go→racing flip does NOT tear the interval down and rebuild it (the
+  // audited bug — the effect's own comment claimed "once per racing phase" but
+  // `phase` was in the dep array, so React re-ran it on every phase value
+  // change, including go→racing).
+  const isEngineLive = phase === 'go' || phase === 'racing';
+  // performance.now() at the instant the engine went live (green light) — the
+  // wall-clock zero the race-tick interval below measures elapsed time against.
+  const raceStartMsRef = useRef(null);
+  useEffect(() => {
+    if (isEngineLive) {
+      raceStartMsRef.current = performance.now();
+    } else {
+      raceStartMsRef.current = null;
+    }
+    // This effect and the race-tick effect below share the isEngineLive
+    // dependency and settle in the same commit; the race-tick effect only
+    // reads the anchor lazily inside its own setInterval callback (which can't
+    // fire before both effects have run), so ordering between them is moot.
+  }, [isEngineLive]);
+
   // ── race interval ────────────────────────────────────────────────────────
   // Runs while racing AND during the brief green-light 'go' hold, so RPMs count from
-  // the moment the light turns green — before the race screen appears.
+  // the moment the light turns green — before the race screen appears. Anchored to
+  // WALL-CLOCK time (raceStartMsRef), not to setInterval fire count: each fire
+  // computes how many ticks are actually DUE against elapsed real time and runs
+  // the (single, shared) per-tick body that many times — so a "5:00" race takes
+  // 5 real minutes even under kiosk jank that delays/coalesces timer fires,
+  // instead of drifting by counting fires 1:1. Gated on isEngineLive so the
+  // effect is set up ONCE for the whole go→racing span (see above).
   useEffect(() => {
-    if (phase !== 'racing' && phase !== 'go') return undefined;
-    const id = setInterval(() => {
+    if (!isEngineLive) return undefined;
+    let tickedCount = 0; // wall-clock ticks already applied since raceStartMsRef anchor
+
+    // The per-tick body — resolves inputs, advances the engine, and diffs
+    // telemetry edges. Invoked once per DUE tick (possibly several times per
+    // interval fire during catch-up); returns true when the race is over (no
+    // more ticks should run this fire).
+    const runTick = () => {
       const controller = controllerRef.current;
-      if (!controller) return;
+      if (!controller) return true;
       const liveSession = sessionRef.current;
       const liveGetUserVitals = getUserVitalsRef.current;
       const before = controller.getState();
@@ -998,16 +1033,43 @@ export default function CycleGameContainer({ onMount } = {}) {
           }))
         });
         applySnapshot(finalState);
-        return;
+        return true;
       }
       // During the green-light hold, advance the engine but keep showing the green
       // stoplight (don't flip render to 'racing' yet — the go-hold timer does that).
-      if (phase === 'go') setSnapshot(state); else applySnapshot(state);
+      // Read the render phase from the ref (not the `phase` closed over at effect
+      // creation) — this effect is now long-lived across the go→racing edge, so
+      // the closed-over `phase` would go stale the moment 'go' flips to 'racing'.
+      if (phaseRef.current === 'go') setSnapshot(state); else applySnapshot(state);
+      return false;
+    };
+
+    const id = setInterval(() => {
+      const anchorMs = raceStartMsRef.current;
+      const nowMs = performance.now();
+      // Defensive fallback (anchor missing): advance exactly one tick rather than
+      // stalling forever. Should not happen — the anchor effect above always
+      // settles in the same commit as isEngineLive flipping true.
+      let dueTicks = anchorMs == null ? 1 : Math.floor((nowMs - anchorMs) / RACE_TICK_MS) - tickedCount;
+      if (dueTicks < 0) dueTicks = 0;
+      const cappedTicks = Math.min(dueTicks, 30); // bound a resumed-from-freeze burst
+      if (dueTicks > 1) {
+        log.warn('cycle_game.tick_catchup', {
+          raceId: raceMetaRef.current?.raceId,
+          dueTicks,
+          ranTicks: cappedTicks
+        });
+      }
+      for (let i = 0; i < cappedTicks; i += 1) {
+        tickedCount += 1;
+        if (runTick()) break; // race finished mid-catch-up — stop for this fire
+      }
     }, RACE_TICK_MS);
     return () => clearInterval(id);
-    // Live data is read from refs (sessionRef/getUserVitalsRef) so the interval
-    // is set up once per racing phase and never starved by context churn.
-  }, [phase, applySnapshot, recordRaceEvent, log]);
+    // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
+    // interval is set up ONCE for the whole go→racing span and never starved by
+    // context churn or torn down by the go→racing phase edge.
+  }, [isEngineLive, applySnapshot, recordRaceEvent, log]);
 
   // ── save the record once on results ──────────────────────────────────────
   useEffect(() => {
