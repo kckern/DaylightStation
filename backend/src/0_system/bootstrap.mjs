@@ -948,7 +948,7 @@ export function createFitnessServices(config) {
   });
 
   const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
-  const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore });
+  const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore, logger });
 
   const activityRegistry = new ActivityRegistry()
     .register(new CycleGameProvider({ cycleRaceService }));
