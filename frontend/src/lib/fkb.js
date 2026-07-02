@@ -127,6 +127,39 @@ export function launchIntent(packageName, activityName, extras = {}) {
 }
 
 /**
+ * Turn the tablet screen OFF via FKB's JS bridge (`fully.turnScreenOff`).
+ * Instant, dependency-free (no network, no deviceId) — the robust burn-in kill
+ * switch. No-op (returns false) when FKB isn't present. Never throws.
+ *
+ * @returns {boolean} true if the FKB bridge handled the request
+ */
+export function screenOff() {
+  if (!isFKBAvailable() || typeof fully.turnScreenOff !== 'function') {
+    logger().warn('fkb.screenOff.unavailable', {});
+    return false;
+  }
+  logger().info('fkb.screenOff', {});
+  fully.turnScreenOff();
+  return true;
+}
+
+/**
+ * Turn the tablet screen ON via FKB's JS bridge (`fully.turnScreenOn`).
+ * No-op (returns false) when FKB isn't present. Never throws.
+ *
+ * @returns {boolean} true if the FKB bridge handled the request
+ */
+export function screenOn() {
+  if (!isFKBAvailable() || typeof fully.turnScreenOn !== 'function') {
+    logger().warn('fkb.screenOn.unavailable', {});
+    return false;
+  }
+  logger().info('fkb.screenOn', {});
+  fully.turnScreenOn();
+  return true;
+}
+
+/**
  * Schedule dismiss after an FKB app launch.
  * Auto-dismisses after a delay + registers onResume as backup.
  * Call this AFTER the launch succeeds.
