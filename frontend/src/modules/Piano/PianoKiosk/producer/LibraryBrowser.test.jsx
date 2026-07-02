@@ -221,11 +221,33 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(cardTitles().length).toBe(ALL.length);
   });
 
-  it("'Ours' facet is a stub with an honest empty state", async () => {
+  it("'Ours' facet shows an honest empty state when nothing is kept", async () => {
     renderBrowser();
     fireEvent.click(await screen.findByRole('button', { name: 'Ours' }));
-    expect(screen.getByText(/nothing kept yet — record or save something/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing kept yet/i)).toBeInTheDocument();
     expect(document.querySelectorAll('.piano-loop').length).toBe(0);
+  });
+
+  it("'Ours' facet renders kept loops + stacks and picks them (sections excluded)", async () => {
+    const onPickOurs = vi.fn();
+    renderBrowser({
+      ours: {
+        loops: [{ id: 'l1', kind: 'bass', title: 'My Bass', author: 'kc' }],
+        crate: [
+          { id: 'c1', kind: 'stack', title: 'My Stack', layerCount: 3 },
+          { id: 'c2', kind: 'section', title: 'Should Not Show' },
+        ],
+      },
+      onPickOurs,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Ours' }));
+    expect(screen.getByText('My Bass')).toBeInTheDocument();
+    expect(screen.getByText('My Stack')).toBeInTheDocument();
+    expect(screen.queryByText('Should Not Show')).toBeNull(); // section excluded
+    fireEvent.click(screen.getByRole('button', { name: 'My Stack' }));
+    expect(onPickOurs).toHaveBeenCalledWith('stack', expect.objectContaining({ id: 'c1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'My Bass' }));
+    expect(onPickOurs).toHaveBeenCalledWith('loop', expect.objectContaining({ id: 'l1' }));
   });
 
   it("'Prefabs' facet is a stub marked coming soon", async () => {

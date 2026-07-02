@@ -209,3 +209,30 @@ describe('groove layers', () => {
     expect(screen.queryByText('all drums')).toBeNull();
   });
 });
+
+describe('Keep to Crate (Task 8.2)', () => {
+  const takeLayer = {
+    id: 'take-1',
+    source: { kind: 'take', takeId: 'take-1', notes: [{ ticks: 0, durationTicks: 480, midi: 40 }], ppq: 480, lengthBars: 2, drumMode: false },
+    role: 'bass', channel: 1, gmProgram: 33, gain: 1, muted: false, soloed: false, carried: false,
+  };
+
+  it('recorded (take) layers expose Keep to Crate and call the handler with the layer', () => {
+    const onKeepToCrate = vi.fn();
+    renderStrip(takeLayer, { onKeepToCrate });
+    const keep = screen.getByRole('button', { name: 'keep to crate' });
+    fireEvent.click(keep);
+    expect(onKeepToCrate).toHaveBeenCalledWith(takeLayer);
+    expect(screen.getByText('Kept')).toBeInTheDocument(); // latches
+  });
+
+  it('library layers never show Keep to Crate (already in the library)', () => {
+    renderStrip(chordLayer, { onKeepToCrate: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'keep to crate' })).toBeNull();
+  });
+
+  it('no Keep button without the handler', () => {
+    renderStrip(takeLayer);
+    expect(screen.queryByRole('button', { name: 'keep to crate' })).toBeNull();
+  });
+});

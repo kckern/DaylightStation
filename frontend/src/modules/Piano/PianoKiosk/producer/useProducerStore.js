@@ -299,6 +299,37 @@ export function useProducerStore() {
     return { id: rec.id, draft };
   }, [fetchFull, logger]);
 
+  /** Raw full-record access (cached) — used by the 'Ours' library facet to
+   * pull a kept loop's embedded notes on pick. */
+  const getFull = useCallback((family, id) => fetchFull(family, id), [fetchFull]);
+
+  /** Resolve any `{kind:'loop', loopId}` refs in a layer array back into
+   * embedded-note take sources (fetching the loops, cached + deduped). Shared
+   * by loadCrateStack; loadSong keeps its own pass for the carried-map case. */
+  const resolveLoopRefs = useCallback(async (layers) => {
+    const loopIds = new Set();
+    (layers || []).forEach((l) => { if (l?.source?.kind === 'loop') loopIds.add(l.source.loopId); });
+    const loopById = new Map();
+    await Promise.all([...loopIds].map(async (lid) => {
+      try { loopById.set(lid, await fetchFull('loops', lid)); }
+      catch (err) { logger.warn('piano.producer.store.loop-ref-missing', { loopId: lid, error: err.message }); }
+    }));
+    return (layers || []).map((l) => {
+      if (l?.source?.kind !== 'loop') return l;
+      const loop = loopById.get(l.source.loopId);
+      return loop ? { ...l, source: takeSourceFromLoop(loop) } : l;
+    });
+  }, [fetchFull, logger]);
+
+  /** A kept crate 'stack' resolved into workspace-ready layers (loop refs →
+   * embedded takes; library layers untouched, notes re-fetch via the shell). */
+  const loadCrateStack = useCallback(async (id) => {
+    const rec = await fetchFull('crate', id);
+    const layers = await resolveLoopRefs(rec.layers);
+    logger.info('piano.producer.store.load-crate', { id: rec.id, kind: rec.kind, layers: layers.length });
+    return { id: rec.id, kind: rec.kind, layers };
+  }, [fetchFull, resolveLoopRefs, logger]);
+
   const remove = useCallback(async (family, id) => {
     await DaylightAPI(`${BASE}/${family}/${id}`, {}, 'DELETE');
     fullCache.current.delete(`${family}:${id}`);
@@ -334,6 +365,8 @@ export function useProducerStore() {
     loadSong,
     saveCrateItem,
     saveLoop,
+    loadCrateStack,
+    getFull,
     remove,
     rename,
     refresh,

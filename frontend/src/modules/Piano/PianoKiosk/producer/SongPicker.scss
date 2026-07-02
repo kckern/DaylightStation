@@ -1,0 +1,68 @@
+// SongPicker — saved-song front door (Task 8.2). Rides the shared full-bleed
+// overlay surface (piano-producer-mode__overlay*); this file styles only the
+// picker-specific rows.
+.piano-song-picker {
+  &__heading {
+    font: 700 1.2rem 'Roboto Condensed', sans-serif;
+    color: var(--piano-text, #e8e8f0);
+  }
+
+  &__resume {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.5rem 0.75rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-info, #3d7bd9);
+    background: rgba(20, 26, 40, 0.6);
+    color: var(--piano-muted, #bcd);
+  }
+  &__resume-label { font: 500 1rem 'Roboto Condensed', sans-serif; }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__song {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-border, #2a2a34);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-text, #e8e8f0);
+    cursor: pointer;
+    text-align: left;
+    &:hover { border-color: var(--piano-accent, #2ec46f); }
+  }
+  &__song-body { display: flex; flex-direction: column; gap: 0.15rem; }
+  &__song-title { font: 600 1.05rem 'Roboto Condensed', sans-serif; }
+  &__song-meta { font-size: 0.85rem; color: var(--piano-muted, #99a); }
+
+  &__remove {
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2a2a34);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-muted, #99a);
+    font: 600 0.9rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-armed { border-color: var(--piano-danger, #e05a4f); color: var(--piano-danger, #f7a29a); }
+  }
+}

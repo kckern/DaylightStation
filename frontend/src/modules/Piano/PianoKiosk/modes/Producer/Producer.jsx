@@ -70,10 +70,13 @@ import {
   toggleCarried, nudgeKey, setBpm, toggleMetronome, loadStack, setEditingSection,
 } from '../../producer/workspaceReducer.js';
 import {
-  draftReducer, promote, applyTemplate, slotFill,
+  draftReducer, promote, hydrate, applyTemplate, slotFill,
   resolveSectionStack, toSchedulerInputs, sectionProgramMap, draftReferencesLayer,
 } from '../../producer/draftReducer.js';
+import { useProducerStore } from '../../producer/useProducerStore.js';
+import { useResumeSnapshot } from '../../producer/useResumeSnapshot.js';
 import { SongView } from '../../producer/SongView.jsx';
+import { SongPicker } from '../../producer/SongPicker.jsx';
 import { useProducerTransport } from '../../producer/useProducerTransport.js';
 import { createVoiceRouter } from '../../producer/voiceRouter.js';
 import { createOnboardGmTier } from '../../producer/tiers/onboardGmTier.js';
@@ -126,6 +129,17 @@ export function Producer() {
   // Transient pick-failure toast (mirrors the reducer's lastError pattern:
   // set on failure, cleared by the next pick attempt — nothing else reads it).
   const [loadError, setLoadError] = useState(null);
+  // ── persistence (Task 8.2): household pool store + resume net ───────────────
+  const store = useProducerStore();
+  const [songPicker, setSongPicker] = useState(false); // saved-song front door
+  const [saveToast, setSaveToast] = useState(null); // transient save/keep confirm
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg) => {
+    setSaveToast(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setSaveToast(null), 3200);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   useEffect(() => {
     logger.info('piano.producer.mounted', {});
@@ -318,6 +332,37 @@ export function Producer() {
   const transportRef = useRef(transport); transportRef.current = transport;
   useKeepScreenAwake('producer', transport.isPlaying);
 
+  // ── resume net (Task 8.2): sample the bar ~2Hz while playing as the snapshot
+  // throttle clock (positionRef is a ref — no per-frame renders), and snapshot
+  // the live jam + draft every few bars. Never auto-applies; the shell surfaces
+  // a quiet resume chip on next visit.
+  const [snapshotBar, setSnapshotBar] = useState(0);
+  useEffect(() => {
+    if (!transport.isPlaying) return undefined;
+    let raf = 0;
+    let last = 0;
+    const tick = (t) => {
+      if (t - last >= 500) {
+        last = t;
+        const b = transportRef.current?.positionRef?.current?.bar ?? 0;
+        setSnapshotBar((prev) => (prev === b ? prev : b));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [transport.isPlaying]);
+  const getSnapshotState = useCallback(() => ({
+    workspace: stateRef.current,
+    draft: draftRef.current,
+    notesById: notesByIdRef.current,
+  }), []);
+  const resume = useResumeSnapshot({
+    getState: getSnapshotState,
+    isPlaying: transport.isPlaying,
+    bar: snapshotBar,
+  });
+
   // The sticky lock rides isPlaying EDGES: the rising edge latches the mode
   // that was armed when playback actually started (play() can refuse — e.g. a
   // song armed before its notes load compiles to totalMs 0 — and a lock
@@ -489,6 +534,133 @@ export function Producer() {
     if (transportRef.current.pendingJumpRef?.current) setPendingTarget(blockIndex);
   }, [logger]);
 
+  // ── persistence flows (Task 8.2): save / load / keep / resume ──────────────
+  /** Crystallize + persist the current draft as a song (auto-persists embedded
+   * takes as loops first). Optional inline title. */
+  const handleSaveSong = useCallback(async (title) => {
+    const d = draftRef.current;
+    if (!d || !d.sections?.length) return;
+    try {
+      const rec = await store.saveSong(d, { title: title || undefined });
+      logger.info('piano.producer.save-song', { id: rec.id, sections: d.sections.length });
+      showToast(`Saved “${rec.title || 'song'}”`);
+      resume.clear();
+    } catch (err) {
+      logger.error('piano.producer.save-song-failed', { error: err?.message });
+      showToast('Save failed — try again');
+    }
+  }, [store, resume, showToast, logger]);
+
+  /** Load a saved song → resolve loop refs → HYDRATE the draft → re-fetch the
+   * library layers' notes → land on the Song tab. */
+  const handleLoadSong = useCallback(async (id) => {
+    try {
+      const { draft: loaded } = await store.loadSong(id);
+      draftDispatch(hydrate(loaded));
+      // Library layers (across sections, carried refs expanded) re-fetch notes;
+      // take layers carry theirs embedded from the resolved loop records.
+      const layers = (loaded.sections || []).flatMap((s) => (s.stack || [])
+        .map((e) => (e && e.carriedRef != null ? loaded.carriedLayers?.[e.carriedRef] : e))
+        .filter(Boolean));
+      ensureLayerNotes(layers);
+      setSongPicker(false);
+      setTab('song');
+      resume.clear();
+      logger.info('piano.producer.load-song', { id, sections: loaded.sections?.length ?? 0 });
+    } catch (err) {
+      logger.error('piano.producer.load-song-failed', { id, error: err?.message });
+      showToast('Load failed — try again');
+    }
+  }, [store, ensureLayerNotes, resume, showToast, logger]);
+
+  /** Apply the resume snapshot: restore the workspace stack + draft + notes.
+   * A user act — the chip is only a prompt, never auto-applied. */
+  const handleApplyResume = useCallback(() => {
+    const data = resume.applyResume();
+    if (!data) return;
+    const ws = data.workspace || {};
+    dispatch(loadStack({ layers: ws.layers || [], bpm: ws.bpm, keyShift: ws.keyShift }));
+    if (data.draft) draftDispatch(hydrate(data.draft));
+    if (data.notesById && typeof data.notesById === 'object') setNotesById(data.notesById);
+    // Library layers whose notes weren't in the snapshot re-fetch by slug.
+    ensureLayerNotes(ws.layers || []);
+    resume.clear();
+    setSongPicker(false);
+    logger.info('piano.producer.resume-apply', { layers: (ws.layers || []).length });
+  }, [resume, ensureLayerNotes, logger]);
+
+  /** Keep the whole workspace stack to the Crate (recorded takes persist as
+   * loops first, then the stack stores refs — design §6). */
+  const handleKeepStack = useCallback(async () => {
+    const layers = stateRef.current.layers;
+    if (!layers.length) return;
+    try {
+      await store.saveCrateItem('stack', { layers });
+      logger.info('piano.producer.keep-stack', { layers: layers.length });
+      showToast('Kept stack to Crate');
+    } catch (err) {
+      logger.error('piano.producer.keep-stack-failed', { error: err?.message });
+      showToast('Keep failed — try again');
+    }
+  }, [store, showToast, logger]);
+
+  /** Keep a section (its resolved stack — carried refs expanded) to the Crate. */
+  const handleKeepSection = useCallback(async (sectionId) => {
+    const stack = resolveSectionStack(draftRef.current, sectionId);
+    if (!stack || !stack.length) return;
+    try {
+      await store.saveCrateItem('section', { layers: stack });
+      logger.info('piano.producer.keep-section', { sectionId, layers: stack.length });
+      showToast('Kept section to Crate');
+    } catch (err) {
+      logger.error('piano.producer.keep-section-failed', { sectionId, error: err?.message });
+      showToast('Keep failed — try again');
+    }
+  }, [store, showToast, logger]);
+
+  /** Keep a single RECORDED layer (take source) to the household loop pool. */
+  const handleKeepLoop = useCallback(async (layer) => {
+    if (layer?.source?.kind !== 'take') return;
+    try {
+      await store.saveLoop({ ...layer.source, kind: layer.role });
+      logger.info('piano.producer.keep-loop', { id: layer.id, role: layer.role });
+      showToast('Kept loop to Crate');
+    } catch (err) {
+      logger.error('piano.producer.keep-loop-failed', { id: layer.id, error: err?.message });
+      showToast('Keep failed — try again');
+    }
+  }, [store, showToast, logger]);
+
+  /** 'Ours' library facet pick: add a kept loop (embedded notes) or load a kept
+   * stack (loop refs resolved to takes; library layers re-fetch). */
+  const handlePickOurs = useCallback(async (kind, item) => {
+    ensureAudio();
+    setOverlay(null);
+    setLoadError(null);
+    try {
+      if (kind === 'loop') {
+        const rec = await store.getFull('loops', item.id);
+        if (!rec?.notes?.length) { setLoadError("That kept loop is empty."); return; }
+        dispatch(addLayer({
+          source: {
+            kind: 'take', takeId: rec.id, notes: rec.notes, ppq: rec.ppq ?? 480,
+            lengthBars: rec.lengthBars, timeline: rec.timeline ?? null, drumMode: !!rec.drumMode,
+          },
+          role: rec.kind === 'groove' ? 'groove' : (rec.kind || 'idea'),
+        }));
+        logger.info('piano.producer.ours-pick', { kind, id: rec.id });
+      } else if (kind === 'stack') {
+        const { layers } = await store.loadCrateStack(item.id);
+        dispatch(loadStack({ layers, bpm: stateRef.current.bpm, keyShift: stateRef.current.keyShift }));
+        ensureLayerNotes(layers);
+        logger.info('piano.producer.ours-pick', { kind, id: item.id, layers: layers.length });
+      }
+    } catch (err) {
+      logger.error('piano.producer.ours-pick-failed', { kind, id: item.id, error: err?.message });
+      setLoadError("Couldn't load that from the Crate.");
+    }
+  }, [store, ensureAudio, ensureLayerNotes, logger]);
+
   // ── capture session (Task 6.2) ──────────────────────────────────────────────
   const openCapture = useCallback((via) => {
     logger.info('piano.producer.capture-open', { via });
@@ -644,6 +816,9 @@ export function Producer() {
   );
 
   const overlayOpen = overlay !== null;
+  // Full-bleed surfaces (library OR the saved-song picker) reclaim the
+  // transport + keyboard bands.
+  const surfaceOpen = overlayOpen || songPicker;
 
   const editingSectionName = state.editingSectionId
     ? (draft?.sections.find((s) => s.id === state.editingSectionId)?.name ?? state.editingSectionId)
@@ -654,8 +829,18 @@ export function Producer() {
       {lib.loading && <PianoEmpty loading />}
       {lib.error && <PianoEmpty message={`Couldn't load the loop library: ${lib.error}`} />}
 
-      {lib.loops && !overlayOpen && (
+      {lib.loops && !surfaceOpen && (
         <>
+          {resume.hasResume && (
+            <div className="piano-producer-mode__resume-chip" role="status">
+              <span>Resume where you left off?</span>
+              <button type="button" className="piano-chip is-on" onClick={handleApplyResume}>Resume</button>
+              <button type="button" className="piano-chip" aria-label="dismiss resume" onClick={resume.dismiss}>✕</button>
+            </div>
+          )}
+          {saveToast && (
+            <p className="piano-producer-mode__save-toast" role="status">{saveToast}</p>
+          )}
           <TransportBar
             isPlaying={transport.isPlaying}
             // While playing, the button is Stop — it must stay tappable even
@@ -735,9 +920,15 @@ export function Producer() {
                     <span className="piano-producer-mode__door-title">Record my own</span>
                     <span className="piano-producer-mode__door-blurb">Loop-record over a metronome</span>
                   </button>
-                  <button type="button" className="piano-producer-mode__door" disabled title="Saved songs arrive soon">
+                  <button
+                    type="button"
+                    className="piano-producer-mode__door"
+                    onClick={() => { logger.info('piano.producer.front-door', { door: 'songs' }); setSongPicker(true); }}
+                  >
                     <span className="piano-producer-mode__door-title">Songs &amp; Resume</span>
-                    <span className="piano-producer-mode__door-blurb">Coming soon</span>
+                    <span className="piano-producer-mode__door-blurb">
+                      {resume.hasResume ? 'Pick up where you left off, or load a saved song' : 'Load a saved song'}
+                    </span>
                   </button>
                 </div>
               ) : (
@@ -755,6 +946,7 @@ export function Producer() {
                         onRemove={handleRemove}
                         onGain={handleSetGain}
                         onVoice={handleSetVoice}
+                        onKeepToCrate={handleKeepLoop}
                       />
                     ))}
                   </div>
@@ -764,6 +956,11 @@ export function Producer() {
                       className="piano-producer-mode__add-layer"
                       onClick={() => openOverlay(null, null)}
                     >+ Add layer</button>
+                    <button
+                      type="button"
+                      className="piano-producer-mode__keep-stack"
+                      onClick={handleKeepStack}
+                    >Keep stack to Crate</button>
                     <button
                       type="button"
                       className="piano-producer-mode__promote"
@@ -792,6 +989,9 @@ export function Producer() {
                 activeBlockIndex={songPos.blockIndex}
                 pendingBlockIndex={pendingTarget}
                 onQueueJump={handleQueueJump}
+                onSaveSong={handleSaveSong}
+                onOpenSongPicker={() => setSongPicker(true)}
+                onKeepSection={handleKeepSection}
               />
             )}
           </div>
@@ -851,6 +1051,21 @@ export function Producer() {
           bpm={state.bpm}
           keyShift={state.keyShift}
           onAudioGesture={ensureAudio}
+          ours={{ loops: store.loops, crate: store.crate }}
+          onPickOurs={handlePickOurs}
+        />
+      )}
+
+      {songPicker && (
+        <SongPicker
+          songs={store.songs}
+          loading={store.loading}
+          onLoad={handleLoadSong}
+          onClose={() => setSongPicker(false)}
+          onRemove={(id) => store.remove('songs', id).catch(() => showToast('Delete failed'))}
+          hasResume={resume.hasResume}
+          onResume={handleApplyResume}
+          onDismissResume={resume.dismiss}
         />
       )}
     </section>

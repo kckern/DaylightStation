@@ -74,6 +74,33 @@ vi.mock('../../producer/useProducerTransport.js', () => ({
   default: (args) => { transportArgs.last = args; return transportMock; },
 }));
 
+// ── persistence mocks (Task 8.2) — the store/resume carry their own suites ─────
+const storeMock = vi.hoisted(() => ({
+  songs: [], crate: [], loops: [], loading: false, error: null,
+  saveSong: vi.fn(() => Promise.resolve({ id: 'song1', title: 'Saved' })),
+  loadSong: vi.fn(() => Promise.resolve({ id: 'song1', draft: { sections: [], arrangement: [], carriedLayers: {}, meta: {} } })),
+  saveCrateItem: vi.fn(() => Promise.resolve({ id: 'c1' })),
+  saveLoop: vi.fn(() => Promise.resolve({ id: 'l1' })),
+  loadCrateStack: vi.fn(() => Promise.resolve({ id: 'c1', layers: [] })),
+  getFull: vi.fn(() => Promise.resolve({ id: 'l1', notes: [], kind: 'idea' })),
+  remove: vi.fn(() => Promise.resolve()),
+  rename: vi.fn(() => Promise.resolve({})),
+  refresh: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('../../producer/useProducerStore.js', () => ({
+  useProducerStore: () => storeMock,
+  default: () => storeMock,
+}));
+
+const resumeMock = vi.hoisted(() => ({
+  hasResume: false, resumeData: null,
+  applyResume: vi.fn(() => null), dismiss: vi.fn(), clear: vi.fn(), snapshotNow: vi.fn(),
+}));
+vi.mock('../../producer/useResumeSnapshot.js', () => ({
+  useResumeSnapshot: () => resumeMock,
+  default: () => resumeMock,
+}));
+
 import { Producer } from './Producer.jsx';
 
 // ── fixture library ───────────────────────────────────────────────────────────
@@ -198,8 +225,8 @@ describe('Producer shell (three bands)', () => {
     expect(await screen.findByRole('button', { name: /browse the library/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /start from a loop/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /record my own/i })).toBeEnabled();
-    const songs = screen.getByRole('button', { name: /songs & resume/i });
-    expect(songs).toBeDisabled();
+    // 'Songs & Resume' is now wired (Task 8.2) — enabled, opens the picker.
+    expect(screen.getByRole('button', { name: /songs & resume/i })).toBeEnabled();
   });
 
   it('play is disabled with no layers; the keyboard band is always live', async () => {
@@ -751,5 +778,41 @@ describe('Song builder wiring (Task 7.2)', () => {
       expect(document.querySelectorAll('.piano-song-view__slot--empty')).toHaveLength(4) // both Verse slots filled
     ));
     expect(screen.getByRole('button', { name: 'Verse slot 2' }).textContent).toContain('×2 · 8 bars');
+  });
+});
+
+describe('Producer persistence wiring (Task 8.2)', () => {
+  it("'Songs & Resume' front door opens the saved-song picker", async () => {
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: /songs & resume/i }));
+    expect(await screen.findByRole('dialog', { name: 'saved songs' })).toBeInTheDocument();
+  });
+
+  it("'Keep stack to Crate' saves the workspace stack", async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /keep stack to crate/i }));
+    await waitFor(() => expect(storeMock.saveCrateItem).toHaveBeenCalledWith('stack', expect.objectContaining({
+      layers: expect.arrayContaining([expect.objectContaining({ role: 'chords' })]),
+    })));
+  });
+
+  it('Save song (Song tab) crystallizes the draft via the store', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    // Promote the jam so a draft exists, landing on the Song tab.
+    fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save song' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Save song' }));
+    await waitFor(() => expect(storeMock.saveSong).toHaveBeenCalled());
+  });
+
+  it('the resume chip applies the snapshot when one is available', async () => {
+    resumeMock.hasResume = true;
+    resumeMock.applyResume = vi.fn(() => ({ workspace: { layers: [], bpm: 100, keyShift: 0 }, draft: null }));
+    render(<Producer />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(resumeMock.applyResume).toHaveBeenCalled();
+    resumeMock.hasResume = false; // restore for other tests
   });
 });

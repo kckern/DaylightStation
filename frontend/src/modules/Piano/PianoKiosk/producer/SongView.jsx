@@ -114,6 +114,10 @@ function nextSectionIdOf(sections) {
  * @param {number} [props.activeBlockIndex] - from the transport's onBlock (−1 idle)
  * @param {number|null} [props.pendingBlockIndex] - queued jump target block
  * @param {(blockIndex:number, mode:'repeat'|'bar') => void} [props.onQueueJump]
+ * @param {(title:string) => void} [props.onSaveSong] - crystallize + persist (Task 8.2);
+ *   absent → the footer keeps the disabled "coming soon" stub
+ * @param {() => void} [props.onOpenSongPicker] - open the saved-song picker
+ * @param {(sectionId:string) => void} [props.onKeepSection] - keep a section to the Crate
  */
 export function SongView({
   draft,
@@ -127,8 +131,12 @@ export function SongView({
   activeBlockIndex = -1,
   pendingBlockIndex = null,
   onQueueJump,
+  onSaveSong,
+  onOpenSongPicker,
+  onKeepSection,
 }) {
   const [openIdx, setOpenIdx] = useState(null); // arrangement entry whose sheet is open
+  const [saveTitle, setSaveTitle] = useState(''); // inline title for Save (optional)
   const [deleteArmed, setDeleteArmed] = useState(false);
   const disarmTimerRef = useRef(null);
   const holdRef = useRef({ timer: null, fired: false });
@@ -181,6 +189,15 @@ export function SongView({
         >
           Start from your jam
         </button>
+        {onOpenSongPicker && (
+          <button
+            type="button"
+            className="piano-song-view__load"
+            onClick={onOpenSongPicker}
+          >
+            Load a saved song
+          </button>
+        )}
       </div>
     );
   }
@@ -402,6 +419,13 @@ export function SongView({
             >+</button>
           </span>
           <button type="button" onClick={() => handleClone(openSection, openIdx)}>Clone</button>
+          {onKeepSection && (
+            <button
+              type="button"
+              className="piano-song-view__keep"
+              onClick={() => { onKeepSection(openSection.id); setOpenIdx(null); }}
+            >Keep to Crate</button>
+          )}
           <button
             type="button"
             className={`piano-song-view__delete${deleteArmed ? ' is-armed' : ''}`}
@@ -423,9 +447,31 @@ export function SongView({
       )}
 
       <div className="piano-song-view__footer">
-        <button type="button" disabled title="Saving arrives with persistence (Task 8.x)">
-          Save song — coming soon
-        </button>
+        {onSaveSong ? (
+          <>
+            <input
+              className="piano-song-view__save-title"
+              aria-label="song title"
+              placeholder="Title (optional)"
+              value={saveTitle}
+              onChange={(e) => setSaveTitle(e.target.value)}
+            />
+            <button
+              type="button"
+              className="piano-song-view__save"
+              onClick={() => { onSaveSong(saveTitle.trim()); setSaveTitle(''); }}
+            >Save song</button>
+            {onOpenSongPicker && (
+              <button type="button" className="piano-song-view__load" onClick={onOpenSongPicker}>
+                Load
+              </button>
+            )}
+          </>
+        ) : (
+          <button type="button" disabled title="Saving arrives with persistence (Task 8.x)">
+            Save song — coming soon
+          </button>
+        )}
       </div>
     </div>
   );
