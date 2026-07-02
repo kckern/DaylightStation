@@ -14,7 +14,12 @@
   border: 1px solid var(--piano-border, #2c2c3a);
   background: var(--piano-surface, #16161f);
   font-family: 'Roboto Condensed', sans-serif;
-  &.is-muted > :not(.piano-channel-strip__m):not(.piano-channel-strip__s):not(.piano-channel-strip__remove) {
+  // Muted: dim the identity side only. M/S/remove stay full-strength (the way
+  // back out must be findable), GainStrip dims itself (own is-muted), and the
+  // VoicePicker drawer — rendered inside the strip — must never inherit a dim.
+  &.is-muted .piano-channel-strip__glyph,
+  &.is-muted .piano-channel-strip__identity,
+  &.is-muted .piano-channel-strip__voice {
     opacity: 0.5;
   }
 
