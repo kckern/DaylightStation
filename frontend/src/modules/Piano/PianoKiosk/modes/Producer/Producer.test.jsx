@@ -815,4 +815,33 @@ describe('Producer persistence wiring (Task 8.2)', () => {
     expect(resumeMock.applyResume).toHaveBeenCalled();
     resumeMock.hasResume = false; // restore for other tests
   });
+
+  it("'Ours' kept stack loads immediately when the workspace is empty", async () => {
+    storeMock.crate = [{ id: 'c1', kind: 'stack', title: 'Kept', layerCount: 1 }];
+    render(<Producer />);
+    await openLibrary();
+    fireEvent.click(screen.getByRole('button', { name: 'Ours' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Kept' }));
+    // No confirm — empty jam, nothing to lose.
+    expect(screen.queryByRole('alertdialog', { name: 'replace jam' })).toBeNull();
+    await waitFor(() => expect(storeMock.loadCrateStack).toHaveBeenCalledWith('c1'));
+    storeMock.crate = [];
+  });
+
+  it("'Ours' kept stack arms a replace confirm over a non-empty jam, then loads on confirm", async () => {
+    storeMock.crate = [{ id: 'c1', kind: 'stack', title: 'Kept', layerCount: 1 }];
+    render(<Producer />);
+    await addDmLayer(); // a jam worth protecting
+    fireEvent.click(screen.getByRole('button', { name: '+ Add layer' }));
+    await screen.findByRole('dialog', { name: 'loop library' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ours' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Kept' }));
+    // Armed: the confirm shows and nothing has loaded yet.
+    expect(await screen.findByRole('alertdialog', { name: 'replace jam' })).toBeInTheDocument();
+    expect(storeMock.loadCrateStack).not.toHaveBeenCalled();
+    // Confirm → the load runs.
+    fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+    await waitFor(() => expect(storeMock.loadCrateStack).toHaveBeenCalledWith('c1'));
+    storeMock.crate = [];
+  });
 });
