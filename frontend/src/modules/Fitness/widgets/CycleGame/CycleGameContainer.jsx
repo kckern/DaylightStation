@@ -1142,6 +1142,30 @@ export default function CycleGameContainer({ onMount } = {}) {
         })
       });
 
+      // Info-level, rate-limited telemetry: prod runs at info, so the debug
+      // firehose above never persists. This ~5s-resolution snapshot (plus the
+      // full per-second series in the saved record) is what corroborates
+      // "my distance/timing was wrong" reports from the session JSONL.
+      // wallDriftMs = engine clock vs wall clock — nonzero drift beyond one
+      // tick means the catch-up loop is behind (pair with tick_catchup warns).
+      log.sampled?.('cycle_game.race_telemetry', {
+        raceId: raceMetaRef.current?.raceId,
+        tick: tickCountRef.current,
+        elapsedS,
+        wallDriftMs: raceStartMsRef.current != null
+          ? Math.round((performance.now() - raceStartMsRef.current) - elapsedS * 1000)
+          : null,
+        riders: Object.keys(tickRiders).map((userId) => {
+          const r = tickRiders[userId];
+          return {
+            u: userId,
+            rpm: Math.round(Number.isFinite(r.rpm) ? r.rpm : 0),
+            m: Math.round(Number.isFinite(r.cumulativeDistanceM) ? r.cumulativeDistanceM : 0),
+            gap: gapTicksRef.current.get(userId) || 0
+          };
+        })
+      }, { maxPerMinute: 12, aggregate: true });
+
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
         const standings = finalState.engineState?.standings || [];
