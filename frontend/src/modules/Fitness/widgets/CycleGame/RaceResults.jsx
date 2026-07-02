@@ -99,7 +99,7 @@ ResultRow.propTypes = {
 export default function RaceResults({
   standings = [], riders = {}, winCondition = 'distance', dnf = [], penalized = [],
   lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null,
-  ladderNotes = []
+  ladderNotes = [], saveFailed = false
 }) {
   const dnfSet = new Set(dnf);
   const penalizedSet = new Set(penalized);
@@ -115,6 +115,11 @@ export default function RaceResults({
     <div className="race-results" data-testid="race-results">
       <div className="race-results__eyebrow">Finish</div>
       <h2 className="race-results__title">Results</h2>
+      {saveFailed && (
+        <div className="race-results__save-failed" data-testid="race-results-save-failed" role="alert">
+          Race could not be saved — it won&rsquo;t appear in history or the ladder
+        </div>
+      )}
       <ol className="race-results__list">
         {standings.map((s, i) => (
           <ResultRow key={s.userId} s={s} riders={riders} winCondition={winCondition}
@@ -175,5 +180,6 @@ RaceResults.propTypes = {
   secondsLeft: PropTypes.number,
   animate: PropTypes.bool,
   onExit: PropTypes.func,
-  ladderNotes: PropTypes.arrayOf(PropTypes.string)
+  ladderNotes: PropTypes.arrayOf(PropTypes.string),
+  saveFailed: PropTypes.bool
 };
