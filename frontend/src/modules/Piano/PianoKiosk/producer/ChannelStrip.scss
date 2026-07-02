@@ -1,0 +1,297 @@
+// ChannelStrip — DAW-grade touch-first mixer row (design §7 Mix view).
+// Also styles GainStrip and the VoicePicker drawer: they only ever render
+// inside a channel strip, so their styles ride along here (same pattern as
+// Producer.scss owning its band components). Dark stage, Roboto Condensed,
+// ≥48px touch targets.
+
+.piano-channel-strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--piano-border, #2c2c3a);
+  background: var(--piano-surface, #16161f);
+  font-family: 'Roboto Condensed', sans-serif;
+  // Muted: dim the identity side only. M/S/remove stay full-strength (the way
+  // back out must be findable), GainStrip dims itself (own is-muted), and the
+  // VoicePicker drawer — rendered inside the strip — must never inherit a dim.
+  &.is-muted .piano-channel-strip__glyph,
+  &.is-muted .piano-channel-strip__identity,
+  &.is-muted .piano-channel-strip__voice {
+    opacity: 0.5;
+  }
+
+  &__glyph { flex: 0 0 auto; border-radius: 6px; }
+
+  &__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    flex: 1 1 10rem;
+    .roman-progression { max-width: 100%; flex-wrap: wrap; }
+  }
+  &__name {
+    font-weight: 600;
+    color: var(--piano-fg, #eef);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  &__role {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--piano-muted, #99c);
+  }
+
+  // Voice chip: current program name; opens the picker. Disabled for grooves.
+  &__voice {
+    flex: 0 0 auto;
+    min-height: 3rem;
+    max-width: 9rem;
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface-2, #1b1b27);
+    color: var(--piano-fg, #cce);
+    font: 600 0.92rem 'Roboto Condensed', sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    &:disabled { opacity: 0.55; cursor: default; }
+  }
+
+  // M (Mute) / S (Solo) / carry-pin latching taps: ≥48px targets.
+  &__m, &__s, &__carry {
+    flex: 0 0 auto;
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 6px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-muted, #99a);
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  &__m.is-on { background: var(--piano-danger, #e05a4f); color: #fff; border-color: var(--piano-danger, #e05a4f); }
+  &__s.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+  // Carry pin: continuity across sections (§4.1) — cool blue, not the
+  // accent green, so a pinned layer never reads as "soloed".
+  &__carry.is-on { background: var(--piano-info, #3d7bd9); color: #fff; border-color: var(--piano-info, #3d7bd9); }
+
+  &__gain {
+    position: relative;
+    flex: 1 1 12rem;
+    min-width: 8rem;
+    display: flex;
+    flex-direction: column;
+  }
+  &__drums-hint {
+    position: absolute;
+    right: 0.2rem;
+    top: -0.85rem;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--piano-muted, #b9a);
+  }
+
+  // Remove: 2-tap confirm — armed state turns hot.
+  &__remove {
+    flex: 0 0 auto;
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 6px;
+    background: none;
+    border: 1px solid transparent;
+    color: var(--piano-danger, #a66);
+    font: 700 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-armed {
+      border-color: var(--piano-danger, #e05a4f);
+      background: var(--piano-surface, #241618);
+      color: var(--piano-danger, #f7a29a);
+    }
+  }
+
+  // Keep a recorded (take) layer to the household loop pool (Task 8.2).
+  &__keep {
+    flex: 0 0 auto;
+    min-height: 3rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    background: none;
+    border: 1px solid var(--piano-border, #3a3a48);
+    color: var(--piano-muted, #bbc);
+    font: 600 0.85rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-text, #cfe); }
+    &.is-kept, &:disabled { opacity: 0.6; cursor: default; border-style: dashed; }
+  }
+}
+
+// ── GainStrip: segmented tap-to-set gain ─────────────────────────────────────
+
+.piano-gain-strip {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  min-height: 3rem; // ≥48px touch height
+  // Scroll safety: vertical pans stay with the browser (it pointercancels our
+  // pending tap); horizontal taps/gestures are ours. See GainStrip.jsx header.
+  touch-action: pan-y;
+  &.is-muted { opacity: 0.45; }
+
+  &__cell {
+    flex: 1 1 0;
+    min-width: 0;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    border-radius: 4px;
+    background: var(--piano-surface-2, #101018);
+    color: var(--piano-muted, #778);
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 0;
+    // The strip container owns the pointer interaction.
+    pointer-events: none;
+
+    &.is-on { background: var(--piano-accent, #2ec46f); border-color: var(--piano-accent, #2ec46f); }
+    &.is-active { box-shadow: inset 0 0 0 2px var(--piano-accent-text, #bff2d4); }
+    &--silent {
+      color: var(--piano-danger, #a66);
+      font-size: 0.8rem;
+      &.is-active { box-shadow: inset 0 0 0 2px var(--piano-danger, #e05a4f); }
+    }
+  }
+}
+
+// ── VoicePicker: bottom drawer over the stage ────────────────────────────────
+
+.piano-voice-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  font-family: 'Roboto Condensed', sans-serif;
+
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(4, 4, 8, 0.6);
+    cursor: pointer;
+  }
+
+  &__drawer {
+    position: relative;
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 0.85rem 1.25rem 1.25rem;
+    border-radius: 16px 16px 0 0;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    border-bottom: none;
+    background: var(--piano-bg, #0e0e12);
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.55);
+  }
+
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+  }
+  &__title { font: 700 1.15rem 'Roboto Condensed', sans-serif; color: var(--piano-fg, #e8e8f2); }
+  &__close {
+    min-width: 3rem;
+    min-height: 3rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-fg, #cce);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  &__base {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+  }
+
+  &__voice {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 3rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-fg, #dde);
+    font: 600 0.95rem 'Roboto Condensed', sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    &.is-current {
+      border-color: var(--piano-accent, #2ec46f);
+      background: var(--piano-surface-2, #12211a);
+      color: var(--piano-accent-text, #cfe);
+    }
+  }
+  &__check { color: var(--piano-accent, #2ec46f); }
+
+  &__all { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 1rem; }
+  &__all-label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--piano-muted, #99a);
+    margin-bottom: 0.2rem;
+  }
+
+  &__family { display: flex; flex-direction: column; gap: 0.35rem; }
+  &__family-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 3rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #2a2a36);
+    background: var(--piano-surface, #15151d);
+    color: var(--piano-fg, #dde);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-open { border-color: var(--piano-accent, #2ec46f); }
+  }
+  &__family-count { color: var(--piano-muted, #99a); }
+  &__family-voices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+    padding: 0.15rem 0 0.5rem;
+  }
+}
+
+// Focus outlines (kiosk keyboards are rare, but keep parity with Producer.scss).
+.piano-channel-strip__voice:focus-visible,
+.piano-channel-strip__m:focus-visible,
+.piano-channel-strip__s:focus-visible,
+.piano-channel-strip__carry:focus-visible,
+.piano-channel-strip__remove:focus-visible,
+.piano-voice-picker__voice:focus-visible,
+.piano-voice-picker__family-head:focus-visible,
+.piano-voice-picker__close:focus-visible {
+  outline: 2px solid var(--piano-accent, #2ec46f);
+  outline-offset: 2px;
+}

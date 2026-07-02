@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalShift, noteSignature, mergeLoopGroup, targetPath } from './ingestCore.mjs';
+import {
+  canonicalShift, noteSignature, mergeLoopGroup, targetPath,
+  classifyDrums, pickEnrichment, slugMap, ENRICHMENT_FIELDS,
+} from './ingestCore.mjs';
+import { GM_DRUM } from '../../shared/music/percussion.mjs';
 
 describe('canonicalShift', () => {
   it('is the shift that moves a major tonic onto C', () => {
@@ -64,5 +68,96 @@ describe('targetPath', () => {
       targetPath({ type: 'chord-progression', source: 'famous', artist: 'Metallica', mood: null, slug: 'one-chorus' }),
       'chord-progressions/famous/metallica/one-chorus.mid',
     );
+  });
+  it('routes grooves under percussion/', () => {
+    assert.equal(
+      targetPath({ type: 'groove', source: 'niko-master', mood: null, slug: 'four-on-floor' }),
+      'percussion/niko/four-on-floor.mid',
+    );
+  });
+});
+
+describe('classifyDrums (whole-file groove gate)', () => {
+  const notesOn = (pitches) => pitches.map((midi, i) => ({ midi, ticks: i * 240 }));
+  const drumPitches = [GM_DRUM.kick, GM_DRUM.snare, GM_DRUM.hatClosed, GM_DRUM.hatClosed,
+    GM_DRUM.kick, GM_DRUM.snare, GM_DRUM.hatOpen, GM_DRUM.ride];
+
+  it('types a channel-9 drum file as groove', () => {
+    const res = classifyDrums([{ channel: 9, notes: notesOn(drumPitches) }]);
+    assert.equal(res.kind, 'groove');
+  });
+
+  it('NEVER flips a coverage-only file to groove — stays harmonic with a suggestion tag', () => {
+    // A bassline hammering kick/snare/tomLo pitches on a melodic channel:
+    // 100% GM_DRUM pitch coverage, zero channel-9 evidence. Pre-gate this
+    // false-positive became type:groove (76 confirmed on the real packs).
+    const res = classifyDrums([{ channel: 0, notes: notesOn(drumPitches) }]);
+    assert.equal(res.kind, 'harmonic');
+    assert.equal(res.coverageSuggestion, true);
+  });
+
+  it('skips channel-9 drums mixed with substantial pitched material as mixed', () => {
+    const res = classifyDrums([
+      { channel: 9, notes: notesOn(drumPitches) }, // 8 drum notes
+      { channel: 0, notes: notesOn([60, 64, 67, 72, 76, 79]) }, // 6 pitched notes → 57% drums
+    ]);
+    assert.equal(res.kind, 'mixed');
+    assert.ok(res.ratio > 0.5 && res.ratio < 0.9);
+  });
+
+  it('does not let coverage-only tracks force a mixed skip on a harmonic file', () => {
+    // Pitched piece plus a bass track whose pitches fake drum coverage: no
+    // channel-9 anywhere → harmonic (suggestion), never skipped.
+    const res = classifyDrums([
+      { channel: 1, notes: notesOn([GM_DRUM.kick, GM_DRUM.snare, GM_DRUM.tomLo, GM_DRUM.kick]) },
+      { channel: 0, notes: notesOn([60, 64, 67, 72, 76, 79]) },
+    ]);
+    assert.equal(res.kind, 'harmonic');
+    assert.equal(res.coverageSuggestion, true);
+  });
+
+  it('is harmonic with no suggestion when nothing reads as drums', () => {
+    const res = classifyDrums([{ channel: 0, notes: notesOn([60, 62, 64, 65, 67, 69]) }]);
+    assert.equal(res.kind, 'harmonic');
+    assert.equal(res.coverageSuggestion, undefined);
+  });
+});
+
+describe('enrichment carry-over (pickEnrichment / slugMap)', () => {
+  it('picks exactly the enrichment-owned fields that are present', () => {
+    const old = {
+      slug: 'am-f-c-g', path: 'chord-progressions/niko/am-f-c-g.mid', type: 'chord-progression',
+      timeline: [[0, 4, 7]], timelineRoot: 0, specificity: 'triad', rootSource: 'declared',
+      title: 'Am F · C G', signature: null, bpm: 120,
+    };
+    const picked = pickEnrichment(old);
+    assert.deepEqual(picked, {
+      signature: null, title: 'Am F · C G',
+      timeline: [[0, 4, 7]], timelineRoot: 0, specificity: 'triad', rootSource: 'declared',
+    });
+    assert.ok(!('bpm' in picked)); // ingest-owned fields never carried
+    assert.ok(!('path' in picked));
+  });
+
+  it('carries needsReview flags so flagged entries stay flagged until re-enriched', () => {
+    const picked = pickEnrichment({ slug: 'x', needsReview: true, needsReviewReason: 'parse-fail' });
+    assert.deepEqual(picked, { needsReview: true, needsReviewReason: 'parse-fail' });
+  });
+
+  it('every ENRICHMENT_FIELD is one loop-enrich/enrich-index produces', () => {
+    assert.deepEqual([...ENRICHMENT_FIELDS], [
+      'signature', 'title', 'timeline', 'timelineRoot', 'specificity', 'rootSource',
+      'needsReview', 'needsReviewReason',
+    ]);
+  });
+
+  it('slugMap excludes ambiguous (duplicated) slugs', () => {
+    const map = slugMap([
+      { slug: 'a', path: 'p1' },
+      { slug: 'b', path: 'p2' },
+      { slug: 'b', path: 'p3' }, // collision-suffixed twin shares the slug
+    ]);
+    assert.equal(map.get('a').path, 'p1');
+    assert.equal(map.has('b'), false);
   });
 });

@@ -44,6 +44,11 @@ export const PIANO_CONFIG_DEFAULTS = {
   // 'triptych' (circle-of-fifths | staff | live chord name). Household default; a
   // per-user preference (preferences.yml → topPaneLayout) overrides it.
   studio: { topPaneLayout: 'staff' },
+  // Producer capability flags. voiceTiers.onboardGm: true when the GM probe
+  // (/piano/test/gm-probe) verified the piano is multi-timbral GM — lets the
+  // Producer route loop playback to the piano's own engine (tier 1). Null =
+  // unverified: browser gmSynth (tier 2) carries everything.
+  producer: null,
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -121,6 +126,7 @@ export function resolvePianoConfig(raw, pianoId) {
         ?? shared.studio?.topPaneLayout
         ?? PIANO_CONFIG_DEFAULTS.studio.topPaneLayout,
     },
+    producer: p.producer ?? shared.producer ?? PIANO_CONFIG_DEFAULTS.producer,
   };
 }
 
