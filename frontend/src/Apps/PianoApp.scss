@@ -63,21 +63,45 @@
 }
 .piano-vsync-driver {
   position: fixed;
-  bottom: 0;
-  right: 0;
+  // Parked in the dark header band (not over the white keyboard), where an
+  // opaque near-background square is invisible to the eye. It was previously
+  // bottom-right at opacity 0.012 — the 2026-07-01 regression showed the current
+  // WebView (Chrome 149) eventually classifies a near-invisible animation as
+  // imperceptible and stops scheduling frames for it (page decays 60 → ~10fps as
+  // it ages). Opaque + low-contrast beats transparent + ghosted: the compositor
+  // cannot cull what actually paints.
+  top: 4px;
+  left: 42%;
   // Size matters: a 6px element is too small for the WebView to treat as "moving",
   // and vsync starves anyway on sparse pages (measured: 6px → intermittent 0fps;
-  // 64px → steady ~50fps). 64px sweeping 40px each frame forces a real pixel delta.
+  // 64px → steady ~50fps). Sweeping a few px each frame forces a real pixel delta.
   width: 64px;
-  height: 64px;
-  // Imperceptible, but a real (non-zero, non-occluded) layer so it is never culled.
-  opacity: 0.012;
+  height: 40px;
+  background: #1a1a20; // ~2% contrast against the #16161b chrome — invisible
+  opacity: 1;
+  border-radius: 8px;
   pointer-events: none;
   // MUST be the topmost layer — a fully-occluded element gets occlusion-culled by
   // the WebView (which is exactly why the old z-index:0 keep-alive never worked).
   z-index: 2147483647;
   will-change: transform;
   animation: piano-vsync-drive 0.9s linear infinite;
+}
+
+// Keep-alive media driver (KeepAliveVideo.jsx): dark 48px video in the header
+// band. Opaque and unclipped so the media path can't be occlusion-culled; dark
+// content on dark chrome keeps it invisible in practice.
+.piano-keepalive-video {
+  position: fixed;
+  top: 4px;
+  left: 36%;
+  width: 48px;
+  height: 40px;
+  object-fit: cover;
+  opacity: 1;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 2147483646;
 }
 
 .piano-app {

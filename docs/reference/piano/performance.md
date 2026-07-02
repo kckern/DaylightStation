@@ -43,6 +43,44 @@ tiled partial updates). Measured impact, same session, same interaction:
 > it sounds faster but disables tiling; **2** is software rendering. Set via the FKB REST
 > API: `node cli/fkb.cli.mjs set graphicsAccelerationMode 0` then restart FKB.
 
+### Measuring jank (the right way — and a pitfall)
+
+**`node cli/fkb.cli.mjs jank [minFps]`** is the canonical check: it injects a `requestAnimationFrame`
+counter, reads the steady-state fps back out of an offscreen DOM node via `getHtmlSource`, and exits
+non-zero below the threshold (default 20). It is **pure FKB REST — no ADB** — so it works after a
+reboot (adb-over-wifi is non-persistent and dies on reboot; FKB's REST on `:2323` comes back on its
+own). Healthy steady-state on this tablet is **~60 fps**. Cron it to catch regressions.
+
+> **Measurement pitfalls (2026-07-01):** (1) the older `fkb.cli fps` (screenshot) probe samples rAF
+> only ~2.5 s after a cold `loadStartUrl` — during the SPA's load/hydration burst — and under-reads a
+> healthy page; measure at steady state (the `jank` command waits ~10 s). (2) Always confirm
+> `screenOn:true` first — rAF throttles to ~1 fps while the FKB backlight is off. (3) **Both CLI
+> probes reload the page, and a fresh page can read 60 fps while the aged page the user actually
+> lives on has decayed to ~10 fps** (see the keep-alive regression below). Spot probes only measure
+> the latch state; aged-page decay is only visible in the passive `piano.watchdog` telemetry.
+> (4) Do NOT test via `injectJsCode` experiments containing `history.pushState`: FKB re-evaluates the
+> injected JS on history changes, so such probes multiply into an instance storm on an SPA.
+
+### The 2026-07-01 regression: removing the keep-alive video
+
+Commit `7de308f70` ("gut KeepAliveVideo to CSS-only vsync driver") shipped in the 12:31 build on
+2026-07-01; the first `piano.watchdog.jank-start` fired at 13:03 — 32 minutes later — and sustained
+~8–10 fps episodes (a hard ~100 ms/frame floor, `frameMs min ≈ 100`) recurred all day. The observed
+shape: **pages load at ~60 fps and decay to ~10 as they age**; prolonged decayed operation can latch
+the whole WebView (fresh pages read ~8 too; survives reload and `restartApp`; a device reboot clears
+it until pages decay again). CPU idle, RAM free, cool, heap/DOM flat — a throttled frame clock, not
+load. The working theory: the CSS driver's near-invisible animation (`opacity 0.012`) is eventually
+classified imperceptible by the current WebView (Chrome 149) and unscheduled.
+
+**Fix: belt-and-suspenders keep-alive, both drivers compositor-perceptible** (KeepAliveVideo.jsx):
+a muted looping 2 KB near-black H.264 video (`public/vsync-keepalive.mp4`, 48 px, opaque, parked in
+the dark header band — FKB has `autoplayVideos=true` so no gesture is needed; the old video's real
+defects were a broken source, 6 px size, and a needless gesture gate) **plus** the CSS transform
+driver, now opaque near-background color instead of ghost opacity. Telemetry (`keepalive.playing` /
+`keepalive.play-blocked` / `keepalive.stalled`) shows whether the media path is live on-device.
+Do not remove either driver based on a fresh-page measurement — validate on an **aged page**
+(>30 min) via `piano.watchdog` before believing any "X alone is sufficient" claim.
+
 ### Self-heal a dead kiosk page
 
 A transient load failure (e.g. the app restarts mid-load) can strand the WebView on Chrome's

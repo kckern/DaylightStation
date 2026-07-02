@@ -259,6 +259,39 @@ const commands = {
     }
     console.log('✓ recovery applied (a dead kiosk page self-heals within ~30s)');
   },
+
+  // Machine-readable jank check — pure FKB REST, NO ADB (so it works post-reboot
+  // when adb-over-wifi is gone). Injects a rAF-fps counter, reloads, reads the
+  // count back out of the page <title> via getHtmlSource, restores the normal
+  // injected script. Prints the fps and exits non-zero when below the threshold
+  // (default 20) so it can gate a cron/alert. See docs/reference/piano/performance.md.
+  //   node fkb.cli.mjs jank [minFps]
+  async jank([min]) {
+    const minFps = Number(min) || 20;
+    await call('screenOn'); // rAF throttles to ~1fps while the backlight is off
+    // Wait 2.5s for the SPA + vsync driver to settle, sample rAF for 1s, stamp the
+    // result into an offscreen node appended to <body> (outside React's #root, so the
+    // app's own useDocumentTitle can't clobber it, and React won't unmount it).
+    const probe =
+      "setTimeout(function(){var c=0,t=performance.now();function f(){c++;" +
+      "if(performance.now()-t<1000){requestAnimationFrame(f);}else{var d=document.createElement('div');" +
+      "d.id='jankfps';d.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';d.textContent='JANKFPS='+c;" +
+      "document.body.appendChild(d);}}requestAnimationFrame(f);},2500);";
+    await call('setStringSetting', { key: 'injectJsCode', value: probe });
+    await call('loadStartUrl');
+    // This tablet's SPA loads slowly; the node lands at ~load+3.5s and load is ~5-6s,
+    // so read at ~10s. Measuring earlier catches the hydration burst and under-reads.
+    await sleep(10000);
+    const html = await call('getHtmlSource');
+    // Restore the normal injected script for subsequent (natural) reloads.
+    await call('setStringSetting', { key: 'injectJsCode', value: BACK_BUTTON_JS });
+    const m = /JANKFPS=(\d+)/.exec(html);
+    if (!m) { console.log('jank: no reading (screen off? SPA not loaded?)'); process.exit(2); }
+    const fps = Number(m[1]);
+    const ok = fps >= minFps;
+    console.log(`rAF fps = ${fps}  [${ok ? 'OK' : 'JANK'}]  (threshold ${minFps}, 60=smooth)`);
+    process.exit(ok ? 0 : 1);
+  },
 };
 
 const [, , name, ...args] = process.argv;
@@ -268,6 +301,7 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  info [keys...]            deviceInfo (RAM/battery/wifi)');
   console.log('  shot [path]              screenshot -> file');
   console.log('  fps [path]               probe frame-rate (jank w/o CPU%) -> screenshot');
+  console.log('  jank [minFps]            machine-readable rAF fps (no ADB); exit 1 if < minFps (def 20)');
   console.log('  get [key]                all settings, or one value');
   console.log('  set <key> <value>        set a setting (bool auto-detected)');
   console.log('  reload | restart         loadStartUrl | restartApp (respawn renderer)');
