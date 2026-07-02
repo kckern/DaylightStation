@@ -48,6 +48,18 @@ const FitnessSidebarMenu = ({
   const fitnessContext = useFitnessContext();
   const pauseMusicPlayer = fitnessContext?.pauseMusicPlayer;
   const resumeMusicPlayer = fitnessContext?.resumeMusicPlayer;
+  const setFeedbackRecordingActive = fitnessContext?.setFeedbackRecordingActive;
+  // pauseMusicPlayer only reaches the in-session FitnessMusicPlayer (unmounted
+  // on plain browse/menu screens); the ambient MENU music is a separate player
+  // (useMenuMusic via MenuMusicController) ducked instead via the context flag.
+  const onFeedbackPauseMusic = React.useCallback(() => {
+    pauseMusicPlayer?.();
+    setFeedbackRecordingActive?.(true);
+  }, [pauseMusicPlayer, setFeedbackRecordingActive]);
+  const onFeedbackResumeMusic = React.useCallback(() => {
+    resumeMusicPlayer?.();
+    setFeedbackRecordingActive?.(false);
+  }, [resumeMusicPlayer, setFeedbackRecordingActive]);
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
   const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
@@ -331,8 +343,8 @@ const FitnessSidebarMenu = ({
           open={feedbackOpen}
           app="fitness"
           onClose={() => setFeedbackOpen(false)}
-          onPauseMusic={pauseMusicPlayer}
-          onResumeMusic={resumeMusicPlayer}
+          onPauseMusic={onFeedbackPauseMusic}
+          onResumeMusic={onFeedbackResumeMusic}
         />
       </div>
 
