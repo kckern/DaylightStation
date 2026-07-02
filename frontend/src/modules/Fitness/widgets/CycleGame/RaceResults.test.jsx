@@ -59,6 +59,19 @@ describe('RaceResults', () => {
     const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} animate={false} />);
     expect(within(time.container).getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
   });
+  it('crowns the time-race winner even though time races never stamp finishTimeS', () => {
+    // Realistic time-race standings: NOBODY has a finishTimeS (the cap ends the race).
+    const timeStandings = [
+      { userId: 'milo', placement: 1, finishTimeS: null, distanceM: 3000 },
+      { userId: 'felix', placement: 2, finishTimeS: null, distanceM: 2710 }
+    ];
+    const { container } = render(
+      <RaceResults standings={timeStandings} riders={riders} winCondition="time" dnf={[]} animate={false} />
+    );
+    const row = within(container).getByTestId('result-row-milo').closest('li');
+    expect(row.className).toContain('is-winner');
+    expect(row.textContent).toContain('👑');
+  });
   it('renders an exit button that calls onExit', () => {
     const onExit = vi.fn();
     const { getByTestId } = render(

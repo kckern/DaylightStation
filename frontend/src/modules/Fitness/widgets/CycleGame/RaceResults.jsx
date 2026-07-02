@@ -50,7 +50,9 @@ function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, penalizedSet,
   const isOvertime = !isDnf && overtimeSet.has(s.userId);
   const isPenalized = penalizedSet.has(s.userId);
   const finished = s.finishTimeS != null;
-  const isWinner = s.placement === 1 && finished && !isDnf;
+  // Time races never stamp finishTimeS, so "finished" must not gate the crown —
+  // exclude only DNF/overtime (a race closed before ANY finisher has no winner).
+  const isWinner = s.placement === 1 && !isDnf && !isOvertime;
   const rider = riders[s.userId] || {};
   const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
   const sourceId = isGhost ? resolveParticipantIdentity(String(s.userId)).sourceId : s.userId;
