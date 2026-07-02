@@ -32,7 +32,7 @@
     border-radius: 14px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
-  &__clock-label { @include cg.cg-eyebrow; font-size: 0.7rem; }
+  &__clock-label { @include cg.cg-eyebrow; font-size: 1.1rem; } // was 0.7rem — 10-foot floor (audit UX §7)
   &__clock {
     @include cg.cg-numeral(cg.$cg-cyan);
     font-size: 3.4rem; line-height: 1;
@@ -40,7 +40,7 @@
     text-shadow: 0 0 24px rgba(33, 230, 255, 0.45);
   }
   &__clock-goal {
-    font-family: cg.$cg-mono; font-size: 0.78rem; color: cg.$cg-muted;
+    font-family: cg.$cg-mono; font-size: 1.1rem; color: cg.$cg-muted; // was 0.78rem
   }
 
   // False-start banner — names whoever jumped the green light.
@@ -56,7 +56,7 @@
   }
   &__penalty-icon { font-size: 1.3rem; line-height: 1; }
   &__penalty-text {
-    color: #ffe3e3; font-weight: 800; font-size: 0.96rem; letter-spacing: 0.01em;
+    color: #ffe3e3; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.01em; // was 0.96rem
   }
 
   // ── Top region: chart (2/3) + roster (1/3) ────────────────────────────────
@@ -143,46 +143,12 @@
   &__marker-glyph {
     display: flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; border-radius: 50%;
-    font-size: 0.95rem; line-height: 1;
+    font-size: 1.1rem; line-height: 1; // was 0.95rem
     background: cg.$cg-panel-2;
     box-shadow: 0 0 0 2px var(--marker-color, #{cg.$cg-accent}), 0 2px 8px rgba(0, 0, 0, 0.6);
   }
   &__marker--dnf &__marker-glyph { box-shadow: 0 0 0 2px #ff5a52, 0 2px 8px rgba(0, 0, 0, 0.6); }
   &__marker--penalty &__marker-glyph { box-shadow: 0 0 0 2px cg.$cg-gold, 0 2px 8px rgba(0, 0, 0, 0.6); }
-
-  // ── Roster (1/3) — sorted by who's ahead ────────────────────────────────────
-  &__roster {
-    flex: 1 1 0; min-width: 0;
-    display: flex; flex-direction: column; gap: 8px;
-    // Centre the rows so a small field doesn't cram at the top of a tall panel;
-    // `safe` falls back to top-aligned (and scrolls) once a big field overflows.
-    justify-content: safe center;
-    overflow-y: auto; padding-left: 4px;
-  }
-  &__roster-row {
-    display: flex; align-items: center; gap: 12px;
-    background: rgba(18, 20, 27, 0.6);
-    border: 1px solid cg.$cg-border-soft; border-radius: 12px;
-    padding: 8px 12px;
-    &.is-ghost { opacity: 0.85; }
-  }
-  &__roster-rank {
-    @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: 1.3rem;
-    color: cg.$cg-cyan; min-width: 1.2em; text-align: center; flex-shrink: 0;
-  }
-  &__roster-avatar {
-    flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
-    .circular-user-avatar { min-width: 0 !important; width: 44px !important; height: 44px !important; --vital-avatar-size: 44px; }
-  }
-  &__roster-main { display: flex; flex-direction: column; min-width: 0; }
-  &__roster-name {
-    font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; color: cg.$cg-text; }
-  &__roster-row.is-finished { background: rgba(255, 213, 74, 0.08); border-radius: 8px; }
-  &__roster-row.is-finished &__roster-metric { color: cg.$cg-gold; }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never

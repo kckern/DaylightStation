@@ -68,15 +68,19 @@
     transition: opacity 0.25s ease;
   }
 
+  // 10-foot floor (audit UX §7): was 0.55rem, illegible from the bikes. Bumped
+  // to the hard floor; the PovGrid.jsx label-spacing constant was ALSO widened
+  // from every 10 m to every 100 m so the wider glyphs don't crowd the strip
+  // (the audit's "consider keeping only every 100m label" candidate).
   &__mark-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-mono; font-weight: 700; font-size: 0.55rem;
+    font-family: cg.$cg-mono; font-weight: 700; font-size: 1.1rem;
     color: cg.$cg-cyan; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }
   &__gate-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-mono; font-weight: 800; font-size: 0.72rem; letter-spacing: 0.06em;
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.06em;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }

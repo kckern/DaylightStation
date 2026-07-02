@@ -83,7 +83,7 @@
 .cycle-event-toast__subtitle {
   margin-top: 0.1rem;
   font-family: cg.$cg-display;
-  font-size: 0.92rem;
+  font-size: 1.1rem; // was 0.92rem — 10-foot floor (audit UX §7)
   font-weight: 500;
   color: cg.$cg-muted;
 }

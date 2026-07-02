@@ -30,6 +30,21 @@ $cg-bronze:      #d08a52;
 $cg-display: 'Roboto Condensed', system-ui, sans-serif;
 $cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is never loaded — don't claim it
 
+// ── 10-foot type scale (audit UX §7) ────────────────────────────────────────
+// The race screen is watched from bikes 2-3 m away on a 720p garage TV — the
+// same "10-foot UI" distance a couch is from a living-room TV. At that
+// distance a 16 px browser default reads like ~6-7 pt print; anything smaller
+// blurs into noise. $tv-micro (1.1rem ≈ 17.6px) is the HARD FLOOR: no text
+// may render below it while the engine phase is `racing` (see the Global
+// Constraints in the phase1-2 plan). $tv-label is the standard readable size
+// for row/eyebrow/stat text; $tv-num-hero is for the one or two truly
+// marquee numerals (race clock, countdown) that need to be readable at a
+// glance mid-pedal. Anything that cannot earn the floor in its available
+// space is REMOVED, not shrunk below it.
+$tv-num-hero: 3rem;
+$tv-label:    1.4rem;
+$tv-micro:    1.1rem; // hard floor — nothing during `racing` renders smaller
+
 // Synthwave atmosphere — horizon glow + scanlines. Used behind every screen.
 @mixin cg-backdrop {
   position: relative;
