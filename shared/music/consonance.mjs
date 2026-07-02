@@ -105,6 +105,25 @@ function gcd(a, b) {
 }
 
 /**
+ * Phase-align two slot arrays by tiling each to the LCM of their lengths
+ * (4 vs 8 → 8 pairs; 4 vs 6 → 12). Shared by `stackable` here and
+ * `melodyFit` (melodyFit.mjs) so the two scorers can never disagree on
+ * alignment. Element type is opaque — pairs hold REFERENCES to the original
+ * elements (pc arrays here; melodyFit tiles precomputed Sets), not copies.
+ * Either input empty → [] (callers decide what an empty alignment means).
+ *
+ * @template A, B
+ * @param {A[]} a slot array (harmonicTimeline.mjs `slots` shape, or per-slot derivatives)
+ * @param {B[]} b slot array
+ * @returns {Array<[A, B]>} LCM-length array of [aSlot, bSlot] pairs
+ */
+export function alignSlots(a, b) {
+  if (a.length === 0 || b.length === 0) return [];
+  const alignedLength = (a.length * b.length) / gcd(a.length, b.length);
+  return Array.from({ length: alignedLength }, (_, i) => [a[i % a.length], b[i % b.length]]);
+}
+
+/**
  * Can two loops stack? Phase-aligns both timelines by tiling their slot arrays
  * to the LCM of their lengths (4 vs 8 → 8; 4 vs 6 → 12), then requires the
  * per-slot UNION of pitch classes to pass `slotConsonant` on EVERY aligned
@@ -137,19 +156,17 @@ export function stackable(timelineA, timelineB) {
   if (!Array.isArray(timelineB?.slots)) {
     throw new TypeError('stackable: timelineB is not a harmonic timeline (missing array `slots`)');
   }
-  const a = timelineA.slots;
-  const b = timelineB.slots;
-  if (a.length === 0 || b.length === 0) return { ok: true, worstSlot: -1, score: 1 };
+  const pairs = alignSlots(timelineA.slots, timelineB.slots);
+  if (pairs.length === 0) return { ok: true, worstSlot: -1, score: 1 };
 
-  const alignedLength = (a.length * b.length) / gcd(a.length, b.length);
   let worstSlot = -1;
   let consonantCount = 0;
-  for (let i = 0; i < alignedLength; i += 1) {
-    const union = [...a[i % a.length], ...b[i % b.length]];
-    if (slotConsonant(union)) consonantCount += 1;
+  for (let i = 0; i < pairs.length; i += 1) {
+    const [slotA, slotB] = pairs[i];
+    if (slotConsonant([...slotA, ...slotB])) consonantCount += 1;
     else if (worstSlot === -1) worstSlot = i;
   }
-  return { ok: worstSlot === -1, worstSlot, score: consonantCount / alignedLength };
+  return { ok: worstSlot === -1, worstSlot, score: consonantCount / pairs.length };
 }
 
-export default { CHORD_TEMPLATES, slotConsonant, stackable };
+export default { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable };

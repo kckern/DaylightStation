@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHORD_TEMPLATES, slotConsonant, stackable } from './consonance.mjs';
+import { CHORD_TEMPLATES, slotConsonant, alignSlots, stackable } from './consonance.mjs';
 
 /** Timeline literal helper — only `slots` matters to stackable (loops are
  *  key-conformed upstream, so root is irrelevant to the union test). */
@@ -89,6 +89,33 @@ describe('slotConsonant', () => {
 
   it('bare semitone {0,1} is consonant (rotates to maj7 shell {0,11} — documented leniency)', () => {
     assert.equal(slotConsonant([0, 1]), true);
+  });
+});
+
+describe('alignSlots', () => {
+  it('tiles to the LCM of the two lengths (4 vs 6 → 12)', () => {
+    const a = [[0], [1], [2], [3]];
+    const b = [[10], [11], [12], [13], [14], [15]];
+    const pairs = alignSlots(a, b);
+    assert.equal(pairs.length, 12);
+    assert.deepEqual(pairs[0], [[0], [10]]);
+    assert.deepEqual(pairs[4], [[0], [14]]); // a wrapped, b not yet
+    assert.deepEqual(pairs[7], [[3], [11]]); // both wrapped
+  });
+
+  it('pairs hold references to the original slot arrays, not copies', () => {
+    const a = [[0, 4, 7]];
+    const b = [[2, 7, 11], [0, 5, 9]];
+    const pairs = alignSlots(a, b);
+    assert.equal(pairs[0][0], a[0]);
+    assert.equal(pairs[1][0], a[0]); // tiled repeat is the SAME reference
+    assert.equal(pairs[1][1], b[1]);
+  });
+
+  it('either input empty → empty alignment', () => {
+    assert.deepEqual(alignSlots([], [[0]]), []);
+    assert.deepEqual(alignSlots([[0]], []), []);
+    assert.deepEqual(alignSlots([], []), []);
   });
 });
 
