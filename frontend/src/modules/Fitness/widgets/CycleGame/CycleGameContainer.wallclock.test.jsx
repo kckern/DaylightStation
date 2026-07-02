@@ -308,4 +308,42 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(recoveredCalls).toHaveLength(1);
     expect(recoveredCalls[0][1]).toMatchObject({ userId: 'felix', equipmentId: 'tricycle' });
   });
+
+  it('never flags sensor_lost for a rider who has not pedaled a single connected reading yet (cold start, not a dropout)', () => {
+    // A rider who hasn't started pedaling at race start (still mounting the
+    // bike, clipping in) reads exactly like felix's dropout case above from
+    // gapTicks alone — but rpmHistoryRef is empty, because there was never a
+    // real reading to begin with. raceStartGraceS (30s) already covers this
+    // gracefully at the DNF layer; SENSOR must not fire a false alarm here.
+    mockCtx = makeCtx({
+      cycleGameConfig: {
+        default_win_condition: 'distance',
+        distance_goal_default_m: 3000,
+        time_cap_default_s: 300,
+        hrless_multiplier: 1.0,
+        start_countdown_s: START_COUNTDOWN_S,
+        staging_buffer_ms: 0,
+        cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
+        race_start_grace_s: 30
+      },
+      fitnessSessionInstance: {
+        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentCadence: (id) => {
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides normally
+          return { rpm: 0, connected: false }; // felix hasn't clipped in yet
+        }
+      }
+    });
+    const renderApi = render(<CycleGameContainer />);
+    nowMs = 0;
+    driveToGo(renderApi);
+
+    // Well past SENSOR_LOST_GAP_TICKS (9) — the exact live-garage repro was
+    // a false SENSOR chip at elapsedS:9 for a rider who simply hadn't
+    // started pedaling. Stop short of the 30s start-grace DNF window.
+    nowMs = 20000;
+    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+
+    expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(false);
+  });
 });
