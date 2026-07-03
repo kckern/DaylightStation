@@ -110,6 +110,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
                             .put("GET /log").put("POST /panic")
+                            .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status / force reconnect)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
                             .put("GET|POST /exec?cmd=…[&timeout=10000]  (sh -c as app uid)")
@@ -172,6 +173,22 @@ public class ControlServer extends NanoWSD {
                     PianoEngine e = service.getEngine();
                     if (e != null) e.panic();
                     return json(ok().put("action", "panic"));
+                }
+                case "/update": {
+                    // ADB-free self-update: fetch a new APK of ourselves from ?url= (or
+                    // POST body = url), stage it, and hand to PackageInstaller. On this
+                    // Android 10 (no device owner) the user taps one confirm; watch the
+                    // result via GET /log. New APK must be same-signed + versionCode >=.
+                    String url = strParam(session, "url", null);
+                    if (url == null && method == NanoHTTPD.Method.POST) url = readBody(session);
+                    if (url == null || url.trim().isEmpty()) return json(err("missing url"));
+                    url = url.trim();
+                    Diag.log(TAG, "/update from " + session.getRemoteIpAddress() + " url=" + url);
+                    File staged = new File(service.getCacheDir(), "update.apk");
+                    long bytes = downloadTo(url, staged);
+                    Updater.install(service, staged);
+                    return json(ok().put("action", "update").put("bytes", bytes)
+                            .put("note", "tap Update on the device to confirm"));
                 }
 
                 // --- ADB-replacement diagnostics ---------------------------------
@@ -273,6 +290,26 @@ public class ControlServer extends NanoWSD {
             if (len <= 0 && bos.size() > 65536) break; // safety cap when no content-length
         }
         return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    /** Download a URL to a file (following redirects); returns the byte count. */
+    private long downloadTo(String url, File dest) throws IOException {
+        java.net.HttpURLConnection c =
+                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(30000);
+        c.setInstanceFollowRedirects(true);
+        try (InputStream in = c.getInputStream();
+             java.io.FileOutputStream out = new java.io.FileOutputStream(dest)) {
+            byte[] buf = new byte[65536];
+            long total = 0;
+            int n;
+            while ((n = in.read(buf)) > 0) { out.write(buf, 0, n); total += n; }
+            out.flush();
+            return total;
+        } finally {
+            c.disconnect();
+        }
     }
 
     // --- live MIDI fan-out (called by PianoBridgeService's MidiReceiver) ---

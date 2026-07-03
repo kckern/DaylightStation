@@ -15,6 +15,15 @@
     <!-- Read SFZ/sample assets from /sdcard/piano-instruments (legacy storage, targetSdk 29). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
+    <!-- Self-update (POST /update → PackageInstaller): lets the bridge install a new
+         APK of itself over the LAN control plane, so future upgrades never need ADB.
+         Normal-protection appop; pre-granted once over USB with
+         `appops set net.kckern.pianobridge REQUEST_INSTALL_PACKAGES allow` (persists
+         across updates). This device has a Google account so it can't be a device
+         owner — the system therefore shows a ONE-TAP confirm per install; there is no
+         silent path here. See README "Self-update (ADB-free upgrades)". -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- ADB-replacement diagnostics (the /exec, /cpu, /logcat, /dumpsys control-plane
          endpoints). All three are protectionLevel signature|privileged|DEVELOPMENT, so
          they cannot be granted at install but CAN be granted once over USB with
@@ -49,8 +58,15 @@
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
+    <!-- usesCleartextTraffic: the bridge makes plain-HTTP calls to localhost FKB
+         (ScreenWaker screenOn poke, 127.0.0.1:2323) and to arbitrary LAN hosts for
+         self-update (POST /update). targetSdk 29 blocks cleartext by default, which
+         silently broke the wake poke ("Cleartext HTTP traffic ... not permitted");
+         allowing it is consistent with this LAN-only kiosk (which already exposes an
+         unauthenticated /exec shell on :8770). -->
     <application
         android:label="Piano Bridge"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false">
 
         <activity
@@ -80,6 +96,13 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- Receives PackageInstaller callbacks for self-update (see Updater/
+             InstallReceiver): on Android 10 (non device-owner) the commit returns
+             STATUS_PENDING_USER_ACTION with a confirm Intent this receiver launches. -->
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
 
     </application>
 

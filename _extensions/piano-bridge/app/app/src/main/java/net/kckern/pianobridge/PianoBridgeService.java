@@ -99,9 +99,12 @@ public class PianoBridgeService extends Service {
 
         startBleMidi();
 
-        // Regular service: do not auto-restart with a sticky intent; the kiosk
-        // (and BootReceiver / MainActivity) re-launch us explicitly.
-        return START_NOT_STICKY;
+        // START_STICKY: if the OS reclaims the process under memory pressure, revive
+        // the service automatically (onStartCommand re-runs with a null intent, which
+        // the midi_name guard above tolerates). Reboots are covered by BootReceiver and
+        // a manual ADB-free restart by FKB `startApplication` (fkb.cli launch) — this
+        // adds a third net so a dark, un-wakeable tablet can't result from a mid-run kill.
+        return START_STICKY;
     }
 
     @Override

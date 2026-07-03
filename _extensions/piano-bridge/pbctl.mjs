@@ -14,6 +14,9 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs update <apk-url>  # ADB-free self-update (one-tap confirm on device)
+//   node pbctl.mjs quiet <s> <e>     # daily MIDI-wake quiet window "HH:mm" (or: quiet off)
+//   node pbctl.mjs suppress <ms>     # mute MIDI-wake for <ms> from now (0 = clear)
 
 const HOST = process.env.PB_HOST || '10.0.0.245:8770';
 const BASE = `http://${HOST}`;
@@ -75,6 +78,32 @@ const cmds = {
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
+  // --- ADB-free self-update + wake-policy config -----------------------------
+  async update([url]) {
+    if (!url) { console.error('usage: update <apk-url>'); process.exit(1); }
+    console.log('→ ' + BASE + ' fetching + installing ' + url);
+    pretty(await req('POST', `/update?url=${encodeURIComponent(url)}`));
+    console.log('  (tap "Update" on the tablet when Android prompts — no ADB needed)');
+  },
+  async quiet([start, end]) {
+    // Daily MIDI-wake quiet window (local "HH:mm"). One merged POST = one reconnect.
+    const cur = await req('GET', '/config');
+    const vals = { ...(cur.values || {}) };
+    if (start === 'off' || start === 'clear') { vals.fkbWakeQuietStart = ''; vals.fkbWakeQuietEnd = ''; }
+    else if (start && end) { vals.fkbWakeQuietStart = start; vals.fkbWakeQuietEnd = end; }
+    else { console.error('usage: quiet <HH:mm start> <HH:mm end>   |   quiet off'); process.exit(1); }
+    const yaml = Object.entries(vals).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n';
+    pretty(await req('POST', '/config', yaml));
+  },
+  async suppress([ms]) {
+    // Mute note-wake until now+ms (0 or omitted = clear). Backend can do the same
+    // by POSTing fkbWakeSuppressUntilEpochMs directly for arbitrary policy.
+    const n = Number(ms);
+    const until = Number.isFinite(n) && n > 0 ? Date.now() + n : 0;
+    await cmds.config(['set', 'fkbWakeSuppressUntilEpochMs', String(until)]);
+    console.log(until ? `wake muted until ${new Date(until).toISOString()}` : 'wake suppression cleared');
+  },
+
   // --- ADB-replacement diagnostics (see CLAUDE.md for the SELinux ceiling) ---
   async logcat([lines, tag]) {
     const q = new URLSearchParams({ lines: lines || '200', ...(tag ? { tag } : {}) });
@@ -102,13 +131,26 @@ const cmds = {
     const r = await req('GET', `/props${key ? `?key=${encodeURIComponent(key)}` : ''}`);
     process.stdout.write((r.stdout || JSON.stringify(r)) + '\n');
   },
+  // ADB-free `settings get/put` (WRITE_SECURE_SETTINGS). ns = secure|global|system.
+  // e.g. disable Play Protect so OTA self-update isn't blocked (persists):
+  //   pbctl setsetting global package_verifier_enable 0
+  async getsetting([ns, key]) {
+    if (!key) { console.error('usage: getsetting <secure|global|system> <key>'); process.exit(1); }
+    pretty(await req('GET', `/getsetting?ns=${encodeURIComponent(ns)}&key=${encodeURIComponent(key)}`));
+  },
+  async setsetting([ns, key, value]) {
+    if (value === undefined) { console.error('usage: setsetting <secure|global|system> <key> <value>'); process.exit(1); }
+    pretty(await req('GET', `/setsetting?ns=${encodeURIComponent(ns)}&key=${encodeURIComponent(key)}&value=${encodeURIComponent(value)}`));
+  },
 };
 
 const [, , name, ...args] = process.argv;
 if (!name || !cmds[name]) {
   console.log(`pbctl — Piano Bridge control (${BASE})\n`);
   console.log('  status | connect | forget | scan [ms] | config [set k v|push f] | log | panic');
+  console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
   console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');
+  console.log('  sys:   getsetting <ns> <k> | setsetting <ns> <k> <v>   (ns=secure|global|system)');
   process.exit(name ? 1 : 0);
 }
 try { await cmds[name](args); } catch (e) { console.error('✗ ' + (e.message || e) + `  (is the bridge running + reachable at ${BASE}?)`); process.exit(1); }

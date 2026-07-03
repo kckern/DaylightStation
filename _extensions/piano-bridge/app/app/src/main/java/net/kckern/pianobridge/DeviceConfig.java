@@ -131,6 +131,19 @@ public class DeviceConfig {
     public String fkbPassword() { return values.getOrDefault("fkbPassword", ""); }
     public int fkbWakeCooldownMs() { return intOr("fkbWakeCooldownMs", 8000); }
 
+    // Wake gating the ScreenWaker evaluates at note time — ALL settable live via
+    // `pbctl config set` (POST /config hot-reloads and rebuilds the ScreenWaker),
+    // so wake policy can change forever with no APK rebuild and no ADB:
+    //   fkbWakeQuietStart / fkbWakeQuietEnd : "HH:mm" LOCAL-time daily quiet window
+    //     (both must be set; empty = no quiet window). Wraps past midnight, e.g.
+    //     22:00→07:00 suppresses overnight wakes.
+    //   fkbWakeSuppressUntilEpochMs : absolute epoch-millis; notes before it don't
+    //     wake. The DS backend can implement ARBITRARY wake policy (any condition it
+    //     wants) by computing a deadline and pushing this ONE key — no APK change.
+    public String fkbWakeQuietStart() { return values.getOrDefault("fkbWakeQuietStart", ""); }
+    public String fkbWakeQuietEnd() { return values.getOrDefault("fkbWakeQuietEnd", ""); }
+    public long fkbWakeSuppressUntilMs() { return longOr("fkbWakeSuppressUntilEpochMs", 0L); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 
@@ -138,6 +151,12 @@ public class DeviceConfig {
         String v = values.get(key);
         if (v == null) return def;
         try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+    }
+
+    private long longOr(String key, long def) {
+        String v = values.get(key);
+        if (v == null) return def;
+        try { return Long.parseLong(v.trim()); } catch (NumberFormatException e) { return def; }
     }
 
     private boolean boolOr(String key, boolean def) {
