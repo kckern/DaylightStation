@@ -59,7 +59,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
-  const [layout, setLayout] = useState({ events: [], width: 0, height: 0 });
+  const [layout, setLayout] = useState({ events: [], notes: [], tempoEntries: [], width: 0, height: 0, flow: null });
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState('follow');
   const [flow, setFlow] = useState('wrapped');
