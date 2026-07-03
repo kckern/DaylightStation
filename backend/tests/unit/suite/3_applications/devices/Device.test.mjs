@@ -73,3 +73,25 @@ describe('Device.clearContent', () => {
     expect(result.error).toMatch(/not supported|loadStartUrl/i);
   });
 });
+
+describe('Device.getStatus', () => {
+  it('delegates to contentControl.getStatus (the FKB screenOn verify read)', async () => {
+    const getStatus = vi.fn(async () => ({ ready: true, screenOn: true, currentUrl: 'x' }));
+    const device = makeDevice({ contentControl: { load: vi.fn(), getStatus } });
+
+    const result = await device.getStatus();
+
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ready: true, screenOn: true, currentUrl: 'x' });
+  });
+
+  it('returns a not-ready stub when content control is missing', () => {
+    const device = makeDevice({ contentControl: null });
+    expect(device.getStatus()).toEqual({ ready: false, error: 'no status' });
+  });
+
+  it('returns a not-ready stub when content control lacks getStatus', () => {
+    const device = makeDevice({ contentControl: { load: vi.fn() } });
+    expect(device.getStatus()).toEqual({ ready: false, error: 'no status' });
+  });
+});
