@@ -61,6 +61,41 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
   });
 
+  it('listen mode: tempo button opens a modal whose slider commits via onTempo on release', () => {
+    const onTempo = vi.fn();
+    render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={onTempo} />);
+    // Not present outside Listen.
+    const tempoBtn = screen.getByRole('button', { name: /tempo/i });
+    expect(tempoBtn).toHaveTextContent(/100%/);
+    fireEvent.click(tempoBtn);
+    const slider = screen.getByRole('slider', { name: /tempo/i });
+    fireEvent.change(slider, { target: { value: '1.5' } });
+    fireEvent.mouseUp(slider); // commit on release
+    expect(onTempo).toHaveBeenCalledWith(1.5);
+  });
+
+  it('listen mode: play-along toggle fires onTogglePlayAlong and reflects aria-pressed', () => {
+    const onTogglePlayAlong = vi.fn();
+    const { rerender } = render(
+      <ScoreTransportBar {...base} mode="listen" playAlong={false} onTogglePlayAlong={onTogglePlayAlong} />,
+    );
+    const toggle = screen.getByRole('button', { name: /play along/i });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(toggle);
+    expect(onTogglePlayAlong).toHaveBeenCalled();
+    rerender(<ScoreTransportBar {...base} mode="listen" playAlong onTogglePlayAlong={onTogglePlayAlong} />);
+    expect(screen.getByRole('button', { name: /play along/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('tempo + play-along are Listen-only (absent in Learn/Polish/Perform)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" />);
+    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+    rerender(<ScoreTransportBar {...base} mode="polish" />);
+    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+  });
+
   it('size is a single button that opens a modal (no inline +/-), and commits scale on release', () => {
     render(<ScoreTransportBar {...base} />);
     const sizeBtn = screen.getByRole('button', { name: /size/i });

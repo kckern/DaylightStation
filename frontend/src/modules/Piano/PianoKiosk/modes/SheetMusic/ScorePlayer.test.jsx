@@ -185,7 +185,7 @@ describe('ScorePlayer — Listen mode', () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it('sounds only parts set to play, and stops silence via panic', async () => {
+  it('performs ALL parts (jukebox) and stops silence via panic', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       notes: [
@@ -196,16 +196,47 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('RH: Play').click(); // cycle RH play → you
-    await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    expect(h.pressNote).toHaveBeenCalledWith(40, expect.any(Number)); // LH sounds
-    expect(h.pressNote).not.toHaveBeenCalledWith(64, expect.any(Number)); // RH is yours
+    expect(h.pressNote).toHaveBeenCalledWith(40, expect.any(Number)); // LH performed
+    expect(h.pressNote).toHaveBeenCalledWith(64, expect.any(Number)); // RH performed too — full jukebox
     screen.getByText('❚❚').click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
+  });
+
+  it('tempo control scales the Listen performance timeline', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // written = 1000ms/quarter
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    // Half speed (0.5×) → each step takes 2000ms.
+    fireEvent.click(screen.getByRole('button', { name: /tempo/i }));
+    const slider = screen.getByRole('slider', { name: /tempo/i });
+    fireEvent.change(slider, { target: { value: '0.5' } });
+    fireEvent.mouseUp(slider);
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1050)); // < 2000ms → not yet advanced
+    expect(screen.getByText('1 / 4')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(1050)); // > 2000ms total → advanced one step
+    expect(screen.getByText('2 / 4')).toBeTruthy();
+  });
+
+  it('play-along lights a correctly-struck note without advancing (non-gating)', async () => {
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: /play along/i }));
+    await act(async () => {});
+    // Struck the top note of the current (first) onset — lights, never advances.
+    play(64);
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // cursor unchanged (non-gating)
+    // A note NOT expected here does nothing (no advance, no throw).
+    play(99);
+    expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
   it('keeps part roles across a re-engrave (zoom must not wipe You/Mute)', async () => {

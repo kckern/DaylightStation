@@ -8,10 +8,10 @@ import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
-import { buildTempoMap, buildStepTimeline } from '../../../../MusicNotation/scoreTimeline.js';
+import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
+import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import useFollowTracker from './useFollowTracker.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
@@ -82,6 +82,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
   const [flow, setFlow] = useState('wrapped');
   const [scale, setScale] = useState(1);
+  const [tempoMult, setTempoMult] = useState(1); // Listen tempo: 1 = written, 1.5 = 50% faster, 0.5 = half
+  const [playAlong, setPlayAlong] = useState(false); // Listen: light up your correctly-struck notes (non-gating)
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
   const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
@@ -126,9 +128,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Listen is a jukebox: the kiosk performs EVERY part (allPlayRoles), tempo-scaled
+  // by the user's multiplier (faster tempo → shorter durations → factor 1/tempoMult).
+  // Other modes keep their silent step timeline. Polish is scaled too so its tempo
+  // control (later task) tracks the same knob without further plumbing.
+  const listenRoles = useMemo(() => allPlayRoles(parts), [parts]);
   const playTimeline = useMemo(
-    () => (mode === 'listen' ? buildPlayTimeline(events, layout.notes, tempoMap, roles) : stepTimeline),
-    [mode, events, layout.notes, tempoMap, roles, stepTimeline],
+    () => (mode === 'listen'
+      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, listenRoles), 1 / tempoMult)
+      : scaleTimeline(stepTimeline, 1 / tempoMult)),
+    [mode, events, layout.notes, tempoMap, listenRoles, stepTimeline, tempoMult],
   );
 
   const soundingRef = useRef(new Set());
@@ -214,6 +223,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onWrong: onFollowWrong,
   });
 
+  // ── Listen play-along: non-gating light-up ────────────────────────────────────
+  // Optional in Listen only. A struck note that matches the CURRENT step's expected
+  // active-staff midis lights green (adds to `struck`). It NEVER advances or blocks —
+  // the transport clock alone drives the cursor. Subscribes once per enabled change;
+  // step/steps/activeParts read from refs (ref pattern, like useFollowTracker). The
+  // transport's per-step `struck` reset already clears these additions each step.
+  const stepsRef = useRef(steps); stepsRef.current = steps;
+  const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
+  useEffect(() => {
+    if (!(mode === 'listen' && playAlong) || !subscribe) return undefined;
+    logger.debug('score.listen.playalong', { on: true });
+    return subscribe((evt) => {
+      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
+      const expected = expectedMidisAtStep(stepsRef.current?.[stepRef.current], activePartsRef.current || {});
+      if (expected.has(evt.note)) {
+        setStruck((prev) => { const n = new Set(prev); n.add(evt.note); return n; });
+      }
+    });
+  }, [mode, playAlong, subscribe, logger]);
+
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
     if (followHitsRef.current || followWrongsRef.current) {
@@ -295,9 +324,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // Seek jumps idxRef past pending note_offs — flush sounding notes first
       // (Listen mode) so a skipped-over note doesn't drone on the piano.
       if (mode === 'listen') silence();
-      transport.seek(stepTimeline[i]?.t ?? 0);
+      // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
+      // seek positions come from the unscaled stepTimeline, so scale to match.
+      transport.seek((stepTimeline[i]?.t ?? 0) / tempoMult);
     }
-  }, [mode, flow, events, transport, stepTimeline, silence]);
+  }, [mode, flow, events, transport, stepTimeline, silence, tempoMult]);
 
   useEffect(() => () => silence(), [silence]);
 
@@ -313,6 +344,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setMode(id);
     logger.info('score.mode', { mode: id });
   }, [mode, flushPlaybackNow, flushFollowNow, transport, silence, logger]);
+
+  // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
+  // the playTimeline memo; the transport reads the new timings on its next tick.
+  const onTempo = useCallback((v) => {
+    const n = Number(v);
+    setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
+  }, []);
 
   const reset = useCallback(() => {
     transport.stop();
@@ -330,11 +368,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       flushPlaybackNow();
       logger.info('score.transport.pause', { step });
     } else {
-      transport.seek(stepTimeline[stepRef.current]?.t ?? 0);
+      transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
       transport.play();
-      logger.info('score.transport.play', { step, mode, bpm: tempoMap[0]?.bpm });
+      logger.info('score.transport.play', { step, mode, bpm: tempoMap[0]?.bpm, tempoMult });
     }
-  }, [running, transport, mode, silence, flushPlaybackNow, logger, step, stepTimeline, tempoMap]);
+  }, [running, transport, mode, silence, flushPlaybackNow, logger, step, stepTimeline, tempoMap, tempoMult]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
@@ -445,6 +483,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleFlow={() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped'))}
         scale={scale}
         onScale={setScale}
+        tempoMult={tempoMult}
+        onTempo={onTempo}
+        playAlong={playAlong}
+        onTogglePlayAlong={() => setPlayAlong((v) => !v)}
         parts={barParts}
         activeParts={activeParts}
         roles={roles}

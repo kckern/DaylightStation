@@ -22,7 +22,7 @@ const ROLE_TITLES = {
  * breadcrumb-only).
  *
  * Mode-aware clusters (deeper per-mode features land in later tasks):
- *  Listen  — playback (reset/run/position), part roles, size/keyboard/info, click toggle.
+ *  Listen  — playback (reset/run/position), part roles, tempo, play-along, size/keyboard/info, click toggle.
  *  Learn   — parts + click toggle + position (transport is a no-op — Learn waits).
  *  Polish  — parts + run/reset + position.
  *  Perform — a page-indicator placeholder only (no parts / no transport / no view controls).
@@ -39,6 +39,10 @@ export default function ScoreTransportBar({
   onToggleFlow,
   scale,
   onScale,
+  tempoMult = 1,
+  onTempo,
+  playAlong = false,
+  onTogglePlayAlong,
   parts = [],
   activeParts = {},
   roles = {},
@@ -52,6 +56,8 @@ export default function ScoreTransportBar({
   const [sizeOpen, setSizeOpen] = useState(false);
   const [sizeDraft, setSizeDraft] = useState(scale);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [tempoOpen, setTempoOpen] = useState(false);
+  const [tempoDraft, setTempoDraft] = useState(tempoMult);
 
   const position = `${Math.min(step + 1, total)} / ${total}`;
 
@@ -67,6 +73,8 @@ export default function ScoreTransportBar({
   const hasViewControls = !isPerform;
   // The metronome-click toggle lives in Listen and Learn (Polish/Perform omit it).
   const hasClick = mode === 'listen' || mode === 'learn';
+  // Tempo control + play-along light-up are Listen-only (jukebox performance).
+  const hasListenExtras = mode === 'listen';
 
   const openSize = () => {
     setSizeDraft(scale);
@@ -75,6 +83,15 @@ export default function ScoreTransportBar({
 
   const commitScale = () => {
     onScale(Number(sizeDraft));
+  };
+
+  const openTempo = () => {
+    setTempoDraft(tempoMult);
+    setTempoOpen((v) => !v);
+  };
+
+  const commitTempo = () => {
+    onTempo?.(Number(tempoDraft));
   };
 
   const renderPartChip = (part) => {
@@ -175,6 +192,62 @@ export default function ScoreTransportBar({
           >
             {'♩'}
           </button>
+        )}
+
+        {hasListenExtras && (
+          <button
+            type="button"
+            className={`piano-score-btn piano-score-playalong${playAlong ? ' is-on' : ''}`}
+            aria-label="Play along"
+            aria-pressed={playAlong}
+            onClick={onTogglePlayAlong}
+          >
+            {'Play-along'}
+          </button>
+        )}
+
+        {hasListenExtras && (
+          <div className="piano-score-tempo-wrap">
+            <button
+              type="button"
+              className="piano-score-btn piano-score-tempo"
+              aria-label="Tempo"
+              aria-expanded={tempoOpen}
+              onClick={openTempo}
+            >
+              {`Tempo ${Math.round(tempoMult * 100)}%`}
+            </button>
+            {tempoOpen && (
+              <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
+                <input
+                  type="range"
+                  role="slider"
+                  aria-label="Tempo"
+                  min="0.25"
+                  max="2"
+                  step="0.05"
+                  defaultValue={tempoMult}
+                  onChange={(e) => setTempoDraft(e.target.value)}
+                  onMouseUp={commitTempo}
+                  onTouchEnd={commitTempo}
+                  onKeyUp={commitTempo}
+                />
+                <span className="piano-score-tempo-preview tabular-nums">
+                  {`${Math.round(Number(tempoDraft) * 100)}%`}
+                </span>
+                <button
+                  type="button"
+                  className="piano-score-btn piano-score-tempo-apply"
+                  onClick={() => {
+                    commitTempo();
+                    setTempoOpen(false);
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {hasViewControls && (
