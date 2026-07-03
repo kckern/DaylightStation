@@ -122,16 +122,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return () => clearTimeout(id);
   }, [mode, running, events, tempo, step]);
 
-  // Manual mode: sostenuto (middle) pedal scrolls a screenful.
+  // Manual mode: sostenuto (middle) pedal turns the page — rising edge only,
+  // since continuous/half pedals stream many CC66 values per physical press.
   useEffect(() => {
     if (mode !== 'manual') return undefined;
+    let prev = 0;
     return subscribeRaw(({ data }) => {
       if (!data || data.length < 3) return;
-      if ((data[0] & 0xf0) === 0xb0 && data[1] === SOSTENUTO_CC && data[2] >= 64) {
-        const el = scrollRef.current;
-        if (el) el.scrollBy({ [flow === 'horizontal' ? 'left' : 'top']: (flow === 'horizontal' ? el.clientWidth : el.clientHeight) * 0.85, behavior: 'smooth' });
-        logger.info('score.manual.pageturn', {});
-      }
+      if ((data[0] & 0xf0) !== 0xb0 || data[1] !== SOSTENUTO_CC) return;
+      const rising = prev < 64 && data[2] >= 64;
+      prev = data[2];
+      if (!rising) return;
+      const el = scrollRef.current;
+      if (el) el.scrollBy({ [flow === 'horizontal' ? 'left' : 'top']: (flow === 'horizontal' ? el.clientWidth : el.clientHeight) * 0.85, behavior: 'smooth' });
+      logger.info('score.manual.pageturn', {});
     });
   }, [mode, subscribeRaw, flow, logger]);
 

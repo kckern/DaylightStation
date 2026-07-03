@@ -5,19 +5,21 @@ import { MemoryRouter } from 'react-router-dom';
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
   noteCb: null, // the Follow-mode note-event subscriber
+  rawCb: null,  // the Manual-mode raw-MIDI subscriber
   events: [
-    { midi: 64, onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }, // E4
-    { midi: 62, onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 }, // D4
-    { midi: 60, onsetQuarter: 2, x: 220, top: 10, bottom: 200, system: 0 }, // C4
-    { midi: 62, onsetQuarter: 3, x: 280, top: 10, bottom: 200, system: 0 }, // D4
+    { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }, // E4
+    { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 }, // D4
+    { midi: 60, midis: [60], onsetQuarter: 2, x: 220, top: 10, bottom: 200, system: 0 }, // C4
+    { midi: 62, midis: [62], onsetQuarter: 3, x: 280, top: 10, bottom: 200, system: 0 }, // D4
   ],
+  layoutExtras: {},
 }));
 
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
     activeNotes: new Map(),
     subscribe: (fn) => { h.noteCb = fn; return () => { h.noteCb = null; }; },
-    subscribeRaw: () => () => {},
+    subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
   }),
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
@@ -30,7 +32,9 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   const { useEffect } = await import('react');
   return {
     MusicXmlRenderer: ({ onLayout, children }) => {
-      useEffect(() => { onLayout?.({ width: 800, height: 400, events: h.events }); }, [onLayout]);
+      useEffect(() => {
+        onLayout?.({ width: 800, height: 400, events: h.events, notes: [], tempoEntries: [], flow: 'wrapped', ...h.layoutExtras });
+      }, [onLayout]);
       return <div data-testid="renderer">{children}</div>;
     },
   };
@@ -42,8 +46,9 @@ const play = (note) => act(() => { h.noteCb?.({ type: 'note_on', note, velocity:
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
+beforeEach(() => { h.noteCb = null; h.rawCb = null; h.layoutExtras = {}; });
+
 describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
-  beforeEach(() => { h.noteCb = null; });
 
   it('advances on the correct note and ignores wrong notes', () => {
     renderPlayer();
@@ -72,5 +77,23 @@ describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
     renderPlayer();
     for (const n of [64, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+});
+
+describe('ScorePlayer — Manual mode pedal page-turn', () => {
+  it('turns one page per pedal press (rising edge), not per CC message', async () => {
+    const scrollBy = vi.fn();
+    Element.prototype.scrollBy = scrollBy;
+    renderPlayer();
+    screen.getByText('Manual').click();
+    await act(async () => {});
+    const cc66 = (v) => act(() => { h.rawCb?.({ data: [0xb0, 66, v] }); });
+
+    cc66(127); // press
+    cc66(127); // continuous pedal streams repeats while held
+    cc66(96);  // still held
+    cc66(0);   // release
+    cc66(127); // second press
+    expect(scrollBy).toHaveBeenCalledTimes(2);
   });
 });
