@@ -38,7 +38,9 @@ function nearestEvent(events, x, y) {
  * ScorePlayer — interactive engraved score. Four modes:
  *  Follow    — full-hand tracking: the cursor advances only once every active-staff
  *              note of the step is struck; wrong notes flash; struck noteheads light.
- *  Metronome — auto-advances at tempo; noteheads light as they sound.
+ *  Metronome — auto-advances at tempo; the current onset's active-staff
+ *              noteheads light up (bouncing ball). It does NOT perform through
+ *              the piano — it only lights the notes you should be playing.
  *  Play      — the kiosk performs 'play' parts through the piano; 'you' parts are
  *              highlighted (never sent); 'mute' parts are silent.
  *  Manual    — no awareness; sostenuto (middle) pedal + tap-to-scroll move the page.
@@ -141,8 +143,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [releaseNote, sendPanic]);
 
   // Flush playback telemetry only when a metronome/play run actually produced fires.
+  // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
+  // so the unmount flush doesn't double-emit a summary the pause/stop/done path
+  // already flushed (and so an already-empty run doesn't emit an empty stats line).
+  const pendingPlaybackRef = useRef(false);
   const flushPlaybackNow = useCallback(() => {
-    if (mode === 'metronome' || mode === 'play') flushPlayback(mode);
+    if (mode === 'metronome' || mode === 'play') { flushPlayback(mode); pendingPlaybackRef.current = false; }
   }, [mode, flushPlayback]);
 
   const transport = useScoreTransport({
@@ -162,7 +168,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         soundingRef.current.delete(e.note);
       }
     },
-    onFire: (ev, driftMs, gapMs) => recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm),
+    onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
     onDone: () => { if (mode === 'play') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
@@ -216,6 +222,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [flushFollow]);
   const flushFollowRef = useRef(flushFollowNow); flushFollowRef.current = flushFollowNow;
   useEffect(() => () => flushFollowRef.current(), []);
+
+  // Leaving the view mid metronome/play run cancels the rAF without an onDone, so
+  // the playback summary would never emit. Flush once on unmount if a run is still
+  // pending (guarded so it never double-emits with the pause/stop/done flush).
+  const flushPlaybackRef = useRef(flushPlaybackNow); flushPlaybackRef.current = flushPlaybackNow;
+  useEffect(() => () => { if (pendingPlaybackRef.current) flushPlaybackRef.current(); }, []);
 
   // Auto-follow the cursor: retargetable tween on the scroll container only
   // (native smooth scrollIntoView self-cancels at per-note cadence and drags
@@ -332,10 +344,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
       silence(); // role change invalidates the note timeline mid-flight
       logger.info('score.play.part', { staff, role: next });
     } else {
+      // Follow needs ≥1 active staff or the all-notes rule can never be satisfied
+      // (the cursor would deadlock). Refuse to turn off the last active staff.
+      const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
+      if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
       setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
       logger.info('score.active-part', { staff, on: !activeParts[staff] });
     }
-  }, [mode, roles, running, transport, flushPlaybackNow, silence, logger, activeParts]);
+  }, [mode, roles, running, transport, flushPlaybackNow, silence, logger, activeParts, parts]);
 
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total
@@ -366,6 +382,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
       ? expectedMidisAtStep(steps[step], activeParts)
       : null;
 
+  // Lit (green "hit") noteheads. Follow/Play fill `struck` as notes are struck /
+  // sounded (unchanged). Metronome has no note_on transport events, so nothing
+  // would ever light — instead light every active-staff note at the current onset
+  // (the bouncing ball), recomputed as `step` advances. expectedMidisAtStep
+  // tolerates an undefined step.
+  const litNotes = mode === 'metronome'
+    ? expectedMidisAtStep(steps[step], activeParts)
+    : struck;
+
   return (
     <div className="piano-score-player">
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
@@ -387,7 +412,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
             <NoteHighlightLayer
               step={steps[step]}
               activeParts={activeParts}
-              struck={struck}
+              struck={litNotes}
               missed={NO_MISSED}
               scale={scale}
               accent={cursorColor}

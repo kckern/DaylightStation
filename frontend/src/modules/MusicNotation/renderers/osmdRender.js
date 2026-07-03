@@ -68,10 +68,17 @@ export function pickMelodyNote(notes) {
 export function buildSteps(recs) {
   const byQuarter = new Map();
   for (const r of recs || []) {
-    if (!byQuarter.has(r.onsetQuarter)) byQuarter.set(r.onsetQuarter, { onsetQuarter: r.onsetQuarter, notes: [] });
-    byQuarter.get(r.onsetQuarter).notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width });
+    let step = byQuarter.get(r.onsetQuarter);
+    if (!step) { step = { onsetQuarter: r.onsetQuarter, notes: [], seen: new Set() }; byQuarter.set(r.onsetQuarter, step); }
+    // Repeats walk the same onset twice, pushing the same midi again → duplicate
+    // overlapping light-up chips. De-dupe by midi within a step (keep the first).
+    if (step.seen.has(r.midi)) continue;
+    step.seen.add(r.midi);
+    step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width });
   }
-  return [...byQuarter.values()].sort((a, b) => a.onsetQuarter - b.onsetQuarter);
+  return [...byQuarter.values()]
+    .map(({ seen, ...s }) => s) // drop the internal de-dupe set from the public shape
+    .sort((a, b) => a.onsetQuarter - b.onsetQuarter);
 }
 
 /**
