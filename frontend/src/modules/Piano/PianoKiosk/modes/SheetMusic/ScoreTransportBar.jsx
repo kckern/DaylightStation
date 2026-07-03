@@ -25,7 +25,7 @@ const ROLE_TITLES = {
  *  Listen  — playback (reset/run/position), part roles, tempo, play-along, size/keyboard/info, click toggle.
  *  Learn   — parts + click toggle + position (transport is a no-op — Learn waits).
  *  Polish  — parts + run/reset + position.
- *  Perform — a page-indicator placeholder only (no parts / no transport / no view controls).
+ *  Perform — a {page} / {pages} indicator only (no parts / no transport / no view controls).
  */
 export default function ScoreTransportBar({
   mode,
@@ -35,6 +35,8 @@ export default function ScoreTransportBar({
   onReset,
   step,
   total,
+  page = 1,
+  pages = 1,
   flow,
   onToggleFlow,
   scale,
@@ -189,7 +191,7 @@ export default function ScoreTransportBar({
         )}
         {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
         {isPerform && (
-          <span className="piano-score-page-indicator" aria-label="Page">Perform</span>
+          <span className="piano-score-page-indicator tabular-nums" aria-label="Page">{`${page} / ${pages}`}</span>
         )}
       </div>
 
