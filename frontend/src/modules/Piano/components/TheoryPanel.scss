@@ -36,7 +36,9 @@
     gap: 1.5rem;
     padding: 1rem;
     .theory-panel__circle { flex: 0 0 auto; width: 100%;
-      .theory-panel__circle-box { height: auto; width: min(72%, 15rem); } }
+      // Cap width at the base 14rem max-height so aspect-ratio:1 stays square
+      // (a wider box would get clamped vertically → slight ellipse).
+      .theory-panel__circle-box { height: auto; width: min(72%, 14rem); } }
     // The staff must not flex-grab the whole column (a single chord shouldn't be
     // 600px tall). Give it a bounded, definite height so the absolute-SVG host
     // has something to fill, and let the three elements sit centered with even

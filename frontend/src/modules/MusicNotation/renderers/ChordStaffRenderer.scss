@@ -1,7 +1,7 @@
 // Sizing contract: the host is a normal block element that fills whatever box its
 // container gives it. The SVG is absolutely positioned so it can NEVER contribute
 // to layout size — a container that fails to size the host yields a small/empty
-// staff (min-height floor), never a viewport-height balloon.
+// staff (safe collapse-to-empty), never a viewport-height balloon.
 .chord-staff {
   position: relative;
   width: 100%;
