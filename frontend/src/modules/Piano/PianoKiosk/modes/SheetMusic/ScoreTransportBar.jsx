@@ -59,6 +59,8 @@ export default function ScoreTransportBar({
   onToggleKeyboard,
   clickOn = false,
   onToggleClick,
+  scoringOn = true,
+  onToggleScoring,
   meta = {},
 }) {
   const [sizeOpen, setSizeOpen] = useState(false);
@@ -83,8 +85,10 @@ export default function ScoreTransportBar({
   const hasClick = mode === 'listen' || mode === 'learn';
   // Tempo control + play-along light-up are Listen-only (jukebox performance).
   const hasListenExtras = mode === 'listen';
-  // Focus range (section chips + custom loop) is a Learn practice affordance for now.
-  const hasFocus = mode === 'learn';
+  // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
+  const hasFocus = mode === 'learn' || mode === 'polish';
+  // Scoring on/off is a Polish-only toggle (grades measures red/yellow/green).
+  const hasScoring = mode === 'polish';
   // Readout of the active range: a section shows its label; a custom loop shows a
   // 1-based measure span (indices are 0-based internally).
   const focusLabel = focus
@@ -243,6 +247,18 @@ export default function ScoreTransportBar({
             onClick={onToggleClick}
           >
             {'♩'}
+          </button>
+        )}
+
+        {hasScoring && (
+          <button
+            type="button"
+            className={`piano-score-btn piano-score-scoring${scoringOn ? ' is-on' : ''}`}
+            aria-label="Scoring"
+            aria-pressed={scoringOn}
+            onClick={onToggleScoring}
+          >
+            {'Scoring'}
           </button>
         )}
 
