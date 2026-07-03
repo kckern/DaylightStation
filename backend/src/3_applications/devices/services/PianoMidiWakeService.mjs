@@ -42,6 +42,8 @@ export class PianoMidiWakeService {
   #backoff;
   #lastWakeAt;   // ms of the last wake fired, or null (never)
   #waking;       // in-flight guard so a burst can't stack setScreen calls
+  #suppressUntil; // epoch-ms; note-ons before this don't wake (manual screen-off)
+  #fetchImpl;    // injectable fetch for the APK /config relay (tests)
 
   /**
    * @param {Object} opts
@@ -62,6 +64,7 @@ export class PianoMidiWakeService {
     WebSocketImpl = WebSocket,
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
+    fetchImpl,
   } = {}) {
     if (!deviceService || typeof deviceService.get !== 'function') {
       throw new Error('PianoMidiWakeService requires deviceService with get');
@@ -84,7 +87,43 @@ export class PianoMidiWakeService {
     this.#backoff = backoffBaseMs;
     this.#lastWakeAt = null;
     this.#waking = false;
+    this.#suppressUntil = 0;
+    this.#fetchImpl = fetchImpl ?? ((...a) => fetch(...a));
   }
+
+  /**
+   * Mute MIDI-driven screen wakes until `deadlineMs` (epoch-ms). Skips this
+   * service's own FKB pokes AND relays the deadline to the piano-bridge APK's
+   * control plane so its on-device ScreenWaker is muted too (no APK rebuild —
+   * the APK reads fkbWakeSuppressUntilEpochMs in ScreenWaker.poke()).
+   * @param {number} deadlineMs
+   */
+  suppressWakeUntil(deadlineMs) {
+    this.#suppressUntil = deadlineMs;
+    this.#logger.info?.('piano-midi-wake.suppressed', {
+      deviceId: this.#deviceId, until: deadlineMs,
+    });
+    // ws://host:port → http://host:port/config (POST a flat key: value YAML line,
+    // which the APK's /config endpoint hot-reloads and rebuilds ScreenWaker from).
+    const httpBase = this.#bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
+    const url = `${httpBase}/config`;
+    try {
+      Promise.resolve(this.#fetchImpl(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: `fkbWakeSuppressUntilEpochMs: ${deadlineMs}\n`,
+      })).catch((err) => this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', {
+        deviceId: this.#deviceId, error: String(err?.message ?? err),
+      }));
+    } catch (err) {
+      this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', {
+        deviceId: this.#deviceId, error: String(err?.message ?? err),
+      });
+    }
+  }
+
+  /** Test seam: exercise the note-on handler without a live WS. */
+  _handleNoteOnForTest() { this.#onNoteOn(); }
 
   start() {
     this.#stopped = false;
@@ -150,6 +189,7 @@ export class PianoMidiWakeService {
   /** @private Debounced wake: at most one setScreen(true) per cooldown window. */
   #onNoteOn() {
     const now = this.#clock.now();
+    if (now < this.#suppressUntil) return; // manually muted (screen-off cooldown)
     if (this.#lastWakeAt !== null && now - this.#lastWakeAt < this.#cooldownMs) return;
     if (this.#waking) return;
     this.#lastWakeAt = now;
