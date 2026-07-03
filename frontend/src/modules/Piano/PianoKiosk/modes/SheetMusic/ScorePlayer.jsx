@@ -13,6 +13,7 @@ import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
+import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
@@ -76,9 +77,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
-  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], tempoEntries: [], width: 0, height: 0, flow: null });
+  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null });
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState('learn');
+  const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
+  const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
+  const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
   const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
   const [flow, setFlow] = useState('wrapped');
   const [scale, setScale] = useState(1);
@@ -99,6 +103,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const steps = layout.steps;
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
+
+  // ── Learn focus range (practice a section / custom loop) ──────────────────────
+  // Sections come from rehearsal marks (measure NUMBERS); `layout.measures` maps
+  // NUMBERS↔INDICES and INDICES↔step spans. A `focus` resolves to a step span
+  // [lo, hi]; the follow tracker loops within it and taps/seeks clamp into it.
+  // Learn-only for now (Polish reuses this in a later task).
+  const sections = parsed?.sections || [];
+  const range = useMemo(
+    () => (focus && mode === 'learn' && layout.measures ? rangeSteps(layout.measures, focus) : null),
+    [focus, mode, layout.measures],
+  );
+  // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
+  // tapped note (step index) into a measure index for the custom loop brackets.
+  const measureIndexOfStep = useCallback((i) => {
+    const ms = layout.measures || [];
+    const idx = ms.findIndex((m) => i >= m.firstStep && i <= m.lastStep);
+    return idx < 0 ? 0 : idx;
+  }, [layout.measures]);
 
   // Tempo map (mid-piece changes included) drives the Polish transport; the
   // opening tempo also feeds the metadata popover. Falls back to the parsed
@@ -222,6 +244,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onStep: onFollowStep,
     onHit: onFollowHit,
     onWrong: onFollowWrong,
+    range, // wrap advancement within the practice range (null → linear)
   });
 
   // ── Listen play-along: non-gating light-up ────────────────────────────────────
@@ -318,20 +341,69 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
-    if (i >= 0) {
-      setStep(i);
-      setStruck(() => new Set());
-      lastAdvanceRef.current = performance.now();
-      // Seek jumps idxRef past pending note_offs — flush sounding notes first
-      // (Listen mode) so a skipped-over note doesn't drone on the piano.
-      if (mode === 'listen') silence();
-      // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
-      // seek positions come from the unscaled stepTimeline, so scale to match.
-      transport.seek((stepTimeline[i]?.t ?? 0) / tempoMult);
+    if (i < 0) return;
+    // Custom-loop arming (Learn): the first tap sets the pending in-measure, the
+    // second sets the out-measure → a { inMeasure, outMeasure } range (ordered
+    // low→high). Arming taps set the bracket instead of seeking.
+    if (loopArm && mode === 'learn') {
+      const mi = measureIndexOfStep(i);
+      if (loopInRef.current == null) {
+        loopInRef.current = mi;
+        logger.info('score.focus.arm', { inMeasure: mi });
+      } else {
+        const inMeasure = Math.min(loopInRef.current, mi);
+        const outMeasure = Math.max(loopInRef.current, mi);
+        loopInRef.current = null;
+        setLoopArm(false);
+        setFocus({ kind: 'custom', inMeasure, outMeasure });
+      }
+      return;
     }
-  }, [mode, flow, events, transport, stepTimeline, silence, tempoMult]);
+    // Normal seek. When a practice range is active, clamp the target into it.
+    const target = range ? clampStepToRange(i, range) : i;
+    setStep(target);
+    setStruck(() => new Set());
+    lastAdvanceRef.current = performance.now();
+    // Seek jumps idxRef past pending note_offs — flush sounding notes first
+    // (Listen mode) so a skipped-over note doesn't drone on the piano.
+    if (mode === 'listen') silence();
+    // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
+    // seek positions come from the unscaled stepTimeline, so scale to match.
+    transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
+  }, [mode, flow, events, transport, stepTimeline, silence, tempoMult, loopArm, range, measureIndexOfStep, logger]);
 
   useEffect(() => () => silence(), [silence]);
+
+  // ── Focus range: selection + custom-loop taps ─────────────────────────────────
+  // When a practice range is (re)selected, jump the cursor to its in-point and log.
+  useEffect(() => {
+    if (!focus) return;
+    const r = layout.measures ? rangeSteps(layout.measures, focus) : null;
+    if (!r) return;
+    setStep(r[0]);
+    setStruck(() => new Set());
+    lastAdvanceRef.current = performance.now();
+    logger.info('score.focus.set', { kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure });
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onPickSection = useCallback((section) => {
+    const r = layout.measures ? sectionToRange(section, layout.measures) : null;
+    if (!r) return;
+    setLoopArm(false); loopInRef.current = null;
+    setFocus({ kind: 'section', label: section.label, ...r });
+  }, [layout.measures]);
+
+  // Toggle the custom-range tap state machine. Re-arming clears any pending first tap.
+  const onArmLoop = useCallback(() => {
+    loopInRef.current = null;
+    setLoopArm((v) => !v);
+  }, []);
+
+  const onClearFocus = useCallback(() => {
+    setLoopArm(false); loopInRef.current = null;
+    setFocus(null);
+    logger.info('score.focus.clear', {});
+  }, [logger]);
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
@@ -341,6 +413,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     transport.stop();
     silence();
     setStruck(() => new Set());
+    // Focus is a Learn-only affordance for now — releasing it on any mode change
+    // keeps the range from bleeding into Polish/Listen/Perform.
+    setFocus(null); setLoopArm(false); loopInRef.current = null;
     setKeyboardVisible(id !== 'perform');
     setMode(id);
     logger.info('score.mode', { mode: id });
@@ -409,7 +484,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
   // A new score opens in its written key (mirror the other per-score resets).
-  useEffect(() => { openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0); }, [scoreMeta.musicXml]);
+  useEffect(() => {
+    openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0);
+    // A new document resets the practice range (measure indices don't carry over).
+    setFocus(null); setLoopArm(false); loopInRef.current = null;
+  }, [scoreMeta.musicXml]);
   const onReady = useCallback(() => {
     if (readySentRef.current) return;
     readySentRef.current = true;
@@ -505,6 +584,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
         activeParts={activeParts}
         roles={roles}
         onCyclePart={onCyclePart}
+        sections={sections}
+        focus={focus}
+        loopArm={loopArm}
+        onPickSection={onPickSection}
+        onArmLoop={onArmLoop}
+        onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={() => setKeyboardVisible((v) => !v)}
         clickOn={clickOn}

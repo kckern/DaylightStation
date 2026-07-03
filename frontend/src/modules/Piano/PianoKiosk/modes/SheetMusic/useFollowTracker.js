@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { expectedMidisAtStep, isStepSatisfied } from './activeParts.js';
+import { nextStepInRange } from './focusRange.js';
 
 /**
  * useFollowTracker — full-hand Follow tracking. Advances the cursor only once
@@ -20,14 +21,18 @@ import { expectedMidisAtStep, isStepSatisfied } from './activeParts.js';
  * @param {Function} p.onStep       - onStep(nextIndex)
  * @param {Function} p.onHit        - onHit(midi)
  * @param {Function} p.onWrong      - onWrong(midi)
+ * @param {[number,number]|null} [p.range] - active focus span [lo, hi]; when set,
+ *   advancement wraps back to `lo` after `hi` (loop a section) instead of running
+ *   linearly to the end. `null` (default) → normal linear advance.
  */
-export function useFollowTracker({ enabled, steps, activeParts, step, subscribe, onStep, onHit, onWrong }) {
+export function useFollowTracker({ enabled, steps, activeParts, step, subscribe, onStep, onHit, onWrong, range = null }) {
   const stepsRef = useRef(steps);
   const activePartsRef = useRef(activeParts);
   const stepRef = useRef(step);
   const onStepRef = useRef(onStep);
   const onHitRef = useRef(onHit);
   const onWrongRef = useRef(onWrong);
+  const rangeRef = useRef(range);
   const struckRef = useRef(new Set());
 
   stepsRef.current = steps;
@@ -35,6 +40,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
   onStepRef.current = onStep;
   onHitRef.current = onHit;
   onWrongRef.current = onWrong;
+  rangeRef.current = range;
 
   // A new step starts fresh — clear the accumulated struck notes.
   useEffect(() => {
@@ -53,7 +59,12 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
         struckRef.current.add(evt.note);
         onHitRef.current?.(evt.note);
         if (isStepSatisfied(expected, struckRef.current)) {
-          const next = Math.min((stepsRef.current?.length || 1) - 1, stepRef.current + 1);
+          // With a focus range active, wrap back to its in-point after the
+          // out-point (loop the section); otherwise advance linearly to the end.
+          const r = rangeRef.current;
+          const next = r
+            ? nextStepInRange(stepRef.current, r)
+            : Math.min((stepsRef.current?.length || 1) - 1, stepRef.current + 1);
           onStepRef.current?.(next);
           struckRef.current = new Set();
         }

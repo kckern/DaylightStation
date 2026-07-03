@@ -103,6 +103,44 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
+  it('learn mode: renders a section chip per section and fires onPickSection with it', () => {
+    const onPickSection = vi.fn();
+    const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
+    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
+    fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
+    expect(onPickSection).toHaveBeenCalledWith(sections[0]);
+  });
+
+  it('learn mode: Loop toggle reflects loopArm; Clear appears only with an active range', () => {
+    const onArmLoop = vi.fn();
+    const onClearFocus = vi.fn();
+    const { rerender } = render(
+      <ScoreTransportBar {...base} mode="learn" loopArm={false} onArmLoop={onArmLoop} onClearFocus={onClearFocus} />,
+    );
+    const loop = screen.getByRole('button', { name: /loop range/i });
+    expect(loop).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(loop);
+    expect(onArmLoop).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /clear range/i })).toBeNull(); // no range yet
+
+    rerender(
+      <ScoreTransportBar {...base} mode="learn" loopArm
+        focus={{ kind: 'custom', inMeasure: 2, outMeasure: 5 }} onClearFocus={onClearFocus} />,
+    );
+    expect(screen.getByRole('button', { name: /loop range/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('m3–m6')).toBeInTheDocument(); // 1-based readout
+    fireEvent.click(screen.getByRole('button', { name: /clear range/i }));
+    expect(onClearFocus).toHaveBeenCalled();
+  });
+
+  it('focus cluster is Learn-only (absent in Listen/Polish/Perform)', () => {
+    for (const mode of ['listen', 'polish', 'perform']) {
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
+      expect(screen.queryByRole('button', { name: /loop range/i })).toBeNull();
+      unmount();
+    }
+  });
+
   it('size is a single button that opens a modal (no inline +/-), and commits scale on release', () => {
     render(<ScoreTransportBar {...base} />);
     const sizeBtn = screen.getByRole('button', { name: /size/i });
