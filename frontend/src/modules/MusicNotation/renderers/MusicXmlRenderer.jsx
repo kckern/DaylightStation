@@ -13,14 +13,16 @@ function logger() {
  *
  * Renders the engraved notation (beams, ties, stems, key signatures — real
  * sheet music) and reports the on-screen position of every melody note through
- * `onLayout({ width, height, events })`, so an overlay (cursor / play-along)
- * can light notes up without touching the renderer internals.
+ * `onLayout({ width, height, events, notes, steps, tempoEntries })`, so an overlay
+ * (cursor / play-along / per-notehead light-up) can position itself without
+ * touching the renderer internals. `steps` carries every onset's noteheads across
+ * all staves with geometry; `events` is the top-staff melody cursor track.
  *
  * @param {string} [musicXml] - raw MusicXML document
  * @param {number} [width] - render width (defaults to the parent's width)
  * @param {'wrapped'|'horizontal'} [flow]
  * @param {number} [scale]
- * @param {(res:{width,height,events}) => void} [onLayout]
+ * @param {(res:{width,height,events,notes,steps,tempoEntries}) => void} [onLayout]
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
 export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, onLayout, children }) {
