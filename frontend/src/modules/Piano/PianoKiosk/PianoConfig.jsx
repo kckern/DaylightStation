@@ -39,7 +39,7 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Always-on MIDI history (disabled by default — opt in per piano).
   autoRecord: { enabled: false, silenceSeconds: 25, minNotes: 5, minSeconds: 3, flushSeconds: 12 },
   // Screensaver disabled until a deviceId is configured (null = no screen control).
-  screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null },
+  screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null, offCooldownMinutes: 30 },
   // Studio mode defaults. topPaneLayout: 'staff' (centered grand staff, default) |
   // 'triptych' (circle-of-fifths | staff | live chord name). Household default; a
   // per-user preference (preferences.yml → topPaneLayout) overrides it.
@@ -60,6 +60,7 @@ export function resolveScreensaver(shared, p) {
     deviceId: ps.deviceId ?? s.deviceId ?? d.deviceId,
     timeoutMinutes: ps.timeoutMinutes ?? s.timeoutMinutes ?? d.timeoutMinutes,
     quietHours: ps.quietHours ?? s.quietHours ?? d.quietHours,
+    offCooldownMinutes: ps.offCooldownMinutes ?? s.offCooldownMinutes ?? d.offCooldownMinutes,
   };
 }
 
