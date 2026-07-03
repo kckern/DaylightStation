@@ -2183,7 +2183,14 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 1rem;
-    max-width: calc(var(--picker-cols, 4) * var(--picker-card) + (var(--picker-cols, 4) - 1) * 1rem);
+    // DEFINITE width (exactly N cards + gaps), not max-width: a flex-wrap box
+    // reports its max-content as ALL cards on one un-wrapped row, so the sheet's
+    // `width: fit-content` was blowing up to that full row (then clamped to 94vw)
+    // and the balanced grid floated centered with big gutters — the opposite of
+    // "hug the grid". A definite width both wraps at N columns AND gives the sheet
+    // an honest width to hug. Caps at 100% so a narrow screen can still shrink it.
+    width: calc(var(--picker-cols, 4) * var(--picker-card) + (var(--picker-cols, 4) - 1) * 1rem);
+    max-width: 100%;
 
     > li { flex: 0 0 var(--picker-card); width: var(--picker-card); }
   }
