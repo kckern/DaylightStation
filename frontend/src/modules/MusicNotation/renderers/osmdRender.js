@@ -177,17 +177,47 @@ export function extractEvents(osmd) {
 }
 
 /**
- * Engrave `xml` into `host` and return layout + melody events.
+ * Cooperative time-slicer: process indices [0,total) in slices of `sliceSize`,
+ * yielding (via `yieldFn`) between slices so the main thread stays responsive.
+ * Reports fractional progress after each slice; `shouldAbort()` (checked before
+ * each slice) stops early and resolves false.
+ */
+export async function runSliced(total, sliceSize, doSlice, yieldFn, onProgress, shouldAbort = () => false) {
+  let i = 0;
+  while (i < total) {
+    if (shouldAbort()) return false;
+    const end = Math.min(total, i + sliceSize);
+    for (; i < end; i++) doSlice(i);
+    onProgress?.(total ? i / total : 1);
+    if (i < total) await new Promise((r) => yieldFn(r));
+  }
+  onProgress?.(1);
+  return true;
+}
+
+/** Default yield: idle callback when available, else a macrotask. */
+export function scheduleYield(cb) {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(() => cb(), { timeout: 50 });
+  else setTimeout(cb, 0);
+}
+
+/**
+ * Engrave (PAINT) `xml` into `host` up to and including `osmd.render()` — the
+ * fast part the React wrapper reveals first. Does NOT extract events/geometry;
+ * that expensive cursor walk is run separately (sliced) in Task 8 so the main
+ * thread breathes. Loads OSMD lazily, builds the instance with the SAME options
+ * osmdRender has always used, sets EngravingRules, loads the XML, honors
+ * shouldAbort, applies width/zoom, and renders.
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
  *           shouldAbort?:() => boolean }} [opts]
  *   shouldAbort is checked after each await so a stale render never clobbers
  *   a newer one's DOM.
- * @returns {Promise<{width:number,height:number,flow:string,events:Array}|null>}
+ * @returns {Promise<{osmd:object,width:number,height:number,flow:string}|null>}
  *   null when aborted.
  */
-export async function osmdRender(host, xml, opts = {}) {
+export async function osmdEngrave(host, xml, opts = {}) {
   const { OpenSheetMusicDisplay } = await loadOsmd();
   const abort = opts.shouldAbort || (() => false);
   if (abort()) return null;
@@ -215,7 +245,39 @@ export async function osmdRender(host, xml, opts = {}) {
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
   await osmd.load(xml);
   if (abort()) return null;
-  return osmdReRender(osmd, host, { flow, scale });
+
+  if (opts.width) host.style.width = `${opts.width}px`;
+  osmd.Zoom = scale;
+  osmd.render();
+
+  const svg = host.querySelector('svg');
+  const width = Math.ceil(Number(svg?.getAttribute('width')) || svg?.clientWidth || host.clientWidth || 0);
+  const height = Math.ceil(Number(svg?.getAttribute('height')) || svg?.clientHeight || host.clientHeight || 0);
+  return { osmd, width, height, flow };
+}
+
+/**
+ * Engrave `xml` into `host` and return layout + melody events.
+ *
+ * Thin composition of {@link osmdEngrave} (paint) followed by a synchronous
+ * full {@link extractEvents} — public shape/options are UNCHANGED from before
+ * the engrave/extract split. Task 8's React wrapper calls osmdEngrave + a sliced
+ * extract instead; this remains for callers that want the whole blocking pass.
+ * @param {HTMLElement} host
+ * @param {string} xml - raw MusicXML
+ * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
+ *           shouldAbort?:() => boolean }} [opts]
+ *   shouldAbort is checked after each await so a stale render never clobbers
+ *   a newer one's DOM.
+ * @returns {Promise<{width:number,height:number,flow:string,events:Array}|null>}
+ *   null when aborted.
+ */
+export async function osmdRender(host, xml, opts = {}) {
+  const engraved = await osmdEngrave(host, xml, opts);
+  if (!engraved) return null; // aborted
+  const { osmd, width, height, flow } = engraved;
+  const { events, notes, tempoEntries, steps } = extractEvents(osmd);
+  return { width, height, flow, events, notes, tempoEntries, steps, osmd };
 }
 
 /**
