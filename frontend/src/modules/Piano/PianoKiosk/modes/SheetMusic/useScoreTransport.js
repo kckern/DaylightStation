@@ -10,21 +10,27 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  * Consumers do the real work in onEvent (cursor step, MIDI out) — the
  * transport itself is domain-blind.
  */
-export function useScoreTransport({ timeline, onEvent, onDone }) {
+export function useScoreTransport({ timeline, onEvent, onFire, onDone }) {
   const [playing, setPlaying] = useState(false);
   const timelineRef = useRef(timeline); timelineRef.current = timeline || [];
   const onEventRef = useRef(onEvent); onEventRef.current = onEvent;
+  const onFireRef = useRef(onFire); onFireRef.current = onFire;
   const onDoneRef = useRef(onDone); onDoneRef.current = onDone;
   const rafRef = useRef(null);
   const anchorRef = useRef(0); // wall time corresponding to position 0
   const posRef = useRef(0);    // position while paused (ms)
   const idxRef = useRef(0);    // next unfired event
+  const lastPosRef = useRef(0); // position at previous tick (for frame-gap jitter)
 
   const tick = useCallback(() => {
     const tl = timelineRef.current;
     const pos = performance.now() - anchorRef.current;
+    const frameGapMs = pos - lastPosRef.current;
+    lastPosRef.current = pos;
     while (idxRef.current < tl.length && tl[idxRef.current].t <= pos) {
-      onEventRef.current?.(tl[idxRef.current]);
+      const ev = tl[idxRef.current];
+      onFireRef.current?.(ev, pos - ev.t, frameGapMs);
+      onEventRef.current?.(ev);
       idxRef.current += 1;
     }
     if (idxRef.current >= tl.length) {
@@ -39,6 +45,8 @@ export function useScoreTransport({ timeline, onEvent, onDone }) {
   const play = useCallback(() => {
     if (!timelineRef.current.length) return;
     anchorRef.current = performance.now() - posRef.current;
+    lastPosRef.current = posRef.current; // first tick's gap measured from resume position
+
     cancelAnimationFrame(rafRef.current);
     setPlaying(true);
     rafRef.current = requestAnimationFrame(tick);
