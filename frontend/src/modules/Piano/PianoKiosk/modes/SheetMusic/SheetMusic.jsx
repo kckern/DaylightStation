@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPIText } from '../../../../../lib/api.mjs';
@@ -91,6 +91,7 @@ function ScoreViewerRoute() {
 function NotationScore({ contentId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const [xml, setXml] = useState(null); // null = loading, '' = failed
+  const fetchMsRef = useRef(0); // raw-XML fetch time → ScorePlayer's score.load telemetry
   const localId = useMemo(() => contentId.replace(/^[a-z]+:/i, ''), [contentId]);
 
   useEffect(() => {
@@ -98,7 +99,9 @@ function NotationScore({ contentId }) {
     (async () => {
       try {
         logger.info('piano.score-open', { id: localId, kind: 'notation' });
+        const t0 = performance.now();
         const text = await DaylightAPIText(`api/v1/proxy/media/stream/${encodeURIComponent(localId)}`);
+        fetchMsRef.current = performance.now() - t0;
         if (!cancelled) setXml(text);
       } catch (err) {
         logger.warn('piano.score-open-failed', { id: localId, error: err.message });
@@ -110,7 +113,7 @@ function NotationScore({ contentId }) {
 
   if (xml === null) return <PianoEmpty loading />;
   if (xml === '') return <PianoEmpty message="Could not load this score." />;
-  return <ScorePlayer score={{ id: contentId, musicXml: xml }} />;
+  return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current }} />;
 }
 
 export default SheetMusic;
