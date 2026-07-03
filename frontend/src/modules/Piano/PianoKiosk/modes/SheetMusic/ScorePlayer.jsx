@@ -68,7 +68,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // holding the returned object: the object identity is fresh every render, and
   // the renderer's engrave effect depends on `onReady` — a churning identity
   // would re-fire onLayout/onReady endlessly (infinite re-engrave loop).
-  const { logLoad, recordFire, flushPlayback, recordFollowHit, flushFollow } = useScoreTelemetry({ id: scoreMeta.id });
+  const { startSession, logLoad, recordFire, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
@@ -101,6 +101,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
   const [scoringOn, setScoringOn] = useState(true); // Polish: grade measures red/yellow/green
   const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
+  const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
@@ -271,13 +272,23 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
-    logger.debug('score.polish.grade', { measure: g.measure, grade: g.grade, combined: Math.round((g.combined ?? 0) * 100) });
-  }, [logger]);
+    logMeasureGrade({ measure: g.measure, grade: g.grade, noteScore: g.noteScore, timingScore: g.timingScore });
+  }, [logMeasureGrade]);
   const onSilentStop = useCallback(() => {
     transport.pause();
     setSummaryOpen(true);
     logger.info('score.polish.silent-stop', {});
-  }, [transport, logger]);
+    // Run summary opens → log the aggregate (same tallying rule as RunSummary:
+    // greens win ties, then reds over yellows for the overall read).
+    const counts = { green: 0, yellow: 0, red: 0 };
+    for (const g of Object.values(gradesRef.current)) {
+      if (g?.grade && counts[g.grade] != null) counts[g.grade] += 1;
+    }
+    const overall = counts.green >= counts.yellow && counts.green >= counts.red
+      ? 'green'
+      : counts.red >= counts.yellow ? 'red' : 'yellow';
+    logRunSummary({ greens: counts.green, yellows: counts.yellow, reds: counts.red, overall });
+  }, [transport, logger, logRunSummary]);
 
   useScoreEvaluator({
     enabled: mode === 'polish' && scoringOn && running, // only while actually playing
@@ -497,7 +508,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStep(r[0]);
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
-    logger.info('score.focus.set', { kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure });
+    logFocus({ kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure });
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPickSection = useCallback((section) => {
@@ -534,8 +545,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSummaryOpen(false); setGrades({});
     setKeyboardVisible(id !== 'perform');
     setMode(id);
-    logger.info('score.mode', { mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silence, logger]);
+    logMode({ mode: id });
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silence, logMode]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -551,8 +562,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const n = Math.round(Number(v));
     const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
     setTranspose(clamped);
-    logger.info('score.transpose', { semitones: clamped });
-  }, [logger]);
+    logTranspose({ semitones: clamped });
+  }, [logTranspose]);
 
   const reset = useCallback(() => {
     transport.stop();
@@ -608,9 +619,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // A new score opens in its written key (mirror the other per-score resets).
   useEffect(() => {
     openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0);
+    // Open a fresh per-run session log for this document (bounds the JSONL file);
+    // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
+    startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
     setFocus(null); setLoopArm(false); loopInRef.current = null;
-  }, [scoreMeta.musicXml]);
+  }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
     if (readySentRef.current) return;
     readySentRef.current = true;
