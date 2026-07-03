@@ -32,11 +32,19 @@
   &--column {
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 1rem;
     .theory-panel__circle { flex: 0 0 auto; width: 100%;
-      .theory-panel__circle-box { height: auto; width: min(70%, 18rem); } }
-    .theory-panel__staff { width: 100%; }
+      .theory-panel__circle-box { height: auto; width: min(72%, 15rem); } }
+    // The staff must not flex-grab the whole column (a single chord shouldn't be
+    // 600px tall). Give it a bounded, definite height so the absolute-SVG host
+    // has something to fill, and let the three elements sit centered with even
+    // breathing room rather than a giant staff pinned between tiny neighbours.
+    .theory-panel__staff {
+      flex: 0 1 auto; width: 100%;
+      height: 38%; min-height: 8rem; max-height: 17rem;
+    }
     .theory-panel__chord { flex: 0 0 auto; width: 100%; }
   }
 }
