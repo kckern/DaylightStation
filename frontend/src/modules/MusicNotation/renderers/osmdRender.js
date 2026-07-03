@@ -117,7 +117,15 @@ function noteheadBox(osmd, n, opRect) {
  * @param {object} osmd
  */
 function makeCursorWalk(osmd) {
-  const events = [], notes = [], tempoEntries = [], onsetRecords = [];
+  const notes = [], tempoEntries = [], onsetRecords = [];
+  // Cursor-bar box per onset (keyed by onsetQuarter) — the vertical position the
+  // Follow/step cursor draws at. `events` is derived from `steps` in finalize()
+  // using these, so `events[i]` and `steps[i]` are index-aligned by construction
+  // (both one-per-onset, same order). That alignment is what lets `step` index the
+  // cursor track and the per-notehead light-up interchangeably — including at
+  // left-hand-only onsets, which have no top-staff melody note but must still be a
+  // cursor stop (a left-hand intro).
+  const cursorBoxByQuarter = new Map();
   const cursor = osmd.cursor;
   let lastBpm = null;
   let graphicalHits = 0, fallbackHits = 0;
@@ -141,6 +149,7 @@ function makeCursorWalk(osmd) {
       bottom: el.offsetTop + el.offsetHeight,
       width: el.offsetWidth,
     } : { x: 0, top: 0, bottom: 0, width: 0 };
+    if (onset.length) cursorBoxByQuarter.set(onsetQuarter, fallbackBox);
     for (const n of onset) {
       const staff = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
       notes.push({
@@ -162,34 +171,47 @@ function makeCursorWalk(osmd) {
         width: box.width,
       });
     }
-    const melody = pickMelodyNote(onset);
-    if (melody) {
-      events.push({
-        midi: midiOfHalfTone(melody.halfTone),
-        midis: onset.map((n) => midiOfHalfTone(n.halfTone)),
-        onsetQuarter,
-        x: fallbackBox.x,
-        top: fallbackBox.top,
-        bottom: fallbackBox.bottom,
-      });
-    }
   }
 
   function finalize() {
     logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
-    events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
     const steps = buildSteps(onsetRecords);
+    // One cursor event per step, index-aligned. `midi` is the cursor's
+    // representative pitch: the top-staff (melody) highest, or — when this onset
+    // has no top-staff note (a left-hand passage) — the overall highest pitch.
+    const events = steps.map((s) => {
+      const box = cursorBoxByQuarter.get(s.onsetQuarter) || { x: 0, top: 0, bottom: 0 };
+      return {
+        midi: leadMidi(s.notes),
+        midis: s.notes.map((n) => n.midi),
+        onsetQuarter: s.onsetQuarter,
+        x: box.x,
+        top: box.top,
+        bottom: box.bottom,
+      };
+    });
     return { events, notes, tempoEntries, steps };
   }
 
   return { cursor, processStep, finalize };
 }
 
+/** Representative cursor pitch for an onset: top-staff highest, else overall highest. */
+function leadMidi(stepNotes) {
+  let top = null, any = null;
+  for (const n of stepNotes || []) {
+    if (!any || n.midi > any.midi) any = n;
+    if (n.staff === 0 && (!top || n.midi > top.midi)) top = n;
+  }
+  return (top || any)?.midi ?? null;
+}
+
 /**
  * Walk OSMD's cursor start→end. Emits, from one pass (so repeats and tempo
  * stay aligned with the visual cursor):
- *  events       — one per melody onset (cursor steps), with `midis` (every
- *                 pitch sounding at that onset, both staves) + geometry
+ *  events       — one per onset (cursor steps), index-aligned with `steps`, with
+ *                 `midi` (representative pitch), `midis` (every pitch sounding at
+ *                 that onset, all staves) + cursor geometry
  *  notes        — every onset on every staff with duration, for playback
  *  tempoEntries — [{onsetQuarter, bpm}] wherever the iterator's bpm changes
  *  steps        — one per onset, carrying EVERY note sounding across ALL
