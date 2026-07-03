@@ -18,8 +18,12 @@ import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import { playClick } from './click.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
+import useScoreEvaluator from './useScoreEvaluator.js';
+import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
+import MeasureGradeLayer from './MeasureGradeLayer.jsx';
+import RunSummary from './RunSummary.jsx';
 
 const SOSTENUTO_CC = 66; // middle pedal — Perform page turns
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
@@ -94,12 +98,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
   const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
+  const [scoringOn, setScoringOn] = useState(true); // Polish: grade measures red/yellow/green
+  const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
+  const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
   const wrongTimer = useRef(null);
   const stepRef = useRef(0);
   stepRef.current = step;
+  const stepStartRef = useRef(0); // wall time the current step began (Polish drift proxy)
 
   const events = layout.events;
   const steps = layout.steps;
@@ -113,9 +121,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn-only for now (Polish reuses this in a later task).
   const sections = parsed?.sections || [];
   const range = useMemo(
-    () => (focus && mode === 'learn' && layout.measures ? rangeSteps(layout.measures, focus) : null),
+    () => (focus && (mode === 'learn' || mode === 'polish') && layout.measures ? rangeSteps(layout.measures, focus) : null),
     [focus, mode, layout.measures],
   );
+  const rangeRef = useRef(range); rangeRef.current = range; // read latest range inside the transport tick
   // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
   // tapped note (step index) into a measure index for the custom loop brackets.
   const measureIndexOfStep = useCallback((i) => {
@@ -190,6 +199,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     timeline: mode === 'polish' || mode === 'listen' ? playTimeline : [],
     onEvent: (e) => {
       if (e.kind === 'step' || e.type == null) {
+        // Focus loop (at tempo): once the cursor passes the range out-point, wrap
+        // back to the in-point so a practice range repeats. Seek positions come from
+        // the unscaled stepTimeline; scale to match the tempo-scaled playTimeline.
+        const r = rangeRef.current;
+        if (r && e.index > r[1]) {
+          transportRef.current?.seek((stepTimeline[r[0]]?.t ?? 0) / tempoMult);
+          setStep(r[0]);
+          setStruck(() => new Set());
+          return;
+        }
         setStep(e.index);
         setStruck(() => new Set()); // new step starts dark; notes light as they sound
         return;
@@ -207,6 +226,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onDone: () => { if (mode === 'listen') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
+  const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
 
   // Metronome click (reference-only). Ticks in Learn at the piece's opening tempo
   // and in Listen at the user-scaled tempo. It only plays a blip — it NEVER gates
@@ -228,6 +248,52 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
+
+  // ── Polish scoring (at-tempo, per-measure grade) ──────────────────────────────
+  // The cursor advances on the silent step timeline (no note_on for your parts);
+  // MIDI hits are graded per measure. Timing drift is proxied by "ms after this
+  // step's beat began" (stepStartRef) — a coarse but honest at-tempo lateness read.
+  const resolvedScoringCfg = useMemo(
+    () => resolveSheetMusicConfig(config?.sheetmusic).scoring,
+    [config],
+  );
+  const currentMeasure = layout.steps?.[step]?.measure ?? 0;
+  useEffect(() => { stepStartRef.current = performance.now(); }, [step]);
+  const driftForNote = useCallback(() => performance.now() - stepStartRef.current, []);
+  const expectedForMeasure = useCallback((m) => {
+    const meas = layout.measures?.[m];
+    if (!meas) return [];
+    const set = new Set();
+    for (let i = meas.firstStep; i <= meas.lastStep; i++) {
+      for (const midi of expectedMidisAtStep(layout.steps?.[i], activeParts)) set.add(midi);
+    }
+    return [...set];
+  }, [layout.measures, layout.steps, activeParts]);
+
+  const onMeasureGrade = useCallback((g) => {
+    setGrades((prev) => ({ ...prev, [g.measure]: g }));
+    logger.debug('score.polish.grade', { measure: g.measure, grade: g.grade, combined: Math.round((g.combined ?? 0) * 100) });
+  }, [logger]);
+  const onSilentStop = useCallback(() => {
+    transport.pause();
+    setSummaryOpen(true);
+    logger.info('score.polish.silent-stop', {});
+  }, [transport, logger]);
+
+  useScoreEvaluator({
+    enabled: mode === 'polish' && scoringOn && running, // only while actually playing
+    cfg: resolvedScoringCfg,
+    subscribe,
+    currentMeasure,
+    expectedForMeasure,
+    driftForNote,
+    onMeasureGrade,
+    onSilentStop,
+  });
+
+  // Clear grades + summary when the score document changes or scoring is turned off.
+  useEffect(() => { setGrades({}); setSummaryOpen(false); }, [scoreMeta.musicXml]);
+  useEffect(() => { if (!scoringOn) { setGrades({}); setSummaryOpen(false); } }, [scoringOn]);
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
@@ -426,9 +492,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     transport.stop();
     silence();
     setStruck(() => new Set());
-    // Focus is a Learn-only affordance for now — releasing it on any mode change
-    // keeps the range from bleeding into Polish/Listen/Perform.
+    // Focus is a Learn + Polish practice affordance — release it on any mode change
+    // so the range never bleeds into Listen/Perform (and starts clean on re-entry).
     setFocus(null); setLoopArm(false); loopInRef.current = null;
+    // Leaving Polish: drop the run summary + grades (they belong to that run).
+    setSummaryOpen(false); setGrades({});
     setKeyboardVisible(id !== 'perform');
     setMode(id);
     logger.info('score.mode', { mode: id });
@@ -457,8 +525,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     flushPlaybackNow();
     setStep(0);
     setStruck(() => new Set());
+    setGrades({});          // a fresh run clears the previous grades…
+    setSummaryOpen(false);  // …and closes any open summary
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
   }, [transport, mode, silence, flushPlaybackNow]);
+
+  // Run summary Replay: reset the run (clears grades + closes the panel).
+  const onReplaySummary = useCallback(() => { reset(); }, [reset]);
+  const onCloseSummary = useCallback(() => setSummaryOpen(false), []);
 
   const toggleRun = useCallback(() => {
     if (running) {
@@ -534,6 +608,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     ? expectedMidisAtStep(steps[step], activeParts)
     : struck;
 
+  // Per-step cursor boxes (same offset-space as the cursor) → measure-grade geometry.
+  // Events are parallel to steps by index; MeasureGradeLayer reads x/top/bottom.
+  const showGrades = mode === 'polish' && scoringOn;
+  const stepBoxes = useMemo(
+    () => (showGrades ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
+    [showGrades, events],
+  );
+
   return (
     <div className="piano-score-player">
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
@@ -549,6 +631,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
                 height: Math.max(40 * scale, current.bottom - current.top),
                 '--cursor-color': cursorColor,
               }}
+            />
+          )}
+          {showGrades && (
+            <MeasureGradeLayer
+              measures={layout.measures}
+              stepBoxes={stepBoxes}
+              grades={grades}
             />
           )}
           {mode !== 'perform' && (
@@ -607,8 +696,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleKeyboard={() => setKeyboardVisible((v) => !v)}
         clickOn={clickOn}
         onToggleClick={() => setClickOn((v) => !v)}
+        scoringOn={scoringOn}
+        onToggleScoring={() => setScoringOn((v) => !v)}
         meta={meta}
       />
+
+      {mode === 'polish' && scoringOn && (
+        <RunSummary
+          open={summaryOpen}
+          grades={grades}
+          measures={layout.measures}
+          onClose={onCloseSummary}
+          onReplay={onReplaySummary}
+        />
+      )}
     </div>
   );
 }

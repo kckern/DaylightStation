@@ -2029,6 +2029,54 @@
 }
 @keyframes scoreNoteMissed { 0% { opacity: 0.7; } 100% { opacity: 0; } }
 
+// ── Task 14: Polish per-measure grade wash + run summary ──────────────────────
+// Translucent fill over each graded measure (MeasureGradeLayer sets geometry
+// inline). Sits below the cursor (z5) and note chips (z6). Non-interactive.
+.piano-score-measure-grade {
+  position: absolute; z-index: 3; pointer-events: none; border-radius: 4px;
+  &--green  { background: rgba(46, 196, 111, 0.18); }
+  &--yellow { background: rgba(232, 196, 61, 0.18); }
+  &--red    { background: rgba(255, 82, 82, 0.18); }
+}
+
+// Run summary — centered overlay panel opened after N silent measures.
+.piano-score-run-summary {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+  z-index: 30; min-width: 260px; max-width: min(90vw, 420px);
+  display: flex; flex-direction: column; align-items: center; gap: 0.9rem;
+  padding: 1.4rem 1.6rem;
+  background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-lg, 16px); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  color: var(--piano-stage-fg, #f3efe6);
+}
+.piano-score-run-overall {
+  font-weight: 700; font-size: 1.15rem; letter-spacing: 0.01em;
+  &--green  { color: #7ee2a8; }
+  &--yellow { color: #f0d270; }
+  &--red    { color: #ff8a8a; }
+}
+.piano-score-run-strip { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; max-width: 340px; }
+.piano-score-run-chip {
+  width: 14px; height: 20px; border-radius: 3px; background: rgba(255, 255, 255, 0.12);
+  &--green  { background: #2ec46f; }
+  &--yellow { background: #e8c43d; }
+  &--red    { background: #ff5252; }
+  &--none   { background: rgba(255, 255, 255, 0.12); }
+}
+.piano-score-run-counts { display: flex; gap: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.piano-score-run-count {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  &::before { content: ''; width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  &--green::before  { background: #2ec46f; }
+  &--yellow::before { background: #e8c43d; }
+  &--red::before    { background: #ff5252; }
+}
+.piano-score-run-actions { display: flex; gap: 0.6rem; }
+.piano-score-run-replay { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+
+// Polish scoring toggle — lights the neutral green Polish accent when on.
+.piano-score-scoring.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+
 // Keyboard slot (Task 11: generalized to BOTH flows). A fixed-height row shown
 // when present, sitting above the transport bar in either flow.
 .piano-score-player__keys {

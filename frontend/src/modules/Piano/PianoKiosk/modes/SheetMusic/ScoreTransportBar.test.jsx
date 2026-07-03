@@ -133,12 +133,31 @@ describe('ScoreTransportBar', () => {
     expect(onClearFocus).toHaveBeenCalled();
   });
 
-  it('focus cluster is Learn-only (absent in Listen/Polish/Perform)', () => {
-    for (const mode of ['listen', 'polish', 'perform']) {
+  it('focus cluster is Learn + Polish (absent in Listen/Perform)', () => {
+    for (const mode of ['listen', 'perform']) {
       const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
       expect(screen.queryByRole('button', { name: /loop range/i })).toBeNull();
       unmount();
     }
+    for (const mode of ['learn', 'polish']) {
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
+      expect(screen.getByRole('button', { name: /loop range/i })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('polish mode: scoring toggle fires onToggleScoring and reflects aria-pressed', () => {
+    const onToggleScoring = vi.fn();
+    const { rerender } = render(<ScoreTransportBar {...base} mode="polish" scoringOn onToggleScoring={onToggleScoring} />);
+    const toggle = screen.getByRole('button', { name: /scoring/i });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(toggle);
+    expect(onToggleScoring).toHaveBeenCalled();
+    rerender(<ScoreTransportBar {...base} mode="polish" scoringOn={false} onToggleScoring={onToggleScoring} />);
+    expect(screen.getByRole('button', { name: /scoring/i })).toHaveAttribute('aria-pressed', 'false');
+    // Scoring toggle is Polish-only.
+    rerender(<ScoreTransportBar {...base} mode="learn" />);
+    expect(screen.queryByRole('button', { name: /scoring/i })).toBeNull();
   });
 
   it('size is a single button that opens a modal (no inline +/-), and commits scale on release', () => {
