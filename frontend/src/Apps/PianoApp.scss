@@ -750,6 +750,11 @@
   // Fixed-width sides so the circle and chord plaque never resize/reflow ("no rug
   // pull") when the chord name changes width — only the center staff flexes.
   grid-template-columns: 14rem 1fr 14rem;
+  // Definite row: without it the single implicit row is `auto`, so the staff SVG's
+  // height:100% can't resolve and it falls back to its viewBox intrinsic aspect —
+  // ballooning to viewport height and shoving the circle/chord out of the clipped
+  // card. A definite row keeps every child bounded to the pane.
+  grid-template-rows: 100%;
   align-items: center;
   gap: 1.25rem;
   width: 100%;
