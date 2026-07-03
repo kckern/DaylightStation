@@ -1,0 +1,42 @@
+// TheoryPanel — circle of fifths · live grand staff · chord name.
+// Contract: give the panel a sized box; it never overflows it. All internal
+// slots are flex items with min-width/height:0 so percentage chains resolve.
+.theory-panel {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+
+  &__circle, &__chord { display: flex; align-items: center; justify-content: center; }
+  &__staff { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }
+
+  // Fluid circle: the box decides the size; the SVG fills an aspect-locked square.
+  &__circle-box {
+    aspect-ratio: 1;
+    height: 100%;
+    max-height: 14rem;
+    max-width: 100%;
+    display: flex;
+    .piano-circle-of-fifths { width: 100%; height: 100%; display: block; }
+  }
+
+  &--row {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 1.25rem;
+    // Fixed-basis sides ("no rug pull" when the chord name changes width).
+    .theory-panel__circle, .theory-panel__chord { flex: 0 0 clamp(11rem, 16vw, 15rem); }
+  }
+
+  &--column {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    .theory-panel__circle { flex: 0 0 auto; width: 100%;
+      .theory-panel__circle-box { height: auto; width: min(70%, 18rem); } }
+    .theory-panel__staff { width: 100%; }
+    .theory-panel__chord { flex: 0 0 auto; width: 100%; }
+  }
+}
