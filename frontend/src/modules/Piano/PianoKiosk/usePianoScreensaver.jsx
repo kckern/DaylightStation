@@ -92,6 +92,26 @@ export function usePianoWakeLockState() {
   return useContext(PianoWakeLockContext)?.held ?? false;
 }
 
+// ── Manual screen-off cooldown ───────────────────────────────────────────────
+// Bridges the Who's-Playing "Turn off screen" button (in PianoShell, below the
+// connect gate) to the screensaver (in ScreensaverDriver, above it). The button
+// bumps `armNonce`; the screensaver reacts by muting MIDI-wake until the player
+// has been idle for offCooldownMinutes (a touch clears it sooner). Mounted so it
+// wraps BOTH the screensaver and the shell (see PianoApp.jsx ActivePiano).
+const PianoScreenControlContext = createContext(null);
+
+export function PianoScreenControlProvider({ children }) {
+  const [armNonce, setArmNonce] = useState(0);
+  const beginScreenOffCooldown = useCallback(() => setArmNonce((n) => n + 1), []);
+  const value = useMemo(() => ({ armNonce, beginScreenOffCooldown }), [armNonce, beginScreenOffCooldown]);
+  return <PianoScreenControlContext.Provider value={value}>{children}</PianoScreenControlContext.Provider>;
+}
+
+/** Returns a function that arms the manual screen-off MIDI-wake cooldown. */
+export function useScreenOffCooldown() {
+  return useContext(PianoScreenControlContext)?.beginScreenOffCooldown ?? (() => {});
+}
+
 // ── Screensaver controller ───────────────────────────────────────────────────
 const POLL_INTERVAL_MS = 15_000;
 
@@ -117,7 +137,7 @@ const POLL_INTERVAL_MS = 15_000;
  * @param {number}   [args.timeoutMinutes]
  * @param {{start?:string,end?:string}|null} [args.quietHours]
  */
-export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours }) {
+export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, offCooldownMinutes = 30 }) {
   const enabled = !!deviceId && timeoutMinutes > 0;
   const held = usePianoWakeLockState();
 
@@ -129,6 +149,14 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   heldRef.current = held;
   const quietRef = useRef(quietHours);
   quietRef.current = quietHours;
+
+  // Manual screen-off MIDI-wake suppression. Armed by the Who's-Playing button
+  // (via PianoScreenControlContext); cleared by a touch or offCooldownMinutes of
+  // no input (the idle poll below).
+  const midiSuppressedRef = useRef(false);
+  const ctrl = useContext(PianoScreenControlContext);
+  const armNonce = ctrl?.armNonce ?? 0;
+  const prevArmRef = useRef(armNonce);
 
   // Send a screen on/off command, deduped against believed state + in-flight.
   const setScreen = useCallback((on) => {
@@ -150,6 +178,19 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
       .finally(() => { inFlightRef.current = false; });
   }, [deviceId]);
 
+  // Who's-Playing "Turn off screen": the button already turned the backlight
+  // off, so just record that + start muting MIDI-wake. Not fired on mount
+  // (prevArmRef starts equal to armNonce).
+  useEffect(() => {
+    if (armNonce === prevArmRef.current) return;
+    prevArmRef.current = armNonce;
+    if (!enabled) return;
+    midiSuppressedRef.current = true;
+    screenOnRef.current = false;
+    lastActivityRef.current = Date.now();
+    logger().info('piano.screen-off-cooldown.armed', { offCooldownMinutes });
+  }, [armNonce, enabled, offCooldownMinutes]);
+
   // Any MIDI activity wakes the screen (unless quiet hours). activeNotes is a
   // fresh Map on every note on/off, and noteHistory grows on play — but it's
   // trimmed on an 8s timer so its length is NOT monotonic, hence we key on the
@@ -158,7 +199,10 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   // mount (a no-op wake since the screen is already on).
   useEffect(() => {
     lastActivityRef.current = Date.now();
-    if (enabled && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
+    // While the manual screen-off cooldown is armed, MIDI must NOT wake the
+    // screen — but keep refreshing lastActivity so the "no input" clock (below)
+    // only elapses once the player actually stops.
+    if (enabled && !midiSuppressedRef.current && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
   }, [activeNotes, historyLen, enabled, setScreen]);
 
   // Touch/keypress: bump activity and wake (unless quiet hours).
@@ -166,6 +210,11 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     if (!enabled) return undefined;
     const bump = () => {
       lastActivityRef.current = Date.now();
+      // A deliberate touch clears the manual screen-off cooldown (they want it back).
+      if (midiSuppressedRef.current) {
+        midiSuppressedRef.current = false;
+        logger().info('piano.screen-off-cooldown.cleared', { via: 'touch' });
+      }
       if (!isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
     };
     window.addEventListener('pointerdown', bump, true);
@@ -180,13 +229,20 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   useEffect(() => {
     if (!enabled) return undefined;
     const thresholdMs = timeoutMinutes * 60_000;
+    const cooldownMs = offCooldownMinutes * 60_000;
     const id = setInterval(() => {
+      // Lift the manual screen-off cooldown once the player has been idle long
+      // enough — MIDI-wake resumes on the next note (see the MIDI effect above).
+      if (midiSuppressedRef.current && Date.now() - lastActivityRef.current >= cooldownMs) {
+        midiSuppressedRef.current = false;
+        logger().info('piano.screen-off-cooldown.cleared', { via: 'idle' });
+      }
       if (heldRef.current) { lastActivityRef.current = Date.now(); return; } // video etc.
       if (isWithinQuietHours(new Date(), quietRef.current)) { setScreen(false); return; }
       if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [enabled, timeoutMinutes, setScreen]);
+  }, [enabled, timeoutMinutes, offCooldownMinutes, setScreen]);
 }
 
 export default usePianoScreensaver;
