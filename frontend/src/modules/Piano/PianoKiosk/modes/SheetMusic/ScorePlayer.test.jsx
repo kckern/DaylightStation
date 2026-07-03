@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
@@ -18,6 +18,18 @@ const h = vi.hoisted(() => ({
   sendPanic: vi.fn(),
 }));
 
+// Derive per-onset full-staff steps from the melody events: the first pitch of
+// each onset is the top staff (0), the rest are accompaniment (staff 1). Mirrors
+// osmdRender.buildSteps so the full-hand Follow tracker + light-up have geometry.
+const deriveSteps = (events) => events.map((e) => ({
+  onsetQuarter: e.onsetQuarter,
+  notes: (e.midis || [e.midi]).map((midi, i) => ({ midi, staff: i === 0 ? 0 : 1, x: e.x, top: e.top, bottom: e.bottom, width: 8 })),
+}));
+// Flatten the per-onset steps into playback note records (all staves) — mirrors
+// osmdRender emitting `notes` alongside `steps` from one walk, so parts/activeParts
+// exist for the Follow tracker + part chips.
+const deriveNotes = (steps) => steps.flatMap((s) => s.notes.map((n) => ({ midi: n.midi, staff: n.staff, onsetQuarter: s.onsetQuarter, durationQuarters: 1 })));
+
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
     activeNotes: new Map(),
@@ -33,21 +45,28 @@ vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: 
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 
-// Stub the engraver: report a known melody layout, render the cursor children.
+// Stub the engraver: report a known layout (melody events + derived per-onset
+// steps), render the cursor / light-up children.
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ onLayout, children, scale }) => {
+    MusicXmlRenderer: ({ onLayout, onReady, children, scale }) => {
       // Re-fire onLayout when scale changes (mirrors a real re-engrave), always
       // with FRESH array references so tests exercise the new-identity path.
       useEffect(() => {
         const extra = h.layoutExtras || {};
+        const events = extra.events || h.events;
+        const steps = extra.steps || deriveSteps(events);
+        const notes = (extra.notes || deriveNotes(steps)).map((n) => ({ ...n }));
         onLayout?.({
-          width: 800, height: 400, events: h.events, tempoEntries: [], flow: 'wrapped',
+          width: 800, height: 400, tempoEntries: [], flow: 'wrapped',
           ...extra,
-          notes: (extra.notes || []).map((n) => ({ ...n })),
+          events,
+          steps,
+          notes,
         });
-      }, [onLayout, scale]);
+        onReady?.();
+      }, [onLayout, onReady, scale]);
       return <div data-testid="renderer" className="musicxml-renderer">{children}</div>;
     },
   };
@@ -64,22 +83,24 @@ beforeEach(() => {
   h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
 });
 
-describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
+describe('ScorePlayer — Follow mode (full-hand, simulated MIDI input)', () => {
 
-  it('advances on the correct note and ignores wrong notes', () => {
+  it('advances only when every active-staff note of the step is struck', () => {
     renderPlayer();
 
-    // Layout reported 4 melody events; cursor starts at the first.
+    // Layout reported 4 onsets; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
     expect(h.noteCb).toBeTypeOf('function'); // Follow mode subscribed
 
-    play(64);                                  // correct (expects E4)
+    play(64);                                  // melody of the opening chord — not enough alone
+    expect(screen.getByText('1 / 4')).toBeTruthy();
+    play(52); play(40);                        // the LH E3/E2 → all-notes rule satisfied
     expect(screen.getByText('2 / 4')).toBeTruthy();
 
     play(60);                                  // WRONG (expects D4) → no advance
     expect(screen.getByText('2 / 4')).toBeTruthy();
 
-    play(62);                                  // correct (D4)
+    play(62);                                  // correct (D4, single-note step)
     expect(screen.getByText('3 / 4')).toBeTruthy();
 
     play(60);                                  // correct (C4)
@@ -91,7 +112,7 @@ describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
 
   it('does not advance past the end on extra notes', () => {
     renderPlayer();
-    for (const n of [64, 62, 60, 62, 64, 64, 64]) play(n);
+    for (const n of [64, 52, 40, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
   });
 });
@@ -99,7 +120,7 @@ describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
 describe('ScorePlayer — Follow mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();
-    play(52); // LH note of the current onset — correct playing, no advance, NO flash
+    play(52); // LH note of the current onset — a correct hit, no advance, NO flash
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(screen.getByText('1 / 4')).toBeTruthy();
     play(63); // a real wrong note near the melody → flash
@@ -198,7 +219,11 @@ describe('ScorePlayer — Play mode', () => {
     screen.getByText('RH: Play').click(); // RH → You
     await act(async () => {});
     expect(screen.getByText('RH: You')).toBeTruthy();
-    screen.getByText('A+').click(); // zoom → re-engrave (fresh layout.notes identity)
+    // Zoom via the Size slider → re-engrave (fresh layout.notes identity).
+    fireEvent.click(screen.getByRole('button', { name: /size/i }));
+    const slider = screen.getByRole('slider', { name: /size/i });
+    fireEvent.change(slider, { target: { value: '1.3' } });
+    fireEvent.mouseUp(slider);
     await act(async () => {});
     expect(screen.getByText('RH: You')).toBeTruthy(); // role preserved, not reset to Play
   });
