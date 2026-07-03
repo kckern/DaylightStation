@@ -22,4 +22,23 @@ describe('buildSteps', () => {
     const steps = buildSteps([RECS[2], RECS[0]]);
     expect(steps.map((s) => s.onsetQuarter)).toEqual([0, 1]);
   });
+
+  it('returns [] for empty or missing input', () => {
+    expect(buildSteps([])).toEqual([]);
+    expect(buildSteps(undefined)).toEqual([]);
+  });
+
+  it('propagates x and width onto each note', () => {
+    const steps = buildSteps([{ onsetQuarter: 0, midi: 60, staff: 0, x: 12, top: 1, bottom: 9, width: 7 }]);
+    expect(steps[0].notes[0]).toMatchObject({ x: 12, width: 7 });
+  });
+
+  it('keeps two notes on the same staff at the same onset (a chord)', () => {
+    const steps = buildSteps([
+      { onsetQuarter: 0, midi: 60, staff: 0, x: 10, top: 5, bottom: 20, width: 8 },
+      { onsetQuarter: 0, midi: 64, staff: 0, x: 10, top: 0, bottom: 15, width: 8 },
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].notes.map((n) => n.midi).sort()).toEqual([60, 64]);
+  });
 });
