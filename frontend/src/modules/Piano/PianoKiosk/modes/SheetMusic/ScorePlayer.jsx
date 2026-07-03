@@ -20,12 +20,12 @@ import { playClick } from './click.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { isRisingEdge } from './pedalEdge.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 
-const SOSTENUTO_CC = 66; // middle pedal — Perform page turns
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 const NO_MISSED = new Set(); // stable empty ref — note-level missed flashing is deferred (cursor already flashes wrong)
 
@@ -50,7 +50,7 @@ function nearestEvent(events, x, y) {
  *            the piano — it only lights the notes you should be playing.
  *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
  *            highlighted (never sent); 'mute' parts are silent.
- *  Perform — no awareness; sostenuto (middle) pedal + tap-to-scroll move the page.
+ *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
  * breadcrumb (score title). Per-notehead light-up is drawn by {@link NoteHighlightLayer}
@@ -91,6 +91,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
   const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
   const [flow, setFlow] = useState('wrapped');
+  const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
   const [tempoMult, setTempoMult] = useState(1); // Listen tempo: 1 = written, 1.5 = 50% faster, 0.5 = half
@@ -253,10 +254,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // The cursor advances on the silent step timeline (no note_on for your parts);
   // MIDI hits are graded per measure. Timing drift is proxied by "ms after this
   // step's beat began" (stepStartRef) — a coarse but honest at-tempo lateness read.
-  const resolvedScoringCfg = useMemo(
-    () => resolveSheetMusicConfig(config?.sheetmusic).scoring,
-    [config],
-  );
+  const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
   useEffect(() => { stepStartRef.current = performance.now(); }, [step]);
   const driftForNote = useCallback(() => performance.now() - stepStartRef.current, []);
@@ -388,22 +387,58 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [step, flow, mode, current, layout.flow]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
-  // Perform mode: sostenuto (middle) pedal turns the page — rising edge only,
-  // since continuous/half pedals stream many CC66 values per physical press.
+  // Perform page indicator — a rough page = floor(scrollPos / viewport) + 1 over
+  // the current flow's axis. Recomputed on scroll + resize while in Perform.
+  const { advancePedalCC, backPedalCC } = smCfg.perform;
+  const computePerfPage = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const horiz = flow === 'horizontal';
+    const viewport = horiz ? el.clientWidth : el.clientHeight;
+    if (!viewport) return;
+    const pos = horiz ? el.scrollLeft : el.scrollTop;
+    const contentSize = horiz ? el.scrollWidth : el.scrollHeight;
+    setPerfPage({ page: Math.floor(pos / viewport) + 1, pages: Math.max(1, Math.ceil(contentSize / viewport)) });
+  }, [flow]);
+
+  // Scroll the score by ~0.85 of a viewport (forward or back) along the flow axis.
+  const pageBy = useCallback((dir) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const horiz = flow === 'horizontal';
+    const amount = (horiz ? el.clientWidth : el.clientHeight) * 0.85 * (dir === 'back' ? -1 : 1);
+    el.scrollBy({ [horiz ? 'left' : 'top']: amount, behavior: 'smooth' });
+    logger.info('score.perform.pageturn', { dir });
+  }, [flow, logger]);
+
+  // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
+  // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
+  // CC values per physical press. Also tracks the page indicator on scroll/resize.
   useEffect(() => {
     if (mode !== 'perform') return undefined;
-    let prev = 0;
-    return subscribeRaw(({ data }) => {
+    computePerfPage();
+    const el = scrollRef.current;
+    const onScroll = () => computePerfPage();
+    el?.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', computePerfPage);
+    const prev = {}; // controller number → last seen CC value
+    const unsub = subscribeRaw(({ data }) => {
       if (!data || data.length < 3) return;
-      if ((data[0] & 0xf0) !== 0xb0 || data[1] !== SOSTENUTO_CC) return;
-      const rising = prev < 64 && data[2] >= 64;
-      prev = data[2];
+      if ((data[0] & 0xf0) !== 0xb0) return; // control-change only
+      const cc = data[1];
+      const value = data[2];
+      if (cc !== advancePedalCC && cc !== backPedalCC) return;
+      const rising = isRisingEdge(prev[cc] ?? 0, value);
+      prev[cc] = value;
       if (!rising) return;
-      const el = scrollRef.current;
-      if (el) el.scrollBy({ [flow === 'horizontal' ? 'left' : 'top']: (flow === 'horizontal' ? el.clientWidth : el.clientHeight) * 0.85, behavior: 'smooth' });
-      logger.info('score.perform.pageturn', {});
+      pageBy(cc === backPedalCC ? 'back' : 'fwd');
     });
-  }, [mode, subscribeRaw, flow, logger]);
+    return () => {
+      el?.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', computePerfPage);
+      unsub?.();
+    };
+  }, [mode, subscribeRaw, advancePedalCC, backPedalCC, computePerfPage, pageBy]);
 
   // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
   const onScoreClick = useCallback((e) => {
@@ -672,6 +707,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onReset={reset}
         step={step}
         total={events.length}
+        page={perfPage.page}
+        pages={perfPage.pages}
         flow={flow}
         onToggleFlow={() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped'))}
         scale={scale}

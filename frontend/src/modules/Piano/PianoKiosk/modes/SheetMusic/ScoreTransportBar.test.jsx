@@ -56,6 +56,12 @@ describe('ScoreTransportBar', () => {
     expect(base.onCyclePart).toHaveBeenCalledWith(1);
   });
 
+  it('perform mode: shows the page indicator (page / pages)', () => {
+    render(<ScoreTransportBar {...base} mode="perform" page={1} pages={3} />);
+    const indicator = screen.getByLabelText(/page/i);
+    expect(indicator).toHaveTextContent('1 / 3');
+  });
+
   it('shows position readout total', () => {
     render(<ScoreTransportBar {...base} />);
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
