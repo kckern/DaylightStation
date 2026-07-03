@@ -1,0 +1,36 @@
+@use '../cgTokens' as t;
+
+// A phantom lane in the starting grid — same .cgh-slot footprint as a real
+// BikeSlot (see BikeSlot.scss), dashed/dimmed to read as "not a physical
+// bike" while still sitting in the same row.
+.cgh-slot--ghost {
+  border-style: dashed;
+  border-color: t.$cg-border-soft;
+  opacity: 0.92;
+}
+
+.cgh-slot__main--ghost {
+  cursor: default;
+}
+
+.cgh-slot__rider-avatar--ghost {
+  position: relative;
+  display: inline-flex;
+}
+
+.cgh-slot__ghost-badge {
+  display: flex;
+  color: t.$cg-cyan;
+  opacity: 0.85;
+  svg { width: 1.1rem; height: 1.1rem; display: block; }
+}
+
+.cgh-slot__ghost-name {
+  font-size: 0.85rem;
+  color: t.$cg-muted;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
