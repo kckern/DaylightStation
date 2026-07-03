@@ -20,6 +20,18 @@ const BOTTOM_ROOM = 72; // room below the bass staff for LOW ledger notes (don't
 const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
 const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
+const MIN_NOTE_AREA = 40;
+const MAX_STAVE_W = 560; // logical units — don't engrave absurd staves on ultra-wide slots
+
+/** Stave/viewBox geometry for a given key-sig accidental count and host box aspect (w/h). */
+export function computeChordStaffLayout(accCount, aspect) {
+  const logicalH = TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM;
+  const minStaveW = 44 + accCount * 10 + MIN_NOTE_AREA;
+  const valid = Number.isFinite(aspect) && aspect > 0;
+  const target = valid ? Math.round(logicalH * aspect) - PAD * 2 : minStaveW;
+  const staveW = Math.min(MAX_STAVE_W, Math.max(minStaveW, target));
+  return { staveW, logicalW: staveW + PAD * 2, logicalH };
+}
 
 // pitch-class → [letter, alter] spelled with sharps (default / sharp keys)…
 const SHARP_SPELL = [['c', 0], ['c', 1], ['d', 0], ['d', 1], ['e', 0], ['f', 0], ['f', 1], ['g', 0], ['g', 1], ['a', 0], ['a', 1], ['b', 0]];
@@ -49,9 +61,9 @@ function chordNote(midis, clef, keySig) {
  * Render the current chord onto `host` as a centered grand staff.
  *
  * @param {HTMLElement} host
- * @param {{ notes?: Map<number, any>, keySignature?: string }} opts
+ * @param {{ notes?: Map<number, any>, keySignature?: string, aspect?: number }} opts
  */
-export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
+export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {}) {
   if (!host) return;
   host.innerHTML = '';
 
@@ -67,12 +79,12 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
   const accCount = KEY_SIGNATURES[ks].sharps.length + KEY_SIGNATURES[ks].flats.length;
 
-  // Content-sized stave: clef + key signature + one chord. No trailing staff.
-  const staveW = 44 + accCount * 10 + 40;
-  const logicalW = staveW + PAD * 2;
-  // Extra top/bottom room makes the whole engraving a touch smaller (the taller
-  // viewBox scales down under `meet`) AND keeps low-register ledger notes in frame.
-  const logicalH = TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM;
+  // Stave geometry: content-sized by default (clef + key signature + one chord),
+  // but WIDENED to fill the host box's aspect ratio when one is supplied — a wide
+  // landscape slot gets wide staff lines (no dead gutters) with the chord centered.
+  // Extra top/bottom room keeps low-register ledger notes in frame and lets the
+  // taller viewBox scale the whole engraving down a touch under `meet`.
+  const { staveW, logicalW, logicalH } = computeChordStaffLayout(accCount, aspect);
 
   // Render at LOGICAL units (no container-width math, no scale cap). The SVG is
   // given a viewBox so the browser scales the whole engraving to fit its box and
@@ -104,11 +116,17 @@ export function renderChordStaff(host, { notes, keySignature = 'C' } = {}) {
   } catch { /* marker is decorative */ }
 
   const noteAreaW = Math.max(20, staveW - (treble.getNoteStartX() - treble.getX()) - 14);
+  // On a widened stave the formatter still parks the single chord hard-left against
+  // the key signature; nudge both hands right by the same amount so the chord sits
+  // centered in the note area (StaveNote honors x_shift in getNoteHeadBeginX/getStemX,
+  // and the formatter never resets it — so apply it after format(), before draw()).
+  const xShift = Math.max(0, (noteAreaW - 40) / 2);
   const drawVoice = (note, stave) => {
     if (!note) return;
     const v = new Voice({ num_beats: 1, beat_value: 4 }).setStrict(false).addTickables([note]);
     Accidental.applyAccidentals([v], ks);
     new Formatter().joinVoices([v]).format([v], noteAreaW);
+    note.setXShift(xShift);
     v.draw(ctx, stave);
   };
   drawVoice(tNote, treble);
