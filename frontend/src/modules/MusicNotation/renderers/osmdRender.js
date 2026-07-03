@@ -102,9 +102,14 @@ export async function osmdRender(host, xml, opts = {}) {
     drawComposer: false,
     drawLyricist: false,
     drawPartNames: false,
+    // Tempo lives in ScorePlayer's metadata header, and OSMD's in-score
+    // metronome marks collide with chords/measure numbers (2026-07-02 audit E1).
+    drawMetronomeMarks: false,
     followCursor: false,
     renderSingleHorizontalStaffline: flow === 'horizontal',
   });
+  // Mid-system measure numbers pile onto tight chords; system-start only.
+  osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
   await osmd.load(xml);
   if (abort()) return null;
   osmd.Zoom = scale;
