@@ -87,6 +87,13 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByRole('button', { name: /play along/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('listen mode: key + button transposes up by one semitone via onTranspose', () => {
+    const onTranspose = vi.fn();
+    render(<ScoreTransportBar {...base} mode="listen" transpose={1} onTranspose={onTranspose} />);
+    fireEvent.click(screen.getByRole('button', { name: /transpose up/i }));
+    expect(onTranspose).toHaveBeenCalledWith(2);
+  });
+
   it('tempo + play-along are Listen-only (absent in Learn/Polish/Perform)', () => {
     const { rerender } = render(<ScoreTransportBar {...base} mode="learn" />);
     expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();

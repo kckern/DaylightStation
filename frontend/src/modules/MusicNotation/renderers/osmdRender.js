@@ -17,6 +17,10 @@ function loadOsmd() {
   return osmdModulePromise;
 }
 
+// Captured from the lazy module the first time OSMD loads so the synchronous
+// osmdRepaint (which can't await the import) can attach a transpose calculator.
+let _TransposeCalculator = null;
+
 /**
  * Warm the (heavy, lazily-imported) OSMD engine ahead of the first score open —
  * call it when the score grid mounts so the chunk is already loaded by the time a
@@ -373,14 +377,17 @@ export function scheduleYield(cb) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           shouldAbort?:() => boolean }} [opts]
+ *           transpose?:number, shouldAbort?:() => boolean }} [opts]
+ *   transpose is an integer semitone offset (default 0) re-engraving the score in
+ *   a new key — the notation AND the extracted pitches follow it.
  *   shouldAbort is checked after each await so a stale render never clobbers
  *   a newer one's DOM.
  * @returns {Promise<{osmd:object,width:number,height:number,flow:string}|null>}
  *   null when aborted.
  */
 export async function osmdEngrave(host, xml, opts = {}) {
-  const { OpenSheetMusicDisplay } = await loadOsmd();
+  const { OpenSheetMusicDisplay, TransposeCalculator } = await loadOsmd();
+  _TransposeCalculator = TransposeCalculator; // let the sync repaint path reuse it
   const abort = opts.shouldAbort || (() => false);
   if (abort()) return null;
 
@@ -407,6 +414,19 @@ export async function osmdEngrave(host, xml, opts = {}) {
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
   await osmd.load(xml);
   if (abort()) return null;
+
+  // Key transpose: re-engrave in a new key so both the notation and the pitches
+  // the cursor walk re-reads move together. Defensive — a transpose wiring failure
+  // must never break the render; fall through to the untransposed sheet.
+  const transpose = opts.transpose;
+  if (Number.isFinite(transpose) && transpose !== 0) {
+    try {
+      osmd.TransposeCalculator = new TransposeCalculator();
+      osmd.Sheet.Transpose = transpose;
+    } catch (err) {
+      logger().warn('osmd.transpose-failed', { transpose, error: err?.message });
+    }
+  }
 
   if (opts.width) host.style.width = `${opts.width}px`;
   osmd.Zoom = scale;
@@ -449,11 +469,23 @@ export async function osmdRender(host, xml, opts = {}) {
  * (sliced), instead of the blocking double-walk of render+extract.
  * @param {import('opensheetmusicdisplay').OpenSheetMusicDisplay} osmd
  * @param {HTMLElement} host
- * @param {{ width?:number, flow?:string, scale?:number }} [opts]
+ * @param {{ width?:number, flow?:string, scale?:number, transpose?:number }} [opts]
+ *   transpose (integer semitones) re-keys the reused instance; `0` restores the
+ *   written key. Defensive — a transpose failure never breaks the repaint.
  */
 export function osmdRepaint(osmd, host, opts = {}) {
   const scale = Math.max(0.5, Math.min(2.5, opts.scale || 1));
   if (opts.width) host.style.width = `${opts.width}px`;
+  // Key transpose on the reused instance: ensure a calculator is attached, then
+  // set the offset (0 restores the original key). Guarded so it can't break render.
+  if (opts.transpose !== undefined) {
+    try {
+      if (!osmd.TransposeCalculator && _TransposeCalculator) osmd.TransposeCalculator = new _TransposeCalculator();
+      osmd.Sheet.Transpose = opts.transpose || 0;
+    } catch (err) {
+      logger().warn('osmd.transpose-failed', { transpose: opts.transpose, error: err?.message });
+    }
+  }
   osmd.Zoom = scale;
   osmd.render();
 

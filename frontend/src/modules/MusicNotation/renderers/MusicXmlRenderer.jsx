@@ -22,13 +22,16 @@ function logger() {
  * @param {number} [width] - render width (defaults to the parent's width)
  * @param {'wrapped'|'horizontal'} [flow]
  * @param {number} [scale]
+ * @param {number} [transpose] - integer semitone key offset (default 0); re-engraves
+ *   the score in the new key so both the notation AND the extracted pitches move.
+ *   `0` restores the written key.
  * @param {(res:{width,height,events,notes,steps,tempoEntries}) => void} [onLayout]
  * @param {(p:number) => void} [onProgress] - extraction progress fraction 0..1
  * @param {() => void} [onReady] - fired once geometry extraction completes and
  *   the play-along overlay can be armed (the sheet is already painted before this)
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, onLayout, onProgress, onReady, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, onLayout, onProgress, onReady, children }) {
   const hostRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [failed, setFailed] = useState(false);
@@ -68,7 +71,10 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     const seq = ++renderSeq.current;
     const stale = () => renderSeq.current !== seq;
     const w = width || host.parentElement?.clientWidth || 1000;
-    const cacheKey = `${flow}::${musicXml}`;
+    // Transpose is part of the cache key: a key change misses the reuse check and
+    // takes the full engrave path (clean re-parse in the new key), never a stale
+    // same-key cache hit. Zoom/flow/resize at a fixed key still hit the repaint path.
+    const cacheKey = `${flow}::${transpose}::${musicXml}`;
 
     // Progress + result plumbing shared by both paths. Every setState is
     // stale-guarded so a superseded render can never clobber the live one.
@@ -87,7 +93,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // run the expensive geometry extraction sliced so the tablet still breathes.
         if (osmdRef.current && osmdKeyRef.current === cacheKey) {
           try {
-            const rr = osmdRepaint(osmdRef.current, host, { width: w, flow, scale });
+            const rr = osmdRepaint(osmdRef.current, host, { width: w, flow, scale, transpose });
             if (stale()) return;
             setFailed(false);
             setDims({ width: rr.width, height: rr.height }); // PAINT (sheet visible)
@@ -107,7 +113,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // Full path: PAINT the engraved sheet first (Manual mode usable at once),
         // THEN extract geometry in yielded slices with progress.
         setRendering(true);
-        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, shouldAbort: stale });
+        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, shouldAbort: stale });
         if (!eng || stale()) return;
         osmdRef.current = eng.osmd;
         osmdKeyRef.current = cacheKey;
@@ -130,7 +136,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
       }
     })();
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
-  }, [musicXml, width, flow, scale, onLayout, onProgress, onReady, resizeKey]);
+  }, [musicXml, width, flow, scale, transpose, onLayout, onProgress, onReady, resizeKey]);
 
   const showPlaceholder = !musicXml || failed;
   return (

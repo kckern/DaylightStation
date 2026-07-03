@@ -41,6 +41,8 @@ export default function ScoreTransportBar({
   onScale,
   tempoMult = 1,
   onTempo,
+  transpose = 0,
+  onTranspose,
   playAlong = false,
   onTogglePlayAlong,
   parts = [],
@@ -204,6 +206,31 @@ export default function ScoreTransportBar({
           >
             {'Play-along'}
           </button>
+        )}
+
+        {hasListenExtras && (
+          <div className="piano-score-key" role="group" aria-label="Key">
+            <span className="piano-score-key-label">Key</span>
+            <button
+              type="button"
+              className="piano-score-btn piano-score-key-down"
+              aria-label="Transpose down"
+              onClick={() => onTranspose?.(transpose - 1)}
+            >
+              {'−'}
+            </button>
+            <span className="piano-score-key-readout tabular-nums">
+              {transpose > 0 ? `+${transpose}` : String(transpose)}
+            </span>
+            <button
+              type="button"
+              className="piano-score-btn piano-score-key-up"
+              aria-label="Transpose up"
+              onClick={() => onTranspose?.(transpose + 1)}
+            >
+              {'+'}
+            </button>
+          </div>
         )}
 
         {hasListenExtras && (

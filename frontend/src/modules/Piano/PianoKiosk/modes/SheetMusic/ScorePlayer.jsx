@@ -82,6 +82,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
   const [flow, setFlow] = useState('wrapped');
   const [scale, setScale] = useState(1);
+  const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
   const [tempoMult, setTempoMult] = useState(1); // Listen tempo: 1 = written, 1.5 = 50% faster, 0.5 = half
   const [playAlong, setPlayAlong] = useState(false); // Listen: light up your correctly-struck notes (non-gating)
   const [wrong, setWrong] = useState(false);
@@ -352,6 +353,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
+  // Listen key transpose: clamp to ±7 semitones (one fifth either way). The renderer
+  // re-engraves in the new key and re-extracts pitches, so both the notation and the
+  // performed/highlighted notes move together.
+  const onTranspose = useCallback((v) => {
+    const n = Math.round(Number(v));
+    const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
+    setTranspose(clamped);
+    logger.info('score.transpose', { semitones: clamped });
+  }, [logger]);
+
   const reset = useCallback(() => {
     transport.stop();
     if (mode === 'listen') silence();
@@ -397,7 +408,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
-  useEffect(() => { openTsRef.current = performance.now(); readySentRef.current = false; }, [scoreMeta.musicXml]);
+  // A new score opens in its written key (mirror the other per-score resets).
+  useEffect(() => { openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0); }, [scoreMeta.musicXml]);
   const onReady = useCallback(() => {
     if (readySentRef.current) return;
     readySentRef.current = true;
@@ -433,7 +445,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   return (
     <div className="piano-score-player">
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
-        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} onLayout={onLayout} onReady={onReady}>
+        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady}>
           {mode !== 'perform' && current && (
             <div
               ref={cursorRef}
@@ -485,6 +497,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onScale={setScale}
         tempoMult={tempoMult}
         onTempo={onTempo}
+        transpose={transpose}
+        onTranspose={onTranspose}
         playAlong={playAlong}
         onTogglePlayAlong={() => setPlayAlong((v) => !v)}
         parts={barParts}
