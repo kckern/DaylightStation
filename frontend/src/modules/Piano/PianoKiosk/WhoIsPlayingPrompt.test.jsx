@@ -89,3 +89,19 @@ describe('WhoIsPlayingPrompt', () => {
     expect(screen.queryByText('U0')).toBeNull();
   });
 });
+
+describe('WhoIsPlayingPrompt screen-off button', () => {
+  it('renders no screen-off button without onScreenOff', () => {
+    render(<WhoIsPlayingPrompt open users={users} onPick={() => {}} onDismiss={() => {}} />);
+    expect(screen.queryByRole('button', { name: /turn off screen/i })).toBeNull();
+  });
+
+  it('two-tap arms then confirms onScreenOff', () => {
+    const onScreenOff = vi.fn();
+    render(<WhoIsPlayingPrompt open users={users} onPick={() => {}} onDismiss={() => {}} onScreenOff={onScreenOff} />);
+    fireEvent.click(screen.getByRole('button', { name: /turn off screen/i })); // arms only
+    expect(onScreenOff).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /tap again to confirm/i }));
+    expect(onScreenOff).toHaveBeenCalledTimes(1);
+  });
+});
