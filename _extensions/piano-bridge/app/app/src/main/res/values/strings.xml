@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="piano_touch_desc">Emits a tiny synthetic touch while the piano is played so the kiosk display stays smooth. Reads no screen content.</string>
+</resources>

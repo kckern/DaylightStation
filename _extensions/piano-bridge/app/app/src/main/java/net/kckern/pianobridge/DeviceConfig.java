@@ -144,6 +144,19 @@ public class DeviceConfig {
     public String fkbWakeQuietEnd() { return values.getOrDefault("fkbWakeQuietEnd", ""); }
     public long fkbWakeSuppressUntilMs() { return longOr("fkbWakeSuppressUntilEpochMs", 0L); }
 
+    // --- Synthetic-touch un-throttle (TouchPulser + PianoTouchService): emit a
+    //     tiny gesture while playing so the SM-T590 main-thread frame throttle
+    //     stays lifted (BLE-MIDI is not "touch" to Android). All live-tunable via
+    //     `pbctl config set` so we can A/B against perf.diagnostics with no rebuild.
+    //     tapX/tapY/tapLen aim a micro-SWIPE (not a tap) at a corner dead zone; the
+    //     swipe exceeds touch-slop so it never clicks whatever is under it.
+    public boolean tapWakeEnabled() { return boolOr("tapWakeEnabled", true); }
+    public int tapCadenceMs() { return intOr("tapCadenceMs", 700); }
+    public int tapX() { return intOr("tapX", 3); }
+    public int tapY() { return intOr("tapY", 6); }
+    public int tapLen() { return intOr("tapLen", 34); }
+    public int tapDurationMs() { return intOr("tapDurationMs", 20); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 
