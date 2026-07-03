@@ -18,6 +18,8 @@ import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitne
 import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from '@/modules/Fitness/lib/cycleGame/raceCheckpoint.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
+import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
+import { dramaEventToasts } from '@/modules/Fitness/lib/cycleGame/dramaEventCopy.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -26,8 +28,18 @@ import CycleRaceScreen from './CycleRaceScreen.jsx';
 import CycleEventToast from './CycleEventToast.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
-import { StopSignIcon, TimeIcon, RaceFlagIcon } from './home/icons.jsx';
+import { StopSignIcon, TimeIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from './home/icons.jsx';
 import './CycleGameContainer.scss';
+
+// Drama-event toast icons, keyed by the `variant` dramaEventCopy.js returns
+// (stateless glyphs — module-scope, not re-created per render/callback).
+const DRAMA_ICON = {
+  'lead-change': <SpeedIcon />,
+  finished: <MedalIcon />,
+  'photo-finish': <RaceFlagIcon />,
+  'final-lap': <RaceFlagIcon />,
+  lapping: <GhostIcon />,
+};
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
@@ -289,6 +301,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Single-slot, self-dismissing event toast + a queue for events that pile up.
   const [eventToast, setEventToast] = useState(null);
   const toastQueueRef = useRef([]);
+  // Edge-triggered drama events (audit C2 — deriveRaceSnapshot was fully built
+  // + tested but never called from the live tick). Chained snapshot-to-
+  // snapshot so LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/FINAL_LAP/
+  // LAPPING_IMMINENT fire exactly once, on the tick they actually happen.
+  const prevRaceSnapshotRef = useRef(null);
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -373,6 +390,24 @@ export default function CycleGameContainer({ onMount } = {}) {
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
       return toast;
+    });
+  }, []);
+
+  // Drama-event ceremony copy (audit C2 — "the highest fun-per-line fix in
+  // the codebase"): the event→copy mapping is pure (dramaEventCopy.js,
+  // independently unit-tested); this callback only adds the view-layer icon
+  // and enqueues. RIDER_FINISHED doubles as the finish-line ceremony (audit
+  // feedback 2026-07-02) — a distance-goal crossing gets its own celebratory
+  // moment the instant it happens, not just a row on the end-of-race results
+  // screen.
+  const recordDramaEvent = useCallback((event, snapshot, riders) => {
+    dramaEventToasts(event, snapshot, riders).forEach((t) => {
+      const id = (eventIdRef.current += 1);
+      const toast = { id, icon: DRAMA_ICON[t.variant] || null, ...t };
+      setEventToast((cur) => {
+        if (cur) { toastQueueRef.current.push(toast); return cur; }
+        return toast;
+      });
     });
   }, []);
 
@@ -475,10 +510,27 @@ export default function CycleGameContainer({ onMount } = {}) {
     [bikesForGrid]
   );
 
+  // Ghost riders enriched with a real avatar (audit C6 / user feedback
+  // 2026-07-02): a selected ghost used to be invisible pre-race — only a
+  // small "vs Name" chip on the race-type picker — and only materialized once
+  // the race screen mounted. Shared by the starting grid (GhostSlot) and the
+  // ready strip below, so both surfaces show the SAME ghost roster the race
+  // will actually run with.
+  const ghostRosterRiders = useMemo(
+    () => (ghost?.riders || []).map((r) => ({
+      userId: r.userId,
+      displayName: r.displayName,
+      avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc,
+    })),
+    [ghost]
+  );
+
   // On-board riders for the pre-race compliance strip (staging + countdown): the
-  // claimed bikes with their LIVE rpm. `compliant = !(rpm > 0)` mirrors exactly
-  // the controller's green-light test, so the strip predicts the penalty.
-  // assignVersion drives the refresh (bumped by the staging/countdown poll).
+  // claimed bikes with their LIVE rpm, PLUS any selected ghost riders (always
+  // "READY" — a ghost never earns a hot-start penalty, it just runs on its own
+  // recorded clock). `compliant = !(rpm > 0)` mirrors exactly the controller's
+  // green-light test, so the strip predicts the penalty. assignVersion drives
+  // the refresh (bumped by the staging/countdown poll).
   const stagingRiders = useMemo(
     () => bikes.map((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id);
@@ -496,9 +548,18 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneColor: vitals.zoneColor || null,
         compliant: !(rpm > 0)
       };
-    }).filter(Boolean),
+    }).filter(Boolean).concat(ghostRosterRiders.map((r) => ({
+      id: r.userId,
+      name: r.displayName,
+      avatarSrc: r.avatarSrc,
+      rpm: 0,
+      heartRate: null,
+      zoneColor: null,
+      compliant: true,
+      isGhost: true
+    }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bikes, session, getUserVitals, resolveDisplayName, assignVersion]
+    [bikes, session, getUserVitals, resolveDisplayName, assignVersion, ghostRosterRiders]
   );
 
   // True when no on-board rider is pedalling — the gate for leaving staging.
@@ -707,6 +768,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       timeCapS: cfg.timeCapS,
       intervalSeconds: cfg.intervalMs / 1000,
       backgroundPlexId: cfg.backgroundPlexId,
+      lapLengthM,
       // Real course identity only — 'custom'/'ghost' lobby races persist null.
       courseId: ov?.id ?? null
     };
@@ -720,6 +782,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     rpmHistoryRef.current = new Map();
     gapTicksRef.current = new Map();
     prevSensorLostRef.current = new Set();
+    prevRaceSnapshotRef.current = null;
     tickCountRef.current = 0;
     setRaceEvents([]);
     setSaveFailed(false);
@@ -1003,6 +1066,18 @@ export default function CycleGameContainer({ onMount } = {}) {
         };
       });
       const state = controller.tick(inputs);
+
+      // ── Drama events (audit C2) — LEAD_CHANGE / RIDER_FINISHED / PHOTO_FINISH /
+      // FINAL_LAP / LAPPING_IMMINENT, edge-triggered against the previous tick's
+      // snapshot. Runs every tick (not gated on phase==='racing' vs 'finished')
+      // so the race-ending tick's own finisher still gets its ceremony toast.
+      const raceSnapshot = deriveRaceSnapshot(
+        state.engineState,
+        { lapLengthM: raceMetaRef.current?.lapLengthM || 0 },
+        prevRaceSnapshotRef.current
+      );
+      raceSnapshot.events.forEach((evt) => recordDramaEvent(evt, raceSnapshot, state.engineState?.riders || {}));
+      prevRaceSnapshotRef.current = raceSnapshot;
 
       // ── Cadence connectivity transitions (info) — connect/drop only, not steady
       // state. The first read seeds the map without logging. Answers "my pedaling
@@ -1616,6 +1691,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           highScores={highScores}
           onSelectRecord={onSelectRecord}
           ghost={ghost}
+          ghostRoster={ghostRosterRiders}
           ghostCandidates={ghostCandidates}
           onSelectGhost={onSelectGhost}
           onClearGhost={onClearGhost}

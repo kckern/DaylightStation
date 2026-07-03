@@ -96,7 +96,12 @@ export default function CycleEventToast({ toast, onDone, durationMs = CYCLE_TOAS
 CycleEventToast.propTypes = {
   toast: PropTypes.shape({
     id: PropTypes.number,
-    variant: PropTypes.oneOf(['dnf', 'penalty', 'overtime', 'info']),
+    variant: PropTypes.oneOf([
+      'dnf', 'penalty', 'overtime', 'info',
+      // Drama events (audit C2) — LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/
+      // FINAL_LAP/LAPPING_IMMINENT, routed through deriveRaceSnapshot.
+      'lead-change', 'finished', 'photo-finish', 'final-lap', 'lapping',
+    ]),
     icon: PropTypes.node,
     title: PropTypes.node,
     subtitle: PropTypes.node,

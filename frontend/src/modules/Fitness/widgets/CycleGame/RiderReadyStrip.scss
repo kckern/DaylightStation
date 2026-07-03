@@ -48,6 +48,22 @@
     animation: cg-ready-pulse 0.7s ease-in-out infinite;
     .cg-ready-rider__status { background: rgba(241, 163, 60, 0.22); color: #ffb84d; }
   }
+
+  // Ghost — dashed/dimmed, no compliance to earn or violate (audit C6 / user
+  // feedback 2026-07-02: a selected ghost now shows here alongside the real
+  // riders instead of staying invisible until the race screen mounts).
+  &.is-ghost {
+    border-style: dashed;
+    border-color: #2a2e36;
+    opacity: 0.9;
+  }
+  &__auto {
+    margin-top: 2px; padding: 3px 12px;
+    border-radius: 999px;
+    border: 1px dashed #21e6ff;
+    color: #21e6ff;
+    font-weight: 800; font-size: 1.1rem; letter-spacing: 0.08em;
+  }
 }
 
 @keyframes cg-ready-pulse {

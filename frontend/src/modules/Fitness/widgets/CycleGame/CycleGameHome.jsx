@@ -4,6 +4,7 @@ import { uiLog } from './home/uiLog.js';
 import { RaceFlagIcon, VolumeIcon } from './home/icons.jsx';
 import RaceTypePicker from './home/RaceTypePicker.jsx';
 import BikeSlot from './home/BikeSlot.jsx';
+import GhostSlot from './home/GhostSlot.jsx';
 import RiderPicker from './home/RiderPicker.jsx';
 import GhostPicker from './home/GhostPicker.jsx';
 import VolumeModal from './home/VolumeModal.jsx';
@@ -36,6 +37,7 @@ export default function CycleGameHome({
   highScores = [],
   onSelectRecord,
   ghost = null,
+  ghostRoster = [],
   ghostCandidates = [],
   onSelectGhost,
   onClearGhost,
@@ -114,7 +116,7 @@ export default function CycleGameHome({
 
         <section className="cgh-grid-section">
           <div className="cgh-section-label">Starting grid</div>
-          {bikes.length === 0 ? (
+          {bikes.length === 0 && ghostRoster.length === 0 ? (
             <div className="cgh-empty">No bikes detected (equipment with a cadence sensor).</div>
           ) : (
             <div className="cgh-grid">
@@ -126,6 +128,12 @@ export default function CycleGameHome({
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
+              ))}
+              {/* Phantom lanes for a selected ghost race (audit C6 / user
+                  feedback 2026-07-02) — a ghost is invisible no longer; it
+                  lines up in the SAME grid as the real riders. */}
+              {ghostRoster.map((r, i) => (
+                <GhostSlot key={r.userId} rider={r} lane={bikes.length + i + 1} />
               ))}
             </div>
           )}
@@ -203,6 +211,11 @@ CycleGameHome.propTypes = {
   highScores: PropTypes.array,
   onSelectRecord: PropTypes.func,
   ghost: PropTypes.object,
+  ghostRoster: PropTypes.arrayOf(PropTypes.shape({
+    userId: PropTypes.string.isRequired,
+    displayName: PropTypes.string,
+    avatarSrc: PropTypes.string,
+  })),
   ghostCandidates: PropTypes.array,
   onSelectGhost: PropTypes.func,
   onClearGhost: PropTypes.func,
