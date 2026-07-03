@@ -50,17 +50,71 @@ export function pickMelodyNote(notes) {
 }
 
 /**
+ * Group flat onset records (one per note, all staves) into cursor steps keyed by
+ * onsetQuarter. Each step carries every note sounding at that onset with its box,
+ * so the light-up overlay and the active-parts tracker can work per staff.
+ */
+export function buildSteps(recs) {
+  const byQuarter = new Map();
+  for (const r of recs || []) {
+    if (!byQuarter.has(r.onsetQuarter)) byQuarter.set(r.onsetQuarter, { onsetQuarter: r.onsetQuarter, notes: [] });
+    byQuarter.get(r.onsetQuarter).notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width });
+  }
+  return [...byQuarter.values()].sort((a, b) => a.onsetQuarter - b.onsetQuarter);
+}
+
+/**
+ * Best-effort on-screen box for a single OSMD Note's notehead. Tries the
+ * graphical-note mapping (px converted from OSMD units via the current zoom);
+ * on any failure or missing API, returns null so the caller falls back to the
+ * cursor-element box. Never throws.
+ * @param {object} osmd
+ * @param {object} n - OSMD Note
+ * @returns {{x:number,top:number,bottom:number,width:number}|null}
+ */
+function noteheadBox(osmd, n) {
+  try {
+    const gn = osmd?.GraphicSheet?.GetGraphicalNoteFromNote?.(n)
+      ?? osmd?.graphic?.GetGraphicalNoteFromNote?.(n);
+    const pas = gn?.PositionAndShape;
+    const abs = pas?.AbsolutePosition;
+    if (!abs || !Number.isFinite(abs.x) || !Number.isFinite(abs.y)) return null;
+    const unitToPx = 10 * (osmd.Zoom || 1);
+    const cx = abs.x * unitToPx;
+    const cy = abs.y * unitToPx;
+    const borderTop = pas?.BorderTop;
+    const borderBottom = pas?.BorderBottom;
+    const width = Number.isFinite(pas?.Size?.width) ? pas.Size.width * unitToPx : unitToPx;
+    let top, bottom;
+    if (Number.isFinite(borderTop) && Number.isFinite(borderBottom)) {
+      top = cy + borderTop * unitToPx;
+      bottom = cy + borderBottom * unitToPx;
+    } else {
+      const half = unitToPx * 0.75; // small default notehead half-height
+      top = cy - half;
+      bottom = cy + half;
+    }
+    return { x: cx, top, bottom, width };
+  } catch {
+    return null; // malformed / unsupported OSMD version — use fallback
+  }
+}
+
+/**
  * Walk OSMD's cursor start→end. Emits, from one pass (so repeats and tempo
  * stay aligned with the visual cursor):
  *  events       — one per melody onset (cursor steps), with `midis` (every
  *                 pitch sounding at that onset, both staves) + geometry
  *  notes        — every onset on every staff with duration, for playback
  *  tempoEntries — [{onsetQuarter, bpm}] wherever the iterator's bpm changes
+ *  steps        — one per onset, carrying EVERY note sounding across ALL
+ *                 staves with its on-screen notehead box (for the light-up
+ *                 overlay + full-hand follow tracker)
  */
 export function extractEvents(osmd) {
-  const events = [], notes = [], tempoEntries = [];
+  const events = [], notes = [], tempoEntries = [], onsetRecords = [];
   const cursor = osmd.cursor;
-  if (!cursor) return { events, notes, tempoEntries };
+  if (!cursor) return { events, notes, tempoEntries, steps: [] };
   let lastBpm = null;
   try {
     cursor.show(); // geometry only updates while the cursor is visible
@@ -74,24 +128,42 @@ export function extractEvents(osmd) {
         lastBpm = bpm;
       }
       const onset = collectOnsetNotes(cursor.NotesUnderCursor());
+      const el = cursor.cursorElement;
+      // Fallback box (cursor element) reused for any note lacking graphical geometry.
+      const fallbackBox = el ? {
+        x: el.offsetLeft + el.offsetWidth / 2,
+        top: el.offsetTop,
+        bottom: el.offsetTop + el.offsetHeight,
+        width: el.offsetWidth,
+      } : { x: 0, top: 0, bottom: 0, width: 0 };
       for (const n of onset) {
+        const staff = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
         notes.push({
           midi: midiOfHalfTone(n.halfTone),
-          staff: n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0,
+          staff,
           onsetQuarter,
           durationQuarters: (n.Length?.RealValue ?? 0) * 4,
+        });
+        const box = noteheadBox(osmd, n) || fallbackBox;
+        onsetRecords.push({
+          onsetQuarter,
+          midi: midiOfHalfTone(n.halfTone),
+          staff,
+          x: box.x,
+          top: box.top,
+          bottom: box.bottom,
+          width: box.width,
         });
       }
       const melody = pickMelodyNote(onset);
       if (melody) {
-        const el = cursor.cursorElement;
         events.push({
           midi: midiOfHalfTone(melody.halfTone),
           midis: onset.map((n) => midiOfHalfTone(n.halfTone)),
           onsetQuarter,
-          x: el.offsetLeft + el.offsetWidth / 2,
-          top: el.offsetTop,
-          bottom: el.offsetTop + el.offsetHeight,
+          x: fallbackBox.x,
+          top: fallbackBox.top,
+          bottom: fallbackBox.bottom,
         });
       }
       cursor.next();
@@ -100,7 +172,8 @@ export function extractEvents(osmd) {
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
   events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
-  return { events, notes, tempoEntries };
+  const steps = buildSteps(onsetRecords);
+  return { events, notes, tempoEntries, steps };
 }
 
 /**
@@ -159,11 +232,11 @@ export function osmdReRender(osmd, host, opts = {}) {
   osmd.Zoom = scale;
   osmd.render();
 
-  const { events, notes, tempoEntries } = extractEvents(osmd);
+  const { events, notes, tempoEntries, steps } = extractEvents(osmd);
   const svg = host.querySelector('svg');
   const width = Math.ceil(Number(svg?.getAttribute('width')) || svg?.clientWidth || host.clientWidth || 0);
   const height = Math.ceil(Number(svg?.getAttribute('height')) || svg?.clientHeight || host.clientHeight || 0);
-  return { width, height, flow: opts.flow, events, notes, tempoEntries, osmd };
+  return { width, height, flow: opts.flow, events, notes, tempoEntries, steps, osmd };
 }
 
 export default osmdRender;
