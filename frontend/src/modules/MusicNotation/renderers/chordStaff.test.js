@@ -1,5 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { midiToVexKey, renderChordStaff } from './chordStaff.js';
+import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from './chordStaff.js';
+
+describe('computeChordStaffLayout', () => {
+  const LOGICAL_H = 192; // TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM
+
+  it('falls back to content-sized stave when no aspect given', () => {
+    const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, null);
+    expect(staveW).toBe(44 + 0 * 10 + 40);
+    expect(logicalW).toBe(staveW + 16); // PAD * 2
+    expect(logicalH).toBe(LOGICAL_H);
+  });
+
+  it('widens the stave to fill a wide box', () => {
+    const aspect = 550 / 500;
+    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
+  });
+
+  it('never goes below the content minimum (tall/narrow boxes)', () => {
+    const { staveW } = computeChordStaffLayout(4, 0.2);
+    expect(staveW).toBe(44 + 4 * 10 + 40);
+  });
+
+  it('clamps ultra-wide boxes so staves stay musical', () => {
+    const { staveW } = computeChordStaffLayout(0, 10);
+    expect(staveW).toBeLessThanOrEqual(560);
+  });
+
+  it('tolerates garbage aspect values', () => {
+    for (const a of [NaN, Infinity, -1, 0]) {
+      expect(computeChordStaffLayout(0, a).staveW).toBe(84);
+    }
+  });
+});
 
 describe('midiToVexKey — key-signature-aware spelling', () => {
   it('spells naturals with the right letter and octave (C4 = c/4)', () => {
