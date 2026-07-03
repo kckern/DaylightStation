@@ -1,12 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, waitFor } from '@testing-library/react';
 
 // jsdom has no WebGL: mock the three.js stack + camera-controls so the component
 // mounts and we can assert the React-owned avatar overlay (the contract tests cover).
 vi.mock('@/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }),
 }));
+
+// Captures the args every PlaneGeometry() call was constructed with, so a test
+// can assert the ground-plane width without hardcoding the module's internal
+// GRID_PLANE_HALF_W constant.
+const { planeGeomCalls } = vi.hoisted(() => ({ planeGeomCalls: [] }));
 
 vi.mock('camera-controls', () => {
   class CC {
@@ -42,7 +47,7 @@ vi.mock('three', () => {
     PerspectiveCamera: class { constructor() { this.position = new V3(); this.aspect = 1; this.fov = 55; this.matrixWorldInverse = {}; } updateProjectionMatrix() {} },
     WebGLRenderer: class { constructor() { this.domElement = document.createElement('canvas'); } setPixelRatio() {} setSize() {} render() {} dispose() {} },
     BufferGeometry: Geom,
-    PlaneGeometry: class { dispose() {} },
+    PlaneGeometry: class { constructor(w, h) { planeGeomCalls.push([w, h]); } dispose() {} },
     Float32BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     LineBasicMaterial: class { constructor() { this.color = { setHex() {} }; this.opacity = 1; } },
@@ -63,7 +68,22 @@ const riders = {
 };
 
 describe('PovGrid (three.js shell)', () => {
-  beforeEach(() => cleanup());
+  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; });
+
+  // 2026-07-02 fix: the ground plane used to be locked to the playable road's
+  // own width (2*ROAD_HALF_W = 8 world units). At a big-gap zoom-out the
+  // camera's horizontal FOV covers far more than that, so the ground shrank
+  // to a thin center strip instead of anchoring to the frame's full width.
+  // The plane is now sized well past the widest zoom-out — a structural
+  // regression guard, not a pixel-perfect one (the shader is world-space, not
+  // UV-normalized, so widening it can't distort the grid — see PovGrid.jsx).
+  it('sizes the ground plane wide enough to fill the frame at max zoom-out (not locked to the road width)', async () => {
+    render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+    // Scene setup is behind a dynamic import('three') — wait for it to resolve.
+    await waitFor(() => expect(planeGeomCalls.length).toBeGreaterThan(0));
+    const [width] = planeGeomCalls[0];
+    expect(width).toBeGreaterThan(100); // old bug: width was 8
+  });
 
   it('renders the race-pov root', () => {
     const { getByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);

@@ -55,6 +55,15 @@ const GRID_MINOR_COLOR = 0x1fb6d8;  // dim cyan (1 m lines)
 const GRID_MAJOR_COLOR = 0x5cf2ff;  // bright cyan (10 m lines)
 const MINOR_FADE_M = 70;            // 1 m lines fade out by ~70 m (majors persist to fog)
 const GRID_PLANE_Z = 4000;          // ground-plane length (world units)
+// Ground-plane HALF-width (visual only — the playable road/lane width used for
+// rider positions and gate arches stays ROAD_HALF_W). The plane used to be
+// locked to 2*ROAD_HALF_W = 8 units wide; at a big-gap zoom-out (camDist up to
+// MAX_DIST) the camera's horizontal FOV covers far more than 8 units, so the
+// ground shrank to a narrow center strip with empty voids on both sides
+// instead of anchoring to the frame's full width. The shader keys off world-
+// space vWorldPos (not a normalized plane UV — see GRID_FRAG), so widening
+// this costs nothing and can't stretch/distort the grid.
+const GRID_PLANE_HALF_W = MAX_DIST * 2;
 
 // Pools.
 const GATE_POOL = 10;        // simultaneous lap/finish arches
@@ -233,7 +242,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         transparent: true, depthWrite: false, side: THREE.DoubleSide,
       });
       gridMat.extensions = { derivatives: true }; // GL_OES_standard_derivatives (WebGL1 path)
-      const gridGeom = new THREE.PlaneGeometry(2 * ROAD_HALF_W, GRID_PLANE_Z, 1, 1);
+      const gridGeom = new THREE.PlaneGeometry(2 * GRID_PLANE_HALF_W, GRID_PLANE_Z, 1, 1);
       const grid = new THREE.Mesh(gridGeom, gridMat);
       grid.rotation.x = -Math.PI / 2;                  // lay flat in the XZ plane
       grid.position.set(0, 0, 40 - GRID_PLANE_Z / 2);  // covers ~ +40 → -(GRID_PLANE_Z - 40)
