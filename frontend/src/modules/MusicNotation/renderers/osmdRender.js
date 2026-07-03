@@ -17,6 +17,14 @@ function loadOsmd() {
   return osmdModulePromise;
 }
 
+/**
+ * Warm the (heavy, lazily-imported) OSMD engine ahead of the first score open —
+ * call it when the score grid mounts so the chunk is already loaded by the time a
+ * score is selected, cutting first-open latency. Idempotent (shares the cached
+ * import promise); safe to call repeatedly.
+ */
+export function prefetchOsmd() { return loadOsmd(); }
+
 /** MIDI number from OSMD's halfTone (halfTone 48 == C4 == MIDI 60). */
 export const midiOfHalfTone = (halfTone) => halfTone + 12;
 
