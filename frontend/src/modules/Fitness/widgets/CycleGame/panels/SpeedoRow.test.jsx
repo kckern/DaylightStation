@@ -32,9 +32,20 @@ describe('SpeedoRow panel', () => {
       <SpeedoRow riderIds={['a']} riders={riders} riderLive={{ a: { rpm: 0 } }} cadenceBands={[]}
         zoneBox={{ width: 900, height: 600 }} maxGauge={420} />
     );
-    // byHeight = 600-50 = 550, byWidth = 900 → raw 550, clamped to the raised 420 cap.
+    // byHeight = 600-68 (honest chrome budget) = 532, byWidth = 900 → raw 532, clamped to the raised 420 cap.
     const gauge = container.querySelector('.cycle-speedometer');
     expect(gauge.style.width).toBe('420px');
+  });
+
+  it('passes sensorLost through to the rider\'s speedometer (audit game-design #6)', () => {
+    const riders = { a: { displayName: 'A', cumulativeDistanceM: 0 }, b: { displayName: 'B', cumulativeDistanceM: 0 } };
+    const { container, getAllByTestId } = render(
+      <SpeedoRow riderIds={['a', 'b']} riders={riders}
+        riderLive={{ a: { rpm: 0, sensorLost: true }, b: { rpm: 0, sensorLost: false } }} cadenceBands={[]} />
+    );
+    const chips = getAllByTestId('cycle-speedometer-sensor-lost');
+    expect(chips.length).toBe(1);
+    expect(container.querySelectorAll('.cycle-speedometer').length).toBe(2);
   });
 
   it('never shrinks the gauge below minGauge, even before the zone is measured', () => {

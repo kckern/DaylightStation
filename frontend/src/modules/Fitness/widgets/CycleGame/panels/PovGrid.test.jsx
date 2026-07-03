@@ -1,12 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, waitFor } from '@testing-library/react';
 
 // jsdom has no WebGL: mock the three.js stack + camera-controls so the component
 // mounts and we can assert the React-owned avatar overlay (the contract tests cover).
 vi.mock('@/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ debug() {}, info() {}, warn() {}, error() {} }) }),
 }));
+
+// Captures the args every PlaneGeometry() call was constructed with, so a test
+// can assert the ground-plane width without hardcoding the module's internal
+// GRID_PLANE_HALF_W constant.
+const { planeGeomCalls } = vi.hoisted(() => ({ planeGeomCalls: [] }));
 
 vi.mock('camera-controls', () => {
   class CC {
@@ -42,7 +47,7 @@ vi.mock('three', () => {
     PerspectiveCamera: class { constructor() { this.position = new V3(); this.aspect = 1; this.fov = 55; this.matrixWorldInverse = {}; } updateProjectionMatrix() {} },
     WebGLRenderer: class { constructor() { this.domElement = document.createElement('canvas'); } setPixelRatio() {} setSize() {} render() {} dispose() {} },
     BufferGeometry: Geom,
-    PlaneGeometry: class { dispose() {} },
+    PlaneGeometry: class { constructor(w, h) { planeGeomCalls.push([w, h]); } dispose() {} },
     Float32BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     BufferAttribute: class { constructor() { this.needsUpdate = false; } },
     LineBasicMaterial: class { constructor() { this.color = { setHex() {} }; this.opacity = 1; } },
@@ -63,16 +68,32 @@ const riders = {
 };
 
 describe('PovGrid (three.js shell)', () => {
-  beforeEach(() => cleanup());
+  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; });
+
+  // 2026-07-02 fix: the ground plane used to be locked to the playable road's
+  // own width (2*ROAD_HALF_W = 8 world units). At a big-gap zoom-out the
+  // camera's horizontal FOV covers far more than that, so the ground shrank
+  // to a thin center strip instead of anchoring to the frame's full width.
+  // The plane is now sized well past the widest zoom-out — a structural
+  // regression guard, not a pixel-perfect one (the shader is world-space, not
+  // UV-normalized, so widening it can't distort the grid — see PovGrid.jsx).
+  it('sizes the ground plane wide enough to fill the frame at max zoom-out (not locked to the road width)', async () => {
+    render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+    // Scene setup is behind a dynamic import('three') — wait for it to resolve.
+    await waitFor(() => expect(planeGeomCalls.length).toBeGreaterThan(0));
+    const [width] = planeGeomCalls[0];
+    expect(width).toBeGreaterThan(100); // old bug: width was 8
+  });
 
   it('renders the race-pov root', () => {
     const { getByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
     expect(getByTestId('race-pov')).toBeTruthy();
   });
 
-  it('renders one card per moved, non-DNF rider', () => {
+  it('renders a card per non-DNF rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
+    // audit C5: everyone lines up at z=0 from mount so the road is never empty at GO.
     const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={riders} riderLive={{}} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(2); // c has 0 distance
+    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) now parked on the line
   });
 
   it('excludes DNF riders', () => {
@@ -87,9 +108,21 @@ describe('PovGrid (three.js shell)', () => {
     expect(getByTestId('pov-marker').className).toContain('is-ghost');
   });
 
-  it('shows a distance label per card', () => {
-    const { getByText } = render(<PovGrid riderIds={['a']} riders={{ a: { displayName: 'Ada', cumulativeDistanceM: 120 } }} riderLive={{}} />);
-    expect(getByText(/120/)).toBeTruthy();
+  it('shows a fixed-size rank + gap badge per card (no depth-scaled distance label)', () => {
+    const field = {
+      a: { displayName: 'Ada', cumulativeDistanceM: 120 },
+      b: { displayName: 'Ben', cumulativeDistanceM: 80 },
+    };
+    const riderLive = { a: { placement: 1 }, b: { placement: 2 } };
+    const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={field} riderLive={riderLive} />);
+    const badges = getAllByTestId('pov-badge').map((el) => el.textContent);
+    expect(badges).toContain('1st · 120 m'); // leader shows total
+    expect(badges).toContain('2nd · −40 m'); // chaser shows gap-to-next
+  });
+
+  it('renders a horizon leader chip element', () => {
+    const { getByTestId } = render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+    expect(getByTestId('pov-horizon-chip')).toBeTruthy();
   });
 
   it('applies the canonical cg-ghost class to ghost markers on the POV', () => {

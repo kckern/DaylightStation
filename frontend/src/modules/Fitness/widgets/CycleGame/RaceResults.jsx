@@ -12,9 +12,11 @@ const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
 const fmtTime = (s) => {
   if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2, '0')}`;
+  // Round TOTAL seconds first — floor-minutes/round-remainder renders "1:60"
+  // for 119.6s, and the count-up animation passes through 59.5-60 every race.
+  const total = Math.round(s);
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
 };
 
 // Count a number up from 0 to target with an ease-out, unless the user prefers
@@ -41,21 +43,34 @@ function useCountUp(target, active, durationMs = 950) {
 }
 
 // One finishing-order row — slides into place (CSS) with its metric ticking up.
-function ResultRow({ s, riders, winCondition, dnfSet, penalizedSet, index, animate }) {
+function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, penalizedSet, index, animate }) {
   const name = riders[s.userId]?.displayName || s.userId;
   const isDnf = dnfSet.has(s.userId);
+  // Overtime = the race closed around them (mercy-kill window / operator Finish)
+  // while they were still honestly riding — distinct from DNF (idle-quit). They
+  // keep their real metric, just tagged "OT" (audit game-design #7).
+  const isOvertime = !isDnf && overtimeSet.has(s.userId);
   const isPenalized = penalizedSet.has(s.userId);
-  const isWinner = s.placement === 1 && !isDnf;
+  const finished = s.finishTimeS != null;
+  // Time races never stamp finishTimeS, so "finished" must not gate the crown —
+  // exclude only DNF/overtime (a race closed before ANY finisher has no winner).
+  const isWinner = s.placement === 1 && !isDnf && !isOvertime;
   const rider = riders[s.userId] || {};
   const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
   const sourceId = isGhost ? resolveParticipantIdentity(String(s.userId)).sourceId : s.userId;
   const avatarSrc = rider.avatarSrc || `${AVATAR_BASE}/${sourceId}`;
   const medalClass = s.placement <= 3 ? ` race-results__row--p${s.placement}` : '';
 
-  const counted = useCountUp(isDnf ? NaN : (winCondition === 'distance' ? s.finishTimeS : s.distanceM), animate);
+  // Finishers headline the win-condition's counterpart metric (distance race →
+  // finish time; time race → distance covered), exactly as before. Anyone who
+  // did NOT finish — overtime included — has no finish time, so they always show
+  // their real distance traveled; DNF alone masks it with the literal 'DNF'.
+  const metricTarget = isDnf ? NaN : finished ? (winCondition === 'distance' ? s.finishTimeS : s.distanceM) : s.distanceM;
+  const counted = useCountUp(metricTarget, animate);
   const metric = isDnf
     ? 'DNF'
-    : winCondition === 'distance' ? fmtTime(counted) : formatDistance(counted);
+    : finished ? (winCondition === 'distance' ? fmtTime(counted) : formatDistance(counted))
+    : formatDistance(counted);
 
   return (
     <li
@@ -77,15 +92,20 @@ function ResultRow({ s, riders, winCondition, dnfSet, penalizedSet, index, anima
             <span className="race-results__penalty" title="False start penalty" aria-label="false start penalty">⏱️</span>
           )}
         </span>
-        <span className={`race-results__metric${isDnf ? ' race-results__metric--dnf' : ''}`}>{metric}</span>
+        <span className={`race-results__metric${isDnf ? ' race-results__metric--dnf' : ''}`}>
+          {metric}
+          {isOvertime && (
+            <span className="race-results__ot-tag" title="Still riding when the race closed" aria-label="overtime">OT</span>
+          )}
+        </span>
       </span>
     </li>
   );
 }
 ResultRow.propTypes = {
   s: PropTypes.object.isRequired, riders: PropTypes.object.isRequired,
-  winCondition: PropTypes.string, dnfSet: PropTypes.instanceOf(Set), penalizedSet: PropTypes.instanceOf(Set),
-  index: PropTypes.number, animate: PropTypes.bool
+  winCondition: PropTypes.string, dnfSet: PropTypes.instanceOf(Set), overtimeSet: PropTypes.instanceOf(Set),
+  penalizedSet: PropTypes.instanceOf(Set), index: PropTypes.number, animate: PropTypes.bool
 };
 
 /**
@@ -97,13 +117,15 @@ ResultRow.propTypes = {
  * countdown. Distance races headline finish time; time races headline distance.
  */
 export default function RaceResults({
-  standings = [], riders = {}, winCondition = 'distance', dnf = [], penalized = [],
+  standings = [], riders = {}, winCondition = 'distance', dnf = [], overtime = [], penalized = [],
   lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null,
-  ladderNotes = []
+  ladderNotes = [], saveFailed = false
 }) {
   const dnfSet = new Set(dnf);
+  const overtimeSet = new Set(overtime);
   const penalizedSet = new Set(penalized);
   const anyDnf = standings.some((s) => dnfSet.has(s.userId));
+  const anyOvertime = standings.some((s) => !dnfSet.has(s.userId) && overtimeSet.has(s.userId));
   const anyPenalty = standings.some((s) => penalizedSet.has(s.userId));
   // Only review splits when laps were actually completed. With no completed laps
   // SplitsChart falls back to a "live order" list that just duplicates the podium
@@ -115,10 +137,15 @@ export default function RaceResults({
     <div className="race-results" data-testid="race-results">
       <div className="race-results__eyebrow">Finish</div>
       <h2 className="race-results__title">Results</h2>
+      {saveFailed && (
+        <div className="race-results__save-failed" data-testid="race-results-save-failed" role="alert">
+          Race could not be saved — it won&rsquo;t appear in history or the ladder
+        </div>
+      )}
       <ol className="race-results__list">
         {standings.map((s, i) => (
           <ResultRow key={s.userId} s={s} riders={riders} winCondition={winCondition}
-            dnfSet={dnfSet} penalizedSet={penalizedSet} index={i} animate={animate} />
+            dnfSet={dnfSet} overtimeSet={overtimeSet} penalizedSet={penalizedSet} index={i} animate={animate} />
         ))}
       </ol>
 
@@ -137,10 +164,13 @@ export default function RaceResults({
         </div>
       )}
 
-      {(anyDnf || anyPenalty) && (
+      {(anyDnf || anyOvertime || anyPenalty) && (
         <dl className="race-results__legend" data-testid="race-results-legend">
           {anyDnf && (
             <div className="race-results__legend-item"><dt>DNF</dt><dd>Did Not Finish — stopped pedaling</dd></div>
+          )}
+          {anyOvertime && (
+            <div className="race-results__legend-item"><dt>OT</dt><dd>Still riding when the race closed</dd></div>
           )}
           {anyPenalty && (
             <div className="race-results__legend-item"><dt aria-hidden="true">⏱️</dt><dd>False start — pedaling before the green light</dd></div>
@@ -169,11 +199,13 @@ RaceResults.propTypes = {
   riders: PropTypes.object,
   winCondition: PropTypes.string,
   dnf: PropTypes.array,
+  overtime: PropTypes.array,
   penalized: PropTypes.array,
   lapLengthM: PropTypes.number,
   elapsedS: PropTypes.number,
   secondsLeft: PropTypes.number,
   animate: PropTypes.bool,
   onExit: PropTypes.func,
-  ladderNotes: PropTypes.arrayOf(PropTypes.string)
+  ladderNotes: PropTypes.arrayOf(PropTypes.string),
+  saveFailed: PropTypes.bool
 };

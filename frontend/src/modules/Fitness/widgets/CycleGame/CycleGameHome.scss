@@ -189,3 +189,29 @@
   // Pinned to the lobby's top-left, above the scanline/content layers.
   &--corner { position: absolute; top: 20px; left: 20px; z-index: 3; }
 }
+
+// ── Recovered-race banner — a small, self-dismissing (8s, see
+//    RECOVERED_NOTICE_DURATION_MS) notice that a crash-recovered race was
+//    salvaged to history (audit C1 follow-up; recovery used to be log-only).
+.cgh-recovered-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(t.$cg-cyan, 0.4);
+  background: t.$cg-panel-2;
+  color: t.$cg-text;
+  font-family: t.$cg-display;
+  font-size: 1.15rem;
+  font-weight: 600;
+  box-shadow: 0 0 14px rgba(33, 230, 255, 0.25);
+  animation: cgh-notice-in 0.3s ease both;
+}
+
+@keyframes cgh-notice-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

@@ -4,13 +4,20 @@
 //    records rail; standings rows + all-time record mirror HighScores/History
 //    density, and the CTA reuses the roster's cyan GO button treatment.
 .cgh-featured {
-  border: 1px solid t.$cg-border;
-  border-radius: 14px;
-  padding: 14px;
-  background: t.$cg-panel;
+  // Borderless inside the records rail — the rail is already a panel; a
+  // nested panel-in-panel wasted the rail's scarce vertical space.
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid t.$cg-border;
+
+  &__more {
+    list-style: none;
+    color: t.$cg-muted;
+    font-size: 0.78rem;
+    padding-left: 0.2rem;
+  }
 
   &__head {
     display: flex;

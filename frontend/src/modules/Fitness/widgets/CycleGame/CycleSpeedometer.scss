@@ -37,51 +37,90 @@
   }
   &__tick { stroke: rgba(255,255,255,0.4); stroke-width: 1.2; }
   &__tick--major { stroke: rgba(255,255,255,0.8); stroke-width: 2; }
-  &__tick-label { fill: cg.$cg-muted; font-size: 12px; font-weight: 600; font-family: inherit; }
+  // Was a fixed 12px (didn't scale with the gauge at all, unlike the rest of the
+  // T10 em-cascade, and sat well under the 1.1rem 10-foot floor at every size).
+  // `em` ties it to the gauge's own ambient font-size (inherited from
+  // `.cycle-speedometer__gauge`'s inline fontSize) so it scales 96px→360px like
+  // the rest of the overlay; `max()` guarantees the floor at the small end.
+  &__tick-label { fill: cg.$cg-muted; font-size: max(0.6em, 1.1rem); font-weight: 600; font-family: inherit; }
   // Cyan telemetry needle with a neon glow.
   &__needle { stroke: cg.$cg-cyan; stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(33, 230, 255, 0.8)); }
-  &__needle-group { transition: transform 0.18s ease; }
+  // Needle rotation is driven imperatively by the shared motion clock (linear lerp
+  // across the 1 Hz tick) — NO CSS transition here. The old `transition: transform
+  // 0.18s ease` was one of the five desynced motion clocks (it also restarted on every
+  // React render, causing velocity discontinuities).
   &__hub { fill: cg.$cg-cyan; }
 
   // Avatar centered in the gauge. Promoted to its own compositor layer so the
-  // needle's per-tick repaint (it carries a drop-shadow filter, which repaints its
-  // region each frame of the 0.18s transition) does not flush/flicker the avatar
-  // image overlaid on the same SVG — the avatar DOM is otherwise fully stable.
+  // needle's per-frame repaint (it carries a drop-shadow filter, which repaints its
+  // region each animation frame) does not flush/flicker the avatar image overlaid on
+  // the same SVG — the avatar DOM is otherwise fully stable.
   &__avatar {
     position: relative; display: flex; align-items: center; justify-content: center;
     transform: translateZ(0); will-change: transform; backface-visibility: hidden;
   }
+  // Multiplier PILL (2026-07-02 legibility fix) — anchored top-right of the
+  // GAUGE itself (position/size come straight from JS's multiplierChipBox, in
+  // px relative to this &__gauge's own top-left corner — the same origin
+  // computeOverlayBoxes uses), not glued to the avatar. A pill's width is
+  // independent of its height, so "×1.4" stays legible at a floor size (see
+  // MULTIPLIER_CHIP_MIN_WIDTH/HEIGHT_PX) at any gauge size — the old circular
+  // badge, capped at 30% of the avatar's diameter, shrank to an unreadable
+  // ~11px dot at the wide-mode floor and lost its text entirely.
   &__multiplier {
-    // Top-right of the avatar — the HR readout owns the bottom 25% band, so the
-    // multiplier moved up here to stop covering the heart-rate number.
-    position: absolute; right: -8%; top: 2%;
+    position: absolute;
     z-index: 10; // above the avatar (its ring/gauge use z-index up to ~6)
-    min-width: 1.8em; padding: 0.18em 0.5em;
+    display: flex; align-items: center; justify-content: center;
     border-radius: 999px; border: 2px solid cg.$cg-bg;
-    color: #1a1205; font-weight: 800; font-size: 1.35rem; line-height: 1; text-align: center;
+    color: #1a1205; font-weight: 800; line-height: 1; text-align: center;
+    font-size: 1.1rem; // race-screen floor — this must stay readable at a glance
+    white-space: nowrap;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
 
-  // Cadence (rpm) is secondary — small + muted in the upper portion, above the
-  // avatar. The needle + lit band carry cadence; these digits are just the exact value.
-  &__rpm {
-    @include cg.cg-numeral(cg.$cg-muted);
-    position: absolute; left: 0; right: 0; top: 8%;
-    text-align: center; color: cg.$cg-muted; font-size: 0.85rem;
+  // Speed (hero) + rpm (sub-line) share the free LOWER hemisphere (audit UX
+  // §3.1) — the dial's ticks/labels only ever occupy the top half (see
+  // speedometerOverlayLayout.js), so this block can never collide with them.
+  // Positioned as a percentage of the gauge box (== speedometerOverlayLayout's
+  // READOUT_TOP_RATIO), sized in em off the gauge's own font-size (set inline
+  // per-instance to gaugePx * OVERLAY_FONT_RATIO) so it scales collision-free
+  // from the 96px wide-mode floor to the 360px solo/sidebar max.
+  &__lower-readout {
+    position: absolute; left: 0; right: 0; top: 73%; bottom: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 0.05em;
     pointer-events: none;
   }
-  &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: 0.62rem; font-style: normal; }
-
-  // Effective speed — the hero readout in the lower portion of the gauge, where rpm
-  // used to be. Cyan telemetry numeral.
+  // Every em-scaled size below is wrapped in max(…, 1.1rem) — audit UX §7 /
+  // T11: at the 96px wide-mode floor gauge, overlayFontPx = 96 * 0.16 =
+  // 15.36px, so even the 1em hero drops under the 17.6px 10-foot floor before
+  // the clamp. Above roughly a 110px gauge the em term already wins and these
+  // clamps are no-ops — the em cascade is otherwise untouched.
   &__speed {
     @include cg.cg-numeral(cg.$cg-cyan);
-    position: absolute; left: 0; right: 0; bottom: 7%;
-    text-align: center; color: cg.$cg-text; font-size: 1.5rem;
+    font-size: max(1em, 1.1rem); line-height: 1; color: cg.$cg-text;
     text-shadow: 0 0 10px rgba(33, 230, 255, 0.35);
-    pointer-events: none;
   }
-  &__speed-unit { color: cg.$cg-muted; font-weight: 500; font-size: 0.78rem; font-style: normal; }
+  &__speed-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, 1.1rem); font-style: normal; }
+  &__rpm {
+    @include cg.cg-numeral(cg.$cg-muted);
+    // T10 carried this MUST forward: the rpm sub-line lost its explicit
+    // 1.1rem floor when it moved into the em-scaled overlay. Restored here.
+    font-size: max(0.55em, 1.1rem); line-height: 1; color: cg.$cg-muted;
+  }
+  &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, 1.1rem); font-style: normal; }
+  // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
+  // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
+  // Warm/danger red, matching the penalty overlay's palette, so it reads as
+  // "something's wrong" the same way a false-start does. Same T10-carried MUST
+  // as __rpm above — explicit floor so "SENSOR" never renders below 17.6px
+  // even though it inherits __rpm's (also-floored) computed size.
+  &__sensor-lost-chip {
+    display: inline-block;
+    font-size: max(1em, 1.1rem);
+    color: cg.$cg-danger; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; text-shadow: 0 0 8px rgba(cg.$cg-danger, 0.6);
+  }
 
   // Odometer sits BELOW the gauge (lower) — a pill tinted to the rider's lane colour
   // (same --cg-rider-tint the gauge dial + chart lanes use) so the distance readout is
@@ -96,10 +135,14 @@
     padding: 6px 18px; letter-spacing: 0.01em;
     box-shadow: 0 0 14px color-mix(in srgb, var(--cg-rider-tint, transparent) 45%, transparent);
   }
+  // SVG glyph (audit UX §6.3 — 🥇 emoji → the shared MedalIcon), same footprint
+  // the emoji used to occupy.
   &__leader-medal {
     position: absolute; top: -0.6em; left: -0.4em;
-    font-size: 1.6rem; line-height: 1; pointer-events: none;
+    line-height: 1; pointer-events: none;
+    color: cg.$cg-gold;
     filter: drop-shadow(0 0 6px rgba(255, 213, 74, 0.6));
+    svg { width: 1.6rem; height: 1.6rem; display: block; }
   }
 
   // FINISHED — a rider who crossed the line in a distance race. The gauge is
@@ -111,16 +154,20 @@
     gap: 2px; pointer-events: none;
     background: radial-gradient(circle at center, rgba(5, 6, 10, 0.78) 0%, rgba(5, 6, 10, 0.35) 70%, transparent 100%);
   }
-  &__finished-flag { font-size: 1.8rem; line-height: 1; }
+  // SVG glyph (audit UX §6.3 — 🏁 emoji → the shared RaceFlagIcon).
+  &__finished-flag {
+    display: flex; line-height: 1; color: cg.$cg-gold;
+    svg { width: 1.8rem; height: 1.8rem; display: block; }
+  }
   &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
   &__finished-label {
-    color: cg.$cg-text; font-weight: 800; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: cg.$cg-text; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
   }
 
   // FALSE START — a rider pedalling at the green light. Their meter is locked
   // (no distance) for the penalty window; the gauge still shows real RPM so they
   // can see pedalling isn't counting. Red is the danger semantic — kept.
-  &--penalized &__needle { stroke: #ff5a5a; filter: drop-shadow(0 0 4px rgba(255, 90, 90, 0.8)); }
+  &--penalized &__needle { stroke: cg.$cg-danger; filter: drop-shadow(0 0 4px rgba(cg.$cg-danger, 0.8)); }
   &__penalty {
     position: absolute; inset: 0; z-index: 21;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -128,23 +175,27 @@
     background: radial-gradient(circle at center, rgba(60, 6, 6, 0.78) 0%, rgba(40, 4, 4, 0.32) 70%, transparent 100%);
     animation: cg-penalty-pulse 0.6s ease-in-out infinite;
   }
-  &__penalty-icon { font-size: 1.7rem; line-height: 1; }
-  &__penalty-title { color: #ff6b6b; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
-  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; }
+  // SVG glyph (audit UX §6.3 — ⛔ emoji → the shared NoEntryIcon).
+  &__penalty-icon {
+    display: flex; line-height: 1; color: cg.$cg-danger;
+    svg { width: 1.7rem; height: 1.7rem; display: block; }
+  }
+  &__penalty-title { color: cg.$cg-danger; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.14em; text-transform: uppercase; } // was 0.66rem
   // Draining countdown bar — fill width = remaining/total, so it empties as the
   // mandatory window runs down.
   &__penalty-bar {
     margin-top: 5px; width: 64%; height: 6px; border-radius: 999px;
-    background: rgba(255, 90, 90, 0.22); overflow: hidden;
+    background: rgba(cg.$cg-danger, 0.22); overflow: hidden;
   }
   &__penalty-fill {
     display: block; height: 100%; border-radius: 999px;
-    background: #ff5a5a; box-shadow: 0 0 8px rgba(255, 90, 90, 0.8);
+    background: cg.$cg-danger; box-shadow: 0 0 8px rgba(cg.$cg-danger, 0.8);
     transition: width 0.25s linear;
   }
   // Timer served, still pedalling — the gate is now "return to RPM 0".
   &__penalty-stop {
-    color: #fff; font-weight: 900; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: #fff; font-weight: 900; font-size: 1.1rem; letter-spacing: 0.1em; text-transform: uppercase; // was 0.78rem
     margin-top: 3px; padding: 2px 8px; border-radius: 6px;
     background: rgba(255, 60, 60, 0.32); border: 1px solid rgba(255, 120, 120, 0.7);
     animation: cg-penalty-pulse 0.5s ease-in-out infinite;

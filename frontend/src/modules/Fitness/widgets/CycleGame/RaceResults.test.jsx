@@ -24,6 +24,24 @@ describe('RaceResults', () => {
     expect(getByTestId('result-row-felix').textContent).toContain('DNF');
     expect(getByTestId('race-results-legend').textContent).toContain('Did Not Finish');
   });
+  it('shows an overtime rider their REAL distance plus an OT tag, and an OT legend — never DNF', () => {
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} overtime={['felix']} animate={false} />
+    );
+    const row = getByTestId('result-row-felix');
+    expect(row.textContent).toContain('2.71 km'); // real distance (2710 m), not masked
+    expect(row.textContent).not.toContain('DNF');
+    expect(row.textContent).toContain('OT');
+    expect(getByTestId('race-results-legend').textContent).toContain('Still riding when the race closed');
+  });
+  it('DNF still wins over overtime if a rider is somehow flagged both (defensive) — renders DNF, no OT tag', () => {
+    const { getByTestId } = render(
+      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={['felix']} overtime={['felix']} animate={false} />
+    );
+    const row = getByTestId('result-row-felix');
+    expect(row.textContent).toContain('DNF');
+    expect(row.textContent).not.toContain('OT');
+  });
   it('flags penalized riders with a badge and a false-start legend', () => {
     const { getByTestId } = render(
       <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} penalized={['felix']} />
@@ -41,6 +59,19 @@ describe('RaceResults', () => {
     const time = render(<RaceResults standings={standings} riders={riders} winCondition="time" dnf={[]} animate={false} />);
     expect(within(time.container).getByTestId('result-row-milo').textContent).toContain('3.00 km'); // 3000 m
   });
+  it('crowns the time-race winner even though time races never stamp finishTimeS', () => {
+    // Realistic time-race standings: NOBODY has a finishTimeS (the cap ends the race).
+    const timeStandings = [
+      { userId: 'milo', placement: 1, finishTimeS: null, distanceM: 3000 },
+      { userId: 'felix', placement: 2, finishTimeS: null, distanceM: 2710 }
+    ];
+    const { container } = render(
+      <RaceResults standings={timeStandings} riders={riders} winCondition="time" dnf={[]} animate={false} />
+    );
+    const row = within(container).getByTestId('result-row-milo').closest('li');
+    expect(row.className).toContain('is-winner');
+    expect(row.textContent).toContain('👑');
+  });
   it('renders an exit button that calls onExit', () => {
     const onExit = vi.fn();
     const { getByTestId } = render(
@@ -57,5 +88,11 @@ describe('RaceResults', () => {
     expect(box.textContent).toContain('Ladder lead');
     rerender(<RaceResults standings={[]} riders={{}} ladderNotes={[]} />);
     expect(screen.queryByTestId('race-results-ladder')).toBeNull();
+  });
+  it('shows the not-saved banner only when saveFailed', () => {
+    const { rerender } = render(<RaceResults standings={[]} riders={{}} saveFailed />);
+    expect(screen.getByTestId('race-results-save-failed').textContent).toContain('could not be saved');
+    rerender(<RaceResults standings={[]} riders={{}} saveFailed={false} />);
+    expect(screen.queryByTestId('race-results-save-failed')).toBeNull();
   });
 });

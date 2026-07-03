@@ -83,13 +83,16 @@ test.describe('Cycle Game — layout modes', () => {
   test.use({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
   test.setTimeout(180000);
 
-  test('2 riders → sidebar mode (chart+splits+speedo main, POV+oval sidebar)', async ({ page }) => {
+  test('2 riders → sidebar mode (chart+speedo main, POV + standings tower)', async ({ page }) => {
     const bikeIds = await bootToRacing(page, 2);
 
     // Assert layout immediately at racing phase — layout is set by field size, not distance.
+    // Phase 2 (T8): the standings tower replaced the oval in the live panel map.
     await expect(page.getByTestId('race-layout')).toHaveAttribute('data-mode', 'sidebar');
     await expect(page.getByTestId('race-pov')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('zone-oval')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('zone-tower')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('standings-tower')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('zone-oval')).toHaveCount(0);
 
     await page.screenshot({ path: `${SHOT}/sidebar.png` });
     // eslint-disable-next-line no-console
@@ -113,7 +116,7 @@ test.describe('Cycle Game — layout modes', () => {
     expect(maxDist, 'riders accumulated real distance').toBeGreaterThan(10);
   });
 
-  test('4 riders → wide mode (chart|splits|POV top row, full-width speedo, no oval)', async ({ page }) => {
+  test('4 riders → wide mode (chart|POV top row, full-width speedo, standings tower column, no oval)', async ({ page }) => {
     const bikeIds = await bootToRacing(page, 4);
 
     if (bikeIds.length < 4) {
@@ -128,6 +131,8 @@ test.describe('Cycle Game — layout modes', () => {
     // Assert layout immediately at racing phase — layout is set by field size, not distance.
     await expect(page.getByTestId('race-layout')).toHaveAttribute('data-mode', 'wide');
     await expect(page.getByTestId('race-pov')).toBeVisible({ timeout: 5000 });
+    // Phase 2 (T8): wide mode gains the standings tower column; the oval is gone.
+    await expect(page.getByTestId('zone-tower')).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId('zone-oval')).toHaveCount(0);
 
     await page.screenshot({ path: `${SHOT}/wide.png` });

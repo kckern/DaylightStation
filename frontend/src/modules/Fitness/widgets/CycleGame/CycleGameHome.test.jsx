@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import CycleGameHome from './CycleGameHome.jsx';
 
 const bikes = [
@@ -461,6 +461,43 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace').querySelector('.cgh-slot__add')).toBeNull();
   });
 
+  // audit C6 / user feedback 2026-07-02: a selected ghost used to be
+  // invisible until the race screen mounted — it now lines up in the SAME
+  // starting grid as the real bikes.
+  it('shows a phantom grid slot for each selected ghost rider, alongside the real bikes', () => {
+    const ghostRoster = [
+      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+    ];
+    const { getByTestId, queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} ghostRoster={ghostRoster} />
+    );
+    // Real bikes still render.
+    expect(getByTestId('bike-cycle_ace')).toBeTruthy();
+    expect(getByTestId('bike-tricycle')).toBeTruthy();
+    // The ghost gets its own lane in the same grid.
+    const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:kckern');
+    expect(ghostSlot.textContent).toContain('KC 👻');
+    expect(ghostSlot.className).toContain('cgh-slot--ghost');
+  });
+
+  it('does not render any ghost slot when no ghost is selected', () => {
+    const { queryByTestId } = render(
+      <CycleGameHome bikes={bikes} people={people} records={[]} />
+    );
+    expect(queryByTestId(/ghost-slot-/)).toBeNull();
+  });
+
+  it('shows the ghost lane even with zero physical bikes (never the "no bikes" empty state)', () => {
+    const ghostRoster = [
+      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+    ];
+    const { getByTestId, queryByText } = render(
+      <CycleGameHome bikes={[]} people={people} records={[]} ghostRoster={ghostRoster} />
+    );
+    expect(getByTestId('ghost-slot-ghost:20260701120000:kckern')).toBeTruthy();
+    expect(queryByText(/No bikes detected/i)).toBeNull();
+  });
+
   it('renders the featured-course card and forwards Ride It', () => {
     const onRideFeatured = vi.fn();
     const featured = {
@@ -474,6 +511,11 @@ describe('CycleGameHome', () => {
     );
     fireEvent.click(getByTestId('featured-ride'));
     expect(onRideFeatured).toHaveBeenCalledTimes(1);
+    // REGRESSION GUARD: the card must live inside the records rail, NEVER the
+    // main column — there it displaced the picker/grid/start on the fixed-height
+    // unscrollable garage touchscreen and made the lobby unusable (2026-07-02).
+    const card = getByTestId('featured-course-card');
+    expect(getByTestId('cycle-game-records').contains(card)).toBe(true);
   });
 
   it('renders no featured card when the ladder is unavailable', () => {
@@ -497,5 +539,28 @@ describe('CycleGameHome', () => {
     expect(card.classList.contains('is-focused')).toBe(false); // nothing focused yet
     fireEvent.click(card);                               // first tap focuses
     expect(card.classList.contains('is-focused')).toBe(true);
+  });
+
+  it('shows the recovered-race banner and self-dismisses after 8s (audit C1 follow-up)', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByTestId, queryByTestId } = render(
+        <CycleGameHome bikes={bikes} people={people} records={[]}
+          recoveredNotice="Recovered your interrupted race — saved to history" />
+      );
+      const banner = getByTestId('cycle-recovered-banner');
+      expect(banner.textContent).toContain('Recovered your interrupted race');
+      act(() => { vi.advanceTimersByTime(7999); });
+      expect(queryByTestId('cycle-recovered-banner')).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(2); });
+      expect(queryByTestId('cycle-recovered-banner')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders no banner when recoveredNotice is absent', () => {
+    const { queryByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={[]} />);
+    expect(queryByTestId('cycle-recovered-banner')).toBeNull();
   });
 });

@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { uiLog } from './home/uiLog.js';
 import { RaceFlagIcon, VolumeIcon } from './home/icons.jsx';
 import RaceTypePicker from './home/RaceTypePicker.jsx';
 import BikeSlot from './home/BikeSlot.jsx';
+import GhostSlot from './home/GhostSlot.jsx';
 import RiderPicker from './home/RiderPicker.jsx';
 import GhostPicker from './home/GhostPicker.jsx';
 import VolumeModal from './home/VolumeModal.jsx';
@@ -11,6 +12,10 @@ import HighScores from './home/HighScores.jsx';
 import HistoryTable from './home/HistoryTable.jsx';
 import FeaturedCourseCard from './home/FeaturedCourseCard.jsx';
 import './CycleGameHome.scss';
+
+// How long the "recovered your interrupted race" banner stays up before it
+// self-dismisses (audit C1 follow-up — recovery used to be log-only).
+const RECOVERED_NOTICE_DURATION_MS = 8000;
 
 /**
  * Cycle-game home (the `idle` lifecycle state). A designed lobby: race-type
@@ -32,6 +37,7 @@ export default function CycleGameHome({
   highScores = [],
   onSelectRecord,
   ghost = null,
+  ghostRoster = [],
   ghostCandidates = [],
   onSelectGhost,
   onClearGhost,
@@ -42,11 +48,22 @@ export default function CycleGameHome({
   canStart = false,
   featured = null,
   onRideFeatured = null,
-  resolveName = (id) => id
+  resolveName = (id) => id,
+  recoveredNotice = null
 }) {
   const [pickerBike, setPickerBike] = useState(null);
   const [showGhostPicker, setShowGhostPicker] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
+  // Self-dismissing: a fresh notice text re-arms the timer; the container also
+  // clears its own state on timeout/race-start, but the DOM here hides itself
+  // independently so a stale prop can never linger visually past 8s.
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  useEffect(() => {
+    if (!recoveredNotice) { setNoticeVisible(false); return undefined; }
+    setNoticeVisible(true);
+    const id = setTimeout(() => setNoticeVisible(false), RECOVERED_NOTICE_DURATION_MS);
+    return () => clearTimeout(id);
+  }, [recoveredNotice]);
 
   const peopleById = useMemo(() => {
     const map = new Map();
@@ -66,6 +83,11 @@ export default function CycleGameHome({
 
   return (
     <div className="cycle-game-home" data-testid="cycle-game-home">
+      {noticeVisible && recoveredNotice && (
+        <div className="cgh-recovered-banner" data-testid="cycle-recovered-banner" role="status" aria-live="polite">
+          {recoveredNotice}
+        </div>
+      )}
       <button
         type="button"
         className={`cgh-volume-fab cgh-volume-fab--corner${masterMuted ? ' is-muted' : ''}`}
@@ -82,8 +104,6 @@ export default function CycleGameHome({
           <p className="cycle-game-home__subtitle">Pick a race, line up the riders, and go.</p>
         </header>
 
-        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
-
         <RaceTypePicker
           raceType={raceType}
           onSelectRaceType={onSelectRaceType}
@@ -96,7 +116,7 @@ export default function CycleGameHome({
 
         <section className="cgh-grid-section">
           <div className="cgh-section-label">Starting grid</div>
-          {bikes.length === 0 ? (
+          {bikes.length === 0 && ghostRoster.length === 0 ? (
             <div className="cgh-empty">No bikes detected (equipment with a cadence sensor).</div>
           ) : (
             <div className="cgh-grid">
@@ -108,6 +128,12 @@ export default function CycleGameHome({
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
+              ))}
+              {/* Phantom lanes for a selected ghost race (audit C6 / user
+                  feedback 2026-07-02) — a ghost is invisible no longer; it
+                  lines up in the SAME grid as the real riders. */}
+              {ghostRoster.map((r, i) => (
+                <GhostSlot key={r.userId} rider={r} lane={bikes.length + i + 1} />
               ))}
             </div>
           )}
@@ -128,6 +154,11 @@ export default function CycleGameHome({
       </div>
 
       <aside className="cycle-game-home__records" data-testid="cycle-game-records">
+        {/* Weekly ladder lives in the records rail — NEVER in the main column,
+            where its height displaced the picker/grid/start on the fixed-height
+            (unscrollable) garage touchscreen and made the lobby unusable. */}
+        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
+
         <HighScores highScores={highScores} onSelectRecord={onSelectRecord} />
 
         <div className="cgh-section-label">History</div>
@@ -180,6 +211,11 @@ CycleGameHome.propTypes = {
   highScores: PropTypes.array,
   onSelectRecord: PropTypes.func,
   ghost: PropTypes.object,
+  ghostRoster: PropTypes.arrayOf(PropTypes.shape({
+    userId: PropTypes.string.isRequired,
+    displayName: PropTypes.string,
+    avatarSrc: PropTypes.string,
+  })),
   ghostCandidates: PropTypes.array,
   onSelectGhost: PropTypes.func,
   onClearGhost: PropTypes.func,
@@ -190,5 +226,6 @@ CycleGameHome.propTypes = {
   canStart: PropTypes.bool,
   featured: PropTypes.object,
   onRideFeatured: PropTypes.func,
-  resolveName: PropTypes.func
+  resolveName: PropTypes.func,
+  recoveredNotice: PropTypes.string
 };
