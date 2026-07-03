@@ -16,6 +16,28 @@ files) into a clean, canonical, queryable loop library.
 3. **Reorganize** into a role-first, kebab-case tree and emit a queryable
    `index.yml` (with roman-numeral progression signatures via the shared theory
    core).
+4. **Percussion (grooves)** — content-detected, no flag: tracks are
+   drum-detected via `shared/music/percussion.isDrumTrack` (channel 9
+   authoritative; ≥60% GM_DRUM pitch coverage as fallback). A whole file
+   ingests as `type: groove` only when it has **channel-9 drum evidence** and
+   drum tracks carry ≥90% of its notes; channel-9 drums mixed with pitched
+   material are skipped with a report line. Coverage-only detections (no
+   channel-9 track anywhere) **never** change a file's type — basslines/riffs
+   in the kick/snare pitch region routinely fake the coverage bar (76 confirmed
+   false positives on the real packs) — they stay harmonic and are only counted
+   in the report as hygiene suggestions. Grooves land under `percussion/`, get
+   `feel` (`straight`/`swing` via `detectFeel`), `barSpan`, and `bpm` (filename,
+   else MIDI header tempo) — and NO key/roman/availableKeys fields. They are
+   copied verbatim (never transposed: shifting pitches would remap drum
+   pieces), and `loop-enrich.cli.mjs` skips them (no harmonic content).
+5. **Write safety** — enrichment fields (`timeline`/`timelineRoot`/
+   `specificity`/`rootSource`/`title`/`signature`/`needsReview*`) belong to
+   `loop-enrich.cli.mjs` + `enrich-index`; the ingest never computes them. On
+   `--write` over an existing library it first backs up the old index to
+   `index.yml.bak-YYYYMMDD-HHmmss`, then carries each entry's enrichment
+   forward (matched by slug) when the produced `.mid` bytes equal the old
+   entry's file; changed content drops the stale enrichment for the next
+   enrichment run to recompute.
 
 ## Layout produced
 
@@ -23,7 +45,7 @@ files) into a clean, canonical, queryable loop library.
 media/midi/loops/
   chord-progressions/{niko,famous/<artist>}/<mood?>/<slug>.mid
   melodies/{starters,famous/<artist>}/<mood?>/<slug>.mid
-  basslines/… arps/… ideas/…
+  basslines/… arps/… ideas/… percussion/…
   index.yml
 ```
 
@@ -48,7 +70,7 @@ Dry-run is the default and writes nothing. `--src` defaults to
 | File | Responsibility |
 |------|----------------|
 | `loopMeta.mjs` | filename → `LoopEntry` metadata (pure) |
-| `ingestCore.mjs` | canonical signature, dedup-merge, target path (pure) |
+| `ingestCore.mjs` | canonical signature, dedup-merge, groove gate, enrichment carry-over, target path (pure) |
 | `../midi-ingest.mjs` | thin I/O: walk, read SMF (`@tonejs/midi`), write tree + index |
 
 Shared theory core (used by both this CLI and the kiosk UI):

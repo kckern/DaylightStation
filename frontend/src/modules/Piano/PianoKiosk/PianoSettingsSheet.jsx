@@ -3,6 +3,8 @@ import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
+import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
+import { useArmedAction } from './useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
@@ -31,9 +33,28 @@ export default function PianoSettingsSheet({ open, onClose }) {
   const { connected, inputName, status, connect } = usePianoMidi();
   const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
   const { config, pianoId } = usePianoKioskConfig();
+  const { turnOffScreen } = useScreenControl();
   const bluetooth = config?.bluetooth || null;
   const [tab, setTab] = useState('sound');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Transient failure note surfaced when turnOffScreen() reports no-path/reject,
+  // so a dead-looking button isn't silent to the operator.
+  const [screenError, setScreenError] = useState(null);
+
+  // 2-tap confirm for screen-off — avoids an accidental mid-play blackout on a
+  // touch kiosk. First tap arms; a second tap within 3s fires; else it disarms.
+  const { armed: screenArmed, trigger: triggerScreenOff } = useArmedAction(async () => {
+    logger.info('piano.settings.screen-off', {});
+    const res = await turnOffScreen();
+    setScreenError(res?.ok === false ? screenOffFailureMessage(res) : null);
+  }, { armMs: 3000 });
+
+  // Auto-clear the failure note after a few seconds.
+  useEffect(() => {
+    if (!screenError) return undefined;
+    const t = setTimeout(() => setScreenError(null), 4000);
+    return () => clearTimeout(t);
+  }, [screenError]);
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -128,6 +149,22 @@ export default function PianoSettingsSheet({ open, onClose }) {
               </button>
             )}
           </div>
+        </section>
+
+        {/* ── Display (manual screen-off — burn-in kill switch) ── */}
+        <section className="piano-settings__section">
+          <h3 className="piano-settings__eyebrow">Display</h3>
+          <button
+            type="button"
+            className={`piano-settings__screen-off${screenArmed ? ' is-armed' : ''}`}
+            aria-live="polite"
+            onClick={triggerScreenOff}
+          >
+            {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
+          </button>
+          {screenError && (
+            <p className="piano-settings__screen-error" role="status" aria-live="polite">{screenError}</p>
+          )}
         </section>
 
         {/* ── MIDI monitor ── */}
