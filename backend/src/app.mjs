@@ -86,6 +86,7 @@ import {
 
 import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
 import { createScreenPresenceService } from './0_system/bootstrap/screenPresence.mjs';
+import { createPianoScreenPowerSync } from './0_system/bootstrap/pianoScreenPowerSync.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -1960,6 +1961,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     haGateway: homeAutomationAdapters.haGateway,
     devicesConfig: devicesConfig.devices || {},
     logger: rootLogger.child({ module: 'screen-presence' }),
+  });
+
+  // Piano-power → tablet-screen authority. DS becomes the single writer for the
+  // OFF side of the yellow-room tablet's FKB screen: piano OFF ⇒ screen OFF
+  // (debounced + reconciled), piano OFF→ON edge ⇒ pulse screen ON. Disabled by
+  // default (config `piano.screen_power_sync.enabled`); no-ops without HA/device.
+  // Not a two-writer conflict with screen-presence: that device is not
+  // presence-managed, and presence actuates HA input_booleans, not the backlight.
+  createPianoScreenPowerSync({
+    haGateway: homeAutomationAdapters.haGateway,
+    deviceService: deviceServices.deviceService,
+    configService,
+    householdId,
+    logger: rootLogger.child({ module: 'piano-screen-authority' }),
   });
 
   // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by

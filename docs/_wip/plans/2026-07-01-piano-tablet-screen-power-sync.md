@@ -80,6 +80,47 @@ Fail-safe: if piano power is unknown / HA unreachable, treat as **ON** (leave ta
   with backoff; still wrong → `loadStartUrl` (revive) → retry; still wrong → log + notify. Idempotent.
 - Reuse the `/api/v1/device/:id/screen/:state` endpoint (verified working) as the actuator.
 
+#### Config: `piano.yml` → `screen_power_sync` (implemented, slice 1)
+
+Lives in the runtime household app config (`data/household[-{hid}]/config/piano.yml`).
+**`enabled` defaults false** so nothing changes on-device until KC flips it after the
+on-device verification (slice 4). Read by `bootstrap/pianoScreenPowerSync.mjs`, which
+constructs + starts `PianoScreenAuthorityService` and no-ops if HA/device/entity are absent.
+
+```yaml
+screen_power_sync:
+  enabled: false                                       # SAFE default — off until on-device verify
+  device_id: yellow-room-tablet                        # FKB tablet device (from devices.yml)
+  piano_power_entity: binary_sensor.yellow_room_piano_power
+  poll_interval_ms: 3000                               # edge-detect poll (source of truth)
+  off_debounce_ms: 15000                               # CONTINUOUS-off-for-N before screenOff (0 W dip guard)
+  reconcile_interval_ms: 45000                         # re-assert OFF if the panel drifts on
+  max_retries: 3                                        # verify-mismatch retries before loadStartUrl escalation
+  notify_service: mobile_app_kc_phone                  # optional HA notify on give-up
+```
+
+Snake_case and camelCase keys are both accepted; omitted keys fall back to service
+defaults (poll 3000 / debounce 15000 / reconcile 45000 / retries 3).
+
+#### Service shape as built (`PianoScreenAuthorityService.mjs`)
+
+- **Poll loop** (`poll_interval_ms`): `haGateway.getState(entity)` → `'on'` | `'off'` | `'unknown'`
+  (null/error/anything-not-on/off ⇒ `unknown` ⇒ fail-safe treated as ON). Tracks a *debounced*
+  `committedPower`. On confirmed OFF→ON edge → immediate `applyScreen(true)`. On OFF-edge → arm
+  the continuous-off timer (do NOT act). `committedPower` only becomes `off` after OFF holds for
+  the full window — so a transient dip (on→off→on) never commits and produces **neither** a
+  screenOff **nor** a spurious wake pulse (which would otherwise undo a manual-off). `unknown`
+  cancels any pending off and never screenOffs, leaving `committedPower` intact.
+- **Reconcile loop** (`reconcile_interval_ms`): only when `committedPower==='off'`, read the real
+  `device.getStatus().screenOn`; if it drifted ON → `applyScreen(false)`. **Never force-ON here.**
+- **`applyScreen(desiredOn)`**: `device.setScreen` → VERIFY via `device.getStatus().screenOn`
+  (defeats FKB's 200/login silent-success) → retry w/ backoff up to `max_retries` → still wrong
+  AND `desiredOn` → `device.clearContent()` (loadStartUrl revive) + one retry → still wrong →
+  `logger.error` + `haGateway.callService('notify', notify_service, …)`. Idempotent; every timer
+  tick is fully wrapped so a throw can never kill the interval.
+- **`Device.getStatus()`** was added as the public delegator to `contentControl.getStatus()`
+  (the FKB `getDeviceInfo` → `{ ready, screenOn, currentUrl }`) — this is the verify read.
+
 ### DS frontend
 - **Screensaver** already hoisted above the connect gate (shipped `6a665ddc4`) — keeps idle-dim + MIDI/
   touch wake while the piano is on.
