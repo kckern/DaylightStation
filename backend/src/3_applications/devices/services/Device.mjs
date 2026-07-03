@@ -198,6 +198,23 @@ export class Device {
   }
 
   /**
+   * Read the device's real content-control status (for FKB: the live
+   * `getDeviceInfo` → `{ ready, screenOn, currentUrl, ... }`).
+   *
+   * This is the VERIFY read that defeats FKB's 200/login silent-success: after a
+   * screenOn/screenOff command, callers re-read the ACTUAL screen state rather
+   * than trusting the command ack. Used by PianoScreenAuthorityService.
+   *
+   * Returns a `{ ready:false }` stub when no content control (or no getStatus)
+   * is configured, so callers can treat "unknown" as not-ready without a throw.
+   *
+   * @returns {Promise<Object>|Object}
+   */
+  getStatus() {
+    return this.#contentControl?.getStatus?.() ?? { ready: false, error: 'no status' };
+  }
+
+  /**
    * Set volume level
    * @param {number|string} level - Volume level (0-100, '+', '-', 'mute', 'unmute')
    * @returns {Promise<Object>}
