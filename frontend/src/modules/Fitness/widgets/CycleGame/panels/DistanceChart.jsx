@@ -465,6 +465,13 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         <span className="cg-chart__goal">
           {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `Leader ${formatDistance(maxDistanceM)}`}
         </span>
+        {/* Lives in the header, not the plot overlay — the plot's top-right corner
+            is exactly where a leader's terminus tag sits in log mode (leader gap=0
+            clamps to the layoutTags floor, ~11% from the top), so an absolutely-
+            positioned chip there collided with it (2026-07-02 audit feedback). */}
+        {useLog && (
+          <span className="cg-chart__log-chip" data-testid="chart-log-chip">Zoomed on leaders</span>
+        )}
       </div>
       <div className="cg-chart__plot" ref={chartRef}>
       <div ref={fitRef} style={fitScaleVal < 1 ? { transform: `scale(${fitScaleVal})`, transformOrigin: 'top left' } : undefined}>
@@ -557,11 +564,6 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         >
           <span className="cycle-race-screen__goal-flag" aria-hidden="true"><RaceFlagIcon /></span> {formatDistance(goalM)}
         </div>
-      )}
-
-      {/* "Zoomed on leaders" chip while the log crowding mode is active (time races). */}
-      {useLog && (
-        <div className="cg-chart__log-chip" data-testid="chart-log-chip">Zoomed on leaders</div>
       )}
 
       {/* Terminus tags: each line's tip carries the rider's avatar + gap-behind-leader

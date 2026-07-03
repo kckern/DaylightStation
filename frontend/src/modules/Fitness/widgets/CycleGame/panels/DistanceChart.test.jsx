@@ -130,6 +130,25 @@ describe('DistanceChart panel', () => {
     const slowY = yOf(lines[2]);
     expect(slowY).toBeLessThan(FLOOR_Y - 12);
   });
+  // 2026-07-02 fix: the chip used to be absolutely positioned at the plot's
+  // top-right corner — exactly where a leader's terminus tag sits in log mode
+  // (leader gap=0 clamps to the layoutTags floor, ~11% from the top, and their
+  // tag drifts rightward toward the current-time edge as the race runs) —
+  // visually colliding with it. It now lives in the header row, structurally
+  // outside the plot overlay, so it can never overlap chart content.
+  it('renders the log-mode chip inside the header, not the plot overlay (no tag/marker collision)', () => {
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },
+      second: { displayName: 'S', cumulativeDistanceM: 2480, distanceSeries: [2480] },
+    };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['lead', 'second']} riders={riders}
+        riderLive={{ lead: {}, second: {} }} winCondition="time" goalM={5000} elapsedS={1} />
+    );
+    const header = getByTestId('chart-header');
+    const chip = getByTestId('chart-log-chip');
+    expect(header.contains(chip)).toBe(true);
+  });
   it('never enters log mode for a distance race (fixed linear scale, no chip)', () => {
     const riders = {
       lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },

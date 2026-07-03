@@ -16,6 +16,18 @@
       font-family: cg.$cg-mono; font-weight: 800; font-size: 2.4rem; line-height: 1; color: cg.$cg-text;
     }
     .cg-chart__goal { font-size: 1.1rem; color: cg.$cg-muted; }
+
+    // "Zoomed on leaders" chip — shown while the log crowding mode is active.
+    // Lives in the header flex row (not the plot overlay): the plot's top-right
+    // corner is where a leader's terminus tag sits in log mode, so an
+    // absolutely-positioned chip there collided with it (2026-07-02 fix).
+    .cg-chart__log-chip {
+      padding: 3px 10px; border-radius: 999px;
+      background: rgba(12, 16, 24, 0.82); border: 1px solid cg.$cg-border;
+      font-family: cg.$cg-mono; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em;
+      color: cg.$cg-cyan;
+      animation: cg-log-chip-in 0.4s ease-out both;
+    }
   }
 
   &__plot { flex: 1 1 auto; min-height: 0; position: relative; }
@@ -30,16 +42,6 @@
   }
   &__axis--y &__axis-label { left: 4px; transform: translateY(-50%); }
   &__axis--x &__axis-label { bottom: 2px; transform: translateX(-50%); }
-
-  // "Zoomed on leaders" chip — shown while the log crowding mode is active.
-  &__log-chip {
-    position: absolute; top: 6px; right: 8px; z-index: 2; pointer-events: none;
-    padding: 3px 10px; border-radius: 999px;
-    background: rgba(12, 16, 24, 0.82); border: 1px solid cg.$cg-border;
-    font-family: cg.$cg-mono; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em;
-    color: cg.$cg-cyan;
-    animation: cg-log-chip-in 0.4s ease-out both;
-  }
 }
 
 @keyframes cg-log-chip-in {
