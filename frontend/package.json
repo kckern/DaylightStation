@@ -70,7 +70,8 @@
     "vexflow": "^4.2.5",
     "video.js": "^8.22.0",
     "videojs-hotkeys": "^0.2.30",
-    "vimond-replay": "^4.0.0"
+    "vimond-replay": "^4.0.0",
+    "webaudiofont": "^3.0.4"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",

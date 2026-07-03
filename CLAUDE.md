@@ -203,6 +203,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Config system | `docs/reference/core/configuration.md` |
 | Coding standards | `docs/reference/core/coding-standards.md` |
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
+| Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
 
