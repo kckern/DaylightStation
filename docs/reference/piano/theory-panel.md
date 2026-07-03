@@ -34,13 +34,15 @@ peeked in). The fix makes the staff physically unable to drive layout:
    normal block that fills its container; the `<svg>` is `position:absolute; inset:0`.
    A container that fails to size the host yields a small/empty staff — **never** a
    viewport-height balloon.
-2. **The engraving fills its box** (`computeChordStaffLayout` in `chordStaff.js`): a
+2. **The engraving FILLS its box** (`computeChordStaffLayout` in `chordStaff.js`): a
    `ResizeObserver` in `ChordStaffRenderer.jsx` measures the host's real box aspect
-   (bucketed to 0.05 to avoid re-render thrash) and widens the stave to match — so a
-   wide slot gets wide staff lines instead of a narrow portrait engraving with dead
-   side-gutters. Widening is floored at the content minimum and capped at
-   `MAX_STAVE_W` (560 logical units) so ultra-wide slots stay musical (the chord is
-   centered on the stave, not stretched).
+   (bucketed to 0.05 to avoid re-render thrash) and sizes the stave width to match,
+   so the viewBox aspect equals the box aspect and the staff lines span the full
+   width with **no side gutters**. Floored at the content minimum for narrow slots;
+   **no upper cap** — the stave is fixed to the box width regardless of the chord, so
+   it never jumps as you play and always leaves room for the clef + key signature +
+   notes. Content flows from the LEFT (clef → key signature → chord); anything that
+   overruns the fixed width is trimmed by the host's `overflow`.
 3. **The panel provides definite heights** (`TheoryPanel.scss`): flexbox only, every
    slot carries `min-width/height: 0` so percentage chains resolve. In `column` layout
    the staff slot is given a bounded, definite height (it must not flex-grab the whole
