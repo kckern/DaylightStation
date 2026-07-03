@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   noteCb: null, // the Follow-mode note-event subscriber
   rawCb: null,  // the Manual-mode raw-MIDI subscriber
   events: [
-    { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }, // E4
+    { midi: 64, midis: [64, 52, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }, // E4 + LH E3/E2
     { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 }, // D4
     { midi: 60, midis: [60], onsetQuarter: 2, x: 220, top: 10, bottom: 200, system: 0 }, // C4
     { midi: 62, midis: [62], onsetQuarter: 3, x: 280, top: 10, bottom: 200, system: 0 }, // D4
@@ -77,6 +77,17 @@ describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
     renderPlayer();
     for (const n of [64, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+});
+
+describe('ScorePlayer — Follow mode chord tolerance (audit B2)', () => {
+  it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
+    renderPlayer();
+    play(52); // LH note of the current onset — correct playing, no advance, NO flash
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
+    expect(screen.getByText('1 / 4')).toBeTruthy();
+    play(63); // a real wrong note near the melody → flash
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).not.toBeNull();
   });
 });
 

@@ -122,8 +122,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (evt.type !== 'note_on' || !evt.velocity) return;
       const ev = events[stepRef.current];
       if (!ev) return;
+      const expected = ev.midis || [ev.midi];
       if (evt.note === ev.midi) setStep((s) => Math.min(events.length - 1, s + 1));
-      else if (Math.abs(evt.note - ev.midi) <= 24) flashWrong();
+      else if (!expected.includes(evt.note) && Math.abs(evt.note - ev.midi) <= 24) flashWrong();
     });
   }, [mode, events, subscribe, flashWrong]);
 
@@ -236,7 +237,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <div className="piano-score-player__keys">
           <PianoKeyboard
             activeNotes={activeNotes}
-            targetNotes={mode === 'follow' && current ? new Set([current.midi]) : null}
+            targetNotes={mode !== 'manual' && current ? new Set(current.midis || [current.midi]) : null}
             startNote={kb.startNote}
             endNote={kb.endNote}
           />
