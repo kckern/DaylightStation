@@ -75,10 +75,10 @@ describe('WhoIsPlayingPrompt', () => {
     expect(onPick).toHaveBeenCalledWith('kckern');
   });
 
-  it('paginates a roster larger than 9, showing dots and switching pages', () => {
+  it('paginates a roster larger than one 3×2 page, showing dots and switching pages', () => {
     const twelve = Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, name: `U${i}` }));
     const { container } = render(<WhoIsPlayingPrompt open users={twelve} onPick={() => {}} onDismiss={() => {}} />);
-    // Page 1: first 9 faces only.
+    // Page 1: first 6 faces only (3×2).
     expect(screen.getByText('U0')).toBeTruthy();
     expect(screen.queryByText('U9')).toBeNull();
     const dots = container.querySelectorAll('.piano-userpicker__dot');
