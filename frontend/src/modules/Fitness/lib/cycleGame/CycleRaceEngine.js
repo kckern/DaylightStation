@@ -119,8 +119,14 @@ export class CycleRaceEngine {
         rider.zoneId = input.zoneId ?? null;
       }
       // Finish detection + clamp at the line (both live and ghost riders).
+      // Interpolate the exact crossing instant within this tick, mirroring the
+      // lap-split math below: frac = (goalM - prevCumM) / (cumM - prevCumM),
+      // guarded against a zero-delta tick (frac → 1, i.e. crossed at tick end).
       if (this.winCondition === 'distance' && rider.finishTimeS == null && rider.cumulativeDistanceM >= this.goalM) {
-        rider.finishTimeS = this.elapsedS;
+        const prevCumM = lapD0;
+        const cumM = rider.cumulativeDistanceM;
+        const finishFrac = cumM > prevCumM ? (this.goalM - prevCumM) / (cumM - prevCumM) : 1;
+        rider.finishTimeS = this.elapsedS - this.intervalSeconds + finishFrac * this.intervalSeconds;
         rider.cumulativeDistanceM = this.goalM;
       }
       if (this.lapLengthM > 0) {
@@ -152,15 +158,31 @@ export class CycleRaceEngine {
     return this.getState();
   }
 
+  // Dead-heat threshold: finishers within this many seconds of each other
+  // share a placement (audit game-design #8 — no more "ties by bike slot").
+  static DEAD_HEAT_S = 0.05;
+
   standings() {
     const riders = [...this.riders.values()];
     if (this.winCondition === 'distance') {
-      return riders.slice().sort((a, b) => {
-        if (a.finishTimeS != null && b.finishTimeS != null) return a.finishTimeS - b.finishTimeS;
-        if (a.finishTimeS != null) return -1;
-        if (b.finishTimeS != null) return 1;
-        return b.cumulativeDistanceM - a.cumulativeDistanceM;
-      }).map((r, i) => ({ userId: r.userId, placement: i + 1, finishTimeS: r.finishTimeS, distanceM: Math.round(r.cumulativeDistanceM) }));
+      const finished = riders.filter((r) => r.finishTimeS != null)
+        .sort((a, b) => a.finishTimeS - b.finishTimeS);
+      const unfinished = riders.filter((r) => r.finishTimeS == null)
+        .sort((a, b) => b.cumulativeDistanceM - a.cumulativeDistanceM);
+      const out = [];
+      let placement = 0;
+      let prevFinishTimeS = null;
+      finished.forEach((r, i) => {
+        if (prevFinishTimeS == null || Math.abs(r.finishTimeS - prevFinishTimeS) >= CycleRaceEngine.DEAD_HEAT_S) {
+          placement = i + 1; // skips past any tied slots, e.g. 1,1,3
+        }
+        out.push({ userId: r.userId, placement, finishTimeS: r.finishTimeS, distanceM: Math.round(r.cumulativeDistanceM) });
+        prevFinishTimeS = r.finishTimeS;
+      });
+      unfinished.forEach((r, i) => {
+        out.push({ userId: r.userId, placement: finished.length + i + 1, finishTimeS: null, distanceM: Math.round(r.cumulativeDistanceM) });
+      });
+      return out;
     }
     return riders.slice().sort((a, b) => b.cumulativeDistanceM - a.cumulativeDistanceM)
       .map((r, i) => ({ userId: r.userId, placement: i + 1, finishTimeS: null, distanceM: Math.round(r.cumulativeDistanceM) }));

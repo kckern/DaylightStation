@@ -19,7 +19,7 @@
   &__close {
     appearance: none; cursor: pointer; width: 38px; height: 38px; border-radius: 50%;
     border: 1px solid cg.$cg-border; background: cg.$cg-panel-2; color: cg.$cg-text; font-size: 1.4rem; line-height: 1;
-    &:hover { border-color: #f87171; color: #f87171; }
+    &:hover { border-color: cg.$cg-danger; color: cg.$cg-danger; }
   }
 
   &__stage { flex: 1 1 auto; min-height: 0; position: relative; }

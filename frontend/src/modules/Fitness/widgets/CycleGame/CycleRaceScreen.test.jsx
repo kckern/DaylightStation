@@ -34,17 +34,18 @@ const base4RiderProps = {
 };
 
 describe('CycleRaceScreen', () => {
-  it('renders sidebar mode for ≤3 riders with chart, pov, oval', () => {
+  it('renders sidebar mode for ≤3 riders with chart, pov, standings tower', () => {
     const { getByTestId } = render(<CycleRaceScreen {...props} />);
     expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
     expect(getByTestId('distance-chart')).toBeInTheDocument();
     expect(getByTestId('race-pov')).toBeInTheDocument();
-    expect(getByTestId('oval-track')).toBeInTheDocument();
+    expect(getByTestId('standings-tower')).toBeInTheDocument();
   });
-  it('renders wide mode (no oval) for 4+ riders', () => {
+  it('renders wide mode (no oval, tower docked as a column) for 4+ riders', () => {
     const { getByTestId, queryByTestId } = render(<CycleRaceScreen {...base4RiderProps} />);
     expect(getByTestId('race-layout').dataset.mode).toBe('wide');
     expect(queryByTestId('zone-oval')).toBeNull();
+    expect(getByTestId('standings-tower')).toBeInTheDocument();
   });
   it('renders one speedometer per rider', () => {
     const { container } = render(<CycleRaceScreen {...props} />);

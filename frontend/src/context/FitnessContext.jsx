@@ -142,6 +142,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
+  // Separate from voiceMemoOverlayState (the in-app "Voice Memo" feature's own
+  // state shape) — this flags the developer-facing Feedback panel (recording a
+  // bug/note) so MenuMusicController can duck ambient music for it too. The two
+  // features are unrelated but share the same "don't talk over my recording"
+  // requirement.
+  const [feedbackRecordingActive, setFeedbackRecordingActive] = useState(false);
   const [fitnessToast, setFitnessToast] = useState(null);
   const toastIdRef = useRef(0);
   const riderToastRef = useRef(null);
@@ -2583,8 +2589,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Music transport for voice-capture coordination (voice memo + feedback
     // overlays pause music while recording). Defined above but must be exposed
     // here or consumers get undefined and the pause/resume becomes a no-op.
+    // NOTE: this only reaches the in-session FitnessMusicPlayer (musicPlayerRef
+    // is null on plain browse/menu screens, where it isn't mounted) — the
+    // ambient MENU music (useMenuMusic, via MenuMusicController) is a separate
+    // player ducked instead via feedbackRecordingActive below.
     pauseMusicPlayer,
     resumeMusicPlayer,
+    feedbackRecordingActive,
+    setFeedbackRecordingActive,
     governance: governanceState.status,
     zones: zoneConfig || [],
     userCurrentZones,

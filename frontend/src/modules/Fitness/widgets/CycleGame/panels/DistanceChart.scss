@@ -3,14 +3,48 @@
 .cg-chart {
   width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box;
 
+  // Header shrinks to its content (the old fixed 30% band wasted a third of the
+  // panel — audit UX 2.4). The race clock is the hero; the goal sits beside it.
   &__header {
-    flex: 0 0 30%; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px;
+    flex: 0 0 auto; min-height: 0;
+    display: flex; align-items: baseline; justify-content: center; gap: 14px;
+    padding: 2px 0 6px;
     border-bottom: 1px solid cg.$cg-border-soft;
 
-    .cg-chart__clock-label { font-size: 0.7rem; text-transform: uppercase; color: cg.$cg-faint; }
-    .cg-chart__clock { font-family: cg.$cg-mono; font-weight: 800; font-size: 1.6rem; color: cg.$cg-text; }
-    .cg-chart__goal { font-size: 0.7rem; color: cg.$cg-muted; }
+    .cg-chart__clock-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 0.04em; color: cg.$cg-faint; }
+    .cg-chart__clock {
+      font-family: cg.$cg-mono; font-weight: 800; font-size: 2.4rem; line-height: 1; color: cg.$cg-text;
+    }
+    .cg-chart__goal { font-size: 1.1rem; color: cg.$cg-muted; }
+
+    // "Zoomed on leaders" chip — shown while the log crowding mode is active.
+    // Lives in the header flex row (not the plot overlay): the plot's top-right
+    // corner is where a leader's terminus tag sits in log mode, so an
+    // absolutely-positioned chip there collided with it (2026-07-02 fix).
+    .cg-chart__log-chip {
+      padding: 3px 10px; border-radius: 999px;
+      background: rgba(12, 16, 24, 0.82); border: 1px solid cg.$cg-border;
+      font-family: cg.$cg-mono; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.02em;
+      color: cg.$cg-cyan;
+      animation: cg-log-chip-in 0.4s ease-out both;
+    }
   }
 
   &__plot { flex: 1 1 auto; min-height: 0; position: relative; }
+
+  // HTML axis-label overlays (≥1.1rem, dodge the non-uniform viewBox stretch).
+  &__axis { position: absolute; inset: 0; pointer-events: none; }
+  &__axis-label {
+    position: absolute;
+    font-family: cg.$cg-mono; font-size: 1.1rem; font-weight: 700; line-height: 1;
+    color: cg.$cg-muted; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+    white-space: nowrap;
+  }
+  &__axis--y &__axis-label { left: 4px; transform: translateY(-50%); }
+  &__axis--x &__axis-label { bottom: 2px; transform: translateX(-50%); }
+}
+
+@keyframes cg-log-chip-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

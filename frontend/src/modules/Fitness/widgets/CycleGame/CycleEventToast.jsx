@@ -16,8 +16,9 @@ function logger() {
 
 /**
  * Single-slot, self-dismissing officiating-event banner for the cycle race
- * screen — announces a DNF or false-start penalty in plain language so the
- * acronyms on the chart and results board are never unexplained. Non-blocking:
+ * screen — announces a DNF, false-start penalty, or a mercy-kill/forced-finish
+ * race closure (overtime) in plain language so the acronyms on the chart and
+ * results board are never unexplained. Non-blocking:
  * it never pauses the race. The parent feeds the current toast (or null) and a
  * new `toast.id` restarts the countdown; on completion it calls onDone.
  */
@@ -95,7 +96,12 @@ export default function CycleEventToast({ toast, onDone, durationMs = CYCLE_TOAS
 CycleEventToast.propTypes = {
   toast: PropTypes.shape({
     id: PropTypes.number,
-    variant: PropTypes.oneOf(['dnf', 'penalty', 'info']),
+    variant: PropTypes.oneOf([
+      'dnf', 'penalty', 'overtime', 'info',
+      // Drama events (audit C2) — LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/
+      // FINAL_LAP/LAPPING_IMMINENT, routed through deriveRaceSnapshot.
+      'lead-change', 'finished', 'photo-finish', 'final-lap', 'lapping',
+    ]),
     icon: PropTypes.node,
     title: PropTypes.node,
     subtitle: PropTypes.node,

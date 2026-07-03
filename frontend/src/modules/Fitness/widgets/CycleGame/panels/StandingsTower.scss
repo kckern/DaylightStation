@@ -1,0 +1,136 @@
+@use '../cgTokens' as t;
+
+// Persistent standings tower — the always-on rank/gap ladder (audit UX §4.1).
+// Synthwave HUD panel, matching the oval/chart's card treatment. Text floor:
+// every element here renders during `racing`, so nothing goes below 1.1rem.
+.cg-tower {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: t.$cg-panel;
+  border: 1px solid t.$cg-border;
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: t.$cg-text;
+  font-family: t.$cg-display;
+
+  // Folded-in "Lap 3 · Last 0:42 · Now 0:12" — replaces the oval's two-row
+  // lap strip (audit UX §4.2: wide mode used to lose this entirely).
+  &__header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: t.$cg-muted;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.4rem;
+    border-bottom: 1px solid t.$cg-border-soft;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  &__lap-num {
+    color: t.$cg-cyan;
+    text-shadow: 0 0 6px rgba(t.$cg-cyan, 0.5);
+  }
+  &__lap-sep { color: t.$cg-faint; }
+  &__lap-last, &__lap-now { font-variant-numeric: tabular-nums; }
+  &__lap-now { color: t.$cg-text; }
+
+  &__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 2.6rem 6px 32px 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.35rem;
+    border-radius: 6px;
+    background: rgba(t.$cg-panel-2, 0.5);
+    min-width: 0;
+
+    &--finished {
+      background: rgba(t.$cg-cyan, 0.1);
+      border: 1px solid rgba(t.$cg-cyan, 0.28);
+    }
+    // Overtime/DNF — out of contention; visually recede without disappearing.
+    &--dim { opacity: 0.55; }
+  }
+
+  &__rank {
+    font-size: 2rem;
+    font-weight: 800;
+    font-style: italic;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    line-height: 1;
+    color: t.$cg-text;
+  }
+
+  &__lane {
+    width: 6px;
+    height: 1.8rem;
+    border-radius: 3px;
+  }
+
+  &__avatar {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+  }
+
+  &__name {
+    font-size: 1.3rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  &__metric {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: t.$cg-cyan;
+    white-space: nowrap;
+  }
+
+  // SVG glyph (audit UX §6.3 — 🏁 emoji → the shared RaceFlagIcon).
+  &__flag {
+    display: inline-flex; color: t.$cg-gold;
+    svg { width: 1.1rem; height: 1.1rem; display: block; }
+  }
+
+  &__ot-tag {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: t.$cg-warn;
+    letter-spacing: 0.04em;
+  }
+
+  // Overtime dims to a neutral muted tone (still honestly riding); DNF reuses
+  // the danger red the penalty/sensor-lost chips use elsewhere in the HUD.
+  &__row--dim &__metric { color: t.$cg-muted; }
+  &__row[data-kind='dnf'] &__metric-text { color: t.$cg-danger; }
+}

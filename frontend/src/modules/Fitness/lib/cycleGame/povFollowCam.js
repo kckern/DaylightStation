@@ -26,4 +26,22 @@ export function povFollowCam({ leaderZ, lastZ, aheadM = 25, minSpanM = 20, roadH
   };
 }
 
+/**
+ * Horizon leader-chip hysteresis (audit C5). Even gap-compressed, a very large
+ * TRUE gap should surface a fixed-size "LEADER +312 m" plate pinned at the
+ * horizon so the trailing rider always knows the real gap. To avoid flicker at
+ * the boundary we hysteresis it: show once the true gap exceeds `showAtM`, keep
+ * showing until it drops below `showAtM * hideFactor`. Pure — unit-tested.
+ *
+ * @param {number} gapM        true leader-vs-anchor gap in metres
+ * @param {boolean} wasShown   whether the chip is currently shown
+ * @returns {{ show:boolean, gapM:number, text:(string|null) }}
+ */
+export function horizonChipState({ gapM = 0, wasShown = false, showAtM = 120, hideFactor = 0.9 }) {
+  const g = Math.max(0, Number(gapM) || 0);
+  const hideAtM = showAtM * hideFactor;
+  const show = wasShown ? g > hideAtM : g > showAtM;
+  return { show, gapM: Math.round(g), text: show ? `LEADER +${Math.round(g)} m` : null };
+}
+
 export default povFollowCam;

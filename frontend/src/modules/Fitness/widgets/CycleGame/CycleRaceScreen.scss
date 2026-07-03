@@ -32,7 +32,7 @@
     border-radius: 14px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   }
-  &__clock-label { @include cg.cg-eyebrow; font-size: 0.7rem; }
+  &__clock-label { @include cg.cg-eyebrow; font-size: 1.1rem; } // was 0.7rem — 10-foot floor (audit UX §7)
   &__clock {
     @include cg.cg-numeral(cg.$cg-cyan);
     font-size: 3.4rem; line-height: 1;
@@ -40,7 +40,7 @@
     text-shadow: 0 0 24px rgba(33, 230, 255, 0.45);
   }
   &__clock-goal {
-    font-family: cg.$cg-mono; font-size: 0.78rem; color: cg.$cg-muted;
+    font-family: cg.$cg-mono; font-size: 1.1rem; color: cg.$cg-muted; // was 0.78rem
   }
 
   // False-start banner — names whoever jumped the green light.
@@ -50,13 +50,18 @@
     margin-top: 10px; padding: 8px 20px;
     border-radius: 999px;
     background: rgba(120, 12, 12, 0.92);
-    border: 1px solid #ff5a5a;
+    border: 1px solid cg.$cg-danger;
     box-shadow: 0 8px 26px rgba(180, 0, 0, 0.4);
     animation: cg-penalty-banner-pulse 0.7s ease-in-out infinite;
   }
-  &__penalty-icon { font-size: 1.3rem; line-height: 1; }
+  // SVG glyph (audit UX §6.3 — no-entry emoji → icon set); sized to what the
+  // ⛔ glyph used to render at.
+  &__penalty-icon {
+    display: flex; line-height: 1; color: cg.$cg-danger;
+    svg { width: 1.3rem; height: 1.3rem; display: block; }
+  }
   &__penalty-text {
-    color: #ffe3e3; font-weight: 800; font-size: 0.96rem; letter-spacing: 0.01em;
+    color: #ffe3e3; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.01em; // was 0.96rem
   }
 
   // ── Top region: chart (2/3) + roster (1/3) ────────────────────────────────
@@ -80,44 +85,61 @@
   // step has NO transition and only the ratio→1 pull-back animates over 300ms).
   &__zoomable { will-change: transform; }
   &__goal { stroke: cg.$cg-gold; stroke-width: 1.5; stroke-dasharray: 7 5; opacity: 0.8; }
-  // Label riding the dashed goal line, near its right end, just below the dashes.
+  // Label riding the always-visible goal line, near its right end, just below the
+  // dashes — the finish target the whole race climbs toward (audit UX 2.6).
   &__goal-label {
-    position: absolute; right: 7%; transform: translateY(2px);
-    padding: 1px 7px; border-radius: 4px;
-    background: rgba(0, 0, 0, 0.45);
-    font-family: cg.$cg-mono; font-size: 0.6rem; font-weight: 700;
-    letter-spacing: 0.08em; text-transform: uppercase;
+    position: absolute; right: 5%; transform: translateY(2px);
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 9px; border-radius: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    font-family: cg.$cg-mono; font-size: 1.1rem; font-weight: 800;
+    letter-spacing: 0.04em;
     color: cg.$cg-gold; white-space: nowrap; pointer-events: none;
   }
-  &__gridline { stroke: rgba(122, 162, 255, 0.14); stroke-width: 1; }
-  &__gridline--y { stroke: rgba(122, 162, 255, 0.18); }
+  // SVG glyph (audit UX §6.3 — checkered-flag emoji → the shared RaceFlagIcon).
+  &__goal-flag {
+    display: inline-flex; line-height: 1; color: cg.$cg-gold;
+    svg { width: 1.1rem; height: 1.1rem; display: block; }
+  }
+  // Legacy indigo (#7aa2ff) purged — gridlines now ride the telemetry cyan
+  // family instead of a leftover indigo accent (audit UX §6.2).
+  &__gridline { stroke: rgba(cg.$cg-cyan, 0.14); stroke-width: 1; }
+  &__gridline--y { stroke: rgba(cg.$cg-cyan, 0.18); }
 
-  // Terminus nodes — a small lettered disc riding each line's tip (avatars live
-  // in the roster). De-overlapped vertically; a connector links a displaced node
-  // back to its true line endpoint.
+  // Terminus tags — a 28px rider AVATAR riding each line's tip + a gap-behind-leader
+  // readout (the leader shows total distance) so distance is read here, not off a
+  // y-axis. De-overlapped vertically; a connector links a displaced tag back to its
+  // true line endpoint.
+  // Tag / connector / marker positions are driven imperatively by the shared motion
+  // clock (DistanceChart) — NO CSS position transition here (that was one of the five
+  // desynced clocks). They glide on the same linear rAF.
   &__tags { position: absolute; inset: 0; pointer-events: none; }
   &__tag-connector {
     position: absolute; width: 2px; transform: translateX(-50%);
     opacity: 0.55; border-radius: 1px;
-    transition: top 0.3s linear, height 0.3s linear;
   }
   &__tag {
     position: absolute;
+    display: flex; align-items: center; gap: 6px;
     transform: translate(-50%, -50%);
-    transition: left 0.3s linear, top 0.3s linear;
   }
-  &__node {
-    display: flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border-radius: 50%;
-    font-family: cg.$cg-display; font-weight: 800; font-size: 0.95rem; color: #0a0b0f;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.6);
+  &__tag-avatar {
+    display: inline-flex; width: 28px; height: 28px; border-radius: 50%;
+    flex: 0 0 auto;
+    box-shadow: 0 0 0 2px var(--lane, #{cg.$cg-accent}), 0 2px 8px rgba(0, 0, 0, 0.6);
+    img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
   }
-  &__tag.is-leader &__node {
-    width: 32px; height: 32px; font-size: 1.15rem;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 14px currentColor;
-    filter: drop-shadow(0 0 8px rgba(33, 230, 255, 0.7));
+  &__tag-gap {
+    font-family: cg.$cg-mono; font-weight: 800; font-size: 1.1rem; line-height: 1;
+    color: cg.$cg-text; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
   }
-  &__tag.is-ghost &__node { opacity: 0.85; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); }
+  &__tag.is-leader &__tag-avatar {
+    width: 34px; height: 34px;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 14px var(--lane, currentColor);
+  }
+  &__tag.is-leader &__tag-gap { color: cg.$cg-cyan; }
+  &__tag.is-ghost &__tag-avatar { opacity: 0.9; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28); }
 
   // Officiating-event markers — a glyph chip pinned to the spot on a rider's
   // lane where a DNF or false-start penalty fired. Persist for the whole race.
@@ -125,52 +147,23 @@
   &__marker {
     position: absolute;
     transform: translate(-50%, -50%);
-    transition: left 0.3s linear, top 0.3s linear;
+    // Position glides on the shared motion clock (imperative); the pop-in is a
+    // one-shot STATE transition (a new event fired) and stays as a CSS animation.
     animation: cg-marker-pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
   }
+  // SVG glyph (audit UX §6.3 — 🛑/⏱️ emoji → icon set); the chip's own text-size
+  // is kept as an explicit floor so a future glyph swap can't regress under
+  // 1.1rem (T11).
   &__marker-glyph {
     display: flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; border-radius: 50%;
-    font-size: 0.95rem; line-height: 1;
+    font-size: 1.1rem; line-height: 1; // was 0.95rem
     background: cg.$cg-panel-2;
     box-shadow: 0 0 0 2px var(--marker-color, #{cg.$cg-accent}), 0 2px 8px rgba(0, 0, 0, 0.6);
+    svg { width: 0.95em; height: 0.95em; display: block; }
   }
-  &__marker--dnf &__marker-glyph { box-shadow: 0 0 0 2px #ff5a52, 0 2px 8px rgba(0, 0, 0, 0.6); }
-  &__marker--penalty &__marker-glyph { box-shadow: 0 0 0 2px cg.$cg-gold, 0 2px 8px rgba(0, 0, 0, 0.6); }
-
-  // ── Roster (1/3) — sorted by who's ahead ────────────────────────────────────
-  &__roster {
-    flex: 1 1 0; min-width: 0;
-    display: flex; flex-direction: column; gap: 8px;
-    // Centre the rows so a small field doesn't cram at the top of a tall panel;
-    // `safe` falls back to top-aligned (and scrolls) once a big field overflows.
-    justify-content: safe center;
-    overflow-y: auto; padding-left: 4px;
-  }
-  &__roster-row {
-    display: flex; align-items: center; gap: 12px;
-    background: rgba(18, 20, 27, 0.6);
-    border: 1px solid cg.$cg-border-soft; border-radius: 12px;
-    padding: 8px 12px;
-    &.is-ghost { opacity: 0.85; }
-  }
-  &__roster-rank {
-    @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: 1.3rem;
-    color: cg.$cg-cyan; min-width: 1.2em; text-align: center; flex-shrink: 0;
-  }
-  &__roster-avatar {
-    flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%;
-    .circular-user-avatar { min-width: 0 !important; width: 44px !important; height: 44px !important; --vital-avatar-size: 44px; }
-  }
-  &__roster-main { display: flex; flex-direction: column; min-width: 0; }
-  &__roster-name {
-    font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  &__roster-metric { font-family: cg.$cg-mono; font-weight: 700; font-size: 0.95rem; color: cg.$cg-text; }
-  &__roster-row.is-finished { background: rgba(255, 213, 74, 0.08); border-radius: 8px; }
-  &__roster-row.is-finished &__roster-metric { color: cg.$cg-gold; }
+  &__marker--dnf &__marker-glyph { color: cg.$cg-danger; box-shadow: 0 0 0 2px cg.$cg-danger, 0 2px 8px rgba(0, 0, 0, 0.6); }
+  &__marker--penalty &__marker-glyph { color: cg.$cg-gold; box-shadow: 0 0 0 2px cg.$cg-gold, 0 2px 8px rgba(0, 0, 0, 0.6); }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never

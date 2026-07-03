@@ -9,8 +9,9 @@ import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 
 function fmtMs(s) {
   if (!Number.isFinite(s)) return '—';
-  const m = Math.floor(s / 60);
-  return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const total = Math.round(s); // round total first — else 119.6 → "1:60"
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total % 60).padStart(2, '0')}`;
 }
 
 /**
