@@ -13,6 +13,9 @@ const h = vi.hoisted(() => ({
     { midi: 62, midis: [62], onsetQuarter: 3, x: 280, top: 10, bottom: 200, system: 0 }, // D4
   ],
   layoutExtras: {},
+  pressNote: vi.fn(),
+  releaseNote: vi.fn(),
+  sendPanic: vi.fn(),
 }));
 
 vi.mock('../../PianoMidiContext.jsx', () => ({
@@ -20,6 +23,9 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
     activeNotes: new Map(),
     subscribe: (fn) => { h.noteCb = fn; return () => { h.noteCb = null; }; },
     subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
+    pressNote: h.pressNote,
+    releaseNote: h.releaseNote,
+    sendPanic: h.sendPanic,
   }),
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
@@ -46,7 +52,10 @@ const play = (note) => act(() => { h.noteCb?.({ type: 'note_on', note, velocity:
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
-beforeEach(() => { h.noteCb = null; h.rawCb = null; h.layoutExtras = {}; });
+beforeEach(() => {
+  h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
+  h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
+});
 
 describe('ScorePlayer — Follow mode (simulated MIDI input)', () => {
 
@@ -135,5 +144,39 @@ describe('ScorePlayer — Metronome mode (transport-driven)', () => {
     expect(screen.getByText('3 / 4')).toBeTruthy();
     act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+});
+
+describe('ScorePlayer — Play mode', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('sounds only parts set to play, and stops silence via panic', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Play').click();
+    await act(async () => {});
+    screen.getByText('RH: Play').click(); // cycle RH play → you
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.pressNote).toHaveBeenCalledWith(40, expect.any(Number)); // LH sounds
+    expect(h.pressNote).not.toHaveBeenCalledWith(64, expect.any(Number)); // RH is yours
+    screen.getByText('❚❚').click(); // pause mid-note
+    await act(async () => {});
+    expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
   });
 });
