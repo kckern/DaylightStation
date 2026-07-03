@@ -24,7 +24,7 @@ android {
         // BUMP versionCode on EVERY build: PackageInstaller self-update (POST /update)
         // rejects an APK whose versionCode is < the installed one. Future ADB-free
         // upgrades must keep incrementing this.
-        versionCode 12
+        versionCode 14
         versionName "1.6-selfupdate"
 
         // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
