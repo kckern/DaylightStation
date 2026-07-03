@@ -10,7 +10,7 @@ import { ChordStaffRenderer } from './renderers/ChordStaffRenderer.jsx';
  *   - 'chord' → ChordStaffRenderer (VexFlow; compact self-centering live chord)
  *   - 'abc' → AbcRenderer (abcjs grand-staff; melodic drills / scrolling)
  *   - 'svg' → SvgStaffRenderer (hand-rolled SVG; game target staves)
- *   - 'musicxml' → MusicXmlRenderer (VexFlow; notation-driven lessons)
+ *   - 'musicxml' → MusicXmlRenderer (OpenSheetMusicDisplay; engraved scores)
  *
  * Props are forwarded to the chosen renderer (see each renderer for its API).
  *
