@@ -382,24 +382,41 @@ export async function osmdRender(host, xml, opts = {}) {
 }
 
 /**
- * Re-render an ALREADY-loaded OSMD instance (zoom / resize) and re-extract the
- * layout. Skips the expensive `osmd.load(xml)` MusicXML parse — an order of
- * magnitude cheaper on the tablet than a full osmdRender. Audit F1.
+ * Re-render an already-loaded OSMD instance at a new zoom/width (PAINT only) and
+ * return its dimensions. The paint-only half of {@link osmdReRender} — used by the
+ * React wrapper's zoom/resize path so geometry extraction can run separately
+ * (sliced), instead of the blocking double-walk of render+extract.
  * @param {import('opensheetmusicdisplay').OpenSheetMusicDisplay} osmd
  * @param {HTMLElement} host
  * @param {{ width?:number, flow?:string, scale?:number }} [opts]
  */
-export function osmdReRender(osmd, host, opts = {}) {
+export function osmdRepaint(osmd, host, opts = {}) {
   const scale = Math.max(0.5, Math.min(2.5, opts.scale || 1));
   if (opts.width) host.style.width = `${opts.width}px`;
   osmd.Zoom = scale;
   osmd.render();
 
-  const { events, notes, tempoEntries, steps } = extractEvents(osmd);
   const svg = host.querySelector('svg');
   const width = Math.ceil(Number(svg?.getAttribute('width')) || svg?.clientWidth || host.clientWidth || 0);
   const height = Math.ceil(Number(svg?.getAttribute('height')) || svg?.clientHeight || host.clientHeight || 0);
-  return { width, height, flow: opts.flow, events, notes, tempoEntries, steps, osmd };
+  return { width, height, flow: opts.flow };
+}
+
+/**
+ * Re-render an ALREADY-loaded OSMD instance (zoom / resize) and re-extract the
+ * layout. Skips the expensive `osmd.load(xml)` MusicXML parse — an order of
+ * magnitude cheaper on the tablet than a full osmdRender. Audit F1.
+ *
+ * Thin composition of {@link osmdRepaint} (paint) + a synchronous full
+ * {@link extractEvents} — public shape/return UNCHANGED from before the split.
+ * @param {import('opensheetmusicdisplay').OpenSheetMusicDisplay} osmd
+ * @param {HTMLElement} host
+ * @param {{ width?:number, flow?:string, scale?:number }} [opts]
+ */
+export function osmdReRender(osmd, host, opts = {}) {
+  const { width, height, flow } = osmdRepaint(osmd, host, opts);
+  const { events, notes, tempoEntries, steps } = extractEvents(osmd);
+  return { width, height, flow, events, notes, tempoEntries, steps, osmd };
 }
 
 export default osmdRender;

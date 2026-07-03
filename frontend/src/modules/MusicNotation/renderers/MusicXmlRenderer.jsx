@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { osmdEngrave, osmdReRender, extractLayoutSliced, scheduleYield } from './osmdRender.js';
+import { osmdEngrave, osmdRepaint, extractLayoutSliced, scheduleYield } from './osmdRender.js';
 
 let _logger;
 function logger() {
@@ -87,7 +87,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // run the expensive geometry extraction sliced so the tablet still breathes.
         if (osmdRef.current && osmdKeyRef.current === cacheKey) {
           try {
-            const rr = osmdReRender(osmdRef.current, host, { width: w, flow, scale });
+            const rr = osmdRepaint(osmdRef.current, host, { width: w, flow, scale });
             if (stale()) return;
             setFailed(false);
             setDims({ width: rr.width, height: rr.height }); // PAINT (sheet visible)
