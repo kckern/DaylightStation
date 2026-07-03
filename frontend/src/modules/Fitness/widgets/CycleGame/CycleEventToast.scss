@@ -35,6 +35,15 @@
   &--overtime { --cycle-event-accent: #{cg.$cg-warn}; }
   &--info { --cycle-event-accent: #{cg.$cg-accent}; }
 
+  // Drama events (audit C2 — deriveRaceSnapshot wired into the live tick).
+  &--lead-change { --cycle-event-accent: #{cg.$cg-cyan}; }
+  // Finish-line ceremony (audit feedback 2026-07-02) — a distance-goal
+  // crossing gets its own celebratory moment the instant it happens.
+  &--finished { --cycle-event-accent: #{cg.$cg-gold}; }
+  &--photo-finish { --cycle-event-accent: #{cg.$cg-magenta}; }
+  &--final-lap { --cycle-event-accent: #{cg.$cg-warn}; }
+  &--lapping { --cycle-event-accent: #{cg.$cg-danger}; }
+
   &--entered {
     animation: cycle-event-toast-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
   }

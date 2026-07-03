@@ -59,21 +59,22 @@
     position: relative; display: flex; align-items: center; justify-content: center;
     transform: translateZ(0); will-change: transform; backface-visibility: hidden;
   }
-  // Multiplier badge — a fixed circle anchored just clear of the avatar's own
-  // top-right corner (left:100% + a small JS-computed margin-left, top:0 of the
-  // avatar's box), so its bounding box never overlaps the avatar's (audit UX
-  // §3.2: the old `right:-8%; top:2%` anchor, sized against the avatar's own
-  // small box, crowded/overlapped the avatar once the badge grew to fit a real
-  // multiplier like "×2.5"). Width/height/font-size/gap are all computed in JS
-  // as a ratio of the avatar's diameter (speedometerOverlayLayout.BADGE_RATIO /
-  // BADGE_GAP_RATIO) — a hard cap, not an em cascade, since "30% of a SIBLING'S
-  // size" isn't expressible in plain CSS em inheritance.
+  // Multiplier PILL (2026-07-02 legibility fix) — anchored top-right of the
+  // GAUGE itself (position/size come straight from JS's multiplierChipBox, in
+  // px relative to this &__gauge's own top-left corner — the same origin
+  // computeOverlayBoxes uses), not glued to the avatar. A pill's width is
+  // independent of its height, so "×1.4" stays legible at a floor size (see
+  // MULTIPLIER_CHIP_MIN_WIDTH/HEIGHT_PX) at any gauge size — the old circular
+  // badge, capped at 30% of the avatar's diameter, shrank to an unreadable
+  // ~11px dot at the wide-mode floor and lost its text entirely.
   &__multiplier {
-    position: absolute; left: 100%; top: 0;
+    position: absolute;
     z-index: 10; // above the avatar (its ring/gauge use z-index up to ~6)
     display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; border: 2px solid cg.$cg-bg;
+    border-radius: 999px; border: 2px solid cg.$cg-bg;
     color: #1a1205; font-weight: 800; line-height: 1; text-align: center;
+    font-size: 1.1rem; // race-screen floor — this must stay readable at a glance
+    white-space: nowrap;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   }
 

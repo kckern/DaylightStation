@@ -22,27 +22,26 @@
 // Avatar diameter, as a fraction of the gauge's pixel size.
 export const AVATAR_RATIO = 0.4;
 
-// Multiplier badge diameter, capped at 30% of the avatar's diameter (not the
-// gauge's) — the badge sits ANCHORED to the avatar, not the dial.
-export const BADGE_TO_AVATAR_RATIO = 0.3;
-export const BADGE_RATIO = AVATAR_RATIO * BADGE_TO_AVATAR_RATIO;
+// Multiplier CHIP (not a circular badge — a pill, like the SENSOR chip):
+// audit feedback (2026-07-02) reported the multiplier number unreadable —
+// the prior circular badge, capped at 30% of the avatar's diameter, shrank
+// to ~11px at the wide-mode floor (96px gauge), too small for "×1.4" to fit
+// as text, so it degraded to a color-only dot. A pill's width is independent
+// of its height, so it can hold the text at a legible floor size at ANY
+// gauge size without the height needing to grow to match — the avatar-ratio
+// coupling that caused the original collapse is gone entirely. Anchored
+// top-right of the gauge (clear of the centered avatar and the bottom
+// readout block) rather than glued to the avatar's edge.
+export const MULTIPLIER_CHIP_MIN_WIDTH_PX = 52;
+export const MULTIPLIER_CHIP_MIN_HEIGHT_PX = 24;
+export const MULTIPLIER_CHIP_WIDTH_RATIO = 0.34;
+export const MULTIPLIER_CHIP_HEIGHT_RATIO = 0.11;
+export const MULTIPLIER_CHIP_MARGIN_RATIO = 0.02;
 
 // The overlay wrapper's font-size, as a fraction of the gauge's pixel size —
 // the anchor every em-based overlay child (rpm sub-line, speed hero) scales
 // from, so typography grows/shrinks in lockstep with the dial.
 export const OVERLAY_FONT_RATIO = 0.16;
-
-// Badge anchor: just clear of the avatar's own bounding box (its right edge /
-// top edge, plus a small explicit gap) — replaces the old `right: -8%; top: 2%`
-// anchor (relative to the avatar's own small box), which crowded/overlapped the
-// avatar once the badge could grow to the size a wide-format multiplier (e.g.
-// "×2.5") needs at large gauges. The gap is a deliberate margin, not just an
-// exact-touch: two ratio sums that mathematically equal the same edge (e.g.
-// `0.3 + 0.4` vs `0.7`) can differ by float noise, so an exact-touch anchor can
-// register as a false-positive overlap.
-export const BADGE_GAP_RATIO = 0.02;
-export const BADGE_LEFT_RATIO = 0.5 + AVATAR_RATIO / 2 + BADGE_GAP_RATIO; // just past the avatar's right edge
-export const BADGE_TOP_RATIO = 0.5 - AVATAR_RATIO / 2;                   // = avatar's top edge
 
 // Lower-hemisphere readout block (speed hero + rpm sub-line, stacked). Top
 // ratio clears the avatar's bottom edge (0.5 + AVATAR_RATIO/2 = 0.7) with a
@@ -51,6 +50,19 @@ export const BADGE_TOP_RATIO = 0.5 - AVATAR_RATIO / 2;                   // = av
 export const READOUT_TOP_RATIO = 0.73;
 export const SPEED_HEIGHT_EM = 1.0;
 export const RPM_HEIGHT_EM = 0.55;
+
+/**
+ * multiplierChipBox(gaugePx) — the pill's box, top-right corner of the gauge.
+ * Width/height each have an absolute px floor (so text stays legible at the
+ * smallest gauge) and grow with gaugePx beyond that floor.
+ */
+export function multiplierChipBox(gaugePx) {
+  const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : 0;
+  const width = Math.max(MULTIPLIER_CHIP_MIN_WIDTH_PX, px * MULTIPLIER_CHIP_WIDTH_RATIO);
+  const height = Math.max(MULTIPLIER_CHIP_MIN_HEIGHT_PX, px * MULTIPLIER_CHIP_HEIGHT_RATIO);
+  const margin = px * MULTIPLIER_CHIP_MARGIN_RATIO;
+  return { x: px - width - margin, y: margin, width, height };
+}
 
 /**
  * computeOverlayBoxes(gaugePx) — pure, no DOM. Returns axis-aligned bounding
@@ -69,13 +81,7 @@ export function computeOverlayBoxes(gaugePx) {
     height: avatarSize
   };
 
-  const badgeSize = px * BADGE_RATIO;
-  const badge = {
-    x: BADGE_LEFT_RATIO * px,
-    y: BADGE_TOP_RATIO * px,
-    width: badgeSize,
-    height: badgeSize
-  };
+  const badge = multiplierChipBox(px);
 
   const speed = {
     x: 0,
@@ -108,7 +114,9 @@ export function boxWithin(box, bounds) {
 }
 
 export default {
-  AVATAR_RATIO, BADGE_TO_AVATAR_RATIO, BADGE_RATIO, OVERLAY_FONT_RATIO,
-  BADGE_LEFT_RATIO, BADGE_TOP_RATIO, READOUT_TOP_RATIO, SPEED_HEIGHT_EM, RPM_HEIGHT_EM,
-  computeOverlayBoxes, boxesIntersect, boxWithin
+  AVATAR_RATIO, OVERLAY_FONT_RATIO,
+  MULTIPLIER_CHIP_MIN_WIDTH_PX, MULTIPLIER_CHIP_MIN_HEIGHT_PX,
+  MULTIPLIER_CHIP_WIDTH_RATIO, MULTIPLIER_CHIP_HEIGHT_RATIO, MULTIPLIER_CHIP_MARGIN_RATIO,
+  READOUT_TOP_RATIO, SPEED_HEIGHT_EM, RPM_HEIGHT_EM,
+  computeOverlayBoxes, multiplierChipBox, boxesIntersect, boxWithin
 };

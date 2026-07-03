@@ -47,15 +47,19 @@ describe('CycleSpeedometer', () => {
     rerender(<CycleSpeedometer {...baseProps} rpm={75} />);
     expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#f1c40f'); // pushing
   });
-  it('shows the multiplier badge dot + readout text only when multiplier > 1', () => {
+  it('shows a legible multiplier pill (with its number) only when multiplier > 1', () => {
+    // 2026-07-02 feedback: the prior circular badge shrank to an unreadable
+    // dot with the number moved to tiny inline text elsewhere. The pill must
+    // show the number directly, legibly (≥1.1rem via CSS, asserted in
+    // speedometerOverlayLayout.test.js's box-size math).
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} multiplier={2} />);
-    // The dot itself is color-only (T10's 30%-of-avatar cap leaves no room for
-    // floor-legible text); the number lives in the lower readout beside rpm.
-    expect(queryByTestId('cycle-speedometer-multiplier')).not.toBeNull();
-    expect(queryByTestId('cycle-speedometer-multiplier-text').textContent).toContain('×2');
+    const pill = queryByTestId('cycle-speedometer-multiplier');
+    expect(pill).not.toBeNull();
+    expect(pill.textContent).toContain('×2');
+    rerender(<CycleSpeedometer {...baseProps} multiplier={1.4} />);
+    expect(queryByTestId('cycle-speedometer-multiplier').textContent).toContain('×1.4');
     rerender(<CycleSpeedometer {...baseProps} multiplier={1} />);
     expect(queryByTestId('cycle-speedometer-multiplier')).toBeNull();
-    expect(queryByTestId('cycle-speedometer-multiplier-text')).toBeNull();
   });
   it('renders the HR value via the embedded avatar', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);

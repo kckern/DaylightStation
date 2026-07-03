@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import DistanceChart from './DistanceChart.jsx';
 
@@ -130,6 +130,25 @@ describe('DistanceChart panel', () => {
     const slowY = yOf(lines[2]);
     expect(slowY).toBeLessThan(FLOOR_Y - 12);
   });
+  // 2026-07-02 fix: the chip used to be absolutely positioned at the plot's
+  // top-right corner — exactly where a leader's terminus tag sits in log mode
+  // (leader gap=0 clamps to the layoutTags floor, ~11% from the top, and their
+  // tag drifts rightward toward the current-time edge as the race runs) —
+  // visually colliding with it. It now lives in the header row, structurally
+  // outside the plot overlay, so it can never overlap chart content.
+  it('renders the log-mode chip inside the header, not the plot overlay (no tag/marker collision)', () => {
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },
+      second: { displayName: 'S', cumulativeDistanceM: 2480, distanceSeries: [2480] },
+    };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['lead', 'second']} riders={riders}
+        riderLive={{ lead: {}, second: {} }} winCondition="time" goalM={5000} elapsedS={1} />
+    );
+    const header = getByTestId('chart-header');
+    const chip = getByTestId('chart-log-chip');
+    expect(header.contains(chip)).toBe(true);
+  });
   it('never enters log mode for a distance race (fixed linear scale, no chip)', () => {
     const riders = {
       lead:   { displayName: 'L', cumulativeDistanceM: 2500, distanceSeries: [2500] },
@@ -238,5 +257,69 @@ describe('DistanceChart panel', () => {
     expect(hdr.textContent).toContain('0:55');
     expect(hdr.textContent.toLowerCase()).toContain('time left');
     expect(hdr.textContent).toContain('Leader'); // "Leader 50 m"
+  });
+
+  // ── 2026-07-02 fix: tags/markers reproject through the live eased window ──
+  // every animation frame, instead of lerping between two STATIC per-tick
+  // percentage snapshots (each computed under a DIFFERENT tick's window) —
+  // which could only agree with the line at the tick boundaries (f=0/1) and
+  // would drift apart from it mid-transition. Drives the shared motion clock
+  // by hand (fake rAF + a controllable performance.now) to a mid-frame
+  // fraction and asserts the tag sits EXACTLY on its own line's tip.
+  describe('motion-clock frame sync (tag/line desync fix)', () => {
+    let frames; let seq; let nowMs; let nowSpy;
+
+    const flush = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((cb) => cb(nowMs));
+    };
+    // Last (x,y) pair of an SVG polyline's `points` attribute, as % of the
+    // (fixed, 600x200) viewBox — the same units chart-tag left/top use.
+    const tipPct = (line) => {
+      const pts = line.getAttribute('points').trim().split(' ').filter(Boolean);
+      const [x, y] = pts[pts.length - 1].split(',').map(Number);
+      return { leftPct: (x / 600) * 100, topPct: (y / 200) * 100 };
+    };
+
+    it('keeps a terminus tag glued to its own line tip mid-frame during an active window change', () => {
+      frames = new Map(); seq = 0; nowMs = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb) => { seq += 1; frames.set(seq, cb); return seq; });
+      vi.stubGlobal('cancelAnimationFrame', (id) => { frames.delete(id); });
+      nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+      try {
+        const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 100, distanceSeries: [100] } };
+        const { container, rerender } = render(
+          <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+            winCondition="distance" goalM={1000} elapsedS={1} />
+        );
+        // Let tick 1's (trivial, single-sample) motion land before advancing.
+        nowMs = 1000; flush();
+
+        // Tick 2: a big jump in elapsed time — the T auto-zoom window grows
+        // between ticks, so mid-frame the line/tag must reproject under an
+        // ACTIVELY EASING window, not just a newly-arrived data point.
+        const riders2 = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 900, distanceSeries: [100, 900] } };
+        rerender(
+          <DistanceChart riderIds={['a']} riders={riders2} riderLive={{ a: {} }}
+            winCondition="distance" goalM={1000} elapsedS={25} />
+        );
+
+        // Mid-transition: fraction 0.5 through the 1000ms tick interval.
+        nowMs = 1500; flush();
+
+        const line = container.querySelector('[data-testid="race-line"]');
+        const tag = container.querySelector('[data-testid="chart-tag"]');
+        const lineTip = tipPct(line);
+        const tagLeftPct = parseFloat(tag.style.left);
+        const tagTopPct = parseFloat(tag.style.top);
+
+        expect(tagLeftPct).toBeCloseTo(lineTip.leftPct, 1);
+        expect(tagTopPct).toBeCloseTo(lineTip.topPct, 1);
+      } finally {
+        vi.unstubAllGlobals();
+        nowSpy.mockRestore();
+      }
+    });
   });
 });
