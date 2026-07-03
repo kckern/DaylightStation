@@ -1984,7 +1984,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // default (config `piano.midi_wake.enabled`). Complements the power-edge wake in
   // PianoScreenAuthorityService — no two-writer conflict (that service force-OFFs
   // only when the piano is off, i.e. when there is no MIDI to wake on).
-  createPianoMidiWake({
+  const { pianoMidiWakeService } = createPianoMidiWake({
     deviceService: deviceServices.deviceService,
     configService,
     householdId,
@@ -2055,6 +2055,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dispatchIdempotencyService,
     configService,
     loadFile,
+    pianoMidiWakeService,
     logger: rootLogger.child({ module: 'device-api' })
   });
 

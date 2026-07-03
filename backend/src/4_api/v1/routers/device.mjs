@@ -112,6 +112,7 @@ export function createDeviceRouter(config) {
     }),
     configService,
     loadFile,
+    pianoMidiWakeService,
     logger = console,
   } = config;
 
@@ -733,6 +734,26 @@ export function createDeviceRouter(config) {
     logger.info?.('device.router.setScreen', { deviceId, state });
     const result = await device.setScreen(state === 'on');
     res.json(result);
+  }));
+
+  /**
+   * POST /device/:deviceId/screen/suppress-wake   body: { minutes?: number }
+   * Mute MIDI-driven screen wakes for `minutes` (default 30). Used by the piano
+   * kiosk's "Turn off screen" action so playing the piano doesn't re-light the
+   * tablet until the player has been idle. Coordinates the backend midi-wake
+   * service + (via it) the on-device APK ScreenWaker. Best-effort: returns 200
+   * even when no midi-wake service is wired (the frontend still self-suppresses).
+   */
+  router.post('/:deviceId/screen/suppress-wake', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const minutes = Number(req.body?.minutes) > 0 ? Number(req.body.minutes) : 30;
+    const until = Date.now() + minutes * 60_000;
+    logger.info?.('device.router.suppressWake', { deviceId, minutes, until });
+    if (pianoMidiWakeService?.suppressWakeUntil) {
+      pianoMidiWakeService.suppressWakeUntil(until);
+      return res.json({ ok: true, until, relayed: true });
+    }
+    return res.json({ ok: true, until, relayed: false });
   }));
 
   // ===========================================================================

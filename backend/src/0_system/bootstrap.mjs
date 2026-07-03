@@ -2012,6 +2012,7 @@ export function createDeviceApiRouter(config) {
     dispatchIdempotencyService,
     configService,
     loadFile,
+    pianoMidiWakeService,
     logger = console
   } = config;
 
@@ -2022,6 +2023,7 @@ export function createDeviceApiRouter(config) {
     dispatchIdempotencyService,
     configService,
     loadFile,
+    pianoMidiWakeService,
     logger
   });
 }
