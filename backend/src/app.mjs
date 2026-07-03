@@ -87,6 +87,7 @@ import {
 import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
 import { createScreenPresenceService } from './0_system/bootstrap/screenPresence.mjs';
 import { createPianoScreenPowerSync } from './0_system/bootstrap/pianoScreenPowerSync.mjs';
+import { createPianoMidiWake } from './0_system/bootstrap/pianoMidiWake.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -1975,6 +1976,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     householdId,
     logger: rootLogger.child({ module: 'piano-screen-authority' }),
+  });
+
+  // MIDI-note → tablet-screen wake. An always-on WS client of the piano-bridge
+  // APK's note fan-out: playing the piano pokes FKB screenOn even when the WebView
+  // is dark (so its own Web-MIDI/touch wake can't fire). Debounced; disabled by
+  // default (config `piano.midi_wake.enabled`). Complements the power-edge wake in
+  // PianoScreenAuthorityService — no two-writer conflict (that service force-OFFs
+  // only when the piano is off, i.e. when there is no MIDI to wake on).
+  createPianoMidiWake({
+    deviceService: deviceServices.deviceService,
+    configService,
+    householdId,
+    logger: rootLogger.child({ module: 'piano-midi-wake' }),
   });
 
   // Per-device "is a video playing" registry (excludes ArtMode scenes), fed by

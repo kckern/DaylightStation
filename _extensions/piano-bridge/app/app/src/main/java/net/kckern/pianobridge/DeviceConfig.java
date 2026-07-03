@@ -123,6 +123,14 @@ public class DeviceConfig {
     public String speakerMac() { return norm(values.get("speakerMac")); }
     public String speakerName() { return values.getOrDefault("speakerName", "Speaker"); }
 
+    // --- FKB screen-wake (ScreenWaker): poke Fully Kiosk screenOn on a note so a
+    //     played piano wakes a dark tablet. Set fkbPassword via `pbctl config set`.
+    public boolean fkbWakeEnabled() { return boolOr("fkbWakeEnabled", true); }
+    public String fkbHost() { return values.getOrDefault("fkbHost", "127.0.0.1"); }
+    public int fkbPort() { return intOr("fkbPort", 2323); }
+    public String fkbPassword() { return values.getOrDefault("fkbPassword", ""); }
+    public int fkbWakeCooldownMs() { return intOr("fkbWakeCooldownMs", 8000); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 
@@ -130,6 +138,15 @@ public class DeviceConfig {
         String v = values.get(key);
         if (v == null) return def;
         try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+    }
+
+    private boolean boolOr(String key, boolean def) {
+        String v = values.get(key);
+        if (v == null) return def;
+        String s = v.trim().toLowerCase(java.util.Locale.US);
+        if (s.equals("true") || s.equals("1") || s.equals("yes")) return true;
+        if (s.equals("false") || s.equals("0") || s.equals("no")) return false;
+        return def;
     }
 
     private static String norm(String mac) {

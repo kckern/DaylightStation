@@ -56,6 +56,7 @@ public class PianoBridgeService extends Service {
     private DeviceConfig config;
     private BleMidiConnector bleConnector;
     private A2dpConnector a2dpConnector;
+    private ScreenWaker screenWaker;
 
     private volatile boolean engineRunning = false;
 
@@ -108,6 +109,7 @@ public class PianoBridgeService extends Service {
         Log.i(TAG, "Service destroying");
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
+        if (screenWaker != null) { screenWaker.shutdown(); screenWaker = null; }
         closeMidi();
         if (controlServer != null) {
             controlServer.stop();
@@ -189,6 +191,10 @@ public class PianoBridgeService extends Service {
      */
     private void startBleMidi() {
         if (config == null) config = DeviceConfig.load(this);
+        // (Re)build the FKB screen-waker from the current config (fkbPassword etc.
+        // may have changed via a pbctl /config edit → reloadConfigAndReconnect).
+        if (screenWaker != null) screenWaker.shutdown();
+        screenWaker = new ScreenWaker(config);
         midiManager = (MidiManager) getSystemService(Context.MIDI_SERVICE);
         if (midiManager == null) {
             Log.e(TAG, "MidiManager unavailable on this device");
@@ -294,6 +300,8 @@ public class PianoBridgeService extends Service {
                     } else {
                         if (engine != null) engine.noteOn(note, vel);
                         if (controlServer != null) controlServer.fanOutNoteOn(note, vel);
+                        // Wake the tablet's FKB backlight if it's dark (debounced).
+                        if (screenWaker != null) screenWaker.poke();
                     }
                     i += 3;
                 } else if (type == 0x80 && i + 2 < end) { // note off
