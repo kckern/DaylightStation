@@ -15,6 +15,8 @@ import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from 
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
+import useMetronomeClick from './useMetronomeClick.js';
+import { playClick } from './click.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -205,6 +207,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onDone: () => { if (mode === 'listen') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
+
+  // Metronome click (reference-only). Ticks in Learn at the piece's opening tempo
+  // and in Listen at the user-scaled tempo. It only plays a blip — it NEVER gates
+  // or advances the follow tracker/cursor (those are driven independently). Perform
+  // and Polish get no click from this toggle.
+  const clickBpm = (tempoMap[0]?.bpm || 90) * (mode === 'listen' ? tempoMult : 1);
+  useMetronomeClick({
+    enabled: clickOn && (mode === 'learn' || mode === 'listen'),
+    bpm: clickBpm,
+    onTick: playClick,
+  });
 
   const flashWrong = useCallback(() => {
     setWrong(true);
