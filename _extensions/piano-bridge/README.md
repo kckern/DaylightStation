@@ -90,6 +90,15 @@ pbctl suppress 7200000                     # mute wake for 2h from now (0 = clea
 the DS backend can implement *any* rule it likes (guests present, movie playing,
 whatever) by computing a deadline and `POST`ing that one key — the APK never changes.
 
+**Screen power (always-on, no dozing).** The tablet is on permanent wired power, so
+`stay_on_while_plugged_in=7` keeps the display awake — the `screen_off_timeout` (2 min)
+is overridden while plugged, and no ambient/AOD doze is configured (`doze_enabled`,
+`doze_always_on`, `aod_mode` are all null → screen is only ever fully **Awake** or
+**Off**, never a half-on "Dozing" state). The **only** thing that darkens it is the
+piano's own idle screensaver (FKB `screenOff`, 3-min) — exactly the dark-tablet case
+`ScreenWaker` wakes from. To make it stay on 24/7 instead, disable that screensaver
+(piano.yml `timeoutMinutes: 0`); the wake then becomes a pure safety net.
+
 ### Self-update (ADB-free upgrades)
 
 New APK must be **same-signed** (debug keystore) and have **versionCode ≥ installed**.
