@@ -634,7 +634,7 @@ git commit -m "feat(notation): split engrave (paint) from sliced geometry extrac
 **Changes (no new unit test — jsdom can't drive OSMD; covered by the Task 7 slicer test + Task 14 live run):**
 - New props: `onProgress?(fraction)`, `onReady?()`.
 - Effect flow: `setRendering(true)` → `await osmdEngrave(...)` → if stale/abort return → `setDims`, paint is now visible, `setRendering(false)` (sheet shows; Manual usable) → then `await extractLayoutSliced(osmd, { sliceSize: 256, yieldFn: scheduleYield, onProgress, shouldAbort: stale })` → `onLayout(result)` + `onReady()`.
-- Keep the cheap `osmdReRender` path for zoom/flow but run its extraction through the same sliced call.
+- Keep the cheap zoom/flow re-render path but run its extraction through the same sliced call.
 - Add a small `.musicxml-renderer__progress` element driven by the progress fraction while extracting (styled in Task 11).
 
 **Step: Commit**
@@ -642,6 +642,28 @@ git commit -m "feat(notation): split engrave (paint) from sliced geometry extrac
 ```bash
 git add frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx
 git commit -m "feat(notation): paint-first render with determinate extraction progress"
+```
+
+---
+
+### Task 8b: Kill the resize double-extract (`osmdRepaint`) — smooth zoom/resize
+
+**Context:** As first built, the zoom/resize cache path called `osmdReRender`, which runs a **synchronous** `extractEvents` internally, and THEN ran `extractLayoutSliced` — walking the geometry twice, once blocking. That is the resize jank the user reported. Fix: a paint-only sibling of `osmdReRender`, exactly analogous to how `osmdEngrave` is the paint-only half of `osmdRender`.
+
+**Files:**
+- Modify: `frontend/src/modules/MusicNotation/renderers/osmdRender.js`
+- Modify: `frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx`
+
+**Changes:**
+- Add `export function osmdRepaint(osmd, host, opts)` that does ONLY `if (opts.width) host.style.width = ...; osmd.Zoom = scale; osmd.render();` and returns `{ width, height, flow }` (same dims computation as `osmdReRender`). No `extractEvents`.
+- Reimplement `osmdReRender` as `osmdRepaint(...)` + `extractEvents(...)` so its public contract/return shape is unchanged (any other caller still works).
+- In `MusicXmlRenderer` cache path: replace `osmdReRender` with `osmdRepaint` (paint at the new scale) → then the single `extractLayoutSliced` (yielded) → `onLayout`/`onReady`. Result: resize paints once and extracts geometry once, sliced — no blocking double walk.
+- Note: `osmd.render()` (the repaint itself) is internal to OSMD and can't be sliced, but it is far cheaper than extraction; combined with committing scale only on modal release (Task 10), a resize is one repaint + one yielded extract.
+
+**Commit:**
+```bash
+git add frontend/src/modules/MusicNotation/renderers/osmdRender.js frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx
+git commit -m "perf(notation): paint-only osmdRepaint for zoom/resize (no double geometry walk)"
 ```
 
 ---
@@ -694,7 +716,7 @@ const base = {
   running: false, onToggleRun: vi.fn(), onReset: vi.fn(),
   step: 0, total: 40,
   flow: 'wrapped', onToggleFlow: vi.fn(),
-  scale: 1, onZoomIn: vi.fn(), onZoomOut: vi.fn(),
+  scale: 1, onScale: vi.fn(),
   parts: [{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }],
   activeParts: { 0: true, 1: true }, roles: {}, onCyclePart: vi.fn(),
   keyboardVisible: true, onToggleKeyboard: vi.fn(),
@@ -718,6 +740,20 @@ describe('ScoreTransportBar', () => {
     render(<ScoreTransportBar {...base} />);
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
   });
+
+  it('size is a single button that opens a modal (no inline +/-), and commits scale on release', () => {
+    render(<ScoreTransportBar {...base} />);
+    // Exactly one size control, not two zoom buttons.
+    const sizeBtn = screen.getByRole('button', { name: /size/i });
+    expect(screen.queryByRole('button', { name: /^A[−-]$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^A\+$/ })).toBeNull();
+    fireEvent.click(sizeBtn);
+    // Modal opens with a size control; changing it calls onScale (committed value).
+    const slider = screen.getByRole('slider', { name: /size/i });
+    fireEvent.change(slider, { target: { value: '1.3' } });
+    fireEvent.mouseUp(slider); // commit on release
+    expect(base.onScale).toHaveBeenCalledWith(1.3);
+  });
 });
 ```
 
@@ -727,6 +763,8 @@ Run: `npx vitest run frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/Scor
 Expected: FAIL.
 
 **Step 3: Implement** the presentational component (all state lifted to props; no MIDI/logging here). Part chip label: Follow/Metronome → `RH ✓`/dimmed; Play → `RH: Play/You/Mute` via `roles`. ⓘ metadata button opens a popover (local `useState`). Keyboard toggle button. Reset/play only meaningful for metronome/play but render position always.
+
+**Size control (single button + modal):** the bar shows ONE `size` button (label like `Size 100%`) — NOT inline `A−/A+`. It opens a small modal/popover (local `useState`) with a slider (range ~0.7–2.0) and optionally preset chips (S/M/L). The scale is **committed on release** (`onChange` updates a local preview value; `onMouseUp`/`onTouchEnd`/`onKeyUp`, or the modal's Apply, calls `props.onScale(value)`). This ensures the parent re-renders/repaints the score **once**, not on every intermediate drag — critical because each scale change repaints the whole OSMD score. `props.onScale(number)` replaces the old `onZoomIn/onZoomOut`.
 
 **Step 4: Run to verify it passes** — PASS (3 tests).
 
