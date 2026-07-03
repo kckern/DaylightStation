@@ -86,9 +86,13 @@ test.describe('Piano Theory Panel bounding boxes', () => {
     // Aspect-fill proof: in the wide Studio row slot the engraving viewBox must be
     // landscape (widened past the ~100x192 portrait default). A fall-back to
     // portrait would leave big side gutters and signal the ResizeObserver broke.
-    const vb = staff.viewBox?.split(/\s+/).map(Number);
-    expect(vb, 'staff SVG has a viewBox').toBeTruthy();
-    expect(vb[2], 'staff viewBox width > height (aspect-filled)').toBeGreaterThan(vb[3]);
+    // Poll so we wait for the observer's first re-render rather than relying on
+    // incidental round-trip timing (the initial aspect=null render is portrait).
+    await expect.poll(async () => {
+      const s = await box(page, '.chord-staff svg');
+      const vb = s?.viewBox?.split(/\s+/).map(Number);
+      return !!vb && vb[2] > vb[3];
+    }, { message: 'staff viewBox should widen to landscape (aspect-filled)', timeout: 5_000 }).toBe(true);
 
     // ── While a high note is held ────────────────────────────────────
     // Press a far-right (high) key on the on-screen keyboard; extreme ledger
