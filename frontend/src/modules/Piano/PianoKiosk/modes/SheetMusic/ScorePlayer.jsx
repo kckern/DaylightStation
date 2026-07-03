@@ -12,13 +12,17 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
+import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 
 const SOSTENUTO_CC = 66; // middle pedal — manual page turns
 const MODES = [
   { id: 'follow', label: 'Follow' },
   { id: 'metronome', label: 'Metronome' },
+  { id: 'play', label: 'Play' },
   { id: 'manual', label: 'Manual' },
 ];
+const PART_LABEL = { play: 'Play', you: 'You', mute: 'Mute' };
+const partName = (staff) => (staff === 0 ? 'RH' : staff === 1 ? 'LH' : `P${staff + 1}`);
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 
 /** Nearest melody event to a click at renderer-local (x, y). */
@@ -44,7 +48,7 @@ function nearestEvent(events, x, y) {
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
   const navigate = useNavigate();
-  const { activeNotes, subscribe, subscribeRaw } = usePianoMidi();
+  const { activeNotes, subscribe, subscribeRaw, pressNote, releaseNote, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
@@ -89,10 +93,33 @@ export default function ScorePlayer({ score: scoreMeta }) {
   );
   const stepTimeline = useMemo(() => buildStepTimeline(events, tempoMap), [events, tempoMap]);
 
+  // Play mode: per-staff roles (play/mute/you). Re-seeded when the score's staves change.
+  const [roles, setRoles] = useState({});
+  const parts = useMemo(() => partsOf(layout.notes), [layout.notes]);
+  useEffect(() => { setRoles(Object.fromEntries(parts.map((p) => [p.staff, 'play']))); }, [parts]);
+
+  const playTimeline = useMemo(
+    () => (mode === 'play' ? buildPlayTimeline(events, layout.notes, tempoMap, roles) : stepTimeline),
+    [mode, events, layout.notes, tempoMap, roles, stepTimeline],
+  );
+
+  const soundingRef = useRef(new Set());
+  const silence = useCallback(() => {
+    soundingRef.current.forEach((n) => { try { releaseNote?.(n); } catch { /* port gone */ } });
+    soundingRef.current.clear();
+    // BLE one-turn-late bug can swallow a lone terminal note-off — panic (CC123)
+    // goes through the flushed path (contract established by the Producer transport).
+    sendPanic?.();
+  }, [releaseNote, sendPanic]);
+
   const transport = useScoreTransport({
-    timeline: mode === 'metronome' ? stepTimeline : [],
-    onEvent: (e) => setStep(e.index),
-    onDone: () => logger.info('score.metronome.done', { steps: events.length }),
+    timeline: mode === 'metronome' || mode === 'play' ? playTimeline : [],
+    onEvent: (e) => {
+      if (e.kind === 'step' || e.type == null) { setStep(e.index); return; }
+      if (e.type === 'note_on') { pressNote?.(e.note, e.velocity ?? 80); soundingRef.current.add(e.note); }
+      else { releaseNote?.(e.note); soundingRef.current.delete(e.note); }
+    },
+    onDone: () => { if (mode === 'play') silence(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
 
@@ -180,12 +207,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (i >= 0) { setStep(i); transport.seek(stepTimeline[i]?.t ?? 0); }
   }, [mode, flow, events, transport, stepTimeline]);
 
-  const reset = () => { transport.stop(); setStep(0); scrollRef.current?.scrollTo({ top: 0, left: 0 }); };
+  useEffect(() => () => silence(), [silence]);
+
+  const reset = () => { transport.stop(); if (mode === 'play') silence(); setStep(0); scrollRef.current?.scrollTo({ top: 0, left: 0 }); };
   const toggleRun = () => {
-    if (running) { transport.pause(); logger.info('score.transport.pause', { step }); }
-    else { transport.seek(stepTimeline[stepRef.current]?.t ?? 0); transport.play(); logger.info('score.transport.play', { step, bpm: tempoMap[0].bpm }); }
+    if (running) { transport.pause(); if (mode === 'play') silence(); logger.info('score.transport.pause', { step }); }
+    else { transport.seek(stepTimeline[stepRef.current]?.t ?? 0); transport.play(); logger.info('score.transport.play', { step, mode, bpm: tempoMap[0].bpm }); }
   };
-  const cursorColor = mode === 'follow' ? '#2ec46f' : '#6cf';
+  const cursorColor = mode === 'follow' ? '#2ec46f' : mode === 'play' ? '#e8a33d' : '#6cf';
   const pct = Math.round(scale * 100);
 
   // Teleport (don't sweep diagonally) when the cursor crosses to a new system.
@@ -218,7 +247,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
         <div className="piano-score-player__modes" role="tablist">
           {MODES.map((m) => (
-            <button key={m.id} type="button" className={`piano-score-mode${mode === m.id ? ' is-active' : ''}`} aria-selected={mode === m.id} onClick={() => { setMode(m.id); transport.stop(); logger.info('score.mode', { mode: m.id }); }}>{m.label}</button>
+            <button key={m.id} type="button" className={`piano-score-mode${mode === m.id ? ' is-active' : ''}`} aria-selected={mode === m.id} onClick={() => { setMode(m.id); transport.stop(); silence(); logger.info('score.mode', { mode: m.id }); }}>{m.label}</button>
           ))}
         </div>
 
@@ -231,7 +260,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
             <span className="piano-score-player__pos">{pct}%</span>
             <button type="button" className="piano-score-mode" onClick={() => setScale((s) => Math.min(2, Math.round((s + 0.15) * 100) / 100))} aria-label="Bigger">A+</button>
           </span>
-          {mode === 'metronome' && (
+          {mode === 'play' && parts.map((p) => {
+            const role = roles[p.staff] || 'play';
+            return (
+              <button key={p.staff} type="button" className={`piano-score-mode piano-score-part--${role}`}
+                onClick={() => {
+                  const next = cyclePart(role);
+                  setRoles((r) => ({ ...r, [p.staff]: next }));
+                  transport.pause(); silence(); // role change invalidates the note timeline mid-flight
+                  logger.info('score.play.part', { staff: p.staff, role: next });
+                }}>{`${partName(p.staff)}: ${PART_LABEL[role]}`}</button>
+            );
+          })}
+          {(mode === 'metronome' || mode === 'play') && (
             <button type="button" className="piano-score-mode" onClick={toggleRun} disabled={!events.length}>{running ? '❚❚' : '▶'}</button>
           )}
           {mode !== 'manual' && <button type="button" className="piano-score-mode" onClick={reset}>⟲</button>}
@@ -264,7 +305,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <div className="piano-score-player__keys">
           <PianoKeyboard
             activeNotes={activeNotes}
-            targetNotes={mode !== 'manual' && current ? new Set(current.midis || [current.midi]) : null}
+            targetNotes={
+              mode === 'play' && current ? youMidisAt(layout.notes, roles, current.onsetQuarter)
+              : mode !== 'manual' && current ? new Set(current.midis || [current.midi])
+              : null
+            }
             startNote={kb.startNote}
             endNote={kb.endNote}
           />
