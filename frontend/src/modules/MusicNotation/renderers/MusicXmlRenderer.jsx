@@ -27,6 +27,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   const hostRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [failed, setFailed] = useState(false);
+  const [rendering, setRendering] = useState(false);
   const [resizeKey, setResizeKey] = useState(0);
   const renderSeq = useRef(0);
 
@@ -57,6 +58,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     const seq = ++renderSeq.current;
     const stale = () => renderSeq.current !== seq;
     const w = width || host.parentElement?.clientWidth || 1000;
+    setRendering(true);
     (async () => {
       try {
         const res = await osmdRender(host, musicXml, { width: w, flow, scale, shouldAbort: stale });
@@ -68,6 +70,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         if (stale()) return;
         setFailed(true);
         logger().warn('musicxml.render-failed', { error: err?.message });
+      } finally {
+        if (!stale()) setRendering(false);
       }
     })();
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
@@ -82,7 +86,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
       {showPlaceholder && <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>}
       {/* Host stays mounted even on failure so a new document can render into it. */}
       <div ref={hostRef} className="musicxml-renderer__svg" style={showPlaceholder ? { display: 'none' } : undefined} />
-      {!showPlaceholder && children}
+      {!showPlaceholder && rendering && dims.width > 0 && <div className="musicxml-renderer__busy">Engraving…</div>}
+      {!showPlaceholder && !rendering && children}
     </div>
   );
 }

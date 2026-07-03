@@ -1969,6 +1969,11 @@
 .musicxml-renderer { margin: 0 auto; }
 .musicxml-renderer__svg svg { display: block; }
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
+.musicxml-renderer__busy {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  color: #6a6256; font-weight: 600; background: rgba(252, 250, 244, 0.7);
+}
 
 .piano-score-cursor {
   position: absolute; // width set inline (scales with zoom)
