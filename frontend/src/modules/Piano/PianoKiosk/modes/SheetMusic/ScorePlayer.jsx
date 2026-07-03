@@ -9,6 +9,8 @@ import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
+import { buildTempoMap, buildStepTimeline } from '../../../../MusicNotation/scoreTimeline.js';
+import { useScoreTransport } from './useScoreTransport.js';
 
 const SOSTENUTO_CC = 66; // middle pedal — manual page turns
 const MODES = [
@@ -64,7 +66,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [mode, setMode] = useState('follow');
   const [flow, setFlow] = useState('wrapped');
   const [scale, setScale] = useState(1);
-  const [running, setRunning] = useState(false);
   const [wrong, setWrong] = useState(false);
   const [metaOpen, setMetaOpen] = useState(false);
   const scrollRef = useRef(null);
@@ -76,6 +77,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const events = layout.events;
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
+
+  // Tempo map (mid-piece changes included) drives the metronome transport; the
+  // opening tempo also feeds the header. Falls back to the parsed opening tempo
+  // before layout has reported OSMD's tempo entries.
+  const tempoMap = useMemo(
+    () => buildTempoMap(layout.tempoEntries, parsed?.tempo || 90),
+    [layout.tempoEntries, parsed],
+  );
+  const stepTimeline = useMemo(() => buildStepTimeline(events, tempoMap), [events, tempoMap]);
+
+  const transport = useScoreTransport({
+    timeline: mode === 'metronome' ? stepTimeline : [],
+    onEvent: (e) => setStep(e.index),
+    onDone: () => logger.info('score.metronome.done', { steps: events.length }),
+  });
+  const running = transport.playing;
 
   const flashWrong = useCallback(() => {
     setWrong(true);
@@ -110,18 +127,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [mode, events, subscribe, flashWrong]);
 
-  // Metronome mode: advance at tempo while running.
-  useEffect(() => {
-    if (mode !== 'metronome' || !running || !events.length) return undefined;
-    const beatMs = 60000 / tempo;
-    const a = events[step]?.onsetQuarter, b = events[step + 1]?.onsetQuarter;
-    const gap = (a != null && b != null) ? Math.max(0.25, b - a) : 1;
-    const id = setTimeout(() => {
-      setStep((s) => { if (s >= events.length - 1) { setRunning(false); return s; } return s + 1; });
-    }, beatMs * gap);
-    return () => clearTimeout(id);
-  }, [mode, running, events, tempo, step]);
-
   // Manual mode: sostenuto (middle) pedal turns the page — rising edge only,
   // since continuous/half pedals stream many CC66 values per physical press.
   useEffect(() => {
@@ -154,10 +159,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
-    if (i >= 0) setStep(i);
-  }, [mode, flow, events]);
+    if (i >= 0) { setStep(i); transport.seek(stepTimeline[i]?.t ?? 0); }
+  }, [mode, flow, events, transport, stepTimeline]);
 
-  const reset = () => { setStep(0); setRunning(false); scrollRef.current?.scrollTo({ top: 0, left: 0 }); };
+  const reset = () => { transport.stop(); setStep(0); scrollRef.current?.scrollTo({ top: 0, left: 0 }); };
+  const toggleRun = () => {
+    if (running) { transport.pause(); logger.info('score.transport.pause', { step }); }
+    else { transport.seek(stepTimeline[stepRef.current]?.t ?? 0); transport.play(); logger.info('score.transport.play', { step, bpm: tempoMap[0].bpm }); }
+  };
   const cursorColor = mode === 'follow' ? '#2ec46f' : '#6cf';
   const pct = Math.round(scale * 100);
 
@@ -187,7 +196,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
         <div className="piano-score-player__modes" role="tablist">
           {MODES.map((m) => (
-            <button key={m.id} type="button" className={`piano-score-mode${mode === m.id ? ' is-active' : ''}`} aria-selected={mode === m.id} onClick={() => { setMode(m.id); setRunning(false); }}>{m.label}</button>
+            <button key={m.id} type="button" className={`piano-score-mode${mode === m.id ? ' is-active' : ''}`} aria-selected={mode === m.id} onClick={() => { setMode(m.id); transport.stop(); logger.info('score.mode', { mode: m.id }); }}>{m.label}</button>
           ))}
         </div>
 
@@ -201,7 +210,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
             <button type="button" className="piano-score-mode" onClick={() => setScale((s) => Math.min(2, Math.round((s + 0.15) * 100) / 100))} aria-label="Bigger">A+</button>
           </span>
           {mode === 'metronome' && (
-            <button type="button" className="piano-score-mode" onClick={() => setRunning((r) => !r)}>{running ? '❚❚' : '▶'}</button>
+            <button type="button" className="piano-score-mode" onClick={toggleRun} disabled={!events.length}>{running ? '❚❚' : '▶'}</button>
           )}
           {mode !== 'manual' && <button type="button" className="piano-score-mode" onClick={reset}>⟲</button>}
           {mode !== 'manual' && <span className="piano-score-player__pos">{events.length ? `${Math.min(step + 1, events.length)} / ${events.length}` : ''}</span>}

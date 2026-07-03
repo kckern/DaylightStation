@@ -97,3 +97,32 @@ describe('ScorePlayer — Manual mode pedal page-turn', () => {
     expect(scrollBy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('ScorePlayer — Metronome mode (transport-driven)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  // h.events onsets are 0,1,2,3 quarters; report a tempo map with a mid-piece
+  // change so the timeline is: q0@60=1000ms/q, then q2@120=500ms/q.
+  it('advances the cursor on the tempo map, including a mid-piece change', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 2, bpm: 120 }] };
+    renderPlayer();
+    screen.getByText('Metronome').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+
+    act(() => vi.advanceTimersByTime(1050)); // 1st quarter @60 = 1000ms
+    expect(screen.getByText('2 / 4')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(1050)); // 2nd quarter @60
+    expect(screen.getByText('3 / 4')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
+    expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+});
