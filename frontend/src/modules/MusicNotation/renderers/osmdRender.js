@@ -73,7 +73,7 @@ export function buildSteps(recs) {
   const byQuarter = new Map();
   for (const r of recs || []) {
     let step = byQuarter.get(r.onsetQuarter);
-    if (!step) { step = { onsetQuarter: r.onsetQuarter, measure: r.measure ?? 0, notes: [], seen: new Set() }; byQuarter.set(r.onsetQuarter, step); }
+    if (!step) { step = { onsetQuarter: r.onsetQuarter, measure: r.measure ?? 0, number: r.number ?? ((r.measure ?? 0) + 1), notes: [], seen: new Set() }; byQuarter.set(r.onsetQuarter, step); }
     // Repeats walk the same onset twice, pushing the same midi again → duplicate
     // overlapping light-up chips. De-dupe by midi within a step (keep the first).
     if (step.seen.has(r.midi)) continue;
@@ -88,20 +88,23 @@ export function buildSteps(recs) {
 /**
  * Group cursor `steps` (already in cursor order) into measures. Each entry is a
  * contiguous run of steps sharing the same `measure` value:
- *   [{ index, firstStep, lastStep }]
- * where `index` is the measure value and `firstStep`/`lastStep` are the bounding
- * step indices (positions in the `steps` array) of that run. Empty input → [].
+ *   [{ index, number, firstStep, lastStep }]
+ * where `index` is the 0-based measure value, `number` is the printed measure
+ * NUMBER (from the first step of the run — what section rehearsal marks reference),
+ * and `firstStep`/`lastStep` are the bounding step indices (positions in the
+ * `steps` array) of that run. Empty input → [].
  * Pure — enables tap-to-jump, focus ranges, section chips, and per-measure grading.
- * @param {Array<{measure:number}>} steps
- * @returns {Array<{index:number,firstStep:number,lastStep:number}>}
+ * @param {Array<{measure:number,number:number}>} steps
+ * @returns {Array<{index:number,number:number,firstStep:number,lastStep:number}>}
  */
 export function buildMeasures(steps) {
   const out = [];
   for (let i = 0; i < (steps?.length || 0); i++) {
     const m = steps[i].measure ?? 0;
+    const number = steps[i].number ?? (m + 1);
     const last = out[out.length - 1];
     if (last && last.index === m) last.lastStep = i;
-    else out.push({ index: m, firstStep: i, lastStep: i });
+    else out.push({ index: m, number, firstStep: i, lastStep: i });
   }
   return out;
 }
@@ -167,6 +170,9 @@ function makeCursorWalk(osmd) {
   function processStep() {
     const onsetQuarter = cursor.Iterator.currentTimeStamp.RealValue * 4;
     const measure = cursor.Iterator?.CurrentMeasureIndex ?? 0;
+    // Printed measure NUMBER (what a section's rehearsal-mark references), which
+    // can differ from the 0-based INDEX (pickup bars, repeats, custom numbering).
+    const number = cursor.Iterator?.CurrentMeasure?.MeasureNumber ?? measure;
     const bpm = cursor.Iterator.CurrentBpm;
     if (Number.isFinite(bpm) && bpm > 0 && bpm !== lastBpm) {
       tempoEntries.push({ onsetQuarter, bpm });
@@ -197,6 +203,7 @@ function makeCursorWalk(osmd) {
       onsetRecords.push({
         onsetQuarter,
         measure,
+        number,
         midi: midiOfHalfTone(n.halfTone),
         staff,
         x: box.x,

@@ -2102,6 +2102,17 @@
   &.is-role-mute { opacity: 0.45; }
 }
 
+// Learn focus range — section chips + custom loop toggle + range readout. Reuses
+// the shared .piano-score-btn chrome; the armed Loop lights the neutral green
+// Learn accent, the readout picks up the muted position colour.
+.piano-score-focus { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.piano-score-section-chip { font-size: 0.9rem; padding: 0.4rem 0.7rem; border-radius: var(--r-pill, 999px); }
+.piano-score-loop.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+.piano-score-focus-readout {
+  min-width: 2.5rem; text-align: center; font-weight: 600; font-size: 0.9rem;
+  color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
+}
+
 // Size popover & info popover — anchored above the bar, elevated.
 .piano-score-size-wrap, .piano-score-info-wrap { position: relative; }
 .piano-score-size-modal, .piano-score-info-popover {
