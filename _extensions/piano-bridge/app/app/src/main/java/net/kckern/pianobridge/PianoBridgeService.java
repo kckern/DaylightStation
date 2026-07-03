@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.media.midi.MidiDevice;
@@ -57,6 +58,7 @@ public class PianoBridgeService extends Service {
     private BleMidiConnector bleConnector;
     private A2dpConnector a2dpConnector;
     private ScreenWaker screenWaker;
+    private TouchPulser touchPulser;
 
     private volatile boolean engineRunning = false;
 
@@ -113,6 +115,7 @@ public class PianoBridgeService extends Service {
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
         if (screenWaker != null) { screenWaker.shutdown(); screenWaker = null; }
+        touchPulser = null;
         closeMidi();
         if (controlServer != null) {
             controlServer.stop();
@@ -198,6 +201,17 @@ public class PianoBridgeService extends Service {
         // may have changed via a pbctl /config edit → reloadConfigAndReconnect).
         if (screenWaker != null) screenWaker.shutdown();
         screenWaker = new ScreenWaker(config);
+
+        // (Re)build the synthetic-touch un-throttler and SELF-ENABLE its
+        // AccessibilityService over the LAN (WRITE_SECURE_SETTINGS) — no USB, no
+        // manual toggle. The system binds PianoTouchService shortly after.
+        touchPulser = new TouchPulser(config);
+        if (config.tapWakeEnabled()) {
+            String comp = new ComponentName(this, PianoTouchService.class).flattenToString();
+            org.json.JSONObject r = SettingsControl.enableAccessibilityService(this, comp);
+            Log.i(TAG, "enableAccessibilityService " + comp + " -> " + r);
+        }
+
         midiManager = (MidiManager) getSystemService(Context.MIDI_SERVICE);
         if (midiManager == null) {
             Log.e(TAG, "MidiManager unavailable on this device");
@@ -305,6 +319,8 @@ public class PianoBridgeService extends Service {
                         if (controlServer != null) controlServer.fanOutNoteOn(note, vel);
                         // Wake the tablet's FKB backlight if it's dark (debounced).
                         if (screenWaker != null) screenWaker.poke();
+                        // Keep the WebView frame clock un-throttled while playing.
+                        if (touchPulser != null) touchPulser.poke();
                     }
                     i += 3;
                 } else if (type == 0x80 && i + 2 < end) { // note off

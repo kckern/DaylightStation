@@ -89,6 +89,24 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
+        <!-- Synthetic-touch AccessibilityService (PianoTouchService): TouchPulser
+             dispatches a tiny gesture while notes flow so the SM-T590's OS input-
+             recency frame throttle stays lifted during MIDI play (BLE-MIDI is not
+             "touch" to Android). Bound by the system via BIND_ACCESSIBILITY_SERVICE;
+             SELF-ENABLED over the LAN via WRITE_SECURE_SETTINGS (no USB, no manual
+             toggle) — see SettingsControl.enableAccessibilityService. -->
+        <service
+            android:name=".PianoTouchService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/piano_touch_service" />
+        </service>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

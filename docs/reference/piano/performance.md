@@ -86,10 +86,18 @@ throttle.
 2. During throttle, capture mechanism: `dumpsys gfxinfo`, CPU freqs (`cat /sys/devices/system/cpu/*/cpufreq/scaling_cur_freq`),
    renderer cgroup/priority — distinguishes Chromium renderer scheduling vs Samsung touch-boost DVFS.
 3. Try WebView command-line flags (`/data/local/tmp/webview-command-line`).
-4. **The designed fix:** add an `AccessibilityService` to the piano-bridge APK that `dispatchGesture`s
-   a 1-px corner tap when MIDI notes flow (it already owns `MidiManager`) — playing the piano becomes
-   the OS-level input that un-throttles the UI, precisely when latency matters. Periodic idle ticks
-   optional for the screensaver-era wake paths.
+4. **The designed fix (IMPLEMENTED 2026-07-02, pending on-device validation):** `PianoTouchService`
+   (an `AccessibilityService` in the piano-bridge APK) + `TouchPulser` dispatch a tiny corner
+   micro-swipe on each MIDI note (cadence-limited via `tapCadenceMs`) — the bridge already owns
+   `MidiManager`, so *playing* becomes the OS-level input that un-throttles the UI. It ships entirely
+   over the LAN — **no USB**: the bridge SELF-INSTALLS the new APK (`/update` → PackageInstaller) and
+   SELF-ENABLES the service via `WRITE_SECURE_SETTINGS` (`SettingsControl.enableAccessibilityService`,
+   the ADB-free `settings put secure enabled_accessibility_services`). All knobs are live-tunable via
+   `pbctl config set` (`tapWakeEnabled`, `tapCadenceMs`, `tapX/tapY/tapLen`).
+   **OPEN QUESTION:** whether an accessibility-INJECTED gesture is treated as touch by the input-
+   recency throttle is not yet confirmed on hardware — validate by toggling `tapWakeEnabled` and
+   watching `perf.diagnostics` fps during play. If injection doesn't un-throttle, this is the wrong
+   lever and the gfxinfo/cpufreq capture (step 2) is needed to find the real one.
 
 ### The 2026-07-01 regression: removing the keep-alive video
 
