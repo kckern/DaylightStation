@@ -2847,8 +2847,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         if (req.path.startsWith('/api/v1') || req.path.startsWith('/ws')) {
           return next();
         }
-        // Skip paths with file extensions (already handled by express.static)
-        if (req.path.includes('.')) {
+        // Skip genuine static-asset requests (already tried by express.static
+        // above). Match a known asset extension on the FINAL path segment only
+        // — a dot inside a SPA deep-link segment must NOT divert the request.
+        // SPA content ids can carry dots (e.g. a sheet-music score route
+        // /piano/sheetmusic/view/files:docs/sheet-music/song.musicxml); a broad
+        // `req.path.includes('.')` skip sent those past this handler to a
+        // dead-end (no route matches → the request hangs).
+        const lastSeg = req.path.slice(req.path.lastIndexOf('/') + 1);
+        if (/\.(js|mjs|cjs|css|map|json|png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp[34]|m4a|ogg|oga|wav|webm|mov|pdf|wasm|txt|zip)$/i.test(lastSeg)) {
           return next();
         }
         // SPA route - serve index.html with no-cache so deploys take effect on reload
