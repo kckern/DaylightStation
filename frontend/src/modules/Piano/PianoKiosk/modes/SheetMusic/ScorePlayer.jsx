@@ -11,6 +11,7 @@ import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from './useScoreTransport.js';
+import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 
 const SOSTENUTO_CC = 66; // middle pedal — manual page turns
 const MODES = [
@@ -70,6 +71,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [metaOpen, setMetaOpen] = useState(false);
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
+  const prevTopRef = useRef(null);
   const wrongTimer = useRef(null);
   const stepRef = useRef(0);
   stepRef.current = step;
@@ -104,16 +106,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
 
-  // Auto-scroll the cursor into view (horizontal-only in scroll mode, vertical in wrap).
+  // Auto-follow the cursor: retargetable tween on the scroll container only
+  // (native smooth scrollIntoView self-cancels at per-note cadence and drags
+  // ancestor scrollers with it). Skipped while the reported layout belongs to
+  // the other flow (mid re-engrave — coordinates would be stale).
   useEffect(() => {
     if (mode === 'manual' || !current) return;
-    const c = cursorRef.current;
-    if (c) c.scrollIntoView({
-      behavior: 'smooth',
-      block: flow === 'horizontal' ? 'nearest' : 'center',
-      inline: flow === 'horizontal' ? 'center' : 'nearest',
-    });
-  }, [step, flow, mode, current]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (layout.flow && layout.flow !== flow) return;
+    const el = scrollRef.current;
+    const rdr = el?.querySelector('.musicxml-renderer');
+    if (!el || !rdr) return;
+    const elRect = el.getBoundingClientRect();
+    const rdrRect = rdr.getBoundingClientRect();
+    const rdrLeft = rdrRect.left - elRect.left + el.scrollLeft;
+    const rdrTop = rdrRect.top - elRect.top + el.scrollTop;
+    if (flow === 'horizontal') {
+      tweenScrollTo(el, { left: rdrLeft + current.x - el.clientWidth / 2 });
+    } else {
+      const mid = rdrTop + (current.top + current.bottom) / 2;
+      const targetTop = mid - el.clientHeight / 2;
+      // Re-center only when the cursor drifts out of the comfortable band —
+      // avoids a vertical micro-scroll on every step within a system.
+      if (Math.abs(targetTop - el.scrollTop) > el.clientHeight * 0.18) tweenScrollTo(el, { top: targetTop });
+    }
+  }, [step, flow, mode, current, layout.flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
   // Follow mode: advance on the correct note, flash on a plausible wrong one.
   useEffect(() => {
@@ -171,6 +188,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const cursorColor = mode === 'follow' ? '#2ec46f' : '#6cf';
   const pct = Math.round(scale * 100);
 
+  // Teleport (don't sweep diagonally) when the cursor crosses to a new system.
+  const jump = current != null && prevTopRef.current != null && Math.abs(current.top - prevTopRef.current) > 1;
+  useEffect(() => { prevTopRef.current = current?.top ?? null; }, [current]);
+
   // Title lives in the body (not the header): fixed at top in scroll mode, at the
   // top of the page (scrolls out of view) in wrap mode. Tap it for metadata.
   const titleBlock = (
@@ -226,8 +247,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
           {current && mode !== 'manual' && (
             <div
               ref={cursorRef}
-              className={`piano-score-cursor${wrong ? ' is-wrong' : ''}`}
-              style={{ left: current.x - 9, top: current.top, height: Math.max(40, current.bottom - current.top), '--cursor-color': cursorColor }}
+              className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
+              style={{
+                left: current.x - 9 * scale,
+                top: current.top,
+                width: Math.round(18 * scale),
+                height: Math.max(40 * scale, current.bottom - current.top),
+                '--cursor-color': cursorColor,
+              }}
             />
           )}
         </MusicXmlRenderer>

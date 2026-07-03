@@ -1971,11 +1971,12 @@
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
 
 .piano-score-cursor {
-  position: absolute; width: 18px;
+  position: absolute; // width set inline (scales with zoom)
   background: color-mix(in srgb, var(--cursor-color, #2ec46f) 26%, transparent);
   border-left: 3px solid var(--cursor-color, #2ec46f);
   border-radius: 3px; pointer-events: none; z-index: 5;
   transition: left 140ms ease, top 140ms ease;
+  &.is-jump { transition: none; } // system break — teleport, don't sweep diagonally
   &.is-wrong {
     background: rgba(255, 82, 82, 0.3); border-color: #ff5252;
     animation: scoreCursorWrong 280ms ease;
