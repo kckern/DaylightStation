@@ -96,6 +96,88 @@ function noteheadBox(osmd, n, opRect) {
 }
 
 /**
+ * Build the shared per-step machinery for one cursor walk: the accumulator
+ * arrays, the hit counters, a `processStep()` closure that reads the CURRENT
+ * cursor position and pushes onto them, and a `finalize()` that logs + returns
+ * the assembled result.
+ *
+ * Both the synchronous {@link extractEvents} and the sliced
+ * {@link extractLayoutSliced} drive their OWN cursor loop but call this exact
+ * `processStep` body, so their geometry / tempo / counter logic can never
+ * diverge. The only difference between the two callers is loop cadence
+ * (blocking vs. yielded); the per-step work lives here in ONE place.
+ * @param {object} osmd
+ */
+function makeCursorWalk(osmd) {
+  const events = [], notes = [], tempoEntries = [], onsetRecords = [];
+  const cursor = osmd.cursor;
+  let lastBpm = null;
+  let graphicalHits = 0, fallbackHits = 0;
+
+  // One cursor step: reads cursor.Iterator / cursor.NotesUnderCursor() at the
+  // current position and appends to the shared arrays. Called once per iteration.
+  function processStep() {
+    const onsetQuarter = cursor.Iterator.currentTimeStamp.RealValue * 4;
+    const bpm = cursor.Iterator.CurrentBpm;
+    if (Number.isFinite(bpm) && bpm > 0 && bpm !== lastBpm) {
+      tempoEntries.push({ onsetQuarter, bpm });
+      lastBpm = bpm;
+    }
+    const onset = collectOnsetNotes(cursor.NotesUnderCursor());
+    const el = cursor.cursorElement;
+    const opRect = el?.offsetParent?.getBoundingClientRect?.() || null;
+    // Fallback box (cursor element) reused for any note lacking graphical geometry.
+    const fallbackBox = el ? {
+      x: el.offsetLeft + el.offsetWidth / 2,
+      top: el.offsetTop,
+      bottom: el.offsetTop + el.offsetHeight,
+      width: el.offsetWidth,
+    } : { x: 0, top: 0, bottom: 0, width: 0 };
+    for (const n of onset) {
+      const staff = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
+      notes.push({
+        midi: midiOfHalfTone(n.halfTone),
+        staff,
+        onsetQuarter,
+        durationQuarters: (n.Length?.RealValue ?? 0) * 4,
+      });
+      const gbox = noteheadBox(osmd, n, opRect);
+      if (gbox) graphicalHits++; else fallbackHits++;
+      const box = gbox || fallbackBox;
+      onsetRecords.push({
+        onsetQuarter,
+        midi: midiOfHalfTone(n.halfTone),
+        staff,
+        x: box.x,
+        top: box.top,
+        bottom: box.bottom,
+        width: box.width,
+      });
+    }
+    const melody = pickMelodyNote(onset);
+    if (melody) {
+      events.push({
+        midi: midiOfHalfTone(melody.halfTone),
+        midis: onset.map((n) => midiOfHalfTone(n.halfTone)),
+        onsetQuarter,
+        x: fallbackBox.x,
+        top: fallbackBox.top,
+        bottom: fallbackBox.bottom,
+      });
+    }
+  }
+
+  function finalize() {
+    logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
+    events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
+    const steps = buildSteps(onsetRecords);
+    return { events, notes, tempoEntries, steps };
+  }
+
+  return { cursor, processStep, finalize };
+}
+
+/**
  * Walk OSMD's cursor start→end. Emits, from one pass (so repeats and tempo
  * stay aligned with the visual cursor):
  *  events       — one per melody onset (cursor steps), with `midis` (every
@@ -105,75 +187,94 @@ function noteheadBox(osmd, n, opRect) {
  *  steps        — one per onset, carrying EVERY note sounding across ALL
  *                 staves with its on-screen notehead box (for the light-up
  *                 overlay + full-hand follow tracker)
+ *
+ * Synchronous / blocking. For the yielded, progress-reporting variant that
+ * shares the exact same per-step body, see {@link extractLayoutSliced}.
  */
 export function extractEvents(osmd) {
-  const events = [], notes = [], tempoEntries = [], onsetRecords = [];
   const cursor = osmd.cursor;
-  if (!cursor) return { events, notes, tempoEntries, steps: [] };
-  let lastBpm = null;
-  let graphicalHits = 0, fallbackHits = 0;
+  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [] };
+  const walk = makeCursorWalk(osmd);
   try {
     cursor.show(); // geometry only updates while the cursor is visible
     cursor.reset();
     let guard = 0;
     while (!cursor.Iterator.EndReached && guard++ < 50000) {
-      const onsetQuarter = cursor.Iterator.currentTimeStamp.RealValue * 4;
-      const bpm = cursor.Iterator.CurrentBpm;
-      if (Number.isFinite(bpm) && bpm > 0 && bpm !== lastBpm) {
-        tempoEntries.push({ onsetQuarter, bpm });
-        lastBpm = bpm;
-      }
-      const onset = collectOnsetNotes(cursor.NotesUnderCursor());
-      const el = cursor.cursorElement;
-      const opRect = el?.offsetParent?.getBoundingClientRect?.() || null;
-      // Fallback box (cursor element) reused for any note lacking graphical geometry.
-      const fallbackBox = el ? {
-        x: el.offsetLeft + el.offsetWidth / 2,
-        top: el.offsetTop,
-        bottom: el.offsetTop + el.offsetHeight,
-        width: el.offsetWidth,
-      } : { x: 0, top: 0, bottom: 0, width: 0 };
-      for (const n of onset) {
-        const staff = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
-        notes.push({
-          midi: midiOfHalfTone(n.halfTone),
-          staff,
-          onsetQuarter,
-          durationQuarters: (n.Length?.RealValue ?? 0) * 4,
-        });
-        const gbox = noteheadBox(osmd, n, opRect);
-        if (gbox) graphicalHits++; else fallbackHits++;
-        const box = gbox || fallbackBox;
-        onsetRecords.push({
-          onsetQuarter,
-          midi: midiOfHalfTone(n.halfTone),
-          staff,
-          x: box.x,
-          top: box.top,
-          bottom: box.bottom,
-          width: box.width,
-        });
-      }
-      const melody = pickMelodyNote(onset);
-      if (melody) {
-        events.push({
-          midi: midiOfHalfTone(melody.halfTone),
-          midis: onset.map((n) => midiOfHalfTone(n.halfTone)),
-          onsetQuarter,
-          x: fallbackBox.x,
-          top: fallbackBox.top,
-          bottom: fallbackBox.bottom,
-        });
-      }
+      walk.processStep();
       cursor.next();
     }
   } finally {
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
-  logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
-  events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
-  const steps = buildSteps(onsetRecords);
-  return { events, notes, tempoEntries, steps };
+  return walk.finalize();
+}
+
+/**
+ * Sliced, non-blocking twin of {@link extractEvents}: the SAME cursor walk
+ * (same {@link makeCursorWalk} per-step body → identical events/notes/steps/
+ * tempoEntries), but yielding to the event loop every `sliceSize` steps so the
+ * tablet's main thread breathes while geometry is extracted. The React wrapper
+ * paints the engraved sheet first, then runs this to fill in the play-along
+ * geometry without freezing.
+ *
+ * The total step count is unknown up front, so we don't use {@link runSliced}
+ * (which needs a total); we drive the cursor directly and estimate a soft total
+ * from the measure count for a monotonic progress fraction.
+ * @param {object} osmd - an already-engraved OSMD instance
+ * @param {{ sliceSize?:number, yieldFn?:(cb:Function)=>void,
+ *           onProgress?:(p:number)=>void, shouldAbort?:() => boolean }} [opts]
+ * @returns {Promise<{events:Array,notes:Array,tempoEntries:Array,steps:Array}|null>}
+ *   null when aborted mid-walk.
+ */
+export async function extractLayoutSliced(osmd, opts = {}) {
+  const {
+    sliceSize = 256,
+    yieldFn = scheduleYield,
+    onProgress,
+    shouldAbort = () => false,
+  } = opts;
+  const cursor = osmd?.cursor;
+  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [] }; }
+
+  const walk = makeCursorWalk(osmd);
+
+  // Soft total for progress — the exact step count is unknowable without walking
+  // the whole score, so estimate measures × a rough steps-per-measure.
+  const measureCount = osmd.GraphicSheet?.MeasureList?.length
+    || osmd.Sheet?.SourceMeasures?.length
+    || 0;
+  const STEPS_PER_MEASURE = 8;
+  const estimate = measureCount > 0 ? measureCount * STEPS_PER_MEASURE : 0;
+  const reportProgress = (done) => {
+    if (!onProgress) return;
+    // Monotonic, always < 1 until the final onProgress(1); approaches 1 with `done`.
+    const p = estimate > 0
+      ? done / estimate
+      : 1 - 1 / (1 + done / 256);
+    onProgress(Math.min(0.99, p));
+  };
+
+  let done = 0;
+  try {
+    if (shouldAbort()) return null;
+    cursor.show(); // geometry only updates while the cursor is visible
+    cursor.reset();
+    let guard = 0;
+    while (!cursor.Iterator.EndReached && guard++ < 50000) {
+      walk.processStep();
+      cursor.next();
+      done++;
+      if (done % sliceSize === 0) {
+        reportProgress(done);
+        await new Promise((r) => yieldFn(r));
+        if (shouldAbort()) return null; // checked before the next slice's work
+      }
+    }
+  } finally {
+    try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
+  }
+  onProgress?.(1);
+  return walk.finalize();
 }
 
 /**
