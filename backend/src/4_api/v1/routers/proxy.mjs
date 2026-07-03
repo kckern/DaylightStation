@@ -164,6 +164,42 @@ export function rewriteHlsPlaylist(text, baseUrl, profile) {
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
+/**
+ * Extract the uncompressed MusicXML text from a compressed `.mxl` buffer.
+ *
+ * A `.mxl` is a ZIP whose `META-INF/container.xml` names the root score file
+ * (the MusicXML). We read that pointer and return the referenced entry as UTF-8
+ * text, so the stream endpoint can serve clean XML that the frontend engraver
+ * (OSMD) can parse directly — no in-browser unzip needed.
+ *
+ * @param {Buffer} buffer - raw .mxl file bytes
+ * @returns {Promise<string>} uncompressed MusicXML
+ */
+export async function extractMusicXmlFromMxl(buffer) {
+  const AdmZip = (await import('adm-zip')).default;
+  const zip = new AdmZip(buffer);
+
+  // Preferred: follow META-INF/container.xml → <rootfile full-path="…">.
+  const container = zip.getEntry('META-INF/container.xml');
+  if (container) {
+    const xml = container.getData().toString('utf-8');
+    const m = xml.match(/<rootfile\b[^>]*\bfull-path\s*=\s*(?:"([^"]+)"|'([^']+)')/i);
+    const rootPath = m && (m[1] || m[2]);
+    if (rootPath) {
+      const entry = zip.getEntry(rootPath);
+      if (entry) return entry.getData().toString('utf-8');
+    }
+  }
+
+  // Fallback: first .musicxml/.xml entry that isn't ZIP metadata.
+  const entry = zip.getEntries().find((e) =>
+    !e.entryName.startsWith('META-INF/') &&
+    /\.(musicxml|xml)$/i.test(e.entryName));
+  if (entry) return entry.getData().toString('utf-8');
+
+  throw new Error('No MusicXML entry found in .mxl archive');
+}
+
 export function createProxyRouter(config) {
   const router = express.Router();
   const { registry, proxyService, configService, mediaBasePath, dataPath, retroarchProxy, logger = console } = config;
@@ -186,6 +222,25 @@ export function createProxyRouter(config) {
 
       const fullPath = item.metadata.filePath;
       const mimeType = item.metadata.mimeType || 'application/octet-stream';
+
+      // Compressed MusicXML (.mxl) is a ZIP container — unzip on the fly and
+      // serve the inner MusicXML as clean text so the engraver can parse it
+      // directly (the raw ZIP bytes are unusable as the text the client fetches).
+      if (/\.mxl$/i.test(fullPath)) {
+        try {
+          const xml = await extractMusicXmlFromMxl(await fs.promises.readFile(fullPath));
+          res.set({
+            'Content-Type': 'application/vnd.recordare.musicxml+xml; charset=utf-8',
+            'Cache-Control': 'public, max-age=31536000',
+            'X-Content-Type-Options': 'nosniff',
+            'Access-Control-Allow-Origin': '*',
+          });
+          return res.send(xml);
+        } catch (err) {
+          logger.warn?.('proxy.mxl.extract_failed', { filePath, error: err.message });
+          return res.status(422).json({ error: 'Could not decompress .mxl score' });
+        }
+      }
 
       streamFileWithRanges(req, res, fullPath, mimeType, {
         'Cache-Control': 'public, max-age=31536000',
