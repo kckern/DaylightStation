@@ -18,6 +18,8 @@ import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from '@/modules/Fitne
 import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from '@/modules/Fitness/lib/cycleGame/raceCheckpoint.js';
 import { buildAutoStartCourse } from '@/modules/Fitness/lib/cycleGame/autoStartCourse.js';
 import { effectiveLapLength } from '@/modules/Fitness/lib/cycleGame/effectiveLapLength.js';
+import { deriveRaceSnapshot } from '@/modules/Fitness/lib/cycleGame/deriveRaceSnapshot.js';
+import { dramaEventToasts } from '@/modules/Fitness/lib/cycleGame/dramaEventCopy.js';
 import { usePersistentVolume } from '@/modules/Fitness/nav/usePersistentVolume.js';
 import CycleGameHome from './CycleGameHome.jsx';
 import CountdownStoplight from './CountdownStoplight.jsx';
@@ -26,8 +28,18 @@ import CycleRaceScreen from './CycleRaceScreen.jsx';
 import CycleEventToast from './CycleEventToast.jsx';
 import RaceResults from './RaceResults.jsx';
 import RaceRecap from './RaceRecap.jsx';
-import { StopSignIcon, TimeIcon, RaceFlagIcon } from './home/icons.jsx';
+import { StopSignIcon, TimeIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from './home/icons.jsx';
 import './CycleGameContainer.scss';
+
+// Drama-event toast icons, keyed by the `variant` dramaEventCopy.js returns
+// (stateless glyphs — module-scope, not re-created per render/callback).
+const DRAMA_ICON = {
+  'lead-change': <SpeedIcon />,
+  finished: <MedalIcon />,
+  'photo-finish': <RaceFlagIcon />,
+  'final-lap': <RaceFlagIcon />,
+  lapping: <GhostIcon />,
+};
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
@@ -289,6 +301,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Single-slot, self-dismissing event toast + a queue for events that pile up.
   const [eventToast, setEventToast] = useState(null);
   const toastQueueRef = useRef([]);
+  // Edge-triggered drama events (audit C2 — deriveRaceSnapshot was fully built
+  // + tested but never called from the live tick). Chained snapshot-to-
+  // snapshot so LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/FINAL_LAP/
+  // LAPPING_IMMINENT fire exactly once, on the tick they actually happen.
+  const prevRaceSnapshotRef = useRef(null);
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -373,6 +390,24 @@ export default function CycleGameContainer({ onMount } = {}) {
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
       return toast;
+    });
+  }, []);
+
+  // Drama-event ceremony copy (audit C2 — "the highest fun-per-line fix in
+  // the codebase"): the event→copy mapping is pure (dramaEventCopy.js,
+  // independently unit-tested); this callback only adds the view-layer icon
+  // and enqueues. RIDER_FINISHED doubles as the finish-line ceremony (audit
+  // feedback 2026-07-02) — a distance-goal crossing gets its own celebratory
+  // moment the instant it happens, not just a row on the end-of-race results
+  // screen.
+  const recordDramaEvent = useCallback((event, snapshot, riders) => {
+    dramaEventToasts(event, snapshot, riders).forEach((t) => {
+      const id = (eventIdRef.current += 1);
+      const toast = { id, icon: DRAMA_ICON[t.variant] || null, ...t };
+      setEventToast((cur) => {
+        if (cur) { toastQueueRef.current.push(toast); return cur; }
+        return toast;
+      });
     });
   }, []);
 
@@ -707,6 +742,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       timeCapS: cfg.timeCapS,
       intervalSeconds: cfg.intervalMs / 1000,
       backgroundPlexId: cfg.backgroundPlexId,
+      lapLengthM,
       // Real course identity only — 'custom'/'ghost' lobby races persist null.
       courseId: ov?.id ?? null
     };
@@ -720,6 +756,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     rpmHistoryRef.current = new Map();
     gapTicksRef.current = new Map();
     prevSensorLostRef.current = new Set();
+    prevRaceSnapshotRef.current = null;
     tickCountRef.current = 0;
     setRaceEvents([]);
     setSaveFailed(false);
@@ -1003,6 +1040,18 @@ export default function CycleGameContainer({ onMount } = {}) {
         };
       });
       const state = controller.tick(inputs);
+
+      // ── Drama events (audit C2) — LEAD_CHANGE / RIDER_FINISHED / PHOTO_FINISH /
+      // FINAL_LAP / LAPPING_IMMINENT, edge-triggered against the previous tick's
+      // snapshot. Runs every tick (not gated on phase==='racing' vs 'finished')
+      // so the race-ending tick's own finisher still gets its ceremony toast.
+      const raceSnapshot = deriveRaceSnapshot(
+        state.engineState,
+        { lapLengthM: raceMetaRef.current?.lapLengthM || 0 },
+        prevRaceSnapshotRef.current
+      );
+      raceSnapshot.events.forEach((evt) => recordDramaEvent(evt, raceSnapshot, state.engineState?.riders || {}));
+      prevRaceSnapshotRef.current = raceSnapshot;
 
       // ── Cadence connectivity transitions (info) — connect/drop only, not steady
       // state. The first read seeds the map without logging. Answers "my pedaling
