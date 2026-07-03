@@ -1,12 +1,19 @@
 # Piano Bridge (APK)
 
-> **STATUS: BUILDS + RUNS (sfizz enabled). Verified 2026-06-23 on the SM-T590.**
+> **STATUS: BUILDS + RUNS. sfizz audio + screen-wake + ADB-free self-update all
+> verified 2026-07-02 on the SM-T590 (versionCode 10 / `1.6-selfupdate`).**
 >
 > The APK compiles (NDK r26b + cmake 3.22.1), installs on the tablet, runs the
 > foreground service + WebSocket control server on `:8770`, loads the Salamander
 > Grand SFZ via the vendored **sfizz** engine, and renders real audio through Oboe
 > (confirmed: `render signal peak>0` on note-on, no crash). **Dexed/FM is still
 > behind `#ifdef HAVE_DEXED` (silent) — not yet vendored.**
+>
+> **Verified 2026-07-02:** note→`screenOn poke -> HTTP 200` wake (after the
+> `usesCleartextTraffic` fix); live wake-policy reconfig over `:8770` (quiet
+> hours/suppress, no reinstall); ADB-free self-update; reboot auto-start via
+> `BootReceiver`. **The device should never need USB/ADB again** — see
+> *Operate this WITHOUT ADB* below.
 >
 > ### What it took to build (gotchas, all fixed in this tree)
 > - Install toolchain: `JAVA_HOME=/opt/homebrew/opt/openjdk@17 sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"`.
@@ -34,6 +41,106 @@ same Gradle wrapper layout, `compileSdk 33` / `minSdk 30`, Java 11, and cruciall
 the **regular-started-service + `NotificationManager.notify()`** pattern (NOT
 `startForeground()`) — see `_extensions/audio-bridge/DESIGN.md` for why that
 matters on Android 11.
+
+---
+
+## Operate this WITHOUT ADB (the `:8770` control plane)
+
+**Design goal (2026-07-02): the SM-T590 never needs USB/ADB again.** Everything you
+used to reach over `adb` is exposed over plain HTTP on `:8770` (NanoHTTPD binds all
+interfaces → reachable on the LAN). Drive it with `pbctl.mjs`
+(`PB_HOST=10.0.0.245:8770 node pbctl.mjs …`). No auth — same LAN-only trust model as
+the Fully REST API (and this plane already exposes `/exec`, an in-sandbox shell).
+
+The privileged perms this relies on are **granted once over USB and then persist**
+across reboots *and* across same-signature self-updates (lost only on a full
+uninstall). Currently granted on the device: `WRITE_SECURE_SETTINGS`, `READ_LOGS`,
+`DUMP`, `ACCESS_FINE_LOCATION`, and the `REQUEST_INSTALL_PACKAGES` appop.
+
+### Screen-wake on a played note (`ScreenWaker`)
+
+A BLE-MIDI note-on pokes Fully Kiosk's `screenOn` REST endpoint on `127.0.0.1:2323`,
+so playing the piano wakes a dark tablet even when the WebView is backgrounded (its
+Web-MIDI/timers are throttled and can't self-wake). Debounced to one poke per
+`cooldownMs`. The DS backend runs an equivalent WS-driven wake; either revives it.
+
+> **Cleartext fix (essential, 2026-07-02):** targetSdk 29 blocks cleartext HTTP by
+> default, which silently killed the poke (`Cleartext HTTP traffic to 127.0.0.1 not
+> permitted`). Fixed with `android:usesCleartextTraffic="true"`. Verify a real note
+> logs `screenOn poke -> HTTP 200` (via `pbctl log` / `pbctl logcat`).
+
+**Wake policy is 100% runtime-configurable over the LAN — no rebuild, no reinstall.**
+`POST /config` hot-reloads and rebuilds the `ScreenWaker` live. Keys:
+
+| key | meaning |
+|-----|---------|
+| `fkbWakeEnabled` | master on/off (default true) |
+| `fkbWakeCooldownMs` | min ms between pokes (default 8000) |
+| `fkbWakeQuietStart` / `fkbWakeQuietEnd` | `"HH:mm"` **local** daily quiet window (wraps midnight; empty = none) |
+| `fkbWakeSuppressUntilEpochMs` | absolute epoch-ms; notes before it don't wake |
+| `fkbPassword` / `fkbHost` / `fkbPort` | FKB target (set `fkbPassword` once via pbctl) |
+
+```bash
+pbctl config set fkbWakeEnabled false     # kill wake entirely
+pbctl quiet 22:00 07:00                    # nightly quiet window   (pbctl quiet off to clear)
+pbctl suppress 7200000                     # mute wake for 2h from now (0 = clear)
+```
+
+`fkbWakeSuppressUntilEpochMs` is the **generic hook for arbitrary future policy**:
+the DS backend can implement *any* rule it likes (guests present, movie playing,
+whatever) by computing a deadline and `POST`ing that one key — the APK never changes.
+
+### Self-update (ADB-free upgrades)
+
+New APK must be **same-signed** (debug keystore) and have **versionCode ≥ installed**.
+This device has a Google account, so it can't be a device owner → installs are **not
+silent**; each shows a one-tap Android confirm. But **never ADB again**:
+
+> **One-time prerequisite — disable Play Protect (ADB-free, persists).** Google Play
+> Protect blocks the sideloaded debug APK with `INSTALL_FAILED_VERIFICATION_FAILURE`
+> *after* you tap confirm (seen 2026-07-02). Turn the package verifier off once over
+> the `:8770` control plane (`WRITE_SECURE_SETTINGS`); it survives reboots + updates:
+> ```bash
+> pbctl setsetting global package_verifier_enable 0
+> pbctl setsetting global verifier_verify_adb_installs 0
+> ```
+> Verify a subsequent install logs `self-update result status=0` (SUCCESS) in
+> `pbctl log`, not `status=3`.
+
+Then, to update (confirm dialog surfaces reliably if you foreground the app first):
+
+- **Primary (native, verified 2026-07-02):**
+  ```bash
+  node cli/fkb.cli.mjs launch net.kckern.pianobridge      # foreground the app first
+  pbctl update http://<host>/piano-bridge.apk             # bridge downloads + PackageInstaller
+  ```
+  Foregrounding the app first is what lets the confirm dialog win the race against
+  Fully's kiosk foreground-reclaim (`InstallReceiver` `startActivity`s it). Watch
+  `pbctl log` for `launching install confirm dialog` → tap **Update** → `status=0`.
+- **Fallback:** Fully's own installer, `node cli/fkb.cli.mjs install http://<host>/x.apk`.
+  It surfaces the dialog too, but its `mdmApkToInstall` fetch proved **flaky** (often
+  never downloads on the `restartApp` nudge; use a **unique filename** each time so FKB
+  doesn't dedupe a URL it already processed).
+
+Host the APK anywhere the tablet can reach (a LAN HTTP server, or drop it in the DS
+prod container's served `frontend/dist/`). **Post-update the service is stopped** (the
+in-place update kills the process) — relaunch it ADB-free with
+`node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
+
+### Lifecycle / recovery (no ADB)
+
+- **Reboot:** `BootReceiver` → `startForegroundService` auto-starts the service
+  (verified 2026-07-02: bridge back on `:8770` ~60 s after boot, no launch needed).
+- **Mid-run OS kill:** the service is `START_STICKY` (revives itself).
+- **Manual restart:** `node cli/fkb.cli.mjs launch net.kckern.pianobridge` (FKB
+  `startApplication` → MainActivity → service). No ADB.
+- Config override + granted perms **persist** across reboots and self-updates.
+
+### Diagnostics (`pbctl`)
+
+`status | log | logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]` —
+see the header of `pbctl.mjs`. `/exec` runs `sh -c` as the app uid; other-process CPU
+is impossible under the Knox untrusted-app SELinux ceiling (needs adb's shell uid).
 
 ---
 
@@ -80,17 +187,37 @@ cd _extensions/piano-bridge/app
 JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug
 ```
 
-Output (once buildable): `app/build/outputs/apk/debug/app-debug.apk`.
+Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
+
+> **Gotcha (2026-07-02):** the `gradle/wrapper/gradle-wrapper.jar` in this tree is
+> truncated (46 KB) and throws `NoClassDefFoundError: …MissingResourceException`.
+> The extracted Gradle 7.5.1 distribution itself is fine — build with it directly:
+> ```bash
+> JAVA_HOME=/opt/homebrew/opt/openjdk@17 \
+>   ~/.gradle/wrapper/dists/gradle-7.5.1-bin/*/gradle-7.5.1/bin/gradle assembleDebug
+> ```
+
+> **Always bump `versionCode` in `app/app/build.gradle` on every build** — the
+> self-update path (below) rejects an APK whose `versionCode` is < the installed one.
+> Current shipped build: **versionCode 10 / versionName `1.6-selfupdate`** (SM-T590,
+> verified 2026-07-02).
 
 ## Install
 
 ```bash
-adb -s <ip:5555> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <ip:5555> install -r app/app/build/outputs/apk/debug/app-debug.apk
 adb -s <ip:5555> shell am start -n net.kckern.pianobridge/.MainActivity
 ```
 
 `MainActivity` starts `PianoBridgeService` (a regular started service) and shows
 a status screen with a "Restart service" button for debugging.
+
+**After a *fresh* install** the app sits in Android's "stopped state" and will NOT
+receive `BOOT_COMPLETED` until it is launched once — so always run the
+`am start …MainActivity` line above after installing, or the bridge won't auto-start
+on the *next* reboot. (Once launched, boot-survival is permanent — see below.)
+
+Future upgrades **do not need ADB at all** — see *Self-update* below.
 
 ## Push instrument assets
 
@@ -203,9 +330,13 @@ _extensions/piano-bridge/
             ├── AndroidManifest.xml
             ├── java/net/kckern/pianobridge/
             │   ├── MainActivity.java
-            │   ├── PianoBridgeService.java    (core: notify(), MidiManager, WS)
-            │   ├── BootReceiver.java
-            │   ├── ControlServer.java         (NanoWSD, port 8770, protocol)
+            │   ├── PianoBridgeService.java    (core: notify(), MidiManager, WS, START_STICKY)
+            │   ├── BootReceiver.java          (BOOT_COMPLETED → startForegroundService)
+            │   ├── ScreenWaker.java           (note → FKB screenOn poke; quiet/suppress gating)
+            │   ├── Updater.java               (self-update: PackageInstaller session)
+            │   ├── InstallReceiver.java       (self-update: launches the confirm dialog)
+            │   ├── DeviceConfig.java          (runtime override; wake-policy keys)
+            │   ├── ControlServer.java         (NanoWSD :8770 — WS + /config /update /exec …)
             │   └── PianoEngine.java           (JNI facade)
             └── cpp/
                 ├── CMakeLists.txt             (guarded sfizz/dexed blocks)

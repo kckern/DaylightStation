@@ -34,12 +34,18 @@ public final class ScreenWaker {
     private final boolean enabled;
     private final String url;          // fully-built screenOn URL (password baked in)
     private final long cooldownMs;
+    private final int quietStartMin;   // minutes-of-day, or -1 if no quiet window
+    private final int quietEndMin;
+    private final long suppressUntilMs; // absolute epoch-ms; notes before this don't wake
     private final ExecutorService exec;
     private final AtomicLong lastWakeAt = new AtomicLong(0);
 
     public ScreenWaker(DeviceConfig cfg) {
         this.enabled = cfg.fkbWakeEnabled();
         this.cooldownMs = cfg.fkbWakeCooldownMs();
+        this.quietStartMin = parseHhmm(cfg.fkbWakeQuietStart());
+        this.quietEndMin = parseHhmm(cfg.fkbWakeQuietEnd());
+        this.suppressUntilMs = cfg.fkbWakeSuppressUntilMs();
         this.url = "http://" + cfg.fkbHost() + ":" + cfg.fkbPort()
                 + "/?cmd=screenOn&type=json&password=" + enc(cfg.fkbPassword());
         this.exec = Executors.newSingleThreadExecutor(r -> {
@@ -50,6 +56,8 @@ public final class ScreenWaker {
         Log.i(TAG, "ScreenWaker enabled=" + enabled
                 + " target=" + cfg.fkbHost() + ":" + cfg.fkbPort()
                 + " cooldownMs=" + cooldownMs
+                + " quiet=" + cfg.fkbWakeQuietStart() + "-" + cfg.fkbWakeQuietEnd()
+                + " suppressUntilMs=" + suppressUntilMs
                 + " hasPassword=" + (!cfg.fkbPassword().isEmpty()));
     }
 
@@ -60,6 +68,8 @@ public final class ScreenWaker {
     public void poke() {
         if (!enabled) return;
         long now = System.currentTimeMillis();
+        if (now < suppressUntilMs) return;   // externally muted until a deadline (backend policy)
+        if (inQuietWindow()) return;         // inside the daily local-time quiet window
         long last = lastWakeAt.get();
         if (now - last < cooldownMs) return;
         // Claim the window atomically so a burst of notes fires exactly one poke.
@@ -69,6 +79,33 @@ public final class ScreenWaker {
         } catch (Exception ignored) {
             // executor shut down (service stopping) — drop the poke
         }
+    }
+
+    /** Parse "HH:mm" to minutes-of-day, or -1 if blank/invalid. */
+    private static int parseHhmm(String s) {
+        if (s == null) return -1;
+        s = s.trim();
+        int colon = s.indexOf(':');
+        if (colon <= 0) return -1;
+        try {
+            int h = Integer.parseInt(s.substring(0, colon).trim());
+            int m = Integer.parseInt(s.substring(colon + 1).trim());
+            if (h < 0 || h > 23 || m < 0 || m > 59) return -1;
+            return h * 60 + m;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** True if the current LOCAL time falls in [quietStart, quietEnd) (wraps past midnight). */
+    private boolean inQuietWindow() {
+        if (quietStartMin < 0 || quietEndMin < 0 || quietStartMin == quietEndMin) return false;
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        int nowMin = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE);
+        if (quietStartMin < quietEndMin) {
+            return nowMin >= quietStartMin && nowMin < quietEndMin;   // same-day window
+        }
+        return nowMin >= quietStartMin || nowMin < quietEndMin;       // window wraps midnight
     }
 
     private void doWake() {
