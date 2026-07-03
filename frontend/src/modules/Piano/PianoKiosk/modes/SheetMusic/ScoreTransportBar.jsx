@@ -45,6 +45,9 @@ export default function ScoreTransportBar({
   const [infoOpen, setInfoOpen] = useState(false);
 
   const position = `${Math.min(step + 1, total)} / ${total}`;
+  // Run (▶/❚❚) and reset (⟲) drive the transport, which only exists in the
+  // auto-advancing modes; in Follow/Manual their timeline is empty → no-ops.
+  const canRun = mode === 'metronome' || mode === 'play';
 
   const openSize = () => {
     setSizeDraft(scale);
@@ -58,7 +61,7 @@ export default function ScoreTransportBar({
   const renderPartChip = (part) => {
     const { staff, label } = part;
     if (mode === 'play') {
-      const role = roles[staff] || 'mute';
+      const role = roles[staff] || 'play';
       const roleTitle = ROLE_TITLES[role] || role;
       return (
         <button
@@ -113,6 +116,7 @@ export default function ScoreTransportBar({
           className="piano-score-btn piano-score-reset"
           aria-label="Reset"
           onClick={onReset}
+          disabled={!canRun}
         >
           {'⟲'}
         </button>
@@ -122,6 +126,7 @@ export default function ScoreTransportBar({
           aria-label={running ? 'Pause' : 'Play'}
           aria-pressed={running}
           onClick={onToggleRun}
+          disabled={!canRun}
         >
           {running ? '❚❚' : '▶'}
         </button>
