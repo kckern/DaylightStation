@@ -21,7 +21,7 @@ const props = { recording: false, elapsedMs: 0, onRecordToggle: vi.fn() };
 describe('StudioPlay top pane', () => {
   it('always renders the theory triptych (circle · staff · chord) — no layout toggle', () => {
     const { container } = render(<StudioPlay {...props} />);
-    expect(container.querySelector('.piano-triptych')).toBeTruthy();
+    expect(container.querySelector('.theory-panel--row')).toBeTruthy();
     expect(container.querySelector('.piano-circle-of-fifths')).toBeTruthy();
     expect(container.querySelector('.current-chord-staff-wrapper')).toBeTruthy();
     expect(container.querySelector('.piano-chord-name')).toBeTruthy();

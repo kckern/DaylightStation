@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { NoteWaterfall } from '../../../components/NoteWaterfall.jsx';
 import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
-import { StudioTriptych } from '../../../components/StudioTriptych.jsx';
+import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -45,7 +45,7 @@ export default function StudioPlay({ recording, elapsedMs, onRecordToggle }) {
 
       {/* Theory triptych is the default top pane — circle of fifths · staff · chord. */}
       <StudioTopPane align="stretch">
-        <StudioTriptych activeNotes={activeNotes} />
+        <TheoryPanel activeNotes={activeNotes} layout="row" />
       </StudioTopPane>
 
       <div className="piano-studio-play__waterfall">

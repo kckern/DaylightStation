@@ -36,6 +36,7 @@ export function parseMusicXml(xml) {
   }
 
   const score = { divisions: 1, tempo: 100, timeSig: { beats: 4, beatType: 4 }, key: { fifths: 0 }, parts: [] };
+  let tempoFound = false; // header shows the OPENING tempo; later markings belong to the tempo map
   score.title = text(doc, 'work work-title', null) || text(doc, 'movement-title', null);
   score.composer = doc.querySelector('identification creator[type="composer"]')?.textContent?.trim()
     || doc.querySelector('creator')?.textContent?.trim() || null;
@@ -68,11 +69,14 @@ export function parseMusicXml(xml) {
         }
         measure.attributes = { clefs: { ...part.clefs }, key: score.key, time: score.timeSig };
       }
-      // Tempo (sound tempo or metronome per-minute).
-      const sound = measureEl.querySelector('sound[tempo]');
-      if (sound) score.tempo = Math.round(Number(sound.getAttribute('tempo')));
-      const perMin = measureEl.querySelector('metronome per-minute');
-      if (perMin && !sound) score.tempo = Number(perMin.textContent) || score.tempo;
+      // Tempo (sound tempo or metronome per-minute) — first marking wins; the
+      // header shows the opening tempo, later markings belong to the tempo map.
+      if (!tempoFound) {
+        const sound = measureEl.querySelector('sound[tempo]');
+        const perMin = measureEl.querySelector('metronome per-minute');
+        if (sound) { score.tempo = Math.round(Number(sound.getAttribute('tempo'))); tempoFound = true; }
+        else if (perMin) { score.tempo = Number(perMin.textContent) || score.tempo; tempoFound = true; }
+      }
 
       // Walk children in document order, tracking a time cursor (in divisions).
       let cursor = 0; // divisions from measure start
