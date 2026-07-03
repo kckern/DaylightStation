@@ -143,6 +143,8 @@ defaults (poll 3000 / debounce 15000 / reconcile 45000 / retries 3).
 | Missed edge / HA or DS down | DS poll self-heals; fail-safe to ON |
 | Dead kiosk page | escalate to `loadStartUrl` (recovery already shipped) |
 | Two-writer fight | DS only force-OFFs (piano off) + pulses ON (edge); browser owns on-state while piano on |
+| Future ambient-schedule conflict | Single-writer holds only because `yellow-room-tablet` is **not** in `ambient.yml`/`art.yml`. If it is ever added to the ambient schedule, `AmbientSchedulerService`'s timer-driven wake would fight PSAS's OFF-reconcile — keep the tablet out of ambient, or make PSAS the arbiter, before adding it. |
+| Escalation vs FKB self-heal | PSAS's `loadStartUrl` escalation (gated to `desiredOn` only) and FKB's on-device `reloadPageFailure` recovery share the same goal (get the page live) and converge; PSAS fires it at most once per `applyScreen` then gives up + notifies, so worst case is one redundant reload — not a ping-pong. |
 
 ## Open items to verify (empirically, on the device)
 1. Does FKB `screenOff` still deliver **touch** events to the WebView? (assume no; wire anyway)
