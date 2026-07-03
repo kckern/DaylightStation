@@ -9,9 +9,10 @@ import useArmedAction from './useArmedAction.js';
  * face → onPick(id). The ✕ / backdrop / timeout → onDismiss (the caller sets
  * the player to Guest). Presentational; the parent owns identity side-effects.
  *
- * Layout: each page of up to 9 faces is balanced into even rows (6→3+3, 8→4+4,
- * 7→4+3 centered) by capping the flex grid to `columnsForCount` columns. A
- * roster larger than 9 paginates, with page dots beneath the grid.
+ * Layout: a full page is a 3×2 grid of 6 faces (columnsForCount(6) → 3 columns);
+ * a smaller trailing page balances into even rows (5→3+2) by capping the flex
+ * grid to `columnsForCount` columns. A roster larger than 6 paginates, with page
+ * dots beneath the grid.
  */
 export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss, onScreenOff, timeoutMs = 30000 }) {
   const onDismissRef = useRef(onDismiss);
