@@ -93,10 +93,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   );
   const stepTimeline = useMemo(() => buildStepTimeline(events, tempoMap), [events, tempoMap]);
 
-  // Play mode: per-staff roles (play/mute/you). Re-seeded when the score's staves change.
+  // Play mode: per-staff roles (play/mute/you). Keyed to the staff SET (a stable
+  // signature), not the parts array identity — otherwise every re-engrave
+  // (zoom / flow / resize gives layout.notes a fresh reference) would wipe the
+  // user's role picks. Staves that persist keep their role; new staves default to play.
   const [roles, setRoles] = useState({});
   const parts = useMemo(() => partsOf(layout.notes), [layout.notes]);
-  useEffect(() => { setRoles(Object.fromEntries(parts.map((p) => [p.staff, 'play']))); }, [parts]);
+  const staffSig = parts.map((p) => p.staff).join(',');
+  useEffect(() => {
+    setRoles((prev) => Object.fromEntries(parts.map((p) => [p.staff, prev[p.staff] || 'play'])));
+  }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playTimeline = useMemo(
     () => (mode === 'play' ? buildPlayTimeline(events, layout.notes, tempoMap, roles) : stepTimeline),
@@ -105,6 +111,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const soundingRef = useRef(new Set());
   const silence = useCallback(() => {
+    // Nothing the kiosk sent is sounding — don't broadcast a panic that would
+    // cut off notes the player is holding on the piano (e.g. switching out of Follow).
+    if (!soundingRef.current.size) return;
     soundingRef.current.forEach((n) => { try { releaseNote?.(n); } catch { /* port gone */ } });
     soundingRef.current.clear();
     // BLE one-turn-late bug can swallow a lone terminal note-off — panic (CC123)
@@ -204,8 +213,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
-    if (i >= 0) { setStep(i); transport.seek(stepTimeline[i]?.t ?? 0); }
-  }, [mode, flow, events, transport, stepTimeline]);
+    if (i >= 0) {
+      setStep(i);
+      // Seek jumps idxRef past pending note_offs — flush sounding notes first
+      // (Play mode) so a skipped-over note doesn't drone on the piano.
+      if (mode === 'play') silence();
+      transport.seek(stepTimeline[i]?.t ?? 0);
+    }
+  }, [mode, flow, events, transport, stepTimeline, silence]);
 
   useEffect(() => () => silence(), [silence]);
 
