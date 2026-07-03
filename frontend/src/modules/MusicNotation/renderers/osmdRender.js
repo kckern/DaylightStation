@@ -8,6 +8,9 @@
 //   'wrapped'    — systems wrap to the container width (scroll ↓)
 //   'horizontal' — one endless staffline (infinite scroll →)
 
+import getLogger from '../../../lib/logging/Logger.js';
+let _logger; function logger() { if (!_logger) _logger = getLogger().child({ component: 'osmd-render' }); return _logger; }
+
 let osmdModulePromise = null;
 function loadOsmd() {
   if (!osmdModulePromise) osmdModulePromise = import('opensheetmusicdisplay');
@@ -64,39 +67,31 @@ export function buildSteps(recs) {
 }
 
 /**
- * Best-effort on-screen box for a single OSMD Note's notehead. Tries the
- * graphical-note mapping (px converted from OSMD units via the current zoom);
- * on any failure or missing API, returns null so the caller falls back to the
- * cursor-element box. Never throws.
+ * On-screen box of a note's notehead, in the same offset-space as the cursor
+ * (measured relative to opRect = the cursor's offsetParent rect). Returns null if
+ * the graphical note or its SVG element is unavailable / not laid out, so the
+ * caller falls back to the cursor-band box.
  * @param {object} osmd
  * @param {object} n - OSMD Note
+ * @param {DOMRect|null} opRect - bounding rect of the cursor element's offsetParent
  * @returns {{x:number,top:number,bottom:number,width:number}|null}
  */
-function noteheadBox(osmd, n) {
+function noteheadBox(osmd, n, opRect) {
+  if (!opRect) return null;
   try {
-    const gn = osmd?.GraphicSheet?.GetGraphicalNoteFromNote?.(n)
-      ?? osmd?.graphic?.GetGraphicalNoteFromNote?.(n);
-    const pas = gn?.PositionAndShape;
-    const abs = pas?.AbsolutePosition;
-    if (!abs || !Number.isFinite(abs.x) || !Number.isFinite(abs.y)) return null;
-    const unitToPx = 10 * (osmd.Zoom || 1);
-    const cx = abs.x * unitToPx;
-    const cy = abs.y * unitToPx;
-    const borderTop = pas?.BorderTop;
-    const borderBottom = pas?.BorderBottom;
-    const width = Number.isFinite(pas?.Size?.width) ? pas.Size.width * unitToPx : unitToPx;
-    let top, bottom;
-    if (Number.isFinite(borderTop) && Number.isFinite(borderBottom)) {
-      top = cy + borderTop * unitToPx;
-      bottom = cy + borderBottom * unitToPx;
-    } else {
-      const half = unitToPx * 0.75; // small default notehead half-height
-      top = cy - half;
-      bottom = cy + half;
-    }
-    return { x: cx, top, bottom, width };
+    const g = osmd?.EngravingRules?.GNote?.(n);
+    const el = g?.getSVGGElement?.();
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (!r || (!r.width && !r.height)) return null; // not rendered
+    return {
+      x: r.left - opRect.left + r.width / 2, // center-x, offset-space
+      top: r.top - opRect.top,
+      bottom: r.bottom - opRect.top,
+      width: r.width,
+    };
   } catch {
-    return null; // malformed / unsupported OSMD version — use fallback
+    return null; // malformed / unsupported — fall back
   }
 }
 
@@ -116,6 +111,7 @@ export function extractEvents(osmd) {
   const cursor = osmd.cursor;
   if (!cursor) return { events, notes, tempoEntries, steps: [] };
   let lastBpm = null;
+  let graphicalHits = 0, fallbackHits = 0;
   try {
     cursor.show(); // geometry only updates while the cursor is visible
     cursor.reset();
@@ -129,6 +125,7 @@ export function extractEvents(osmd) {
       }
       const onset = collectOnsetNotes(cursor.NotesUnderCursor());
       const el = cursor.cursorElement;
+      const opRect = el?.offsetParent?.getBoundingClientRect?.() || null;
       // Fallback box (cursor element) reused for any note lacking graphical geometry.
       const fallbackBox = el ? {
         x: el.offsetLeft + el.offsetWidth / 2,
@@ -144,7 +141,9 @@ export function extractEvents(osmd) {
           onsetQuarter,
           durationQuarters: (n.Length?.RealValue ?? 0) * 4,
         });
-        const box = noteheadBox(osmd, n) || fallbackBox;
+        const gbox = noteheadBox(osmd, n, opRect);
+        if (gbox) graphicalHits++; else fallbackHits++;
+        const box = gbox || fallbackBox;
         onsetRecords.push({
           onsetQuarter,
           midi: midiOfHalfTone(n.halfTone),
@@ -171,6 +170,7 @@ export function extractEvents(osmd) {
   } finally {
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
+  logger().debug('notation.geometry', { total: graphicalHits + fallbackHits, graphical: graphicalHits, fallback: fallbackHits });
   events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
   const steps = buildSteps(onsetRecords);
   return { events, notes, tempoEntries, steps };
