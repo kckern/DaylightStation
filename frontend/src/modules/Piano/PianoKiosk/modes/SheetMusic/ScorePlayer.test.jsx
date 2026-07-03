@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
@@ -37,11 +37,18 @@ vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ onLayout, children }) => {
+    MusicXmlRenderer: ({ onLayout, children, scale }) => {
+      // Re-fire onLayout when scale changes (mirrors a real re-engrave), always
+      // with FRESH array references so tests exercise the new-identity path.
       useEffect(() => {
-        onLayout?.({ width: 800, height: 400, events: h.events, notes: [], tempoEntries: [], flow: 'wrapped', ...h.layoutExtras });
-      }, [onLayout]);
-      return <div data-testid="renderer">{children}</div>;
+        const extra = h.layoutExtras || {};
+        onLayout?.({
+          width: 800, height: 400, events: h.events, tempoEntries: [], flow: 'wrapped',
+          ...extra,
+          notes: (extra.notes || []).map((n) => ({ ...n })),
+        });
+      }, [onLayout, scale]);
+      return <div data-testid="renderer" className="musicxml-renderer">{children}</div>;
     },
   };
 });
@@ -126,7 +133,7 @@ describe('ScorePlayer — Metronome mode (transport-driven)', () => {
     vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
     vi.setSystemTime(0);
   });
-  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   // h.events onsets are 0,1,2,3 quarters; report a tempo map with a mid-piece
   // change so the timeline is: q0@60=1000ms/q, then q2@120=500ms/q.
@@ -155,7 +162,7 @@ describe('ScorePlayer — Play mode', () => {
     vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
     vi.setSystemTime(0);
   });
-  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('sounds only parts set to play, and stops silence via panic', async () => {
     h.layoutExtras = {
@@ -178,5 +185,37 @@ describe('ScorePlayer — Play mode', () => {
     screen.getByText('❚❚').click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
+  });
+
+  it('keeps part roles across a re-engrave (zoom must not wipe You/Mute)', async () => {
+    h.layoutExtras = { notes: [
+      { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+      { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
+    ] };
+    renderPlayer();
+    screen.getByText('Play').click();
+    await act(async () => {});
+    screen.getByText('RH: Play').click(); // RH → You
+    await act(async () => {});
+    expect(screen.getByText('RH: You')).toBeTruthy();
+    screen.getByText('A+').click(); // zoom → re-engrave (fresh layout.notes identity)
+    await act(async () => {});
+    expect(screen.getByText('RH: You')).toBeTruthy(); // role preserved, not reset to Play
+  });
+
+  it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
+    };
+    renderPlayer();
+    screen.getByText('Play').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // note 40 now sounding
+    h.sendPanic.mockClear();
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap to seek
+    expect(h.sendPanic).toHaveBeenCalled(); // flushed, won't drone
   });
 });
