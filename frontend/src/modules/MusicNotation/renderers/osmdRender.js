@@ -142,6 +142,20 @@ export async function osmdRender(host, xml, opts = {}) {
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
   await osmd.load(xml);
   if (abort()) return null;
+  return osmdReRender(osmd, host, { flow, scale });
+}
+
+/**
+ * Re-render an ALREADY-loaded OSMD instance (zoom / resize) and re-extract the
+ * layout. Skips the expensive `osmd.load(xml)` MusicXML parse — an order of
+ * magnitude cheaper on the tablet than a full osmdRender. Audit F1.
+ * @param {import('opensheetmusicdisplay').OpenSheetMusicDisplay} osmd
+ * @param {HTMLElement} host
+ * @param {{ width?:number, flow?:string, scale?:number }} [opts]
+ */
+export function osmdReRender(osmd, host, opts = {}) {
+  const scale = Math.max(0.5, Math.min(2.5, opts.scale || 1));
+  if (opts.width) host.style.width = `${opts.width}px`;
   osmd.Zoom = scale;
   osmd.render();
 
@@ -149,7 +163,7 @@ export async function osmdRender(host, xml, opts = {}) {
   const svg = host.querySelector('svg');
   const width = Math.ceil(Number(svg?.getAttribute('width')) || svg?.clientWidth || host.clientWidth || 0);
   const height = Math.ceil(Number(svg?.getAttribute('height')) || svg?.clientHeight || host.clientHeight || 0);
-  return { width, height, flow, events, notes, tempoEntries };
+  return { width, height, flow: opts.flow, events, notes, tempoEntries, osmd };
 }
 
 export default osmdRender;
