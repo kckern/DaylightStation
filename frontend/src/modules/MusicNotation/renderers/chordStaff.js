@@ -1,9 +1,11 @@
-// chordStaff — engrave the live "current chord" as a compact, self-centering
-// grand staff via VexFlow (SVG backend). Unlike the abcjs path, the staff is
-// drawn at an EXACT, content-sized viewBox (clef + key signature + one chord,
-// nothing more) and the whole fixed-size SVG is centered by its container — so
-// there's no container-width-vs-scale fight, no overflow clipping, and the chord
-// sits centered by construction regardless of how high/low it is.
+// chordStaff — engrave the live "current chord" as a grand staff via VexFlow
+// (SVG backend). The stave is drawn to FILL its host box width (its logical width
+// tracks the measured box aspect, so the viewBox aspect equals the box aspect and
+// the staff lines span edge-to-edge with no side gutters). The width is fixed by
+// the box, NOT by the chord — so it never jumps as you play, always leaves room
+// for the clef + key signature + notes, and content that would overrun it is
+// trimmed by the host's overflow:hidden. Clef → key signature → chord flow from
+// the left, as in normal notation.
 //
 // Spelling is key-signature aware: each MIDI note is given its true letter+alter,
 // then VexFlow's Accidental.applyAccidentals draws only the accidentals the key
@@ -21,15 +23,22 @@ const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff sy
 const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
 const MIN_NOTE_AREA = 40;
-const MAX_STAVE_W = 560; // logical units — don't engrave absurd staves on ultra-wide slots
 
-/** Stave/viewBox geometry for a given key-sig accidental count and host box aspect (w/h). */
+/**
+ * Stave/viewBox geometry for a given key-sig accidental count and host box aspect
+ * (w/h). The stave is sized to FILL the box: its width tracks the box aspect so
+ * the viewBox aspect equals the box aspect (staff lines span the full width, no
+ * gutters). Floored at the content minimum so a narrow slot still fits the clef +
+ * key signature + a note; deliberately NO upper cap — the stave fills however wide
+ * the slot is, and overrun content is trimmed by the host's overflow. Width is a
+ * function of the BOX, not the chord, so it stays fixed as notes change.
+ */
 export function computeChordStaffLayout(accCount, aspect) {
   const logicalH = TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM;
   const minStaveW = 44 + accCount * 10 + MIN_NOTE_AREA;
   const valid = Number.isFinite(aspect) && aspect > 0;
   const target = valid ? Math.round(logicalH * aspect) - PAD * 2 : minStaveW;
-  const staveW = Math.min(MAX_STAVE_W, Math.max(minStaveW, target));
+  const staveW = Math.max(minStaveW, target);
   return { staveW, logicalW: staveW + PAD * 2, logicalH };
 }
 
@@ -79,11 +88,10 @@ export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
   const accCount = KEY_SIGNATURES[ks].sharps.length + KEY_SIGNATURES[ks].flats.length;
 
-  // Stave geometry: content-sized by default (clef + key signature + one chord),
-  // but WIDENED to fill the host box's aspect ratio when one is supplied — a wide
-  // landscape slot gets wide staff lines (no dead gutters) with the chord centered.
-  // Extra top/bottom room keeps low-register ledger notes in frame and lets the
-  // taller viewBox scale the whole engraving down a touch under `meet`.
+  // Stave geometry: WIDTH FILLS the host box (tracks its aspect ratio) so the staff
+  // lines span edge-to-edge with no dead gutters, floored at the content minimum for
+  // narrow slots. Extra top/bottom room keeps low-register ledger notes in frame and
+  // lets the taller viewBox scale the engraving under `meet`.
   const { staveW, logicalW, logicalH } = computeChordStaffLayout(accCount, aspect);
 
   // Render at LOGICAL units (no container-width math, no scale cap). The SVG is
@@ -115,18 +123,19 @@ export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {
     if (bassOtt.marker && bNote) bNote.addModifier(new Annotation(bassOtt.marker).setVerticalJustification(Annotation.VerticalJustify.BOTTOM));
   } catch { /* marker is decorative */ }
 
+  // Content flows from the LEFT (clef → key signature → chord); the stave lines run
+  // full width to the right. The formatter parks a single chord just after the key
+  // signature, which is exactly what we want now — a small fixed inset gives it a
+  // little air so it isn't jammed against the accidentals. (No centering: on a wide
+  // fill-the-width stave, centering would strand the chord alone in the middle.)
   const noteAreaW = Math.max(20, staveW - (treble.getNoteStartX() - treble.getX()) - 14);
-  // On a widened stave the formatter still parks the single chord hard-left against
-  // the key signature; nudge both hands right by the same amount so the chord sits
-  // centered in the note area (StaveNote honors x_shift in getNoteHeadBeginX/getStemX,
-  // and the formatter never resets it — so apply it after format(), before draw()).
-  const xShift = Math.max(0, (noteAreaW - 40) / 2);
+  const NOTE_INSET = 10; // logical units of air after the key signature
   const drawVoice = (note, stave) => {
     if (!note) return;
     const v = new Voice({ num_beats: 1, beat_value: 4 }).setStrict(false).addTickables([note]);
     Accidental.applyAccidentals([v], ks);
     new Formatter().joinVoices([v]).format([v], noteAreaW);
-    note.setXShift(xShift);
+    note.setXShift(NOTE_INSET);
     v.draw(ctx, stave);
   };
   drawVoice(tNote, treble);

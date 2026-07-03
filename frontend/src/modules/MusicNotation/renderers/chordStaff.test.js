@@ -22,9 +22,12 @@ describe('computeChordStaffLayout', () => {
     expect(staveW).toBe(44 + 4 * 10 + 40);
   });
 
-  it('clamps ultra-wide boxes so staves stay musical', () => {
-    const { staveW } = computeChordStaffLayout(0, 10);
-    expect(staveW).toBeLessThanOrEqual(560);
+  it('fills ultra-wide boxes with no cap (staff lines span the full width)', () => {
+    const aspect = 10;
+    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    // No upper clamp: the stave fills however wide the slot is, so the viewBox
+    // aspect tracks the box aspect (→ no side gutters).
+    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
   });
 
   it('tolerates garbage aspect values', () => {

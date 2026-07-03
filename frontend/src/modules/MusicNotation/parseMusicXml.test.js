@@ -54,3 +54,22 @@ describe('parseMusicXml — Mary Had a Little Lamb', () => {
     expect(() => parseMusicXml('<not-musicxml/>')).not.toThrow();
   });
 });
+
+describe('tempo extraction', () => {
+  const xmlWithTempoChange = `<?xml version="1.0"?>
+<score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+  <measure number="1">
+    <attributes><divisions>1</divisions></attributes>
+    <sound tempo="72"/>
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+  </measure>
+  <measure number="2">
+    <sound tempo="120"/>
+    <note><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+  </measure>
+</part></score-partwise>`;
+
+  it('keeps the FIRST tempo marking (opening tempo), not the last', () => {
+    expect(parseMusicXml(xmlWithTempoChange).tempo).toBe(72);
+  });
+});

@@ -740,44 +740,6 @@
   }
 }
 
-// Opt-in music-theory triptych — fills the StudioTopPane content slot when the
-// user's top-pane layout pref is "triptych". Three columns: circle-of-fifths |
-// staff | live chord name. The shell (.piano-studio-toppane) still owns the fixed
-// height + vertical padding; this only splits the slot into columns. Plan's stated
-// v1 column proportions: 1 : 2 : 1.
-.piano-triptych {
-  display: grid;
-  // Fixed-width sides so the circle and chord plaque never resize/reflow ("no rug
-  // pull") when the chord name changes width — only the center staff flexes.
-  grid-template-columns: 14rem 1fr 14rem;
-  // Definite row: without it the single implicit row is `auto`, so the staff SVG's
-  // height:100% can't resolve and it falls back to its viewBox intrinsic aspect —
-  // ballooning to viewport height and shoving the circle/chord out of the clipped
-  // card. A definite row keeps every child bounded to the pane.
-  grid-template-rows: 100%;
-  align-items: center;
-  gap: 1.25rem;
-  width: 100%;
-  height: 100%;
-
-  &__side {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    min-width: 0;
-  }
-
-  &__center {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    height: 100%;
-    .current-chord-staff-wrapper { width: 100%; }
-  }
-}
-
 // Play tab: staff (auto) → waterfall (grows) → keyboard (pinned at foot).
 .piano-studio-play {
   position: relative; // anchors the floating Record button
@@ -1385,31 +1347,6 @@
     box-sizing: border-box; padding: 0.5rem;
     background: #fff; border-left: 1px solid var(--piano-border);
     display: flex; align-items: stretch; justify-content: center;
-  }
-
-  /* Right-sidebar chord column: circle of fifths pinned at the top, the live
-     grand staff vertically + horizontally centered in the flexible middle (NOT
-     rotated — normal horizontal staff orientation), chord-name badge pinned at
-     the bottom. Top/bottom are fixed-size so their centers don't drift. */
-  .piano-chord-column {
-    flex: 1 1 auto; min-height: 0; width: 100%;
-    display: flex; flex-direction: column; align-items: center;
-
-    &__circle {
-      flex: 0 0 auto;
-      display: flex; align-items: center; justify-content: center;
-      padding-top: 0.25rem;
-    }
-    &__staff {
-      flex: 1 1 auto; min-height: 0; width: 100%;
-      display: flex; align-items: center; justify-content: center;
-      .current-chord-staff-wrapper { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0.25rem 0; }
-    }
-    &__chord {
-      flex: 0 0 auto; width: 100%;
-      display: flex; align-items: center; justify-content: center;
-      padding-bottom: 0.25rem;
-    }
   }
 
   &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
@@ -2020,7 +1957,11 @@
   background: rgba(255,255,255,0.06); color: var(--piano-stage-fg, #f3efe6);
   font: inherit; font-weight: 600; padding: 0.5rem 0.95rem; border-radius: 999px; cursor: pointer;
   &.is-active { background: #2ec46f; border-color: #2ec46f; color: #07120a; }
+  &[disabled] { opacity: 0.4; cursor: default; }
 }
+// Play-mode part chips: Play (default) / You (amber, the reader's part) / Mute.
+.piano-score-part--you { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
+.piano-score-part--mute { opacity: 0.55; }
 .piano-score-player__pos { color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
 
 .piano-score-player__scroll {
@@ -2032,13 +1973,19 @@
 .musicxml-renderer { margin: 0 auto; }
 .musicxml-renderer__svg svg { display: block; }
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
+.musicxml-renderer__busy {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  color: #6a6256; font-weight: 600; background: rgba(252, 250, 244, 0.7);
+}
 
 .piano-score-cursor {
-  position: absolute; width: 18px;
+  position: absolute; // width set inline (scales with zoom)
   background: color-mix(in srgb, var(--cursor-color, #2ec46f) 26%, transparent);
   border-left: 3px solid var(--cursor-color, #2ec46f);
   border-radius: 3px; pointer-events: none; z-index: 5;
   transition: left 140ms ease, top 140ms ease;
+  &.is-jump { transition: none; } // system break — teleport, don't sweep diagonally
   &.is-wrong {
     background: rgba(255, 82, 82, 0.3); border-color: #ff5252;
     animation: scoreCursorWrong 280ms ease;

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
-import { osmdRender } from './osmdRender.js';
+import { osmdRender, osmdReRender } from './osmdRender.js';
 
 let _logger;
 function logger() {
@@ -27,8 +27,12 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   const hostRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [failed, setFailed] = useState(false);
+  const [rendering, setRendering] = useState(false);
   const [resizeKey, setResizeKey] = useState(0);
   const renderSeq = useRef(0);
+  const osmdRef = useRef(null);    // loaded OSMD instance (reused for zoom/resize)
+  const osmdKeyRef = useRef(null); // `${flow}::${musicXml}` the instance was loaded for
+  useEffect(() => () => { osmdRef.current = null; }, []);
 
   // Resize watchdog: re-fit when the container width changes (wrapped mode reflows
   // its systems to the new width). Debounced; ignores sub-pixel jitter.
@@ -57,10 +61,31 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     const seq = ++renderSeq.current;
     const stale = () => renderSeq.current !== seq;
     const w = width || host.parentElement?.clientWidth || 1000;
+
+    // Cheap path: same document + flow (zoom / resize) — re-render the loaded
+    // instance in place, skipping the MusicXML re-parse (audit F1). Synchronous,
+    // so no shimmer.
+    const cacheKey = `${flow}::${musicXml}`;
+    if (osmdRef.current && osmdKeyRef.current === cacheKey) {
+      try {
+        const res = osmdReRender(osmdRef.current, host, { width: w, flow, scale });
+        setFailed(false);
+        setDims({ width: res.width, height: res.height });
+        onLayout?.(res);
+        return undefined;
+      } catch (err) {
+        logger().warn('musicxml.rerender-failed', { error: err?.message });
+        osmdRef.current = null; // fall through to a full engrave
+      }
+    }
+
+    setRendering(true);
     (async () => {
       try {
         const res = await osmdRender(host, musicXml, { width: w, flow, scale, shouldAbort: stale });
         if (!res || stale()) return;
+        osmdRef.current = res.osmd;
+        osmdKeyRef.current = cacheKey;
         setFailed(false);
         setDims({ width: res.width, height: res.height });
         onLayout?.(res);
@@ -68,6 +93,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         if (stale()) return;
         setFailed(true);
         logger().warn('musicxml.render-failed', { error: err?.message });
+      } finally {
+        if (!stale()) setRendering(false);
       }
     })();
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
@@ -82,7 +109,8 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
       {showPlaceholder && <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>}
       {/* Host stays mounted even on failure so a new document can render into it. */}
       <div ref={hostRef} className="musicxml-renderer__svg" style={showPlaceholder ? { display: 'none' } : undefined} />
-      {!showPlaceholder && children}
+      {!showPlaceholder && rendering && dims.width > 0 && <div className="musicxml-renderer__busy">Engraving…</div>}
+      {!showPlaceholder && !rendering && children}
     </div>
   );
 }

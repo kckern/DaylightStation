@@ -78,8 +78,9 @@ function ScoreGridRoute({ collectionRef }) {
 function ScoreViewerRoute() {
   const params = useParams();
   const contentId = params['*'] || '';
+  const imageScore = useMemo(() => ({ id: contentId }), [contentId]);
   if (NOTATION_RE.test(contentId)) return <NotationScore contentId={contentId} />;
-  return <ScoreViewer score={useMemo(() => ({ id: contentId }), [contentId])} />;
+  return <ScoreViewer score={imageScore} />;
 }
 
 /**
