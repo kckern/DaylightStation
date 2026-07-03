@@ -17,6 +17,22 @@ function loadOsmd() {
 /** MIDI number from OSMD's halfTone (halfTone 48 == C4 == MIDI 60). */
 export const midiOfHalfTone = (halfTone) => halfTone + 12;
 
+/** Real new onsets under the cursor: no rests, no grace notes, no tie continuations. */
+export function collectOnsetNotes(notes) {
+  const out = [];
+  for (const n of notes || []) {
+    try {
+      if (!n || n.isRest() || n.IsGraceNote) continue;
+      const tie = n.NoteTie;
+      if (tie && tie.StartNote !== n) continue;
+      out.push(n);
+    } catch {
+      // malformed entry — skip it rather than break the whole score
+    }
+  }
+  return out;
+}
+
 /**
  * Pick the melody note for one cursor step: top staff only, no rests, no
  * grace notes, no tie continuations (a held note is not a new onset); the
@@ -25,40 +41,54 @@ export const midiOfHalfTone = (halfTone) => halfTone + 12;
  */
 export function pickMelodyNote(notes) {
   let best = null;
-  for (const n of notes || []) {
-    try {
-      if (!n || n.isRest() || n.IsGraceNote) continue;
-      const tie = n.NoteTie;
-      if (tie && tie.StartNote !== n) continue;
-      const staffId = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
-      if (staffId !== 0) continue;
-      if (!best || n.halfTone > best.halfTone) best = n;
-    } catch {
-      // malformed entry — skip it rather than break the whole score
-    }
+  for (const n of collectOnsetNotes(notes)) {
+    const staffId = n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0;
+    if (staffId !== 0) continue;
+    if (!best || n.halfTone > best.halfTone) best = n;
   }
   return best;
 }
 
 /**
- * Walk OSMD's cursor start→end and emit one event per melody onset, with the
- * cursor element's real on-screen geometry (px, relative to the host).
+ * Walk OSMD's cursor start→end. Emits, from one pass (so repeats and tempo
+ * stay aligned with the visual cursor):
+ *  events       — one per melody onset (cursor steps), with `midis` (every
+ *                 pitch sounding at that onset, both staves) + geometry
+ *  notes        — every onset on every staff with duration, for playback
+ *  tempoEntries — [{onsetQuarter, bpm}] wherever the iterator's bpm changes
  */
 export function extractEvents(osmd) {
-  const events = [];
+  const events = [], notes = [], tempoEntries = [];
   const cursor = osmd.cursor;
-  if (!cursor) return events;
+  if (!cursor) return { events, notes, tempoEntries };
+  let lastBpm = null;
   try {
     cursor.show(); // geometry only updates while the cursor is visible
     cursor.reset();
     let guard = 0;
     while (!cursor.Iterator.EndReached && guard++ < 50000) {
-      const note = pickMelodyNote(cursor.NotesUnderCursor());
-      if (note) {
+      const onsetQuarter = cursor.Iterator.currentTimeStamp.RealValue * 4;
+      const bpm = cursor.Iterator.CurrentBpm;
+      if (Number.isFinite(bpm) && bpm > 0 && bpm !== lastBpm) {
+        tempoEntries.push({ onsetQuarter, bpm });
+        lastBpm = bpm;
+      }
+      const onset = collectOnsetNotes(cursor.NotesUnderCursor());
+      for (const n of onset) {
+        notes.push({
+          midi: midiOfHalfTone(n.halfTone),
+          staff: n.ParentStaffEntry?.ParentStaff?.idInMusicSheet ?? 0,
+          onsetQuarter,
+          durationQuarters: (n.Length?.RealValue ?? 0) * 4,
+        });
+      }
+      const melody = pickMelodyNote(onset);
+      if (melody) {
         const el = cursor.cursorElement;
         events.push({
-          midi: midiOfHalfTone(note.halfTone),
-          onsetQuarter: cursor.Iterator.currentTimeStamp.RealValue * 4,
+          midi: midiOfHalfTone(melody.halfTone),
+          midis: onset.map((n) => midiOfHalfTone(n.halfTone)),
+          onsetQuarter,
           x: el.offsetLeft + el.offsetWidth / 2,
           top: el.offsetTop,
           bottom: el.offsetTop + el.offsetHeight,
@@ -70,7 +100,7 @@ export function extractEvents(osmd) {
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
   events.sort((a, b) => a.onsetQuarter - b.onsetQuarter);
-  return events;
+  return { events, notes, tempoEntries };
 }
 
 /**
@@ -115,11 +145,11 @@ export async function osmdRender(host, xml, opts = {}) {
   osmd.Zoom = scale;
   osmd.render();
 
-  const events = extractEvents(osmd);
+  const { events, notes, tempoEntries } = extractEvents(osmd);
   const svg = host.querySelector('svg');
   const width = Math.ceil(Number(svg?.getAttribute('width')) || svg?.clientWidth || host.clientWidth || 0);
   const height = Math.ceil(Number(svg?.getAttribute('height')) || svg?.clientHeight || host.clientHeight || 0);
-  return { width, height, flow, events };
+  return { width, height, flow, events, notes, tempoEntries };
 }
 
 export default osmdRender;
