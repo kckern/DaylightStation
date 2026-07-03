@@ -13,14 +13,27 @@ const FRAME_GAP_MS = 50;
  * scoreTelemetry.js; this layer only collects + emits.
  */
 export function useScoreTelemetry({ id }) {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
+  // app + sessionLog on the child context route every emitted event to the
+  // backend per-app session file (media/logs/piano-sheetmusic/{ts}.jsonl). A
+  // startSession() 'session-log.start' opens that file; all subsequent events
+  // (load / follow / polish / focus / mode / transpose) land in the same run log.
+  const logger = useMemo(() => getLogger().child({ component: 'piano-score-player', app: 'piano-sheetmusic', sessionLog: true }), []);
   const drifts = useRef([]);
   const gaps = useRef([]);
   const stalls = useRef(0);
   const follow = useRef([]);
 
+  const startSession = useCallback((scoreId) => logger.info('session-log.start', { scoreId }), [logger]);
+
   const logLoad = useCallback((phases) => logger.info('score.load', { id, ...phases }), [logger, id]);
   const logLoadFailed = useCallback((phase, error) => logger.warn('score.load.failed', { id, phase, error }), [logger, id]);
+
+  // Full sheet-music event catalog — one path per event so nothing double-logs.
+  const logMeasureGrade = useCallback(({ measure, grade, noteScore, timingScore }) => logger.info('score.polish.measure', { measure, grade, noteScore, timingScore }), [logger]);
+  const logRunSummary = useCallback(({ greens, yellows, reds, overall }) => logger.info('score.polish.summary', { greens, yellows, reds, overall }), [logger]);
+  const logFocus = useCallback(({ kind, inMeasure, outMeasure }) => logger.info('score.focus.set', { kind, inMeasure, outMeasure }), [logger]);
+  const logTranspose = useCallback(({ semitones }) => logger.info('score.transpose', { semitones }), [logger]);
+  const logMode = useCallback(({ mode }) => logger.info('score.mode', { mode }), [logger]);
 
   const recordFire = useCallback((ev, driftMs, gapMs, bpm) => {
     drifts.current.push(driftMs); gaps.current.push(gapMs);
@@ -56,7 +69,7 @@ export function useScoreTelemetry({ id }) {
     follow.current = [];
   }, [logger]);
 
-  return { logLoad, logLoadFailed, recordFire, flushPlayback, recordFollowHit, flushFollow };
+  return { startSession, logLoad, logLoadFailed, recordFire, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
 }
 
 function pct(arr, pred) { return arr.length ? Math.round((arr.filter(pred).length / arr.length) * 100) : 0; }
