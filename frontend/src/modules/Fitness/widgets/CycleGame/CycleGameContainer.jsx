@@ -510,10 +510,27 @@ export default function CycleGameContainer({ onMount } = {}) {
     [bikesForGrid]
   );
 
+  // Ghost riders enriched with a real avatar (audit C6 / user feedback
+  // 2026-07-02): a selected ghost used to be invisible pre-race — only a
+  // small "vs Name" chip on the race-type picker — and only materialized once
+  // the race screen mounted. Shared by the starting grid (GhostSlot) and the
+  // ready strip below, so both surfaces show the SAME ghost roster the race
+  // will actually run with.
+  const ghostRosterRiders = useMemo(
+    () => (ghost?.riders || []).map((r) => ({
+      userId: r.userId,
+      displayName: r.displayName,
+      avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc,
+    })),
+    [ghost]
+  );
+
   // On-board riders for the pre-race compliance strip (staging + countdown): the
-  // claimed bikes with their LIVE rpm. `compliant = !(rpm > 0)` mirrors exactly
-  // the controller's green-light test, so the strip predicts the penalty.
-  // assignVersion drives the refresh (bumped by the staging/countdown poll).
+  // claimed bikes with their LIVE rpm, PLUS any selected ghost riders (always
+  // "READY" — a ghost never earns a hot-start penalty, it just runs on its own
+  // recorded clock). `compliant = !(rpm > 0)` mirrors exactly the controller's
+  // green-light test, so the strip predicts the penalty. assignVersion drives
+  // the refresh (bumped by the staging/countdown poll).
   const stagingRiders = useMemo(
     () => bikes.map((bike) => {
       const userId = session?.getEquipmentRider?.(bike.id);
@@ -531,9 +548,18 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneColor: vitals.zoneColor || null,
         compliant: !(rpm > 0)
       };
-    }).filter(Boolean),
+    }).filter(Boolean).concat(ghostRosterRiders.map((r) => ({
+      id: r.userId,
+      name: r.displayName,
+      avatarSrc: r.avatarSrc,
+      rpm: 0,
+      heartRate: null,
+      zoneColor: null,
+      compliant: true,
+      isGhost: true
+    }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bikes, session, getUserVitals, resolveDisplayName, assignVersion]
+    [bikes, session, getUserVitals, resolveDisplayName, assignVersion, ghostRosterRiders]
   );
 
   // True when no on-board rider is pedalling — the gate for leaving staging.
@@ -1665,6 +1691,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           highScores={highScores}
           onSelectRecord={onSelectRecord}
           ghost={ghost}
+          ghostRoster={ghostRosterRiders}
           ghostCandidates={ghostCandidates}
           onSelectGhost={onSelectGhost}
           onClearGhost={onClearGhost}
