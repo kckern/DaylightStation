@@ -7,7 +7,7 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoMix } from '../../PianoMixContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
-import { PianoChordColumn } from '../../../components/PianoChordColumn.jsx';
+import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
@@ -237,7 +237,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
         {/* Right sidebar: circle of fifths (top) · live grand staff (centered) ·
             chord-name badge (bottom). Always visible. */}
         <aside className="piano-video-player__staff">
-          <PianoChordColumn activeNotes={notes} />
+          <TheoryPanel activeNotes={notes} layout="column" />
         </aside>
       </div>
 
