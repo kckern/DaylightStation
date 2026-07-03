@@ -83,7 +83,7 @@ beforeEach(() => {
   h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
 });
 
-describe('ScorePlayer — Follow mode (full-hand, simulated MIDI input)', () => {
+describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('advances only when every active-staff note of the step is struck', () => {
     renderPlayer();
@@ -117,7 +117,7 @@ describe('ScorePlayer — Follow mode (full-hand, simulated MIDI input)', () => 
   });
 });
 
-describe('ScorePlayer — Follow mode chord tolerance (audit B2)', () => {
+describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();
     play(52); // LH note of the current onset — a correct hit, no advance, NO flash
@@ -128,12 +128,12 @@ describe('ScorePlayer — Follow mode chord tolerance (audit B2)', () => {
   });
 });
 
-describe('ScorePlayer — Manual mode pedal page-turn', () => {
+describe('ScorePlayer — Perform mode pedal page-turn', () => {
   it('turns one page per pedal press (rising edge), not per CC message', async () => {
     const scrollBy = vi.fn();
     Element.prototype.scrollBy = scrollBy;
     renderPlayer();
-    screen.getByText('Manual').click();
+    screen.getByText('Perform').click();
     await act(async () => {});
     const cc66 = (v) => act(() => { h.rawCb?.({ data: [0xb0, 66, v] }); });
 
@@ -146,7 +146,7 @@ describe('ScorePlayer — Manual mode pedal page-turn', () => {
   });
 });
 
-describe('ScorePlayer — Metronome mode (transport-driven)', () => {
+describe('ScorePlayer — Polish mode (transport-driven)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
@@ -161,7 +161,7 @@ describe('ScorePlayer — Metronome mode (transport-driven)', () => {
   it('advances the cursor on the tempo map, including a mid-piece change', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 2, bpm: 120 }] };
     renderPlayer();
-    screen.getByText('Metronome').click();
+    screen.getByText('Polish').click();
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
@@ -175,7 +175,7 @@ describe('ScorePlayer — Metronome mode (transport-driven)', () => {
   });
 });
 
-describe('ScorePlayer — Play mode', () => {
+describe('ScorePlayer — Listen mode', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
@@ -194,7 +194,7 @@ describe('ScorePlayer — Play mode', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Play').click();
+    screen.getByText('Listen').click();
     await act(async () => {});
     screen.getByText('RH: Play').click(); // cycle RH play → you
     await act(async () => {});
@@ -214,7 +214,7 @@ describe('ScorePlayer — Play mode', () => {
       { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
     ] };
     renderPlayer();
-    screen.getByText('Play').click();
+    screen.getByText('Listen').click();
     await act(async () => {});
     screen.getByText('RH: Play').click(); // RH → You
     await act(async () => {});
@@ -234,7 +234,7 @@ describe('ScorePlayer — Play mode', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
     };
     renderPlayer();
-    screen.getByText('Play').click();
+    screen.getByText('Listen').click();
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});

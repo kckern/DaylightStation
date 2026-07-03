@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 
 const base = {
-  mode: 'follow', onMode: vi.fn(),
+  mode: 'learn', onMode: vi.fn(),
   running: false, onToggleRun: vi.fn(), onReset: vi.fn(),
   step: 0, total: 40,
   flow: 'wrapped', onToggleFlow: vi.fn(),
@@ -15,10 +15,39 @@ const base = {
 };
 
 describe('ScoreTransportBar', () => {
-  it('renders the four mode tabs and fires onMode', () => {
+  it('renders the four named mode tabs (Listen/Learn/Polish/Perform) and fires onMode', () => {
     render(<ScoreTransportBar {...base} />);
-    fireEvent.click(screen.getByRole('tab', { name: /metronome/i }));
-    expect(base.onMode).toHaveBeenCalledWith('metronome');
+    for (const name of [/listen/i, /learn/i, /polish/i, /perform/i]) {
+      expect(screen.getByRole('tab', { name })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('tab', { name: /polish/i }));
+    expect(base.onMode).toHaveBeenCalledWith('polish');
+  });
+
+  it('exposes a metronome-click toggle in Learn/Listen (aria-pressed reflects clickOn)', () => {
+    const onToggleClick = vi.fn();
+    const { rerender } = render(
+      <ScoreTransportBar {...base} clickOn={false} onToggleClick={onToggleClick} />,
+    );
+    const click = screen.getByRole('button', { name: /metronome click/i });
+    expect(click).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(click);
+    expect(onToggleClick).toHaveBeenCalled();
+    rerender(<ScoreTransportBar {...base} clickOn onToggleClick={onToggleClick} />);
+    expect(screen.getByRole('button', { name: /metronome click/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('is mode-aware: Perform shows no parts/transport/view controls, Polish shows run + parts', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="perform" />);
+    expect(screen.queryByRole('button', { name: /^LH$/ })).toBeNull(); // no part chips
+    expect(screen.queryByRole('button', { name: /pause|play/i })).toBeNull(); // no transport
+    expect(screen.queryByRole('button', { name: /size/i })).toBeNull(); // no view controls
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull(); // no click in Perform
+
+    rerender(<ScoreTransportBar {...base} mode="polish" />);
+    expect(screen.getByRole('button', { name: /^▶$|play/i })).toBeInTheDocument(); // transport present
+    expect(screen.getByRole('button', { name: /LH/ })).toBeInTheDocument(); // parts present
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull(); // no click in Polish
   });
 
   it('shows one part chip per staff and cycles it', () => {

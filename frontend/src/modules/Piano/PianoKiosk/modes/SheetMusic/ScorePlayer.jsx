@@ -18,7 +18,7 @@ import useScoreTelemetry from './useScoreTelemetry.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 
-const SOSTENUTO_CC = 66; // middle pedal — manual page turns
+const SOSTENUTO_CC = 66; // middle pedal — Perform page turns
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 const NO_MISSED = new Set(); // stable empty ref — note-level missed flashing is deferred (cursor already flashes wrong)
 
@@ -36,14 +36,14 @@ function nearestEvent(events, x, y) {
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
- *  Follow    — full-hand tracking: the cursor advances only once every active-staff
- *              note of the step is struck; wrong notes flash; struck noteheads light.
- *  Metronome — auto-advances at tempo; the current onset's active-staff
- *              noteheads light up (bouncing ball). It does NOT perform through
- *              the piano — it only lights the notes you should be playing.
- *  Play      — the kiosk performs 'play' parts through the piano; 'you' parts are
- *              highlighted (never sent); 'mute' parts are silent.
- *  Manual    — no awareness; sostenuto (middle) pedal + tap-to-scroll move the page.
+ *  Learn   — full-hand tracking: the cursor advances only once every active-staff
+ *            note of the step is struck; wrong notes flash; struck noteheads light.
+ *  Polish  — auto-advances at tempo; the current onset's active-staff
+ *            noteheads light up (bouncing ball). It does NOT perform through
+ *            the piano — it only lights the notes you should be playing.
+ *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
+ *            highlighted (never sent); 'mute' parts are silent.
+ *  Perform — no awareness; sostenuto (middle) pedal + tap-to-scroll move the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
  * breadcrumb (score title). Per-notehead light-up is drawn by {@link NoteHighlightLayer}
@@ -78,12 +78,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], tempoEntries: [], width: 0, height: 0, flow: null });
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState('follow');
+  const [mode, setMode] = useState('learn');
+  const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
   const [flow, setFlow] = useState('wrapped');
   const [scale, setScale] = useState(1);
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
-  const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is follow → shown
+  const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
@@ -96,7 +97,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
 
-  // Tempo map (mid-piece changes included) drives the metronome transport; the
+  // Tempo map (mid-piece changes included) drives the Polish transport; the
   // opening tempo also feeds the metadata popover. Falls back to the parsed
   // opening tempo before layout has reported OSMD's tempo entries.
   const tempoMap = useMemo(
@@ -105,7 +106,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   );
   const stepTimeline = useMemo(() => buildStepTimeline(events, tempoMap), [events, tempoMap]);
 
-  // Parts (one per staff). Roles (Play mode) and active-parts (Follow/Metronome
+  // Parts (one per staff). Roles (Listen mode) and active-parts (Learn/Polish
   // on/off) are BOTH keyed to the staff SET (a stable signature), not the parts
   // array identity — otherwise every re-engrave (zoom / flow / resize gives
   // layout.notes a fresh reference) would wipe the user's picks. Persisting
@@ -126,14 +127,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playTimeline = useMemo(
-    () => (mode === 'play' ? buildPlayTimeline(events, layout.notes, tempoMap, roles) : stepTimeline),
+    () => (mode === 'listen' ? buildPlayTimeline(events, layout.notes, tempoMap, roles) : stepTimeline),
     [mode, events, layout.notes, tempoMap, roles, stepTimeline],
   );
 
   const soundingRef = useRef(new Set());
   const silence = useCallback(() => {
     // Nothing the kiosk sent is sounding — don't broadcast a panic that would
-    // cut off notes the player is holding on the piano (e.g. switching out of Follow).
+    // cut off notes the player is holding on the piano (e.g. switching out of Learn).
     if (!soundingRef.current.size) return;
     soundingRef.current.forEach((n) => { try { releaseNote?.(n); } catch { /* port gone */ } });
     soundingRef.current.clear();
@@ -142,17 +143,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
     sendPanic?.();
   }, [releaseNote, sendPanic]);
 
-  // Flush playback telemetry only when a metronome/play run actually produced fires.
+  // Flush playback telemetry only when a Polish/Listen run actually produced fires.
   // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
   // so the unmount flush doesn't double-emit a summary the pause/stop/done path
   // already flushed (and so an already-empty run doesn't emit an empty stats line).
   const pendingPlaybackRef = useRef(false);
   const flushPlaybackNow = useCallback(() => {
-    if (mode === 'metronome' || mode === 'play') { flushPlayback(mode); pendingPlaybackRef.current = false; }
+    if (mode === 'polish' || mode === 'listen') { flushPlayback(mode); pendingPlaybackRef.current = false; }
   }, [mode, flushPlayback]);
 
   const transport = useScoreTransport({
-    timeline: mode === 'metronome' || mode === 'play' ? playTimeline : [],
+    timeline: mode === 'polish' || mode === 'listen' ? playTimeline : [],
     onEvent: (e) => {
       if (e.kind === 'step' || e.type == null) {
         setStep(e.index);
@@ -169,7 +170,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       }
     },
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
-    onDone: () => { if (mode === 'play') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
+    onDone: () => { if (mode === 'listen') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
 
@@ -183,7 +184,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
 
-  // ── Follow mode: full-hand tracker (all active-staff notes → advance) ──────────
+  // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
   const followHitsRef = useRef(0);
   const followWrongsRef = useRef(0);
@@ -203,7 +204,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, []);
   const onFollowWrong = useCallback(() => { flashWrong(); followWrongsRef.current += 1; }, [flashWrong]);
   useFollowTracker({
-    enabled: mode === 'follow',
+    enabled: mode === 'learn',
     steps,
     activeParts,
     step,
@@ -213,7 +214,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onWrong: onFollowWrong,
   });
 
-  // Flush follow-timing stats when leaving Follow (and on unmount if still in it).
+  // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
     if (followHitsRef.current || followWrongsRef.current) {
       flushFollow(followHitsRef.current, followWrongsRef.current);
@@ -223,7 +224,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const flushFollowRef = useRef(flushFollowNow); flushFollowRef.current = flushFollowNow;
   useEffect(() => () => flushFollowRef.current(), []);
 
-  // Leaving the view mid metronome/play run cancels the rAF without an onDone, so
+  // Leaving the view mid Polish/Listen run cancels the rAF without an onDone, so
   // the playback summary would never emit. Flush once on unmount if a run is still
   // pending (guarded so it never double-emits with the pause/stop/done flush).
   const flushPlaybackRef = useRef(flushPlaybackNow); flushPlaybackRef.current = flushPlaybackNow;
@@ -234,7 +235,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ancestor scrollers with it). Skipped while the reported layout belongs to
   // the other flow (mid re-engrave — coordinates would be stale).
   useEffect(() => {
-    if (mode === 'manual' || !current) return;
+    if (mode === 'perform' || !current) return;
     if (layout.flow && layout.flow !== flow) return;
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
@@ -255,10 +256,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [step, flow, mode, current, layout.flow]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
-  // Manual mode: sostenuto (middle) pedal turns the page — rising edge only,
+  // Perform mode: sostenuto (middle) pedal turns the page — rising edge only,
   // since continuous/half pedals stream many CC66 values per physical press.
   useEffect(() => {
-    if (mode !== 'manual') return undefined;
+    if (mode !== 'perform') return undefined;
     let prev = 0;
     return subscribeRaw(({ data }) => {
       if (!data || data.length < 3) return;
@@ -268,16 +269,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (!rising) return;
       const el = scrollRef.current;
       if (el) el.scrollBy({ [flow === 'horizontal' ? 'left' : 'top']: (flow === 'horizontal' ? el.clientWidth : el.clientHeight) * 0.85, behavior: 'smooth' });
-      logger.info('score.manual.pageturn', {});
+      logger.info('score.perform.pageturn', {});
     });
   }, [mode, subscribeRaw, flow, logger]);
 
-  // Tap: follow/metronome → move the cursor to the nearest note; manual → scroll it into view.
+  // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
   const onScoreClick = useCallback((e) => {
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     if (!el) return;
-    if (mode === 'manual') {
+    if (mode === 'perform') {
       const r = el.getBoundingClientRect();
       const dy = e.clientY - (r.top + el.clientHeight / 2);
       const dx = e.clientX - (r.left + el.clientWidth / 2);
@@ -292,8 +293,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
       setStruck(() => new Set());
       lastAdvanceRef.current = performance.now();
       // Seek jumps idxRef past pending note_offs — flush sounding notes first
-      // (Play mode) so a skipped-over note doesn't drone on the piano.
-      if (mode === 'play') silence();
+      // (Listen mode) so a skipped-over note doesn't drone on the piano.
+      if (mode === 'listen') silence();
       transport.seek(stepTimeline[i]?.t ?? 0);
     }
   }, [mode, flow, events, transport, stepTimeline, silence]);
@@ -303,19 +304,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
     if (id === mode) return;
-    flushPlaybackNow();          // leaving a metronome/play run
-    if (mode === 'follow') flushFollowNow();
+    flushPlaybackNow();          // leaving a Polish/Listen run
+    if (mode === 'learn') flushFollowNow();
     transport.stop();
     silence();
     setStruck(() => new Set());
-    setKeyboardVisible(id !== 'manual');
+    setKeyboardVisible(id !== 'perform');
     setMode(id);
     logger.info('score.mode', { mode: id });
   }, [mode, flushPlaybackNow, flushFollowNow, transport, silence, logger]);
 
   const reset = useCallback(() => {
     transport.stop();
-    if (mode === 'play') silence();
+    if (mode === 'listen') silence();
     flushPlaybackNow();
     setStep(0);
     setStruck(() => new Set());
@@ -325,7 +326,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const toggleRun = useCallback(() => {
     if (running) {
       transport.pause();
-      if (mode === 'play') silence();
+      if (mode === 'listen') silence();
       flushPlaybackNow();
       logger.info('score.transport.pause', { step });
     } else {
@@ -336,15 +337,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [running, transport, mode, silence, flushPlaybackNow, logger, step, stepTimeline, tempoMap]);
 
   const onCyclePart = useCallback((staff) => {
-    if (mode === 'play') {
+    if (mode === 'listen') {
       const role = roles[staff] || 'play';
       const next = cyclePart(role);
       setRoles((r) => ({ ...r, [staff]: next }));
       if (running) { transport.pause(); flushPlaybackNow(); }
       silence(); // role change invalidates the note timeline mid-flight
-      logger.info('score.play.part', { staff, role: next });
+      logger.info('score.listen.part', { staff, role: next });
     } else {
-      // Follow needs ≥1 active staff or the all-notes rule can never be satisfied
+      // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
       // (the cursor would deadlock). Refuse to turn off the last active staff.
       const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
       if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
@@ -368,26 +369,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [logLoad, scoreMeta.fetchMs]);
 
-  const cursorColor = mode === 'follow' ? '#2ec46f' : mode === 'play' ? '#e8a33d' : '#6cf';
+  const cursorColor = mode === 'learn' ? '#2ec46f' : mode === 'listen' ? '#e8a33d' : '#6cf';
 
   // Teleport (don't sweep diagonally) when the cursor crosses to a new system.
   const jump = current != null && prevTopRef.current != null && Math.abs(current.top - prevTopRef.current) > 1;
   useEffect(() => { prevTopRef.current = current?.top ?? null; }, [current]);
 
-  // Keyboard target set: Play → your ('you') part pitches at this onset; other
+  // Keyboard target set: Listen → your ('you') part pitches at this onset; other
   // interactive modes → the active-staff expected midis at this step.
-  const targetNotes = mode === 'play' && current
+  const targetNotes = mode === 'listen' && current
     ? youMidisAt(layout.notes, roles, current.onsetQuarter)
-    : mode !== 'manual'
+    : mode !== 'perform'
       ? expectedMidisAtStep(steps[step], activeParts)
       : null;
 
-  // Lit (green "hit") noteheads. Follow/Play fill `struck` as notes are struck /
-  // sounded (unchanged). Metronome has no note_on transport events, so nothing
+  // Lit (green "hit") noteheads. Learn/Listen fill `struck` as notes are struck /
+  // sounded (unchanged). Polish has no note_on transport events, so nothing
   // would ever light — instead light every active-staff note at the current onset
   // (the bouncing ball), recomputed as `step` advances. expectedMidisAtStep
   // tolerates an undefined step.
-  const litNotes = mode === 'metronome'
+  const litNotes = mode === 'polish'
     ? expectedMidisAtStep(steps[step], activeParts)
     : struck;
 
@@ -395,7 +396,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     <div className="piano-score-player">
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} onLayout={onLayout} onReady={onReady}>
-          {mode !== 'manual' && current && (
+          {mode !== 'perform' && current && (
             <div
               ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
@@ -408,7 +409,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               }}
             />
           )}
-          {mode !== 'manual' && (
+          {mode !== 'perform' && (
             <NoteHighlightLayer
               step={steps[step]}
               activeParts={activeParts}
@@ -450,6 +451,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onCyclePart={onCyclePart}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={() => setKeyboardVisible((v) => !v)}
+        clickOn={clickOn}
+        onToggleClick={() => setClickOn((v) => !v)}
         meta={meta}
       />
     </div>
