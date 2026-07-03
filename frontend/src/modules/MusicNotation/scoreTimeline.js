@@ -62,4 +62,14 @@ export function buildNoteTimeline(notes, tempoMap, { isAudible = () => true } = 
   return out.sort((a, b) => a.t - b.t || (a.type === b.type ? 0 : a.type === 'note_off' ? -1 : 1));
 }
 
-export default { buildTempoMap, msAtQuarter, buildStepTimeline, buildNoteTimeline };
+/**
+ * Scale a time-sorted timeline in the time dimension. `factor` is a duration
+ * multiplier: factor>1 slows down (t grows), factor<1 speeds up. Returns a new
+ * array; every entry's `t` becomes `t * factor`, other fields preserved.
+ */
+export function scaleTimeline(timeline, factor) {
+  const f = Number.isFinite(factor) && factor > 0 ? factor : 1;
+  return (timeline || []).map((e) => ({ ...e, t: e.t * f }));
+}
+
+export default { buildTempoMap, msAtQuarter, buildStepTimeline, buildNoteTimeline, scaleTimeline };
