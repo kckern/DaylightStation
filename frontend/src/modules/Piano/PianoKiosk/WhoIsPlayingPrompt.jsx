@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import PianoAvatar from './PianoAvatar.jsx';
 import { columnsForCount, paginatePlayers } from './whoIsPlayingLayout.js';
 import { hasFamilyContext, resolveUserDisplayName } from '@/lib/userDisplayName.js';
+import useArmedAction from './useArmedAction.js';
 
 /**
  * "Who's playing?" prompt — roster faces ONLY (Guest is never a card). Tap a
@@ -12,9 +13,13 @@ import { hasFamilyContext, resolveUserDisplayName } from '@/lib/userDisplayName.
  * 7→4+3 centered) by capping the flex grid to `columnsForCount` columns. A
  * roster larger than 9 paginates, with page dots beneath the grid.
  */
-export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss, timeoutMs = 30000 }) {
+export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss, onScreenOff, timeoutMs = 30000 }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+
+  // Optional "Turn off screen" affordance for someone who doesn't want the
+  // tablet involved. Two-tap arm/confirm so a stray tap can't blank the screen.
+  const { armed: offArmed, trigger: triggerOff } = useArmedAction(() => onScreenOff?.(), { armMs: 3000 });
 
   // A roster that lists the kids is a "family scene" → show relational labels
   // (Dad/Mom) for the parents; adults-only → full names. Derived once from the
@@ -67,6 +72,18 @@ export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss
                 onClick={() => setPage(i)}
               />
             ))}
+          </div>
+        )}
+        {onScreenOff && (
+          <div className="piano-userpicker__device">
+            <button
+              type="button"
+              className={`piano-userpicker__screen-off${offArmed ? ' is-armed' : ''}`}
+              aria-live="polite"
+              onClick={triggerOff}
+            >
+              {offArmed ? 'Tap again to confirm' : 'Turn off screen'}
+            </button>
           </div>
         )}
       </div>

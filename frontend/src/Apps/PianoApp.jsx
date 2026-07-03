@@ -18,7 +18,10 @@ import { useArmedAction } from '../modules/Piano/PianoKiosk/useArmedAction.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
+  PianoScreenControlProvider,
+  useScreenOffCooldown,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
+import { DaylightAPI } from '../lib/api.mjs';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -153,6 +156,7 @@ function ScreensaverDriver() {
     noteHistory,
     timeoutMinutes: config.screensaver?.timeoutMinutes,
     quietHours: config.screensaver?.quietHours,
+    offCooldownMinutes: config.screensaver?.offCooldownMinutes,
   });
   return null;
 }
@@ -166,6 +170,25 @@ function PianoShell() {
   const { playing, videoActive } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
+  const { turnOffScreen } = useScreenControl();
+  const beginScreenOffCooldown = useScreenOffCooldown();
+
+  // Who's-Playing "Turn off screen": for someone who just wants to play in peace.
+  // Turn the backlight off, then suppress MIDI-wake across all three paths — the
+  // in-browser screensaver (local), and the backend midi-wake + on-device APK
+  // (via the suppress-wake endpoint) — so a played note won't re-light it until
+  // they've been idle offCooldownMinutes. Treated as a dismiss-to-guest.
+  const handleScreenOff = useMemo(() => async () => {
+    const minutes = config.screensaver?.offCooldownMinutes ?? 30;
+    await turnOffScreen();
+    beginScreenOffCooldown();
+    const deviceId = config.screensaver?.deviceId;
+    if (deviceId) {
+      DaylightAPI(`api/v1/device/${deviceId}/screen/suppress-wake`, { minutes }, 'POST').catch(() => {});
+    }
+    setCurrentUser('guest');
+    setWhoOpen(false);
+  }, [config.screensaver, turnOffScreen, beginScreenOffCooldown, setCurrentUser]);
 
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
   // Suppressed while a video lecture is open: the open player is already earning
@@ -202,6 +225,7 @@ function PianoShell() {
             users={users}
             onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}
             onDismiss={() => { setCurrentUser('guest'); setWhoOpen(false); }}
+            onScreenOff={handleScreenOff}
           />
           <PianoChrome modeLabel={modeLabel} modeKey={modeKey} />
           <Routes>
@@ -243,15 +267,19 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
           {/* Screensaver runs above the connect gate so an idle tablet sleeps
               even with no piano connected; the wake-lock provider is hoisted
               with it so a playing video (a hold set by the modes below) still
-              keeps the screen awake. */}
-          <ScreensaverDriver />
-          <ConnectGate>
-            <PianoPlaybackProvider>
-              <PianoMixProvider>
-                <PianoShell />
-              </PianoMixProvider>
-            </PianoPlaybackProvider>
-          </ConnectGate>
+              keeps the screen awake. PianoScreenControlProvider wraps both the
+              screensaver and the shell so the Who's-Playing "Turn off screen"
+              button (in the shell) can arm the screensaver's MIDI-wake mute. */}
+          <PianoScreenControlProvider>
+            <ScreensaverDriver />
+            <ConnectGate>
+              <PianoPlaybackProvider>
+                <PianoMixProvider>
+                  <PianoShell />
+                </PianoMixProvider>
+              </PianoPlaybackProvider>
+            </ConnectGate>
+          </PianoScreenControlProvider>
         </PianoWakeLockProvider>
       </PianoMidiProvider>
       </PianoUserProvider>

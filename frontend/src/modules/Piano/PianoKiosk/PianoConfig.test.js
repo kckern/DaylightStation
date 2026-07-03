@@ -71,6 +71,7 @@ describe('resolvePianoConfig', () => {
       deviceId: 'yellow-room-tablet',           // per-piano
       timeoutMinutes: 30,                        // shared
       quietHours: { start: '22:00', end: '06:00' },
+      offCooldownMinutes: PIANO_CONFIG_DEFAULTS.screensaver.offCooldownMinutes,
     });
   });
 });
@@ -157,6 +158,7 @@ describe('resolveScreensaver', () => {
       deviceId: null,
       timeoutMinutes: PIANO_CONFIG_DEFAULTS.screensaver.timeoutMinutes,
       quietHours: null,
+      offCooldownMinutes: PIANO_CONFIG_DEFAULTS.screensaver.offCooldownMinutes,
     });
   });
   it('lets a per-piano value override a shared value', () => {
@@ -166,6 +168,7 @@ describe('resolveScreensaver', () => {
       deviceId: 'shared-tablet',
       timeoutMinutes: 5,
       quietHours: null,
+      offCooldownMinutes: PIANO_CONFIG_DEFAULTS.screensaver.offCooldownMinutes,
     });
   });
 });
