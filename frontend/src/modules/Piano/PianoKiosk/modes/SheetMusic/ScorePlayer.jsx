@@ -323,7 +323,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
   }, []);
-  const onFollowWrong = useCallback(() => { flashWrong(); followWrongsRef.current += 1; }, [flashWrong]);
+  // Learn mode optimizes for READING the score, so the keyboard must not spoil
+  // which key to press. Reveal the target key(s) only AFTER a wrong attempt at the
+  // current step (and then only in a dim "half shade" — see targetNotes/dimTarget
+  // below). Resets on every step change so the next note starts un-spoiled.
+  const [revealKeys, setRevealKeys] = useState(false);
+  useEffect(() => { setRevealKeys(false); }, [step]);
+  const onFollowWrong = useCallback(() => { flashWrong(); setRevealKeys(true); followWrongsRef.current += 1; }, [flashWrong]);
   useFollowTracker({
     enabled: mode === 'learn',
     steps,
@@ -642,11 +648,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Keyboard target set: Listen → your ('you') part pitches at this onset; other
   // interactive modes → the active-staff expected midis at this step.
+  // Listen → your ('you') part pitches (playalong reference). Polish → the bouncing-
+  // ball expected notes (an auto demo, fine to show). Learn → NOTHING until a wrong
+  // attempt reveals it (reading-first; see revealKeys). Perform → no keyboard.
   const targetNotes = mode === 'listen' && current
     ? youMidisAt(layout.notes, roles, current.onsetQuarter)
-    : mode !== 'perform'
+    : mode === 'polish'
       ? expectedMidisAtStep(steps[step], activeParts)
-      : null;
+      : mode === 'learn' && revealKeys
+        ? expectedMidisAtStep(steps[step], activeParts)
+        : null;
 
   // Lit (green "hit") noteheads. Learn/Listen fill `struck` as notes are struck /
   // sounded (unchanged). Polish has no note_on transport events, so nothing
@@ -707,6 +718,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           <PianoKeyboard
             activeNotes={activeNotes}
             targetNotes={targetNotes}
+            dimTarget={mode === 'learn'}
             startNote={kb.startNote}
             endNote={kb.endNote}
           />

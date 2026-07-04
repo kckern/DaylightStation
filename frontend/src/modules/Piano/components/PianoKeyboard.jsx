@@ -64,6 +64,8 @@ const PianoKey = React.memo(function PianoKey({
  * @param {number} props.startNote - First note to display (default: 21 = A0)
  * @param {number} props.endNote - Last note to display (default: 108 = C8)
  * @param {boolean} props.showLabels - Show note labels on white keys
+ * @param {boolean} [props.dimTarget] - Render target keys in a muted "half shade"
+ *   (a hint rather than a full spoiler light) — used by Sheet Music Learn mode.
  * @param {Map<number, { destroyedAt: number, cooldownMs: number }>} [props.destroyedKeys] - Destroyed keys with cooldown
  * @param {(note: number, velocity: number) => void} [props.onNoteOn] - When provided, keys become touch/clickable (press)
  * @param {(note: number) => void} [props.onNoteOff] - Release handler paired with onNoteOn
@@ -77,6 +79,7 @@ export function PianoKeyboard({
   endNote = 108,
   showLabels = false,
   targetNotes = null,
+  dimTarget = false,
   wrongNotes = null,
   destroyedKeys = null,
   onNoteOn = null,
@@ -132,7 +135,7 @@ export function PianoKeyboard({
 
   return (
     <div
-      className={`piano-keyboard${interactive ? ' interactive' : ''}`}
+      className={`piano-keyboard${interactive ? ' interactive' : ''}${dimTarget ? ' target-dim' : ''}`}
       style={{ '--white-key-count': whiteKeyCount }}
     >
       {descriptors.map((d) => {
