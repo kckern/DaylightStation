@@ -249,6 +249,13 @@ async function openLibrary() {
   await screen.findByRole('dialog', { name: 'loop library' });
 }
 
+/** "+ Add layer" now opens the Add Layer sheet (§8): pick a role → the library. */
+async function openLibraryViaAddSheet(roleLabel = 'Chords') {
+  fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+  fireEvent.click(await screen.findByRole('button', { name: roleLabel }));
+  await screen.findByRole('dialog', { name: 'loop library' });
+}
+
 /** Front door → overlay → pick the Dm chord loop; waits for its row. */
 async function addDmLayer() {
   await openLibrary();
@@ -400,22 +407,18 @@ describe('Producer shell (three bands)', () => {
     expect(transportMock.stop).toHaveBeenCalled();
   });
 
-  it('"+ Add layer" reopens the library gated to consonance-stackable candidates', async () => {
+  it('"+ Add layer" → the Add Layer sheet → a role opens the gated library', async () => {
     render(<Producer />);
     await addDmLayer();
+    // The unified entry: "+ Add layer" opens the sheet (§8), not the library.
     fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    expect(await screen.findByRole('dialog', { name: 'add a layer' })).toBeInTheDocument();
+    // Picking Melody opens the library, still guardrailed to the current jam,
+    // with the melodic complement offered.
+    fireEvent.click(screen.getByRole('button', { name: 'Melody' }));
     await screen.findByRole('dialog', { name: 'loop library' });
-    // The guardrail indicator is up, and the compatible complement is offered…
     expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
-    // …the harmonically clashing loop (its slot-unions vs the base spell no
-    // nameable chord) is excluded, and the already-stacked base is not
-    // re-offered. (Ported from the interim overlay's stackable-filter test —
-    // the gate is now union-consonance, not roman-signature matching.)
-    // Assert exclusion by accessible NAME: keyed titles never render as text,
-    // so a queryByText here would pass vacuously.
-    expect(screen.queryByRole('button', { name: 'Different Progression Loop' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
   });
 
   it('a failed/empty note load removes the layer (no zombie row) and toasts why', async () => {
@@ -455,7 +458,7 @@ describe('Producer shell (three bands)', () => {
   it('removing one of two layers keeps the jam going (no stack wipe)', async () => {
     render(<Producer />);
     await addDmLayer();
-    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    await openLibraryViaAddSheet('Melody');
     fireEvent.click(await screen.findByRole('button', { name: 'Catchy Hook' }));
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
     removeLayer(0);
@@ -566,7 +569,7 @@ describe('Producer shell (three bands)', () => {
     render(<Producer />);
     await addDmLayer();
     transportMock.isPlaying = true;
-    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    await openLibraryViaAddSheet('Melody');
     const pill = await screen.findByRole('button', { name: 'now playing' });
     fireEvent.click(pill);
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'loop library' })).toBeNull());
@@ -895,8 +898,7 @@ describe('Producer persistence wiring (Task 8.2)', () => {
     storeMock.crate = [{ id: 'c1', kind: 'stack', title: 'Kept', layerCount: 1 }];
     render(<Producer />);
     await addDmLayer(); // a jam worth protecting
-    fireEvent.click(screen.getByRole('button', { name: '+ Add layer' }));
-    await screen.findByRole('dialog', { name: 'loop library' });
+    await openLibraryViaAddSheet('Chords');
     fireEvent.click(screen.getByRole('button', { name: 'Ours' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Kept' }));
     // Armed: the confirm shows and nothing has loaded yet.

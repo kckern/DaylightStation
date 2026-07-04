@@ -26,6 +26,8 @@ const captureMock = vi.hoisted(() => ({
   state: 'idle',
   passCount: 0,
   takeNoteCount: 0,
+  takeNotes: [],
+  lengthBars: 4,
   drumMode: false,
   lastProps: null,
   __force: () => {},
@@ -38,6 +40,7 @@ vi.mock('./useLoopCapture.js', () => ({
     captureMock.__force = force;
     return { ...captureMock };
   },
+  PPQ: 480,
   // Real GM values (pinned in useLoopCapture.test.js) — hardcoded so the pad
   // → ch9 forwarding assertions are literal.
   DRUM_KEY_MAP: { 36: 36, 38: 38, 40: 42, 41: 46, 43: 45, 45: 47, 47: 50, 48: 49, 50: 51 },
@@ -332,6 +335,27 @@ describe('drum pads', () => {
     expect(router.noteOff).toHaveBeenCalledWith(9, 36);
     fireEvent.pointerUp(kick); // no double off
     expect(router.noteOff).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── live piano-roll ───────────────────────────────────────────────────────────
+
+describe('live piano-roll (design §8)', () => {
+  it('prompts before any notes, then renders the roll once the take has notes', () => {
+    renderCard();
+    arm();
+    expect(screen.getByText(/play along — your notes land here/i)).toBeInTheDocument();
+    expect(document.querySelector('.piano-loop-roll')).toBeNull();
+    setCapture({
+      passCount: 1,
+      takeNoteCount: 2,
+      takeNotes: [
+        { ticks: 0, durationTicks: 240, midi: 60, velocity: 90 },
+        { ticks: 480, durationTicks: 240, midi: 64, velocity: 90 },
+      ],
+    });
+    expect(screen.queryByText(/play along/i)).toBeNull();
+    expect(document.querySelector('.piano-loop-roll')).toBeTruthy();
   });
 });
 

@@ -23,7 +23,10 @@ export function shortestKeyDelta(fromPc, toPc) {
  * @param {() => void} onClose
  */
 export function KeySheet({ keyPc, onKeyNudge, onClose }) {
-  const radius = 42; // % of the ring box
+  // Center-to-center ring radius as an ABSOLUTE distance: the 18rem ring minus
+  // half a wedge (~3.1rem). A `%` here would resolve against the wedge's own
+  // box, not the ring, and collapse every key into the center.
+  const radius = '7rem';
   const pick = (pc) => {
     const delta = shortestKeyDelta(keyPc, pc);
     if (delta !== 0) onKeyNudge(delta);
@@ -48,7 +51,7 @@ export function KeySheet({ keyPc, onKeyNudge, onClose }) {
                 aria-label={`key ${k.name}`}
                 aria-pressed={k.pc === keyPc}
                 style={{
-                  transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-${radius}%) rotate(${-angle}deg)`,
+                  transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-${radius}) rotate(${-angle}deg)`,
                 }}
                 onClick={() => pick(k.pc)}
               >{k.name}</button>
