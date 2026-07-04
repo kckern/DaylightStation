@@ -313,6 +313,14 @@ function cyclicContains(hay, needle) {
   for (let i = 0; i < h.length; i += 1) if (n.every((x, j) => d[i + j] === x)) return true;
   return false;
 }
+// Absolute root cycle in C — the canonical LAYERING match key. Two loops are
+// harmonically layer-compatible iff they share this (both play in C, so absolute
+// chords must agree; a tonic-relative roman or transposition-invariant shape would
+// wrongly match rotations/different chords). e.g. "A-F-C-G", "C".
+function harmonyKey(roots) {
+  const cyc = minimalCycle(normalizeProgression((roots || []).map(String))).map(Number);
+  return cyc.length ? cyc.map((r) => NOTE_NAMES[r]).join('-') : '';
+}
 // 'yes' | 'no' | '' (no vendor label to check against)
 function harmonyVerified(entry, derivedRoots) {
   const vendor = (entry.chords || []).map((c) => parseChordSymbol(c)?.root).filter((r) => r != null);
@@ -332,6 +340,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
     : { name: (entry.type === 'groove' || entry.type === 'percussion') ? feelName(entry.slug) : null, roman: null, signature: null, confidence: 0 };
   const harmony = { roman: canon.roman, signature: canon.signature, confidence: canon.confidence };
   const verified = harmonyVerified(entry, canon.roots); // 'yes' | 'no' | '' vs vendor label
+  const harmKey = harmonyKey(canon.roots); // absolute-root-in-C layering match key
   const warnings = [];
   if (!midi.pitched.length && !midi.hasPercussion) warnings.push('no-notes');
   if (midi.pitched.length && harmony.confidence < 0.6 && entry.type === 'chord-progression') warnings.push('low-harmony-confidence');
@@ -364,6 +373,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
       'converted-at': nowIso,
       'derived-roman': (harmony.roman || []).join(' '),
       'derived-signature': harmony.signature || '',
+      'harmony-key': harmKey, // absolute root cycle in C — the layering match key
       'derived-confidence': harmony.confidence.toFixed(2),
       'harmony-verified': verified, // 'yes'/'no' = agrees/disagrees with vendor chord label; '' = no label
     },
@@ -376,7 +386,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
     slug: entry.slug, canonical: canon.name, type: entry.type, source: entry.path,
     genre, emotion, tags, quality, artist: entry.artist || null,
     ppq: midi.ppq, notes: midi.pitched.length, hasPercussion: midi.hasPercussion,
-    derivedRoman: harmony.roman, derivedSignature: harmony.signature,
+    derivedRoman: harmony.roman, derivedSignature: harmony.signature, harmonyKey: harmKey,
     derivedConfidence: harmony.confidence, harmonyVerified: verified,
     converter: CONVERTER_VERSION, analyzer: ANALYZER_VERSION,
     convertedAt: nowIso, warnings,
