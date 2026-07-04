@@ -415,6 +415,11 @@ export function LibraryBrowser({
   const handlePick = useCallback((result) => {
     logger.info('library.pick', {
       slug: result.entry.slug,
+      // The asset PATH is the unambiguous file identity — a slug can map to
+      // several voicing files (same progression+rhythm, hash-disambiguated), so
+      // log the path (and roman) to answer "which file did I pick?" from logs.
+      path: result.entry.path,
+      roman: (result.entry.roman || []).join('-') || undefined,
       stackable: result.stackable,
       ...(result.fit != null ? { fit: Math.round(result.fit * 100) / 100 } : {}),
     });
