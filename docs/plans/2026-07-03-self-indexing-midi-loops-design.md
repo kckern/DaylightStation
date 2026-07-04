@@ -213,6 +213,27 @@ loops/
    the long tail stays queryable. Nothing is lost; mess is demoted, not deleted.
 4. Re-derive all harmony/grid/roman from the actual notes.
 
+## Migration Executed (2026-07-03)
+
+First full MIDI→MusicXML pass via `cli/midi-to-musicxml.mjs` — **non-destructive**:
+- **Backup:** `media/midi/_backups/loops-pre-musicxml-2026-07-03.tar.gz` (3,231 `.mid`,
+  integrity-verified); raw vendor packs untouched; originals in `loops/` never modified.
+- **Output:** staging tree `media/midi/loops-xml/` (`chords/ basslines/ melodies/ ideas/
+  percussion/`) + `_ledger.jsonl`. Revert = `rm -rf loops-xml/`. Cutover deferred.
+- **Result:** 3,231/3,231 converted, 0 failures, all XML well-formed (xmllint), 41 MB, ~2s.
+- **Traceability:** each brick embeds source-midi path, vendor origin, source pack,
+  converter/analyzer versions, timestamp, and a derived-harmony snapshot; the ledger is a
+  1:1 input→output audit trail.
+- **Collision handling:** 206 chord-name slugs were shared by 934 distinct loops (e.g.
+  `am-f-c-g` = 23 different loops). Disambiguated with a source-path hash suffix
+  (`am-f-c-g-a3f9.musicxml`) so the mapping is exactly 1 input → 1 output.
+- **Harmony:** 1,622/1,655 chord-progressions derived at confidence 1.0; 28 flagged
+  low-confidence (the `harmony-override` tail).
+
+Known follow-ups before cutover: canonical roman+Braille filenames (currently reuse the
+old slug), 16th-grid quantization refinement, and wiring the hardened V2 analyzer (the
+migration used a simpler major/minor snapshot for the embedded field).
+
 ## Producer Integration
 
 - `useLoopLibrary` re-points from `…/loops/index.yml` to the new
