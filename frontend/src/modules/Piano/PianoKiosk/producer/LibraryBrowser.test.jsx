@@ -2,7 +2,7 @@
  * LibraryBrowser tests (Task 5.1) — the full-screen library surface with
  * consonance guardrails. Pure-ranking behavior lives in libraryRanking.test.js;
  * these cover the SURFACE: cards, facets, guardrail indicator + Show-all lift,
- * "goes with →" pivot, honest naming, the 120-card cap, and the pick seam.
+ * honest naming (no keyed spelling on cards), the 120-card cap, and the pick seam.
  *
  * Timelines reuse the hand-built consonance-vocabulary fixtures: I-I-V-I base,
  * roots-only stackable candidate, dim7 wall dissonant against it.
@@ -18,29 +18,35 @@ const TL_ROOTS = [[0], [0], [7], [0]];
 const TL_DIM7 = [[0, 3, 6, 9], [0, 3, 6, 9], [0, 3, 6, 9], [0, 3, 6, 9]];
 
 // ── entries ──────────────────────────────────────────────────────────────────
+// Migrated from the legacy `mood` string to the brick fields: `genre`/`emotion`
+// arrays + a `quality` string. `quality: 'best'` on every fixture here keeps
+// them visible under the browser's new default Best-only view (Task 7); the
+// dedicated quality-toggle test below adds a non-best entry instead of
+// touching these.
 const BASE = {
   slug: 'base-loop', path: 'chord-progressions/base-loop.mid', type: 'chord-progression',
-  roman: ['I', 'I', 'V', 'I'], title: 'C · G', mood: 'Happy', bpm: 120,
+  roman: ['I', 'I', 'V', 'I'], title: 'C · G', genre: ['pop'], emotion: ['happy'], quality: 'best', bpm: 120,
   timeline: TL_I_V, timelineRoot: 0, specificity: 'triad',
 };
 const FRIEND = {
   slug: 'friendly-roots', path: 'chord-progressions/friendly-roots.mid', type: 'chord-progression',
-  roman: ['I', 'I', 'V', 'I'], title: 'Root Notes', mood: 'Happy', bpm: 120,
+  roman: ['I', 'I', 'V', 'I'], title: 'Root Notes', genre: ['pop'], emotion: ['happy'], quality: 'best', bpm: 120,
   timeline: TL_ROOTS, timelineRoot: 0, specificity: 'root',
 };
 const CLASH = {
   slug: 'dim-wall', path: 'chord-progressions/dim-wall.mid', type: 'chord-progression',
-  roman: ['viio7'], title: 'Dim Wall', mood: 'Dark',
+  roman: ['viio7'], title: 'Dim Wall', genre: ['rock'], emotion: ['dark'], quality: 'best',
   timeline: TL_DIM7, timelineRoot: 0, specificity: 'extended',
 };
 const UNTITLED_MELODY = {
   slug: 'nameless-tune', path: 'melodies/nameless-tune.mid', type: 'melody',
-  degrees: [1, 2, 3], mood: 'Catchy',
+  degrees: [1, 2, 3], genre: ['indie'], emotion: ['catchy'], quality: 'best',
   timeline: [[0], [4], [7], [0]], timelineRoot: 0, specificity: 'triad',
 };
 const GROOVE = {
+  // Real grooves carry NO quality tier — they must still show under Best.
   slug: 'basic-rock', path: 'grooves/basic-rock.mid', type: 'groove',
-  feel: 'straight', bpm: 96, title: 'Basic Rock',
+  feel: 'straight', bpm: 96, title: 'Basic Rock', quality: '',
 };
 
 const ALL = [BASE, FRIEND, CLASH, UNTITLED_MELODY, GROOVE];
@@ -77,6 +83,18 @@ describe('LibraryBrowser — cards & honest identity', () => {
     const card = await screen.findByRole('button', { name: 'C · G' });
     expect(card.querySelector('.piano-material-glyph')).toBeTruthy();
     expect(card.querySelector('.roman-progression')).toBeTruthy();
+  });
+
+  it('harmonic cards never render a keyed spelling — the abstract Roman IS the identity', async () => {
+    renderBrowser();
+    // 'C · G' is the vendor's keyed title on a chord-progression brick; the
+    // library is abstract/key-agnostic (transposed at playtime), so it must
+    // survive ONLY as the aria-label, never as visible card text.
+    const card = await screen.findByRole('button', { name: 'C · G' });
+    expect(card.querySelector('.piano-loop__name')).toBeNull();
+    expect(card.querySelector('.piano-loop__caption')).toBeNull();
+    expect(card.querySelector('.roman-progression')).toBeTruthy();
+    expect(card.textContent).not.toContain('C · G');
   });
 
   it('never fabricates a name: untitled melodic card has no name text, only a subdued slug caption', async () => {
@@ -138,41 +156,14 @@ describe('LibraryBrowser — consonance guardrail', () => {
   });
 });
 
-describe('LibraryBrowser — "goes with →" pivot', () => {
-  it('pivot re-anchors the browse (works without a workspace base) and breadcrumb ✕ restores', async () => {
-    renderBrowser();
-    await screen.findByRole('button', { name: 'Dim Wall' });
-    fireEvent.click(screen.getByRole('button', { name: 'goes with C · G' }));
-    // Re-anchored: gate now runs against C · G — the clash disappears.
-    expect(screen.queryByRole('button', { name: 'Dim Wall' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Root Notes' })).toBeInTheDocument();
-    expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
-    // Breadcrumb shows the pivot; ✕ returns to the unanchored browse.
-    expect(screen.getByText('Goes with')).toBeInTheDocument();
-    expect(screen.getByText('C · G')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'clear pivot' }));
-    expect(screen.queryByText('Goes with')).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Dim Wall' })).toBeInTheDocument();
-  });
-
-  it('pivot overrides the workspace base (and resets a lifted gate)', async () => {
-    renderBrowser({ layers: [layerFor(BASE)] });
-    fireEvent.click(await screen.findByRole('button', { name: 'Show all' }));
-    await screen.findByRole('button', { name: 'Dim Wall' });
-    fireEvent.click(screen.getByRole('button', { name: 'goes with Root Notes' }));
-    // Anchored to Root Notes now, gate re-armed: dim wall gated out again.
-    expect(screen.queryByRole('button', { name: 'Dim Wall' })).toBeNull();
-    expect(screen.getByText('Root Notes', { selector: '.piano-producer-mode__crumb-name' })).toBeInTheDocument();
-  });
-});
-
 describe('LibraryBrowser — facets, search, stubs, cap', () => {
   it('kind facet filters (Grooves shows only grooves; All restores)', async () => {
     renderBrowser();
     await screen.findByRole('button', { name: 'Basic Rock' });
-    fireEvent.click(screen.getByRole('button', { name: 'Grooves' }));
+    const kindGroup = screen.getByRole('group', { name: 'kind' });
+    fireEvent.click(within(kindGroup).getByRole('button', { name: 'Grooves' }));
     expect(cardTitles()).toEqual(['Basic Rock']);
-    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    fireEvent.click(within(kindGroup).getByRole('button', { name: 'All' }));
     expect(cardTitles().length).toBe(ALL.length);
   });
 
@@ -183,15 +174,71 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(screen.queryByRole('button', { name: 'Basic Rock' })).toBeNull();
   });
 
-  it('mood facet chips filter and toggle off', async () => {
+  it('genre facet chips filter and toggle off', async () => {
     renderBrowser();
     await screen.findByRole('button', { name: 'Basic Rock' });
-    const moodGroup = screen.getByRole('group', { name: 'mood' });
-    fireEvent.click(within(moodGroup).getByRole('button', { name: 'Happy' }));
+    const genreGroup = screen.getByRole('group', { name: 'genre' });
+    fireEvent.click(within(genreGroup).getByRole('button', { name: 'pop' }));
     expect(cardTitles()).toEqual(expect.arrayContaining(['C · G', 'Root Notes']));
     expect(cardTitles()).toHaveLength(2);
-    fireEvent.click(within(moodGroup).getByRole('button', { name: 'Happy' }));
+    fireEvent.click(within(genreGroup).getByRole('button', { name: 'pop' }));
     expect(cardTitles().length).toBe(ALL.length);
+  });
+
+  it('genre chips render from facets.genres and the chip label filters the grid', async () => {
+    const DREAMY = {
+      slug: 'dreamy-bed', path: 'chord-progressions/dreamy-bed.mid', type: 'chord-progression',
+      roman: ['I'], title: 'Dreamy Bed', genre: ['lofi'], emotion: ['dreamy'], tags: ['lofi'], quality: 'best',
+      timeline: [[0, 4, 7]], timelineRoot: 0, specificity: 'triad',
+    };
+    const HOUSE = {
+      slug: 'house-lead', path: 'melodies/house-lead.mid', type: 'melody',
+      title: 'House Lead', genre: ['house'], emotion: [], tags: ['house'], quality: 'best',
+      timeline: [[0], [4]], timelineRoot: 0, specificity: 'root',
+    };
+    renderBrowser({ lib: makeLib([DREAMY, HOUSE]) });
+    await screen.findByRole('button', { name: 'Dreamy Bed' });
+    fireEvent.click(screen.getByRole('button', { name: /^lofi$/i }));
+    // Assert card presence by accessible name, not visible text: 'Dreamy Bed'
+    // is a chord-progression, whose keyed title renders only as the aria-label.
+    expect(screen.getByRole('button', { name: 'Dreamy Bed' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'House Lead' })).not.toBeInTheDocument();
+  });
+
+  it('quality toggle defaults to Best; All reveals non-best entries', async () => {
+    const DRAFT = {
+      slug: 'draft-loop', path: 'chord-progressions/draft-loop.mid', type: 'chord-progression',
+      roman: ['I', 'V'], title: 'Draft Loop', genre: ['pop'], emotion: [], quality: '',
+      timeline: [[0, 4, 7], [2, 7, 11]], timelineRoot: 0, specificity: 'triad',
+    };
+    renderBrowser({ lib: makeLib([...ALL, DRAFT]) });
+    await screen.findByRole('button', { name: 'Basic Rock' });
+    expect(screen.queryByRole('button', { name: 'Draft Loop' })).toBeNull();
+    const qualityGroup = screen.getByRole('group', { name: 'quality' });
+    fireEvent.click(within(qualityGroup).getByRole('button', { name: 'All' }));
+    expect(screen.getByRole('button', { name: 'Draft Loop' })).toBeInTheDocument();
+    fireEvent.click(within(qualityGroup).getByRole('button', { name: 'Best' }));
+    expect(screen.queryByRole('button', { name: 'Draft Loop' })).toBeNull();
+  });
+
+  it('grooves stay visible under the Best default (no quality tier) — drums must be addable', async () => {
+    renderBrowser(); // quality defaults to Best; GROOVE has quality ''
+    fireEvent.click(screen.getByRole('button', { name: 'Grooves' }));
+    expect(await screen.findByRole('button', { name: 'Basic Rock' })).toBeInTheDocument();
+  });
+
+  it('ideas stay visible under the Best default — no idea is graded "best", so the whole Ideas category must not vanish', async () => {
+    // Same class as grooves: the `idea` type has NO 'best'-tier members in the
+    // real library, so a Best default that hard-filtered by tier emptied the
+    // entire Ideas kind. The quality facet must no-op for such a type.
+    const IDEA = {
+      slug: 'spark', path: 'ideas/spark.mid', type: 'idea', title: 'Bright Spark',
+      genre: ['jazz'], emotion: ['bright'], quality: '',
+      timeline: [[0, 4, 7], [2, 7, 11]], timelineRoot: 0, specificity: 'triad',
+    };
+    renderBrowser({ lib: makeLib([...ALL, IDEA]) }); // quality defaults to Best
+    fireEvent.click(screen.getByRole('button', { name: 'Ideas' }));
+    expect(await screen.findByRole('button', { name: 'Bright Spark' })).toBeInTheDocument();
   });
 
   it('feel chips appear for the groove kind and filter by feel', async () => {
@@ -289,7 +336,7 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
   it('caps the grid at 120 cards with a "refine to see more" footer', async () => {
     const many = Array.from({ length: 150 }, (_, i) => ({
       slug: `loop-${i}`, path: `chord-progressions/loop-${i}.mid`, type: 'chord-progression',
-      roman: ['I', 'V'], title: `Loop ${i}`,
+      roman: ['I', 'V'], title: `Loop ${i}`, quality: 'best',
       timeline: [[0, 4, 7], [2, 7, 11]], timelineRoot: 0, specificity: 'triad',
     }));
     renderBrowser({ lib: makeLib(many) });

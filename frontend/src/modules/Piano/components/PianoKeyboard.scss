@@ -30,6 +30,10 @@
     user-select: none;
   }
 
+  // Half-shade target reveal (Sheet Music Learn mode): the target key is only
+  // shown AFTER a wrong attempt, and then muted — a hint, not a spoiler light.
+  &.target-dim .piano-key.target { opacity: 0.45; }
+
   .piano-key {
     position: relative;
     transition: background-color 0.05s ease-out;

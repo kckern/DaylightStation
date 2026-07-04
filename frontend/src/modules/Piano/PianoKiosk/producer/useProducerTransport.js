@@ -183,7 +183,7 @@ export function useProducerTransport({
   const activeRef = useRef(new Set());     // "ch:note" of sounding LOOP notes (incl. clicks)
   const pendingSwapRef = useRef(null);     // { atWall, atBar, mode, cycle, compiled, barMs, beatsPerBar, metro }
   const pendingJumpRef = useRef(null);     // { targetIdx, atMs, atWall } — exposed for UI affordance
-  const positionRef = useRef({ normalized: 0, bar: 0, beat: 0, blockIndex: -1 });
+  const positionRef = useRef({ normalized: 0, bar: 0, beat: 0, barFrac: 0, blockIndex: -1 });
   const stopRef = useRef(null);            // set below; lets tick-internal code stop cleanly
 
   // ── internal helpers (ref-based only, so stale closure instances are fine) ─
@@ -284,6 +284,9 @@ export function useProducerTransport({
     p.normalized = Math.max(0, Math.min(1, normalized));
     p.bar = bar;
     p.beat = Math.min(bpb - 1, Math.max(0, Math.floor(elapsedInBar / (barMsRef.current / bpb))));
+    // Smooth 0..1 position WITHIN the current bar — lets a playhead sweep
+    // continuously instead of stepping per beat/measure.
+    p.barFrac = Math.max(0, Math.min(1, elapsedInBar / (barMsRef.current || 1)));
     p.blockIndex = blockIndex;
   }
 

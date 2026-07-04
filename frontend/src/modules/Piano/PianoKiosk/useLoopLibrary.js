@@ -1,21 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import jsyaml from 'js-yaml';
-import { Midi } from '@tonejs/midi';
 import getLogger from '../../../lib/logging/Logger.js';
+import { musicXmlToNotes } from '@shared-music/musicXmlToNotes.mjs';
 import { queryLoops, facets } from '@shared-music/loopQuery.mjs';
 import { rankLayerCandidates } from '@shared-music/layerMatch.mjs';
 
 /**
- * useLoopLibrary — loads the canonical MIDI loop catalog (media/midi/loops) and
- * exposes query / facet / layer-ranking helpers plus lazy note loading.
- *
- * The index is the queryable layer (one fetch, cached for the session). Note
- * data is loaded on demand per loop (tiny .mid parsed in-browser) and memoized,
- * so browsing is cheap and only auditioned/active loops pay the parse cost.
+ * useLoopLibrary — loads the backend loop-manifest (one fetch, cached for the
+ * session) and exposes query / facet / layer-ranking helpers plus lazy note
+ * loading. The manifest is the queryable layer; a brick's notes are parsed from
+ * its MusicXML on demand (tiny file, parsed in-browser) and memoized, so
+ * browsing is cheap and only auditioned/active bricks pay the parse cost.
  */
 
-const LOOPS_BASE = 'midi/loops';
-const streamUrl = (rel) => `/api/v1/local/stream/${rel}`;
+const MANIFEST_URL = '/api/v1/piano/loop-manifest';
+const streamUrl = (rel) => `/api/v1/local/stream/${rel.split('/').map(encodeURIComponent).join('/')}`;
 
 let _logger;
 const logger = () => {
@@ -33,11 +31,13 @@ export function useLoopLibrary() {
     (async () => {
       try {
         const t0 = performance.now();
-        const text = await (await fetch(streamUrl(`${LOOPS_BASE}/index.yml`))).text();
-        const parsed = jsyaml.load(text) || [];
+        const res = await fetch(MANIFEST_URL);
+        if (!res.ok) throw new Error(`loop-manifest ${res.status}`);
+        const data = await res.json();
+        const bricks = Array.isArray(data?.bricks) ? data.bricks : [];
         if (cancelled) return;
-        setLoops(parsed);
-        logger().info('loop-library.loaded', { count: parsed.length, ms: Math.round(performance.now() - t0) });
+        setLoops(bricks);
+        logger().info('loop-library.loaded', { count: bricks.length, ms: Math.round(performance.now() - t0) });
       } catch (err) {
         if (cancelled) return;
         setError(err.message);
@@ -51,16 +51,13 @@ export function useLoopLibrary() {
   const libraryFacets = useMemo(() => facets(loops || []), [loops]);
   const rankFor = useCallback((base, opts) => rankLayerCandidates(base, loops || [], opts), [loops]);
 
-  /** Fetch + parse a loop's MIDI into { ppq, notes:[{ticks,durationTicks,midi}] }. Cached. */
+  /** Fetch + parse a brick's MusicXML into { ppq, notes:[{ticks,durationTicks,midi}] }. Cached. */
   const loadNotes = useCallback(async (entry) => {
     if (notesCache.current.has(entry.path)) return notesCache.current.get(entry.path);
     try {
-      const buf = await (await fetch(streamUrl(`${LOOPS_BASE}/${entry.path}`))).arrayBuffer();
-      const midi = new Midi(buf);
-      const notes = midi.tracks.flatMap((tr) => tr.notes.map((n) => ({
-        ticks: n.ticks, durationTicks: n.durationTicks, midi: n.midi,
-      })));
-      const result = { ppq: midi.header.ppq || 480, notes };
+      const xml = await (await fetch(streamUrl(`midi/${entry.path}`))).text();
+      const { ppq, notes } = musicXmlToNotes(xml);
+      const result = { ppq, notes };
       notesCache.current.set(entry.path, result);
       logger().debug('loop-library.notes-loaded', { path: entry.path, notes: notes.length });
       return result;

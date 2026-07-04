@@ -3,29 +3,31 @@ import assert from 'node:assert/strict';
 import { queryLoops, facets } from './loopQuery.mjs';
 
 const LIB = [
-  { slug: 'a', type: 'chord-progression', mood: 'Catchy', sources: ['niko-chord'], chords: ['C', 'F', 'G'], artist: null, descriptor: null },
-  { slug: 'b', type: 'melody', mood: 'Dark', sources: ['niko-master'], chords: null, artist: null, descriptor: 'Brooding line' },
-  { slug: 'c', type: 'melody', mood: 'Catchy', sources: ['melody-starters'], chords: null, artist: null, descriptor: null },
-  { slug: 'd', type: 'chord-progression', mood: null, sources: ['famous'], chords: ['Am', 'F'], artist: 'Drake', descriptor: null },
+  { slug: 'a', path: 'chords/a.musicxml', type: 'chord-progression', genre: ['catchy'], emotion: ['dreamy'], tags: ['catchy', 'dreamy'], quality: 'best', title: 'A', artist: '' },
+  { slug: 'b', path: 'melodies/b.musicxml', type: 'melody', genre: ['dark'], emotion: [], tags: ['dark', 'brooding'], quality: '', title: 'B', artist: '' },
+  { slug: 'c', path: 'melodies/c.musicxml', type: 'melody', genre: ['catchy'], emotion: [], tags: ['catchy'], quality: '', title: 'C', artist: '' },
+  { slug: 'd', path: 'chords/d.musicxml', type: 'chord-progression', genre: [], emotion: [], tags: [], quality: 'famous', title: 'D', artist: 'Drake' },
 ];
 
 describe('queryLoops', () => {
   it('filters by role', () => {
     assert.deepEqual(queryLoops(LIB, { role: 'melody' }).map((l) => l.slug), ['b', 'c']);
   });
-  it('filters by mood (case-insensitive)', () => {
-    assert.deepEqual(queryLoops(LIB, { mood: 'catchy' }).map((l) => l.slug), ['a', 'c']);
+  it('filters by genre (case-insensitive)', () => {
+    assert.deepEqual(queryLoops(LIB, { genre: 'CATCHY' }).map((l) => l.slug), ['a', 'c']);
   });
-  it('filters by source', () => {
-    assert.deepEqual(queryLoops(LIB, { source: 'famous' }).map((l) => l.slug), ['d']);
+  it('filters by emotion (case-insensitive)', () => {
+    assert.deepEqual(queryLoops(LIB, { emotion: 'Dreamy' }).map((l) => l.slug), ['a']);
   });
-  it('text-searches slug, chords, artist, descriptor', () => {
+  it('filters by quality', () => {
+    assert.deepEqual(queryLoops(LIB, { quality: 'famous' }).map((l) => l.slug), ['d']);
+  });
+  it('text-searches title, slug, artist, tags', () => {
     assert.deepEqual(queryLoops(LIB, { text: 'drake' }).map((l) => l.slug), ['d']);
     assert.deepEqual(queryLoops(LIB, { text: 'brooding' }).map((l) => l.slug), ['b']);
-    assert.deepEqual(queryLoops(LIB, { text: 'Am' }).map((l) => l.slug), ['d']);
   });
   it('combines filters (AND)', () => {
-    assert.deepEqual(queryLoops(LIB, { role: 'melody', mood: 'Catchy' }).map((l) => l.slug), ['c']);
+    assert.deepEqual(queryLoops(LIB, { role: 'melody', genre: 'catchy' }).map((l) => l.slug), ['c']);
   });
   it('returns all with no filters', () => {
     assert.equal(queryLoops(LIB, {}).length, 4);
@@ -33,11 +35,11 @@ describe('queryLoops', () => {
 });
 
 describe('facets', () => {
-  it('counts roles, moods and sources for filter chips', () => {
+  it('counts roles, genres, emotions and qualities for filter chips', () => {
     const f = facets(LIB);
     assert.deepEqual(f.roles, { chords: 2, melody: 2 });
-    assert.deepEqual(f.moods, { Catchy: 2, Dark: 1 });
-    assert.equal(f.sources['niko-chord'], 1);
-    assert.equal(f.sources.famous, 1);
+    assert.deepEqual(f.genres, { catchy: 2, dark: 1 });
+    assert.deepEqual(f.emotions, { dreamy: 1 });
+    assert.deepEqual(f.qualities, { best: 1, famous: 1 });
   });
 });

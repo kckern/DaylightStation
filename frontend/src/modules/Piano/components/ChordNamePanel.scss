@@ -23,8 +23,12 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     color: #fff;
+    transition: opacity 0.4s ease;
 
     &.is-empty { opacity: 0.85; }
+    // Lingering (keys released) — a gentle fade signals it's the last chord,
+    // still legible until it clears or a new chord takes its place.
+    &.is-held { opacity: 0.72; }
   }
 
   &__eyebrow {

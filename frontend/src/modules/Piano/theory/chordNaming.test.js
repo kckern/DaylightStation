@@ -130,6 +130,82 @@ describe('identifyChord — unknown set', () => {
   });
 });
 
+describe('identifyChord — inverted sevenths keep their identity (v2)', () => {
+  it('C7 with the bottom C moved to the top is STILL C7 (first inversion / E)', () => {
+    // C-E-G-Bb voiced E-G-Bb-C — the user's example: same chord, inverted.
+    const r = identifyChord([E4, G4, Bb4, C4 + 12]);
+    expect(r.root).toBe(0);
+    expect(r.quality).toBe('dominant7');
+    expect(r.inversion).toBe(1);
+    expect(r.displayName).toBe('C 7 / E');
+  });
+
+  it('G7 in third inversion (F in bass) → G 7 / F', () => {
+    const r = identifyChord([F4, G4 + 12, B4 + 12, D4 + 24]);
+    expect(r.quality).toBe('dominant7');
+    expect(r.displayName).toBe('G 7 / F');
+  });
+});
+
+describe('identifyChord — tolerant voicings (dropped 5th, v2)', () => {
+  it('C7 without the 5th is still C 7', () => {
+    const r = identifyChord([C4, E4, Bb4]); // no G
+    expect(r.quality).toBe('dominant7');
+    expect(r.displayName).toBe('C 7');
+  });
+
+  it('C major 9 without the 5th is still C major 9', () => {
+    const r = identifyChord([C4, D4 + 12, E4, B4]); // C E B D, no G
+    expect(r.quality).toBe('major9');
+    expect(r.displayName).toBe('C major 9');
+  });
+
+  it('a chromatic-ish cluster stays nameless (no blind guess)', () => {
+    expect(identifyChord([C4, Gb4, F4]).displayName).toBe(''); // 0,5,6 — not a chord
+  });
+});
+
+describe('identifyChord — broadened vocabulary (v2)', () => {
+  it('C6 (major sixth)', () => {
+    const r = identifyChord([C4, E4, G4, A4]);
+    expect(r.quality).toBe('sixth');
+    expect(r.displayName).toBe('C 6');
+  });
+
+  it('C add9', () => {
+    const r = identifyChord([C4, D4, E4, G4]);
+    expect(r.quality).toBe('add9');
+    expect(r.displayName).toBe('C add9');
+  });
+
+  it('C dominant 9', () => {
+    const r = identifyChord([C4, E4, G4, Bb4, D4 + 12]);
+    expect(r.quality).toBe('dominant9');
+    expect(r.displayName).toBe('C 9');
+  });
+
+  it('C minor 9', () => {
+    const r = identifyChord([C4, Eb4, G4, Bb4, D4 + 12]);
+    expect(r.quality).toBe('minor9');
+    expect(r.displayName).toBe('C minor 9');
+  });
+
+  it('G 7 sus4', () => {
+    const r = identifyChord([G4, C4 + 12, D4 + 12, F4 + 12]);
+    expect(r.quality).toBe('dominant7sus4');
+    expect(r.displayName).toBe('G 7 sus4');
+  });
+});
+
+describe('identifyChord — the bass disambiguates an ambiguous set (v2)', () => {
+  it('C-D-G with C in the bass is C sus2', () => {
+    expect(identifyChord([C4, D4, G4]).displayName).toBe('C sus2');
+  });
+  it('the SAME pitch classes with G in the bass is G sus4', () => {
+    expect(identifyChord([G4 - 12, C4, D4]).displayName).toBe('G sus4');
+  });
+});
+
 describe('PITCH_CLASS_NAMES', () => {
   it('maps 0 → C and 6 → F# (sharp default)', () => {
     expect(PITCH_CLASS_NAMES[0]).toBe('C');

@@ -79,6 +79,7 @@ export const ActionTypes = Object.freeze({
   SET_REPEATS: 'SET_REPEATS',
   MOVE_ENTRY: 'MOVE_ENTRY',
   ADD_ENTRY: 'ADD_ENTRY',
+  ADD_SECTION: 'ADD_SECTION',
   REMOVE_ENTRY: 'REMOVE_ENTRY',
   SET_SECTION_LENGTH: 'SET_SECTION_LENGTH',
   RENAME_SECTION: 'RENAME_SECTION',
@@ -496,6 +497,23 @@ export function draftReducer(state, action) {
       return { ...state, arrangement: state.arrangement.filter((_, i) => i !== index) };
     }
 
+    case ActionTypes.ADD_SECTION: {
+      // Mint a brand-new EMPTY section and append it to the play order. This is
+      // the ONLY way to grow a song with FRESH material once past the template
+      // empty-state: PROMOTE/APPLY_TEMPLATE seed sections, CLONE_SECTION copies
+      // an existing one — none add a blank slot. The new section renders as a
+      // dashed "fill me" that the existing fill sheet (Use current jam / Open in
+      // Mix to build) populates, exactly like a template's empty slot.
+      if (state == null) return state;
+      const id = nextSectionId(state.sections);
+      const section = { id, name: autoLabel(state.sections), lengthBars: 1, stack: [] };
+      return {
+        ...state,
+        sections: [...state.sections, section],
+        arrangement: [...state.arrangement, { sectionId: id, repeats: 1 }],
+      };
+    }
+
     case ActionTypes.SET_SECTION_LENGTH: {
       if (!Number.isFinite(action.lengthBars)) return state;
       if (!state.sections.some((s) => s.id === action.sectionId)) return state;
@@ -615,6 +633,7 @@ export const setArrangement = (entries) => ({ type: ActionTypes.SET_ARRANGEMENT,
 export const setRepeats = (index, repeats) => ({ type: ActionTypes.SET_REPEATS, index, repeats });
 export const moveEntry = (from, to) => ({ type: ActionTypes.MOVE_ENTRY, from, to });
 export const addEntry = (sectionId, at) => ({ type: ActionTypes.ADD_ENTRY, sectionId, at });
+export const addSection = () => ({ type: ActionTypes.ADD_SECTION });
 export const removeEntry = (index) => ({ type: ActionTypes.REMOVE_ENTRY, index });
 export const setSectionLength = (sectionId, lengthBars) => (
   { type: ActionTypes.SET_SECTION_LENGTH, sectionId, lengthBars }

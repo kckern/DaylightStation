@@ -394,11 +394,16 @@ export function toTransportLayers(state, loadedNotes = {}) {
         ? { notes: layer.source.notes, ppq: layer.source.ppq, barSpan: layer.source.lengthBars }
         : null);
     if (!loaded?.notes?.length) continue;
+    // Each library brick is in its OWN key; entry.tonicPc is the pc its "I"
+    // sounds. Transpose by (keyShift − tonicPc) so the loop's tonic lands on the
+    // jam key ("I" in key C sounds C), not the brick's stored key. Takes are
+    // already canonical (tonic 0); grooves never transpose.
+    const tonicPc = layer.source?.kind === 'library' ? (layer.source.entry?.tonicPc || 0) : 0;
     out.push({
       notes: loaded.notes,
       ppq: loaded.ppq,
       barSpan: loaded.barSpan,
-      transpose: layer.role === 'groove' ? 0 : state.keyShift,
+      transpose: layer.role === 'groove' ? 0 : (state.keyShift - tonicPc),
       muted: effectiveMuted(state, layer.id),
       channel: layer.channel,
       gain: layer.gain,

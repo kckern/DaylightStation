@@ -5,22 +5,23 @@
  *
  * Behavior map:
  * - Pinned top bar: search + facet chips — store (Library / Ours / Prefabs),
- *   kind (All/Chords/Melody/Bass/Ideas/Grooves), mood (top 8 + overflow),
- *   feel (groove kind only). 'Ours' and 'Prefabs' are STUB facets rendering
- *   honest empty states (Tasks 8.2 / 9.1 fill them).
+ *   kind (All/Chords/Melody/Bass/Ideas/Grooves), quality (Best/All, defaults
+ *   to Best), genre (top 8 + overflow), feel (groove kind only). 'Ours' and
+ *   'Prefabs' are STUB facets rendering honest empty states (Tasks 8.2 / 9.1
+ *   fill them).
  * - Guardrails: when the browse is anchored to a base with a harmonic
  *   timeline, the grid shows buildCompatibleSet's guardrailed results
  *   ("Showing what fits your jam · N"). "Show all" lifts the gate for honest
  *   browsing — non-stackable cards get a small ⚠ but adding them is ALLOWED
  *   (guardrails are defaults, not prisons; design §4b).
- * - "Goes with →" pivot: any card can re-anchor the browse with ITSELF as the
- *   base (pivotEntry overrides the workspace base); a breadcrumb chip shows
- *   the pivot with ✕ to return. Works with or without a workspace base.
  * - Cards: MaterialGlyph + kind identity — RomanProgression (harmonic), staff
  *   thumb (melodic), feel/bpm chips (grooves — they carry NO timeline, so no
- *   fake onset rows). Title only when a REAL title exists; the glyph+roman IS
- *   the identity (requirements §3.1). For melodic/groove material without a
- *   title the slug appears only as a subdued debug caption, never as a name.
+ *   fake onset rows). Library entries are ABSTRACT, key-agnostic classes (in C,
+ *   transposed at playtime), so a keyed chord SPELLING is an instantiation:
+ *   entry.title (a concrete chord spelling for harmonic AND ~40% of melodic
+ *   bricks) is NEVER rendered on a card — it survives only as the aria-label.
+ *   The glyph + Roman/staff/feel IS the identity (requirements §3.1). An
+ *   untitled melodic card falls back to a subdued slug caption (a source id).
  * - Tap card = onPick(entry). Press-AND-HOLD (150ms arm) = peek audition
  *   (design §7): the entry sounds over the jam if it's playing, solo +
  *   metronome if not, conformed to the current key/tempo (usePeek). Release
@@ -28,7 +29,7 @@
  *   tap. Scroll safety mirrors GainStrip (touch-action pan-y + >12px drift
  *   cancels the arm), but the commit points differ: peek starts on the HOLD
  *   TIMER, tap commits on pointer-up.
- * - Perf: the compatible set is built on open + base/pivot change (memo),
+ * - Perf: the compatible set is built on open + base change (memo),
  *   NEVER per keystroke — search/facets filter the already-built set. Render
  *   is capped at 120 cards with a "refine to see more" footer instead of
  *   virtualization (simple + honest at ~3.2k entries).
@@ -89,8 +90,13 @@ const KINDS = [
 
 /** Render cap — refine (search/facets) to see more; no virtualization. */
 const CARD_CAP = 120;
-/** Mood chips shown before the overflow toggle. */
-const MOOD_TOP = 8;
+/** Genre chips shown before the overflow toggle. */
+const GENRE_TOP = 8;
+/** Quality toggle: curated default vs everything. */
+const QUALITIES = [
+  { key: 'best', label: 'Best' },
+  { key: null, label: 'All' },
+];
 /** How often the pill readout syncs from positionRef (≤4Hz — no per-frame state). */
 const PILL_READOUT_MS = 250;
 /** Press-and-hold arm delay: shorter reads as a laggy tap, longer feels dead. */
@@ -155,8 +161,7 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
 }
 
 /**
- * One library card: glyph-forward identity + kind display + pivot affordance.
- * The pivot is a SIBLING button (nested buttons are invalid HTML).
+ * One library card: glyph-forward identity + kind display.
  *
  * Pointer choreography (Task 5.2 press-to-peek):
  * - pointer-down arms a HOLD_MS timer (and captures the pointer);
@@ -168,7 +173,7 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
  * - onClick handles ONLY keyboard activation (detail === 0): the pointer flow
  *   owns taps, and the guard swallows the browser's post-tap ghost click.
  */
-function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
+function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
   const { entry, reasons = [] } = result;
   const isGroove = entry.type === 'groove';
   const hasRoman = !!entry.roman?.length;
@@ -257,18 +262,21 @@ function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, 
             {entry.bpm ? <span className="piano-loop__chip">{entry.bpm} bpm</span> : null}
           </span>
         )}
-        {entry.title
-          ? <span className="piano-loop__name">{entry.title}</span>
-          : (!hasRoman && <span className="piano-loop__caption">{entry.slug}</span>)}
+        {/* entry.title is a KEYED chord SPELLING (concrete chord names) — true
+            even for melodies (~40% carry their progression as the title, e.g.
+            "G Am · F C") — and the library is abstract/key-agnostic (transposed
+            at playtime), so title is NEVER rendered as visible card text; it
+            survives only as the aria-label above. The identity IS the glyph +
+            Roman (harmonic) / staff (melodic) / feel (groove). A melodic card
+            with no title at all falls back to a subdued slug caption (a source
+            id, never a keyed spelling). */}
+        {!hasRoman && !isGroove && !entry.title && (
+          <span className="piano-loop__caption">{entry.slug}</span>
+        )}
         {reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
-        {entry.mood && <span className="piano-loop__tag">{entry.mood}</span>}
+        {entry.quality === 'best' && <span className="piano-loop__tag">best</span>}
+        {entry.tags?.[0] && <span className="piano-loop__tag">{entry.tags[0]}</span>}
       </button>
-      <button
-        type="button"
-        className="piano-loop__pivot"
-        aria-label={`goes with ${label}`}
-        onClick={() => onPivot(entry)}
-      >goes with →</button>
     </li>
   );
 }
@@ -294,11 +302,11 @@ export function LibraryBrowser({
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
   const [store, setStore] = useState('curated');
   const [kind, setKind] = useState(initialRole);
-  const [mood, setMood] = useState(null);
+  const [genre, setGenre] = useState(null);
   const [feel, setFeel] = useState(null);
+  const [quality, setQuality] = useState('best');
   const [text, setText] = useState('');
-  const [moodsExpanded, setMoodsExpanded] = useState(false);
-  const [pivot, setPivot] = useState(null); // "goes with →" anchor, overrides the workspace base
+  const [genresExpanded, setGenresExpanded] = useState(false);
   const [gateLifted, setGateLifted] = useState(false);
 
   // Press-and-hold audition engine (Task 5.2). isPlaying doubles as the
@@ -316,7 +324,7 @@ export function LibraryBrowser({
     () => layers.find((l) => l.source?.kind === 'library')?.source.entry ?? null,
     [layers],
   );
-  const base = pivot ?? workspaceBase;
+  const base = workspaceBase;
   // The gate only exists when the anchor has a harmonic timeline (groove or
   // unenriched anchors can't gate — buildCompatibleSet passes everything).
   const gateActive = !!timelineOf(base);
@@ -328,10 +336,10 @@ export function LibraryBrowser({
       gate: gateActive,
       entries: entries.length,
     });
-    // Open-context snapshot only — later base/entry changes log via pivot/pick.
+    // Open-context snapshot only — later entry changes log via pick.
   }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── compatible set: rebuilt on base/pivot change ONLY, never per keystroke ──
+  // ── compatible set: rebuilt on base change ONLY, never per keystroke ──
   const compatible = useMemo(() => buildCompatibleSet({ entries, baseEntry: base }), [entries, base]);
   const ranked = useMemo(() => rankCompatible(compatible, base), [compatible, base]);
   const passing = useMemo(
@@ -350,6 +358,22 @@ export function LibraryBrowser({
     return rankCompatible(rows, base);
   }, [showAll, ranked, entries, passing, base]);
 
+  // Types that actually HAVE an entry at the selected quality tier. The quality
+  // facet only curates WITHIN a type that has graded members; a type with none
+  // at that tier (grooves and ideas carry no 'best') would be emptied entirely
+  // by the Best default — making that whole category un-addable (the groove and
+  // bassline/idea bugs). So the quality filter is a no-op for such types.
+  const typesAtQuality = useMemo(() => {
+    const m = new Map(); // quality tier -> Set(entry.type)
+    for (const e of entries) {
+      const eq = e.quality || '';
+      if (!eq) continue;
+      if (!m.has(eq)) m.set(eq, new Set());
+      m.get(eq).add(e.type);
+    }
+    return m;
+  }, [entries]);
+
   // ── client-side facet + search filtering of the already-built pool ─────────
   const existingIds = useMemo(() => new Set(layers.map((l) => l.id)), [layers]);
   const filtered = useMemo(() => {
@@ -358,24 +382,28 @@ export function LibraryBrowser({
       if (existingIds.has(entryIdentity(entry))) return false; // layer ids follow the same path||slug rule
       if (kind === 'groove') { if (entry.type !== 'groove') return false; }
       else if (kind && roleOf(entry) !== kind) return false;
-      if (mood && (entry.mood || '') !== mood) return false;
+      if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
       if (feel && (entry.feel || '') !== feel) return false;
+      // Only curate by quality when this entry's TYPE has members at that tier;
+      // otherwise (grooves, ideas — no 'best') the filter would empty the
+      // category. See typesAtQuality above.
+      if (quality && typesAtQuality.get(quality)?.has(entry.type) && (entry.quality || '') !== quality) return false;
       if (q) {
-        const hay = [entry.title, entry.slug, entry.mood, entry.artist, entry.descriptor, ...(entry.chords || [])]
-          .filter(Boolean).join(' ').toLowerCase();
+        const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [pool, existingIds, kind, mood, feel, text]);
+  }, [pool, existingIds, kind, genre, feel, quality, text, typesAtQuality]);
 
   const visible = filtered.slice(0, CARD_CAP);
   const overflow = filtered.length - visible.length;
 
   // ── facet chip data ─────────────────────────────────────────────────────────
-  const moodChips = useMemo(() => {
-    const counts = Object.entries(lib.facets?.moods || {}).sort((a, b) => b[1] - a[1]);
-    return { top: counts.slice(0, MOOD_TOP).map(([m]) => m), rest: counts.slice(MOOD_TOP).map(([m]) => m) };
+  const genreChips = useMemo(() => {
+    const counts = Object.entries(lib.facets?.genres || {}).sort((a, b) => b[1] - a[1]);
+    const names = counts.map(([g]) => g);
+    return { top: names.slice(0, GENRE_TOP), rest: names.slice(GENRE_TOP) };
   }, [lib.facets]);
   const feelChips = useMemo(
     () => [...new Set(entries.filter((e) => e.type === 'groove' && e.feel).map((e) => e.feel))],
@@ -384,9 +412,9 @@ export function LibraryBrowser({
 
   useEffect(() => {
     logger.sampled('library.filter', {
-      store, kind: kind ?? 'all', mood, feel, textLen: text.length,
+      store, kind: kind ?? 'all', genre, feel, quality, textLen: text.length,
     }, { maxPerMinute: 30, aggregate: true });
-  }, [store, kind, mood, feel, text, logger]);
+  }, [store, kind, genre, feel, quality, text, logger]);
 
   // ── handlers ────────────────────────────────────────────────────────────────
   const handlePick = useCallback((result) => {
@@ -398,30 +426,14 @@ export function LibraryBrowser({
     onPick(result.entry);
   }, [logger, onPick]);
 
-  const handlePivot = useCallback((entry) => {
-    logger.info('library.pivot', { slug: entry.slug });
-    setPivot(entry);
-    setGateLifted(false);
-  }, [logger]);
-
-  const clearPivot = useCallback(() => {
-    logger.info('library.pivot-clear', {});
-    setPivot(null);
-    setGateLifted(false);
-  }, [logger]);
-
   const liftGate = useCallback(() => {
     logger.info('library.gate-lift', { lifted: !gateLifted });
     setGateLifted((v) => !v);
   }, [logger, gateLifted]);
 
   const clearFilters = useCallback(() => {
-    setKind(null); setMood(null); setFeel(null); setText('');
+    setKind(null); setGenre(null); setFeel(null); setText(''); setQuality('best');
   }, []);
-
-  const pivotLabel = pivot
-    ? (pivot.title || (pivot.roman?.length ? pivot.roman.join(' ') : pivot.type))
-    : null;
 
   // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
   // sections/arrangements aren't addable layers, documented scoping). Filtered
@@ -454,7 +466,7 @@ export function LibraryBrowser({
       <div className="piano-producer-mode__overlay-top">
         <input
           className="piano-producer-mode__search"
-          placeholder="Search loops (chords, mood, artist…)"
+          placeholder="Search loops (title, tags, artist…)"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
@@ -484,19 +496,29 @@ export function LibraryBrowser({
             >{k.label}</button>
           ))}
         </div>
-        {(moodChips.top.length > 0) && (
-          <div className="piano-producer-mode__roles" role="group" aria-label="mood">
-            {(moodsExpanded ? [...moodChips.top, ...moodChips.rest] : moodChips.top).map((m) => (
+        <div className="piano-producer-mode__roles" role="group" aria-label="quality">
+          {QUALITIES.map((qOpt) => (
+            <button
+              key={qOpt.label}
+              type="button"
+              className={`piano-chip${quality === qOpt.key ? ' is-on' : ''}`}
+              onClick={() => setQuality(qOpt.key)}
+            >{qOpt.label}</button>
+          ))}
+        </div>
+        {(genreChips.top.length > 0) && (
+          <div className="piano-producer-mode__roles" role="group" aria-label="genre">
+            {(genresExpanded ? [...genreChips.top, ...genreChips.rest] : genreChips.top).map((g) => (
               <button
-                key={m}
+                key={g}
                 type="button"
-                className={`piano-chip${mood === m ? ' is-on' : ''}`}
-                onClick={() => setMood((cur) => (cur === m ? null : m))}
-              >{m}</button>
+                className={`piano-chip${genre === g ? ' is-on' : ''}`}
+                onClick={() => setGenre((cur) => (cur === g ? null : g))}
+              >{g}</button>
             ))}
-            {moodChips.rest.length > 0 && (
-              <button type="button" className="piano-chip" onClick={() => setMoodsExpanded((v) => !v)}>
-                {moodsExpanded ? 'Less' : `+${moodChips.rest.length} more`}
+            {genreChips.rest.length > 0 && (
+              <button type="button" className="piano-chip" onClick={() => setGenresExpanded((v) => !v)}>
+                {genresExpanded ? 'Less' : `+${genreChips.rest.length} more`}
               </button>
             )}
           </div>
@@ -514,15 +536,6 @@ export function LibraryBrowser({
           </div>
         )}
       </div>
-
-      {pivot && (
-        <div className="piano-producer-mode__crumb">
-          <span className="piano-producer-mode__crumb-label">Goes with</span>
-          <MaterialGlyph material={pivot} size={26} />
-          <span className="piano-producer-mode__crumb-name">{pivotLabel}</span>
-          <button type="button" className="piano-producer-mode__crumb-clear" aria-label="clear pivot" onClick={clearPivot}>✕</button>
-        </div>
-      )}
 
       {gateActive && store === 'curated' && (
         <div className="piano-producer-mode__gate">
@@ -610,7 +623,6 @@ export function LibraryBrowser({
                 warn={showAll && !result.stackable}
                 lib={lib}
                 onPick={handlePick}
-                onPivot={handlePivot}
                 isPeeking={peekingId != null && peekingId === entryIdentity(result.entry)}
                 onPeekStart={startPeek}
                 onPeekStop={handlePeekStop}
