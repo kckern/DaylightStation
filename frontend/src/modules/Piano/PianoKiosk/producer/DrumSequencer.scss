@@ -10,7 +10,18 @@
 
   // The grid scrolls horizontally INSIDE the modal (long loops = many steps),
   // so it never overflows the viewport; the row label stays pinned at the left.
-  &__grid { display: flex; flex-direction: column; gap: 0.35rem; overflow-x: auto; }
+  // min-width:0 + align-self:stretch are load-bearing: as a flex item the grid's
+  // default min-width:auto refuses to shrink below content, so overflow-x:auto
+  // never engages and the grid spills out of the modal. These make it fill the
+  // modal width and scroll internally instead.
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    overflow-x: auto;
+    min-width: 0;
+    align-self: stretch;
+  }
   &__row { display: flex; align-items: center; gap: 0.6rem; width: max-content; }
   &__row-label {
     position: sticky;
