@@ -1,48 +1,116 @@
 // Pure chord identification: a set of MIDI notes → root, quality, inversion, and a
-// human display name (e.g. "D minor", "C major / E", "G 7"). No React, no DOM.
+// human display name (e.g. "D minor", "C 7 / E", "C 9"). No React, no DOM.
 //
-// Pitch class = midi % 12. Quality detection collapses to pitch classes; the lowest
-// sounding MIDI note sets the bass for inversion. v1 uses sharp spelling for roots.
+// Pitch class = midi % 12. The lowest sounding MIDI note sets the bass (for
+// inversion / slash spelling). v2 uses sharp spelling for roots.
+//
+// WHY A TIERED MATCHER (not a blind exact-match dictionary):
+//   1. EXACT tier — the played pitch classes equal a template exactly. Among
+//      exact reads (a set can be read from several roots — that IS what an
+//      inversion is), we prefer ROOT POSITION (bass == root), then the lowest
+//      inversion. This resolves genuine ambiguity by the bass: C-D-G with C in
+//      the bass is "C sus2", not "G sus4" or "D7sus4".
+//   2. TOLERANT tier — no exact read exists, so real playing (a dropped 5th, one
+//      added tension) still names. Only the perfect 5th may be ABSENT, and at
+//      most one sounding note may be UNEXPLAINED; anything looser is rejected as
+//      "no chord" rather than mislabeled (a chromatic cluster stays nameless).
+// Inversions are first-class: any root is tried, so C-E-G-Bb voiced E-G-Bb-C is
+// still "C 7" (spelled "C 7 / E"), never a different chord.
 
 /** Sharp-spelled pitch-class names (index 0..11 = C..B). */
 export const PITCH_CLASS_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-// Chord templates: intervals (semitones above root) → quality + label suffix.
-// Order matters only for display; matching is by exact interval-set equality.
+const mod12 = (n) => ((n % 12) + 12) % 12;
+const PERFECT_FIFTH = 7; // the one chord tone allowed to be absent in a real voicing
+
+// Chord templates: intervals (semitones above root) → quality + display label.
+// Ordered richest-first only for readability; matching does not depend on order.
+// The vocabulary spans triads, sus, 6ths, the whole 7th family, adds and 9ths —
+// deliberately broad so real voicings resolve to a real name.
 const TEMPLATES = [
+  // ── ninths ────────────────────────────────────────────────────────────────
+  { quality: 'major9',       intervals: [0, 2, 4, 7, 11], label: 'major 9' },
+  { quality: 'dominant9',    intervals: [0, 2, 4, 7, 10], label: '9' },
+  { quality: 'minor9',       intervals: [0, 2, 3, 7, 10], label: 'minor 9' },
+  { quality: 'six9',         intervals: [0, 2, 4, 7, 9],  label: '6/9' },
+  // ── sevenths ────────────────────────────────────────────────────────────────
+  { quality: 'major7',       intervals: [0, 4, 7, 11],    label: 'major 7' },
+  { quality: 'dominant7',    intervals: [0, 4, 7, 10],    label: '7' },
+  { quality: 'minor7',       intervals: [0, 3, 7, 10],    label: 'minor 7' },
+  { quality: 'minorMajor7',  intervals: [0, 3, 7, 11],    label: 'minor major 7' },
+  { quality: 'minor7b5',     intervals: [0, 3, 6, 10],    label: 'minor 7 ♭5' },
+  { quality: 'diminished7',  intervals: [0, 3, 6, 9],     label: 'diminished 7' },
+  { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5' },
+  { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4' },
+  // ── sixths ────────────────────────────────────────────────────────────────
+  { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6' },
+  { quality: 'minor6',       intervals: [0, 3, 7, 9],     label: 'minor 6' },
+  // ── added tone ──────────────────────────────────────────────────────────────
+  { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9' },
+  { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9' },
+  // ── triads ────────────────────────────────────────────────────────────────
   { quality: 'major',        intervals: [0, 4, 7],        label: 'major' },
   { quality: 'minor',        intervals: [0, 3, 7],        label: 'minor' },
   { quality: 'diminished',   intervals: [0, 3, 6],        label: 'diminished' },
   { quality: 'augmented',    intervals: [0, 4, 8],        label: 'augmented' },
   { quality: 'sus2',         intervals: [0, 2, 7],        label: 'sus2' },
   { quality: 'sus4',         intervals: [0, 5, 7],        label: 'sus4' },
-  { quality: 'major7',       intervals: [0, 4, 7, 11],    label: 'major 7' },
-  { quality: 'dominant7',    intervals: [0, 4, 7, 10],    label: '7' },
-  { quality: 'minor7',       intervals: [0, 3, 7, 10],    label: 'minor 7' },
-  { quality: 'minor7b5',     intervals: [0, 3, 6, 10],    label: 'minor 7 ♭5' },
-  { quality: 'diminished7',  intervals: [0, 3, 6, 9],     label: 'diminished 7' },
+  // ── dyad ────────────────────────────────────────────────────────────────────
   { quality: 'power',        intervals: [0, 7],           label: '5' },
-];
-
-const sigKey = (arr) => arr.slice().sort((a, b) => a - b).join(',');
-
-// Map each template's sorted-interval signature → template, for O(1) lookup.
-const TEMPLATE_BY_SIGNATURE = new Map(TEMPLATES.map((t) => [sigKey(t.intervals), t]));
-
-/** Intervals of `pitchClasses` measured above `root`, de-duped + sorted. */
-function intervalsAbove(root, pitchClasses) {
-  const set = new Set(pitchClasses.map((pc) => ((pc - root) % 12 + 12) % 12));
-  return [...set].sort((a, b) => a - b);
-}
+].map((t) => ({ ...t, set: new Set(t.intervals) }));
 
 /**
- * Position of `bassPc` within the chord's stacked tones, used as the inversion index.
- * Root position = 0; the next chord tone up = 1; etc.
+ * Position of `bassPc` within the chord's stacked tones (root + intervals),
+ * used as the inversion index. Root position = 0; next chord tone up = 1; etc.
+ * A bass that is not a chord tone reports 0 (root position, no slash).
  */
 function inversionOf(root, template, bassPc) {
-  const tones = template.intervals.map((iv) => (root + iv) % 12);
-  const idx = tones.indexOf(((bassPc % 12) + 12) % 12);
+  const tones = template.intervals.map((iv) => mod12(root + iv));
+  const idx = tones.indexOf(mod12(bassPc));
   return idx < 0 ? 0 : idx;
+}
+
+/** Score one (root, template) reading of `relSet` (intervals present above root). */
+function evaluate(root, template, relSet, bassPc) {
+  let matched = 0;
+  let missing = 0;
+  let missingOnlyFifth = true;
+  for (const iv of template.intervals) {
+    if (relSet.has(iv)) matched += 1;
+    else { missing += 1; if (iv !== PERFECT_FIFTH) missingOnlyFifth = false; }
+  }
+  const extra = relSet.size - matched; // sounding notes this reading can't explain
+  const isPower = template.intervals.length === 2;
+
+  // Eligibility — reject readings too loose to be a real name.
+  if (isPower) {
+    if (missing > 0 || extra > 0) return null; // a fifth is a fifth only when bare
+  } else {
+    if (matched < 3) return null;              // a named chord needs ≥3 of its tones
+    if (!missingOnlyFifth || missing > 1) return null; // only the P5 may be absent
+    if (extra > 1) return null;                // at most one unexplained note
+  }
+  return {
+    root,
+    template,
+    inversion: inversionOf(root, template, bassPc),
+    matched,
+    missing,
+    extra,
+    rootPosition: root === bassPc,
+  };
+}
+
+/** Best reading of a candidate list: root position, then lowest inversion, then
+ *  most tones present, then fewest unexplained, then the simplest chord. */
+function pickBest(candidates) {
+  return candidates.sort((a, b) => (
+    (b.rootPosition - a.rootPosition)
+    || (a.inversion - b.inversion)
+    || (b.matched - a.matched)
+    || (a.extra - b.extra)
+    || (a.template.intervals.length - b.template.intervals.length)
+  ))[0];
 }
 
 /**
@@ -61,9 +129,8 @@ export function identifyChord(midiNotes) {
   };
   if (notes.length === 0) return empty;
 
-  const bassMidi = Math.min(...notes);
-  const bassPc = ((bassMidi % 12) + 12) % 12;
-  const pitchClasses = [...new Set(notes.map((n) => ((n % 12) + 12) % 12))].sort((a, b) => a - b);
+  const bassPc = mod12(Math.min(...notes));
+  const pitchClasses = [...new Set(notes.map(mod12))].sort((a, b) => a - b);
 
   // Single note → just the note name.
   if (pitchClasses.length === 1) {
@@ -76,33 +143,26 @@ export function identifyChord(midiNotes) {
     };
   }
 
-  // Try each present pitch class as the candidate root; collect template matches.
-  const matches = [];
+  // Try every sounding pitch class as the root; collect exact vs tolerant reads.
+  const exact = [];
+  const tolerant = [];
   for (const root of pitchClasses) {
-    const sig = sigKey(intervalsAbove(root, pitchClasses));
-    const template = TEMPLATE_BY_SIGNATURE.get(sig);
-    if (template) {
-      matches.push({ root, template, inversion: inversionOf(root, template, bassPc) });
+    const relSet = new Set(pitchClasses.map((pc) => mod12(pc - root)));
+    for (const template of TEMPLATES) {
+      const cand = evaluate(root, template, relSet, bassPc);
+      if (!cand) continue;
+      (cand.missing === 0 && cand.extra === 0 ? exact : tolerant).push(cand);
     }
   }
 
-  if (matches.length === 0) {
-    return { ...empty, bassPitchClass: bassPc, notePitchClasses: pitchClasses };
-  }
-
-  // Prefer the lowest inversion (root position first); tie-break on more chord tones.
-  matches.sort((a, b) =>
-    a.inversion - b.inversion ||
-    b.template.intervals.length - a.template.intervals.length);
-  const best = matches[0];
+  const best = exact.length ? pickBest(exact) : (tolerant.length ? pickBest(tolerant) : null);
+  if (!best) return { ...empty, bassPitchClass: bassPc, notePitchClasses: pitchClasses };
 
   const rootName = PITCH_CLASS_NAMES[best.root];
   let displayName = best.template.quality === 'power'
     ? `${rootName}5`
     : `${rootName} ${best.template.label}`;
-  if (best.inversion > 0) {
-    displayName += ` / ${PITCH_CLASS_NAMES[bassPc]}`;
-  }
+  if (best.inversion > 0) displayName += ` / ${PITCH_CLASS_NAMES[bassPc]}`;
 
   return {
     root: best.root,

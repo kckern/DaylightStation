@@ -27,8 +27,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
-import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
-import { GainStrip } from './GainStrip.jsx';
+import { ChordLane } from './ChordLane.jsx';
+import { LoopRoll } from './LoopRoll.jsx';
+import { GainStrip, levelFromGain, snapToGainLevel } from './GainStrip.jsx';
 import { VoicePicker, voiceName } from './VoicePicker.jsx';
 import './ChannelStrip.scss';
 
@@ -53,6 +54,9 @@ export function ChannelStrip({
   layer,
   grooveCount = 0,
   onboardGm = false,
+  notesBundle = null,
+  positionRef = null,
+  isPlaying = false,
   onToggleMute,
   onToggleSolo,
   onRemove,
@@ -66,9 +70,12 @@ export function ChannelStrip({
   const isGroove = layer.role === 'groove';
   const [kept, setKept] = useState(false);
   const title = entry?.title || entry?.slug || layer.id;
+  const hasNotes = !!notesBundle?.notes?.length;
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [gainOpen, setGainOpen] = useState(false);
   const [removeArmed, setRemoveArmed] = useState(false);
+  const gainLevel = snapToGainLevel(levelFromGain(layer.gain));
   const disarmTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(disarmTimerRef.current), []);
 
@@ -93,10 +100,31 @@ export function ChannelStrip({
         title={title}
       />
 
+      {/* Identity + live loop view: a harmonic loop shows its chord TIMELINE
+          (chords in time slots, sounding chord lit, sweeping cursor); a
+          melodic/groove loop shows a piano-roll with a cursor. Falls back to a
+          name while notes load. */}
       <div className="piano-channel-strip__identity">
-        {entry?.roman?.length
-          ? <RomanProgression roman={entry.roman} inline />
-          : <span className="piano-channel-strip__name">{title}</span>}
+        {entry?.roman?.length ? (
+          <ChordLane
+            roman={entry.roman}
+            notesBundle={notesBundle}
+            positionRef={positionRef}
+            isPlaying={isPlaying}
+            muted={layer.muted}
+          />
+        ) : hasNotes ? (
+          <LoopRoll
+            notes={notesBundle.notes}
+            ppq={notesBundle.ppq}
+            barSpan={notesBundle.barSpan}
+            positionRef={positionRef}
+            isPlaying={isPlaying}
+            muted={layer.muted}
+          />
+        ) : (
+          <span className="piano-channel-strip__name">{title}</span>
+        )}
         <span className="piano-channel-strip__role">{layer.role}</span>
       </div>
 
@@ -134,15 +162,49 @@ export function ChannelStrip({
         >⇉</button>
       )}
 
+      {/* Compact gain: a chip with a level meter (the wide 11-segment strip
+          used to dominate the row width — design §7 abomination fix). Tap opens
+          the full segmented strip in a popover (no drag sliders; kiosk rule).
+          The reclaimed width goes to the harmonic/notation identity lane. */}
       <div className="piano-channel-strip__gain">
-        <GainStrip
-          gain={layer.gain}
-          muted={layer.muted}
-          onGain={(gain) => onGain(layer.id, gain)}
-          label={`${title} gain`}
-        />
+        <button
+          type="button"
+          className={`piano-channel-strip__gain-chip${layer.muted ? ' is-muted' : ''}`}
+          aria-label={`${title} volume`}
+          aria-expanded={gainOpen}
+          onClick={() => setGainOpen((v) => !v)}
+        >
+          <span
+            className="piano-channel-strip__gain-meter"
+            aria-hidden="true"
+            style={{ '--lvl': `${layer.muted ? 0 : gainLevel}%` }}
+          />
+          <span className="piano-channel-strip__gain-val">{layer.muted ? 'Muted' : `${gainLevel}%`}</span>
+        </button>
         {isGroove && grooveCount > 1 && (
           <span className="piano-channel-strip__drums-hint">all drums</span>
+        )}
+        {gainOpen && (
+          <>
+            <button
+              type="button"
+              className="piano-channel-strip__gain-scrim"
+              aria-label="close volume"
+              onClick={() => setGainOpen(false)}
+            />
+            <div className="piano-channel-strip__gain-pop" role="dialog" aria-label={`${title} volume`}>
+              <div className="piano-channel-strip__gain-pop-head">
+                <span className="piano-channel-strip__gain-pop-title">{layer.role} volume</span>
+                <span className="piano-channel-strip__gain-pop-val">{layer.muted ? 'Muted' : `${gainLevel}%`}</span>
+              </div>
+              <GainStrip
+                gain={layer.gain}
+                muted={layer.muted}
+                onGain={(gain) => onGain(layer.id, gain)}
+                label={`${title} gain`}
+              />
+            </div>
+          </>
         )}
       </div>
 

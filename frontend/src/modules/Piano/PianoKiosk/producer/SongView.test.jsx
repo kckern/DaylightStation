@@ -155,6 +155,16 @@ describe('structure rail', () => {
     expect(screen.getAllByText('fill me').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /save song — coming soon/i })).toBeDisabled();
   });
+
+  it('the rail ends with an "add a new section" control that dispatches ADD_SECTION (grow the song past the first part)', () => {
+    const { dispatch } = renderView(templatedDraft());
+    const addBtn = screen.getByRole('button', { name: 'add a new section' });
+    expect(addBtn).toBeInTheDocument();
+    // it is a CONTROL, not a section: the list count still equals the arrangement
+    expect(screen.getAllByRole('listitem')).toHaveLength(POP.arrangement.length);
+    fireEvent.click(addBtn);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'ADD_SECTION' });
+  });
 });
 
 // ── fill sheet (empty slot) ──────────────────────────────────────────────────

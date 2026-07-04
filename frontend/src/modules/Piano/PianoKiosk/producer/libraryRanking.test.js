@@ -46,7 +46,7 @@ const groove = (slug, extra = {}) => ({
   ...extra,
 });
 
-const BASE = harmonic('base-i-v', TL_I_V, { mood: 'Happy' });
+const BASE = harmonic('base-i-v', TL_I_V, { emotion: ['Happy'] });
 const slugsOf = (results) => results.map((r) => r.entry.slug);
 
 describe('buildCompatibleSet — guardrail matrix', () => {
@@ -74,12 +74,22 @@ describe('buildCompatibleSet — guardrail matrix', () => {
     expect(out).toEqual([]);
   });
 
-  it('harmonic base: bassline candidates gate exactly like harmonic ones', () => {
+  it('harmonic base: basslines take the fit-ranked LINE path, NEVER hard-gated', () => {
+    // A bass is a single low voice, not an independent harmonic layer: the
+    // union-consonance gate wrongly blamed the bass root for the chord's own
+    // busy slots and rejected ~90% of chord loops' basslines (bass became
+    // un-addable). Basslines now rank by melodyFit like melodies — a bass that
+    // tracks the roots ranks top, a clashing one ranks low but STAYS offered.
     const out = buildCompatibleSet({
-      entries: [bassline('good-bass', TL_ROOTS), bassline('bad-bass', TL_DIM7)],
+      entries: [bassline('tracks-roots', TL_FIT_10), bassline('clashes', TL_DIM7)],
       baseEntry: BASE,
     });
-    expect(slugsOf(out)).toEqual(['good-bass']);
+    // Both admitted — nothing is gated out. (Old behavior excluded 'clashes'.)
+    expect(slugsOf(out).sort()).toEqual(['clashes', 'tracks-roots']);
+    const byId = Object.fromEntries(out.map((r) => [r.entry.slug, r]));
+    expect(byId['tracks-roots'].fit).toBeCloseTo(1.0);
+    expect(byId['tracks-roots'].stackable).toBe(true);
+    expect(byId['clashes'].fit).toBeLessThan(byId['tracks-roots'].fit);
   });
 
   it('harmonic base: candidate WITHOUT a timeline is excluded before stackable runs (no throw)', () => {
@@ -152,19 +162,19 @@ describe('rankCompatible — layerMatch scoring + fit blend', () => {
 
   it('attaches layerMatch score + human reasons to every result', () => {
     const results = buildCompatibleSet({
-      entries: [harmonic('same-mood', TL_ROOTS, { mood: 'Happy' })],
+      entries: [harmonic('same-emotion', TL_ROOTS, { emotion: ['Happy'] })],
       baseEntry: BASE,
     });
     const ranked = rankCompatible(results, BASE);
     expect(ranked[0].score).toBeGreaterThan(0);
-    expect(ranked[0].reasons).toContain('Happy mood');
+    expect(ranked[0].reasons).toContain('same mood'); // layerMatch's label for an emotion overlap
   });
 
-  it('BLEND: a 1.0-fit melody outranks a 0.5-fit melody with a better mood match', () => {
-    // fit05 gets the base's mood (+2 layerMatch); fit10 doesn't. The fit
+  it('BLEND: a 1.0-fit melody outranks a 0.5-fit melody with a better emotion match', () => {
+    // fit05 shares the base's emotion (+2 layerMatch); fit10 doesn't. The fit
     // weight (×5) must still put the perfect-fit melody first: 3+5 > 5+2.5.
     const results = buildCompatibleSet({
-      entries: [melody('fit05', TL_FIT_05, { mood: 'Happy' }), melody('fit10', TL_FIT_10)],
+      entries: [melody('fit05', TL_FIT_05, { emotion: ['Happy'] }), melody('fit10', TL_FIT_10)],
       baseEntry: BASE,
     });
     const ranked = rankCompatible(results, BASE);
@@ -179,9 +189,9 @@ describe('rankCompatible — layerMatch scoring + fit blend', () => {
     expect(ranked[0].stackable).toBe(true);
   });
 
-  it('ranks stackable harmonics by layerMatch score (mood match wins the tiebreak)', () => {
+  it('ranks stackable harmonics by layerMatch score (emotion match wins the tiebreak)', () => {
     const results = buildCompatibleSet({
-      entries: [harmonic('plain', TL_ROOTS, { mood: 'Sad' }), harmonic('matching', TL_ROOTS, { mood: 'Happy' })],
+      entries: [harmonic('plain', TL_ROOTS, { emotion: ['Sad'] }), harmonic('matching', TL_ROOTS, { emotion: ['Happy'] })],
       baseEntry: BASE,
     });
     expect(slugsOf(rankCompatible(results, BASE))).toEqual(['matching', 'plain']);

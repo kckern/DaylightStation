@@ -14,7 +14,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import { Midi } from '@tonejs/midi';
 
 // ── kiosk context mocks ───────────────────────────────────────────────────────
 const pressNote = vi.fn();
@@ -104,81 +103,119 @@ vi.mock('../../producer/useResumeSnapshot.js', () => ({
 import { Producer } from './Producer.jsx';
 
 // ── fixture library ───────────────────────────────────────────────────────────
-const INDEX_YML = `
-- slug: dm-c-f-gm
-  path: chord-progressions/niko/dm-c-f-gm.mid
-  type: chord-progression
-  sources: [niko-chord]
-  mood: Catchy
-  chords: [Dm, C, F, Gm]
-  roman: [i, bVII, bIII, iv]
-  title: "Dm C · F Gm"
-  signature: i-bVII-bIII-iv
-  barSpan: 4
-  bpm: 120
-  timeline: [[0, 3, 7], [10, 2, 5], [3, 7, 10], [5, 8, 0]]
-  timelineRoot: 2
-  specificity: triad
-- slug: catchy-hook-5-6-1
-  path: melodies/starters/catchy/catchy-hook-5-6-1.mid
-  type: melody
-  sources: [melody-starters]
-  mood: Catchy
-  degrees: [5, 6, 1]
-  title: "Catchy Hook"
-  timeline: [[0], [3], [7], [5]]
-  timelineRoot: 2
-  specificity: root
-- slug: am-f-g-am
-  path: chord-progressions/other/am-f-g-am.mid
-  type: chord-progression
-  sources: [other]
-  mood: Sad
-  roman: [iii, I, II, iii]
-  title: "Am F · G Am"
-  signature: iii-I-II-iii
-  barSpan: 4
-  bpm: 100
-- slug: different-progression-loop
-  path: chord-progressions/other/different-progression-loop.mid
-  type: chord-progression
-  sources: [other]
-  mood: Catchy
-  roman: [ii, V, I]
-  title: "Different Progression Loop"
-  signature: ii-V-I
-  barSpan: 3
-  bpm: 120
-  timeline: [[2, 5, 9], [7, 11, 2], [0, 4, 7]]
-  timelineRoot: 0
-  specificity: triad
-- slug: broken-melody
-  path: melodies/other/broken-melody.mid
-  type: melody
-  sources: [other]
-  title: "Broken Melody"
-- slug: basic-rock
-  path: grooves/basic-rock.mid
-  type: groove
-  feel: rock
-  title: "Basic Rock"
-  barSpan: 2
-`;
+// Manifest bricks (new contract: /api/v1/piano/loop-manifest → { bricks }).
+// quality: 'best' is REQUIRED on every entry — LibraryBrowser defaults its
+// quality chip to 'best' and filters out anything without it (see
+// LibraryBrowser.jsx:306,371); the old YAML fixture predates that facet, so
+// every entry here carries it just to stay visible, matching old behavior.
+// mood → genre/emotion (arrays): the old single `mood` scalar has no reader
+// anywhere in the current pipeline; genre/emotion are the real facets read by
+// shared/music/layerMatch.mjs (ranking only, never gating) and the
+// LibraryBrowser genre chip (unused by these tests, so exact values are just
+// representative). barSpan is preserved even though the real backend
+// (loopManifest.mjs) never emits it — draftReducer.js's barSpanOf() still
+// reads entry.barSpan as a fallback source, and keeping it here preserves the
+// old fixture's "4 bars"/"3 bars" section-length behavior unchanged.
+const BRICKS = [
+  {
+    slug: 'dm-c-f-gm',
+    path: 'chord-progressions/niko/dm-c-f-gm.musicxml',
+    type: 'chord-progression',
+    tags: ['niko-chord'],
+    genre: ['Pop'],
+    emotion: ['Catchy'],
+    quality: 'best',
+    roman: ['i', 'bVII', 'bIII', 'iv'],
+    title: 'Dm C · F Gm',
+    barSpan: 4,
+    bpm: 120,
+    timeline: [[0, 3, 7], [10, 2, 5], [3, 7, 10], [5, 8, 0]],
+    timelineRoot: 2,
+    specificity: 'triad',
+  },
+  {
+    slug: 'catchy-hook-5-6-1',
+    path: 'melodies/starters/catchy/catchy-hook-5-6-1.musicxml',
+    type: 'melody',
+    tags: ['melody-starters'],
+    genre: ['Pop'],
+    emotion: ['Catchy'],
+    quality: 'best',
+    title: 'Catchy Hook',
+    timeline: [[0], [3], [7], [5]],
+    timelineRoot: 2,
+    specificity: 'root',
+  },
+  {
+    slug: 'am-f-g-am',
+    path: 'chord-progressions/other/am-f-g-am.musicxml',
+    type: 'chord-progression',
+    tags: ['other'],
+    genre: ['Pop'],
+    emotion: ['Sad'],
+    quality: 'best',
+    roman: ['iii', 'I', 'II', 'iii'],
+    title: 'Am F · G Am',
+    barSpan: 4,
+    bpm: 100,
+  },
+  {
+    slug: 'different-progression-loop',
+    path: 'chord-progressions/other/different-progression-loop.musicxml',
+    type: 'chord-progression',
+    tags: ['other'],
+    genre: ['Pop'],
+    emotion: ['Catchy'],
+    quality: 'best',
+    roman: ['ii', 'V', 'I'],
+    title: 'Different Progression Loop',
+    barSpan: 3,
+    bpm: 120,
+    timeline: [[2, 5, 9], [7, 11, 2], [0, 4, 7]],
+    timelineRoot: 0,
+    specificity: 'triad',
+  },
+  {
+    slug: 'broken-melody',
+    path: 'melodies/other/broken-melody.musicxml',
+    type: 'melody',
+    tags: ['other'],
+    quality: 'best',
+    title: 'Broken Melody',
+  },
+  {
+    slug: 'basic-rock',
+    path: 'grooves/basic-rock.musicxml',
+    type: 'groove',
+    tags: [],
+    quality: 'best',
+    title: 'Basic Rock',
+    feel: 'rock', // real grooves carry feel (loopManifest derives it from canonical-name)
+    barSpan: 2,
+  },
+];
 
-function midiBuffer() {
-  const m = new Midi();
-  const tr = m.addTrack();
-  tr.addNote({ midi: 62, time: 0, duration: 0.5 });
-  tr.addNote({ midi: 65, time: 0.5, duration: 0.5 });
-  return m.toArray(); // Uint8Array
+const STEP_NAMES = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
+const SHARP_PCS = new Set([1, 3, 6, 8, 10]);
+
+/**
+ * Minimal MusicXML for a sequence of [midi, start, duration] notes (start is
+ * documentary only — musicXmlToNotes derives ticks sequentially from
+ * durations, so notes must be listed back-to-back with no gaps). divisions=4
+ * ⇒ ppq 4; duration units are in those ticks.
+ */
+function musicXml(notes) {
+  const noteXml = notes.map(([midi, , dur]) => {
+    const pc = ((midi % 12) + 12) % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    const alter = SHARP_PCS.has(pc) ? '<alter>1</alter>' : '';
+    return `<note><pitch><step>${STEP_NAMES[pc]}</step>${alter}<octave>${octave}</octave></pitch><duration>${dur}</duration></note>`;
+  }).join('');
+  return `<?xml version="1.0"?><score-partwise><part id="P1"><measure number="1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${noteXml}</measure></part></score-partwise>`;
 }
 
-/** A structurally valid MIDI file with ZERO notes — the "load lands empty" case. */
-function emptyMidiBuffer() {
-  const m = new Midi();
-  m.addTrack();
-  return m.toArray();
-}
+/** A structurally valid MusicXML doc with ZERO notes — the "load lands empty" case. */
+const EMPTY_MUSICXML = musicXml([]);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -200,9 +237,9 @@ beforeEach(() => {
   // a real-looking AudioContext first.
   global.window.AudioContext = class { close() { return Promise.resolve(); } };
   global.fetch = vi.fn((url) => {
-    if (url.endsWith('index.yml')) return Promise.resolve({ text: () => Promise.resolve(INDEX_YML) });
-    if (url.includes('broken-melody')) return Promise.resolve({ arrayBuffer: () => Promise.resolve(emptyMidiBuffer().buffer) });
-    return Promise.resolve({ arrayBuffer: () => Promise.resolve(midiBuffer().buffer) });
+    if (url.includes('/loop-manifest')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ bricks: BRICKS }) });
+    if (url.includes('broken-melody')) return Promise.resolve({ text: () => Promise.resolve(EMPTY_MUSICXML) });
+    return Promise.resolve({ text: () => Promise.resolve(musicXml([[62, 0, 2], [65, 2, 2]])) });
   });
 });
 
@@ -244,19 +281,23 @@ describe('Producer shell (three bands)', () => {
     expect(screen.queryByTestId('keyboard')).toBeNull();
   });
 
-  it('lists browseable loops in the overlay (title + roman, never the slug)', async () => {
+  it('lists browseable loops by abstract identity — keyed title is aria-label only, never visible text or slug', async () => {
     render(<Producer />);
     await openLibrary();
+    // Cards are addressable by accessible NAME (aria-label = title), but the
+    // keyed chord spelling is never visible card text (the library is abstract,
+    // transposed at playtime) and the slug is never shown.
     expect(await screen.findByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument();
-    expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
-    expect(screen.queryByText('dm-c-f-gm')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
+    expect(screen.queryByText('Dm C · F Gm')).toBeNull(); // keyed spelling not rendered
+    expect(screen.queryByText('dm-c-f-gm')).toBeNull();    // slug not rendered
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 
   it('shows a staff thumbnail for a melodic loop with no roman', async () => {
     render(<Producer />);
     await openLibrary();
-    await screen.findByText('Catchy Hook');
+    await screen.findByRole('button', { name: 'Catchy Hook' });
     expect(document.querySelector('.piano-loop__staff svg, .piano-loop__staff .action-staff')).toBeTruthy();
   });
 
@@ -269,7 +310,7 @@ describe('Producer shell (three bands)', () => {
     const row = document.querySelector('.piano-channel-strip');
     expect(row.querySelector('.piano-material-glyph')).toBeTruthy();
     expect(screen.getByText('chords')).toBeInTheDocument();
-    expect(row.querySelector('.roman-progression')).toBeTruthy();
+    expect(row.querySelector('.piano-chord-lane')).toBeTruthy();
     // Play is now enabled.
     expect(screen.getByRole('button', { name: /play/i })).toBeEnabled();
   });
@@ -341,12 +382,14 @@ describe('Producer shell (three bands)', () => {
     await screen.findByRole('dialog', { name: 'loop library' });
     // The guardrail indicator is up, and the compatible complement is offered…
     expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
-    expect(await screen.findByText('Catchy Hook')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
     // …the harmonically clashing loop (its slot-unions vs the base spell no
     // nameable chord) is excluded, and the already-stacked base is not
     // re-offered. (Ported from the interim overlay's stackable-filter test —
     // the gate is now union-consonance, not roman-signature matching.)
-    expect(screen.queryByText('Different Progression Loop')).toBeNull();
+    // Assert exclusion by accessible NAME: keyed titles never render as text,
+    // so a queryByText here would pass vacuously.
+    expect(screen.queryByRole('button', { name: 'Different Progression Loop' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
   });
 
@@ -363,11 +406,13 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
   });
 
-  it('groove cards are name-only — no drum-pitches-on-a-treble-staff thumb', async () => {
+  it('groove cards show a feel chip — no keyed name text, no drum-pitches-on-a-treble-staff thumb', async () => {
     render(<Producer />);
     await openLibrary();
     const card = await screen.findByRole('button', { name: 'Basic Rock' });
-    expect(card.textContent).toContain('Basic Rock');
+    // Identity is the feel chip, not the vendor title (aria-label only).
+    expect(card.querySelector('.piano-loop__chip')?.textContent).toBe('rock');
+    expect(card.textContent).not.toContain('Basic Rock');
     expect(card.querySelector('.piano-loop__staff')).toBeNull();
     expect(card.querySelector('svg.action-staff, .piano-loop__staff svg')).toBeNull();
   });
@@ -720,7 +765,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     const baseFetch = global.fetch;
     global.fetch = vi.fn((url) => {
       if (String(url).includes('dm-c-f-gm')) {
-        return dmGate.then(() => ({ arrayBuffer: () => Promise.resolve(midiBuffer().buffer) }));
+        return dmGate.then(() => ({ text: () => Promise.resolve(musicXml([[62, 0, 2], [65, 2, 2]])) }));
       }
       return baseFetch(url);
     });
