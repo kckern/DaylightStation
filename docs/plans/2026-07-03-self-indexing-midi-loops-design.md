@@ -204,9 +204,10 @@ loops/
 1. Regenerate **all 3,231** existing loops into MusicXML bricks. Their notes were already
    normalized to canonical C by the prior ingest, so this is primarily a MIDI→MusicXML
    conversion plus rhythm re-quantization.
-2. Carry `provenance` and useful `tags` from the current `index.yml` (`origin`, `source`,
+2. Carry **only key-independent** fields from the current `index.yml` (`origin`, `source`,
    `mood`, `artist`) into each brick's metadata as a **one-time bootstrap read**, then
-   discard the monolith.
+   discard the monolith. **Do NOT carry stored `roman`/`chords`** — the prototype proved
+   they're in the original vendor key, inconsistent with the transposed-to-C notes.
 3. The analyzer assigns a **quality/curation flag** (from source curation folders like
    `best-*`, `famous`, dedup density) so the UI can **default to the curated tier** while
    the long tail stays queryable. Nothing is lost; mess is demoted, not deleted.
@@ -222,8 +223,49 @@ loops/
   the derived grid.
 - Optional: MusicXML source can feed the existing **OSMD** dependency for notation display.
 
+## Prototype Findings (2026-07-03)
+
+De-risked the load-bearing assumption ("derive harmony from notes") with a scratch
+eval (`cli/_proto-harmony-eval.mjs`, untracked) over a stratified 32-loop sample,
+reusing the existing `harmonicTimeline` / `pcSetToTriad` / `bestTonic` / `signatureKey`
+primitives. Compared note-derived harmony (bar-resolution *and* a new beat-resolution
+variant) against the stored `roman`/`chords`.
+
+**Verdict: the core assumption is sound, but the analyzer is the crux investment —
+and the existing index is worse than assumed (which strengthens the rebuild case).**
+
+1. **Note-derivation is fundamentally correct.** A loop named `c-f-g-c` derives to roots
+   `C-F-G-C` exactly; clean triadic progressions recover perfectly. Beat-resolution beat
+   bar-resolution (meanJaccard 0.53 vs 0.42; transposition-invariant shape match 6/18 vs
+   fewer) — validating the beat-grid choice.
+2. **🔴 The stored `chords` metadata is in the *original vendor key*, not canonical C.**
+   Absolute-key match with the notes was **0/18**, with a *consistent per-file semitone
+   offset* (e.g. Taylor Swift: every stored root = derived root + 1). The notes were
+   transposed to C; the harmony metadata never was. **Concrete proof the index is
+   internally inconsistent** — the notes are the only reliable ground truth. Migration
+   must **not** carry stored `roman`/`chords` as truth (only key-independent fields:
+   provenance, mood, artist, tags).
+3. **✅ Type-specific derivation is mandatory, not optional.** Basslines (monophonic)
+   yield empty/garbage from triad-fitting (4/6 empty) — they must be read as **root
+   lines** (the single-note sequence), never chord-fitted. Melodies likewise resolve to
+   nonsense chords (forcing harmony onto a line) — they must be **note-name sequences in
+   C**. The design already says this; the prototype proves skipping it produces garbage.
+4. **🟡 The analyzer needs hardening for real voicings.** Failures cluster on: sustained/
+   pedal tones bleeding across beat windows; arpeggiation; and 7th/add/sus color tones
+   confusing triad-fitting into inversion-root errors (e.g. `Dm7` read as `F6`). Solvable
+   (onset/bass-weighted windowing, harmonic-segment rather than fixed-beat windows,
+   inversion-aware root detection) but real algorithm work. This single analyzer is the
+   highest-leverage component — it improves all bricks at once.
+
+**Net:** proceed with the design. Budget the bulk of implementation effort on a hardened,
+type-aware harmonic analyzer, and treat the current `index.yml` harmony as untrusted.
+
 ## Open Implementation Tasks
 
+- **Hardened, type-aware harmonic analyzer (the crux)** — onset/bass-weighted, segment-
+  based windowing, inversion-aware; separate paths for beds (chords) vs bass (root line)
+  vs melody (note-names). Keep `cli/_proto-harmony-eval.mjs` as the regression harness to
+  measure improvements against the sample.
 - MIDI→MusicXML conversion + rhythm quantization for migration (Node-side).
 - Node-side MusicXML parser for the build step (`@tonejs/midi` parses MIDI, not MusicXML).
 - The Braille header codebook (~8–12 glyphs) — finalize after analyzing the real
