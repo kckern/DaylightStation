@@ -131,12 +131,16 @@ export function ChannelStrip({
       />
 
       {/* Identity + live loop view: a harmonic loop shows its Roman sequence
-          with the SOUNDING chord lit; a melodic/groove loop shows a piano-roll
-          with a playhead cursor. Falls back to a name while notes load. */}
+          with the SOUNDING chord lit AND a piano-roll (blocks) that fills the
+          row width with a playhead cursor; a melodic/groove loop shows the
+          piano-roll alone. Falls back to a name while notes load. */}
       <div className="piano-channel-strip__identity">
         {entry?.roman?.length ? (
           <RomanProgression roman={entry.roman} inline activeIndex={activeChord} />
-        ) : hasNotes ? (
+        ) : (!hasNotes && (
+          <span className="piano-channel-strip__name">{title}</span>
+        ))}
+        {hasNotes && (
           <LoopRoll
             notes={notesBundle.notes}
             ppq={notesBundle.ppq}
@@ -145,8 +149,6 @@ export function ChannelStrip({
             isPlaying={isPlaying}
             muted={layer.muted}
           />
-        ) : (
-          <span className="piano-channel-strip__name">{title}</span>
         )}
         <span className="piano-channel-strip__role">{layer.role}</span>
       </div>
