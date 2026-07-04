@@ -211,6 +211,47 @@
   }
 }
 
+// ── ChordLane: chord loop as a time line (chords in slots + sweeping cursor) ──
+.piano-chord-lane {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 2.4rem;
+  gap: 3px;
+  &.is-muted { opacity: 0.5; }
+
+  &__slot {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    background: var(--piano-surface-2, #101018);
+    border: 1px solid var(--piano-border, #24242e);
+    overflow: hidden;
+    // The lane owns the chip look; the inner RomanChord is just the glyph.
+    .roman-chord { border: none; background: none; padding: 0; }
+    &.is-active {
+      background: var(--piano-accent, #2ec46f);
+      border-color: var(--piano-accent, #2ec46f);
+      .roman-chord, .roman-chord * { color: var(--piano-accent-ink, #06210f); }
+    }
+  }
+
+  // Sweeping playhead — positioned by `left` each frame (smooth via barFrac).
+  &__cursor {
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--piano-accent-text, #cdf6dd);
+    box-shadow: 0 0 6px var(--piano-accent, #2ec46f);
+    pointer-events: none;
+  }
+}
+
 // ── LoopRoll: piano-roll of a loop's notes + a playhead cursor ───────────────
 .piano-loop-roll {
   display: block;
