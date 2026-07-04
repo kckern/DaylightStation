@@ -1941,17 +1941,16 @@
 }
 .piano-score-tile--builtin { background: transparent; border: none; }
 
+// Full-height flex column: scroll area (flex:1) + optional keyboard row + pinned
+// bottom transport bar. (Old top toolbar / in-body title retired in Task 11.)
 .piano-score-player {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; min-height: 0;
   background: #0e0e16;
 }
-.piano-score-player__bar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; padding: 0.6rem 1rem; flex: 0 0 auto;
-  background: rgba(0,0,0,0.35);
-}
-.piano-score-player__modes, .piano-score-player__transport { display: flex; align-items: center; gap: 0.5rem; }
+
+// Shared: mode-button pill (still used by the legacy ScorePlayer controls and any
+// generic .piano-score-mode consumers). Segmented tabs live below as -mode-tab.
 .piano-score-mode {
   appearance: none; border: 1px solid rgba(255,255,255,0.18);
   background: rgba(255,255,255,0.06); color: var(--piano-stage-fg, #f3efe6);
@@ -1959,24 +1958,44 @@
   &.is-active { background: #2ec46f; border-color: #2ec46f; color: #07120a; }
   &[disabled] { opacity: 0.4; cursor: default; }
 }
-// Play-mode part chips: Play (default) / You (amber, the reader's part) / Mute.
+// Play-mode part chips (legacy intent): Play (default) / You (amber) / Mute.
 .piano-score-part--you { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
 .piano-score-part--mute { opacity: 0.55; }
 .piano-score-player__pos { color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
+.piano-score-zoom { display: inline-flex; align-items: center; gap: 0.3rem; }
 
 .piano-score-player__scroll {
-  flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
   // Paper — so the black engraving is legible on the dark kiosk.
   background: #fcfaf4;
   padding: 1.25rem 0.5rem 4rem;
+  -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
 }
-.musicxml-renderer { margin: 0 auto; }
+.piano-score-player__scroll--wrapped { overflow-x: hidden; overflow-y: auto; }
+.piano-score-player__scroll--horizontal {
+  overflow-x: auto; overflow-y: hidden;
+  display: flex; align-items: center;
+  .musicxml-renderer { margin: 0; margin-top: auto; margin-bottom: auto; }
+}
+
+.musicxml-renderer { position: relative; margin: 0 auto; }
 .musicxml-renderer__svg svg { display: block; }
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
 .musicxml-renderer__busy {
   position: absolute; inset: 0; z-index: 6;
   display: flex; align-items: center; justify-content: center;
   color: #6a6256; font-weight: 600; background: rgba(252, 250, 244, 0.7);
+}
+// Task 11: determinate geometry-extraction progress — a thin bar pinned to the
+// top of the renderer. Width driven by the inline --p fraction (0..1); the
+// painted sheet stays fully visible beneath it.
+.musicxml-renderer__progress {
+  position: absolute; top: 0; left: 0; z-index: 7;
+  height: 3px; width: calc(var(--p, 0) * 100%);
+  background: var(--piano-accent, #2ec46f);
+  box-shadow: 0 0 6px rgba(46, 196, 111, 0.6);
+  border-radius: 0 2px 2px 0;
+  transition: width 120ms linear; pointer-events: none;
 }
 
 .piano-score-cursor {
@@ -1993,65 +2012,175 @@
 }
 @keyframes scoreCursorWrong { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
-// ScorePlayer — expanded controls (title/metadata, zoom, flow), tap + swipe scroll.
-.piano-score-player__bar { flex-wrap: wrap; }
-.piano-score-player__back { padding: 0.5rem 0.8rem; }
-.piano-score-player__title {
-  appearance: none; border: none; background: transparent; cursor: pointer;
-  color: var(--piano-stage-fg, #f3efe6); font: inherit; font-weight: 800; font-size: 1.15rem;
-  display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.5rem; border-radius: 8px;
-  &:hover { background: rgba(255,255,255,0.06); }
+// Task 11: note light-up chips (positioned over noteheads by NoteHighlightLayer;
+// left/top/width/height set inline). Accent comes from --nh-color. Non-interactive.
+.piano-score-note {
+  position: absolute; z-index: 6; pointer-events: none;
+  box-sizing: border-box; border-radius: 50%;
+  // "You are here" — dim neutral ink ring reference.
+  &--target { border: 2px solid rgba(20, 20, 27, 0.6); opacity: 0.5; }
+  // Struck correctly — solid fill in the accent + soft glow, full opacity.
+  &--hit {
+    opacity: 1; background: var(--nh-color, #2ec46f);
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--nh-color, #2ec46f) 70%, transparent);
+  }
+  // Missed — brief dim-red ring that flashes then fades out.
+  &--missed { border: 2px solid #ff5252; animation: scoreNoteMissed 400ms ease forwards; }
 }
-.piano-score-player__caret { opacity: 0.6; font-size: 0.8em; }
-.piano-score-zoom { display: inline-flex; align-items: center; gap: 0.3rem; }
-.piano-score-player__meta {
-  display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center;
-  padding: 0.6rem 1.1rem; background: rgba(0,0,0,0.5); color: var(--piano-stage-fg,#f3efe6);
-  font-size: 0.92rem; border-bottom: 1px solid rgba(255,255,255,0.08);
-  b { color: var(--piano-stage-muted,#9a958a); font-weight: 600; margin-right: 0.3rem; text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.04em; }
-}
-.piano-score-player__scroll--wrapped { overflow-x: hidden; overflow-y: auto; }
-.piano-score-player__scroll--horizontal {
-  overflow-x: auto; overflow-y: auto;
-  .musicxml-renderer { margin: 0; }
-}
-.piano-score-player__scroll { -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+@keyframes scoreNoteMissed { 0% { opacity: 0.7; } 100% { opacity: 0; } }
 
-// Horizontal scroll mode: plain centered title above, vertically-centered staff.
-.piano-score-player__scrolltitle {
-  flex: 0 0 auto; text-align: center; font-weight: 800; font-size: 1.4rem;
-  color: #2a2620; background: #fcfaf4; padding: 0.6rem 1rem 0.2rem;
-  position: sticky; top: 0; left: 0; right: 0; z-index: 4;
-}
-.piano-score-player__scroll--horizontal {
-  display: flex; align-items: center;
-  .musicxml-renderer { margin-top: auto; margin-bottom: auto; }
+// ── Task 14: Polish per-measure grade wash + run summary ──────────────────────
+// Translucent fill over each graded measure (MeasureGradeLayer sets geometry
+// inline). Sits below the cursor (z5) and note chips (z6). Non-interactive.
+.piano-score-measure-grade {
+  position: absolute; z-index: 3; pointer-events: none; border-radius: 4px;
+  &--green  { background: rgba(46, 196, 111, 0.18); }
+  &--yellow { background: rgba(232, 196, 61, 0.18); }
+  &--red    { background: rgba(255, 82, 82, 0.18); }
 }
 
-// Scroll mode: live keyboard fills the vertical space below the single-row staff.
+// Run summary — centered overlay panel opened after N silent measures.
+.piano-score-run-summary {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+  z-index: 30; min-width: 260px; max-width: min(90vw, 420px);
+  display: flex; flex-direction: column; align-items: center; gap: 0.9rem;
+  padding: 1.4rem 1.6rem;
+  background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-lg, 16px); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  color: var(--piano-stage-fg, #f3efe6);
+}
+.piano-score-run-overall {
+  font-weight: 700; font-size: 1.15rem; letter-spacing: 0.01em;
+  &--green  { color: #7ee2a8; }
+  &--yellow { color: #f0d270; }
+  &--red    { color: #ff8a8a; }
+}
+.piano-score-run-strip { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; max-width: 340px; }
+.piano-score-run-chip {
+  width: 14px; height: 20px; border-radius: 3px; background: rgba(255, 255, 255, 0.12);
+  &--green  { background: #2ec46f; }
+  &--yellow { background: #e8c43d; }
+  &--red    { background: #ff5252; }
+  &--none   { background: rgba(255, 255, 255, 0.12); }
+}
+.piano-score-run-counts { display: flex; gap: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.piano-score-run-count {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  &::before { content: ''; width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  &--green::before  { background: #2ec46f; }
+  &--yellow::before { background: #e8c43d; }
+  &--red::before    { background: #ff5252; }
+}
+.piano-score-run-actions { display: flex; gap: 0.6rem; }
+.piano-score-run-replay { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+
+// Polish scoring toggle — lights the neutral green Polish accent when on.
+.piano-score-scoring.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+
+// Keyboard slot (Task 11: generalized to BOTH flows). A fixed-height row shown
+// when present, sitting above the transport bar in either flow.
 .piano-score-player__keys {
-  flex: 0 0 auto; height: 24%; min-height: 130px;
+  flex: 0 0 auto; height: 140px; min-height: 120px; max-height: 160px;
   background: #15151c; padding: 0.4rem 0.5rem 0.6rem;
   border-top: 1px solid rgba(255,255,255,0.08);
 }
 .piano-score-player__keys .piano-keyboard { height: 100%; }
 
-// Title moved into the body (centered). Scroll mode: fixed slot above the score,
-// no vertical scroll. Wrap mode: at the top of the page, scrolls out of view.
-.piano-score-player__scroll--horizontal { overflow-y: hidden; }
-.piano-score-bodytitle { text-align: center; padding: 0.5rem 1rem 0.4rem; background: #fcfaf4; }
-.piano-score-bodytitle__name {
-  appearance: none; border: none; background: transparent; cursor: pointer;
-  color: #2a2620; font: inherit; font-weight: 800; font-size: 1.5rem;
-  display: inline-flex; align-items: center; gap: 0.4rem;
+// ── Task 11: pinned bottom transport bar (ScoreTransportBar) ──────────────────
+.tabular-nums { font-variant-numeric: tabular-nums; } // utility (position readout, size preview)
+
+.piano-score-transportbar {
+  flex: 0 0 auto; width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.55rem 1rem;
+  padding-bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(0, 0, 0, 0.45); border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--piano-stage-fg, #f3efe6);
 }
-.piano-score-bodytitle__caret { opacity: 0.5; font-size: 0.7em; }
-.piano-score-bodytitle__meta {
-  display: flex; flex-wrap: wrap; gap: 1.1rem; justify-content: center;
-  margin-top: 0.3rem; color: #6a6256; font-size: 0.92rem;
-  b { color: #2a2620; font-weight: 600; margin-right: 0.25rem; text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.04em; }
+
+// Groups
+.piano-score-modes { display: flex; align-items: center; gap: 0.25rem; }
+.piano-score-playback { display: flex; align-items: center; gap: 0.5rem; }
+.piano-score-view { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+.piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+
+// Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
+.piano-score-btn {
+  appearance: none; border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06); color: var(--piano-stage-fg, #f3efe6);
+  font: inherit; font-weight: 600; line-height: 1;
+  min-width: 2.4rem; padding: 0.5rem 0.8rem; border-radius: var(--r-md, 12px); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  &:active { background: rgba(255, 255, 255, 0.12); }
+  &[disabled] { opacity: 0.4; cursor: default; }
+  // Toggle-on state (keyboard) — neutral blue accent (Metronome/Manual palette).
+  &.is-on { background: rgba(108, 204, 255, 0.18); border-color: #6cf; color: #cdefff; }
 }
-.piano-score-bodytitle-slot { flex: 0 0 auto; }
+.piano-score-run[aria-pressed="true"] { background: #2ec46f; border-color: #2ec46f; color: #07120a; }
+.piano-score-position {
+  min-width: 3.5rem; text-align: center; margin: 0 0.15rem;
+  color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
+}
+
+// Mode tabs — segmented control. The bar doesn't know the per-mode colour, so the
+// active tab uses a neutral filled+underlined highlight.
+.piano-score-mode-tab {
+  appearance: none; border: 1px solid transparent; background: transparent;
+  color: var(--piano-stage-muted, #9a958a); font: inherit; font-weight: 600;
+  padding: 0.45rem 0.85rem; border-radius: var(--r-pill, 999px); cursor: pointer;
+  &:hover { color: var(--piano-stage-fg, #f3efe6); }
+  &.is-active {
+    color: var(--piano-stage-fg, #f3efe6);
+    background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.55);
+  }
+}
+
+// Part chips — Follow/Metronome/Manual: on/off toggle. Play: role cycle.
+.piano-score-part-chip {
+  appearance: none; border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08); color: var(--piano-stage-fg, #f3efe6);
+  font: inherit; font-weight: 600; font-size: 0.9rem; line-height: 1;
+  padding: 0.4rem 0.7rem; border-radius: var(--r-pill, 999px); cursor: pointer; white-space: nowrap;
+  &.is-on { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); }
+  &.is-off { opacity: 0.45; }
+  // Play-mode roles
+  &.is-role-play { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); color: var(--piano-stage-fg, #f3efe6); }
+  &.is-role-you  { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
+  &.is-role-mute { opacity: 0.45; }
+}
+
+// Learn focus range — section chips + custom loop toggle + range readout. Reuses
+// the shared .piano-score-btn chrome; the armed Loop lights the neutral green
+// Learn accent, the readout picks up the muted position colour.
+.piano-score-focus { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.piano-score-section-chip { font-size: 0.9rem; padding: 0.4rem 0.7rem; border-radius: var(--r-pill, 999px); }
+.piano-score-loop.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
+.piano-score-focus-readout {
+  min-width: 2.5rem; text-align: center; font-weight: 600; font-size: 0.9rem;
+  color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
+}
+
+// Size popover & info popover — anchored above the bar, elevated.
+.piano-score-size-wrap, .piano-score-info-wrap { position: relative; }
+.piano-score-size-modal, .piano-score-info-popover {
+  position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 20;
+  background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-md, 12px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  color: var(--piano-stage-fg, #f3efe6);
+}
+.piano-score-size-modal {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; min-width: 16rem;
+  input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent, #2ec46f); }
+}
+.piano-score-size-preview { min-width: 3rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-stage-muted, #9a958a); }
+.piano-score-size-apply { flex: 0 0 auto; background: var(--piano-accent, #2ec46f); border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #07210f); }
+.piano-score-info-popover {
+  padding: 0.75rem 1rem; min-width: 14rem; max-width: 22rem;
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }
+  dt { color: var(--piano-stage-muted, #9a958a); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  dd { margin: 0; font-weight: 600; }
+}
 
 // ── Player roster: avatars, chip, and "Who's playing?" picker ────────────────
 .piano-avatar {

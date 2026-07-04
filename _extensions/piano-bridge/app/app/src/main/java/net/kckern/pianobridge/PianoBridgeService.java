@@ -59,12 +59,17 @@ public class PianoBridgeService extends Service {
     private A2dpConnector a2dpConnector;
     private ScreenWaker screenWaker;
     private TouchPulser touchPulser;
+    private KioskWatchdog kioskWatchdog;
 
     private volatile boolean engineRunning = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        // FIRST: arm durable crash/lifecycle logging so we capture WHY the bridge
+        // dies (Diag is in-memory and dies with the process). Detects an unclean
+        // previous death (the 2026-07-03 outage was unrecoverable after the fact).
+        CrashLog.install(this);
         Log.i(TAG, "Service created");
         createNotificationChannel();
     }
@@ -101,6 +106,16 @@ public class PianoBridgeService extends Service {
 
         startBleMidi();
 
+        // Out-of-process WebView watchdog: created once (survives config reloads via
+        // updateConfig so it never loses beat state). startBleMidi() has just loaded
+        // `config`, so it's non-null here.
+        if (kioskWatchdog == null) {
+            kioskWatchdog = new KioskWatchdog(this, config);
+            kioskWatchdog.start();
+        } else {
+            kioskWatchdog.updateConfig(config);
+        }
+
         // START_STICKY: if the OS reclaims the process under memory pressure, revive
         // the service automatically (onStartCommand re-runs with a null intent, which
         // the midi_name guard above tolerates). Reboots are covered by BootReceiver and
@@ -112,6 +127,8 @@ public class PianoBridgeService extends Service {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
+        if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
+        CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
         if (screenWaker != null) { screenWaker.shutdown(); screenWaker = null; }
@@ -243,6 +260,8 @@ public class PianoBridgeService extends Service {
 
     public A2dpConnector getA2dpConnector() { return a2dpConnector; }
 
+    public KioskWatchdog getKioskWatchdog() { return kioskWatchdog; }
+
     /** Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver. */
     private synchronized void connectPort(MidiDevice device) {
         closeMidi(); // tear down any previous port first
@@ -270,6 +289,8 @@ public class PianoBridgeService extends Service {
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
         closeMidi();
         startBleMidi();
+        // Refresh watchdog thresholds/policy in place (keeps its beat state).
+        if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
     }
 
     private synchronized void closeMidi() {

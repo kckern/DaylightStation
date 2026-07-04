@@ -237,4 +237,5 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Backend | `backend/src/4_api/v1/routers/piano.mjs` · `backend/src/4_api/v1/routers/admin/apps.mjs` |
 | Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
 | Game engines | [piano-games.md](./piano-games.md) |
+| Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
 | Performance + jank | [performance.md](./performance.md) |
