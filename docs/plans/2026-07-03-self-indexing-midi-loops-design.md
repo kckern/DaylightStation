@@ -234,10 +234,23 @@ variant) against the stored `roman`/`chords`.
 **Verdict: the core assumption is sound, but the analyzer is the crux investment —
 and the existing index is worse than assumed (which strengthens the rebuild case).**
 
-1. **Note-derivation is fundamentally correct.** A loop named `c-f-g-c` derives to roots
-   `C-F-G-C` exactly; clean triadic progressions recover perfectly. Beat-resolution beat
-   bar-resolution (meanJaccard 0.53 vs 0.42; transposition-invariant shape match 6/18 vs
-   fewer) — validating the beat-grid choice.
+1. **Note-derivation is fundamentally correct, and a bass-informed analyzer nails it.**
+   Measured by transposition-invariant progression *shape* (does it recover the
+   progression in any key), on 18 chord-progression samples vs the (imperfect) stored
+   reference:
+   - **V1** (plain per-beat triad-fit): **6/18** exact.
+   - **V2** (bass-informed root + onset-weighting + color-tone tolerance, ~50 lines):
+     **13/18** exact, **15/18 (83%)** counting loop-boundary-only misses — **zero
+     regressions** vs V1.
+   The single unlock was **bass-informed root selection**: the lowest sounding note
+   disambiguates inversions/color tones (e.g. `Dm7` no longer misreads as `F6`). V2 fixed
+   every sus/add/7th voicing V1 failed on.
+   - The 3 residual misses are genuinely ambiguous (a symmetric dim7; a dense 8-chord
+     progression, 6/8 right; a typo'd source whose reference is itself suspect) — precisely
+     the confidence-gated `harmony-override` cases.
+   - Remaining tractable work: **loop-boundary / minimal-cycle detection** (recovers 2 of
+     the 5 non-exact — the harmony is right, the cycle just didn't tile), a problem
+     separable from harmony reading.
 2. **🔴 The stored `chords` metadata is in the *original vendor key*, not canonical C.**
    Absolute-key match with the notes was **0/18**, with a *consistent per-file semitone
    offset* (e.g. Taylor Swift: every stored root = derived root + 1). The notes were
@@ -257,8 +270,12 @@ and the existing index is worse than assumed (which strengthens the rebuild case
    inversion-aware root detection) but real algorithm work. This single analyzer is the
    highest-leverage component — it improves all bricks at once.
 
-**Net:** proceed with the design. Budget the bulk of implementation effort on a hardened,
-type-aware harmonic analyzer, and treat the current `index.yml` harmony as untrusted.
+**Net:** proceed with the design — the risk is retired. A bass-informed analyzer already
+hits 83% clean recovery in ~50 lines; the productionization work is loop-boundary
+detection, the type-specific bass/melody paths, and confidence-gating the ambiguous tail
+to the `harmony-override` escape hatch. Treat the current `index.yml` harmony as untrusted.
+The bass-informed V2 approach lives in `cli/_proto-harmony-eval.mjs` (`fitTriadBass` /
+`deriveV2`) as the starting point.
 
 ## Open Implementation Tasks
 
