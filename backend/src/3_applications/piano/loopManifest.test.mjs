@@ -25,6 +25,7 @@ describe('buildBrickEntry', () => {
     expect(Array.isArray(e.timeline)).toBe(true);
     expect(e.timeline[0]).toEqual([0, 4, 7]); // C major triad, root-relative to C
     expect(e.roman).toEqual(['I']);
+    expect(typeof e.specificity).toBe('string');
     expect(e.needsReview).toBeUndefined();
   });
 
