@@ -1,8 +1,8 @@
 // layerMatch — rank loop-library candidates for layering onto a base loop.
 // Pure, framework-agnostic; operates on index.yml LoopEntry shapes + the theory
 // core. Key/tempo are never blockers (canonical MIDI transposes/retempos for
-// free) — this scores what sounds good STACKED: role complement, mood/mode
-// coherence, same-source affinity, and tempo closeness.
+// free) — this scores what sounds good STACKED: role complement, emotion/mode
+// coherence, genre affinity, and tempo closeness.
 
 import { signatureKey, areStackable } from './harmonicSignature.mjs';
 
@@ -11,6 +11,7 @@ const ROLE_BY_TYPE = {
   melody: 'melody',
   bassline: 'bass',
   idea: 'idea',
+  groove: 'groove',
 };
 
 /** Layering role for a loop entry. */
@@ -26,7 +27,14 @@ function modeOf(entry) {
   return letter && letter === letter.toLowerCase() ? 'minor' : 'major';
 }
 
-const WEIGHTS = { sameSignature: 10, complement: 3, sameRole: -3, mood: 2, mode: 1, source: 1, sameArtist: 2, bpmMax: 1 };
+/** Do two array fields share at least one (case-insensitive) member? */
+function overlaps(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  const set = new Set(a.map((x) => String(x).toLowerCase()));
+  return b.some((x) => set.has(String(x).toLowerCase()));
+}
+
+const WEIGHTS = { sameSignature: 10, complement: 3, sameRole: -3, emotion: 2, mode: 1, genre: 1, sameArtist: 2, bpmMax: 1 };
 
 /** Weighted compatibility number for stacking `cand` on `base` (higher = better). */
 export function compatibilityScore(base, cand) {
@@ -35,10 +43,10 @@ export function compatibilityScore(base, cand) {
   const cSig = signatureKey(cand.roman);
   if (bSig && cSig && bSig === cSig) score += WEIGHTS.sameSignature;
   score += roleOf(cand) === roleOf(base) ? WEIGHTS.sameRole : WEIGHTS.complement;
-  if (base.mood && cand.mood && base.mood === cand.mood) score += WEIGHTS.mood;
+  if (overlaps(base.emotion, cand.emotion)) score += WEIGHTS.emotion;
   const bm = modeOf(base); const cm = modeOf(cand);
   if (bm && cm && bm === cm) score += WEIGHTS.mode;
-  if (cand.sources?.some((s) => base.sources?.includes(s))) score += WEIGHTS.source;
+  if (overlaps(base.genre, cand.genre)) score += WEIGHTS.genre;
   if (base.artist && cand.artist && base.artist === cand.artist) score += WEIGHTS.sameArtist;
   if (base.bpm && cand.bpm) {
     const closeness = 1 - Math.min(Math.abs(base.bpm - cand.bpm), 40) / 40;
@@ -54,9 +62,9 @@ function reasonsFor(base, cand) {
   const cSig = signatureKey(cand.roman);
   if (bSig && cSig && bSig === cSig) reasons.push('same progression');
   if (roleOf(cand) !== roleOf(base)) reasons.push(`adds ${roleOf(cand)}`);
-  if (base.mood && cand.mood === base.mood) reasons.push(`${cand.mood} mood`);
+  if (overlaps(base.emotion, cand.emotion)) reasons.push('same mood');
   if (base.artist && cand.artist === base.artist) reasons.push('same artist');
-  else if (cand.sources?.some((s) => base.sources?.includes(s))) reasons.push('same set');
+  else if (overlaps(base.genre, cand.genre)) reasons.push('same genre');
   if (base.bpm && cand.bpm && Math.abs(base.bpm - cand.bpm) <= 8) reasons.push('tempo match');
   return reasons;
 }
