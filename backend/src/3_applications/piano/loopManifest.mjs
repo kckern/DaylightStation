@@ -67,6 +67,37 @@ function readLedger(midiDir) {
   return map;
 }
 
+/** Filled-dot count of a braille cell (U+2800–U+28FF). */
+function braillePopcount(cp) {
+  let v = cp - 0x2800;
+  let c = 0;
+  while (v) { c += v & 1; v >>= 1; }
+  return c;
+}
+
+/** Per-chord durations (in timeline slots = beats) from the canonical-name's
+ *  braille suffixes: e.g. "VI⣿-II⠇-IIIsus4⠟-…" → [8, 3, 5, …]. Each chord token
+ *  carries a braille cell whose filled-dot count IS its slot span (verified: the
+ *  Σ of dots equals the harmonic timeline's slot count). Returns null when ANY
+ *  token lacks a braille suffix — callers then fall back to even distribution. */
+export function parseCanonicalDurations(canonicalName) {
+  if (!canonicalName) return null;
+  const toks = String(canonicalName).split('-').filter(Boolean);
+  if (!toks.length) return null;
+  const out = [];
+  for (const tok of toks) {
+    let dots = 0;
+    let found = false;
+    for (const ch of tok) {
+      const cp = ch.codePointAt(0);
+      if (cp >= 0x2800 && cp <= 0x28ff) { dots += braillePopcount(cp); found = true; }
+    }
+    if (!found) return null;
+    out.push(dots);
+  }
+  return out;
+}
+
 /** Build one manifest entry from a brick's relative path + raw XML. Pure.
  *  `ledgerRow` (optional) supplies the analyzer's harmonyKey + roman for tonic
  *  recovery; absent → tonic assumed C (0). */
@@ -104,6 +135,16 @@ export function buildBrickEntry(relPath, xml, ledgerRow = null) {
     entry.timeline = tl.slots;
     entry.timelineRoot = tl.root; // the brick's tonic pc (key-conformed grid)
     entry.specificity = tl.specificity;
+    // Per-chord slot spans from the canonical-name braille (uneven progressions).
+    // Attached ONLY when it aligns 1:1 with roman[] AND sums to the slot count —
+    // so the frontend ChordLane can highlight the EXACT sounding chord instead of
+    // assuming even distribution; any mismatch omits it (even-distribution fallback).
+    const durations = parseCanonicalDurations(meta['canonical-name']);
+    if (durations
+      && durations.length === entry.roman.length
+      && durations.reduce((a, b) => a + b, 0) === entry.timeline.length) {
+      entry.romanDurations = durations;
+    }
   } catch (err) {
     entry.needsReview = true;
     entry.needsReviewReason = `engine-throw: ${err.message}`;
