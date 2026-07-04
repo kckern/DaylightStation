@@ -13,6 +13,7 @@ import {
   setRepeats,
   moveEntry,
   addEntry,
+  addSection,
   removeEntry,
   setSectionLength,
   renameSection,
@@ -124,6 +125,7 @@ describe('initial state', () => {
   it('every verb except PROMOTE is a no-op on null (draft materializes only by promotion or song load)', () => {
     const actions = [
       setArrangement([]), setRepeats(0, 2), moveEntry(0, 1), addEntry('sec-1'),
+      addSection(),
       removeEntry(0), setSectionLength('sec-1', 8), renameSection('sec-1', 'Verse'),
       deleteSection('sec-1'), cloneSection('sec-1'), mutateCarried('x', { gain: 0.5 }),
       setMeta({ title: 'T' }), openSection('sec-1'),
@@ -160,6 +162,24 @@ describe('PROMOTE (new section)', () => {
     expect(s.sections[0].id).toBe('sec-1');
     expect(s.sections[0].name).toBe('A');
     expect(s.arrangement).toEqual([{ sectionId: 'sec-1', repeats: 1 }]);
+  });
+
+  it('ADD_SECTION appends a fresh EMPTY section + arrangement entry (the "add another part" affordance)', () => {
+    const before = run(promote({ workspaceState: ws([wsLayer(CHORDS_A, 'chords', 0)]), notesById }));
+    const s = draftReducer(before, addSection());
+    expect(s.sections).toHaveLength(2);
+    const added = s.sections[1];
+    expect(added.id).toBe('sec-2');
+    expect(added.name).toBe('B'); // next structural label
+    expect(added.stack).toEqual([]); // empty → renders "fill me", fillable via the sheet
+    expect(added.lengthBars).toBe(1);
+    // placed in the play order once, after the existing section
+    expect(s.arrangement).toEqual([
+      { sectionId: 'sec-1', repeats: 1 },
+      { sectionId: 'sec-2', repeats: 1 },
+    ]);
+    // the original section is untouched
+    expect(s.sections[0]).toEqual(before.sections[0]);
   });
 
   it('deep-copies non-carried layers (no shared references with the workspace)', () => {
