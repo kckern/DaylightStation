@@ -271,6 +271,16 @@ function nudgeKey(delta) {
   fireEvent.click(screen.getByRole('button', { name: `key ${WEDGE_NAME_BY_PC[target]}` }));
 }
 
+// Remove a layer via its ⋯ overflow (open the menu → 2-tap confirm). `idx`
+// selects which strip's menu (Remove moved off the row in design §6).
+function removeLayer(idx = 0) {
+  const more = screen.getAllByRole('button', { name: 'more' });
+  fireEvent.click(more[idx]);
+  const remove = screen.getByLabelText('remove layer');
+  fireEvent.click(remove); // arm
+  fireEvent.click(remove); // confirm
+}
+
 describe('Producer shell (three bands)', () => {
   it('renders the four front-door entry cards when the workspace is empty', async () => {
     render(<Producer />);
@@ -435,9 +445,8 @@ describe('Producer shell (three bands)', () => {
   it('removing the last layer returns the front doors', async () => {
     render(<Producer />);
     await addDmLayer();
-    // Remove is a 2-tap confirm (arm, then remove).
-    fireEvent.click(screen.getByLabelText('remove layer'));
-    fireEvent.click(screen.getByLabelText('remove layer'));
+    // Remove is a 2-tap confirm inside the ⋯ overflow.
+    removeLayer(0);
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
     expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
@@ -449,8 +458,7 @@ describe('Producer shell (three bands)', () => {
     fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
     fireEvent.click(await screen.findByRole('button', { name: 'Catchy Hook' }));
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
-    fireEvent.click(document.querySelector('.piano-channel-strip__remove'));
-    fireEvent.click(document.querySelector('.piano-channel-strip__remove'));
+    removeLayer(0);
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1));
     expect(screen.getByRole('button', { name: /\+ add layer/i })).toBeInTheDocument();
   });
@@ -790,8 +798,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     // …then remove the layer from the WORKSPACE before the fetch resolves.
-    fireEvent.click(screen.getByLabelText('remove layer'));
-    fireEvent.click(screen.getByLabelText('remove layer'));
+    removeLayer(0);
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
     // The landing must still be accepted: the DRAFT references the layer.
     await act(async () => { releaseDm(); });
@@ -809,8 +816,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     await jamAndPromote();
     // Clean the jam out from under the song…
     fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
-    fireEvent.click(screen.getByLabelText('remove layer'));
-    fireEvent.click(screen.getByLabelText('remove layer'));
+    removeLayer(0);
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
     // …the arrangement input still carries the section's notes.
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
