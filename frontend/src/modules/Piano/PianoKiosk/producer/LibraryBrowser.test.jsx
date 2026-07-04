@@ -44,8 +44,9 @@ const UNTITLED_MELODY = {
   timeline: [[0], [4], [7], [0]], timelineRoot: 0, specificity: 'triad',
 };
 const GROOVE = {
+  // Real grooves carry NO quality tier — they must still show under Best.
   slug: 'basic-rock', path: 'grooves/basic-rock.mid', type: 'groove',
-  feel: 'straight', bpm: 96, title: 'Basic Rock', quality: 'best',
+  feel: 'straight', bpm: 96, title: 'Basic Rock', quality: '',
 };
 
 const ALL = [BASE, FRIEND, CLASH, UNTITLED_MELODY, GROOVE];
@@ -218,6 +219,12 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(screen.getByRole('button', { name: 'Draft Loop' })).toBeInTheDocument();
     fireEvent.click(within(qualityGroup).getByRole('button', { name: 'Best' }));
     expect(screen.queryByRole('button', { name: 'Draft Loop' })).toBeNull();
+  });
+
+  it('grooves stay visible under the Best default (no quality tier) — drums must be addable', async () => {
+    renderBrowser(); // quality defaults to Best; GROOVE has quality ''
+    fireEvent.click(screen.getByRole('button', { name: 'Grooves' }));
+    expect(await screen.findByRole('button', { name: 'Basic Rock' })).toBeInTheDocument();
   });
 
   it('feel chips appear for the groove kind and filter by feel', async () => {

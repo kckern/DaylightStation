@@ -368,7 +368,10 @@ export function LibraryBrowser({
       else if (kind && roleOf(entry) !== kind) return false;
       if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
       if (feel && (entry.feel || '') !== feel) return false;
-      if (quality && (entry.quality || '') !== quality) return false;
+      // Grooves carry NO curation tier (quality ''), so the Best-quality default
+      // would hide every drum loop — making drums un-addable. Exempt them: all
+      // grooves are curated and always show regardless of the quality chip.
+      if (quality && entry.type !== 'groove' && (entry.quality || '') !== quality) return false;
       if (q) {
         const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
