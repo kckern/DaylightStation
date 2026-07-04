@@ -90,6 +90,7 @@ import { ChannelStrip } from '../../producer/ChannelStrip.jsx';
 import { LibraryBrowser } from '../../producer/LibraryBrowser.jsx';
 import { CaptureCard } from '../../producer/CaptureCard.jsx';
 import { LoopMeter } from '../../producer/LoopMeter.jsx';
+import { AddLayerSheet } from '../../producer/AddLayerSheet.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -122,6 +123,8 @@ export function Producer() {
   /** Queued scene-launch target (block index) for the SongView "next" chip. */
   const [pendingTarget, setPendingTarget] = useState(null);
   const [overlay, setOverlay] = useState(null); // null | { role: null|'chords' }
+  const [addSheet, setAddSheet] = useState(false); // the unified Add Layer sheet (§8)
+  const [builder, setBuilder] = useState(null); // null | 'drums' | 'chords' (§9)
   const [showRoman, setShowRoman] = useState(false);
   // Capture session (Task 6.2): the card overlays the STAGE band only.
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -1095,7 +1098,7 @@ export function Producer() {
                     <button
                       type="button"
                       className="piano-producer-mode__add-layer"
-                      onClick={() => openOverlay(null, null)}
+                      onClick={() => setAddSheet(true)}
                     >+ Add layer</button>
                     <button
                       type="button"
@@ -1155,6 +1158,14 @@ export function Producer() {
               onKeep={handleCaptureKeep}
               onClose={closeCapture}
               onAudioGesture={ensureAudio}
+            />
+          )}
+
+          {addSheet && (
+            <AddLayerSheet
+              onPickRole={(role) => { setAddSheet(false); openOverlay(role, null); }}
+              onRecord={() => { setAddSheet(false); openCapture('add-layer'); }}
+              onClose={() => setAddSheet(false)}
             />
           )}
           </div>

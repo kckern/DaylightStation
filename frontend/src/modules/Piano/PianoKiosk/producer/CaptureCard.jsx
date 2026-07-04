@@ -74,8 +74,9 @@
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
-import { useLoopCapture, DRUM_KEY_MAP } from './useLoopCapture.js';
+import { useLoopCapture, DRUM_KEY_MAP, PPQ } from './useLoopCapture.js';
 import { DRUM_CHANNEL } from './workspaceReducer.js';
+import { LoopRoll } from './LoopRoll.jsx';
 import './CaptureCard.scss';
 
 let _logger;
@@ -431,6 +432,22 @@ export function CaptureCard({
 
         {armed && (
           <div className="piano-capture-card__live">
+            {/* Live piano-roll (design §8): your playing appears here each loop
+                and thickens, so you SEE the take building — not just a counter. */}
+            {capture.takeNotes.length > 0 ? (
+              <LoopRoll
+                notes={capture.takeNotes}
+                ppq={PPQ}
+                barSpan={capture.lengthBars || lengthBars}
+                positionRef={transport?.positionRef}
+                isPlaying
+              />
+            ) : (
+              <div className="piano-capture-card__roll-empty" role="status">
+                Play along — your notes land here
+              </div>
+            )}
+
             <div className="piano-capture-card__dial-row">
               <span
                 className={`piano-capture-card__dial${dial?.phase === 'countin' ? ' is-countin' : ''}`}

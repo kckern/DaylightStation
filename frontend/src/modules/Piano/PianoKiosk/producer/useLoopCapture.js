@@ -428,10 +428,22 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
     return take;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live snapshot of the accumulated take (completed passes only) for the record
+  // overlay's live piano-roll (design §8). Cheap flatten; recomputed only when
+  // the take note count changes — i.e. a pass merges at the cycle boundary, so
+  // your playing "appears" each loop and thickens. In-flight (uncommitted) pass
+  // notes aren't included (their ticks aren't laid out until the boundary).
+  const takeNotes = useMemo(
+    () => passesRef.current.flat().map((n) => ({ ...n })),
+    [takeNoteCount],
+  );
+
   return useMemo(() => ({
     state,
     passCount,
     takeNoteCount,
+    takeNotes,
+    lengthBars: geomRef.current?.lengthBars ?? 0,
     drumMode,
     arm,
     disarm,
@@ -442,7 +454,7 @@ export function useLoopCapture({ bpm, timeSig = [4, 4] }) {
     clearTake,
     keep,
     setDrumMode,
-  }), [state, passCount, takeNoteCount, drumMode, arm, disarm, tick, noteOn, noteOff, undoPass, clearTake, keep, setDrumMode]);
+  }), [state, passCount, takeNoteCount, takeNotes, drumMode, arm, disarm, tick, noteOn, noteOff, undoPass, clearTake, keep, setDrumMode]);
 }
 
 export default useLoopCapture;

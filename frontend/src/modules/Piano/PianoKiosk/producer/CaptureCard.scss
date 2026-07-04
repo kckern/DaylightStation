@@ -70,6 +70,19 @@
   }
 
   // ── cycling ────────────────────────────────────────────────────────────────
+  // Live piano-roll: the star of the record overlay (design §8).
+  .piano-loop-roll { height: 5.5rem; }
+  &__roll-empty {
+    height: 5.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: 1px dashed var(--piano-border, #34343f);
+    color: var(--piano-muted, #8a8a9a);
+    font: 500 0.95rem 'Roboto Condensed', sans-serif;
+  }
+
   &__dial-row { display: flex; align-items: baseline; gap: 1rem; }
   &__dial {
     font: 800 2.6rem 'Roboto Condensed', sans-serif;
