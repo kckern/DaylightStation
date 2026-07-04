@@ -449,7 +449,7 @@ describe('Producer shell (three bands)', () => {
     // No jam layers yet → the promote door is disabled.
     expect(screen.getByRole('button', { name: /start from your jam/i })).toBeDisabled();
     // Back to Mix — state preserved.
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     expect(screen.getByRole('button', { name: /browse the library/i })).toBeInTheDocument();
   });
 
@@ -613,7 +613,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     await jamAndPromote();
     fireEvent.click(screen.getByRole('button', { name: /play/i }));
     setPlaying(true); // rising edge on the Song tab → locks 'song'
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     // Mix tab while the song plays: the transport still holds the arrangement.
     expect(transportArgs.last.arrangement).not.toBeNull();
     // Stop → the lock releases; on the Mix tab the transport is stack-armed.
@@ -627,13 +627,13 @@ describe('Song builder wiring (Task 7.2)', () => {
     // The mocked play() never starts playback (== the real transport refusing,
     // e.g. totalMs 0). No rising edge → no lock → tabs keep re-arming.
     fireEvent.click(screen.getByRole('button', { name: /play/i }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     expect(transportArgs.last.arrangement).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     expect(transportArgs.last.arrangement).not.toBeNull();
   });
 
-  it('Edit in Mix loads the section WITH the song key/tempo (the loadStack seam) and shows the editing badge', async () => {
+  it('Edit in Loop loads the section WITH the song key/tempo (the loadStack seam) and shows the editing badge', async () => {
     render(<Producer />);
     await addDmLayer();
     fireEvent.click(screen.getByLabelText('key up')); // jam keyShift 1
@@ -641,14 +641,14 @@ describe('Song builder wiring (Task 7.2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add to song' })); // meta: bpm 120, keyShift 1
     await screen.findByRole('button', { name: 'A slot 1' });
     // Drift the workspace key AFTER promotion…
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     fireEvent.click(screen.getByLabelText('key down'));
     fireEvent.click(screen.getByLabelText('key down'));
     await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(-1));
     // …then open the section: the workspace snaps back to the SONG's key.
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     // Landed in Mix: strip present, badge up, promote door relabeled.
     expect(screen.getByRole('button', { name: /browse|add layer/i })).toBeInTheDocument();
     expect(screen.getByRole('status').textContent).toContain('Editing section A');
@@ -661,13 +661,13 @@ describe('Song builder wiring (Task 7.2)', () => {
     render(<Producer />);
     await jamAndPromote();
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
     // Re-open and discard: badge clears, the strip (workspace stack) survives.
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     expect(screen.getByRole('status')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(screen.queryByRole('status')).toBeNull();
@@ -678,7 +678,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     render(<Producer />);
     await jamAndPromote(); // section sec-1 holds program 0 on channel 0
     // Drift the WORKSPACE voice so the section's program actually differs.
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     fireEvent.click(screen.getByRole('button', { name: 'voice' }));
     fireEvent.click(await screen.findByRole('option', { name: 'E-Piano' }));
     await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
@@ -701,7 +701,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     await jamAndPromote();
     // Second section → arrangement [sec-1 ×1, sec-2 ×1]; entry 1 starts at
     // block 1. (Only the FIRST promote auto-switches tabs — go back manually.)
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     fireEvent.click(screen.getByRole('button', { name: 'Add to song' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));
     await screen.findByRole('button', { name: 'B slot 2' });
@@ -737,7 +737,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     render(<Producer />);
     await jamAndPromote(); // section sec-1: program 0 on channel 0
     // Drift the WORKSPACE voice so workspace vs section programs differ.
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     fireEvent.click(screen.getByRole('button', { name: 'voice' }));
     fireEvent.click(await screen.findByRole('option', { name: 'E-Piano' }));
     await waitFor(() => expect(routerMock.configureLayer).toHaveBeenCalledWith(0, { program: 4, gain: 1 }));
@@ -776,7 +776,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     await screen.findByRole('button', { name: 'A slot 1' });
     // Open the section — ensureLayerNotes starts a (gated) fetch…
     fireEvent.click(screen.getByRole('button', { name: 'A slot 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     // …then remove the layer from the WORKSPACE before the fetch resolves.
     fireEvent.click(screen.getByLabelText('remove layer'));
     fireEvent.click(screen.getByLabelText('remove layer'));
@@ -796,7 +796,7 @@ describe('Song builder wiring (Task 7.2)', () => {
     render(<Producer />);
     await jamAndPromote();
     // Clean the jam out from under the song…
-    fireEvent.click(screen.getByRole('tab', { name: 'Mix' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
     fireEvent.click(screen.getByLabelText('remove layer'));
     fireEvent.click(screen.getByLabelText('remove layer'));
     await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(0));
@@ -833,10 +833,10 @@ describe('Producer persistence wiring (Task 8.2)', () => {
     expect(await screen.findByRole('dialog', { name: 'saved songs' })).toBeInTheDocument();
   });
 
-  it("'Keep stack to Crate' saves the workspace stack", async () => {
+  it("'Keep to My Loops' saves the workspace stack", async () => {
     render(<Producer />);
     await addDmLayer();
-    fireEvent.click(screen.getByRole('button', { name: /keep stack to crate/i }));
+    fireEvent.click(screen.getByRole('button', { name: /keep to my loops/i }));
     await waitFor(() => expect(storeMock.saveCrateItem).toHaveBeenCalledWith('stack', expect.objectContaining({
       layers: expect.arrayContaining([expect.objectContaining({ role: 'chords' })]),
     })));

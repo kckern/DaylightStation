@@ -9,9 +9,9 @@
  *
  * IDLE (song not playing): tapping a slot opens its sheet —
  *   - empty slot → fill menu: "Use current jam" (SLOT_FILL; disabled when the
- *     workspace is empty), "Open in Mix to build" (LOAD_STACK empty +
- *     editingSectionId via the shell), "From Crate" (disabled stub, Task 8.2);
- *   - filled slot → actions: Edit in Mix, repeats ±, bars ±, inline rename,
+ *     workspace is empty), "Open in Loop to build" (LOAD_STACK empty +
+ *     editingSectionId via the shell), "From My Loops" (disabled stub, Task 8.2);
+ *   - filled slot → actions: Edit in Loop, repeats ±, bars ±, inline rename,
  *     Clone (CLONE_SECTION + ADD_ENTRY right after this slot), Delete (2-tap
  *     confirm — removes THIS slot; the section itself is deleted only when no
  *     other slot references it, so invisible material never lingers), and
@@ -380,8 +380,8 @@ export function SongView({
           <button
             type="button"
             onClick={() => { onOpenSection(openSection.id); setOpenIdx(null); }}
-          >Open in Mix to build</button>
-          <button type="button" disabled title="The Crate arrives in a later phase">From Crate</button>
+          >Open in Loop to build</button>
+          <button type="button" disabled title="My Loops arrives in a later phase">From My Loops</button>
         </div>
       )}
 
@@ -403,7 +403,7 @@ export function SongView({
           <button
             type="button"
             onClick={() => { onOpenSection(openSection.id); setOpenIdx(null); }}
-          >Edit in Mix</button>
+          >Edit in Loop</button>
           <span className="piano-song-view__stepper">
             <button
               type="button"
@@ -438,7 +438,7 @@ export function SongView({
               type="button"
               className="piano-song-view__keep"
               onClick={() => { onKeepSection(openSection.id); setOpenIdx(null); }}
-            >Keep to Crate</button>
+            >Keep to My Loops</button>
           )}
           <button
             type="button"

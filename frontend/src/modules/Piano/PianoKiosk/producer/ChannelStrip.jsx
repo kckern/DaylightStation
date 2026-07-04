@@ -92,7 +92,7 @@ export function ChannelStrip({
   };
 
   return (
-    <div className={`piano-channel-strip${layer.muted ? ' is-muted' : ''}`}>
+    <div className={`piano-channel-strip${layer.muted ? ' is-muted' : ''}`} data-role={layer.role}>
       <MaterialGlyph
         material={entry ?? { kind: 'take', id: layer.id }}
         size={44}
@@ -125,7 +125,7 @@ export function ChannelStrip({
         ) : (
           <span className="piano-channel-strip__name">{title}</span>
         )}
-        <span className="piano-channel-strip__role">{layer.role}</span>
+        <span className="piano-channel-strip__role" data-role={layer.role}>{layer.role}</span>
       </div>
 
       <button
@@ -212,8 +212,8 @@ export function ChannelStrip({
         <button
           type="button"
           className={`piano-channel-strip__keep${kept ? ' is-kept' : ''}`}
-          aria-label="keep to crate"
-          title="Keep this recording to the Crate"
+          aria-label="keep to my loops"
+          title="Keep this recording to My Loops"
           disabled={kept}
           onClick={() => { onKeepToCrate(layer); setKept(true); }}
         >{kept ? 'Kept' : 'Keep'}</button>
