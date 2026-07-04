@@ -109,6 +109,7 @@ export function ChannelStrip({
           <ChordLane
             roman={entry.roman}
             durations={entry.romanDurations || null}
+            cycles={entry.romanCycles || 1}
             notesBundle={notesBundle}
             positionRef={positionRef}
             isPlaying={isPlaying}

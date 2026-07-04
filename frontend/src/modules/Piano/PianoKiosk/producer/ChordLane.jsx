@@ -17,11 +17,14 @@ import { loopBars } from './LoopRoll.jsx';
  * canonical-name braille) is present, slot WIDTHS are proportional to duration
  * and the active chord is the one whose cumulative span contains the playhead —
  * so an uneven progression (a 2-bar I then a 1-bar IV) highlights correctly and
- * the cursor lines up with the lit slot. Absent → equal slots + even
- * distribution (the safe fallback), wrapping every `barSpan` bars.
+ * the cursor lines up with the lit slot. `cycles` > 1 means the loop repeats the
+ * shown progression k times (the braille is the minimal cycle); the cursor then
+ * wraps k times across the loop. Absent → equal slots + even distribution (the
+ * safe fallback), wrapping every `barSpan` bars.
  *
  * @param {string[]} roman
  * @param {number[]|null} durations - slots per chord, parallel to roman (optional)
+ * @param {number} [cycles] - how many times the progression repeats over the loop
  * @param {{notes:Array, ppq:number, barSpan:number}|null} notesBundle
  * @param {{current:{bar:number,barFrac:number}}|null} positionRef
  * @param {boolean} isPlaying
@@ -40,7 +43,7 @@ export function cumulativeBounds(durations, count) {
 }
 
 export function ChordLane({
-  roman, durations = null, notesBundle, positionRef, isPlaying = false, muted = false,
+  roman, durations = null, cycles = 1, notesBundle, positionRef, isPlaying = false, muted = false,
 }) {
   const cursorRef = useRef(null);
   const [active, setActive] = useState(-1);
@@ -55,12 +58,15 @@ export function ChordLane({
     }
     const bars = loopBars(notesBundle.notes, notesBundle.ppq, notesBundle.barSpan);
     const bounds = cumulativeBounds(durations, count);
+    const cyc = Math.max(1, Math.round(cycles || 1));
     let raf = 0;
     let last = -1;
     const frame = () => {
       const p = positionRef.current || {};
       const barInLoop = ((((p.bar || 0) % bars) + bars) % bars);
-      const frac = Math.max(0, Math.min(1, (barInLoop + (p.barFrac || 0)) / bars));
+      const loopFrac = Math.max(0, Math.min(1, (barInLoop + (p.barFrac || 0)) / bars));
+      // With a repeating progression the cursor sweeps ONE cycle k times.
+      const frac = cyc > 1 ? ((loopFrac * cyc) % 1) : loopFrac;
       if (el) { el.style.opacity = '1'; el.style.left = `${frac * 100}%`; }
       let idx;
       if (bounds) {
@@ -74,7 +80,7 @@ export function ChordLane({
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, positionRef, count, notesBundle, durations]);
+  }, [isPlaying, positionRef, count, notesBundle, durations, cycles]);
 
   if (!count) return null;
   const useWidths = Array.isArray(durations) && durations.length === count;

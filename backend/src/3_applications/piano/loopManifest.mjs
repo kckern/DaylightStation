@@ -142,15 +142,20 @@ export function buildBrickEntry(relPath, xml, ledgerRow = null) {
     entry.timeline = tl.slots;
     entry.timelineRoot = tl.root; // the brick's tonic pc (key-conformed grid)
     entry.specificity = tl.specificity;
-    // Per-chord slot spans from the canonical-name braille (uneven progressions).
-    // Attached ONLY when it aligns 1:1 with roman[] AND sums to the slot count —
-    // so the frontend ChordLane can highlight the EXACT sounding chord instead of
-    // assuming even distribution; any mismatch omits it (even-distribution fallback).
+    // Per-chord slot spans from the canonical-name braille (uneven progressions),
+    // so the frontend ChordLane highlights the EXACT sounding chord instead of
+    // assuming even distribution. The braille is ONE cycle; the notes may repeat
+    // it k times (the canonical-name carries the minimal cycle — README caveat),
+    // so `romanCycles` = k. Attached ONLY when the durations align 1:1 with roman[]
+    // AND their sum divides the slot count; anything else omits both (fallback).
     const durations = parseCanonicalDurations(meta['canonical-name']);
-    if (durations
-      && durations.length === entry.roman.length
-      && durations.reduce((a, b) => a + b, 0) === entry.timeline.length) {
-      entry.romanDurations = durations;
+    if (durations && durations.length === entry.roman.length) {
+      const cycleBeats = durations.reduce((a, b) => a + b, 0);
+      const slots = entry.timeline.length;
+      if (cycleBeats > 0 && slots % cycleBeats === 0) {
+        entry.romanDurations = durations;
+        entry.romanCycles = slots / cycleBeats; // 1 = once; k = repeats k times
+      }
     }
   } catch (err) {
     entry.needsReview = true;

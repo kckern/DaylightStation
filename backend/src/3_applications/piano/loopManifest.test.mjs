@@ -72,19 +72,30 @@ describe('buildBrickEntry', () => {
     expect(e.timeline).toBeUndefined();
   });
 
-  it('attaches romanDurations from the canonical-name braille when it aligns with roman + slot count', () => {
+  it('attaches romanDurations (+ romanCycles 1) when the braille sums to the slot count', () => {
     // 2 bars = 8 slots; canonical I⠿-V⠃ → dots 6 + 2 = 8 (uneven: a longer I, shorter V).
     const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'iv', 'derived-signature': 'I-V', 'canonical-name': 'I⠿-V⠃' })}${twoBarTriad}</x>`;
     const e = buildBrickEntry('chords/iv.musicxml', xml);
     expect(e.timeline.length).toBe(8);
     expect(e.roman).toEqual(['I', 'V']);
     expect(e.romanDurations).toEqual([6, 2]);
+    expect(e.romanCycles).toBe(1);
   });
 
-  it('omits romanDurations when the braille sum ≠ slot count (mismatch → even-distribution fallback)', () => {
-    // I⠇-V⠇ → 3 + 3 = 6 ≠ 8 slots.
+  it('sets romanCycles = k when the loop REPEATS the minimal cycle (braille sum divides slots)', () => {
+    // I⠃-V⠃ → 2 + 2 = 4 beats = one cycle; 8 slots ⇒ the cycle plays twice.
+    const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'rep', 'derived-signature': 'I-V', 'canonical-name': 'I⠃-V⠃' })}${twoBarTriad}</x>`;
+    const e = buildBrickEntry('chords/rep.musicxml', xml);
+    expect(e.romanDurations).toEqual([2, 2]);
+    expect(e.romanCycles).toBe(2);
+  });
+
+  it('omits romanDurations when the braille sum does NOT divide the slot count (→ even-distribution fallback)', () => {
+    // I⠇-V⠇ → 3 + 3 = 6; 8 % 6 ≠ 0.
     const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'm', 'derived-signature': 'I-V', 'canonical-name': 'I⠇-V⠇' })}${twoBarTriad}</x>`;
-    expect(buildBrickEntry('chords/m.musicxml', xml).romanDurations).toBeUndefined();
+    const e = buildBrickEntry('chords/m.musicxml', xml);
+    expect(e.romanDurations).toBeUndefined();
+    expect(e.romanCycles).toBeUndefined();
   });
 
   it('omits romanDurations when the token count ≠ roman count, or the canonical-name has no braille', () => {
