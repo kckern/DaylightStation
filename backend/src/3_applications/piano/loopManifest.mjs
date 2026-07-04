@@ -15,11 +15,67 @@ const csv = (s) => (typeof s === 'string' && s.trim()
   ? s.split(',').map((x) => x.trim()).filter(Boolean)
   : []);
 
-/** Build one manifest entry from a brick's relative path + raw XML. Pure. */
-export function buildBrickEntry(relPath, xml) {
+// ── tonic recovery ───────────────────────────────────────────────────────────
+// The bricks are NOT uniformly in C — each is in its own key. The conversion
+// ledger records the analyzer's chord-ROOT sequence (`harmonyKey`, note names
+// like "F-A-C-G") and the tonic-relative `derivedRoman`. The tonic pitch class
+// is therefore rootPc(harmonyKey[0]) − degree(roman[0]): e.g. roots A-F-C-G with
+// roman vi-IV-I-V → tonic C; a single "I" chord rooted on F → tonic F. Playback
+// transposes each loop by (keyShift − tonicPc) so "I" always sounds the jam key,
+// and the harmonic timeline is built tonic-relative (rootOverride: tonicPc) so
+// the consonance grid is genuinely key-conformed.
+const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const ROMAN_BASE = { I: 0, II: 2, III: 4, IV: 5, V: 7, VI: 9, VII: 11 };
+
+function noteNamePc(name) {
+  const m = String(name || '').trim().toUpperCase().match(/^([A-G])([#B]?)/);
+  if (!m) return null;
+  const acc = m[2] === '#' ? 1 : m[2] === 'B' ? -1 : 0;
+  return (((LETTER_PC[m[1]] + acc) % 12) + 12) % 12;
+}
+
+function romanDegree(token) {
+  const m = String(token || '').trim().match(/^([b#]?)([ivIV]+)/);
+  if (!m) return null;
+  const deg = ROMAN_BASE[m[2].toUpperCase()];
+  if (deg == null) return null;
+  const acc = m[1] === 'b' ? -1 : m[1] === '#' ? 1 : 0;
+  return (((deg + acc) % 12) + 12) % 12;
+}
+
+/** Tonic pitch class from the ledger's root sequence + roman, or null. */
+export function computeTonicPc(harmonyKey, roman) {
+  if (!harmonyKey || !Array.isArray(roman) || roman.length === 0) return null;
+  const firstRoot = noteNamePc(String(harmonyKey).split('-')[0]);
+  const deg = romanDegree(roman[0]);
+  if (firstRoot == null || deg == null) return null;
+  return (((firstRoot - deg) % 12) + 12) % 12;
+}
+
+/** Read the conversion ledger → Map(outputPath → { harmonyKey, roman }). */
+function readLedger(midiDir) {
+  const map = new Map();
+  const raw = readFile(path.join(midiDir, '_workspace', '_ledger.jsonl'));
+  if (!raw) return map;
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const j = JSON.parse(line);
+      if (j.output) map.set(j.output, { harmonyKey: j.harmonyKey, roman: j.derivedRoman });
+    } catch { /* skip malformed row */ }
+  }
+  return map;
+}
+
+/** Build one manifest entry from a brick's relative path + raw XML. Pure.
+ *  `ledgerRow` (optional) supplies the analyzer's harmonyKey + roman for tonic
+ *  recovery; absent → tonic assumed C (0). */
+export function buildBrickEntry(relPath, xml, ledgerRow = null) {
   const meta = readBrickMeta(xml);
   const type = meta.type || 'idea';
+  const tonicPc = computeTonicPc(ledgerRow?.harmonyKey, ledgerRow?.roman) ?? 0;
   const entry = {
+    tonicPc,
     path: relPath,
     slug: meta['source-slug'] || meta['canonical-name'] || relPath,
     type,
@@ -44,9 +100,9 @@ export function buildBrickEntry(relPath, xml) {
       entry.needsReviewReason = 'parse-fail';
       return entry;
     }
-    const tl = harmonicTimeline(notes, ppq, { rootOverride: 0, timeSig });
+    const tl = harmonicTimeline(notes, ppq, { rootOverride: tonicPc, timeSig });
     entry.timeline = tl.slots;
-    entry.timelineRoot = tl.root; // always 0 (canonical C)
+    entry.timelineRoot = tl.root; // the brick's tonic pc (key-conformed grid)
     entry.specificity = tl.specificity;
   } catch (err) {
     entry.needsReview = true;
@@ -58,6 +114,7 @@ export function buildBrickEntry(relPath, xml) {
 /** Walk the five type folders under midiDir → array of manifest entries. */
 export function buildManifest(midiDir) {
   const bricks = [];
+  const ledger = readLedger(midiDir);
   for (const folder of TYPE_FOLDERS) {
     const dir = path.join(midiDir, folder);
     for (const file of listFiles(dir)) {
@@ -66,7 +123,7 @@ export function buildManifest(midiDir) {
       if (xml == null) continue;
       const relPath = `${folder}/${file}`;
       try {
-        bricks.push(buildBrickEntry(relPath, xml));
+        bricks.push(buildBrickEntry(relPath, xml, ledger.get(relPath)));
       } catch (err) {
         bricks.push({ path: relPath, type: folder, needsReview: true, needsReviewReason: `build-fail: ${err.message}` });
       }

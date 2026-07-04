@@ -193,8 +193,9 @@ export function usePeek({ router, lib, bpm, keyShift = 0, isJamPlaying = false, 
     const liveBpm = sanitizeBpm(bpmRef.current);
     const shift = Number.isFinite(keyShiftRef.current) ? Math.trunc(keyShiftRef.current) : 0;
     const channel = isGroove ? PEEK_DRUM_CHANNEL : PEEK_CHANNEL;
-    // Key conformance (header): keyShift for non-grooves, 0 for grooves.
-    const transpose = isGroove ? 0 : shift;
+    // Key conformance: (keyShift − brick tonic) for non-grooves so the loop's
+    // "I" sounds the jam key, not the brick's stored key; 0 for grooves.
+    const transpose = isGroove ? 0 : (shift - (entry?.tonicPc || 0));
     const lengthMs = layerLengthMs(
       { notes: loaded.notes, ppq: loaded.ppq, barSpan: entry.barSpan },
       liveBpm,
