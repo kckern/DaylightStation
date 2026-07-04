@@ -5,9 +5,10 @@
  *
  * Behavior map:
  * - Pinned top bar: search + facet chips — store (Library / Ours / Prefabs),
- *   kind (All/Chords/Melody/Bass/Ideas/Grooves), mood (top 8 + overflow),
- *   feel (groove kind only). 'Ours' and 'Prefabs' are STUB facets rendering
- *   honest empty states (Tasks 8.2 / 9.1 fill them).
+ *   kind (All/Chords/Melody/Bass/Ideas/Grooves), quality (Best/All, defaults
+ *   to Best), genre (top 8 + overflow), feel (groove kind only). 'Ours' and
+ *   'Prefabs' are STUB facets rendering honest empty states (Tasks 8.2 / 9.1
+ *   fill them).
  * - Guardrails: when the browse is anchored to a base with a harmonic
  *   timeline, the grid shows buildCompatibleSet's guardrailed results
  *   ("Showing what fits your jam · N"). "Show all" lifts the gate for honest
@@ -89,8 +90,13 @@ const KINDS = [
 
 /** Render cap — refine (search/facets) to see more; no virtualization. */
 const CARD_CAP = 120;
-/** Mood chips shown before the overflow toggle. */
-const MOOD_TOP = 8;
+/** Genre chips shown before the overflow toggle. */
+const GENRE_TOP = 8;
+/** Quality toggle: curated default vs everything. */
+const QUALITIES = [
+  { key: 'best', label: 'Best' },
+  { key: null, label: 'All' },
+];
 /** How often the pill readout syncs from positionRef (≤4Hz — no per-frame state). */
 const PILL_READOUT_MS = 250;
 /** Press-and-hold arm delay: shorter reads as a laggy tap, longer feels dead. */
@@ -261,7 +267,8 @@ function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, 
           ? <span className="piano-loop__name">{entry.title}</span>
           : (!hasRoman && <span className="piano-loop__caption">{entry.slug}</span>)}
         {reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
-        {entry.mood && <span className="piano-loop__tag">{entry.mood}</span>}
+        {entry.quality === 'best' && <span className="piano-loop__tag">best</span>}
+        {entry.tags?.[0] && <span className="piano-loop__tag">{entry.tags[0]}</span>}
       </button>
       <button
         type="button"
@@ -294,10 +301,11 @@ export function LibraryBrowser({
   const logger = useMemo(() => getLogger().child({ component: 'piano-producer-library' }), []);
   const [store, setStore] = useState('curated');
   const [kind, setKind] = useState(initialRole);
-  const [mood, setMood] = useState(null);
+  const [genre, setGenre] = useState(null);
   const [feel, setFeel] = useState(null);
+  const [quality, setQuality] = useState('best');
   const [text, setText] = useState('');
-  const [moodsExpanded, setMoodsExpanded] = useState(false);
+  const [genresExpanded, setGenresExpanded] = useState(false);
   const [pivot, setPivot] = useState(null); // "goes with →" anchor, overrides the workspace base
   const [gateLifted, setGateLifted] = useState(false);
 
@@ -358,24 +366,25 @@ export function LibraryBrowser({
       if (existingIds.has(entryIdentity(entry))) return false; // layer ids follow the same path||slug rule
       if (kind === 'groove') { if (entry.type !== 'groove') return false; }
       else if (kind && roleOf(entry) !== kind) return false;
-      if (mood && (entry.mood || '') !== mood) return false;
+      if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
       if (feel && (entry.feel || '') !== feel) return false;
+      if (quality && (entry.quality || '') !== quality) return false;
       if (q) {
-        const hay = [entry.title, entry.slug, entry.mood, entry.artist, entry.descriptor, ...(entry.chords || [])]
-          .filter(Boolean).join(' ').toLowerCase();
+        const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [pool, existingIds, kind, mood, feel, text]);
+  }, [pool, existingIds, kind, genre, feel, quality, text]);
 
   const visible = filtered.slice(0, CARD_CAP);
   const overflow = filtered.length - visible.length;
 
   // ── facet chip data ─────────────────────────────────────────────────────────
-  const moodChips = useMemo(() => {
-    const counts = Object.entries(lib.facets?.moods || {}).sort((a, b) => b[1] - a[1]);
-    return { top: counts.slice(0, MOOD_TOP).map(([m]) => m), rest: counts.slice(MOOD_TOP).map(([m]) => m) };
+  const genreChips = useMemo(() => {
+    const counts = Object.entries(lib.facets?.genres || {}).sort((a, b) => b[1] - a[1]);
+    const names = counts.map(([g]) => g);
+    return { top: names.slice(0, GENRE_TOP), rest: names.slice(GENRE_TOP) };
   }, [lib.facets]);
   const feelChips = useMemo(
     () => [...new Set(entries.filter((e) => e.type === 'groove' && e.feel).map((e) => e.feel))],
@@ -384,9 +393,9 @@ export function LibraryBrowser({
 
   useEffect(() => {
     logger.sampled('library.filter', {
-      store, kind: kind ?? 'all', mood, feel, textLen: text.length,
+      store, kind: kind ?? 'all', genre, feel, quality, textLen: text.length,
     }, { maxPerMinute: 30, aggregate: true });
-  }, [store, kind, mood, feel, text, logger]);
+  }, [store, kind, genre, feel, quality, text, logger]);
 
   // ── handlers ────────────────────────────────────────────────────────────────
   const handlePick = useCallback((result) => {
@@ -416,7 +425,7 @@ export function LibraryBrowser({
   }, [logger, gateLifted]);
 
   const clearFilters = useCallback(() => {
-    setKind(null); setMood(null); setFeel(null); setText('');
+    setKind(null); setGenre(null); setFeel(null); setText(''); setQuality('best');
   }, []);
 
   const pivotLabel = pivot
@@ -454,7 +463,7 @@ export function LibraryBrowser({
       <div className="piano-producer-mode__overlay-top">
         <input
           className="piano-producer-mode__search"
-          placeholder="Search loops (chords, mood, artist…)"
+          placeholder="Search loops (title, tags, artist…)"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
@@ -484,19 +493,29 @@ export function LibraryBrowser({
             >{k.label}</button>
           ))}
         </div>
-        {(moodChips.top.length > 0) && (
-          <div className="piano-producer-mode__roles" role="group" aria-label="mood">
-            {(moodsExpanded ? [...moodChips.top, ...moodChips.rest] : moodChips.top).map((m) => (
+        <div className="piano-producer-mode__roles" role="group" aria-label="quality">
+          {QUALITIES.map((qOpt) => (
+            <button
+              key={qOpt.label}
+              type="button"
+              className={`piano-chip${quality === qOpt.key ? ' is-on' : ''}`}
+              onClick={() => setQuality(qOpt.key)}
+            >{qOpt.label}</button>
+          ))}
+        </div>
+        {(genreChips.top.length > 0) && (
+          <div className="piano-producer-mode__roles" role="group" aria-label="genre">
+            {(genresExpanded ? [...genreChips.top, ...genreChips.rest] : genreChips.top).map((g) => (
               <button
-                key={m}
+                key={g}
                 type="button"
-                className={`piano-chip${mood === m ? ' is-on' : ''}`}
-                onClick={() => setMood((cur) => (cur === m ? null : m))}
-              >{m}</button>
+                className={`piano-chip${genre === g ? ' is-on' : ''}`}
+                onClick={() => setGenre((cur) => (cur === g ? null : g))}
+              >{g}</button>
             ))}
-            {moodChips.rest.length > 0 && (
-              <button type="button" className="piano-chip" onClick={() => setMoodsExpanded((v) => !v)}>
-                {moodsExpanded ? 'Less' : `+${moodChips.rest.length} more`}
+            {genreChips.rest.length > 0 && (
+              <button type="button" className="piano-chip" onClick={() => setGenresExpanded((v) => !v)}>
+                {genresExpanded ? 'Less' : `+${genreChips.rest.length} more`}
               </button>
             )}
           </div>
