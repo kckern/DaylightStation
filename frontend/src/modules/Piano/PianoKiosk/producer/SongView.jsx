@@ -44,7 +44,7 @@ import { MaterialGlyph, seedFor } from './MaterialGlyph.jsx';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import {
   setRepeats, moveEntry, removeEntry, setSectionLength, renameSection,
-  deleteSection, cloneSection, addEntry, sectionGlyphSeeds,
+  deleteSection, cloneSection, addEntry, addSection, sectionGlyphSeeds,
 } from './draftReducer.js';
 import './SongView.scss';
 
@@ -352,6 +352,20 @@ export function SongView({
             </div>
           );
         })}
+        {/* Not a role=listitem: the add affordance is a control, not one of the
+            song's sections — keeps the list == the real arrangement entries. */}
+        <div className="piano-song-view__slot-wrap">
+          <button
+            type="button"
+            className="piano-song-view__slot piano-song-view__slot--add"
+            aria-label="add a new section"
+            onClick={() => { dispatch(addSection()); setOpenIdx(null); }}
+          >
+            <span className="piano-song-view__fill-hint" aria-hidden="true">＋</span>
+            <span className="piano-song-view__slot-name">Add section</span>
+            <span className="piano-song-view__fill-label">new part</span>
+          </button>
+        </div>
       </div>
 
       {openSection && !openFilled && (

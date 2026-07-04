@@ -42,6 +42,16 @@
       color: var(--piano-muted, #99a);
       background: transparent;
     }
+    // The trailing "add a new part" affordance — a dashed slot in the accent
+    // colour so it reads as an action, not just another empty template slot.
+    &--add {
+      border-style: dashed;
+      border-color: var(--piano-accent, #2ec46f);
+      color: var(--piano-accent, #2ec46f);
+      background: transparent;
+      justify-content: center;
+      &:hover { background: rgba(46, 196, 111, 0.08); }
+    }
     &.is-open { border-color: var(--piano-fg, #aab); }
     // Active slot glow: the playing section during arrangement playback.
     &.is-active {
