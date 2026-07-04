@@ -61,7 +61,12 @@ export function buildManifest(midiDir) {
       if (!file.endsWith('.musicxml')) continue;
       const xml = readFile(path.join(dir, file));
       if (xml == null) continue;
-      bricks.push(buildBrickEntry(`${folder}/${file}`, xml));
+      const relPath = `${folder}/${file}`;
+      try {
+        bricks.push(buildBrickEntry(relPath, xml));
+      } catch (err) {
+        bricks.push({ path: relPath, type: folder, needsReview: true, needsReviewReason: `build-fail: ${err.message}` });
+      }
     }
   }
   return bricks;
