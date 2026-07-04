@@ -76,10 +76,17 @@ function braillePopcount(cp) {
 }
 
 /** Per-chord durations (in timeline slots = beats) from the canonical-name's
- *  braille suffixes: e.g. "VI⣿-II⠇-IIIsus4⠟-…" → [8, 3, 5, …]. Each chord token
- *  carries a braille cell whose filled-dot count IS its slot span (verified: the
- *  Σ of dots equals the harmonic timeline's slot count). Returns null when ANY
- *  token lacks a braille suffix — callers then fall back to even distribution. */
+ *  braille suffixes: e.g. "VI⣿-II⠇-IIIsus4⠟-…" → [8, 3, 5, …].
+ *
+ *  Per the brick-library spec (media/midi/README.md §"Braille = rhythm"): each
+ *  token carries one or more braille cells, "1 dot = 1 beat … Beat count =
+ *  number of dots (popcount)", and durations > 8 beats repeat cells (⣿⠃ = 10) —
+ *  so we sum the popcount of EVERY braille cell in the token. 1 beat = 1
+ *  harmonic-timeline slot (4/4), so Σ dots === slot count; the caller only
+ *  trusts the result when that holds, which also rejects the spec's edge cases
+ *  (a leading meter-header glyph, or a syncopation mask that leaves a beat
+ *  unclaimed). Reads the `canonical-name` METADATA field, never the filename.
+ *  Returns null when ANY token lacks a braille suffix → even-distribution fallback. */
 export function parseCanonicalDurations(canonicalName) {
   if (!canonicalName) return null;
   const toks = String(canonicalName).split('-').filter(Boolean);
