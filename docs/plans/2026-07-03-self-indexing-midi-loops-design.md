@@ -116,7 +116,8 @@ macOS/APFS and in git.
 | ⠇ | 1,2,3 | 3 beats |
 | ⠏ | 1,2,3,4 | 4 beats (full 4/4 bar) |
 | ⠅ | 1,3 | sounds beats 1 & 3 (syncopated) |
-| ⠿ | all 8 | 8 beats |
+| ⠿ | 1–6 | 6 beats |
+| ⣿ | all 8 | 8 beats (full cell — note 8-dot cells, so 8 beats = ⣿ not ⠿) |
 
 - **Beat count = popcount** (dots set). **Placement = which dots.** Held vs. syncopated
   fall out of the same glyph.
@@ -253,9 +254,19 @@ source packs, old `.mid` tree, backups, prefabs, and the ledger moved under `_wo
 (all `mv`, reversible). Converter paths updated accordingly (`MIDI_ROOT`/`LOOPS_DIR`/
 `OUT_DIR` env-overridable).
 
-Known follow-ups before cutover: canonical roman+Braille filenames (currently reuse the
-old slug), 16th-grid quantization refinement, and wiring the hardened V2 analyzer (the
-migration used a simpler major/minor snapshot for the embedded field).
+**Canonical naming DONE (converter v0.3):** filenames are now derived Roman/note-name +
+Braille-duration, not the old keyed slug — `chords`/`ideas` → roman (`I⠃-iii⠃-II⠏`),
+`basslines` → uppercase degree root-line, `melodies` → note-names in C (`C⠁-A⠁-E⠁`),
+`percussion` → cleaned feel token (`latin-clave`). The V2 bass-informed analyzer feeds
+both the name and the embedded `derived-roman`. Each brick keeps `source-slug` +
+`source-midi` for traceability. Names carry a `source-path` hash suffix on collision
+(563 bricks); **collision detection is case-folded** because APFS is case-insensitive and
+Roman case (`III` vs `iii`) is the major/minor signal — otherwise ~14 case-twins clobber.
+All 3,231 uniquely named, well-formed, 1:1.
+
+Known follow-ups before cutover: 16th-grid quantization refinement, loop-boundary/minimal-
+cycle detection (some names repeat the progression), the sus-casing convention (thirdless
+chords default to uppercase+`sus`), and building the runtime manifest + re-pointing Producer.
 
 ## Producer Integration
 

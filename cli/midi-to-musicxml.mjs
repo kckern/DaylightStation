@@ -14,8 +14,8 @@ import crypto from 'node:crypto';
 import yaml from 'js-yaml';
 import pkg from '@tonejs/midi';
 import { mod12 } from '../shared/music/transpose.mjs';
-import { romanAnalysis, bestTonic } from '../shared/music/romanAnalysis.mjs';
-import { signatureKey } from '../shared/music/harmonicSignature.mjs';
+import { romanAnalysis, bestTonic, degreeNumeral } from '../shared/music/romanAnalysis.mjs';
+import { signatureKey, minimalCycle } from '../shared/music/harmonicSignature.mjs';
 
 const { Midi } = pkg;
 
@@ -187,42 +187,125 @@ ${body}
 `;
 }
 
-// ---------- derived-harmony snapshot (informational traceability, NOT authoritative) ----------
-function harmonySnapshot(events) {
-  const chords = [];
-  for (const e of events) {
-    // crude per-event triad (snapshot only; the real analyzer runs at build time)
-    if (e.midis.length < 2) continue;
-    const pcs = new Set(e.midis.map(mod12));
-    let best = null;
-    for (let root = 0; root < 12; root += 1) {
-      for (const [quality, ivals] of [['major', [0, 4, 7]], ['minor', [0, 3, 7]]]) {
-        const present = ivals.map((iv) => (root + iv) % 12).filter((pc) => pcs.has(pc)).length;
-        if (present >= 2 && (!best || present > best.present)) best = { root, quality, present };
-      }
-    }
-    if (best) chords.push({ root: best.root, quality: best.quality });
+// ---------- V2 bass-informed harmonic analysis (per beat, collapsed with durations) ----------
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const TRIADS_V2 = [['major', [0, 4, 7]], ['minor', [0, 3, 7]], ['diminished', [0, 3, 6]], ['augmented', [0, 4, 8]], ['sus4', [0, 5, 7]], ['sus2', [0, 2, 7]]];
+
+function fitTriadBass(pcs, bassPc) {
+  if (pcs.size < 2) return null;
+  let best = null;
+  for (let root = 0; root < 12; root += 1) for (const [quality, iv] of TRIADS_V2) {
+    const triad = iv.map((i) => (root + i) % 12);
+    const present = triad.filter((pc) => pcs.has(pc)).length;
+    if (present < 2) continue;
+    const extra = [...pcs].filter((pc) => !triad.includes(pc)).length;
+    let s = present * 2 - extra * 0.5;
+    if (bassPc != null) s += root === bassPc ? 3 : triad.includes(bassPc) ? 0.5 : -1.5;
+    if (!best || s > best.s) best = { root, quality, s };
   }
-  if (!chords.length) return { roman: null, signature: null, confidence: 0 };
-  const tonic = bestTonic(chords);
-  const roman = romanAnalysis(chords, tonic);
-  return { roman, signature: signatureKey(roman), confidence: chords.length / Math.max(1, events.length) };
+  return best ? { root: best.root, quality: best.quality } : null;
 }
+
+// per-beat windows over the raw notes: { pcs, bassPc, melodyPc }
+function beatWindows(notes, ppq, beats, beatType) {
+  if (!notes.length) return [];
+  const bt = ppq * (4 / beatType);
+  const end = notes.reduce((m, n) => Math.max(m, n.ticks + (n.durationTicks || 0)), 0);
+  const count = Math.max(1, Math.ceil(end / bt));
+  return Array.from({ length: count }, (_, s) => {
+    const t0 = s * bt; const t1 = t0 + bt;
+    const sounding = notes.filter((n) => n.ticks < t1 && n.ticks + (n.durationTicks || 0) > t0);
+    const onsets = sounding.filter((n) => n.ticks >= t0 && n.ticks < t1);
+    const pool = onsets.length ? onsets : sounding;
+    return {
+      pcs: new Set(sounding.map((n) => mod12(n.midi))),
+      bassPc: pool.length ? mod12(pool.reduce((lo, n) => (n.midi < lo.midi ? n : lo)).midi) : null,
+      melodyPc: onsets.length ? mod12(onsets.reduce((hi, n) => (n.midi > hi.midi ? n : hi)).midi) : null,
+    };
+  });
+}
+
+// Collapse per-beat chords into { root, quality, beats } runs (bass = monophonic root line).
+function analyzeHarmony(notes, ppq, beats, beatType, isBass) {
+  const wins = beatWindows(notes, ppq, beats, beatType);
+  const perBeat = wins.map((w) => (isBass
+    ? (w.bassPc != null ? { root: w.bassPc, quality: 'bass' } : null)
+    : fitTriadBass(w.pcs, w.bassPc)));
+  const runs = [];
+  for (const c of perBeat) {
+    if (!c) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.root === c.root && last.quality === c.quality) last.beats += 1;
+    else runs.push({ root: c.root, quality: c.quality, beats: 1 });
+  }
+  const resolved = perBeat.filter(Boolean).length;
+  return { runs, confidence: perBeat.length ? resolved / perBeat.length : 0, wins };
+}
+
+// ---------- canonical Roman/note-name + Braille-duration filenames ----------
+// Braille = beat-occupancy mask, 1 dot = 1 beat, filled run (2 beats -> ⠃, 4 -> ⠏, 8 -> ⠿).
+function brailleDur(beats) {
+  let n = Math.max(1, Math.round(beats)); let out = '';
+  while (n > 0) { const k = Math.min(8, n); out += String.fromCodePoint(0x2800 + ((1 << k) - 1)); n -= k; }
+  return out;
+}
+// optional leading header glyph declares resolution+meter; absent = beat-grid 4/4.
+const METER_HEADER = { '4/4': '', '3/4': '⠢', '6/8': '⠔', '2/4': '⠆', '12/8': '⠿', '5/4': '⠲' };
+const headerGlyph = (beats, beatType) => (METER_HEADER[`${beats}/${beatType}`] ?? (beats === 4 && beatType === 4 ? '' : '⠮'));
+
+function finalizeName(header, tokens, allowCycle) {
+  if (!tokens.length) return null;
+  let seq = allowCycle ? minimalCycle(tokens) : tokens;
+  if (seq.join('-').length > 120) seq = seq.slice(0, 12); // long melodies -> lead phrase (hash disambiguates)
+  return (header + seq.join('-')).replace(/[\/\\]/g, '');
+}
+
+// Returns { name, roman, signature, confidence } — name is the canonical filename stem.
+function canonicalize(entry, notes, ppq, beats, beatType) {
+  const header = headerGlyph(beats, beatType);
+  if (entry.type === 'melody') {
+    const wins = beatWindows(notes, ppq, beats, beatType);
+    const runs = [];
+    for (const w of wins) {
+      if (w.melodyPc == null) continue;
+      const last = runs[runs.length - 1];
+      if (last && last.pc === w.melodyPc) last.beats += 1; else runs.push({ pc: w.melodyPc, beats: 1 });
+    }
+    const tokens = runs.map((r) => NOTE_NAMES[r.pc] + brailleDur(r.beats));
+    return { name: finalizeName(header, tokens, false), roman: null, signature: null, confidence: runs.length ? 1 : 0 };
+  }
+  // chords / idea / bassline: derive roman (bass = root-line, uppercase degrees)
+  const isBass = entry.type === 'bassline';
+  const { runs, confidence } = analyzeHarmony(notes, ppq, beats, beatType, isBass);
+  if (!runs.length) return { name: null, roman: null, signature: null, confidence };
+  const tonic = bestTonic(runs);
+  const roman = romanAnalysis(runs, tonic);
+  const tokens = roman.map((r, i) => r + brailleDur(runs[i].beats));
+  return { name: finalizeName(header, tokens, true), roman, signature: signatureKey(roman), confidence };
+}
+
+// percussion/groove: cleaned feel token (no harmony), bpm stripped
+const feelName = (slug) => String(slug).replace(/-?\d+bpm/gi, '').replace(/-+$/,'') || slug;
 
 // ---------- per-entry conversion ----------
 export function convertEntry(entry, { loopsDir, nowIso }) {
   const abs = path.join(loopsDir, entry.path);
   const midi = readMidi(abs);
   const events = buildEvents(midi.pitched, midi.ppq);
-  const harmony = midi.pitched.length ? harmonySnapshot(events) : { roman: null, signature: null, confidence: 0 };
+  const canon = midi.pitched.length
+    ? canonicalize(entry, midi.pitched, midi.ppq, midi.beats, midi.beatType)
+    : { name: (entry.type === 'groove' || entry.type === 'percussion') ? feelName(entry.slug) : null, roman: null, signature: null, confidence: 0 };
+  const harmony = { roman: canon.roman, signature: canon.signature, confidence: canon.confidence };
   const warnings = [];
   if (!midi.pitched.length && !midi.hasPercussion) warnings.push('no-notes');
   if (midi.pitched.length && harmony.confidence < 0.6 && entry.type === 'chord-progression') warnings.push('low-harmony-confidence');
+  if (!canon.name) warnings.push('no-canonical-name');
 
   const { genre, emotion, tags, quality } = deriveTags(entry);
   const meta = {
     miscellaneous: {
       type: entry.type,
+      'canonical-name': canon.name || '',
       title: entry.title || '',
       // --- descriptors surfaced in the UX ---
       genre: genre.join(','),
@@ -236,6 +319,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
       'source-mood': entry.mood || '',
       'source-descriptor': entry.descriptor || '',
       // --- provenance ---
+      'source-slug': entry.slug,
       'source-midi': entry.path,
       'vendor-origin': entry.origin || '',
       'source-pack': (entry.sources || []).join(','),
@@ -249,14 +333,14 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
   };
   const xml = midi.pitched.length ? toMusicXML(events, midi, meta) : toMusicXML([], midi, meta);
   const ledger = {
-    slug: entry.slug, type: entry.type, source: entry.path,
+    slug: entry.slug, canonical: canon.name, type: entry.type, source: entry.path,
     genre, emotion, tags, quality, artist: entry.artist || null,
     ppq: midi.ppq, notes: midi.pitched.length, hasPercussion: midi.hasPercussion,
     derivedRoman: harmony.roman, derivedSignature: harmony.signature,
     derivedConfidence: harmony.confidence, converter: CONVERTER_VERSION, analyzer: ANALYZER_VERSION,
     convertedAt: nowIso, warnings,
   };
-  return { xml, ledger };
+  return { xml, ledger, canonicalName: canon.name };
 }
 
 // ---------- CLI batch ----------
@@ -288,31 +372,41 @@ function main() {
   const typeDir = (t) => ({ 'chord-progression': 'chords', bassline: 'basslines', melody: 'melodies', idea: 'ideas', groove: 'percussion', percussion: 'percussion' }[t] || t);
   const hash6 = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 6);
 
-  // pass 1: find slug collisions within a type dir (many distinct loops share a
-  // chord-name slug). Disambiguate ALL colliding members with a source-path hash
-  // so the mapping stays 1 input -> 1 output and fully traceable.
-  const slugCounts = new Map();
-  for (const e of entries) {
-    const k = `${typeDir(e.type)}/${e.slug}`;
-    slugCounts.set(k, (slugCounts.get(k) || 0) + 1);
-  }
-
+  // pass 1: convert everything, compute canonical names (Roman/note-name + Braille).
+  const converted = [];
   for (const entry of entries) {
     try {
-      const { xml, ledger } = convertEntry(entry, { loopsDir: LOOPS, nowIso });
-      const dir = path.join(OUT, typeDir(entry.type));
-      fs.mkdirSync(dir, { recursive: true });
-      const collided = slugCounts.get(`${typeDir(entry.type)}/${entry.slug}`) > 1;
-      const fname = collided ? `${entry.slug}-${hash6(entry.path)}` : entry.slug;
-      const outPath = path.join(dir, `${fname}.musicxml`);
-      fs.writeFileSync(outPath, xml);
-      ledger.output = path.relative(OUT, outPath);
-      ledger.disambiguated = collided;
-      ledgerRows.push(ledger); ok += 1;
+      const r = convertEntry(entry, { loopsDir: LOOPS, nowIso });
+      converted.push({ entry, ...r });
     } catch (err) {
       ledgerRows.push({ slug: entry.slug, source: entry.path, status: 'FAILED', error: String(err.message || err), convertedAt: nowIso });
       failed += 1;
     }
+  }
+
+  // pass 2: canonical names are intentionally many-to-one (same progression+rhythm
+  // in different voicings). Disambiguate ALL members of a collided name with a
+  // source-path hash so the mapping stays 1 input -> 1 output and traceable.
+  // NB: fold case in the collision key — macOS/APFS is case-insensitive, but Roman
+  // case (III vs iii) is the major/minor signal, so case-twins must be disambiguated.
+  const nameKey = (type, base) => `${typeDir(type)}/${base}`.toLowerCase();
+  const nameCounts = new Map();
+  for (const c of converted) {
+    const k = nameKey(c.entry.type, c.canonicalName || c.entry.slug);
+    nameCounts.set(k, (nameCounts.get(k) || 0) + 1);
+  }
+
+  for (const { entry, xml, ledger, canonicalName } of converted) {
+    const dir = path.join(OUT, typeDir(entry.type));
+    fs.mkdirSync(dir, { recursive: true });
+    const base = canonicalName || entry.slug;
+    const collided = nameCounts.get(nameKey(entry.type, base)) > 1;
+    const fname = collided ? `${base}-${hash6(entry.path)}` : base;
+    const outPath = path.join(dir, `${fname}.musicxml`);
+    fs.writeFileSync(outPath, xml);
+    ledger.output = path.relative(OUT, outPath);
+    ledger.disambiguated = collided;
+    ledgerRows.push(ledger); ok += 1;
   }
   fs.writeFileSync(ledgerPath, ledgerRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   console.log(`${sampleMode ? 'SAMPLE' : 'FULL'} conversion -> ${OUT}`);
