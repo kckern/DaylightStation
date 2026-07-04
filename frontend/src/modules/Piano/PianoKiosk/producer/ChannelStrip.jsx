@@ -167,6 +167,10 @@ export function ChannelStrip({
               onClick={() => setGainOpen(false)}
             />
             <div className="piano-channel-strip__gain-pop" role="dialog" aria-label={`${title} volume`}>
+              <div className="piano-channel-strip__gain-pop-head">
+                <span className="piano-channel-strip__gain-pop-title">{layer.role} volume</span>
+                <span className="piano-channel-strip__gain-pop-val">{layer.muted ? 'Muted' : `${gainLevel}%`}</span>
+              </div>
               <GainStrip
                 gain={layer.gain}
                 muted={layer.muted}
