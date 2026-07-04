@@ -75,6 +75,7 @@ export function ChannelStrip({
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [gainOpen, setGainOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // ⋯ overflow (carry/keep/remove)
   const [removeArmed, setRemoveArmed] = useState(false);
   const gainLevel = snapToGainLevel(levelFromGain(layer.gain));
   const disarmTimerRef = useRef(null);
@@ -94,18 +95,34 @@ export function ChannelStrip({
 
   return (
     <div className={`piano-channel-strip${layer.muted ? ' is-muted' : ''}`} data-role={layer.role}>
-      <MaterialGlyph
-        material={entry ?? { kind: 'take', id: layer.id }}
-        size={44}
-        className="piano-channel-strip__glyph"
-        title={title}
-      />
+      {/* LEFT — identity cluster (design §6): the glyph, the voice it plays, and
+          its role, grouped so a glance says "this is the Chords layer on Grand
+          Piano". Grooves show the kit name (voice change is a GM-drum no-op). */}
+      <div className="piano-channel-strip__ident">
+        <MaterialGlyph
+          material={entry ?? { kind: 'take', id: layer.id }}
+          size={40}
+          className="piano-channel-strip__glyph"
+          title={title}
+        />
+        <div className="piano-channel-strip__ident-text">
+          <button
+            type="button"
+            className="piano-channel-strip__voice"
+            aria-label="voice"
+            disabled={isGroove}
+            title={isGroove ? 'Drum layers use the GM drum kit' : 'Change voice'}
+            onClick={() => setPickerOpen(true)}
+          >{isGroove ? 'Drum Kit' : voiceName(layer.gmProgram)}</button>
+          <span className="piano-channel-strip__role" data-role={layer.role}>{layer.role}</span>
+        </div>
+      </div>
 
-      {/* Identity + live loop view: a harmonic loop shows its chord TIMELINE
-          (chords in time slots, sounding chord lit, sweeping cursor); a
-          melodic/groove loop shows a piano-roll with a cursor. Falls back to a
-          name while notes load. */}
-      <div className="piano-channel-strip__identity">
+      {/* CENTER — the live content: a harmonic loop shows its chord TIMELINE
+          (keyed names over Roman, sounding chord lit, sweeping cursor); a
+          melodic/groove loop shows a piano-roll. Falls back to a name while
+          notes load. This is the widest zone — it's the actual music. */}
+      <div className="piano-channel-strip__content">
         {entry?.roman?.length ? (
           <ChordLane
             roman={entry.roman}
@@ -127,18 +144,10 @@ export function ChannelStrip({
         ) : (
           <span className="piano-channel-strip__name">{title}</span>
         )}
-        <span className="piano-channel-strip__role" data-role={layer.role}>{layer.role}</span>
       </div>
 
-      <button
-        type="button"
-        className="piano-channel-strip__voice"
-        aria-label="voice"
-        disabled={isGroove}
-        title={isGroove ? 'Drum layers use the GM drum kit' : 'Change voice'}
-        onClick={() => setPickerOpen(true)}
-      >{isGroove ? 'Drums' : voiceName(layer.gmProgram)}</button>
-
+      {/* RIGHT — mixer: the things you touch live stay visible (M · S · gain);
+          the rare, wordy actions move behind a ⋯ overflow with real labels. */}
       <button
         type="button"
         className={`piano-channel-strip__m${layer.muted ? ' is-on' : ''}`}
@@ -153,21 +162,9 @@ export function ChannelStrip({
         aria-label="solo"
         onClick={() => onToggleSolo(layer.id)}
       >S</button>
-      {onToggleCarried && (
-        <button
-          type="button"
-          className={`piano-channel-strip__carry${layer.carried ? ' is-on' : ''}`}
-          aria-pressed={!!layer.carried}
-          aria-label="carry"
-          title="Carry across sections"
-          onClick={() => onToggleCarried(layer.id)}
-        >⇉</button>
-      )}
 
-      {/* Compact gain: a chip with a level meter (the wide 11-segment strip
-          used to dominate the row width — design §7 abomination fix). Tap opens
-          the full segmented strip in a popover (no drag sliders; kiosk rule).
-          The reclaimed width goes to the harmonic/notation identity lane. */}
+      {/* Compact gain: a chip with a level meter. Tap opens the full segmented
+          strip in a popover (no drag sliders; kiosk rule). */}
       <div className="piano-channel-strip__gain">
         <button
           type="button"
@@ -210,23 +207,57 @@ export function ChannelStrip({
         )}
       </div>
 
-      {isTake && onKeepToCrate && (
+      {/* ⋯ overflow: Carry · Keep to My Loops · Remove — named words, no bare
+          glyphs. Remove keeps its 2-tap confirm (fewer accidental kiosk deletes). */}
+      <div className="piano-channel-strip__more">
         <button
           type="button"
-          className={`piano-channel-strip__keep${kept ? ' is-kept' : ''}`}
-          aria-label="keep to my loops"
-          title="Keep this recording to My Loops"
-          disabled={kept}
-          onClick={() => { onKeepToCrate(layer); setKept(true); }}
-        >{kept ? 'Kept' : 'Keep'}</button>
-      )}
-
-      <button
-        type="button"
-        className={`piano-channel-strip__remove${removeArmed ? ' is-armed' : ''}`}
-        aria-label="remove layer"
-        onClick={handleRemoveTap}
-      >{removeArmed ? 'Sure?' : '✕'}</button>
+          className="piano-channel-strip__more-btn"
+          aria-label="more"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >⋯</button>
+        {menuOpen && (
+          <>
+            <button
+              type="button"
+              className="piano-channel-strip__more-scrim"
+              aria-label="close menu"
+              onClick={() => { setMenuOpen(false); setRemoveArmed(false); }}
+            />
+            <div className="piano-channel-strip__more-menu" role="menu" aria-label={`${title} actions`}>
+              {onToggleCarried && (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  className={`piano-channel-strip__menu-item${layer.carried ? ' is-on' : ''}`}
+                  aria-checked={!!layer.carried}
+                  aria-label="carry"
+                  onClick={() => onToggleCarried(layer.id)}
+                >Carry across sections{layer.carried ? ' ✓' : ''}</button>
+              )}
+              {isTake && onKeepToCrate && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="piano-channel-strip__menu-item"
+                  aria-label="keep to my loops"
+                  disabled={kept}
+                  onClick={() => { onKeepToCrate(layer); setKept(true); }}
+                >{kept ? 'Kept to My Loops' : 'Keep to My Loops'}</button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className={`piano-channel-strip__menu-item piano-channel-strip__menu-item--danger${removeArmed ? ' is-armed' : ''}`}
+                aria-label="remove layer"
+                onClick={handleRemoveTap}
+              >{removeArmed ? 'Tap again to remove' : 'Remove'}</button>
+            </div>
+          </>
+        )}
+      </div>
 
       {pickerOpen && !isGroove && (
         <VoicePicker

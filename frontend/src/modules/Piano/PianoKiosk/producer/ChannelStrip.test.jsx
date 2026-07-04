@@ -4,7 +4,7 @@
  * disabled, and the shared-drum-channel honesty hint.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { ChannelStrip } from './ChannelStrip.jsx';
 
 const chordLayer = {
@@ -71,6 +71,11 @@ function tapGain(container, fraction) {
   }
 }
 
+/** Carry / Keep / Remove moved behind the ⋯ overflow (design §6) — open it. */
+function openMenu() {
+  fireEvent.click(screen.getByRole('button', { name: 'more' }));
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -88,6 +93,9 @@ describe('ChannelStrip assembly', () => {
     // Gain is a compact chip (the wide strip opens in a popover on tap).
     expect(container.querySelector('.piano-channel-strip__gain-chip')).toBeTruthy();
     expect(container.querySelector('.piano-gain-strip')).toBeNull(); // closed until tapped
+    // Remove lives in the ⋯ overflow now (design §6).
+    expect(screen.getByRole('button', { name: 'more' })).toBeInTheDocument();
+    openMenu();
     expect(screen.getByLabelText('remove layer')).toBeInTheDocument();
   });
 
@@ -143,36 +151,41 @@ describe('ChannelStrip wiring', () => {
   });
 });
 
-describe('carry pin (§4.1 continuity)', () => {
-  it('renders only when onToggleCarried is provided; latches via aria-pressed with the carry title', () => {
+describe('carry (§4.1 continuity, in the ⋯ overflow)', () => {
+  it('renders only when onToggleCarried is provided; latches via aria-checked', () => {
     renderStrip(); // no onToggleCarried prop
+    openMenu();
     expect(screen.queryByLabelText('carry')).toBeNull();
+    cleanup();
 
     renderStrip(chordLayer, { onToggleCarried: vi.fn() });
+    openMenu();
     const pin = screen.getByLabelText('carry');
-    expect(pin).toHaveAttribute('aria-pressed', 'false');
-    expect(pin).toHaveAttribute('title', 'Carry across sections');
+    expect(pin).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('tap dispatches onToggleCarried(id); a carried layer shows the pin latched', () => {
+  it('tap dispatches onToggleCarried(id); a carried layer shows it checked', () => {
     const onToggleCarried = vi.fn();
     renderStrip(chordLayer, { onToggleCarried });
+    openMenu();
     fireEvent.click(screen.getByLabelText('carry'));
     expect(onToggleCarried).toHaveBeenCalledWith(chordLayer.id);
+    cleanup();
 
     renderStrip({ ...chordLayer, carried: true }, { onToggleCarried: vi.fn() });
-    const pins = screen.getAllByLabelText('carry');
-    expect(pins[pins.length - 1]).toHaveAttribute('aria-pressed', 'true');
+    openMenu();
+    expect(screen.getByLabelText('carry')).toHaveAttribute('aria-checked', 'true');
   });
 });
 
-describe('remove 2-tap confirm', () => {
-  it('first tap arms ("Sure?") without removing; second tap removes', () => {
+describe('remove 2-tap confirm (in the ⋯ overflow)', () => {
+  it('first tap arms without removing; second tap removes', () => {
     const { onRemove } = renderStrip();
+    openMenu();
     const remove = screen.getByLabelText('remove layer');
     fireEvent.click(remove);
     expect(onRemove).not.toHaveBeenCalled();
-    expect(remove).toHaveTextContent('Sure?');
+    expect(remove).toHaveTextContent('Tap again to remove');
     expect(remove.className).toContain('is-armed');
     fireEvent.click(remove);
     expect(onRemove).toHaveBeenCalledWith(chordLayer.id);
@@ -181,15 +194,16 @@ describe('remove 2-tap confirm', () => {
   it('disarms itself after 3 s (accidental-tap protection)', () => {
     vi.useFakeTimers();
     const { onRemove } = renderStrip();
+    openMenu();
     const remove = screen.getByLabelText('remove layer');
     fireEvent.click(remove);
-    expect(remove).toHaveTextContent('Sure?');
+    expect(remove).toHaveTextContent('Tap again to remove');
     act(() => { vi.advanceTimersByTime(3100); });
-    expect(remove).toHaveTextContent('✕');
+    expect(remove).toHaveTextContent('Remove');
     // A tap AFTER the window re-arms instead of removing.
     fireEvent.click(remove);
     expect(onRemove).not.toHaveBeenCalled();
-    expect(remove).toHaveTextContent('Sure?');
+    expect(remove).toHaveTextContent('Tap again to remove');
   });
 });
 
@@ -198,7 +212,7 @@ describe('groove layers', () => {
     renderStrip(grooveLayer);
     const chip = screen.getByRole('button', { name: 'voice' });
     expect(chip).toBeDisabled();
-    expect(chip).toHaveTextContent('Drums');
+    expect(chip).toHaveTextContent('Drum Kit');
     fireEvent.click(chip);
     expect(screen.queryByRole('dialog', { name: 'voice picker' })).toBeNull();
   });
@@ -226,19 +240,22 @@ describe('Keep to My Loops (Task 8.2)', () => {
   it('recorded (take) layers expose Keep to My Loops and call the handler with the layer', () => {
     const onKeepToCrate = vi.fn();
     renderStrip(takeLayer, { onKeepToCrate });
-    const keep = screen.getByRole('button', { name: 'keep to my loops' });
+    openMenu();
+    const keep = screen.getByLabelText('keep to my loops');
     fireEvent.click(keep);
     expect(onKeepToCrate).toHaveBeenCalledWith(takeLayer);
-    expect(screen.getByText('Kept')).toBeInTheDocument(); // latches
+    expect(screen.getByText('Kept to My Loops')).toBeInTheDocument(); // latches
   });
 
   it('library layers never show Keep to My Loops (already in the library)', () => {
     renderStrip(chordLayer, { onKeepToCrate: vi.fn() });
-    expect(screen.queryByRole('button', { name: 'keep to my loops' })).toBeNull();
+    openMenu();
+    expect(screen.queryByLabelText('keep to my loops')).toBeNull();
   });
 
   it('no Keep button without the handler', () => {
     renderStrip(takeLayer);
-    expect(screen.queryByRole('button', { name: 'keep to my loops' })).toBeNull();
+    openMenu();
+    expect(screen.queryByLabelText('keep to my loops')).toBeNull();
   });
 });
