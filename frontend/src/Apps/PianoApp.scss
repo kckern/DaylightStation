@@ -1944,8 +1944,12 @@
 // Full-height flex column: scroll area (flex:1) + optional keyboard row + pinned
 // bottom transport bar. (Old top toolbar / in-body title retired in Task 11.)
 .piano-score-player {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; min-height: 0;
+  // Flex child below the always-on chrome (matches .piano-score-viewer) — NOT
+  // absolute/inset:0, which painted over the breadcrumb header and stranded the
+  // user with no way out of a score. Stays a containing block (position:relative)
+  // for the absolutely-positioned cursor/grade layers and run summary.
+  position: relative; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
   background: #0e0e16;
 }
 
@@ -2016,16 +2020,16 @@
 // left/top/width/height set inline). Accent comes from --nh-color. Non-interactive.
 .piano-score-note {
   position: absolute; z-index: 6; pointer-events: none;
-  box-sizing: border-box; border-radius: 50%;
-  // "You are here" — dim neutral ink ring reference.
-  &--target { border: 2px solid rgba(20, 20, 27, 0.6); opacity: 0.5; }
-  // Struck correctly — solid fill in the accent + soft glow, full opacity.
-  &--hit {
-    opacity: 1; background: var(--nh-color, #2ec46f);
-    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--nh-color, #2ec46f) 70%, transparent);
-  }
-  // Missed — brief dim-red ring that flashes then fades out.
-  &--missed { border: 2px solid #ff5252; animation: scoreNoteMissed 400ms ease forwards; }
+  box-sizing: border-box; border-radius: 3px;
+  // NO ring/circle around the notehead — a translucent colour highlight (a
+  // "highlighter swash" behind the note) marks the note to read. Circles were
+  // confusing and didn't help reading; a colour tint does.
+  &--target { background: color-mix(in srgb, var(--nh-color, #2ec46f) 32%, transparent); }
+  // Struck correctly — stronger wash in the same accent (no blurred glow: it's a
+  // per-note paint cost on the tablet GPU).
+  &--hit { background: color-mix(in srgb, var(--nh-color, #2ec46f) 60%, transparent); }
+  // Missed — brief red wash that flashes then fades out.
+  &--missed { background: rgba(255, 82, 82, 0.5); animation: scoreNoteMissed 400ms ease forwards; }
 }
 @keyframes scoreNoteMissed { 0% { opacity: 0.7; } 100% { opacity: 0; } }
 
