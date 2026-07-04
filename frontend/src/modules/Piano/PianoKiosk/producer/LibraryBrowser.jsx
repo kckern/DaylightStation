@@ -88,6 +88,10 @@ const KINDS = [
   { key: 'groove', label: 'Grooves' },
 ];
 
+/** The large families the quality "Best" facet curates. The small line/rhythm
+ *  categories (bass/idea/groove) always show in full — see the filter. */
+const QUALITY_CURATED_TYPES = new Set(['chord-progression', 'melody']);
+
 /** Render cap — refine (search/facets) to see more; no virtualization. */
 const CARD_CAP = 120;
 /** Genre chips shown before the overflow toggle. */
@@ -358,24 +362,12 @@ export function LibraryBrowser({
     return rankCompatible(rows, base);
   }, [showAll, ranked, entries, passing, base]);
 
-  // Types that actually HAVE an entry at the selected quality tier. The quality
-  // facet only curates WITHIN a type that has graded members; a type with none
-  // at that tier (grooves and ideas carry no 'best') would be emptied entirely
-  // by the Best default — making that whole category un-addable (the groove and
-  // bassline/idea bugs). So the quality filter is a no-op for such types.
-  const typesAtQuality = useMemo(() => {
-    const m = new Map(); // quality tier -> Set(entry.type)
-    for (const e of entries) {
-      const eq = e.quality || '';
-      if (!eq) continue;
-      if (!m.has(eq)) m.set(eq, new Set());
-      m.get(eq).add(e.type);
-    }
-    return m;
-  }, [entries]);
-
   // ── client-side facet + search filtering of the already-built pool ─────────
   const existingIds = useMemo(() => new Set(layers.map((l) => l.id)), [layers]);
+  // A jam usually wants ONE chord progression; a second rarely layers cleanly
+  // (the union-consonance gate leaves the Chords tab ~empty once one exists). So
+  // de-emphasise the Chords kind chip when a chord layer is already stacked.
+  const hasChordLayer = useMemo(() => layers.some((l) => l.role === 'chords'), [layers]);
   const filtered = useMemo(() => {
     const q = text.trim().toLowerCase();
     return pool.filter(({ entry }) => {
@@ -384,17 +376,20 @@ export function LibraryBrowser({
       else if (kind && roleOf(entry) !== kind) return false;
       if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
       if (feel && (entry.feel || '') !== feel) return false;
-      // Only curate by quality when this entry's TYPE has members at that tier;
-      // otherwise (grooves, ideas — no 'best') the filter would empty the
-      // category. See typesAtQuality above.
-      if (quality && typesAtQuality.get(quality)?.has(entry.type) && (entry.quality || '') !== quality) return false;
+      // The quality "Best" facet curates ONLY the large families (chord
+      // progressions + melodies, 600+ graded each). The small line/rhythm
+      // categories — bass, idea, groove — always show in FULL regardless of
+      // tier: curating an 8–23-item category just makes material un-addable
+      // (the groove/idea/bassline bugs), and bass especially is small and
+      // always wanted. See QUALITY_CURATED_TYPES.
+      if (quality && QUALITY_CURATED_TYPES.has(entry.type) && (entry.quality || '') !== quality) return false;
       if (q) {
         const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [pool, existingIds, kind, genre, feel, quality, text, typesAtQuality]);
+  }, [pool, existingIds, kind, genre, feel, quality, text]);
 
   const visible = filtered.slice(0, CARD_CAP);
   const overflow = filtered.length - visible.length;
@@ -487,14 +482,18 @@ export function LibraryBrowser({
           ))}
         </div>
         <div className="piano-producer-mode__roles" role="group" aria-label="kind">
-          {KINDS.map((k) => (
-            <button
-              key={k.label}
-              type="button"
-              className={`piano-chip${kind === k.key ? ' is-on' : ''}`}
-              onClick={() => setKind(k.key)}
-            >{k.label}</button>
-          ))}
+          {KINDS.map((k) => {
+            const dim = hasChordLayer && k.key === 'chords';
+            return (
+              <button
+                key={k.label}
+                type="button"
+                className={`piano-chip${kind === k.key ? ' is-on' : ''}${dim ? ' is-dim' : ''}`}
+                title={dim ? 'A chord layer is already in your jam — a second chord progression rarely layers cleanly' : undefined}
+                onClick={() => setKind(k.key)}
+              >{k.label}</button>
+            );
+          })}
         </div>
         <div className="piano-producer-mode__roles" role="group" aria-label="quality">
           {QUALITIES.map((qOpt) => (
