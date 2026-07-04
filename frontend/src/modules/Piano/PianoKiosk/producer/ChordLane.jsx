@@ -13,8 +13,15 @@ import { loopBars } from './LoopRoll.jsx';
  * The active slot + cursor are driven by requestAnimationFrame reading the
  * transport position (bar + smooth barFrac) — the cursor moves via `left` every
  * frame (no React re-render); the active index re-renders only when it changes.
- * Chords are distributed evenly over the loop (a good default; per-chord
- * durations aren't stored), wrapping every `barSpan` bars.
+ *
+ * Per-chord TIMING: when `durations` (slots per chord, from the backend
+ * canonical-name braille) is present, slot WIDTHS are proportional to duration
+ * and the active chord is the one whose cumulative span contains the playhead —
+ * so an uneven progression (a 2-bar I then a 1-bar IV) highlights correctly and
+ * the cursor lines up with the lit slot. `cycles` > 1 means the loop repeats the
+ * shown progression k times (the braille is the minimal cycle); the cursor then
+ * wraps k times across the loop. Absent → equal slots + even distribution (the
+ * safe fallback), wrapping every `barSpan` bars.
  *
  * When `tonicPc` is given (the Producer keys every loop to the jam), each slot
  * also shows the CONCRETE keyed chord name (D, Dsus4…) above the Roman numeral
@@ -22,13 +29,30 @@ import { loopBars } from './LoopRoll.jsx';
  * (the abstract library) → Roman only.
  *
  * @param {string[]} roman
+ * @param {number[]|null} durations - slots per chord, parallel to roman (optional)
+ * @param {number} [cycles] - how many times the progression repeats over the loop
  * @param {{notes:Array, ppq:number, barSpan:number}|null} notesBundle
  * @param {{current:{bar:number,barFrac:number}}|null} positionRef
  * @param {boolean} isPlaying
  * @param {boolean} muted
  * @param {number|null} tonicPc  pitch class Roman `I` sounds at (null → Roman only)
  */
-export function ChordLane({ roman, notesBundle, positionRef, isPlaying = false, muted = false, tonicPc = null }) {
+/** Cumulative END fractions per chord from durations, or null when the
+ *  durations don't line up with the chord count. */
+export function cumulativeBounds(durations, count) {
+  if (!Array.isArray(durations) || durations.length !== count) return null;
+  const total = durations.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  if (!(total > 0)) return null;
+  const bounds = [];
+  let acc = 0;
+  for (const d of durations) { acc += Math.max(0, d); bounds.push(acc / total); }
+  return bounds; // bounds[i] = end fraction of chord i (bounds[count-1] === 1)
+}
+
+export function ChordLane({
+  roman, durations = null, cycles = 1, notesBundle, positionRef,
+  isPlaying = false, muted = false, tonicPc = null,
+}) {
   const cursorRef = useRef(null);
   const [active, setActive] = useState(-1);
   const count = roman?.length || 0;
@@ -41,28 +65,43 @@ export function ChordLane({ roman, notesBundle, positionRef, isPlaying = false, 
       return undefined;
     }
     const bars = loopBars(notesBundle.notes, notesBundle.ppq, notesBundle.barSpan);
+    const bounds = cumulativeBounds(durations, count);
+    const cyc = Math.max(1, Math.round(cycles || 1));
     let raf = 0;
     let last = -1;
     const frame = () => {
       const p = positionRef.current || {};
       const barInLoop = ((((p.bar || 0) % bars) + bars) % bars);
-      const frac = Math.max(0, Math.min(1, (barInLoop + (p.barFrac || 0)) / bars));
+      const loopFrac = Math.max(0, Math.min(1, (barInLoop + (p.barFrac || 0)) / bars));
+      // With a repeating progression the cursor sweeps ONE cycle k times.
+      const frac = cyc > 1 ? ((loopFrac * cyc) % 1) : loopFrac;
       if (el) { el.style.opacity = '1'; el.style.left = `${frac * 100}%`; }
-      const idx = Math.min(count - 1, Math.floor(frac * count));
+      let idx;
+      if (bounds) {
+        idx = bounds.findIndex((edge) => frac < edge);
+        if (idx < 0) idx = count - 1;
+      } else {
+        idx = Math.min(count - 1, Math.floor(frac * count));
+      }
       if (idx !== last) { last = idx; setActive(idx); }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, positionRef, count, notesBundle]);
+  }, [isPlaying, positionRef, count, notesBundle, durations, cycles]);
 
   if (!count) return null;
+  const useWidths = Array.isArray(durations) && durations.length === count;
   return (
     <div className={`piano-chord-lane${muted ? ' is-muted' : ''}`}>
       {roman.map((token, i) => {
         const keyed = Number.isFinite(tonicPc) ? keyedChordName(token, tonicPc) : null;
         return (
-          <div key={`${token}-${i}`} className={`piano-chord-lane__slot${i === active ? ' is-active' : ''}`}>
+          <div
+            key={`${token}-${i}`}
+            className={`piano-chord-lane__slot${i === active ? ' is-active' : ''}`}
+            style={useWidths ? { flexGrow: Math.max(0.001, durations[i]) } : undefined}
+          >
             {keyed && <span className="piano-chord-lane__keyed">{keyed}</span>}
             <RomanChord token={token} />
           </div>

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildBrickEntry, computeTonicPc } from './loopManifest.mjs';
+import { buildBrickEntry, computeTonicPc, parseCanonicalDurations } from './loopManifest.mjs';
 
 const misc = (fields) => `<miscellaneous>${Object.entries(fields).map(([k, v]) => `<miscellaneous-field name="${k}">${v}</miscellaneous-field>`).join('')}</miscellaneous>`;
 const attrs = '<attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>';
 const cMajorTriad = `<measure number="1">${attrs}<note><pitch><step>C</step><octave>4</octave></pitch><duration>16</duration></note><note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>16</duration></note><note><chord/><pitch><step>G</step><octave>4</octave></pitch><duration>16</duration></note></measure>`;
+// A second whole-note triad measure (no repeated <attributes>) → 2 bars = 8 slots.
+const measure2Triad = '<measure number="2"><note><pitch><step>C</step><octave>4</octave></pitch><duration>16</duration></note><note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>16</duration></note><note><chord/><pitch><step>G</step><octave>4</octave></pitch><duration>16</duration></note></measure>';
+const twoBarTriad = cMajorTriad + measure2Triad;
 
 describe('buildBrickEntry', () => {
   it('splits comma metadata into arrays and coerces bpm', () => {
@@ -67,5 +70,53 @@ describe('buildBrickEntry', () => {
     expect(e.needsReview).toBe(true);
     expect(e.needsReviewReason).toBe('parse-fail');
     expect(e.timeline).toBeUndefined();
+  });
+
+  it('attaches romanDurations (+ romanCycles 1) when the braille sums to the slot count', () => {
+    // 2 bars = 8 slots; canonical I⠿-V⠃ → dots 6 + 2 = 8 (uneven: a longer I, shorter V).
+    const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'iv', 'derived-signature': 'I-V', 'canonical-name': 'I⠿-V⠃' })}${twoBarTriad}</x>`;
+    const e = buildBrickEntry('chords/iv.musicxml', xml);
+    expect(e.timeline.length).toBe(8);
+    expect(e.roman).toEqual(['I', 'V']);
+    expect(e.romanDurations).toEqual([6, 2]);
+    expect(e.romanCycles).toBe(1);
+  });
+
+  it('sets romanCycles = k when the loop REPEATS the minimal cycle (braille sum divides slots)', () => {
+    // I⠃-V⠃ → 2 + 2 = 4 beats = one cycle; 8 slots ⇒ the cycle plays twice.
+    const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'rep', 'derived-signature': 'I-V', 'canonical-name': 'I⠃-V⠃' })}${twoBarTriad}</x>`;
+    const e = buildBrickEntry('chords/rep.musicxml', xml);
+    expect(e.romanDurations).toEqual([2, 2]);
+    expect(e.romanCycles).toBe(2);
+  });
+
+  it('omits romanDurations when the braille sum does NOT divide the slot count (→ even-distribution fallback)', () => {
+    // I⠇-V⠇ → 3 + 3 = 6; 8 % 6 ≠ 0.
+    const xml = `<x>${misc({ type: 'chord-progression', 'source-slug': 'm', 'derived-signature': 'I-V', 'canonical-name': 'I⠇-V⠇' })}${twoBarTriad}</x>`;
+    const e = buildBrickEntry('chords/m.musicxml', xml);
+    expect(e.romanDurations).toBeUndefined();
+    expect(e.romanCycles).toBeUndefined();
+  });
+
+  it('omits romanDurations when the token count ≠ roman count, or the canonical-name has no braille', () => {
+    const noBraille = `<x>${misc({ type: 'chord-progression', 'source-slug': 'n', 'derived-signature': 'I-V', 'canonical-name': 'I-V' })}${twoBarTriad}</x>`;
+    expect(buildBrickEntry('chords/n.musicxml', noBraille).romanDurations).toBeUndefined();
+    // three braille tokens but roman is I-V (2) → misaligned, omitted.
+    const misaligned = `<x>${misc({ type: 'chord-progression', 'source-slug': 'x', 'derived-signature': 'I-V', 'canonical-name': 'I⠇-IV⠃-V⠇' })}${twoBarTriad}</x>`;
+    expect(buildBrickEntry('chords/x.musicxml', misaligned).romanDurations).toBeUndefined();
+  });
+});
+
+describe('parseCanonicalDurations', () => {
+  it('decodes each chord token to its braille dot-count', () => {
+    expect(parseCanonicalDurations('VI⣿-II⠇-IIIsus4⠟-VI⣿-IV⠇-III⠟')).toEqual([8, 3, 5, 8, 3, 5]);
+    expect(parseCanonicalDurations('I⠁-V⠃-vi⠇-IV⠏')).toEqual([1, 2, 3, 4]);
+  });
+
+  it('returns null when any token lacks a braille suffix, or the input is empty', () => {
+    expect(parseCanonicalDurations('I-V-vi-IV')).toBeNull();
+    expect(parseCanonicalDurations('I⠏-V')).toBeNull();
+    expect(parseCanonicalDurations('')).toBeNull();
+    expect(parseCanonicalDurations(null)).toBeNull();
   });
 });

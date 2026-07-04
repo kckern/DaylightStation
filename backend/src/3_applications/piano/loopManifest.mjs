@@ -67,6 +67,44 @@ function readLedger(midiDir) {
   return map;
 }
 
+/** Filled-dot count of a braille cell (U+2800–U+28FF). */
+function braillePopcount(cp) {
+  let v = cp - 0x2800;
+  let c = 0;
+  while (v) { c += v & 1; v >>= 1; }
+  return c;
+}
+
+/** Per-chord durations (in timeline slots = beats) from the canonical-name's
+ *  braille suffixes: e.g. "VI⣿-II⠇-IIIsus4⠟-…" → [8, 3, 5, …].
+ *
+ *  Per the brick-library spec (media/midi/README.md §"Braille = rhythm"): each
+ *  token carries one or more braille cells, "1 dot = 1 beat … Beat count =
+ *  number of dots (popcount)", and durations > 8 beats repeat cells (⣿⠃ = 10) —
+ *  so we sum the popcount of EVERY braille cell in the token. 1 beat = 1
+ *  harmonic-timeline slot (4/4), so Σ dots === slot count; the caller only
+ *  trusts the result when that holds, which also rejects the spec's edge cases
+ *  (a leading meter-header glyph, or a syncopation mask that leaves a beat
+ *  unclaimed). Reads the `canonical-name` METADATA field, never the filename.
+ *  Returns null when ANY token lacks a braille suffix → even-distribution fallback. */
+export function parseCanonicalDurations(canonicalName) {
+  if (!canonicalName) return null;
+  const toks = String(canonicalName).split('-').filter(Boolean);
+  if (!toks.length) return null;
+  const out = [];
+  for (const tok of toks) {
+    let dots = 0;
+    let found = false;
+    for (const ch of tok) {
+      const cp = ch.codePointAt(0);
+      if (cp >= 0x2800 && cp <= 0x28ff) { dots += braillePopcount(cp); found = true; }
+    }
+    if (!found) return null;
+    out.push(dots);
+  }
+  return out;
+}
+
 /** Build one manifest entry from a brick's relative path + raw XML. Pure.
  *  `ledgerRow` (optional) supplies the analyzer's harmonyKey + roman for tonic
  *  recovery; absent → tonic assumed C (0). */
@@ -104,6 +142,21 @@ export function buildBrickEntry(relPath, xml, ledgerRow = null) {
     entry.timeline = tl.slots;
     entry.timelineRoot = tl.root; // the brick's tonic pc (key-conformed grid)
     entry.specificity = tl.specificity;
+    // Per-chord slot spans from the canonical-name braille (uneven progressions),
+    // so the frontend ChordLane highlights the EXACT sounding chord instead of
+    // assuming even distribution. The braille is ONE cycle; the notes may repeat
+    // it k times (the canonical-name carries the minimal cycle — README caveat),
+    // so `romanCycles` = k. Attached ONLY when the durations align 1:1 with roman[]
+    // AND their sum divides the slot count; anything else omits both (fallback).
+    const durations = parseCanonicalDurations(meta['canonical-name']);
+    if (durations && durations.length === entry.roman.length) {
+      const cycleBeats = durations.reduce((a, b) => a + b, 0);
+      const slots = entry.timeline.length;
+      if (cycleBeats > 0 && slots % cycleBeats === 0) {
+        entry.romanDurations = durations;
+        entry.romanCycles = slots / cycleBeats; // 1 = once; k = repeats k times
+      }
+    }
   } catch (err) {
     entry.needsReview = true;
     entry.needsReviewReason = `engine-throw: ${err.message}`;
