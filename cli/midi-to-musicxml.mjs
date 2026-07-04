@@ -56,12 +56,12 @@ export function readMidi(absPath) {
   const ppq = midi.header.ppq;
   const ts = midi.header.timeSignatures?.[0]?.timeSignature || [4, 4];
   const pitched = [];
-  let hasPercussion = false;
+  const percussion = [];
   for (const track of midi.tracks) {
-    if (track.instrument?.percussion) { hasPercussion = hasPercussion || track.notes.length > 0; continue; }
-    for (const n of track.notes) pitched.push({ midi: n.midi, ticks: n.ticks, durationTicks: n.durationTicks });
+    const target = track.instrument?.percussion ? percussion : pitched;
+    for (const n of track.notes) target.push({ midi: n.midi, ticks: n.ticks, durationTicks: n.durationTicks });
   }
-  return { ppq, beats: ts[0], beatType: ts[1], pitched, hasPercussion };
+  return { ppq, beats: ts[0], beatType: ts[1], pitched, percussion, hasPercussion: percussion.length > 0 };
 }
 
 // ---------- quantization to a divisions grid ----------
@@ -85,91 +85,100 @@ function decompose(divs) {
   return out;
 }
 
-// ---------- build a single-voice event stream (chords = simultaneous onsets) ----------
-function buildEvents(pitched, ppq) {
-  // group by quantized onset
-  const byOnset = new Map();
-  for (const n of pitched) {
-    const on = q(n.ticks, ppq);
-    const dur = Math.max(1, q(n.durationTicks, ppq));
-    if (!byOnset.has(on)) byOnset.set(on, { on, dur, midis: [] });
-    const e = byOnset.get(on);
-    e.midis.push(n.midi);
-    e.dur = Math.min(e.dur, dur); // chord notated with its shortest member (simplification)
+// ---------- MusicXML emission (voice-separated, duration-preserving) ----------
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const STEP_NAME = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
+const STEP_ALTER = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
+
+// Quantize notes to the divisions grid; notes sharing an EXACT (onset,duration)
+// become one chord unit so their voice keeps every note's true length.
+function quantizeGroups(notes, ppq) {
+  const map = new Map();
+  for (const n of notes) {
+    const onset = Math.max(0, Math.round((n.ticks / ppq) * DIVISIONS));
+    const dur = Math.max(1, Math.round(((n.durationTicks || 0) / ppq) * DIVISIONS));
+    const key = `${onset}:${dur}`;
+    if (!map.has(key)) map.set(key, { onset, dur, midis: [] });
+    map.get(key).midis.push(n.midi);
   }
-  return [...byOnset.values()].sort((a, b) => a.on - b.on);
+  return [...map.values()].sort((a, b) => a.onset - b.onset || a.dur - b.dur);
 }
 
-// ---------- MusicXML emission ----------
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// Greedy voice separation: assign each group to the first voice whose previous
+// group has already ended (no overlap). Preserves every note at its real length.
+function assignVoices(groups) {
+  const voices = []; const ends = [];
+  for (const g of groups) {
+    let vi = ends.findIndex((e) => e <= g.onset);
+    if (vi === -1) { voices.push([]); ends.push(0); vi = voices.length - 1; }
+    voices[vi].push(g); ends[vi] = g.onset + g.dur;
+  }
+  return voices.length ? voices : [[]];
+}
 
-function noteXml({ midis, div, type, dots, tieStart, tieStop, isRest }) {
-  if (isRest) return `      <note><rest/><duration>${div}</duration><type>${type}</type>${'<dot/>'.repeat(dots)}</note>`;
+function noteXml({ midis, div, type, dots, tieStart, tieStop, isRest, voice, unpitched }) {
+  const dot = '<dot/>'.repeat(dots);
+  if (isRest) return `      <note><rest/><duration>${div}</duration><voice>${voice}</voice><type>${type}</type>${dot}</note>`;
   return midis.map((m, i) => {
-    const step = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'][mod12(m)];
-    const alter = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0][mod12(m)];
-    const octave = Math.floor(m / 12) - 1;
-    const ties = `${tieStop ? '<tie type="stop"/>' : ''}${tieStart ? '<tie type="start"/>' : ''}`;
+    const step = STEP_NAME[mod12(m)]; const alter = STEP_ALTER[mod12(m)]; const octave = Math.floor(m / 12) - 1;
+    const head = unpitched
+      ? `<unpitched><display-step>${step}</display-step><display-octave>${octave}</display-octave></unpitched>`
+      : `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>`;
+    const tie = `${tieStop ? '<tie type="stop"/>' : ''}${tieStart ? '<tie type="start"/>' : ''}`;
     const notations = (tieStart || tieStop) ? `<notations>${tieStop ? '<tied type="stop"/>' : ''}${tieStart ? '<tied type="start"/>' : ''}</notations>` : '';
-    return `      <note>${i > 0 ? '<chord/>' : ''}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>${ties}<duration>${div}</duration><type>${type}</type>${'<dot/>'.repeat(dots)}${notations}</note>`;
+    // element order per MusicXML schema: [chord] pitch duration tie voice type dot notations
+    return `      <note>${i > 0 ? '<chord/>' : ''}${head}<duration>${div}</duration>${tie}<voice>${voice}</voice><type>${type}</type>${dot}${notations}</note>`;
   }).join('\n');
 }
 
-// Emit one span (chord or rest) that may cross barlines: split at each barline
-// with ties, then greedy-decompose each side.
-function emitSpan(pos, dur, midis, measureLen, isRest) {
-  const lines = [];
-  let p = pos; let remaining = dur;
-  let firstPiece = true;
-  while (remaining > 0) {
-    const intoMeasure = p % measureLen;
-    const toBarline = measureLen - intoMeasure;
-    const chunk = Math.min(remaining, toBarline);
-    const pieces = decompose(chunk);
-    pieces.forEach((pc, i) => {
-      const tieStop = !isRest && !(firstPiece && i === 0);
-      const tieStart = !isRest && !(remaining - pc.div <= 0 && i === pieces.length - 1);
-      lines.push({ boundary: p % measureLen === 0 && !(firstPiece && i === 0), xml: noteXml({ midis, div: pc.div, type: pc.type, dots: pc.dots, tieStart, tieStop, isRest }) });
-      p += pc.div; firstPiece = false;
-    });
-    remaining -= chunk;
-  }
-  return lines;
+// Render a within-measure span (no barline crossing) as decomposed, tied pieces.
+function renderUnit(midis, dur, isRest, voice, tieInStart, tieInStop, unpitched) {
+  const pieces = decompose(dur);
+  return pieces.map((pc, i) => noteXml({
+    midis, div: pc.div, type: pc.type, dots: pc.dots, isRest, voice, unpitched,
+    tieStop: !isRest && (i > 0 || tieInStop),
+    tieStart: !isRest && (i < pieces.length - 1 || tieInStart),
+  })).join('\n');
 }
 
-export function toMusicXML(events, { beats, beatType }, meta) {
-  const measureLen = DIVISIONS * beats * (4 / beatType); // divisions per measure
-  const end = events.length ? Math.max(...events.map((e) => e.on + e.dur)) : measureLen;
-  const totalLen = Math.max(measureLen, Math.ceil(end / measureLen) * measureLen);
-
-  // walk the timeline, filling gaps with rests
-  const spanLines = [];
-  let cursor = 0;
-  for (const e of events) {
-    if (e.on > cursor) spanLines.push(...emitSpan(cursor, e.on - cursor, [], measureLen, true));
-    spanLines.push(...emitSpan(e.on, e.dur, e.midis, measureLen, false));
-    cursor = Math.max(cursor, e.on + e.dur);
+// One voice's content for one measure — fills the whole measure (gaps -> rests),
+// clips groups to the barline with ties so cross-bar notes stay full-length.
+function voiceMeasure(groups, base, measureLen, voice, unpitched) {
+  const lines = []; let cursor = 0;
+  for (const g of groups) {
+    const gStart = g.onset - base; const gEnd = g.onset + g.dur - base;
+    if (gEnd <= 0 || gStart >= measureLen) continue;
+    const localStart = Math.max(0, gStart); const localEnd = Math.min(measureLen, gEnd);
+    if (localStart > cursor) lines.push(renderUnit([], localStart - cursor, true, voice));
+    lines.push(renderUnit(g.midis, localEnd - localStart, false, voice, gEnd > measureLen, gStart < 0, unpitched));
+    cursor = localEnd;
   }
-  if (cursor < totalLen) spanLines.push(...emitSpan(cursor, totalLen - cursor, [], measureLen, true));
+  if (cursor < measureLen) lines.push(renderUnit([], measureLen - cursor, true, voice));
+  return lines.join('\n');
+}
 
-  // chunk lines into measures on barline boundaries
-  const measures = [];
-  let cur = [];
-  for (const l of spanLines) {
-    if (l.boundary && cur.length) { measures.push(cur); cur = []; }
-    cur.push(l.xml);
-  }
-  if (cur.length) measures.push(cur);
+export function toMusicXML(notes, ppq, { beats, beatType }, meta, opts = {}) {
+  const unpitched = !!opts.unpitched;
+  const measureLen = DIVISIONS * beats * (4 / beatType);
+  const groups = quantizeGroups(notes, ppq);
+  const end = groups.length ? Math.max(...groups.map((g) => g.onset + g.dur)) : measureLen;
+  const numMeasures = Math.max(1, Math.ceil(end / measureLen));
+  const voices = assignVoices(groups);
+
+  const clef = unpitched ? '<clef><sign>percussion</sign><line>2</line></clef>' : '<clef><sign>G</sign><line>2</line></clef>';
+  const body = Array.from({ length: numMeasures }, (_, mi) => {
+    const base = mi * measureLen;
+    const attrs = mi === 0 ? `      <attributes><divisions>${DIVISIONS}</divisions><time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>${clef}</attributes>\n` : '';
+    let inner = '';
+    voices.forEach((vg, vi) => {
+      if (vi > 0) inner += `      <backup><duration>${measureLen}</duration></backup>\n`;
+      inner += `${voiceMeasure(vg, base, measureLen, vi + 1, unpitched)}\n`;
+    });
+    return `    <measure number="${mi + 1}">\n${attrs}${inner}    </measure>`;
+  }).join('\n');
 
   const misc = Object.entries(meta.miscellaneous)
     .map(([k, v]) => `      <miscellaneous-field name="${esc(k)}">${esc(v)}</miscellaneous-field>`).join('\n');
-
-  const body = measures.map((mLines, i) => {
-    const attrs = i === 0
-      ? `      <attributes><divisions>${DIVISIONS}</divisions><time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>`
-      : '';
-    return `    <measure number="${i + 1}">\n${attrs ? attrs + '\n' : ''}${mLines.join('\n')}\n    </measure>`;
-  }).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
@@ -291,7 +300,7 @@ const feelName = (slug) => String(slug).replace(/-?\d+bpm/gi, '').replace(/-+$/,
 export function convertEntry(entry, { loopsDir, nowIso }) {
   const abs = path.join(loopsDir, entry.path);
   const midi = readMidi(abs);
-  const events = buildEvents(midi.pitched, midi.ppq);
+  const isPerc = entry.type === 'groove' || entry.type === 'percussion';
   const canon = midi.pitched.length
     ? canonicalize(entry, midi.pitched, midi.ppq, midi.beats, midi.beatType)
     : { name: (entry.type === 'groove' || entry.type === 'percussion') ? feelName(entry.slug) : null, roman: null, signature: null, confidence: 0 };
@@ -331,7 +340,10 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
       'derived-confidence': harmony.confidence.toFixed(2),
     },
   };
-  const xml = midi.pitched.length ? toMusicXML(events, midi, meta) : toMusicXML([], midi, meta);
+  // Percussion is emitted as pitched notes carrying the exact GM drum number, so
+  // the kit mapping round-trips losslessly (<unpitched> has no display-alter, which
+  // would corrupt sharp-pitch-class drums like hi-hats). type=groove marks it as drums.
+  const xml = toMusicXML(isPerc ? midi.percussion : midi.pitched, midi.ppq, midi, meta);
   const ledger = {
     slug: entry.slug, canonical: canon.name, type: entry.type, source: entry.path,
     genre, emotion, tags, quality, artist: entry.artist || null,

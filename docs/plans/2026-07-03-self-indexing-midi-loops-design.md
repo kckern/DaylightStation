@@ -264,9 +264,18 @@ both the name and the embedded `derived-roman`. Each brick keeps `source-slug` +
 Roman case (`III` vs `iii`) is the major/minor signal — otherwise ~14 case-twins clobber.
 All 3,231 uniquely named, well-formed, 1:1.
 
-Known follow-ups before cutover: 16th-grid quantization refinement, loop-boundary/minimal-
-cycle detection (some names repeat the progression), the sus-casing convention (thirdless
-chords default to uppercase+`sus`), and building the runtime manifest + re-pointing Producer.
+**Note faithfulness FIXED + verified (converter v0.3, emitter rewrite):** the first emitter
+collapsed simultaneous notes to the shortest duration, clipping sustained notes (a melody
+round-tripped at 6% slot-accuracy; percussion bricks were empty). Rewritten to emit
+**voice-separated MusicXML** (`<backup>`, greedy non-overlap voice assignment) so every note
+keeps its true length; percussion is emitted as pitched GM-drum-number notes (lossless).
+Round-trip verifier (`cli/_proto-verify-xml.mjs`) parses each brick back to notes and
+compares a 16th-note pitch grid to the source MIDI: **100% slot-exact** across a 135-brick
+sweep + all types incl. percussion (was 6–52% on polyphonic loops before).
+
+Known follow-ups before cutover: loop-boundary/minimal-cycle detection (some names repeat
+the progression), the sus-casing convention (thirdless chords default to uppercase+`sus`),
+and building the runtime manifest + re-pointing Producer.
 
 ## Producer Integration
 
