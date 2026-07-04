@@ -15,7 +15,8 @@ import yaml from 'js-yaml';
 import pkg from '@tonejs/midi';
 import { mod12 } from '../shared/music/transpose.mjs';
 import { romanAnalysis, bestTonic, degreeNumeral } from '../shared/music/romanAnalysis.mjs';
-import { signatureKey, minimalCycle } from '../shared/music/harmonicSignature.mjs';
+import { signatureKey, minimalCycle, normalizeProgression } from '../shared/music/harmonicSignature.mjs';
+import { parseChordSymbol } from '../shared/music/chords.mjs';
 
 const { Midi } = pkg;
 
@@ -235,7 +236,7 @@ function beatWindows(notes, ppq, beats, beatType) {
 }
 
 // Collapse per-beat chords into { root, quality, beats } runs (bass = monophonic root line).
-function analyzeHarmony(notes, ppq, beats, beatType, isBass) {
+export function analyzeHarmony(notes, ppq, beats, beatType, isBass) {
   const wins = beatWindows(notes, ppq, beats, beatType);
   const perBeat = wins.map((w) => (isBass
     ? (w.bassPc != null ? { root: w.bassPc, quality: 'bass' } : null)
@@ -281,20 +282,45 @@ function canonicalize(entry, notes, ppq, beats, beatType) {
       if (last && last.pc === w.melodyPc) last.beats += 1; else runs.push({ pc: w.melodyPc, beats: 1 });
     }
     const tokens = runs.map((r) => NOTE_NAMES[r.pc] + brailleDur(r.beats));
-    return { name: finalizeName(header, tokens, false), roman: null, signature: null, confidence: runs.length ? 1 : 0 };
+    return { name: finalizeName(header, tokens, false), roman: null, signature: null, confidence: runs.length ? 1 : 0, roots: null };
   }
   // chords / idea / bassline: derive roman (bass = root-line, uppercase degrees)
   const isBass = entry.type === 'bassline';
   const { runs, confidence } = analyzeHarmony(notes, ppq, beats, beatType, isBass);
-  if (!runs.length) return { name: null, roman: null, signature: null, confidence };
+  if (!runs.length) return { name: null, roman: null, signature: null, confidence, roots: null };
   const tonic = bestTonic(runs);
   const roman = romanAnalysis(runs, tonic);
   const tokens = roman.map((r, i) => r + brailleDur(runs[i].beats));
-  return { name: finalizeName(header, tokens, true), roman, signature: signatureKey(roman), confidence };
+  return { name: finalizeName(header, tokens, true), roman, signature: signatureKey(roman), confidence, roots: runs.map((r) => r.root) };
 }
 
 // percussion/groove: cleaned feel token (no harmony), bpm stripped
 const feelName = (slug) => String(slug).replace(/-?\d+bpm/gi, '').replace(/-+$/,'') || slug;
+
+// ---------- harmony trust signal: does derived harmony match the vendor's chord labels? ----------
+// Compared transposition-invariantly (interval shape) because vendor chords are in the
+// original key while ours are derived in C.
+function ivalSig(roots) {
+  const rs = minimalCycle(normalizeProgression((roots || []).map(String))).map(Number);
+  if (rs.length < 2) return rs.length === 1 ? '0' : '';
+  return rs.map((r, i) => ((rs[(i + 1) % rs.length] - r) % 12 + 12) % 12).join('-');
+}
+function cyclicContains(hay, needle) {
+  if (!hay || !needle) return false;
+  const h = hay.split('-'); const n = needle.split('-');
+  if (n.length > h.length) return false;
+  const d = [...h, ...h];
+  for (let i = 0; i < h.length; i += 1) if (n.every((x, j) => d[i + j] === x)) return true;
+  return false;
+}
+// 'yes' | 'no' | '' (no vendor label to check against)
+function harmonyVerified(entry, derivedRoots) {
+  const vendor = (entry.chords || []).map((c) => parseChordSymbol(c)?.root).filter((r) => r != null);
+  if (vendor.length < 2 || !derivedRoots || derivedRoots.length < 1) return '';
+  const a = ivalSig(vendor); const b = ivalSig(derivedRoots);
+  if (!a || !b) return '';
+  return (a === b || cyclicContains(b, a) || cyclicContains(a, b)) ? 'yes' : 'no';
+}
 
 // ---------- per-entry conversion ----------
 export function convertEntry(entry, { loopsDir, nowIso }) {
@@ -305,6 +331,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
     ? canonicalize(entry, midi.pitched, midi.ppq, midi.beats, midi.beatType)
     : { name: (entry.type === 'groove' || entry.type === 'percussion') ? feelName(entry.slug) : null, roman: null, signature: null, confidence: 0 };
   const harmony = { roman: canon.roman, signature: canon.signature, confidence: canon.confidence };
+  const verified = harmonyVerified(entry, canon.roots); // 'yes' | 'no' | '' vs vendor label
   const warnings = [];
   if (!midi.pitched.length && !midi.hasPercussion) warnings.push('no-notes');
   if (midi.pitched.length && harmony.confidence < 0.6 && entry.type === 'chord-progression') warnings.push('low-harmony-confidence');
@@ -338,6 +365,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
       'derived-roman': (harmony.roman || []).join(' '),
       'derived-signature': harmony.signature || '',
       'derived-confidence': harmony.confidence.toFixed(2),
+      'harmony-verified': verified, // 'yes'/'no' = agrees/disagrees with vendor chord label; '' = no label
     },
   };
   // Percussion is emitted as pitched notes carrying the exact GM drum number, so
@@ -349,7 +377,8 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
     genre, emotion, tags, quality, artist: entry.artist || null,
     ppq: midi.ppq, notes: midi.pitched.length, hasPercussion: midi.hasPercussion,
     derivedRoman: harmony.roman, derivedSignature: harmony.signature,
-    derivedConfidence: harmony.confidence, converter: CONVERTER_VERSION, analyzer: ANALYZER_VERSION,
+    derivedConfidence: harmony.confidence, harmonyVerified: verified,
+    converter: CONVERTER_VERSION, analyzer: ANALYZER_VERSION,
     convertedAt: nowIso, warnings,
   };
   return { xml, ledger, canonicalName: canon.name };
