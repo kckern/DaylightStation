@@ -227,6 +227,20 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(await screen.findByRole('button', { name: 'Basic Rock' })).toBeInTheDocument();
   });
 
+  it('ideas stay visible under the Best default — no idea is graded "best", so the whole Ideas category must not vanish', async () => {
+    // Same class as grooves: the `idea` type has NO 'best'-tier members in the
+    // real library, so a Best default that hard-filtered by tier emptied the
+    // entire Ideas kind. The quality facet must no-op for such a type.
+    const IDEA = {
+      slug: 'spark', path: 'ideas/spark.mid', type: 'idea', title: 'Bright Spark',
+      genre: ['jazz'], emotion: ['bright'], quality: '',
+      timeline: [[0, 4, 7], [2, 7, 11]], timelineRoot: 0, specificity: 'triad',
+    };
+    renderBrowser({ lib: makeLib([...ALL, IDEA]) }); // quality defaults to Best
+    fireEvent.click(screen.getByRole('button', { name: 'Ideas' }));
+    expect(await screen.findByRole('button', { name: 'Bright Spark' })).toBeInTheDocument();
+  });
+
   it('feel chips appear for the groove kind and filter by feel', async () => {
     const swing = { ...GROOVE, slug: 'swing-brush', path: 'grooves/swing-brush.mid', feel: 'swing', title: 'Swing Brush' };
     renderBrowser({ lib: makeLib([...ALL, swing]) });

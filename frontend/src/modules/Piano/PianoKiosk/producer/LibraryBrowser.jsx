@@ -358,6 +358,22 @@ export function LibraryBrowser({
     return rankCompatible(rows, base);
   }, [showAll, ranked, entries, passing, base]);
 
+  // Types that actually HAVE an entry at the selected quality tier. The quality
+  // facet only curates WITHIN a type that has graded members; a type with none
+  // at that tier (grooves and ideas carry no 'best') would be emptied entirely
+  // by the Best default — making that whole category un-addable (the groove and
+  // bassline/idea bugs). So the quality filter is a no-op for such types.
+  const typesAtQuality = useMemo(() => {
+    const m = new Map(); // quality tier -> Set(entry.type)
+    for (const e of entries) {
+      const eq = e.quality || '';
+      if (!eq) continue;
+      if (!m.has(eq)) m.set(eq, new Set());
+      m.get(eq).add(e.type);
+    }
+    return m;
+  }, [entries]);
+
   // ── client-side facet + search filtering of the already-built pool ─────────
   const existingIds = useMemo(() => new Set(layers.map((l) => l.id)), [layers]);
   const filtered = useMemo(() => {
@@ -368,17 +384,17 @@ export function LibraryBrowser({
       else if (kind && roleOf(entry) !== kind) return false;
       if (genre && !(entry.genre || []).map((g) => g.toLowerCase()).includes(genre.toLowerCase())) return false;
       if (feel && (entry.feel || '') !== feel) return false;
-      // Grooves carry NO curation tier (quality ''), so the Best-quality default
-      // would hide every drum loop — making drums un-addable. Exempt them: all
-      // grooves are curated and always show regardless of the quality chip.
-      if (quality && entry.type !== 'groove' && (entry.quality || '') !== quality) return false;
+      // Only curate by quality when this entry's TYPE has members at that tier;
+      // otherwise (grooves, ideas — no 'best') the filter would empty the
+      // category. See typesAtQuality above.
+      if (quality && typesAtQuality.get(quality)?.has(entry.type) && (entry.quality || '') !== quality) return false;
       if (q) {
         const hay = [entry.title, entry.slug, entry.artist, ...(entry.tags || [])].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [pool, existingIds, kind, genre, feel, quality, text]);
+  }, [pool, existingIds, kind, genre, feel, quality, text, typesAtQuality]);
 
   const visible = filtered.slice(0, CARD_CAP);
   const overflow = filtered.length - visible.length;
