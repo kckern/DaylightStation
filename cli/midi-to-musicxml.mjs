@@ -19,9 +19,36 @@ import { signatureKey } from '../shared/music/harmonicSignature.mjs';
 
 const { Midi } = pkg;
 
-export const CONVERTER_VERSION = 'midi2xml/0.1.0';
+export const CONVERTER_VERSION = 'midi2xml/0.2.0';
 export const ANALYZER_VERSION = 'harmony-v2-bass-informed/0.1.0';
 const DIVISIONS = 4; // divisions per quarter note (16th-note quantization grid)
+
+// ---------- descriptor / tag extraction (surfaced in the UX) ----------
+// Genre + emotion vocabularies. Tokens are drawn from the source path folders,
+// `mood`, and `descriptor`, then matched against these to build clean, filterable
+// tags. Everything else (structural folder names, bpm tiers) is dropped as noise.
+const GENRE = new Set(['jazz', 'hip-hop', 'hiphop', 'rock', 'house', 'lofi', 'reggaeton', 'rnb', 'r-b', 'pop', 'edm', 'trap', 'dance', 'disco', 'country', 'reggae', 'afro', 'ambient', 'cinematic', 'soul', 'funk', 'blues', 'latin', 'waltz', 'swing', 'orchestral', 'folk', 'gospel', 'techno']);
+const EMOTION = new Set(['dark', 'happy', 'sad', 'emotional', 'mysterious', 'beautiful', 'sexy', 'smooth', 'relax', 'relaxing', 'chill', 'heartbroken', 'dreamy', 'uplifting', 'intense', 'soulful', 'peaceful', 'romantic', 'loving', 'suspenseful', 'memorable', 'catchy', 'energetic', 'aggressive', 'hopeful', 'nostalgic', 'epic', 'groovy', 'bright', 'moody', 'tense', 'blessed', 'awesome', 'gorgeous', 'inspiring', 'sensual']);
+const DROP = new Set(['chord', 'chords', 'progression', 'progressions', 'melody', 'melodies', 'bassline', 'basslines', 'idea', 'ideas', 'niko', 'famous', 'starters', 'starter', 'more', 'extras', 'extra', 'rhythms', 'rhythm', 'rhythmic', 'prog', 'from', 'songs', 'song', 'piano', 'intros', 'intro', 'arps', 'arp', 'pack', 'kotoulas', 'best', 'advanced', 'back', 'forth', 'slower', 'add', 'sus', 'alt', 'dim', 'the', 'and', 'of', 'master', 'variations', 'variation', 'consistent', 'perfect5th', 'perfect',
+  // origin/path noise: key names, reverb tags, vendor batch words
+  'major', 'minor', 'dry', 'wet', 'bonus', 'tophits', 'hits', 'top', 'mix', 'midi', 'sharp', 'flat', 'verse', 'chorus', 'intro', 'outro', 'bridge', 'pre', 'hook', 'drop', 'build', 'fill', 'part', 'section', 'loop', 'main', 'alt', 'var', 'chords', 'bass', 'lead']);
+const kebab = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function tokenize(str) {
+  return kebab(str).split('-').filter((t) => t && t.length > 1 && !DROP.has(t) && !/^\d+$/.test(t) && !/^\d*bpm$/.test(t) && !/^add\d$/.test(t) && !/^m?a?j?\d$/.test(t));
+}
+export function deriveTags(entry) {
+  const folders = (entry.path || '').split('/').slice(0, -1);
+  // origin folder names carry the vendor's own richest genre/emotion labels
+  const originFolders = (entry.origin || '').split('/').slice(0, -1);
+  const raw = [...folders, ...originFolders, ...String(entry.mood || '').split(/\s+/), ...String(entry.descriptor || '').split(/\s+/)];
+  const toks = new Set(raw.flatMap(tokenize));
+  const genre = [...toks].filter((t) => GENRE.has(t));
+  const emotion = [...toks].filter((t) => EMOTION.has(t));
+  const p = entry.path || '';
+  const quality = /best-/.test(p) ? 'best' : /advanced/.test(p) ? 'advanced' : /gorgeous/.test(p) ? 'best' : '';
+  const tags = [...new Set([...genre, ...emotion])];
+  return { genre, emotion, tags, quality };
+}
 
 // ---------- note extraction ----------
 export function readMidi(absPath) {
@@ -192,14 +219,26 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
   if (!midi.pitched.length && !midi.hasPercussion) warnings.push('no-notes');
   if (midi.pitched.length && harmony.confidence < 0.6 && entry.type === 'chord-progression') warnings.push('low-harmony-confidence');
 
+  const { genre, emotion, tags, quality } = deriveTags(entry);
   const meta = {
     miscellaneous: {
       type: entry.type,
+      title: entry.title || '',
+      // --- descriptors surfaced in the UX ---
+      genre: genre.join(','),
+      emotion: emotion.join(','),
+      tags: tags.join(','),
+      quality,
+      artist: entry.artist || '',
+      bpm: entry.bpm != null ? String(entry.bpm) : '',
+      reverb: entry.reverb || '',
+      // --- raw source descriptors kept for traceability ---
+      'source-mood': entry.mood || '',
+      'source-descriptor': entry.descriptor || '',
+      // --- provenance ---
       'source-midi': entry.path,
       'vendor-origin': entry.origin || '',
       'source-pack': (entry.sources || []).join(','),
-      mood: entry.mood || '',
-      artist: entry.artist || '',
       'converter-version': CONVERTER_VERSION,
       'analyzer-version': ANALYZER_VERSION,
       'converted-at': nowIso,
@@ -211,6 +250,7 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
   const xml = midi.pitched.length ? toMusicXML(events, midi, meta) : toMusicXML([], midi, meta);
   const ledger = {
     slug: entry.slug, type: entry.type, source: entry.path,
+    genre, emotion, tags, quality, artist: entry.artist || null,
     ppq: midi.ppq, notes: midi.pitched.length, hasPercussion: midi.hasPercussion,
     derivedRoman: harmony.roman, derivedSignature: harmony.signature,
     derivedConfidence: harmony.confidence, converter: CONVERTER_VERSION, analyzer: ANALYZER_VERSION,
@@ -221,8 +261,12 @@ export function convertEntry(entry, { loopsDir, nowIso }) {
 
 // ---------- CLI batch ----------
 function main() {
-  const LOOPS = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/midi/loops';
-  const OUT = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/midi/loops-xml';
+  // New layout: canonical MusicXML asset folders live at media/midi root; the
+  // source packs, the old .mid tree, backups and the ledger live under _workspace.
+  const ROOT = process.env.MIDI_ROOT || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/midi';
+  const WORKSPACE = path.join(ROOT, '_workspace');
+  const LOOPS = process.env.LOOPS_DIR || path.join(WORKSPACE, 'loops-midi');
+  const OUT = process.env.OUT_DIR || ROOT; // type folders (chords/, melodies/, …) at root
   const args = process.argv.slice(2);
   const sampleMode = args.includes('--sample');
   const index = yaml.load(fs.readFileSync(path.join(LOOPS, 'index.yml'), 'utf8'));
@@ -237,7 +281,8 @@ function main() {
   }
 
   fs.mkdirSync(OUT, { recursive: true });
-  const ledgerPath = path.join(OUT, '_ledger.jsonl');
+  fs.mkdirSync(WORKSPACE, { recursive: true });
+  const ledgerPath = path.join(WORKSPACE, '_ledger.jsonl');
   const ledgerRows = [];
   let ok = 0; let failed = 0;
   const typeDir = (t) => ({ 'chord-progression': 'chords', bassline: 'basslines', melody: 'melodies', idea: 'ideas', groove: 'percussion', percussion: 'percussion' }[t] || t);
