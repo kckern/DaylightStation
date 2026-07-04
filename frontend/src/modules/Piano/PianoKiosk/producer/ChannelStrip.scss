@@ -9,11 +9,20 @@
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 0.7rem 0.45rem 0.85rem;
   border-radius: 10px;
   border: 1px solid var(--piano-border, #2c2c3a);
   background: var(--piano-surface, #16161f);
   font-family: 'Roboto Condensed', sans-serif;
+
+  // Role accent (design §2): a colored left rail keys the row to its part at a
+  // glance. Falls back to the neutral 'idea' teal for any unmapped role.
+  --strip-role: var(--piano-role-idea, #2ec4b6);
+  &[data-role="chords"] { --strip-role: var(--piano-role-chords, #a970ff); }
+  &[data-role="bass"]   { --strip-role: var(--piano-role-bass,   #ff9f43); }
+  &[data-role="groove"] { --strip-role: var(--piano-role-groove, #ff5a6a); }
+  &[data-role="melody"] { --strip-role: var(--piano-role-melody, #4aa3ff); }
+  box-shadow: inset 3px 0 0 var(--strip-role);
   // Muted: dim the identity side only. M/S/remove stay full-strength (the way
   // back out must be findable), GainStrip dims itself (own is-muted), and the
   // VoicePicker drawer — rendered inside the strip — must never inherit a dim.
@@ -46,7 +55,8 @@
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--piano-muted, #99c);
+    font-weight: 700;
+    color: var(--strip-role, var(--piano-muted, #99c));
   }
 
   // Voice chip: current program name; opens the picker. Disabled for grooves.

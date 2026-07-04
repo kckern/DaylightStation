@@ -619,7 +619,7 @@ export function Producer() {
     try {
       await store.saveCrateItem('stack', { layers });
       logger.info('piano.producer.keep-stack', { layers: layers.length });
-      showToast('Kept stack to Crate');
+      showToast('Saved to My Loops');
     } catch (err) {
       logger.error('piano.producer.keep-stack-failed', { error: err?.message });
       showToast('Keep failed — try again');
@@ -633,7 +633,7 @@ export function Producer() {
     try {
       await store.saveCrateItem('section', { layers: stack });
       logger.info('piano.producer.keep-section', { sectionId, layers: stack.length });
-      showToast('Kept section to Crate');
+      showToast('Saved to My Loops');
     } catch (err) {
       logger.error('piano.producer.keep-section-failed', { sectionId, error: err?.message });
       showToast('Keep failed — try again');
@@ -646,7 +646,7 @@ export function Producer() {
     try {
       await store.saveLoop({ ...layer.source, kind: layer.role });
       logger.info('piano.producer.keep-loop', { id: layer.id, role: layer.role });
-      showToast('Kept loop to Crate');
+      showToast('Saved to My Loops');
     } catch (err) {
       logger.error('piano.producer.keep-loop-failed', { id: layer.id, error: err?.message });
       showToast('Keep failed — try again');
@@ -677,7 +677,7 @@ export function Producer() {
       logger.info('piano.producer.stack-pick', { source, id: item.id, layers: layers.length });
     } catch (err) {
       logger.error('piano.producer.stack-pick-failed', { source, id: item.id, error: err?.message });
-      setLoadError(source === 'prefab' ? "Couldn't load that prefab." : "Couldn't load that from the Crate.");
+      setLoadError(source === 'prefab' ? "Couldn't load that prefab." : "Couldn't load that from My Loops.");
     }
   }, [store, prefabs, lib, ensureAudio, ensureLayerNotes, logger]);
 
@@ -713,7 +713,7 @@ export function Producer() {
         logger.info('piano.producer.ours-pick', { kind, id: rec.id });
       } catch (err) {
         logger.error('piano.producer.ours-pick-failed', { kind, id: item.id, error: err?.message });
-        setLoadError("Couldn't load that from the Crate.");
+        setLoadError("Couldn't load that from My Loops.");
       }
       return;
     }
@@ -888,6 +888,16 @@ export function Producer() {
     ? (draft?.sections.find((s) => s.id === state.editingSectionId)?.name ?? state.editingSectionId)
     : null;
 
+  // Breadcrumb: makes the Loop⊂Song nesting explicit at all times (design §3).
+  // Editing a section → `Song › Verse`; a song exists but free-jamming → the
+  // song title on Song, `Loop · scratch` on Loop; no song yet → `Loop · scratch`.
+  const songTitle = draft?.meta?.title || (draft ? 'Untitled song' : null);
+  const breadcrumb = editingSectionName
+    ? `Song › ${editingSectionName}`
+    : tab === 'song'
+      ? (songTitle ? `Song · ${songTitle}` : 'Song · new')
+      : 'Loop · scratch';
+
   return (
     <section className="piano-mode piano-producer-mode">
       {lib.loading && <PianoEmpty loading />}
@@ -929,21 +939,27 @@ export function Producer() {
 
           <div className="piano-producer-mode__stage-wrap">
           <div className="piano-producer-mode__stage">
-            <div className="piano-producer-mode__tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab === 'mix'}
-                className={`piano-chip${tab === 'mix' ? ' is-on' : ''}`}
-                onClick={() => setTab('mix')}
-              >Mix</button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab === 'song'}
-                className={`piano-chip${tab === 'song' ? ' is-on' : ''}`}
-                onClick={() => setTab('song')}
-              >Song</button>
+            <div className="piano-producer-mode__tabbar">
+              {/* Segmented Loop|Song control — the two levels (design §3). The
+                  internal tab token stays 'mix' (state/CSS); only the label is
+                  the taxonomy word "Loop". */}
+              <div className="piano-producer-mode__tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'mix'}
+                  className={`piano-producer-mode__tab${tab === 'mix' ? ' is-on' : ''}`}
+                  onClick={() => setTab('mix')}
+                >Loop</button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'song'}
+                  className={`piano-producer-mode__tab${tab === 'song' ? ' is-on' : ''}`}
+                  onClick={() => setTab('song')}
+                >Song</button>
+              </div>
+              <span className="piano-producer-mode__breadcrumb" aria-label="location">{breadcrumb}</span>
               <button
                 type="button"
                 className={`piano-chip piano-producer-mode__roman-toggle${showRoman ? ' is-on' : ''}`}
@@ -1045,7 +1061,7 @@ export function Producer() {
                       type="button"
                       className="piano-producer-mode__keep-stack"
                       onClick={handleKeepStack}
-                    >Keep stack to Crate</button>
+                    >Keep to My Loops</button>
                     <button
                       type="button"
                       className="piano-producer-mode__promote"

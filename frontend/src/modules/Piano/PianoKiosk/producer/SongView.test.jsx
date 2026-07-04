@@ -180,17 +180,17 @@ describe('fill sheet', () => {
     expect(screen.queryByRole('dialog')).toBeNull(); // sheet closes
   });
 
-  it('"Use current jam" is disabled without jam layers; "From Crate" is a disabled stub', () => {
+  it('"Use current jam" is disabled without jam layers; "From My Loops" is a disabled stub', () => {
     renderView(templatedDraft(), { hasJamLayers: false });
     fireEvent.click(screen.getByRole('button', { name: 'Intro slot 1' }));
     expect(screen.getByRole('button', { name: 'Use current jam' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'From Crate' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'From My Loops' })).toBeDisabled();
   });
 
-  it('"Open in Mix to build" hands the section to the shell', () => {
+  it('"Open in Loop to build" hands the section to the shell', () => {
     const { onOpenSection } = renderView(templatedDraft());
     fireEvent.click(screen.getByRole('button', { name: 'Intro slot 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Mix to build' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Loop to build' }));
     expect(onOpenSection).toHaveBeenCalledWith('sec-1');
   });
 });
@@ -200,10 +200,10 @@ describe('fill sheet', () => {
 describe('section action sheet', () => {
   const open = (name = 'Verse slot 1') => fireEvent.click(screen.getByRole('button', { name }));
 
-  it('Edit in Mix hands the section to the shell', () => {
+  it('Edit in Loop hands the section to the shell', () => {
     const { onOpenSection } = renderView(filledDraft());
     open();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit in Mix' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Loop' }));
     expect(onOpenSection).toHaveBeenCalledWith('sec-1');
   });
 
@@ -294,11 +294,11 @@ describe('persistence wiring (Task 8.2)', () => {
     expect(getByRole('button', { name: /save song — coming soon/i })).toBeDisabled();
   });
 
-  it('a filled section exposes "Keep to Crate" when onKeepSection is provided', () => {
+  it('a filled section exposes "Keep to My Loops" when onKeepSection is provided', () => {
     const onKeepSection = vi.fn();
     const { getByRole } = renderView(filledDraft(), { onKeepSection });
     fireEvent.click(getByRole('button', { name: 'Verse slot 1' }));
-    fireEvent.click(getByRole('button', { name: 'Keep to Crate' }));
+    fireEvent.click(getByRole('button', { name: 'Keep to My Loops' }));
     expect(onKeepSection).toHaveBeenCalledWith('sec-1');
   });
 
