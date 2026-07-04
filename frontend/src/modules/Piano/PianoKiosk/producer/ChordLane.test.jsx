@@ -59,4 +59,22 @@ describe('ChordLane', () => {
     expect(cumulativeBounds([1, 2], 3)).toBeNull();
     expect(cumulativeBounds([0, 0], 2)).toBeNull(); // zero total
   });
+
+  it('a repeating progression (cycles>1) wraps the playhead within one cycle', () => {
+    // Two equal chords, one 4-beat cycle, loop repeats it twice (cycles=2).
+    const bounds = cumulativeBounds([2, 2], 2); // [0.5, 1]
+    const cyc = 2;
+    const wrap = (loopFrac) => ((loopFrac * cyc) % 1); // mirrors the rAF frame
+    // 60% through the loop = 20% into the SECOND cycle → still chord I (0).
+    expect(activeAt(bounds, 2, wrap(0.6))).toBe(0);
+    // 30% through the loop = 60% into the FIRST cycle → chord V (1).
+    expect(activeAt(bounds, 2, wrap(0.3))).toBe(1);
+  });
+
+  it('accepts a cycles prop without breaking render', () => {
+    const { container } = render(
+      <ChordLane roman={['I', 'V']} durations={[2, 2]} cycles={2} notesBundle={bundle} />,
+    );
+    expect(container.querySelectorAll('.piano-chord-lane__slot').length).toBe(2);
+  });
 });
