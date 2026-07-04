@@ -182,13 +182,23 @@ grid.
 
 ## Organization
 
+Canonical MusicXML asset folders live at the `media/midi` **root**; all source and
+intermediate/messy files live under `_workspace/` (reorg done 2026-07-03):
+
 ```
-loops/
-  chords/        *.musicxml
+media/midi/
+  chords/        *.musicxml   ← canonical assets (the Lego bins)
   basslines/     *.musicxml
   melodies/      *.musicxml
+  ideas/         *.musicxml
   percussion/    *.musicxml
-  dist/          manifest.json   ← generated, git-ignored
+  _workspace/
+    source-packs/   Niko_MIDI_Pack_, 2000_NikoChord_Pack, FamousMIDI_Bonus, …
+    loops-midi/     old canonical .mid tree + index.yml (bootstrap input)
+    backups/        pre-conversion tarball snapshot
+    prefabs/        curated arrangements (to be re-pointed at new bricks)
+    _ledger.jsonl   conversion audit trail
+  dist/          manifest.json   ← future generated runtime aggregate, git-ignored
 ```
 
 - Top level = the four **types**, period. No more `niko/`, `famous/`, `100/`, `120bpm/`,
@@ -229,6 +239,19 @@ First full MIDI→MusicXML pass via `cli/midi-to-musicxml.mjs` — **non-destruc
   (`am-f-c-g-a3f9.musicxml`) so the mapping is exactly 1 input → 1 output.
 - **Harmony:** 1,622/1,655 chord-progressions derived at confidence 1.0; 28 flagged
   low-confidence (the `harmony-override` tail).
+
+**Descriptors preserved (v0.2 converter):** genre/emotion/quality tags are extracted from
+the source path, `origin` folder names, `mood`, and `descriptor` against curated
+vocabularies (noise-filtered), and embedded per brick (`genre`, `emotion`, `tags`,
+`quality`, `artist`, `bpm`, `reverb`, `title`) — with raw `source-mood`/`source-descriptor`
+kept for traceability. Coverage: **2,153/3,231 bricks (67%)** carry a surfaceable
+descriptor; top genres pop/house/edm/jazz/trap/rock, top emotions emotional/uplifting/
+dark/beautiful/sad. These are meant to surface in the Producer UX for filtering.
+
+**Layout reorg (2026-07-03):** canonical asset folders promoted to `media/midi` root;
+source packs, old `.mid` tree, backups, prefabs, and the ledger moved under `_workspace/`
+(all `mv`, reversible). Converter paths updated accordingly (`MIDI_ROOT`/`LOOPS_DIR`/
+`OUT_DIR` env-overridable).
 
 Known follow-ups before cutover: canonical roman+Braille filenames (currently reuse the
 old slug), 16th-grid quantization refinement, and wiring the hardened V2 analyzer (the
