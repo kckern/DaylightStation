@@ -14,14 +14,14 @@
  *   ("Showing what fits your jam · N"). "Show all" lifts the gate for honest
  *   browsing — non-stackable cards get a small ⚠ but adding them is ALLOWED
  *   (guardrails are defaults, not prisons; design §4b).
- * - "Goes with →" pivot: any card can re-anchor the browse with ITSELF as the
- *   base (pivotEntry overrides the workspace base); a breadcrumb chip shows
- *   the pivot with ✕ to return. Works with or without a workspace base.
  * - Cards: MaterialGlyph + kind identity — RomanProgression (harmonic), staff
  *   thumb (melodic), feel/bpm chips (grooves — they carry NO timeline, so no
- *   fake onset rows). Title only when a REAL title exists; the glyph+roman IS
- *   the identity (requirements §3.1). For melodic/groove material without a
- *   title the slug appears only as a subdued debug caption, never as a name.
+ *   fake onset rows). Library entries are ABSTRACT, key-agnostic classes (in C,
+ *   transposed at playtime), so a keyed chord SPELLING is an instantiation:
+ *   entry.title (a concrete chord spelling for harmonic AND ~40% of melodic
+ *   bricks) is NEVER rendered on a card — it survives only as the aria-label.
+ *   The glyph + Roman/staff/feel IS the identity (requirements §3.1). An
+ *   untitled melodic card falls back to a subdued slug caption (a source id).
  * - Tap card = onPick(entry). Press-AND-HOLD (150ms arm) = peek audition
  *   (design §7): the entry sounds over the jam if it's playing, solo +
  *   metronome if not, conformed to the current key/tempo (usePeek). Release
@@ -29,7 +29,7 @@
  *   tap. Scroll safety mirrors GainStrip (touch-action pan-y + >12px drift
  *   cancels the arm), but the commit points differ: peek starts on the HOLD
  *   TIMER, tap commits on pointer-up.
- * - Perf: the compatible set is built on open + base/pivot change (memo),
+ * - Perf: the compatible set is built on open + base change (memo),
  *   NEVER per keystroke — search/facets filter the already-built set. Render
  *   is capped at 120 cards with a "refine to see more" footer instead of
  *   virtualization (simple + honest at ~3.2k entries).
@@ -161,8 +161,7 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
 }
 
 /**
- * One library card: glyph-forward identity + kind display + pivot affordance.
- * The pivot is a SIBLING button (nested buttons are invalid HTML).
+ * One library card: glyph-forward identity + kind display.
  *
  * Pointer choreography (Task 5.2 press-to-peek):
  * - pointer-down arms a HOLD_MS timer (and captures the pointer);
@@ -174,7 +173,7 @@ function NowPlayingPill({ positionRef, pillMaterials, onClose }) {
  * - onClick handles ONLY keyboard activation (detail === 0): the pointer flow
  *   owns taps, and the guard swallows the browser's post-tap ghost click.
  */
-function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
+function LoopCard({ result, warn, lib, onPick, isPeeking, onPeekStart, onPeekStop, onAudioGesture }) {
   const { entry, reasons = [] } = result;
   const isGroove = entry.type === 'groove';
   const hasRoman = !!entry.roman?.length;
@@ -263,19 +262,21 @@ function LoopCard({ result, warn, lib, onPick, onPivot, isPeeking, onPeekStart, 
             {entry.bpm ? <span className="piano-loop__chip">{entry.bpm} bpm</span> : null}
           </span>
         )}
-        {entry.title
-          ? <span className="piano-loop__name">{entry.title}</span>
-          : (!hasRoman && <span className="piano-loop__caption">{entry.slug}</span>)}
+        {/* entry.title is a KEYED chord SPELLING (concrete chord names) — true
+            even for melodies (~40% carry their progression as the title, e.g.
+            "G Am · F C") — and the library is abstract/key-agnostic (transposed
+            at playtime), so title is NEVER rendered as visible card text; it
+            survives only as the aria-label above. The identity IS the glyph +
+            Roman (harmonic) / staff (melodic) / feel (groove). A melodic card
+            with no title at all falls back to a subdued slug caption (a source
+            id, never a keyed spelling). */}
+        {!hasRoman && !isGroove && !entry.title && (
+          <span className="piano-loop__caption">{entry.slug}</span>
+        )}
         {reasons.slice(0, 2).map((r) => <span key={r} className="piano-loop__why">{r}</span>)}
         {entry.quality === 'best' && <span className="piano-loop__tag">best</span>}
         {entry.tags?.[0] && <span className="piano-loop__tag">{entry.tags[0]}</span>}
       </button>
-      <button
-        type="button"
-        className="piano-loop__pivot"
-        aria-label={`goes with ${label}`}
-        onClick={() => onPivot(entry)}
-      >goes with →</button>
     </li>
   );
 }
@@ -306,7 +307,6 @@ export function LibraryBrowser({
   const [quality, setQuality] = useState('best');
   const [text, setText] = useState('');
   const [genresExpanded, setGenresExpanded] = useState(false);
-  const [pivot, setPivot] = useState(null); // "goes with →" anchor, overrides the workspace base
   const [gateLifted, setGateLifted] = useState(false);
 
   // Press-and-hold audition engine (Task 5.2). isPlaying doubles as the
@@ -324,7 +324,7 @@ export function LibraryBrowser({
     () => layers.find((l) => l.source?.kind === 'library')?.source.entry ?? null,
     [layers],
   );
-  const base = pivot ?? workspaceBase;
+  const base = workspaceBase;
   // The gate only exists when the anchor has a harmonic timeline (groove or
   // unenriched anchors can't gate — buildCompatibleSet passes everything).
   const gateActive = !!timelineOf(base);
@@ -336,10 +336,10 @@ export function LibraryBrowser({
       gate: gateActive,
       entries: entries.length,
     });
-    // Open-context snapshot only — later base/entry changes log via pivot/pick.
+    // Open-context snapshot only — later entry changes log via pick.
   }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── compatible set: rebuilt on base/pivot change ONLY, never per keystroke ──
+  // ── compatible set: rebuilt on base change ONLY, never per keystroke ──
   const compatible = useMemo(() => buildCompatibleSet({ entries, baseEntry: base }), [entries, base]);
   const ranked = useMemo(() => rankCompatible(compatible, base), [compatible, base]);
   const passing = useMemo(
@@ -407,18 +407,6 @@ export function LibraryBrowser({
     onPick(result.entry);
   }, [logger, onPick]);
 
-  const handlePivot = useCallback((entry) => {
-    logger.info('library.pivot', { slug: entry.slug });
-    setPivot(entry);
-    setGateLifted(false);
-  }, [logger]);
-
-  const clearPivot = useCallback(() => {
-    logger.info('library.pivot-clear', {});
-    setPivot(null);
-    setGateLifted(false);
-  }, [logger]);
-
   const liftGate = useCallback(() => {
     logger.info('library.gate-lift', { lifted: !gateLifted });
     setGateLifted((v) => !v);
@@ -427,10 +415,6 @@ export function LibraryBrowser({
   const clearFilters = useCallback(() => {
     setKind(null); setGenre(null); setFeel(null); setText(''); setQuality('best');
   }, []);
-
-  const pivotLabel = pivot
-    ? (pivot.title || (pivot.roman?.length ? pivot.roman.join(' ') : pivot.type))
-    : null;
 
   // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
   // sections/arrangements aren't addable layers, documented scoping). Filtered
@@ -534,15 +518,6 @@ export function LibraryBrowser({
         )}
       </div>
 
-      {pivot && (
-        <div className="piano-producer-mode__crumb">
-          <span className="piano-producer-mode__crumb-label">Goes with</span>
-          <MaterialGlyph material={pivot} size={26} />
-          <span className="piano-producer-mode__crumb-name">{pivotLabel}</span>
-          <button type="button" className="piano-producer-mode__crumb-clear" aria-label="clear pivot" onClick={clearPivot}>✕</button>
-        </div>
-      )}
-
       {gateActive && store === 'curated' && (
         <div className="piano-producer-mode__gate">
           <span className="piano-producer-mode__gate-note">
@@ -629,7 +604,6 @@ export function LibraryBrowser({
                 warn={showAll && !result.stackable}
                 lib={lib}
                 onPick={handlePick}
-                onPivot={handlePivot}
                 isPeeking={peekingId != null && peekingId === entryIdentity(result.entry)}
                 onPeekStart={startPeek}
                 onPeekStop={handlePeekStop}
