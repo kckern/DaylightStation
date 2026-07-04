@@ -425,7 +425,7 @@ export function LibraryBrowser({
   }, [logger, gateLifted]);
 
   const clearFilters = useCallback(() => {
-    setKind(null); setGenre(null); setFeel(null); setText('');
+    setKind(null); setGenre(null); setFeel(null); setText(''); setQuality('best');
   }, []);
 
   const pivotLabel = pivot

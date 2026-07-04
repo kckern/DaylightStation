@@ -13,7 +13,7 @@ import { rankLayerCandidates } from '@shared-music/layerMatch.mjs';
  */
 
 const MANIFEST_URL = '/api/v1/piano/loop-manifest';
-const streamUrl = (rel) => `/api/v1/local/stream/${encodeURI(rel)}`;
+const streamUrl = (rel) => `/api/v1/local/stream/${rel.split('/').map(encodeURIComponent).join('/')}`;
 
 let _logger;
 const logger = () => {
@@ -32,6 +32,7 @@ export function useLoopLibrary() {
       try {
         const t0 = performance.now();
         const res = await fetch(MANIFEST_URL);
+        if (!res.ok) throw new Error(`loop-manifest ${res.status}`);
         const data = await res.json();
         const bricks = Array.isArray(data?.bricks) ? data.bricks : [];
         if (cancelled) return;

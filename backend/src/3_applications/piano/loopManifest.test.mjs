@@ -30,11 +30,12 @@ describe('buildBrickEntry', () => {
   });
 
   it('skips timeline for grooves', () => {
-    const xml = `<x>${misc({ type: 'groove', 'source-slug': 'four-on-floor' })}</x>`;
+    const xml = `<x>${misc({ type: 'groove', 'source-slug': 'four-on-floor', 'canonical-name': 'four-on-floor' })}</x>`;
     const e = buildBrickEntry('percussion/four-on-floor.musicxml', xml);
     expect(e.type).toBe('groove');
     expect(e.timeline).toBeUndefined();
     expect(e.needsReview).toBeUndefined();
+    expect(e.feel).toBe('four-on-floor');
   });
 
   it('flags a harmonic brick with no notes as needsReview', () => {

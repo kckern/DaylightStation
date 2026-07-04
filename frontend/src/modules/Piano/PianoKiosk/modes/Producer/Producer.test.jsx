@@ -236,7 +236,7 @@ beforeEach(() => {
   // a real-looking AudioContext first.
   global.window.AudioContext = class { close() { return Promise.resolve(); } };
   global.fetch = vi.fn((url) => {
-    if (url.includes('/loop-manifest')) return Promise.resolve({ json: () => Promise.resolve({ bricks: BRICKS }) });
+    if (url.includes('/loop-manifest')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ bricks: BRICKS }) });
     if (url.includes('broken-melody')) return Promise.resolve({ text: () => Promise.resolve(EMPTY_MUSICXML) });
     return Promise.resolve({ text: () => Promise.resolve(musicXml([[62, 0, 2], [65, 2, 2]])) });
   });
