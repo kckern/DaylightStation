@@ -74,12 +74,22 @@ describe('buildCompatibleSet — guardrail matrix', () => {
     expect(out).toEqual([]);
   });
 
-  it('harmonic base: bassline candidates gate exactly like harmonic ones', () => {
+  it('harmonic base: basslines take the fit-ranked LINE path, NEVER hard-gated', () => {
+    // A bass is a single low voice, not an independent harmonic layer: the
+    // union-consonance gate wrongly blamed the bass root for the chord's own
+    // busy slots and rejected ~90% of chord loops' basslines (bass became
+    // un-addable). Basslines now rank by melodyFit like melodies — a bass that
+    // tracks the roots ranks top, a clashing one ranks low but STAYS offered.
     const out = buildCompatibleSet({
-      entries: [bassline('good-bass', TL_ROOTS), bassline('bad-bass', TL_DIM7)],
+      entries: [bassline('tracks-roots', TL_FIT_10), bassline('clashes', TL_DIM7)],
       baseEntry: BASE,
     });
-    expect(slugsOf(out)).toEqual(['good-bass']);
+    // Both admitted — nothing is gated out. (Old behavior excluded 'clashes'.)
+    expect(slugsOf(out).sort()).toEqual(['clashes', 'tracks-roots']);
+    const byId = Object.fromEntries(out.map((r) => [r.entry.slug, r]));
+    expect(byId['tracks-roots'].fit).toBeCloseTo(1.0);
+    expect(byId['tracks-roots'].stackable).toBe(true);
+    expect(byId['clashes'].fit).toBeLessThan(byId['tracks-roots'].fit);
   });
 
   it('harmonic base: candidate WITHOUT a timeline is excluded before stackable runs (no throw)', () => {
