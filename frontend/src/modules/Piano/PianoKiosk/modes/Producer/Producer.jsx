@@ -67,7 +67,7 @@ import { romanAnalysis, bestTonic } from '@shared-music/romanAnalysis.mjs';
 import {
   workspaceReducer, initialWorkspace, toTransportLayers, takeToSource,
   addLayer, removeLayer, toggleMute, toggleSolo, setGain, setVoice,
-  toggleCarried, nudgeKey, setBpm, toggleMetronome, loadStack, setEditingSection,
+  toggleCarried, nudgeKey, setBpm, setLengthBars, toggleMetronome, loadStack, setEditingSection,
 } from '../../producer/workspaceReducer.js';
 import {
   draftReducer, promote, hydrate, applyTemplate, slotFill,
@@ -332,6 +332,9 @@ export function Producer() {
     // Key/tempo are SONG-GLOBAL once a draft exists (design §1) — song
     // playback runs at the draft's meta bpm; the jam stack keeps its own.
     bpm: armedMode === 'song' && draft ? draft.meta.bpm : state.bpm,
+    // Loop length override (design §4) — stack mode only; song mode gets its
+    // length from each section's own lengthBars.
+    forceLengthBars: armedMode === 'song' ? null : state.lengthBars,
     metronome: state.metronome,
     // Count-in only applies while a capture session is open — the capture
     // card's metronome path starts the transport with it. (A Play tap during
@@ -468,6 +471,9 @@ export function Producer() {
       workspaceState: wsState,
       notesById: notesByIdRef.current,
       sectionId: editing ?? undefined,
+      // Carry a forced loop length into the section (design §4); null → the
+      // section derives its natural length as before.
+      lengthBars: wsState.lengthBars ?? undefined,
     }));
     if (editing) dispatch(setEditingSection(null));
     if (isFirst) setTab('song');
@@ -525,11 +531,15 @@ export function Producer() {
     const d = draftRef.current;
     const stack = resolveSectionStack(d, sectionId);
     if (!stack) return;
+    const section = d?.sections?.find((s) => s.id === sectionId);
     logger.info('piano.producer.section-open', { sectionId, layers: stack.length });
     dispatch(loadStack({
       layers: stack,
       bpm: d.meta.bpm,
       keyShift: d.meta.keyShift,
+      // Editing a section adopts its structural length so the loop meter and
+      // playback match the section you're editing (design §4).
+      lengthBars: Number.isFinite(section?.lengthBars) ? section.lengthBars : undefined,
       editingSectionId: sectionId,
     }));
     ensureLayerNotes(stack);
@@ -1034,12 +1044,27 @@ export function Producer() {
               ) : (
                 <div className="piano-producer-mode__mix">
                   {/* The bounded loop made visible (design §4): one segment per
-                      bar, sweeping playhead, resets at the boundary. */}
-                  <LoopMeter
-                    loopBars={transport.loopBars}
-                    positionRef={transport.positionRef}
-                    isPlaying={transport.isPlaying}
-                  />
+                      bar, sweeping playhead, resets at the boundary — plus the
+                      settable length (2/4/8/16, tap again for Auto/natural). */}
+                  <div className="piano-producer-mode__loop-head">
+                    <LoopMeter
+                      loopBars={transport.loopBars}
+                      positionRef={transport.positionRef}
+                      isPlaying={transport.isPlaying}
+                    />
+                    <div className="piano-producer-mode__loop-len" role="group" aria-label="loop length">
+                      {[2, 4, 8, 16].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={`piano-producer-mode__loop-len-btn${state.lengthBars === n ? ' is-on' : ''}`}
+                          aria-pressed={state.lengthBars === n}
+                          title={`${n}-bar loop`}
+                          onClick={() => dispatch(setLengthBars(state.lengthBars === n ? null : n))}
+                        >{n}</button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="piano-producer-mode__layers">
                     {state.layers.map((l) => (
                       <ChannelStrip

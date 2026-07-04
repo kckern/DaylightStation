@@ -107,6 +107,7 @@ export function useProducerTransport({
   arrangement = null,
   bpm,
   timeSig = [4, 4],
+  forceLengthBars = null,
   metronome = false,
   countInBars = 0,
   onBlock,
@@ -119,9 +120,14 @@ export function useProducerTransport({
   const barMs = (60000 / safeBpm) * (4 / beatType) * beatsPerBar;
   const mode = arrangement ? 'arrangement' : 'stack';
 
+  // forceLengthBars (design §4): a positive int overrides the natural cycle
+  // length; null/≤0 keeps the longest-layer length.
+  const forcedBars = Number(forceLengthBars) > 0 ? Math.trunc(Number(forceLengthBars)) : null;
   const cycle = useMemo(
-    () => buildLoopCycle(layers || [], { bpm: safeBpm, timeSig: { beats: beatsPerBar, beatType } }),
-    [layers, safeBpm, beatsPerBar, beatType],
+    () => buildLoopCycle(layers || [], {
+      bpm: safeBpm, timeSig: { beats: beatsPerBar, beatType }, forceLengthBars: forcedBars,
+    }),
+    [layers, safeBpm, beatsPerBar, beatType, forcedBars],
   );
 
   const compiled = useMemo(() => {

@@ -13,6 +13,7 @@ import {
   setKey,
   nudgeKey,
   setBpm,
+  setLengthBars,
   toggleMetronome,
   loadStack,
   clearWorkspace,
@@ -70,6 +71,7 @@ describe('initialWorkspace', () => {
       keyShift: 0,
       bpm: 100,
       metronome: false,
+      lengthBars: null,
       editingSectionId: null,
       lastError: null,
     });
@@ -78,6 +80,27 @@ describe('initialWorkspace', () => {
   it('unknown action returns state unchanged', () => {
     const s = run(addChords(1));
     expect(workspaceReducer(deepFreeze(s), { type: 'NOPE' })).toBe(s);
+  });
+});
+
+// ── SET_LENGTH_BARS (design §4 — settable loop length) ───────────────────────
+
+describe('SET_LENGTH_BARS', () => {
+  it('sets a positive integer override', () => {
+    expect(run(setLengthBars(8)).lengthBars).toBe(8);
+  });
+  it('null clears the override back to natural length', () => {
+    expect(run(setLengthBars(8), setLengthBars(null)).lengthBars).toBeNull();
+  });
+  it('truncates fractional and ignores non-positive / non-finite', () => {
+    expect(run(setLengthBars(4.9)).lengthBars).toBe(4);
+    expect(run(setLengthBars(8), setLengthBars(0)).lengthBars).toBe(8); // ignored
+    expect(run(setLengthBars(8), setLengthBars(-2)).lengthBars).toBe(8); // ignored
+    expect(run(setLengthBars(8), setLengthBars(NaN)).lengthBars).toBe(8); // ignored
+  });
+  it('LOAD_STACK adopts a section length, else clears to null', () => {
+    expect(run(loadStack({ layers: [], lengthBars: 16 })).lengthBars).toBe(16);
+    expect(run(setLengthBars(8), loadStack({ layers: [] })).lengthBars).toBeNull();
   });
 });
 
