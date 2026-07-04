@@ -80,7 +80,7 @@ describe('ChannelStrip assembly', () => {
   it('renders glyph, roman identity, role tag, voice chip, M/S, gain strip and remove', () => {
     const { container } = renderStrip();
     expect(container.querySelector('.piano-material-glyph')).toBeTruthy();
-    expect(container.querySelector('.roman-progression')).toBeTruthy();
+    expect(container.querySelector('.piano-chord-lane')).toBeTruthy();
     expect(screen.getByText('chords')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'voice' })).toHaveTextContent('Grand Piano');
     expect(screen.getByLabelText('mute')).toHaveAttribute('aria-pressed', 'false');

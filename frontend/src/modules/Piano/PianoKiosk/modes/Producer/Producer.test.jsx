@@ -310,7 +310,7 @@ describe('Producer shell (three bands)', () => {
     const row = document.querySelector('.piano-channel-strip');
     expect(row.querySelector('.piano-material-glyph')).toBeTruthy();
     expect(screen.getByText('chords')).toBeInTheDocument();
-    expect(row.querySelector('.roman-progression')).toBeTruthy();
+    expect(row.querySelector('.piano-chord-lane')).toBeTruthy();
     // Play is now enabled.
     expect(screen.getByRole('button', { name: /play/i })).toBeEnabled();
   });

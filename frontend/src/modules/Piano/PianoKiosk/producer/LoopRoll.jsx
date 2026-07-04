@@ -60,8 +60,8 @@ export function LoopRoll({ notes, ppq, barSpan = 1, positionRef, isPlaying = fal
     const frame = () => {
       const p = positionRef.current || {};
       const barInLoop = (((p.bar || 0) % model.bars) + model.bars) % model.bars;
-      const beatInLoop = (barInLoop * BEATS_PER_BAR) + (p.beat || 0);
-      const frac = Math.max(0, Math.min(1, beatInLoop / (model.bars * BEATS_PER_BAR)));
+      // barFrac = smooth 0..1 within the bar → the cursor sweeps continuously.
+      const frac = Math.max(0, Math.min(1, (barInLoop + (p.barFrac || 0)) / model.bars));
       el.setAttribute('x', frac * W);
       el.style.opacity = '1';
       raf = requestAnimationFrame(frame);
