@@ -1,6 +1,8 @@
 # Piano Producer — UX & Taxonomy Overhaul (Design)
 
-> **Status:** Design agreed 2026-07-04 (brainstorming session). Not yet implemented.
+> **Status:** IMPLEMENTED 2026-07-04 (branch `feat/piano-producer-ux-overhaul`).
+> All phases 1–6 (+2b) shipped; 137 Piano test files / 1441 tests green. See the
+> build-order table (§10) for per-phase commits and the follow-ups list below.
 > **Supersedes UX of:** [`2026-07-01-piano-producer-overhaul-design.md`](./2026-07-01-piano-producer-overhaul-design.md)
 > **Architecture reference:** [`docs/reference/piano/producer.md`](../../reference/piano/producer.md)
 >
@@ -318,6 +320,30 @@ Phases 1–4 are mostly presentation over existing machinery; 5 reuses the captu
 engine; 6 is the new build. Each phase is independently shippable and leaves the
 Producer coherent. Every phase must ship with structured logging
 (`frontend/src/lib/logging/`) at lifecycle/state-transition points.
+
+**All phases shipped 2026-07-04**, each as its own commit on
+`feat/piano-producer-ux-overhaul` (1 · taxonomy/shell → 2 · bounded loop →
+2b · settable length → 3 · transport sheets + keyed names → 4 · strip re-layout →
+5 · Add Layer sheet + live record roll → 6 · builders).
+
+### Follow-ups deferred from this pass
+
+- **Keyed names for built/recorded chord layers:** the ChannelStrip shows the
+  keyed ChordLane only for library entries (`entry.roman`); take-sourced layers
+  (recorded or ChordBuilder output) render as a piano-roll. Attaching a roman/
+  timeline read-out to take layers would give them the same chord lane.
+- **Builder live audio preview:** the drum sequencer / chord builder commit a
+  layer that plays in the mix, but don't audition inside the modal. A preview
+  transport would let you hear before adding.
+- **Keep → Save/ephemeral prompt:** after a recorded Keep the take lands as an
+  ephemeral layer; "Save to My Loops" lives on the strip's ⋯ menu rather than an
+  immediate post-Keep choice.
+- **My Loops source in the Add Layer sheet:** the design's Library/My Loops
+  toggle isn't surfaced there yet (role cards open the shared library; the
+  LibraryBrowser's own `Ours` facet still reaches saved loops).
+- **Internal `mix` token / `__mix` CSS:** the workspace tab is labelled "Loop"
+  but the state token and class names stay `mix` (invisible; a later mechanical
+  rename can align them).
 
 ---
 
