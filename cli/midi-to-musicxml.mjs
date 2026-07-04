@@ -270,7 +270,7 @@ function finalizeName(header, tokens, allowCycle) {
   return (header + seq.join('-')).replace(/[\/\\]/g, '');
 }
 
-// Returns { name, roman, signature, confidence } — name is the canonical filename stem.
+// Returns { name, roman, signature, confidence, roots } — name is the canonical stem.
 function canonicalize(entry, notes, ppq, beats, beatType) {
   const header = headerGlyph(beats, beatType);
   if (entry.type === 'melody') {
