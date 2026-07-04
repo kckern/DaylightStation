@@ -21,6 +21,52 @@ import getLogger from '../../../lib/logging/Logger.js';
 export const WATCHDOG_DEFAULTS = { minFps: 12, sustainSeconds: 4, graceMs: 8000 };
 
 /**
+ * The bridge's heartbeat ingest. localhost is a secure context, so the HTTPS
+ * kiosk may POST here despite mixed-content rules (same exemption that lets
+ * `ws://localhost:8770` work in usePianoVoiceBridge). The APK's out-of-process
+ * KioskWatchdog uses the beat stream as the ONE liveness signal that reflects
+ * the WebView's real event-loop health — if the loop starves or the WebView
+ * latches, beats slow or stop and the bridge (which survives WebView failure)
+ * sees exactly that and self-heals.
+ */
+export const DEFAULT_BEAT_URL = 'http://localhost:8770/kiosk/beat';
+
+/**
+ * Pure builder for a heartbeat payload. Kept separate so it is unit-testable
+ * without a DOM. `fps` is frames presented in the last ~1s.
+ * @returns {{fps:number, visibility:string, url:string, sinceLoadMs:number, ts:number}}
+ */
+export function buildBeat(fps, { visibility, url, sinceLoadMs, ts }) {
+  return {
+    fps: Math.round(fps),
+    visibility: visibility || 'unknown',
+    url: url || '',
+    sinceLoadMs: Math.round(sinceLoadMs) || 0,
+    ts: ts || 0,
+  };
+}
+
+/**
+ * Fire-and-forget heartbeat POST. Never throws — a dead/unreachable bridge is
+ * itself the signal the bridge infers from beat silence, so failures are mute.
+ */
+function sendBeat(beatUrl, payload) {
+  if (typeof fetch !== 'function') return;
+  try {
+    fetch(beatUrl, {
+      method: 'POST',
+      mode: 'no-cors', // opaque response; text/plain body needs no preflight
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload),
+      keepalive: true, // survive an unload/navigation so the last beat still lands
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+        ? AbortSignal.timeout(1500)
+        : undefined,
+    }).catch(() => { /* bridge down → silence is the DEAD signal */ });
+  } catch { /* never let telemetry break the render loop */ }
+}
+
+/**
  * Self-heal restart is DISABLED pending root-cause of the SM-T590 frame-clock
  * stall. Field evidence (2026-06): restarting the WebView did NOT recover fps —
  * it stayed ~10fps across restarts, even on a near-empty screen with hardware
@@ -54,12 +100,18 @@ export function tickWatchdog(state, fps, { minFps, sustainSeconds }) {
  * @param {number} [opts.sustainSeconds=4]
  * @param {number} [opts.graceMs=8000] - ignore jank during initial load
  * @param {() => void} [opts.onRestart] - override the restart action (tests)
+ * @param {string} [opts.beatUrl] - heartbeat ingest URL (default DEFAULT_BEAT_URL)
+ * @param {boolean} [opts.heartbeat=true] - post a per-second beat to the bridge
+ * @param {(payload:object) => void} [opts.onBeat] - override the beat sender (tests)
  */
 export function useRenderWatchdog({
   minFps = WATCHDOG_DEFAULTS.minFps,
   sustainSeconds = WATCHDOG_DEFAULTS.sustainSeconds,
   graceMs = WATCHDOG_DEFAULTS.graceMs,
   onRestart,
+  beatUrl = DEFAULT_BEAT_URL,
+  heartbeat = true,
+  onBeat,
 } = {}) {
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return undefined;
@@ -89,6 +141,19 @@ export function useRenderWatchdog({
         const fps = (frames * 1000) / (t - windowStart);
         frames = 0;
         windowStart = t;
+        // Heartbeat every second, unconditionally (even during the grace window):
+        // the bridge needs a continuous liveness stream, and an early beat during
+        // load is useful, not noise. Sent BEFORE the jank gate so a starving loop
+        // still emits its last few beats.
+        if (heartbeat) {
+          const payload = buildBeat(fps, {
+            visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+            url: typeof location !== 'undefined' ? location.href : '',
+            sinceLoadMs: t - startedAt,
+            ts: Date.now(),
+          });
+          if (onBeat) onBeat(payload); else sendBeat(beatUrl, payload);
+        }
         if (t - startedAt >= graceMs) {
           if (fps < minFps) {
             jankSeconds += 1;
@@ -122,7 +187,7 @@ export function useRenderWatchdog({
     };
     rafId = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(rafId);
-  }, [minFps, sustainSeconds, graceMs, onRestart]);
+  }, [minFps, sustainSeconds, graceMs, onRestart, beatUrl, heartbeat, onBeat]);
 }
 
 export default useRenderWatchdog;

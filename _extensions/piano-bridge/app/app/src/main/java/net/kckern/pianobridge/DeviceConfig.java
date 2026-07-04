@@ -102,7 +102,7 @@ public class DeviceConfig {
     /** Target MAC, normalized upper-case (Android returns upper-case addresses). */
     public String targetMac() { return norm(values.get("targetMac")); }
 
-    public String targetName() { return values.getOrDefault("targetName", "WIDI Master"); }
+    public String targetName() { return values.getOrDefault("targetName", "jam-7e6"); }
 
     public Set<String> blocklistMacs() {
         String raw = values.get("blocklistMacs");
@@ -156,6 +156,23 @@ public class DeviceConfig {
     public int tapY() { return intOr("tapY", 6); }
     public int tapLen() { return intOr("tapLen", 34); }
     public int tapDurationMs() { return intOr("tapDurationMs", 20); }
+
+    // --- KioskWatchdog (out-of-process WebView self-heal). All live-tunable via
+    //     `pbctl config set` so thresholds and the recovery policy can change with no
+    //     APK rebuild. The page POSTs a per-second heartbeat to /kiosk/beat; the
+    //     watchdog runs an escalation ladder (touch-burst → reload → restartApp →
+    //     rebootDevice) when the WebView stalls. reboot is capped + persisted so it
+    //     can't boot-loop. Set watchdogRecoverEnabled=false for observe-only, or
+    //     watchdogRebootEnabled=false to keep the soft rungs but never reboot.
+    public boolean watchdogEnabled() { return boolOr("watchdogEnabled", true); }
+    public boolean watchdogRecoverEnabled() { return boolOr("watchdogRecoverEnabled", true); }
+    public boolean watchdogRebootEnabled() { return boolOr("watchdogRebootEnabled", true); }
+    public int watchdogMinFps() { return intOr("watchdogMinFps", 12); }
+    public int watchdogSustainSec() { return intOr("watchdogSustainSec", 5); }
+    public int watchdogBeatTimeoutMs() { return intOr("watchdogBeatTimeoutMs", 12000); }
+    public int watchdogGraceMs() { return intOr("watchdogGraceMs", 15000); }
+    public long watchdogRebootMinGapMs() { return longOr("watchdogRebootMinGapMs", 3600000L); }
+    public int watchdogLadderCooldownMs() { return intOr("watchdogLadderCooldownMs", 60000); }
 
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }

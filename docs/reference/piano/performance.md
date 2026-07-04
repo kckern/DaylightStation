@@ -184,6 +184,42 @@ Two in-app instruments sample `requestAnimationFrame`:
 These give fps and rule out JS/memory, but they cannot see the native upload stall — that is
 what `dumpsys gfxinfo` is for.
 
+**The fatal limitation of the in-app instruments:** they live *inside* the WebView and report
+over WebSocket *to the DS backend*. When the WebView latches or its JS loop starves, the sensor
+stops firing and its telemetry channel dies with it — so the in-app tools can never call time of
+death. And the whole SPA (and its telemetry) dies if the bridge process it depends on dies. On
+2026-07-03 the piano-bridge APK crashed; the kiosk decayed to the throttle with no sound, and
+*why the bridge died was unrecoverable* — `Diag` is an in-memory ring that died with the process.
+
+## The out-of-process watchdog (2026-07-03)
+
+The fix for that blind spot: move health-sensing to the one process that **survives** WebView
+failure — the piano-bridge APK — and give it authority to act. See
+`docs/_wip/plans/2026-07-03-piano-kiosk-out-of-process-watchdog.md`.
+
+- **Heartbeat (page → bridge).** `useRenderWatchdog` POSTs a per-second beat
+  (`{fps, visibility, url}`) to `http://localhost:8770/kiosk/beat`. Beat *silence* is itself the
+  DEAD signal; decayed fps in the beats is the DECAYED signal. This is the only liveness view
+  that reflects the WebView's real event-loop health.
+- **`KioskWatchdog` (in the APK).** Classifies `HEALTHY | DECAYED | DEAD` and runs an escalation
+  ladder **immediately** on stall: **L1** `TouchPulser.burst` (invisible un-throttle) → **L2**
+  `loadStartUrl` (reload) → **L3** `restartApp` (renderer respawn) → **L4** `rebootDevice` (FKB
+  REST — the only rung that clears the hard latch). L2–L4 are suppressed inside the quiet window;
+  L4 is capped and its timestamp **persisted** so a reboot can't boot-loop.
+- **Durable death log (`CrashLog`).** Uncaught-exception handler + a running-marker that flags an
+  unclean previous death, all on disk so the *next* incident is diagnosable.
+- **Diagnostics API.** `pbctl diag` → `GET /diagnostics`: one snapshot of time, CPU, memory,
+  thermal, battery, bridge state, and **both** kiosk views (the WebView watchdog verdict *and*
+  FKB's own `deviceInfo` — distinguishing "WebView stalled" from "FKB app itself wedged").
+  `pbctl kiosk` / `pbctl crashlog` surface the watchdog state and durable death record.
+
+> Config (all live via `pbctl config set`, no rebuild): `watchdogMinFps`, `watchdogSustainSec`,
+> `watchdogBeatTimeoutMs`, `watchdogRecoverEnabled` (false = observe-only), `watchdogRebootEnabled`,
+> `watchdogRebootMinGapMs`. **`fkbPassword` MUST be set** or the L2–L4 FKB REST calls 401.
+
+The in-app `SELF_HEAL_RESTART` stays **off** — the bridge-hosted ladder is the self-heal now, and
+unlike the in-app restart it can escalate past `restartApp` to a real reboot when nothing else works.
+
 ---
 
 *Subsystem overview: [README.md](./README.md). Hardware and tablet setup: [kiosk-setup.md](./kiosk-setup.md).*
