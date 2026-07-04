@@ -674,6 +674,12 @@ export function useProducerTransport({
     queueJump,
     pendingJumpRef,
     lengthMs: mode === 'arrangement' ? (compiled?.totalMs ?? 0) : cycle.lengthMs,
+    // Whole-bar length of the current stack loop (design §4 — the bounded loop:
+    // the cycling bar:beat readout & loop meter tile this many bars, then reset).
+    // 0 when nothing is loaded; arrangement mode has no single loop length.
+    loopBars: mode === 'arrangement' || !(cycle.lengthMs > 0)
+      ? 0
+      : Math.max(1, Math.round(cycle.lengthMs / barMs)),
   };
 }
 

@@ -135,4 +135,19 @@ describe('TransportBar', () => {
     render(<TransportBar {...props} isPlaying={false} />);
     expect(screen.getByLabelText('position').textContent).toBe('1:1');
   });
+
+  it('cycles the bar WITHIN the loop and shows the bar count (design §4)', async () => {
+    const props = baseProps();
+    // Global bar 9 in an 8-bar loop → loop-local bar 1 (9 % 8 = 1 → display 2).
+    props.positionRef = { current: { normalized: 0.1, bar: 9, beat: 0, blockIndex: -1 } };
+    render(<TransportBar {...props} isPlaying loopBars={8} />);
+    await waitFor(() => expect(screen.getByLabelText('position').textContent).toBe('2:1 · 8 bars'));
+  });
+
+  it('falls back to the raw climbing bar with no loop length (loopBars 0)', async () => {
+    const props = baseProps();
+    props.positionRef = { current: { normalized: 0.5, bar: 12, beat: 2, blockIndex: -1 } };
+    render(<TransportBar {...props} isPlaying loopBars={0} />);
+    await waitFor(() => expect(screen.getByLabelText('position').textContent).toBe('13:3'));
+  });
 });
