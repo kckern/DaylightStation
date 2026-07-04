@@ -1,0 +1,49 @@
+// Chord progression builder (design §9). Reuses .piano-sheet / .piano-sheet-scrim.
+@use './TransportSheets.scss';
+
+.piano-chordbuilder {
+  min-width: 32rem;
+  max-width: 94vw;
+  align-items: stretch;
+
+  &__title { margin: 0; font: 700 1.3rem 'Roboto Condensed', sans-serif; text-align: center; }
+
+  &__slots { display: flex; gap: 0.4rem; }
+  &__slot {
+    flex: 1 1 0;
+    min-height: 4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-surface-2, #14141c);
+    color: var(--piano-fg, #dde);
+    cursor: pointer;
+    &.is-sel { border-color: var(--piano-role-chords, #a970ff); box-shadow: 0 0 0 1px var(--piano-role-chords, #a970ff); }
+    &.is-filled { background: color-mix(in srgb, var(--piano-role-chords, #a970ff) 16%, var(--piano-surface-2, #14141c)); }
+  }
+  &__slot-name { font: 700 1.15rem 'Roboto Condensed', sans-serif; }
+  &__slot-roman { font-size: 0.72rem; color: var(--piano-muted, #99a); }
+
+  &__palette { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.4rem; }
+  &__chord {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    min-height: 3.4rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--piano-role-chords, #a970ff);
+    background: color-mix(in srgb, var(--piano-role-chords, #a970ff) 12%, var(--piano-surface-2, #1b1b27));
+    color: var(--piano-fg, #eef);
+    cursor: pointer;
+  }
+  &__chord-name { font: 700 1rem 'Roboto Condensed', sans-serif; }
+  &__chord-roman { font-size: 0.72rem; color: var(--piano-muted, #aab); }
+
+  &__actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+  &__clear, &__cancel { background: var(--piano-surface-2, #1b1b27); border-color: var(--piano-border, #3a3a48); color: var(--piano-fg, #dde); }
+}

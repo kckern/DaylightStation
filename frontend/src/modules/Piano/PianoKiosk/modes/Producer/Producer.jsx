@@ -91,6 +91,8 @@ import { LibraryBrowser } from '../../producer/LibraryBrowser.jsx';
 import { CaptureCard } from '../../producer/CaptureCard.jsx';
 import { LoopMeter } from '../../producer/LoopMeter.jsx';
 import { AddLayerSheet } from '../../producer/AddLayerSheet.jsx';
+import { DrumSequencer } from '../../producer/DrumSequencer.jsx';
+import { ChordBuilder } from '../../producer/ChordBuilder.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -776,6 +778,24 @@ export function Producer() {
     }));
   }, [logger]);
 
+  /** Add a builder's output (drum sequencer / chord builder) as a layer. The
+   * notes are already CANONICAL — drums are GM drum-map slots (never transposed)
+   * and chords are C-rooted (Roman I = C) — so the source is added directly;
+   * toTransportLayers applies the jam keyShift on playback (design §9). */
+  const handleBuilderCommit = useCallback((take) => {
+    ensureAudio();
+    logger.info('piano.producer.builder-commit', {
+      kind: take.kind, notes: take.notes.length, lengthBars: take.lengthBars,
+    });
+    dispatch(addLayer({
+      source: {
+        kind: 'take', takeId: take.takeId, notes: take.notes, ppq: take.ppq ?? 480,
+        lengthBars: take.lengthBars, timeline: take.timeline ?? null, drumMode: !!take.drumMode,
+      },
+      role: take.kind === 'groove' ? 'groove' : take.kind,
+    }));
+  }, [logger]);
+
   const openOverlay = useCallback((role, door) => {
     // door is one of the four entry cards; the "+ Add layer" path passes null.
     if (door) logger.info('piano.producer.front-door', { door });
@@ -1165,7 +1185,25 @@ export function Producer() {
             <AddLayerSheet
               onPickRole={(role) => { setAddSheet(false); openOverlay(role, null); }}
               onRecord={() => { setAddSheet(false); openCapture('add-layer'); }}
+              onBuildDrums={() => { setAddSheet(false); setBuilder('drums'); }}
+              onBuildChords={() => { setAddSheet(false); setBuilder('chords'); }}
               onClose={() => setAddSheet(false)}
+            />
+          )}
+
+          {builder === 'drums' && (
+            <DrumSequencer
+              lengthBars={transport.loopBars || state.lengthBars || 2}
+              onCommit={handleBuilderCommit}
+              onClose={() => setBuilder(null)}
+            />
+          )}
+          {builder === 'chords' && (
+            <ChordBuilder
+              keyPc={keyPc}
+              lengthBars={transport.loopBars || state.lengthBars || 4}
+              onCommit={handleBuilderCommit}
+              onClose={() => setBuilder(null)}
             />
           )}
           </div>
