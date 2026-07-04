@@ -33,4 +33,16 @@ describe('useLoopLibrary', () => {
     await result.current.loadNotes({ path: 'chords/a.musicxml' });
     expect(global.fetch.mock.calls.length).toBe(before);
   });
+
+  it('encodes # (and other special chars) per path segment, not as a URI fragment', async () => {
+    const { result } = renderHook(() => useLoopLibrary());
+    await waitFor(() => expect(result.current.loops).not.toBeNull());
+    await result.current.loadNotes({ path: 'chords/x-#iv.musicxml' });
+    const noteFetchUrl = global.fetch.mock.calls
+      .map(([url]) => url)
+      .find((url) => url.includes('/local/stream/'));
+    expect(noteFetchUrl).toBeDefined();
+    expect(noteFetchUrl).toContain('%23');
+    expect(noteFetchUrl).not.toContain('#');
+  });
 });

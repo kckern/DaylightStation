@@ -33,7 +33,10 @@ export function buildBrickEntry(relPath, xml) {
     reverb: meta.reverb || '',
     roman: meta['derived-signature'] ? meta['derived-signature'].split('-').filter(Boolean) : [],
   };
-  if (SKIP_HARMONY.has(type)) return entry; // grooves have no harmonic content
+  if (SKIP_HARMONY.has(type)) {
+    entry.feel = meta['canonical-name'] || ''; // grooves have no harmonic content
+    return entry;
+  }
   try {
     const { ppq, notes, timeSig } = musicXmlToNotes(xml);
     if (!notes.length) {
