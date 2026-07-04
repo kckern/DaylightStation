@@ -55,8 +55,10 @@ function renderStrip(layer = chordLayer, props = {}) {
   return { ...utils, ...handlers };
 }
 
-/** Tap the gain strip at `fraction` of its width (jsdom: manual pointer events). */
+/** Tap the gain strip at `fraction` of its width (jsdom: manual pointer events).
+ *  The strip lives in a popover now — open it via the compact chip first. */
 function tapGain(container, fraction) {
+  fireEvent.click(container.querySelector('.piano-channel-strip__gain-chip'));
   const strip = container.querySelector('.piano-gain-strip');
   vi.spyOn(strip, 'getBoundingClientRect').mockReturnValue({
     left: 0, top: 0, width: 200, height: 48, right: 200, bottom: 48, x: 0, y: 0,
@@ -83,7 +85,9 @@ describe('ChannelStrip assembly', () => {
     expect(screen.getByRole('button', { name: 'voice' })).toHaveTextContent('Grand Piano');
     expect(screen.getByLabelText('mute')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByLabelText('solo')).toHaveAttribute('aria-pressed', 'false');
-    expect(container.querySelector('.piano-gain-strip')).toBeTruthy();
+    // Gain is a compact chip (the wide strip opens in a popover on tap).
+    expect(container.querySelector('.piano-channel-strip__gain-chip')).toBeTruthy();
+    expect(container.querySelector('.piano-gain-strip')).toBeNull(); // closed until tapped
     expect(screen.getByLabelText('remove layer')).toBeInTheDocument();
   });
 
@@ -94,10 +98,12 @@ describe('ChannelStrip assembly', () => {
     expect(screen.getByText('groove')).toBeInTheDocument();
   });
 
-  it('reflects muted state (row class + dimmed gain strip), M/S latch via aria-pressed', () => {
+  it('reflects muted state (row class + muted gain chip showing "Muted"), M/S latch via aria-pressed', () => {
     const { container } = renderStrip({ ...chordLayer, muted: true, soloed: true });
     expect(container.querySelector('.piano-channel-strip').className).toContain('is-muted');
-    expect(container.querySelector('.piano-gain-strip').className).toContain('is-muted');
+    const chip = container.querySelector('.piano-channel-strip__gain-chip');
+    expect(chip.className).toContain('is-muted');
+    expect(chip).toHaveTextContent('Muted');
     expect(screen.getByLabelText('mute')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('solo')).toHaveAttribute('aria-pressed', 'true');
   });
