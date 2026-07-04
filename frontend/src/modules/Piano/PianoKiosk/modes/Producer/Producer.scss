@@ -64,29 +64,21 @@
     color: var(--piano-muted, #8a8a9a);
   }
 
-  &__tempo, &__key {
+  // Tempo + Key chips: tap to open the sheet (design §5). Live state at a glance.
+  &__chip {
+    min-height: 3rem;
+    padding: 0 1.1rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #334);
+    background: var(--piano-surface, #1a1a22);
+    color: var(--piano-fg, #dde);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    white-space: nowrap;
-    line-height: 1;
-    font-size: 1rem;
-    color: var(--piano-muted, #aab);
-    button {
-      width: 3rem; height: 3rem; border-radius: 50%;
-      border: 1px solid var(--piano-border, #334); background: var(--piano-surface, #1a1a22);
-      color: var(--piano-fg, #cce); cursor: pointer; font-size: 1.2rem; line-height: 1;
-      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
-    }
-  }
-
-  &__tap {
-    // Latching tap pad — wider than the round steppers, same height.
-    width: auto !important;
-    min-width: 3.6rem;
-    border-radius: 999px !important;
-    font: 700 0.85rem 'Roboto Condensed', sans-serif !important;
-    letter-spacing: 0.06em;
+    &:hover { border-color: var(--piano-border, #4a4a66); }
+    &:disabled { opacity: 0.35; cursor: default; }
   }
 
   &__metro, &__rec {

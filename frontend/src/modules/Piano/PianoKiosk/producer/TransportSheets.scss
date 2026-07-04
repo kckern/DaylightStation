@@ -1,0 +1,111 @@
+// Transport modal sheets (Tempo + Key) — big-target, tap-first overlays that
+// replace the crowded stepper strip (design §5). Dark, Roboto Condensed.
+
+.piano-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.piano-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  min-width: 20rem;
+  border-radius: 1rem;
+  background: var(--piano-surface, #16161f);
+  border: 1px solid var(--piano-border, #2c2c3a);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  font-family: 'Roboto Condensed', sans-serif;
+  color: var(--piano-fg, #e8e8ee);
+
+  &__done {
+    min-height: 2.8rem;
+    padding: 0 2rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-accent, #2ec46f);
+    color: var(--piano-accent-ink, #06210f);
+    font: 700 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+  }
+}
+
+// ── Tempo sheet ──────────────────────────────────────────────────────────────
+.piano-tempo-sheet {
+  &__big { display: flex; flex-direction: column; align-items: center; }
+  &__bpm { font-size: 3.4rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  &__unit { font-size: 0.9rem; color: var(--piano-muted, #99a); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  &__fine {
+    display: flex;
+    gap: 0.6rem;
+    button {
+      min-width: 3.2rem;
+      min-height: 3.2rem;
+      border-radius: 0.6rem;
+      border: 1px solid var(--piano-border, #3a3a48);
+      background: var(--piano-surface-2, #1b1b27);
+      color: var(--piano-fg, #dde);
+      font: 700 1.3rem 'Roboto Condensed', sans-serif;
+      cursor: pointer;
+    }
+  }
+  &__tap { min-width: 4.5rem !important; font-size: 1rem !important; letter-spacing: 0.06em; }
+
+  &__presets { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: center; }
+  &__preset {
+    min-width: 3rem;
+    min-height: 2.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface-2, #1b1b27);
+    color: var(--piano-muted, #aab);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); border-color: var(--piano-accent, #2ec46f); }
+  }
+}
+
+// ── Key sheet: circle of fifths ──────────────────────────────────────────────
+.piano-key-sheet {
+  &__ring {
+    position: relative;
+    width: 18rem;
+    height: 18rem;
+  }
+  &__wedge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3.1rem;
+    height: 3.1rem;
+    border-radius: 50%;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface-2, #1b1b27);
+    color: var(--piano-fg, #dde);
+    font: 600 1.05rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-on {
+      background: var(--piano-accent, #2ec46f);
+      border-color: var(--piano-accent, #2ec46f);
+      color: var(--piano-accent-ink, #06210f);
+      box-shadow: 0 0 14px var(--piano-accent, #2ec46f);
+    }
+  }
+  &__center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--piano-muted, #77778a);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+}

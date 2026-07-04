@@ -37,48 +37,23 @@ describe('TransportBar', () => {
     expect(props.onTogglePlay).toHaveBeenCalledTimes(1);
   });
 
-  it('BPM steppers emit bpm ±4 (clamping is the reducer’s job)', () => {
+  it('the tempo chip shows BPM and opens the Tempo sheet (design §5)', () => {
     const props = baseProps();
     render(<TransportBar {...props} bpm={100} />);
-    fireEvent.click(screen.getByLabelText('tempo down'));
-    expect(props.onBpm).toHaveBeenLastCalledWith(96);
-    fireEvent.click(screen.getByLabelText('tempo up'));
-    expect(props.onBpm).toHaveBeenLastCalledWith(104);
+    const chip = screen.getByLabelText('tempo');
+    expect(chip.textContent).toContain('100 BPM');
+    expect(screen.queryByRole('dialog', { name: 'tempo' })).toBeNull();
+    fireEvent.click(chip);
+    expect(screen.getByRole('dialog', { name: 'tempo' })).toBeInTheDocument();
   });
 
-  it('tap tempo averages the last intervals into a SET_BPM emit', () => {
-    const props = baseProps();
-    const times = [0, 500, 1000, 1500];
-    let i = 0;
-    render(<TransportBar {...props} now={() => times[Math.min(i++, times.length - 1)]} />);
-    const tap = screen.getByLabelText('tap tempo');
-    fireEvent.click(tap); // t=0 — first tap, no emit yet
-    expect(props.onBpm).not.toHaveBeenCalled();
-    fireEvent.click(tap); // 500ms interval → 120bpm
-    fireEvent.click(tap);
-    fireEvent.click(tap);
-    expect(props.onBpm).toHaveBeenLastCalledWith(120);
-  });
-
-  it('a ≥2s gap between taps resets the measurement (no emit on the fresh tap)', () => {
-    const props = baseProps();
-    const times = [0, 5000];
-    let i = 0;
-    render(<TransportBar {...props} now={() => times[Math.min(i++, times.length - 1)]} />);
-    const tap = screen.getByLabelText('tap tempo');
-    fireEvent.click(tap);
-    fireEvent.click(tap); // 5s later — window resets, this is tap #1 again
-    expect(props.onBpm).not.toHaveBeenCalled();
-  });
-
-  it('key steppers nudge ±1 and show the current key label', () => {
+  it('the key chip shows the key and opens the Key sheet', () => {
     const props = baseProps();
     render(<TransportBar {...props} keyLabel="E♭" />);
-    expect(screen.getByLabelText('key').textContent).toContain('E♭');
-    fireEvent.click(screen.getByLabelText('key down'));
-    expect(props.onKeyNudge).toHaveBeenLastCalledWith(-1);
-    fireEvent.click(screen.getByLabelText('key up'));
-    expect(props.onKeyNudge).toHaveBeenLastCalledWith(1);
+    const chip = screen.getByLabelText('key');
+    expect(chip.textContent).toContain('E♭');
+    fireEvent.click(chip);
+    expect(screen.getByRole('dialog', { name: 'key' })).toBeInTheDocument();
   });
 
   it('metronome toggle latches (aria-pressed) and fires its callback', () => {
@@ -92,14 +67,12 @@ describe('TransportBar', () => {
     expect(screen.getByLabelText('metronome')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('locked (capture open): tempo steppers, tap, and key steppers disable with the lock tooltip', () => {
+  it('locked (capture open): the tempo + key chips disable with the lock tooltip', () => {
     const props = baseProps();
     const { rerender } = render(<TransportBar {...props} />);
-    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
-      expect(screen.getByLabelText(label)).toBeEnabled();
-    }
+    for (const label of ['tempo', 'key']) expect(screen.getByLabelText(label)).toBeEnabled();
     rerender(<TransportBar {...props} locked />);
-    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
+    for (const label of ['tempo', 'key']) {
       const btn = screen.getByLabelText(label);
       expect(btn).toBeDisabled();
       expect(btn).toHaveAttribute('title', 'Locked while recording');

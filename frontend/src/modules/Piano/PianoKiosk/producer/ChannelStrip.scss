@@ -226,7 +226,7 @@
   position: relative;
   display: flex;
   width: 100%;
-  height: 2.4rem;
+  height: 2.8rem;
   gap: 3px;
   &.is-muted { opacity: 0.5; }
 
@@ -234,8 +234,10 @@
     flex: 1 1 0;
     min-width: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    line-height: 1.05;
     border-radius: 5px;
     background: var(--piano-surface-2, #101018);
     border: 1px solid var(--piano-border, #24242e);
@@ -245,9 +247,19 @@
     &.is-active {
       background: var(--piano-accent, #2ec46f);
       border-color: var(--piano-accent, #2ec46f);
-      .roman-chord, .roman-chord * { color: var(--piano-accent-ink, #06210f); }
+      .roman-chord, .roman-chord *, .piano-chord-lane__keyed { color: var(--piano-accent-ink, #06210f); }
     }
   }
+  // Concrete keyed chord name (design §7) — the PRIMARY read; the Roman numeral
+  // drops to a small sub-label beneath it.
+  &__keyed {
+    font: 700 0.95rem 'Roboto Condensed', sans-serif;
+    color: var(--piano-fg, #eef);
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  // When keyed, the Roman glyph is the smaller secondary line.
+  &__slot:has(.piano-chord-lane__keyed) .roman-chord { font-size: 0.66rem; opacity: 0.75; }
 
   // Sweeping playhead — positioned by `left` each frame (smooth via barFrac).
   &__cursor {
