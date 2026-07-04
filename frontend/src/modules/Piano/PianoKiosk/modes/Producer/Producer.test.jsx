@@ -421,6 +421,28 @@ describe('Producer shell (three bands)', () => {
     expect(await screen.findByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
   });
 
+  it('Add Layer → Build a drum loop → commit adds a groove layer (§9)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /build a drum loop/i }));
+    await screen.findByRole('dialog', { name: 'build a drum loop' });
+    fireEvent.click(screen.getByLabelText('Kick step 1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add drum loop' }));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
+  });
+
+  it('Add Layer → Build chords → commit adds a chords layer (§9)', async () => {
+    render(<Producer />);
+    await addDmLayer();
+    fireEvent.click(screen.getByRole('button', { name: /\+ add layer/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /build chords/i }));
+    const cb = await screen.findByRole('dialog', { name: 'build chords' });
+    fireEvent.click(cb.querySelector('.piano-chordbuilder__chord')); // first diatonic chord
+    fireEvent.click(screen.getByRole('button', { name: 'Add chords' }));
+    await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(2));
+  });
+
   it('a failed/empty note load removes the layer (no zombie row) and toasts why', async () => {
     render(<Producer />);
     await openLibrary();
