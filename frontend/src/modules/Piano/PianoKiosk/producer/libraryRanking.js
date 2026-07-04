@@ -29,7 +29,18 @@ import { rankLayerCandidates } from '@shared-music/layerMatch.mjs';
 /** Same identity rule as layerMatch: path is canonical, slug the fallback. */
 export const entryIdentity = (e) => e?.path || e?.slug;
 
-const MELODIC_TYPES = new Set(['melody', 'idea']);
+// Single-voice LINE material — melodies, motific ideas, and basslines — is
+// RANKED by melodyFit over the harmony, never hard-gated. A monophonic line
+// fitting over a chord is a matter of degree, not admission (design §4). The
+// union-consonance gate (consonance.mjs) is for stacking independent HARMONIC
+// layers; applied to a bass it wrongly blames the single low root for the
+// chord's OWN busy/clustered slots (e.g. a chord slot {0,2,4,6,7,9} is already
+// non-nameable, so no bass note can rescue the union) — that rejected ~90% of
+// chord loops' basslines, making bass effectively un-addable. melodyFit scores
+// the bass root against the harmony (chord-tone/diatonic/chromatic) instead, so
+// a bass tracking the chord roots ranks top and clashers rank low but stay
+// offered.
+const LINE_TYPES = new Set(['melody', 'idea', 'bassline']);
 
 /**
  * Reconstruct the harmonicTimeline shape from an index entry's flat
@@ -46,9 +57,11 @@ export function timelineOf(entry) {
  * - baseEntry null (or without a usable timeline) → every entry passes.
  * - baseEntry with a timeline:
  *   · grooves ALWAYS pass (no harmonic content to clash),
- *   · melodic entries (melody/idea) pass iff enriched (timeline present,
- *     !needsReview), tagged with `fit` = melodyFit(entry, base) for ranking,
- *   · harmonic/bassline entries pass iff enriched AND stackable(base, entry).ok.
+ *   · single-voice LINE entries (melody/idea/bassline) pass iff enriched
+ *     (timeline present, !needsReview), tagged with `fit` = melodyFit(entry,
+ *     base) for ranking — never hard-gated (see LINE_TYPES note),
+ *   · harmonic entries (chord progressions) pass iff enriched AND
+ *     stackable(base, entry).ok.
  * - The base entry itself is never offered back.
  *
  * @param {{entries:object[], baseEntry:object|null}} args
@@ -87,7 +100,7 @@ export function buildCompatibleSet({ entries, baseEntry }) {
     // flagged entries are excluded up front, never fed in.
     const tl = timelineOf(entry);
     if (!tl || entry.needsReview) continue;
-    if (MELODIC_TYPES.has(entry.type)) {
+    if (LINE_TYPES.has(entry.type)) {
       out.push({ entry, stackable: true, fit: scoreFit(tl), reasons: [] });
       continue;
     }
