@@ -241,6 +241,32 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(await screen.findByRole('button', { name: 'Bright Spark' })).toBeInTheDocument();
   });
 
+  it('basslines show in FULL under the Best default — a small line category is never tier-curated (more bass options)', async () => {
+    // Unlike ideas/grooves, basslines DO have a few 'best' entries — but curating
+    // a 23-item category to its 3 graded ones is counterproductive. Only the big
+    // families (chords/melodies) are tier-curated; bass always shows in full.
+    const BASS = {
+      slug: 'walk-1', path: 'basslines/walk-1.mid', type: 'bassline', title: 'Walking One',
+      roman: ['I', 'IV', 'V', 'I'], genre: ['funk'], emotion: ['groovy'], quality: '', // ungraded
+      timeline: [[0], [5], [7], [0]], timelineRoot: 0, specificity: 'root',
+    };
+    renderBrowser({ lib: makeLib([...ALL, BASS]) }); // quality defaults to Best
+    fireEvent.click(screen.getByRole('button', { name: 'Bass' }));
+    expect(await screen.findByRole('button', { name: 'Walking One' })).toBeInTheDocument();
+  });
+
+  it('the Chords kind chip is de-emphasised (is-dim) once a chord layer is already stacked', () => {
+    // No chord layer yet → the Chords chip reads normally.
+    const { unmount } = renderBrowser({ layers: [] });
+    expect(screen.getByRole('button', { name: 'Chords' }).className).not.toMatch(/is-dim/);
+    unmount();
+    // A chord layer in the stack (layerFor sets role 'chords') → dimmed + titled.
+    renderBrowser({ layers: [layerFor(BASE)] });
+    const chip = screen.getByRole('button', { name: 'Chords' });
+    expect(chip.className).toMatch(/is-dim/);
+    expect(chip).toHaveAttribute('title');
+  });
+
   it('feel chips appear for the groove kind and filter by feel', async () => {
     const swing = { ...GROOVE, slug: 'swing-brush', path: 'grooves/swing-brush.mid', feel: 'swing', title: 'Swing Brush' };
     renderBrowser({ lib: makeLib([...ALL, swing]) });
