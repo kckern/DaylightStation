@@ -56,6 +56,12 @@
     font-variant-numeric: tabular-nums;
     color: var(--piano-fg, #dde);
     text-align: center;
+    white-space: nowrap;
+  }
+  &__pos-len {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--piano-muted, #8a8a9a);
   }
 
   &__tempo, &__key {

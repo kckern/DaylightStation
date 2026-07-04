@@ -50,6 +50,7 @@ export function TransportBar({
   canPlay,
   onTogglePlay,
   positionRef,
+  loopBars = 0,
   bpm,
   onBpm,
   keyLabel,
@@ -101,7 +102,12 @@ export function TransportBar({
   };
 
   // Count-in bars are negative; the readout floor keeps 1:1 as the resting face.
-  const barLabel = Math.max(0, pos.bar) + 1;
+  // The bar cycles WITHIN the loop (design §4): a bounded loop counts 1→N then
+  // resets, instead of an ever-climbing global bar. loopBars 0 (nothing loaded /
+  // arrangement mode) falls back to the raw climbing bar.
+  const rawBar = Math.max(0, pos.bar);
+  const barInLoop = loopBars > 0 ? rawBar % loopBars : rawBar;
+  const barLabel = barInLoop + 1;
   const beatLabel = Math.max(0, pos.beat) + 1;
 
   return (
@@ -117,6 +123,7 @@ export function TransportBar({
 
       <span className="piano-producer-mode__pos" aria-label="position">
         {barLabel}:{beatLabel}
+        {loopBars > 0 && <span className="piano-producer-mode__pos-len"> · {loopBars} bars</span>}
       </span>
 
       <span className="piano-producer-mode__tempo">

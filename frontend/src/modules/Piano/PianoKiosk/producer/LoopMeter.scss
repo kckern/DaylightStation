@@ -1,0 +1,47 @@
+// LoopMeter — the bounded loop, one segment per bar, with a sweeping playhead
+// (design §4). Rides inside the Producer stage; dark, Roboto Condensed.
+.piano-loop-meter {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  height: 1.9rem;
+  margin-bottom: 0.15rem;
+
+  &__bar {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    background: var(--piano-surface, #16161f);
+    border: 1px solid var(--piano-border, #2a2a36);
+    transition: background 90ms ease, border-color 90ms ease;
+
+    &.is-active {
+      background: var(--piano-accent, #2ec46f);
+      border-color: var(--piano-accent, #2ec46f);
+      .piano-loop-meter__num { color: var(--piano-accent-ink, #06210f); }
+    }
+  }
+  &__num {
+    font: 600 0.78rem 'Roboto Condensed', sans-serif;
+    color: var(--piano-muted, #77778a);
+    user-select: none;
+  }
+
+  // Playhead: a thin vertical line swept via `left` every frame.
+  &__cursor {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--piano-accent-text, #5fe39a);
+    box-shadow: 0 0 6px var(--piano-accent, #2ec46f);
+    border-radius: 2px;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+}

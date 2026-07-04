@@ -89,6 +89,7 @@ import { TransportBar } from '../../producer/TransportBar.jsx';
 import { ChannelStrip } from '../../producer/ChannelStrip.jsx';
 import { LibraryBrowser } from '../../producer/LibraryBrowser.jsx';
 import { CaptureCard } from '../../producer/CaptureCard.jsx';
+import { LoopMeter } from '../../producer/LoopMeter.jsx';
 import './Producer.scss';
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -923,6 +924,7 @@ export function Producer() {
               || (armedMode === 'song' ? songPlayable : state.layers.length > 0)}
             onTogglePlay={handleTogglePlay}
             positionRef={transport.positionRef}
+            loopBars={transport.loopBars}
             bpm={state.bpm}
             onBpm={(next) => dispatch(setBpm(next))}
             keyLabel={keyLabel}
@@ -1031,6 +1033,13 @@ export function Producer() {
                 </div>
               ) : (
                 <div className="piano-producer-mode__mix">
+                  {/* The bounded loop made visible (design §4): one segment per
+                      bar, sweeping playhead, resets at the boundary. */}
+                  <LoopMeter
+                    loopBars={transport.loopBars}
+                    positionRef={transport.positionRef}
+                    isPlaying={transport.isPlaying}
+                  />
                   <div className="piano-producer-mode__layers">
                     {state.layers.map((l) => (
                       <ChannelStrip
