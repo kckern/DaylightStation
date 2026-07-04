@@ -2,29 +2,36 @@
 @use './TransportSheets.scss';
 
 .piano-drumseq {
-  min-width: 40rem;
-  max-width: 96vw;
+  min-width: 0;
+  width: min(64rem, 94vw);
   align-items: stretch;
 
   &__title { margin: 0; font: 700 1.3rem 'Roboto Condensed', sans-serif; text-align: center; }
 
-  &__grid { display: flex; flex-direction: column; gap: 0.35rem; }
-  &__row { display: flex; align-items: center; gap: 0.6rem; }
+  // The grid scrolls horizontally INSIDE the modal (long loops = many steps),
+  // so it never overflows the viewport; the row label stays pinned at the left.
+  &__grid { display: flex; flex-direction: column; gap: 0.35rem; overflow-x: auto; }
+  &__row { display: flex; align-items: center; gap: 0.6rem; width: max-content; }
   &__row-label {
-    flex: 0 0 4.5rem;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    flex: 0 0 4.2rem;
+    padding-right: 0.3rem;
     text-align: right;
+    background: var(--piano-surface, #16161f);
     font: 600 0.9rem 'Roboto Condensed', sans-serif;
     color: var(--piano-role-groove, #ff5a6a);
   }
   &__cells {
     display: grid;
-    grid-template-columns: repeat(var(--steps), 1fr);
+    grid-template-columns: repeat(var(--steps), 1.5rem);
+    grid-auto-rows: 1.5rem;
     gap: 3px;
-    flex: 1 1 auto;
   }
   &__cell {
-    aspect-ratio: 1;
-    min-height: 1.4rem;
+    width: 1.5rem;
+    height: 1.5rem;
     border-radius: 4px;
     border: 1px solid var(--piano-border, #2c2c3a);
     background: var(--piano-surface-2, #14141c);
