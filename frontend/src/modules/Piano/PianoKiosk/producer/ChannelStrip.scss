@@ -25,12 +25,14 @@
 
   &__glyph { flex: 0 0 auto; border-radius: 6px; }
 
+  // Identity lane — the loop's harmonics/chords/notation. Now the DOMINANT
+  // horizontal element (gain compacted to a chip), so it grows to fill the row.
   &__identity {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
     min-width: 0;
-    flex: 1 1 10rem;
+    flex: 1 1 22rem;
     .roman-progression { max-width: 100%; flex-wrap: wrap; }
   }
   &__name {
@@ -86,21 +88,72 @@
   // accent green, so a pinned layer never reads as "soloed".
   &__carry.is-on { background: var(--piano-info, #3d7bd9); color: #fff; border-color: var(--piano-info, #3d7bd9); }
 
+  // Gain: a COMPACT chip (no longer the wide 11-segment strip). Fixed size, so
+  // the identity lane owns the row. The strip opens on tap in __gain-pop.
   &__gain {
     position: relative;
-    flex: 1 1 12rem;
-    min-width: 8rem;
-    display: flex;
-    flex-direction: column;
+    flex: 0 0 auto;
+  }
+  &__gain-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 3rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface-2, #1b1b27);
+    color: var(--piano-fg, #cce);
+    font: 600 0.88rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-muted { opacity: 0.6; }
+  }
+  // Level meter: an accent fill up to --lvl over a dark track (a small dial-ish
+  // readout without a drag slider).
+  &__gain-meter {
+    width: 2.4rem;
+    height: 0.5rem;
+    border-radius: 3px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background-color: var(--piano-surface, #101018);
+    background-image: linear-gradient(to right,
+      var(--piano-accent, #2ec46f) var(--lvl, 0%), transparent var(--lvl, 0%));
+  }
+  &__gain-val {
+    min-width: 2.7rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  // Full-viewport scrim: an outside tap closes the popover.
+  &__gain-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    border: none;
+    background: transparent;
+    cursor: default;
+  }
+  &__gain-pop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.4rem);
+    z-index: 16;
+    width: 17rem;
+    max-width: 72vw;
+    padding: 0.6rem;
+    border-radius: 12px;
+    border: 1px solid var(--piano-border, #2c2c3a);
+    background: var(--piano-bg, #0e0e12);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
   }
   &__drums-hint {
-    position: absolute;
-    right: 0.2rem;
-    top: -0.85rem;
+    display: block;
+    margin-top: 0.15rem;
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--piano-muted, #b9a);
+    text-align: center;
   }
 
   // Remove: 2-tap confirm — armed state turns hot.
