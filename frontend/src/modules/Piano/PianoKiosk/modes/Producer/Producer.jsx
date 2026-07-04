@@ -858,10 +858,14 @@ export function Producer() {
     if (!loaded?.notes?.length) return 'C';
     return detectKey(loaded.notes.map((n) => n.midi % 12));
   }, [baseLayer, notesById]);
-  const keyLabel = useMemo(() => {
-    const pc = KEY_PC[detectedKey] ?? 0;
-    return NOTE_NAMES[(((pc + state.keyShift) % 12) + 12) % 12];
-  }, [detectedKey, state.keyShift]);
+  // Pitch class Roman `I` sounds at in the current jam — the tonic behind the
+  // "Key X" label (design §7). ChordLanes key their concrete chord names to it,
+  // so the names always agree with the displayed key.
+  const keyPc = useMemo(
+    () => ((((KEY_PC[detectedKey] ?? 0) + state.keyShift) % 12) + 12) % 12,
+    [detectedKey, state.keyShift],
+  );
+  const keyLabel = NOTE_NAMES[keyPc];
 
   // Left-hand roman chord readout (ported behavior): detect below the split.
   const handLabel = useMemo(() => {
@@ -938,6 +942,7 @@ export function Producer() {
             bpm={state.bpm}
             onBpm={(next) => dispatch(setBpm(next))}
             keyLabel={keyLabel}
+            keyPc={keyPc}
             onKeyNudge={(delta) => dispatch(nudgeKey(delta))}
             metronome={state.metronome}
             onToggleMetronome={() => dispatch(toggleMetronome())}
@@ -1075,6 +1080,7 @@ export function Producer() {
                         notesBundle={notesById[l.id]}
                         positionRef={transport.positionRef}
                         isPlaying={transport.isPlaying}
+                        keyPc={keyPc}
                         onToggleMute={handleToggleMute}
                         onToggleSolo={handleToggleSolo}
                         onToggleCarried={handleToggleCarried}

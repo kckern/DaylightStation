@@ -57,6 +57,7 @@ export function ChannelStrip({
   notesBundle = null,
   positionRef = null,
   isPlaying = false,
+  keyPc = null,
   onToggleMute,
   onToggleSolo,
   onRemove,
@@ -112,6 +113,7 @@ export function ChannelStrip({
             positionRef={positionRef}
             isPlaying={isPlaying}
             muted={layer.muted}
+            tonicPc={keyPc}
           />
         ) : hasNotes ? (
           <LoopRoll

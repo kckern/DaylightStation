@@ -21,4 +21,18 @@ describe('ChordLane', () => {
     const { container } = render(<ChordLane roman={['I']} notesBundle={bundle} isPlaying={false} />);
     expect(container.querySelector('.piano-chord-lane__cursor').style.opacity).toBe('0');
   });
+
+  it('shows keyed chord names above the Roman when tonicPc is given (design §7)', () => {
+    // tonic D (pc 2): I→D, IV→G, V→A, vi→Bm
+    const { container } = render(
+      <ChordLane roman={['I', 'IV', 'V', 'vi']} notesBundle={bundle} tonicPc={2} />,
+    );
+    const keyed = [...container.querySelectorAll('.piano-chord-lane__keyed')].map((n) => n.textContent);
+    expect(keyed).toEqual(['D', 'G', 'A', 'Bm']);
+  });
+
+  it('omits keyed names in the abstract (no tonicPc) — Roman only', () => {
+    const { container } = render(<ChordLane roman={['I', 'IV']} notesBundle={bundle} />);
+    expect(container.querySelector('.piano-chord-lane__keyed')).toBeNull();
+  });
 });

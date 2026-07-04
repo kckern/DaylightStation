@@ -256,6 +256,21 @@ async function addDmLayer() {
   await waitFor(() => expect(document.querySelectorAll('.piano-channel-strip').length).toBe(1));
 }
 
+// Key nudging now goes through the Key sheet (circle of fifths). This reads the
+// current key off the chip and taps the wedge `delta` semitones away — robust to
+// whatever the base loop's detected key is.
+const KEY_NAME_BY_PC = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const WEDGE_NAME_BY_PC = {
+  0: 'C', 7: 'G', 2: 'D', 9: 'A', 4: 'E', 11: 'B', 6: 'F♯', 1: 'D♭', 8: 'A♭', 3: 'E♭', 10: 'B♭', 5: 'F',
+};
+function nudgeKey(delta) {
+  const label = screen.getByLabelText('key').textContent.replace('Key', '').trim();
+  const pc = KEY_NAME_BY_PC.indexOf(label);
+  const target = (((pc + delta) % 12) + 12) % 12;
+  fireEvent.click(screen.getByLabelText('key')); // open the sheet
+  fireEvent.click(screen.getByRole('button', { name: `key ${WEDGE_NAME_BY_PC[target]}` }));
+}
+
 describe('Producer shell (three bands)', () => {
   it('renders the four front-door entry cards when the workspace is empty', async () => {
     render(<Producer />);
@@ -473,18 +488,18 @@ describe('Producer shell (three bands)', () => {
     expect(screen.queryByRole('dialog', { name: 'capture' })).toBeNull();
   });
 
-  it('locks tempo/tap/key while the capture card is open, unlocks on close', async () => {
+  it('locks the tempo/key chips while the capture card is open, unlocks on close', async () => {
     render(<Producer />);
     await screen.findByRole('button', { name: /browse the library/i });
-    expect(screen.getByLabelText('tempo up')).toBeEnabled();
+    expect(screen.getByLabelText('tempo')).toBeEnabled();
     fireEvent.click(screen.getByLabelText('record'));
-    for (const label of ['tempo down', 'tempo up', 'tap tempo', 'key down', 'key up']) {
+    for (const label of ['tempo', 'key']) {
       const btn = screen.getByLabelText(label);
       expect(btn).toBeDisabled();
       expect(btn).toHaveAttribute('title', 'Locked while recording');
     }
     fireEvent.click(screen.getByLabelText('record')); // toggle-close
-    expect(screen.getByLabelText('tempo up')).toBeEnabled();
+    expect(screen.getByLabelText('tempo')).toBeEnabled();
   });
 
   it('a kept take is stored at CANONICAL pitch (midi − keyShift) so playback transposes once', async () => {
@@ -498,10 +513,8 @@ describe('Producer shell (three bands)', () => {
     try {
       render(<Producer />);
       await screen.findByRole('button', { name: /browse the library/i });
-      // keyShift +3 BEFORE opening (steppers lock during capture).
-      fireEvent.click(screen.getByLabelText('key up'));
-      fireEvent.click(screen.getByLabelText('key up'));
-      fireEvent.click(screen.getByLabelText('key up'));
+      // keyShift +3 BEFORE opening (the key chip locks during capture).
+      nudgeKey(3);
       fireEvent.click(screen.getByLabelText('record'));
       fireEvent.click(screen.getByRole('button', { name: /arm/i }));
       // bpm 100 → barMs 2400; count-in 1 → anchor 102400; 4 bars → cycle 9600ms.
@@ -636,14 +649,13 @@ describe('Song builder wiring (Task 7.2)', () => {
   it('Edit in Loop loads the section WITH the song key/tempo (the loadStack seam) and shows the editing badge', async () => {
     render(<Producer />);
     await addDmLayer();
-    fireEvent.click(screen.getByLabelText('key up')); // jam keyShift 1
+    nudgeKey(1); // jam keyShift 1
     await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(1));
     fireEvent.click(screen.getByRole('button', { name: 'Add to song' })); // meta: bpm 120, keyShift 1
     await screen.findByRole('button', { name: 'A slot 1' });
     // Drift the workspace key AFTER promotion…
     fireEvent.click(screen.getByRole('tab', { name: 'Loop' }));
-    fireEvent.click(screen.getByLabelText('key down'));
-    fireEvent.click(screen.getByLabelText('key down'));
+    nudgeKey(-2);
     await waitFor(() => expect(transportArgs.last.layers[0]?.transpose).toBe(-1));
     // …then open the section: the workspace snaps back to the SONG's key.
     fireEvent.click(screen.getByRole('tab', { name: 'Song' }));

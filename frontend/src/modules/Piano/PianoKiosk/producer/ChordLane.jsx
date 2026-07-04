@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { RomanChord } from '../../components/roman/RomanProgression.jsx';
+import { keyedChordName } from '../../components/roman/keyedChordName.js';
 import { loopBars } from './LoopRoll.jsx';
 
 /**
@@ -15,13 +16,19 @@ import { loopBars } from './LoopRoll.jsx';
  * Chords are distributed evenly over the loop (a good default; per-chord
  * durations aren't stored), wrapping every `barSpan` bars.
  *
+ * When `tonicPc` is given (the Producer keys every loop to the jam), each slot
+ * also shows the CONCRETE keyed chord name (D, Dsus4…) above the Roman numeral
+ * — the loop is instantiated in a real key, so name it (design §7). Omit tonicPc
+ * (the abstract library) → Roman only.
+ *
  * @param {string[]} roman
  * @param {{notes:Array, ppq:number, barSpan:number}|null} notesBundle
  * @param {{current:{bar:number,barFrac:number}}|null} positionRef
  * @param {boolean} isPlaying
  * @param {boolean} muted
+ * @param {number|null} tonicPc  pitch class Roman `I` sounds at (null → Roman only)
  */
-export function ChordLane({ roman, notesBundle, positionRef, isPlaying = false, muted = false }) {
+export function ChordLane({ roman, notesBundle, positionRef, isPlaying = false, muted = false, tonicPc = null }) {
   const cursorRef = useRef(null);
   const [active, setActive] = useState(-1);
   const count = roman?.length || 0;
@@ -52,11 +59,15 @@ export function ChordLane({ roman, notesBundle, positionRef, isPlaying = false, 
   if (!count) return null;
   return (
     <div className={`piano-chord-lane${muted ? ' is-muted' : ''}`}>
-      {roman.map((token, i) => (
-        <div key={`${token}-${i}`} className={`piano-chord-lane__slot${i === active ? ' is-active' : ''}`}>
-          <RomanChord token={token} />
-        </div>
-      ))}
+      {roman.map((token, i) => {
+        const keyed = Number.isFinite(tonicPc) ? keyedChordName(token, tonicPc) : null;
+        return (
+          <div key={`${token}-${i}`} className={`piano-chord-lane__slot${i === active ? ' is-active' : ''}`}>
+            {keyed && <span className="piano-chord-lane__keyed">{keyed}</span>}
+            <RomanChord token={token} />
+          </div>
+        );
+      })}
       <div ref={cursorRef} className="piano-chord-lane__cursor" style={{ opacity: 0 }} />
     </div>
   );
