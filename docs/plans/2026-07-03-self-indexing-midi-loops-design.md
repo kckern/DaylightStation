@@ -273,6 +273,20 @@ Round-trip verifier (`cli/_proto-verify-xml.mjs`) parses each brick back to note
 compares a 16th-note pitch grid to the source MIDI: **100% slot-exact** across a 135-brick
 sweep + all types incl. percussion (was 6–52% on polyphonic loops before).
 
+**Validation pass (three suspects investigated, all sound):**
+- **Meter:** the library is genuinely 4/4 (3,229 of 3,231); the only two non-4/4 files
+  (`six-eight` 6/8, `waltz` 3/4) are percussion, named by feel token, notes placed by
+  absolute division regardless of meter — correct.
+- **Quantization:** measured 16th-grid drift vs true note timing over 35k notes — onsets
+  are essentially perfect (mean error 0.0001 beat; only 0.1% off by >1/24 beat), i.e. the
+  loops are grid-programmed with **no triplets/swing** to lose. The 100% round-trip claim
+  therefore holds against *reality*, not just against the same grid. 16th resolution is
+  sufficient.
+- **`ideas` single-chord names:** 223/391 ideas name as a single chord (`IV⠏-<hash>`) —
+  investigated and confirmed **not a defect**: these are genuinely single-chord sustained
+  figures with ≤1 melodic run, so there is nothing more distinctive to encode; the hash
+  disambiguates. (A melody-name fallback was prototyped and reverted — it fired 0 times.)
+
 Known follow-ups before cutover: loop-boundary/minimal-cycle detection (some names repeat
 the progression), the sus-casing convention (thirdless chords default to uppercase+`sus`),
 and building the runtime manifest + re-pointing Producer.
