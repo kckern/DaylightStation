@@ -287,6 +287,18 @@ sweep + all types incl. percussion (was 6–52% on polyphonic loops before).
   figures with ≤1 melodic run, so there is nothing more distinctive to encode; the hash
   disambiguates. (A melody-name fallback was prototyped and reverted — it fired 0 times.)
 
+**Melody↔bed matching validated (discriminates):** scored ~290 melodies against three
+distinct beds — mean fit 42–50% with real spread (std 12–15%), and top-30 melody overlap
+between beds is only 5–25% (different melodies rank highest for different beds). The
+melody-fit gate is informative, not everything-fits-everything; a jazzier bed correctly
+admits fewer melodies. Melodies carry no `harmony-key` (they match by runtime chord-tone
+fit against a bed's per-beat chords).
+
+**Backup-locality risk (fixed in README):** the reorg put the source packs, the `.mid`
+tree, and the backup tarball all under `_workspace/`, and the first README said to "ignore"
+it — deleting it would destroy all revert/regeneration ability. README now says do NOT
+delete `_workspace/` and recommends keeping a copy of `_workspace/backups/` outside the tree.
+
 Known follow-ups before cutover: loop-boundary/minimal-cycle detection (some names repeat
 the progression), the sus-casing convention (thirdless chords default to uppercase+`sus`),
 and building the runtime manifest + re-pointing Producer.
