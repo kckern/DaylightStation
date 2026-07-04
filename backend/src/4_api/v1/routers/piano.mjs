@@ -13,6 +13,7 @@ import { userService } from '#system/config/UserService.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { encodeMidiFile } from '#applications/piano/midiFile.mjs';
 import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#applications/piano/courseProgress.mjs';
+import { getManifest } from '#applications/piano/loopManifest.mjs';
 
 /**
  * Piano kiosk API.
@@ -65,6 +66,19 @@ export function createPianoRouter({ configService, fitnessPlayableService = null
       res.json({ users });
     } catch (err) {
       logger.error?.('piano.users.error', { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Loop-library manifest: walk the five MusicXML brick folders, bake per-beat
+  // harmonic timelines (root-0, canonical-C), cache by folder mtime. This is the
+  // ONE index fetch useLoopLibrary makes; individual bricks stream + parse lazily.
+  router.get('/loop-manifest', (req, res) => {
+    try {
+      const midiDir = path.join(configService.getMediaDir(), 'midi');
+      const bricks = getManifest(midiDir, { refresh: req.query.refresh === 'true' });
+      res.json({ bricks, count: bricks.length });
+    } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
