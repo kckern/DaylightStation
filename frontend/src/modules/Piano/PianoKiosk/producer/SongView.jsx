@@ -337,7 +337,7 @@ export function SongView({
                 )}
                 <span className="piano-song-view__slot-name">{section.name}</span>
                 <span className="piano-song-view__slot-meta">
-                  ×{repeats} · {section.lengthBars} bars
+                  ×{repeats} · {section.lengthBars} bar{section.lengthBars === 1 ? '' : 's'}
                 </span>
                 {filled ? (
                   <span className="piano-song-view__slot-stack" aria-hidden="true">
