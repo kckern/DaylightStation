@@ -110,6 +110,10 @@ public class ControlServer extends NanoWSD {
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
                             .put("GET /log").put("POST /panic")
+                            .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
+                            .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
+                            .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
+                            .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status / force reconnect)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
@@ -129,8 +133,38 @@ public class ControlServer extends NanoWSD {
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
                     o.put("preset", currentPresetId == null ? JSONObject.NULL : currentPresetId);
+                    KioskWatchdog wd = service.getKioskWatchdog();
+                    if (wd != null) {
+                        JSONObject s = wd.snapshot();
+                        JSONObject compact = new JSONObject();
+                        compact.put("verdict", s.opt("verdict"));
+                        compact.put("lastFps", s.opt("lastFps"));
+                        compact.put("lastBeatAgoMs", s.opt("lastBeatAgoMs"));
+                        compact.put("recovering", s.opt("recovering"));
+                        o.put("watchdog", compact);
+                    }
                     return json(o);
                 }
+                case "/diagnostics":
+                    // The consolidated "see everything" snapshot: time, cpu, mem, thermal,
+                    // battery, bridge, kiosk (WebView watchdog + FKB app), crash record.
+                    return json(SystemDiagnostics.snapshot(service));
+                case "/kiosk": {
+                    KioskWatchdog wd = service.getKioskWatchdog();
+                    return json(wd != null ? wd.snapshot() : err("no_watchdog"));
+                }
+                case "/kiosk/beat": {
+                    KioskWatchdog wd = service.getKioskWatchdog();
+                    if (wd == null) return json(err("no_watchdog"));
+                    String body = readBody(session);
+                    if (body != null && !body.trim().isEmpty()) {
+                        try { wd.onBeat(new JSONObject(body)); }
+                        catch (JSONException je) { return json(err("bad_beat_json")); }
+                    }
+                    return json(ok());
+                }
+                case "/crashlog":
+                    return json(CrashLog.read());
                 case "/speaker": {
                     A2dpConnector spk = service.getA2dpConnector();
                     if (spk == null) return json(err("no_a2dp"));

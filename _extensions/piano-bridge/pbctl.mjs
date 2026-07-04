@@ -34,6 +34,12 @@ async function req(method, path, body) {
 }
 
 function pretty(o) { console.log(typeof o === 'string' ? o : JSON.stringify(o, null, 2)); }
+function fmtDur(ms) {
+  if (!ms && ms !== 0) return '?';
+  const s = Math.round(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h${m}m` : m ? `${m}m${s % 60}s` : `${s}s`;
+}
 
 const cmds = {
   async status() {
@@ -46,6 +52,11 @@ const cmds = {
     console.log(`bluetooth/loc: ${b.bluetoothOn ? 'on' : 'OFF'} / ${b.locationOn ? 'on' : 'OFF'}`);
     console.log(`lastError    : ${b.lastError ?? '—'}`);
     console.log(`ws clients   : ${s.wsClients}   engine: ${s.engine}`);
+    const w = s.watchdog;
+    if (w) {
+      const age = w.lastBeatAgoMs == null ? 'no-beats' : `${Math.round(w.lastBeatAgoMs / 1000)}s ago`;
+      console.log(`kiosk (fkb)  : ${w.verdict}  fps=${w.lastFps} beat=${age}${w.recovering ? '  [RECOVERING]' : ''}`);
+    }
   },
   async connect() { pretty(await req('POST', '/connect')); },
   async forget() { pretty(await req('POST', '/forget')); },
@@ -127,6 +138,49 @@ const cmds = {
     } else pretty(r);
   },
   async info() { pretty(await req('GET', '/info')); },
+
+  // --- consolidated diagnostics + kiosk watchdog -----------------------------
+  async diag() {
+    // Full "see everything" health dashboard: time, cpu, mem, thermal, battery,
+    // bridge, and the two kiosk views (WebView watchdog + FKB app).
+    const d = await req('GET', '/diagnostics');
+    if (typeof d === 'string' || !d.ok) { pretty(d); return; }
+    const t = d.time || {}, dev = d.device || {}, mem = dev.mem || {}, bat = dev.battery || {};
+    const cpu = d.cpu || {}, th = d.thermal || {}, br = d.bridge || {}, k = d.kiosk || {};
+    const wv = k.webview || {}, fkb = k.fkbApp || {}, cr = d.crash || {};
+    console.log(`── time ─────`);
+    console.log(`  ${t.iso}   uptime ${fmtDur(t.uptimeMs)}   tz ${t.timezone}`);
+    console.log(`── cpu / mem ─────`);
+    console.log(`  process ${cpu.processCpuPct ?? '?'}%  (${cpu.threadCount ?? '?'} threads)`);
+    if (cpu.threads) for (const x of cpu.threads.slice(0, 4)) console.log(`    ${String(x.cpuPct).padStart(5)}%  ${x.name}`);
+    console.log(`  mem ${mem.availMb ?? '?'}/${mem.totalMb ?? '?'} MB free${mem.lowMemory ? '  [LOW]' : ''}`);
+    console.log(`── thermal / power ─────`);
+    if (th.zones && th.zones.length) for (const z of th.zones) {
+      // Client-side normalization too (older APKs may report a ×10 scale ≈ 325°C).
+      let t = z.tempC; while (Math.abs(t) > 150) t /= 10;
+      console.log(`  ${Math.round(t * 10) / 10}°C  ${z.type}`);
+    }
+    else console.log(`  (no thermal zones: ${th.note || 'n/a'})`);
+    console.log(`  battery ${bat.percent ?? '?'}%  ${bat.temperatureC ?? '?'}°C  status=${bat.status ?? '?'} plugged=${bat.plugged ?? '?'}`);
+    console.log(`── bridge ─────`);
+    console.log(`  engine=${br.engine}  ble=${br.ble?.state ?? '?'}  speaker=${br.speaker?.connected ? 'on' : 'off'}`);
+    console.log(`── kiosk: WebView (is it presenting frames?) ─────`);
+    console.log(`  verdict=${wv.verdict}  fps=${wv.lastFps}  beat=${wv.lastBeatAgoMs == null ? 'NONE' : Math.round(wv.lastBeatAgoMs / 1000) + 's ago'}  vis=${wv.lastVisibility}`);
+    console.log(`  recovering=${wv.recovering}  counts=${JSON.stringify(wv.recoveryCounts || {})}`);
+    if (wv.lastOutcome) console.log(`  last: ${wv.lastAction} → ${wv.lastOutcome}`);
+    console.log(`── kiosk: FKB app (is Fully itself alive?) ─────`);
+    if (fkb.reachable) console.log(`  reachable  screenOn=${fkb.screenOn}  url=${fkb.currentPageUrl}  ram ${fkb.ramFreeMb}/${fkb.ramTotalMb} MB${fkb.authOk === false ? '  [AUTH FAIL — set fkbPassword]' : ''}`);
+    else console.log(`  UNREACHABLE — FKB itself may be wedged (${fkb.error || '?'})`);
+    if (cr.prevDeathUnclean) console.log(`── ⚠ previous bridge death was UNCLEAN (crash/kill/reboot) — see \`pbctl crashlog\``);
+  },
+  async kiosk() { pretty(await req('GET', '/kiosk')); },
+  async crashlog() {
+    const r = await req('GET', '/crashlog');
+    if (typeof r === 'string' || !r.ok) { pretty(r); return; }
+    console.log(`prevDeathUnclean: ${r.prevDeathUnclean}   lastRebootAt: ${r.lastRebootAt ? new Date(r.lastRebootAt).toISOString() : 'never'}`);
+    console.log('--- events ---');
+    (r.events || []).forEach((l) => console.log(l));
+  },
   async props([key]) {
     const r = await req('GET', `/props${key ? `?key=${encodeURIComponent(key)}` : ''}`);
     process.stdout.write((r.stdout || JSON.stringify(r)) + '\n');
@@ -149,6 +203,7 @@ if (!name || !cmds[name]) {
   console.log(`pbctl — Piano Bridge control (${BASE})\n`);
   console.log('  status | connect | forget | scan [ms] | config [set k v|push f] | log | panic');
   console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
+  console.log('  health: diag | kiosk | crashlog        (full snapshot / WebView watchdog / durable death log)');
   console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');
   console.log('  sys:   getsetting <ns> <k> | setsetting <ns> <k> <v>   (ns=secure|global|system)');
   process.exit(name ? 1 : 0);
