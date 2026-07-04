@@ -142,6 +142,27 @@ describe('buildLoopCycle', () => {
     assert.ok(cycle.lengthMs > 0);
   });
 
+  it('forceLengthBars overrides the natural length: shorter layers tile to fill it', () => {
+    const cycle = buildLoopCycle(
+      [{ notes: oneBar, ppq: 480, transpose: 0 }], // natural 1 bar
+      { bpm: 120, forceLengthBars: 4 },            // forced to 4 bars = 8000ms
+    );
+    assert.equal(cycle.lengthMs, 8000);
+    const ons = cycle.events.filter((e) => e.type === 'note_on' && e.note === 60).map((e) => e.t);
+    assert.deepEqual(ons, [0, 2000, 4000, 6000]); // tiled once per bar
+  });
+
+  it('forceLengthBars truncates a layer longer than the forced length', () => {
+    const twoBar = [{ ticks: 1920, durationTicks: 480, midi: 72 }]; // note in bar 2
+    const cycle = buildLoopCycle(
+      [{ notes: twoBar, ppq: 480, transpose: 0 }], // natural 2 bars
+      { bpm: 120, forceLengthBars: 1 },            // forced to 1 bar = 2000ms
+    );
+    assert.equal(cycle.lengthMs, 2000);
+    // The bar-2 note (onset at t=2000, the boundary) is dropped — truncated.
+    assert.ok(!cycle.events.some((e) => e.type === 'note_on' && e.note === 72));
+  });
+
   it('passes per-layer channel through to the merged events (default 0)', () => {
     const cycle = buildLoopCycle([
       { notes: oneBar, ppq: 480, transpose: 0, channel: 2 },

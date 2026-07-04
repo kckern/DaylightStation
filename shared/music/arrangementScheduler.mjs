@@ -8,7 +8,7 @@
 // (scene-launch model: 'repeat' = end of current block, 'bar' = next bar).
 // No DOM, no timers — pure functions, node-testable.
 
-import { loopToEvents, layerLengthMs } from './loopScheduler.mjs';
+import { loopToEvents, layerLengthMs, truncateEvents } from './loopScheduler.mjs';
 
 /** Accept timeSig as [beats, beatType] (this module's API) or
  * { beats, beatType } (loopScheduler's shape). */
@@ -20,38 +20,6 @@ function normalizeTimeSig(timeSig) {
 
 function barLengthMs(bpm, { beats, beatType }) {
   return (60000 / bpm) * (4 / beatType) * beats;
-}
-
-/**
- * Truncate a time-sorted event stream at `lengthMs`:
- * - note_ons at or beyond the boundary are dropped (the boundary instant
- *   belongs to the next pass of the loop, not this one);
- * - note_offs whose note_on was dropped are dropped too;
- * - note_offs beyond the boundary whose note_on was KEPT are moved to exactly
- *   the boundary — no stuck notes;
- * - note_offs at or before the boundary pass through untouched.
- * Pairing is by (note, channel) open-count, so overlapping repeats of the same
- * pitch resolve in order.
- */
-function truncateEvents(events, lengthMs) {
-  const out = [];
-  const open = new Map(); // `${note}|${channel}` → count of kept, unclosed note_ons
-  for (const e of events) {
-    const key = `${e.note}|${e.channel}`;
-    if (e.type === 'note_on') {
-      if (e.t < lengthMs) {
-        out.push(e);
-        open.set(key, (open.get(key) || 0) + 1);
-      }
-    } else {
-      const n = open.get(key) || 0;
-      if (n > 0) {
-        open.set(key, n - 1);
-        out.push(e.t <= lengthMs ? e : { ...e, t: lengthMs });
-      }
-    }
-  }
-  return out;
 }
 
 /**

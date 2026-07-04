@@ -174,6 +174,34 @@
   }
   &__roman-toggle { margin-left: auto; }
 
+  // Loop head: the bounded-loop meter + the settable length control (§4).
+  &__loop-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    .piano-loop-meter { flex: 1 1 auto; margin-bottom: 0; }
+  }
+  &__loop-len {
+    display: inline-flex;
+    flex: 0 0 auto;
+    padding: 0.2rem;
+    gap: 0.2rem;
+    border-radius: 0.6rem;
+    background: var(--piano-surface, #16161f);
+    border: 1px solid var(--piano-border, #2c2c3a);
+  }
+  &__loop-len-btn {
+    min-width: 2.3rem;
+    min-height: 2rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--piano-muted, #99a);
+    font: 600 0.95rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &.is-on { background: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #06210f); }
+  }
+
   // Front-door entry cards (empty workspace).
   &__doors {
     display: grid;

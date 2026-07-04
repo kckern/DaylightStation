@@ -55,6 +55,10 @@ export const initialWorkspace = Object.freeze({
   keyShift: 0,
   bpm: DEFAULT_BPM,
   metronome: false,
+  // null → the loop takes its NATURAL length (longest layer, design §4). A
+  // positive int forces the cycle to that many bars (shorter layers tile,
+  // longer truncate) — the settable loop length.
+  lengthBars: null,
   editingSectionId: null,
   lastError: null,
 });
@@ -70,6 +74,7 @@ export const ActionTypes = Object.freeze({
   SET_KEY: 'SET_KEY',
   NUDGE_KEY: 'NUDGE_KEY',
   SET_BPM: 'SET_BPM',
+  SET_LENGTH_BARS: 'SET_LENGTH_BARS',
   TOGGLE_METRONOME: 'TOGGLE_METRONOME',
   LOAD_STACK: 'LOAD_STACK',
   CLEAR: 'CLEAR',
@@ -268,6 +273,15 @@ export function workspaceReducer(state, action) {
       return { ...state, bpm: clampBpm(action.bpm), lastError: null };
     }
 
+    case ActionTypes.SET_LENGTH_BARS: {
+      // null clears the override (back to natural length); a positive int forces
+      // that many bars. Anything else is ignored (keeps state valid).
+      if (action.bars === null) return { ...state, lengthBars: null, lastError: null };
+      const n = Math.trunc(Number(action.bars));
+      if (!Number.isFinite(n) || n <= 0) return state;
+      return { ...state, lengthBars: n, lastError: null };
+    }
+
     case ActionTypes.TOGGLE_METRONOME:
       return { ...state, metronome: !state.metronome, lastError: null };
 
@@ -283,6 +297,9 @@ export function workspaceReducer(state, action) {
         layers: repaired,
         bpm: Number.isFinite(action.bpm) ? clampBpm(action.bpm) : state.bpm,
         keyShift: Number.isFinite(action.keyShift) ? Math.trunc(action.keyShift) : state.keyShift,
+        lengthBars: action.lengthBars === undefined
+          ? null
+          : (Number.isFinite(action.lengthBars) && action.lengthBars > 0 ? Math.trunc(action.lengthBars) : null),
         editingSectionId: action.editingSectionId ?? null,
         lastError: dropped ? 'channels-exhausted' : null,
       };
@@ -313,9 +330,10 @@ export const toggleCarried = (id) => ({ type: ActionTypes.TOGGLE_CARRIED, id });
 export const setKey = (shift) => ({ type: ActionTypes.SET_KEY, shift });
 export const nudgeKey = (delta) => ({ type: ActionTypes.NUDGE_KEY, delta });
 export const setBpm = (bpm) => ({ type: ActionTypes.SET_BPM, bpm });
+export const setLengthBars = (bars) => ({ type: ActionTypes.SET_LENGTH_BARS, bars });
 export const toggleMetronome = () => ({ type: ActionTypes.TOGGLE_METRONOME });
-export const loadStack = ({ layers, bpm, keyShift, editingSectionId }) => (
-  { type: ActionTypes.LOAD_STACK, layers, bpm, keyShift, editingSectionId }
+export const loadStack = ({ layers, bpm, keyShift, lengthBars, editingSectionId }) => (
+  { type: ActionTypes.LOAD_STACK, layers, bpm, keyShift, lengthBars, editingSectionId }
 );
 export const clearWorkspace = () => ({ type: ActionTypes.CLEAR });
 export const setEditingSection = (id) => ({ type: ActionTypes.SET_EDITING_SECTION, id });
