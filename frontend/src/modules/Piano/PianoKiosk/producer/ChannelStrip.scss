@@ -211,6 +211,23 @@
   }
 }
 
+// ── LoopRoll: piano-roll of a loop's notes + a playhead cursor ───────────────
+.piano-loop-roll {
+  display: block;
+  width: 100%;
+  height: 2.4rem;
+  border-radius: 5px;
+  background: var(--piano-surface-2, #101018);
+  border: 1px solid var(--piano-border, #24242e);
+  &.is-muted { opacity: 0.5; }
+
+  &__grid { stroke: var(--piano-border, #2a2a36); stroke-width: 1; }
+  &__note { fill: var(--piano-accent, #2ec46f); }
+  // The playhead sweeps left→right in time with the transport (opacity toggled
+  // by the rAF loop; hidden when stopped).
+  &__cursor { fill: var(--piano-accent-text, #cdf6dd); }
+}
+
 // ── GainStrip: segmented tap-to-set gain ─────────────────────────────────────
 
 .piano-gain-strip {

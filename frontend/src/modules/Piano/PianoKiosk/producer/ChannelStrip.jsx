@@ -28,11 +28,40 @@
 import { useEffect, useRef, useState } from 'react';
 import { MaterialGlyph } from './MaterialGlyph.jsx';
 import { RomanProgression } from '../../components/roman/RomanProgression.jsx';
+import { LoopRoll, loopBars } from './LoopRoll.jsx';
 import { GainStrip, levelFromGain, snapToGainLevel } from './GainStrip.jsx';
 import { VoicePicker, voiceName } from './VoicePicker.jsx';
 import './ChannelStrip.scss';
 
 const REMOVE_ARM_MS = 3000;
+const BEATS_PER_BAR = 4;
+
+/**
+ * The index of the Roman chord currently sounding, driven by the transport so
+ * the live chord lights up as the loop plays. requestAnimationFrame reads the
+ * position ref directly and only re-renders when the chord index CHANGES (a few
+ * times per loop), never per frame. Returns -1 when idle or non-harmonic.
+ */
+function useActiveChordIndex(count, notesBundle, positionRef, isPlaying) {
+  const [idx, setIdx] = useState(-1);
+  useEffect(() => {
+    if (!isPlaying || !positionRef || !count || !notesBundle) { setIdx(-1); return undefined; }
+    const bars = loopBars(notesBundle.notes, notesBundle.ppq, notesBundle.barSpan);
+    let raf = 0;
+    let last = -1;
+    const frame = () => {
+      const p = positionRef.current || {};
+      const barInLoop = ((((p.bar || 0) % bars) + bars) % bars);
+      const frac = (barInLoop * BEATS_PER_BAR + (p.beat || 0)) / (bars * BEATS_PER_BAR);
+      const next = Math.min(count - 1, Math.max(0, Math.floor(frac * count)));
+      if (next !== last) { last = next; setIdx(next); }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, positionRef, count, notesBundle]);
+  return idx;
+}
 
 /**
  * @param {object} props
@@ -53,6 +82,9 @@ export function ChannelStrip({
   layer,
   grooveCount = 0,
   onboardGm = false,
+  notesBundle = null,
+  positionRef = null,
+  isPlaying = false,
   onToggleMute,
   onToggleSolo,
   onRemove,
@@ -66,6 +98,9 @@ export function ChannelStrip({
   const isGroove = layer.role === 'groove';
   const [kept, setKept] = useState(false);
   const title = entry?.title || entry?.slug || layer.id;
+  // Live chord highlight (harmonic loops) — the sounding Roman lights up.
+  const activeChord = useActiveChordIndex(entry?.roman?.length || 0, notesBundle, positionRef, isPlaying);
+  const hasNotes = !!notesBundle?.notes?.length;
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [gainOpen, setGainOpen] = useState(false);
@@ -95,10 +130,24 @@ export function ChannelStrip({
         title={title}
       />
 
+      {/* Identity + live loop view: a harmonic loop shows its Roman sequence
+          with the SOUNDING chord lit; a melodic/groove loop shows a piano-roll
+          with a playhead cursor. Falls back to a name while notes load. */}
       <div className="piano-channel-strip__identity">
-        {entry?.roman?.length
-          ? <RomanProgression roman={entry.roman} inline />
-          : <span className="piano-channel-strip__name">{title}</span>}
+        {entry?.roman?.length ? (
+          <RomanProgression roman={entry.roman} inline activeIndex={activeChord} />
+        ) : hasNotes ? (
+          <LoopRoll
+            notes={notesBundle.notes}
+            ppq={notesBundle.ppq}
+            barSpan={notesBundle.barSpan}
+            positionRef={positionRef}
+            isPlaying={isPlaying}
+            muted={layer.muted}
+          />
+        ) : (
+          <span className="piano-channel-strip__name">{title}</span>
+        )}
         <span className="piano-channel-strip__role">{layer.role}</span>
       </div>
 

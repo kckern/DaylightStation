@@ -1022,6 +1022,9 @@ export function Producer() {
                         layer={l}
                         grooveCount={grooveCount}
                         onboardGm={onboardEnabled}
+                        notesBundle={notesById[l.id]}
+                        positionRef={transport.positionRef}
+                        isPlaying={transport.isPlaying}
                         onToggleMute={handleToggleMute}
                         onToggleSolo={handleToggleSolo}
                         onToggleCarried={handleToggleCarried}
