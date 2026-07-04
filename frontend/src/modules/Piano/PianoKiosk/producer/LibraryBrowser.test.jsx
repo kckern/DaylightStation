@@ -2,7 +2,7 @@
  * LibraryBrowser tests (Task 5.1) — the full-screen library surface with
  * consonance guardrails. Pure-ranking behavior lives in libraryRanking.test.js;
  * these cover the SURFACE: cards, facets, guardrail indicator + Show-all lift,
- * "goes with →" pivot, honest naming, the 120-card cap, and the pick seam.
+ * honest naming (no keyed spelling on cards), the 120-card cap, and the pick seam.
  *
  * Timelines reuse the hand-built consonance-vocabulary fixtures: I-I-V-I base,
  * roots-only stackable candidate, dim7 wall dissonant against it.
@@ -84,6 +84,18 @@ describe('LibraryBrowser — cards & honest identity', () => {
     expect(card.querySelector('.roman-progression')).toBeTruthy();
   });
 
+  it('harmonic cards never render a keyed spelling — the abstract Roman IS the identity', async () => {
+    renderBrowser();
+    // 'C · G' is the vendor's keyed title on a chord-progression brick; the
+    // library is abstract/key-agnostic (transposed at playtime), so it must
+    // survive ONLY as the aria-label, never as visible card text.
+    const card = await screen.findByRole('button', { name: 'C · G' });
+    expect(card.querySelector('.piano-loop__name')).toBeNull();
+    expect(card.querySelector('.piano-loop__caption')).toBeNull();
+    expect(card.querySelector('.roman-progression')).toBeTruthy();
+    expect(card.textContent).not.toContain('C · G');
+  });
+
   it('never fabricates a name: untitled melodic card has no name text, only a subdued slug caption', async () => {
     renderBrowser();
     const card = await screen.findByRole('button', { name: 'nameless-tune' });
@@ -143,34 +155,6 @@ describe('LibraryBrowser — consonance guardrail', () => {
   });
 });
 
-describe('LibraryBrowser — "goes with →" pivot', () => {
-  it('pivot re-anchors the browse (works without a workspace base) and breadcrumb ✕ restores', async () => {
-    renderBrowser();
-    await screen.findByRole('button', { name: 'Dim Wall' });
-    fireEvent.click(screen.getByRole('button', { name: 'goes with C · G' }));
-    // Re-anchored: gate now runs against C · G — the clash disappears.
-    expect(screen.queryByRole('button', { name: 'Dim Wall' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Root Notes' })).toBeInTheDocument();
-    expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
-    // Breadcrumb shows the pivot; ✕ returns to the unanchored browse.
-    expect(screen.getByText('Goes with')).toBeInTheDocument();
-    expect(screen.getByText('C · G')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'clear pivot' }));
-    expect(screen.queryByText('Goes with')).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Dim Wall' })).toBeInTheDocument();
-  });
-
-  it('pivot overrides the workspace base (and resets a lifted gate)', async () => {
-    renderBrowser({ layers: [layerFor(BASE)] });
-    fireEvent.click(await screen.findByRole('button', { name: 'Show all' }));
-    await screen.findByRole('button', { name: 'Dim Wall' });
-    fireEvent.click(screen.getByRole('button', { name: 'goes with Root Notes' }));
-    // Anchored to Root Notes now, gate re-armed: dim wall gated out again.
-    expect(screen.queryByRole('button', { name: 'Dim Wall' })).toBeNull();
-    expect(screen.getByText('Root Notes', { selector: '.piano-producer-mode__crumb-name' })).toBeInTheDocument();
-  });
-});
-
 describe('LibraryBrowser — facets, search, stubs, cap', () => {
   it('kind facet filters (Grooves shows only grooves; All restores)', async () => {
     renderBrowser();
@@ -214,8 +198,10 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     renderBrowser({ lib: makeLib([DREAMY, HOUSE]) });
     await screen.findByRole('button', { name: 'Dreamy Bed' });
     fireEvent.click(screen.getByRole('button', { name: /^lofi$/i }));
-    expect(screen.getByText('Dreamy Bed')).toBeInTheDocument();
-    expect(screen.queryByText('House Lead')).not.toBeInTheDocument();
+    // Assert card presence by accessible name, not visible text: 'Dreamy Bed'
+    // is a chord-progression, whose keyed title renders only as the aria-label.
+    expect(screen.getByRole('button', { name: 'Dreamy Bed' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'House Lead' })).not.toBeInTheDocument();
   });
 
   it('quality toggle defaults to Best; All reveals non-best entries', async () => {

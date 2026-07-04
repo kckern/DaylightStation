@@ -190,6 +190,7 @@ const BRICKS = [
     tags: [],
     quality: 'best',
     title: 'Basic Rock',
+    feel: 'rock', // real grooves carry feel (loopManifest derives it from canonical-name)
     barSpan: 2,
   },
 ];
@@ -280,19 +281,23 @@ describe('Producer shell (three bands)', () => {
     expect(screen.queryByTestId('keyboard')).toBeNull();
   });
 
-  it('lists browseable loops in the overlay (title + roman, never the slug)', async () => {
+  it('lists browseable loops by abstract identity — keyed title is aria-label only, never visible text or slug', async () => {
     render(<Producer />);
     await openLibrary();
+    // Cards are addressable by accessible NAME (aria-label = title), but the
+    // keyed chord spelling is never visible card text (the library is abstract,
+    // transposed at playtime) and the slug is never shown.
     expect(await screen.findByRole('button', { name: 'Dm C · F Gm' })).toBeInTheDocument();
-    expect(screen.getByText('Catchy Hook')).toBeInTheDocument();
-    expect(screen.queryByText('dm-c-f-gm')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
+    expect(screen.queryByText('Dm C · F Gm')).toBeNull(); // keyed spelling not rendered
+    expect(screen.queryByText('dm-c-f-gm')).toBeNull();    // slug not rendered
     expect(document.querySelector('.roman-progression')).toBeTruthy();
   });
 
   it('shows a staff thumbnail for a melodic loop with no roman', async () => {
     render(<Producer />);
     await openLibrary();
-    await screen.findByText('Catchy Hook');
+    await screen.findByRole('button', { name: 'Catchy Hook' });
     expect(document.querySelector('.piano-loop__staff svg, .piano-loop__staff .action-staff')).toBeTruthy();
   });
 
@@ -377,12 +382,14 @@ describe('Producer shell (three bands)', () => {
     await screen.findByRole('dialog', { name: 'loop library' });
     // The guardrail indicator is up, and the compatible complement is offered…
     expect(screen.getByText(/showing what fits your jam/i)).toBeInTheDocument();
-    expect(await screen.findByText('Catchy Hook')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Catchy Hook' })).toBeInTheDocument();
     // …the harmonically clashing loop (its slot-unions vs the base spell no
     // nameable chord) is excluded, and the already-stacked base is not
     // re-offered. (Ported from the interim overlay's stackable-filter test —
     // the gate is now union-consonance, not roman-signature matching.)
-    expect(screen.queryByText('Different Progression Loop')).toBeNull();
+    // Assert exclusion by accessible NAME: keyed titles never render as text,
+    // so a queryByText here would pass vacuously.
+    expect(screen.queryByRole('button', { name: 'Different Progression Loop' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dm C · F Gm' })).toBeNull();
   });
 
@@ -399,11 +406,13 @@ describe('Producer shell (three bands)', () => {
     expect(screen.getByRole('button', { name: /play/i })).toBeDisabled();
   });
 
-  it('groove cards are name-only — no drum-pitches-on-a-treble-staff thumb', async () => {
+  it('groove cards show a feel chip — no keyed name text, no drum-pitches-on-a-treble-staff thumb', async () => {
     render(<Producer />);
     await openLibrary();
     const card = await screen.findByRole('button', { name: 'Basic Rock' });
-    expect(card.textContent).toContain('Basic Rock');
+    // Identity is the feel chip, not the vendor title (aria-label only).
+    expect(card.querySelector('.piano-loop__chip')?.textContent).toBe('rock');
+    expect(card.textContent).not.toContain('Basic Rock');
     expect(card.querySelector('.piano-loop__staff')).toBeNull();
     expect(card.querySelector('svg.action-staff, .piano-loop__staff svg')).toBeNull();
   });
