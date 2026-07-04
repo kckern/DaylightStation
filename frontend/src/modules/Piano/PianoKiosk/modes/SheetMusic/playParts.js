@@ -36,4 +36,9 @@ export function youMidisAt(notes, roles, onsetQuarter) {
   return set.size ? set : null;
 }
 
-export default { partsOf, cyclePart, buildPlayTimeline, youMidisAt };
+/** Every staff set to the `play` role — the full-performance role map for Listen. */
+export function allPlayRoles(parts) {
+  return Object.fromEntries((parts || []).map((p) => [p.staff, 'play']));
+}
+
+export default { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles };

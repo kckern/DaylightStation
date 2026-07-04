@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tickWatchdog } from './useRenderWatchdog.js';
+import { tickWatchdog, buildBeat, DEFAULT_BEAT_URL } from './useRenderWatchdog.js';
 
 const OPTS = { minFps: 12, sustainSeconds: 4 };
 const fresh = { jankSeconds: 0, fired: false };
@@ -36,5 +36,26 @@ describe('tickWatchdog', () => {
     const after = tickWatchdog(s, 1, OPTS);
     expect(after.shouldFire).toBe(false);
     expect(after.fired).toBe(true);
+  });
+});
+
+describe('buildBeat', () => {
+  it('rounds fps and carries liveness fields for the bridge', () => {
+    const beat = buildBeat(58.6, {
+      visibility: 'visible', url: 'https://x/piano', sinceLoadMs: 12345.9, ts: 1720033000000,
+    });
+    expect(beat).toEqual({
+      fps: 59, visibility: 'visible', url: 'https://x/piano', sinceLoadMs: 12346, ts: 1720033000000,
+    });
+  });
+
+  it('degrades missing fields to safe defaults (never emits NaN/undefined)', () => {
+    const beat = buildBeat(0, {});
+    expect(beat).toEqual({ fps: 0, visibility: 'unknown', url: '', sinceLoadMs: 0, ts: 0 });
+    expect(Number.isNaN(beat.sinceLoadMs)).toBe(false);
+  });
+
+  it('exposes the localhost bridge ingest as the default target', () => {
+    expect(DEFAULT_BEAT_URL).toBe('http://localhost:8770/kiosk/beat');
   });
 });

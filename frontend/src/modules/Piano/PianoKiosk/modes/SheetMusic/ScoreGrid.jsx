@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
 
 /** Prettify a filename-derived title: "fur-elise-super-easy" → "Fur Elise Super Easy". */
 function prettyTitle(raw) {
@@ -21,6 +23,10 @@ export default function ScoreGrid({ listPath, onSelect }) {
   const { data: items, error } = usePianoList(listPath);
   const all = items ?? [];
   const loading = items === null;
+
+  // Warm the OSMD engine now, while the user is still choosing a score, so the
+  // heavy engraving chunk is loaded before they open one (cuts first-open lag).
+  useEffect(() => { prefetchOsmd().catch(() => {}); }, []);
 
   return (
     <section className="piano-mode piano-mode--sheetmusic">

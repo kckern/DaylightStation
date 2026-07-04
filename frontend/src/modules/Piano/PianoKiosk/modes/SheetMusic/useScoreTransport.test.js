@@ -74,4 +74,18 @@ describe('useScoreTransport', () => {
     act(() => vi.advanceTimersByTime(40));
     expect(fired).toEqual([0, 1, 0]);
   });
+
+  it('reports fire drift and frame gap via onFire', () => {
+    const fires = [];
+    const { result } = renderHook(() => useScoreTransport({
+      timeline: [{ t: 0, index: 0 }, { t: 100, index: 1 }],
+      onEvent: () => {},
+      onFire: (e, driftMs, gapMs) => fires.push({ i: e.index, driftMs, gapMs }),
+    }));
+    act(() => result.current.play());
+    act(() => vi.advanceTimersByTime(200));
+    expect(fires.length).toBe(2);
+    // drift is non-negative (fired at/after scheduled t); gaps are finite
+    expect(fires.every((f) => f.driftMs >= 0 && Number.isFinite(f.gapMs))).toBe(true);
+  });
 });

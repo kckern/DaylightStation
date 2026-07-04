@@ -21,6 +21,45 @@ const num = (el, sel, def = 0) => {
 const text = (el, sel, def = null) => el?.querySelector(sel)?.textContent?.trim() ?? def;
 
 /**
+ * Extract practice sections from rehearsal marks (<rehearsal> directions).
+ * Each mark opens a section that runs until the next mark's measure (exclusive)
+ * or the score's final measure. Pure — no side effects on the Score model.
+ * @param {string|Document} xmlOrDoc  MusicXML string or an already-parsed Document
+ * @returns {Array<{ label:string, startMeasure:number, endMeasure:number }>}
+ */
+export function extractSections(xmlOrDoc) {
+  const doc = typeof xmlOrDoc === 'string'
+    ? new DOMParser().parseFromString(xmlOrDoc, 'application/xml')
+    : xmlOrDoc;
+  if (!doc || doc.querySelector('parsererror')) return [];
+
+  // Last measure number: max across all <measure> elements (robust to per-part repeats).
+  let lastMeasure = 0;
+  for (const m of doc.querySelectorAll('measure')) {
+    const n = Number(m.getAttribute('number'));
+    if (Number.isFinite(n) && n > lastMeasure) lastMeasure = n;
+  }
+
+  const marks = [];
+  for (const r of doc.querySelectorAll('rehearsal')) {
+    const label = r.textContent?.trim();
+    if (!label) continue;
+    const measureEl = r.closest('measure');
+    const startMeasure = Number(measureEl?.getAttribute('number'));
+    if (!Number.isFinite(startMeasure)) continue; // defensive: skip malformed marks
+    marks.push({ label, startMeasure });
+  }
+  if (marks.length === 0) return [];
+
+  marks.sort((a, b) => a.startMeasure - b.startMeasure);
+  return marks.map((mark, i) => ({
+    label: mark.label,
+    startMeasure: mark.startMeasure,
+    endMeasure: i + 1 < marks.length ? marks[i + 1].startMeasure - 1 : lastMeasure,
+  }));
+}
+
+/**
  * Parse a MusicXML string into a Score model.
  * @param {string} xml
  * @returns {{ divisions:number, tempo:number, timeSig:{beats,beatType}, key:{fifths},
@@ -124,6 +163,7 @@ export function parseMusicXml(xml) {
     }
     score.parts.push(part);
   }
+  score.sections = extractSections(doc);
   return score;
 }
 

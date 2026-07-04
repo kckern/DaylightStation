@@ -21,16 +21,16 @@ describe('columnsForCount — balanced rows', () => {
 
 describe('paginatePlayers', () => {
   const make = (n) => Array.from({ length: n }, (_, i) => ({ id: `u${i}` }));
-  it('returns a single page when within the page size', () => {
-    expect(paginatePlayers(make(9))).toHaveLength(1);
-    expect(paginatePlayers(make(9))[0]).toHaveLength(9);
+  it('returns a single page when within the page size (a full 3×2)', () => {
+    expect(paginatePlayers(make(6))).toHaveLength(1);
+    expect(paginatePlayers(make(6))[0]).toHaveLength(PICKER_PAGE_SIZE);
   });
   it('splits into pages of PICKER_PAGE_SIZE, preserving order', () => {
     const pages = paginatePlayers(make(10));
     expect(pages).toHaveLength(2);
-    expect(pages[0]).toHaveLength(PICKER_PAGE_SIZE);
-    expect(pages[1]).toHaveLength(1);
-    expect(pages[1][0].id).toBe('u9');
+    expect(pages[0]).toHaveLength(PICKER_PAGE_SIZE); // 6
+    expect(pages[1]).toHaveLength(4);
+    expect(pages[1][0].id).toBe('u6');
   });
   it('returns no pages for an empty roster', () => {
     expect(paginatePlayers([])).toEqual([]);

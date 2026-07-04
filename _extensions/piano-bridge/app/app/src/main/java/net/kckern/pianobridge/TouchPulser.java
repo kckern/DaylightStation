@@ -41,6 +41,27 @@ public final class TouchPulser {
                 + " origin=(" + x + "," + y + ") len=" + len + " durationMs=" + durationMs);
     }
 
+    /**
+     * Fire a burst of synthetic touches NOW, bypassing the cadence gate — the
+     * KioskWatchdog's L1 recovery rung. Static so the watchdog can invoke it
+     * without holding a live TouchPulser (which is rebuilt on config reload); it
+     * reads the same corner-swipe geometry from config. Spaced ~150ms so the input
+     * subsystem registers distinct events. No-op if tap-wake is disabled.
+     */
+    public static void burst(DeviceConfig cfg, int count) {
+        if (!cfg.tapWakeEnabled()) { Log.i(TAG, "burst skipped (tapWakeEnabled=false)"); return; }
+        final int x = cfg.tapX(), y = cfg.tapY(), len = cfg.tapLen(), dur = cfg.tapDurationMs();
+        final Handler main = new Handler(Looper.getMainLooper());
+        Log.i(TAG, "burst x" + count + " requested (watchdog L1)");
+        for (int i = 0; i < count; i++) {
+            main.postDelayed(() -> {
+                if (!PianoTouchService.swipe(x, y, len, dur)) {
+                    Log.w(TAG, "burst swipe not dispatched (a11y service not connected)");
+                }
+            }, i * 150L);
+        }
+    }
+
     /** Per note-on (MIDI thread). Cadence-limited; dispatches on the main thread. */
     public void poke() {
         if (!enabled) return;
