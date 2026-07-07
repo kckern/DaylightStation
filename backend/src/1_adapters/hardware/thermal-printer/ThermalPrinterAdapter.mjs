@@ -19,7 +19,7 @@ import { createCanvas, loadImage } from 'canvas';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { encodeText } from '#adapters/hardware/thermal-printer/escposEncode.mjs';
+import { encodeText } from './escposEncode.mjs';
 
 /**
  * Code-page name → ESC/POS `ESC t n` table id (the standard Epson table; cheap

@@ -15,7 +15,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -25,7 +24,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 export class RedditHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
-  #configService;
+  #getUserAuth;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -34,15 +33,15 @@ export class RedditHarvester extends IHarvester {
    * @param {Object} config
    * @param {Object} config.httpClient - HTTP client for API requests
    * @param {Object} config.lifelogStore - Store for lifelog YAML
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
     httpClient,
     lifelogStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -62,7 +61,7 @@ export class RedditHarvester extends IHarvester {
 
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -114,7 +113,7 @@ export class RedditHarvester extends IHarvester {
       this.#logger.info?.('reddit.harvest.start', { username, limit });
 
       // Get auth
-      const auth = this.#configService?.getUserAuth?.('reddit', username) || {};
+      const auth = this.#getUserAuth?.('reddit', username) || {};
       const redditUsername = auth.username;
 
       if (!redditUsername) {

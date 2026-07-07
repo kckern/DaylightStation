@@ -8,16 +8,15 @@ export {
   shortIdFromUuid,
   isShortId,
   isUuid,
-  ShortId,
-} from './shortId.mjs';
+  IdUtils,
+  IdUtils as ShortId,
+} from '#domains/core/utils/id.mjs';
 
 export {
   formatLocalTimestamp,
   parseToDate,
   getCurrentDate,
   getCurrentHour,
-  TimestampService,
-  ts,
   nowTs,
   nowTs24,
   nowDate,

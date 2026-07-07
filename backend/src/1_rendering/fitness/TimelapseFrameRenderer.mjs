@@ -1,5 +1,6 @@
 import canvasPkg from 'canvas';
 import { fileURLToPath } from 'node:url';
+import { ZONE_COLORS } from '#domains/fitness/entities/Zone.mjs';
 
 const { createCanvas, loadImage, registerFont } = canvasPkg;
 
@@ -347,13 +348,16 @@ function drawBand(ctx, x, y, w, h, accent) {
 }
 
 // Zone series persist single-letter codes (h/m/w/a/c); also accept full words.
+// Color values are sourced from the domain canonical palette (ZONE_COLORS) so the
+// recap stays in sync with the live/UI zone colors; only labels are renderer-local.
+// The recap taxonomy's top code is 'm'/'max' (== the domain's 'fire' zone).
 function zoneMeta(zone) {
   switch (String(zone).toLowerCase()) {
-    case 'h': case 'hot': return { label: 'HOT', color: '#ff4d4f' };
-    case 'm': case 'max': return { label: 'MAX', color: '#ff1f4f' };
-    case 'w': case 'warm': return { label: 'WARM', color: '#ffa940' };
-    case 'a': case 'active': return { label: 'ACTIVE', color: '#52c41a' };
-    case 'c': case 'cool': case 'cold': return { label: 'COOL', color: '#40a9ff' };
+    case 'h': case 'hot': return { label: 'HOT', color: ZONE_COLORS.hot };
+    case 'm': case 'max': return { label: 'MAX', color: ZONE_COLORS.fire };
+    case 'w': case 'warm': return { label: 'WARM', color: ZONE_COLORS.warm };
+    case 'a': case 'active': return { label: 'ACTIVE', color: ZONE_COLORS.active };
+    case 'c': case 'cool': case 'cold': return { label: 'COOL', color: ZONE_COLORS.cool };
     default: return { label: String(zone).toUpperCase(), color: '#d9d9d9' };
   }
 }

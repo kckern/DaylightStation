@@ -15,7 +15,6 @@
 import mqtt from 'mqtt';
 import fs from 'fs';
 import path from 'path';
-import { configService } from '#system/config/index.mjs';
 
 /**
  * @typedef {Object} MQTTConfig
@@ -475,19 +474,6 @@ export class MQTTSensorAdapter {
       this.#logger.warn?.('mqtt.offline');
     });
   }
-}
-
-/**
- * Create an MQTTSensorAdapter from environment config
- * @param {Object} [options]
- * @returns {MQTTSensorAdapter}
- */
-export function createMQTTSensorAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('mqtt') || {};
-  const host = adapterConfig.host;
-  const port = adapterConfig.port || 1883;
-
-  return new MQTTSensorAdapter({ host, port }, options);
 }
 
 export default MQTTSensorAdapter;

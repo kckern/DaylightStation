@@ -12,6 +12,8 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
+import { translateVendorError } from '#system/utils/errors/index.mjs';
 
 const API_BASE = 'https://www.googleapis.com/youtube/v3/search';
 const CHANNELS_API = 'https://www.googleapis.com/youtube/v3/channels';
@@ -30,6 +32,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   #apiKey;
   #logger;
   #youtubeAdapter;
+  #httpClient;
   /** @type {Map<string, { items: Object[], ts: number }>} */
   #cache = new Map();
 
@@ -38,13 +41,15 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
    * @param {string} deps.apiKey - YouTube Data API v3 key
    * @param {Object} [deps.youtubeAdapter] - YouTubeAdapter content adapter (Piped proxy)
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ apiKey, youtubeAdapter = null, logger = console }) {
+  constructor({ apiKey, youtubeAdapter = null, logger = console, httpClient } = {}) {
     super();
     if (!apiKey) throw new Error('YouTubeFeedAdapter requires apiKey');
     this.#apiKey = apiKey;
     this.#youtubeAdapter = youtubeAdapter;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   get sourceType() { return 'youtube'; }
@@ -144,10 +149,19 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
 
   async #fetchChannelRSS(channelId, query) {
     const url = `${RSS_BASE}?channel_id=${encodeURIComponent(channelId)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`YouTube RSS ${res.status}`);
+    let res;
+    try {
+      res = await this.#httpClient.get(url);
+    } catch (err) {
+      this.#logger.warn?.('youtube.rss.failed', { channelId, status: err.status });
+      throw translateVendorError({ status: err.status }, { op: 'fetchChannelRSS' });
+    }
+    if (!res.ok) {
+      this.#logger.warn?.('youtube.rss.failed', { channelId, status: res.status });
+      throw translateVendorError({ status: res.status }, { op: 'fetchChannelRSS' });
+    }
 
-    const xml = await res.text();
+    const xml = typeof res.data === 'string' ? res.data : String(res.data ?? '');
     return this.#parseRSS(xml, query);
   }
 
@@ -248,13 +262,19 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   // ======================================================================
 
   async #fetchAPIAndNormalize(params, query) {
-    const res = await fetch(`${API_BASE}?${params}`);
+    let res;
+    try {
+      res = await this.#httpClient.get(`${API_BASE}?${params}`);
+    } catch (err) {
+      this.#logger.warn?.('youtube.api.failed', { status: err.status, detail: err.details?.body?.slice?.(0, 200) });
+      throw translateVendorError({ status: err.status }, { op: 'youtubeSearch' });
+    }
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`YouTube API ${res.status}: ${text.slice(0, 200)}`);
+      this.#logger.warn?.('youtube.api.failed', { status: res.status });
+      throw translateVendorError({ status: res.status }, { op: 'youtubeSearch' });
     }
 
-    const data = await res.json();
+    const data = res.data || {};
     return (data.items || [])
       .filter(v => v.id?.videoId)
       .map(v => {
@@ -326,9 +346,9 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
         fields: 'items/snippet/thumbnails/default/url',
         key: this.#apiKey,
       });
-      const res = await fetch(`${CHANNELS_API}?${params}`);
+      const res = await this.#httpClient.get(`${CHANNELS_API}?${params}`);
       if (!res.ok) return null;
-      const data = await res.json();
+      const data = res.data || {};
       const url = data.items?.[0]?.snippet?.thumbnails?.default?.url || null;
       this.#putInCache(cacheKey, [url]);
       return url;

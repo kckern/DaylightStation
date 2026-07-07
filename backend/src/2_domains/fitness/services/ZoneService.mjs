@@ -2,7 +2,14 @@
  * ZoneService - Heart rate zone resolution and management
  */
 
-import { resolveZone, getHigherZone, createDefaultZones, ZONE_PRIORITY } from '../entities/Zone.mjs';
+import {
+  resolveZone,
+  getHigherZone,
+  createDefaultZones,
+  getDefaultThresholds as domainGetDefaultThresholds,
+  ZONE_PRIORITY,
+  ZONE_COLORS,
+} from '../entities/Zone.mjs';
 
 export class ZoneService {
   constructor({ zoneConfig = null } = {}) {
@@ -51,16 +58,12 @@ export class ZoneService {
   }
 
   /**
-   * Get default thresholds for a max heart rate
+   * Get default thresholds for a max heart rate.
+   * Delegates to the domain SSOT (Zone.mjs) so these can never drift from the
+   * Zone entity's default zones (audit X-5).
    */
   getDefaultThresholds(maxHr = 185) {
-    return {
-      cool: Math.round(maxHr * 0.5),
-      active: Math.round(maxHr * 0.6),
-      warm: Math.round(maxHr * 0.7),
-      hot: Math.round(maxHr * 0.8),
-      fire: Math.round(maxHr * 0.9)
-    };
+    return domainGetDefaultThresholds(maxHr);
   }
 
   /**
@@ -71,17 +74,10 @@ export class ZoneService {
   }
 
   /**
-   * Get zone color
+   * Get zone color from the canonical domain palette (Zone.mjs / ZoneName).
    */
   getZoneColor(zoneName) {
-    const colors = {
-      cool: '#3B82F6',    // blue
-      active: '#10B981',  // green
-      warm: '#F59E0B',    // yellow
-      hot: '#F97316',     // orange
-      fire: '#EF4444'     // red
-    };
-    return colors[zoneName] || '#6B7280';
+    return ZONE_COLORS[zoneName] || '#6B7280';
   }
 }
 

@@ -16,6 +16,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 /**
  * Create Admin Scheduler Router
@@ -77,154 +78,129 @@ export function createAdminSchedulerRouter(config) {
   // GET /jobs - List all jobs merged with runtime state
   // ===========================================================================
 
-  router.get('/jobs', (req, res) => {
-    try {
-      const jobs = readJobsFile();
-      const runtime = readRuntimeState();
-      const merged = jobs.map(job => ({
-        ...job,
-        runtime: runtime[job.id] || null,
-      }));
-      logger.info?.('admin.scheduler.jobs.listed', { count: merged.length });
-      res.json({ jobs: merged });
-    } catch (error) {
-      logger.error?.('admin.scheduler.jobs.list.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to list jobs' });
-    }
-  });
+  router.get('/jobs', asyncHandler((req, res) => {
+    const jobs = readJobsFile();
+    const runtime = readRuntimeState();
+    const merged = jobs.map(job => ({
+      ...job,
+      runtime: runtime[job.id] || null,
+    }));
+    logger.info?.('admin.scheduler.jobs.listed', { count: merged.length });
+    res.json({ jobs: merged });
+  }));
 
   // ===========================================================================
   // POST /jobs - Create a new job
   // ===========================================================================
 
-  router.post('/jobs', (req, res) => {
-    try {
-      const { id, name, module, schedule, dependencies, window } = req.body || {};
+  router.post('/jobs', asyncHandler((req, res) => {
+    const { id, name, module, schedule, dependencies, window } = req.body || {};
 
-      // Validate required fields
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ error: 'Field "id" is required and must be a string' });
-      }
-      if (/\s/.test(id)) {
-        return res.status(400).json({ error: 'Field "id" must not contain spaces' });
-      }
-      if (!name || typeof name !== 'string') {
-        return res.status(400).json({ error: 'Field "name" is required and must be a string' });
-      }
-      if (!schedule || typeof schedule !== 'string') {
-        return res.status(400).json({ error: 'Field "schedule" is required and must be a string (cron expression)' });
-      }
-
-      const jobs = readJobsFile();
-
-      // Check for duplicate id
-      if (jobs.some(job => job.id === id)) {
-        return res.status(409).json({ error: `Job with id "${id}" already exists` });
-      }
-
-      // Build the new job object
-      const newJob = { id, name };
-      if (module !== undefined) newJob.module = module;
-      newJob.schedule = schedule;
-      if (dependencies !== undefined) newJob.dependencies = dependencies;
-      if (window !== undefined) newJob.window = window;
-
-      jobs.push(newJob);
-      writeJobsFile(jobs);
-
-      logger.info?.('admin.scheduler.job.created', { id, name });
-      res.status(201).json({ ok: true, job: newJob });
-    } catch (error) {
-      logger.error?.('admin.scheduler.job.create.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to create job' });
+    // Validate required fields
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({ error: 'Field "id" is required and must be a string' });
     }
-  });
+    if (/\s/.test(id)) {
+      return res.status(400).json({ error: 'Field "id" must not contain spaces' });
+    }
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Field "name" is required and must be a string' });
+    }
+    if (!schedule || typeof schedule !== 'string') {
+      return res.status(400).json({ error: 'Field "schedule" is required and must be a string (cron expression)' });
+    }
+
+    const jobs = readJobsFile();
+
+    // Check for duplicate id
+    if (jobs.some(job => job.id === id)) {
+      return res.status(409).json({ error: `Job with id "${id}" already exists` });
+    }
+
+    // Build the new job object
+    const newJob = { id, name };
+    if (module !== undefined) newJob.module = module;
+    newJob.schedule = schedule;
+    if (dependencies !== undefined) newJob.dependencies = dependencies;
+    if (window !== undefined) newJob.window = window;
+
+    jobs.push(newJob);
+    writeJobsFile(jobs);
+
+    logger.info?.('admin.scheduler.job.created', { id, name });
+    res.status(201).json({ ok: true, job: newJob });
+  }));
 
   // ===========================================================================
   // GET /jobs/:id - Get single job detail with runtime state
   // ===========================================================================
 
-  router.get('/jobs/:id', (req, res) => {
-    try {
-      const jobId = req.params.id;
-      const jobs = readJobsFile();
-      const job = jobs.find(j => j.id === jobId);
+  router.get('/jobs/:id', asyncHandler((req, res) => {
+    const jobId = req.params.id;
+    const jobs = readJobsFile();
+    const job = jobs.find(j => j.id === jobId);
 
-      if (!job) {
-        return res.status(404).json({ error: `Job "${jobId}" not found` });
-      }
-
-      const runtime = readRuntimeState();
-      const merged = {
-        ...job,
-        runtime: runtime[jobId] || null,
-      };
-
-      logger.info?.('admin.scheduler.job.read', { id: jobId });
-      res.json({ job: merged });
-    } catch (error) {
-      logger.error?.('admin.scheduler.job.read.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to read job' });
+    if (!job) {
+      return res.status(404).json({ error: `Job "${jobId}" not found` });
     }
-  });
+
+    const runtime = readRuntimeState();
+    const merged = {
+      ...job,
+      runtime: runtime[jobId] || null,
+    };
+
+    logger.info?.('admin.scheduler.job.read', { id: jobId });
+    res.json({ job: merged });
+  }));
 
   // ===========================================================================
   // PUT /jobs/:id - Update job fields (cannot change id)
   // ===========================================================================
 
-  router.put('/jobs/:id', (req, res) => {
-    try {
-      const jobId = req.params.id;
-      const jobs = readJobsFile();
-      const index = jobs.findIndex(j => j.id === jobId);
+  router.put('/jobs/:id', asyncHandler((req, res) => {
+    const jobId = req.params.id;
+    const jobs = readJobsFile();
+    const index = jobs.findIndex(j => j.id === jobId);
 
-      if (index === -1) {
-        return res.status(404).json({ error: `Job "${jobId}" not found` });
-      }
-
-      const { name, module, schedule, dependencies, window } = req.body || {};
-
-      // Merge allowed fields into the existing job
-      if (name !== undefined) jobs[index].name = name;
-      if (module !== undefined) jobs[index].module = module;
-      if (schedule !== undefined) jobs[index].schedule = schedule;
-      if (dependencies !== undefined) jobs[index].dependencies = dependencies;
-      if (window !== undefined) jobs[index].window = window;
-
-      writeJobsFile(jobs);
-
-      logger.info?.('admin.scheduler.job.updated', { id: jobId });
-      res.json({ ok: true, job: jobs[index] });
-    } catch (error) {
-      logger.error?.('admin.scheduler.job.update.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to update job' });
+    if (index === -1) {
+      return res.status(404).json({ error: `Job "${jobId}" not found` });
     }
-  });
+
+    const { name, module, schedule, dependencies, window } = req.body || {};
+
+    // Merge allowed fields into the existing job
+    if (name !== undefined) jobs[index].name = name;
+    if (module !== undefined) jobs[index].module = module;
+    if (schedule !== undefined) jobs[index].schedule = schedule;
+    if (dependencies !== undefined) jobs[index].dependencies = dependencies;
+    if (window !== undefined) jobs[index].window = window;
+
+    writeJobsFile(jobs);
+
+    logger.info?.('admin.scheduler.job.updated', { id: jobId });
+    res.json({ ok: true, job: jobs[index] });
+  }));
 
   // ===========================================================================
   // DELETE /jobs/:id - Remove a job
   // ===========================================================================
 
-  router.delete('/jobs/:id', (req, res) => {
-    try {
-      const jobId = req.params.id;
-      const jobs = readJobsFile();
-      const index = jobs.findIndex(j => j.id === jobId);
+  router.delete('/jobs/:id', asyncHandler((req, res) => {
+    const jobId = req.params.id;
+    const jobs = readJobsFile();
+    const index = jobs.findIndex(j => j.id === jobId);
 
-      if (index === -1) {
-        return res.status(404).json({ error: `Job "${jobId}" not found` });
-      }
-
-      jobs.splice(index, 1);
-      writeJobsFile(jobs);
-
-      logger.info?.('admin.scheduler.job.deleted', { id: jobId });
-      res.json({ ok: true, id: jobId });
-    } catch (error) {
-      logger.error?.('admin.scheduler.job.delete.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to delete job' });
+    if (index === -1) {
+      return res.status(404).json({ error: `Job "${jobId}" not found` });
     }
-  });
+
+    jobs.splice(index, 1);
+    writeJobsFile(jobs);
+
+    logger.info?.('admin.scheduler.job.deleted', { id: jobId });
+    res.json({ ok: true, id: jobId });
+  }));
 
   // ===========================================================================
   // POST /jobs/:id/run - Trigger immediate job execution (placeholder)
@@ -235,6 +211,8 @@ export function createAdminSchedulerRouter(config) {
     logger.info?.('admin.scheduler.job.run.requested', { id: jobId });
     res.status(202).json({ ok: true, message: 'Job queued for execution' });
   });
+
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }

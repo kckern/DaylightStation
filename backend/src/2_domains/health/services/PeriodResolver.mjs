@@ -16,6 +16,8 @@
  * `deduced` form throws with hint to call deduce_period() explicitly.
  */
 
+import { ValidationError, DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+
 const CALENDAR_NAMED = [
   'this_week', 'this_month', 'this_quarter', 'this_year',
   'last_quarter', 'last_year',
@@ -60,11 +62,11 @@ export class PeriodResolver {
     if (typeof input === 'string') {
       if (this.#isRollingLabel(input)) return this.#resolveRolling(input);
       if (this.#isCalendarLabel(input)) return this.#resolveCalendar(input);
-      throw new Error(`PeriodResolver: unknown period string "${input}"`);
+      throw new ValidationError(`PeriodResolver: unknown period string "${input}"`, { code: 'UNKNOWN_PERIOD_STRING', field: 'period', value: input });
     }
 
     if (!input || typeof input !== 'object') {
-      throw new Error('PeriodResolver.resolve: input must be an object or recognized string label');
+      throw new ValidationError('PeriodResolver.resolve: input must be an object or recognized string label', { code: 'INVALID_PERIOD_INPUT', field: 'period', value: input });
     }
     if (typeof input.rolling === 'string') return this.#resolveRolling(input.rolling);
     if (typeof input.calendar === 'string') return this.#resolveCalendar(input.calendar);
@@ -75,9 +77,9 @@ export class PeriodResolver {
       return this.#resolveNamed(input.named, ctx);
     }
     if (input.deduced) {
-      throw new Error('deduced period inline resolution is not supported. Call deduce_period() first and pass the result as { from, to }.');
+      throw new DomainInvariantError('deduced period inline resolution is not supported. Call deduce_period() first and pass the result as { from, to }.', { code: 'DEDUCED_INLINE_UNSUPPORTED' });
     }
-    throw new Error('PeriodResolver.resolve: unknown period input shape');
+    throw new ValidationError('PeriodResolver.resolve: unknown period input shape', { code: 'UNKNOWN_PERIOD_SHAPE', field: 'period', value: input });
   }
 
   #isRollingLabel(label) {
@@ -109,7 +111,7 @@ export class PeriodResolver {
     }
     const m = /^(last|prev)_(\d+)([dy])$/.exec(label);
     if (!m) {
-      throw new Error(`PeriodResolver: unknown rolling label "${label}"`);
+      throw new ValidationError(`PeriodResolver: unknown rolling label "${label}"`, { code: 'UNKNOWN_ROLLING_LABEL', field: 'label', value: label });
     }
     const [, kind, nStr, unit] = m;
     const n = parseInt(nStr, 10);
@@ -192,12 +194,12 @@ export class PeriodResolver {
         source: 'calendar',
       };
     }
-    throw new Error(`PeriodResolver: unknown calendar label "${label}"`);
+    throw new ValidationError(`PeriodResolver: unknown calendar label "${label}"`, { code: 'UNKNOWN_CALENDAR_LABEL', field: 'label', value: label });
   }
 
   async #resolveNamed(slug, ctx) {
     if (!this.playbookLoader && !this.workingMemoryAdapter) {
-      throw new Error('PeriodResolver: named period lookup requires playbookLoader or workingMemoryAdapter dep');
+      throw new DomainInvariantError('PeriodResolver: named period lookup requires playbookLoader or workingMemoryAdapter dep', { code: 'NAMED_PERIOD_LOOKUP_UNAVAILABLE' });
     }
     const userId = ctx?.userId;
 
@@ -238,7 +240,7 @@ export class PeriodResolver {
       }
     }
 
-    throw new Error(`PeriodResolver: named period not found: "${slug}"`);
+    throw new EntityNotFoundError('NamedPeriod', slug, { details: { code: 'NAMED_PERIOD_NOT_FOUND' } });
   }
 }
 

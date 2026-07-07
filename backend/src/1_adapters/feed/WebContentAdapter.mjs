@@ -13,6 +13,7 @@
  */
 
 import { extract } from '@extractus/article-extractor';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 const ICON_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_ICON_CACHE = 200;
@@ -32,13 +33,16 @@ const PLACEHOLDER_SVG = Buffer.from(
 export class WebContentAdapter {
   #iconCache = new Map();
   #logger;
+  #httpClient;
 
   /**
    * @param {Object} [deps]
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ logger = console } = {}) {
+  constructor({ logger = console, httpClient } = {}) {
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   // ===========================================================================
@@ -61,11 +65,11 @@ export class WebContentAdapter {
     try {
       const start = Date.now();
       const iconUrl = await this.#resolveIconUrl(url);
-      const iconRes = await fetch(iconUrl);
+      const iconRes = await this.#httpClient.requestRaw('GET', iconUrl, { responseType: 'buffer' });
       if (!iconRes.ok) return null;
 
-      const buffer = Buffer.from(await iconRes.arrayBuffer());
-      const contentType = iconRes.headers.get('content-type') || 'image/png';
+      const buffer = iconRes.data;
+      const contentType = iconRes.headers['content-type'] || 'image/png';
 
       this.#iconCache.set(url, { data: buffer, contentType, time: Date.now() });
       this.#evictStaleIcons();
@@ -95,11 +99,11 @@ export class WebContentAdapter {
       const sub = url.match(/\/r\/(\w+)/)?.[1];
       if (sub) {
         try {
-          const aboutRes = await fetch(`https://www.reddit.com/r/${sub}/about.json`, {
+          const aboutRes = await this.#httpClient.requestRaw('GET', `https://www.reddit.com/r/${sub}/about.json`, {
             headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
           });
           if (aboutRes.ok) {
-            const about = await aboutRes.json();
+            const about = aboutRes.data || {};
             const icon = about.data?.community_icon?.split('?')?.[0] || about.data?.icon_img || null;
             if (icon) return icon;
           }
@@ -113,12 +117,13 @@ export class WebContentAdapter {
     const ytMatch = url.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)/);
     if (ytMatch) {
       try {
-        const pageRes = await fetch(`https://www.youtube.com/channel/${ytMatch[1]}`, {
+        const pageRes = await this.#httpClient.requestRaw('GET', `https://www.youtube.com/channel/${ytMatch[1]}`, {
           headers: { 'User-Agent': USER_AGENT },
-          signal: AbortSignal.timeout(5000),
+          responseType: 'text',
+          timeout: 5000,
         });
         if (pageRes.ok) {
-          const html = await pageRes.text();
+          const html = pageRes.data;
           const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
           if (ogImage) return ogImage;
         }
@@ -187,17 +192,18 @@ export class WebContentAdapter {
   async proxyImage(url) {
     try {
       const start = Date.now();
-      const res = await fetch(url, {
+      const res = await this.#httpClient.requestRaw('GET', url, {
         headers: { 'User-Agent': USER_AGENT },
-        signal: AbortSignal.timeout(READABLE_TIMEOUT),
+        responseType: 'buffer',
+        timeout: READABLE_TIMEOUT,
       });
       if (!res.ok) {
         this.#logger.debug?.('webcontent.image.fallback', { url, status: res.status, durationMs: Date.now() - start });
         return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
       }
 
-      const contentType = res.headers.get('content-type') || 'image/png';
-      const buffer = Buffer.from(await res.arrayBuffer());
+      const contentType = res.headers['content-type'] || 'image/png';
+      const buffer = res.data;
       this.#logger.debug?.('webcontent.image.proxied', {
         url,
         contentType,
@@ -250,9 +256,10 @@ export class WebContentAdapter {
     }
 
     // Fallback: manual fetch + regex parser
-    const pageRes = await fetch(url, {
+    const pageRes = await this.#httpClient.requestRaw('GET', url, {
       headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
-      signal: AbortSignal.timeout(READABLE_TIMEOUT),
+      responseType: 'text',
+      timeout: READABLE_TIMEOUT,
     });
 
     if (!pageRes.ok) {
@@ -262,7 +269,7 @@ export class WebContentAdapter {
       throw err;
     }
 
-    const html = await pageRes.text();
+    const html = pageRes.data;
     const result = this.#parseHtml(html);
     this.#logger.debug?.('webcontent.readable.extracted', {
       url, wordCount: result.wordCount, hasOgImage: !!result.ogImage,

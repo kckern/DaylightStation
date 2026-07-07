@@ -12,9 +12,13 @@ export {
   Zone,
   ZONE_NAMES,
   ZONE_PRIORITY,
+  ZONE_COLORS,
+  ZONE_ORDER,
+  DEFAULT_ZONE_FRACTIONS,
   resolveZone,
   getHigherZone,
-  createDefaultZones
+  createDefaultZones,
+  getDefaultThresholds
 } from './entities/Zone.mjs';
 
 // Services

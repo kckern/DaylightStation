@@ -16,7 +16,6 @@
 import { google } from 'googleapis';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { nowDate, nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -27,7 +26,11 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 export class GmailHarvester extends IHarvester {
   #lifelogStore;
   #currentStore;
-  #configService;
+  #getUserAuth;
+  #googleClientId;
+  #googleClientSecret;
+  #googleRedirectUri;
+  #googleRefreshToken;
   #circuitBreaker;
   #logger;
 
@@ -35,13 +38,21 @@ export class GmailHarvester extends IHarvester {
    * @param {Object} config
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} config.currentStore - Store for current inbox state
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.googleClientId] - Google OAuth client id (from secrets)
+   * @param {string} [config.googleClientSecret] - Google OAuth client secret (from secrets)
+   * @param {string} [config.googleRedirectUri] - Google OAuth redirect URI (from secrets)
+   * @param {string} [config.googleRefreshToken] - Fallback Google refresh token (from secrets)
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
     lifelogStore,
     currentStore,
-    configService,
+    getUserAuth,
+    googleClientId,
+    googleClientSecret,
+    googleRedirectUri,
+    googleRefreshToken,
     logger = console,
   }) {
     super();
@@ -55,7 +66,11 @@ export class GmailHarvester extends IHarvester {
 
     this.#lifelogStore = lifelogStore;
     this.#currentStore = currentStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#googleClientId = googleClientId;
+    this.#googleClientSecret = googleClientSecret;
+    this.#googleRedirectUri = googleRedirectUri;
+    this.#googleRefreshToken = googleRefreshToken;
     this.#logger = logger;
 
     this.#circuitBreaker = new CircuitBreaker({
@@ -192,11 +207,11 @@ export class GmailHarvester extends IHarvester {
    * @private
    */
   async #createGmailClient(username) {
-    const GOOGLE_CLIENT_ID = configService.getSecret('GOOGLE_CLIENT_ID');
-    const GOOGLE_CLIENT_SECRET = configService.getSecret('GOOGLE_CLIENT_SECRET');
-    const GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI');
-    const auth = this.#configService?.getUserAuth?.('google', username) || {};
-    const refreshToken = auth.refresh_token || configService.getSecret('GOOGLE_REFRESH_TOKEN');
+    const GOOGLE_CLIENT_ID = this.#googleClientId;
+    const GOOGLE_CLIENT_SECRET = this.#googleClientSecret;
+    const GOOGLE_REDIRECT_URI = this.#googleRedirectUri;
+    const auth = this.#getUserAuth?.('google', username) || {};
+    const refreshToken = auth.refresh_token || this.#googleRefreshToken;
 
     if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
       throw new InfrastructureError('Gmail credentials not found', {

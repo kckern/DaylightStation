@@ -2,9 +2,10 @@
 import { vi } from 'vitest';
 import { YouTubeFeedAdapter } from '#adapters/feed/sources/YouTubeFeedAdapter.mjs';
 
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+// Mock the injected system HttpClient. get() resolves {ok,status,data};
+// data is the parsed JSON (API) or raw text (RSS).
+const mockGet = vi.fn();
+const mockHttpClient = { get: mockGet };
 
 describe('YouTubeFeedAdapter', () => {
   const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
@@ -12,9 +13,9 @@ describe('YouTubeFeedAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Production now fetches the channel icon in parallel with the RSS/API
-    // request. Default any unmocked fetch to a benign 404 so the icon
+    // request. Default any unmocked request to a benign 404 so the icon
     // promise resolves without throwing.
-    mockFetch.mockResolvedValue({ ok: false, json: async () => ({}), text: async () => '' });
+    mockGet.mockResolvedValue({ ok: false, status: 404, data: {} });
   });
 
   describe('RSS path thumbnail dimensions', () => {
@@ -35,14 +36,14 @@ describe('YouTubeFeedAdapter', () => {
       // Route fetch by URL: RSS gets the xml, icon API gets a benign 404.
       // Production fetches both in parallel, so a single mockResolvedValueOnce
       // would race with the icon fetch.
-      mockFetch.mockImplementation(async (url) => {
+      mockGet.mockImplementation(async (url) => {
         if (typeof url === 'string' && url.includes('feeds/videos.xml')) {
-          return { ok: true, text: async () => rssXml };
+          return { ok: true, status: 200, data: rssXml };
         }
-        return { ok: false, json: async () => ({}), text: async () => '' };
+        return { ok: false, status: 404, data: {} };
       });
 
-      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
+      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger, httpClient: mockHttpClient });
 
       const items = await adapter.fetchItems({
         type: 'youtube',
@@ -73,14 +74,14 @@ describe('YouTubeFeedAdapter', () => {
   </entry>
 </feed>`;
 
-      mockFetch.mockImplementation(async (url) => {
+      mockGet.mockImplementation(async (url) => {
         if (typeof url === 'string' && url.includes('feeds/videos.xml')) {
-          return { ok: true, text: async () => rssXml };
+          return { ok: true, status: 200, data: rssXml };
         }
-        return { ok: false, json: async () => ({}), text: async () => '' };
+        return { ok: false, status: 404, data: {} };
       });
 
-      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
+      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger, httpClient: mockHttpClient });
 
       const items = await adapter.fetchItems({
         type: 'youtube',
@@ -113,12 +114,13 @@ describe('YouTubeFeedAdapter', () => {
         }],
       };
 
-      mockFetch.mockResolvedValueOnce({
+      mockGet.mockResolvedValueOnce({
         ok: true,
-        json: async () => apiResponse,
+        status: 200,
+        data: apiResponse,
       });
 
-      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
+      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger, httpClient: mockHttpClient });
 
       const items = await adapter.fetchItems({
         type: 'youtube',
@@ -150,12 +152,13 @@ describe('YouTubeFeedAdapter', () => {
         }],
       };
 
-      mockFetch.mockResolvedValueOnce({
+      mockGet.mockResolvedValueOnce({
         ok: true,
-        json: async () => apiResponse,
+        status: 200,
+        data: apiResponse,
       });
 
-      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger });
+      const adapter = new YouTubeFeedAdapter({ apiKey: 'test-key', logger, httpClient: mockHttpClient });
 
       const items = await adapter.fetchItems({
         type: 'youtube',

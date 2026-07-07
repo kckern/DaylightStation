@@ -1,6 +1,7 @@
 // backend/src/2_domains/health/services/MetricAggregator.mjs
 
 import { MetricRegistry } from './MetricRegistry.mjs';
+import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const STATS = ['mean', 'median', 'min', 'max', 'count', 'sum', 'p25', 'p75', 'stdev'];
 
@@ -34,9 +35,9 @@ const DEFAULT_SNAPSHOT_METRICS = [
 export class MetricAggregator {
   /** @param {MetricAggregatorDeps} deps */
   constructor(deps) {
-    if (!deps?.healthStore) throw new Error('MetricAggregator requires healthStore');
-    if (!deps?.healthService) throw new Error('MetricAggregator requires healthService');
-    if (!deps?.periodResolver) throw new Error('MetricAggregator requires periodResolver');
+    if (!deps?.healthStore) throw new ValidationError('MetricAggregator requires healthStore', { code: 'MISSING_HEALTH_STORE', field: 'healthStore' });
+    if (!deps?.healthService) throw new ValidationError('MetricAggregator requires healthService', { code: 'MISSING_HEALTH_SERVICE', field: 'healthService' });
+    if (!deps?.periodResolver) throw new ValidationError('MetricAggregator requires periodResolver', { code: 'MISSING_PERIOD_RESOLVER', field: 'periodResolver' });
     this.healthStore = deps.healthStore;
     this.healthService = deps.healthService;
     this.periodResolver = deps.periodResolver;
@@ -54,7 +55,7 @@ export class MetricAggregator {
   async aggregate({ userId, metric, period, statistic = 'mean' }) {
     const reg = MetricRegistry.get(metric);  // throws on unknown
     if (!STATS.includes(statistic)) {
-      throw new Error(`MetricAggregator: unknown statistic "${statistic}"`);
+      throw new ValidationError(`MetricAggregator: unknown statistic "${statistic}"`, { code: 'UNKNOWN_STATISTIC', field: 'statistic', value: statistic });
     }
     const resolved = await this.periodResolver.resolve(period, { userId });
     const daysInPeriod = daysBetweenInclusive(resolved.from, resolved.to);
@@ -96,9 +97,9 @@ export class MetricAggregator {
    */
   async aggregateSeries({ userId, metric, period, granularity, statistic = 'mean' }) {
     const reg = MetricRegistry.get(metric);
-    if (!STATS.includes(statistic)) throw new Error(`MetricAggregator: unknown statistic "${statistic}"`);
+    if (!STATS.includes(statistic)) throw new ValidationError(`MetricAggregator: unknown statistic "${statistic}"`, { code: 'UNKNOWN_STATISTIC', field: 'statistic', value: statistic });
     if (!['daily','weekly','monthly','quarterly','yearly'].includes(granularity)) {
-      throw new Error(`MetricAggregator: unknown granularity "${granularity}"`);
+      throw new ValidationError(`MetricAggregator: unknown granularity "${granularity}"`, { code: 'UNKNOWN_GRANULARITY', field: 'granularity', value: granularity });
     }
     const resolved = await this.periodResolver.resolve(period, { userId });
     const dailyRows = await this.#collectDailyRows({ userId, reg, from: resolved.from, to: resolved.to });
@@ -307,7 +308,7 @@ export class MetricAggregator {
       }
       return { values, daysCovered };
     }
-    throw new Error(`MetricAggregator: unknown metric source "${reg.source}"`);
+    throw new DomainInvariantError(`MetricAggregator: unknown metric source "${reg.source}"`, { code: 'UNKNOWN_METRIC_SOURCE' });
   }
 }
 
@@ -348,7 +349,7 @@ function computeStatistic(values, stat) {
     const variance = sorted.reduce((s, v) => s + (v - mean) * (v - mean), 0) / n;
     return Math.sqrt(variance);
   }
-  throw new Error(`computeStatistic: unhandled statistic "${stat}"`);
+  throw new DomainInvariantError(`computeStatistic: unhandled statistic "${stat}"`, { code: 'UNHANDLED_STATISTIC' });
 }
 
 function percentileFromSorted(sorted, p) {

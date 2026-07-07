@@ -6,14 +6,16 @@
   "apps-no-config-internals": 10,
   "apps-no-fs": 13,
   "apps-no-fileio": 8,
-  "adapters-no-config-singleton": 23,
+  "adapters-no-config-singleton": 0,
   "adapters-no-rendering": 1,
-  "adapters-no-cross-adapter": 10,
+  "adapters-no-cross-adapter": 5,
   "rendering-no-adapters-apps": 0,
   "api-no-adapters": 10,
   "api-no-apps": 16,
   "api-no-domains": 12,
   "api-no-config": 2,
   "no-applications-alias": 0,
-  "no-deep-relative-layer-cross": 0
+  "no-deep-relative-layer-cross": 0,
+  "api-handrolled-500": 93,
+  "apps-success-false": 49
 }

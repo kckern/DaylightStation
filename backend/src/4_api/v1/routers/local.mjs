@@ -18,7 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { spawn } from 'child_process';
-import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { dirExists, fileExists } from '#system/utils/FileIO.mjs';
 
 const MIME_TYPES = {
@@ -284,16 +284,8 @@ export function createLocalRouter(config) {
     });
   }));
 
-  // Error handler
-  router.use((err, req, res, next) => {
-    logger.error?.('local.router.error', {
-      error: err.message,
-      stack: err.stack,
-      url: req.url,
-      method: req.method
-    });
-    res.status(500).json({ error: err.message });
-  });
+  // Error handler: maps by name/status, hides internals on 5xx, logs real error.
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }

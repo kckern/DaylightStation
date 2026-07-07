@@ -255,8 +255,11 @@ export class ListAdapter {
       if (menuCaseMatch) return menuCaseMatch;
     }
 
-    // Return default path (will fail gracefully in _loadList)
-    return path.join(this.dataPath, 'household', 'config', 'lists', listType, `${name}.yml`);
+    // Return default path (will fail gracefully in _loadList). Uses the
+    // household-scoped folder name (same resolution as the lookup loops above)
+    // rather than a hardcoded 'household', so multi-household installs report
+    // the correct missing path.
+    return path.join(this.dataPath, `household${householdSuffix}`, 'config', 'lists', listType, `${name}.yml`);
   }
 
   /**

@@ -16,7 +16,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { listHouseholdDirs, parseHouseholdId } from '#system/config/configLoader.mjs';
+import { listHouseholdDirs, parseHouseholdId } from '#system/utils/householdDirs.mjs';
 
 export class YamlJournalDatastore extends IJournalDatastore {
   /**
