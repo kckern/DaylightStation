@@ -28,7 +28,7 @@ backend/
 
 ## Layer Details
 
-### 0_system/ (26 files)
+### 0_system/
 
 Cross-cutting concerns shared across all layers.
 
@@ -38,13 +38,12 @@ Cross-cutting concerns shared across all layers.
 | `logging/` | Structured logging | dispatcher.js, logger.js, transports/ |
 | `eventbus/` | Real-time messaging | WebSocketEventBus.mjs, MqttAdapter.mjs |
 | `scheduling/` | Cron job management | TaskRegistry.mjs |
-| `routing/` | Legacy/new route toggle | RoutingConfig.mjs, ShimMetrics.mjs |
 | `proxy/` | External service proxy | ProxyService.mjs |
 | `utils/` | Shared utilities | Various helpers |
 
 **Key Pattern:** `bootstrap.mjs` contains factory functions for creating all domain services with proper dependency injection.
 
-### 1_adapters/ (76 files)
+### 1_adapters/
 
 Concrete implementations that connect domains to external systems.
 
@@ -78,11 +77,18 @@ Server-side presentation layer for non-browser output targets (thermal printer, 
 | `fitness/` | Fitness receipt renderer + theme |
 | `gratitude/` | Gratitude card renderer + theme |
 
+Additional renderer families now live here:
+
+- **eink framework** (`eink/`) — e-ink display rendering (providers, widgets)
+- **newsreporter** (`newsreporter/`) — scheduled report rendering
+- **qrcode** (`qrcode/`) — QR code generation
+- **timelapse** (`fitness/TimelapseFrameRenderer.mjs`) — fitness timelapse frame rendering
+
 Renderers receive pre-computed domain data via DI callbacks and produce visual output (PNG canvases). They share drawing primitives via `lib/` — unlike adapters, which are domain-isolated.
 
 See [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) for details.
 
-### 2_domains/ (111 files)
+### 2_domains/
 
 Pure business logic with no external dependencies. Each domain has:
 - `entities/` - Data models with validation
@@ -107,7 +113,7 @@ Pure business logic with no external dependencies. Each domain has:
 | `lifelog/` | Activity aggregation | Lifelog entries |
 | `core/` | Shared value objects | Common types |
 
-### 3_applications/ (60 files)
+### 3_applications/
 
 Use case orchestration, complex workflows, and **port interfaces** (contracts for external dependencies).
 
@@ -120,7 +126,7 @@ Use case orchestration, complex workflows, and **port interfaces** (contracts fo
 | `lifeplan/` | Life planning (JOP) | DriftService, CeremonyService, AlignmentService, RetroService, MetricsService |
 | `health/` | Health workflows + agent personalization | `HealthDashboardUseCase`, `AggregateHealthUseCase`, `ReconciliationProcessor`, `LongitudinalAggregationService`, `PersonalContextLoader` (F-101), `SetDailyCoachingUseCase` (F-001) |
 
-### 4_api/ (39 files)
+### 4_api/
 
 HTTP layer - Express routers and handlers.
 
@@ -128,8 +134,7 @@ HTTP layer - Express routers and handlers.
 |-----------|---------|
 | `routers/` | 20+ Express routers |
 | `handlers/` | Request handlers for complex endpoints |
-| `middleware/` | Auth, logging, legacy shims |
-| `shims/` | Legacy compatibility wrappers |
+| `middleware/` | Auth, logging |
 
 **Key Routers:**
 - `/api/content`, `/api/list`, `/api/play` - Content domain
@@ -138,7 +143,6 @@ HTTP layer - Express routers and handlers.
 - `/api/health`, `/api/gratitude` - Health/wellness
 - `/api/life` - Life planning (plan, now, log, health)
 - `/api/nutribot`, `/api/journalist` - Chatbot webhooks
-- `/admin/legacy`, `/admin/shims` - Admin endpoints
 
 ---
 
@@ -158,7 +162,7 @@ HTTP layer - Express routers and handlers.
 1_adapters     → can import from → 3 (ports only), 2, 0
 1_rendering    → can import from → 2, 0
 2_domains      → can import from → 0 (minimal)
-0_system       → standalone (no upward imports)
+0_system       → standalone (no upward imports; the composition root is the sole exception and is being relocated — see remediation plan P2.7)
 ```
 
 **Key Principles:**
@@ -209,12 +213,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
 ### Strangler Fig Migration
 
-Legacy code is gradually replaced:
-
-1. Create new implementation in `src/`
-2. Legacy file becomes thin wrapper that delegates to new code
-3. Monitor usage via `/admin/legacy` endpoint
-4. Delete legacy when usage drops to 0
+The strangler-fig migration is complete; the `_legacy/` tree has been deleted. See the decision register (`docs/reference/core/layers-of-abstraction/decision-register.md`) for the history and rationale.
 
 ---
 
