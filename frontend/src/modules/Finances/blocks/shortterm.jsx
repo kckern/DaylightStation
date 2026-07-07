@@ -5,7 +5,7 @@ import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
 import moment from 'moment';
 
-export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimensions }) {
+export function BudgetShortTerm({ setDrawerContent, budget }) {
 
 
     const { budgetStart, budgetEnd, shortTermBuckets, shortTermStatus } = budget;

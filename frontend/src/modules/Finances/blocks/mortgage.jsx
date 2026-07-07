@@ -1,6 +1,6 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs, Badge, Table, Select, TextInput, Tooltip } from "@mantine/core";
+import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { useState, useMemo } from 'react';
@@ -71,11 +71,6 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         if (i === arr.length - 1 && endMs > todayMs) endMs = todayMs;
         return [endMs, record.cumulativeInterest];
       });
-
-      // 2. Determine last amortization month to avoid overlap with future series.
-      const lastAmortMonth = mortgage.amortization?.length
-        ? mortgage.amortization[mortgage.amortization.length - 1].month
-        : null;
 
       // 3. Build a future series for each payment plan.
       // First point anchors at TODAY with the first projection month's

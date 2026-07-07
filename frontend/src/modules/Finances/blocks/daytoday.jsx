@@ -230,7 +230,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   };
 }
 
-export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
+export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
 
   const months = Object.keys(budget.dayToDayBudget);
   const currentMonth = moment().format("YYYY-MM");
@@ -262,17 +262,10 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
       <div className="budget-block-content">
         {monthHeader}
         <HighchartsReact
-        key={activeMonth}
+          key={activeMonth}
           className="budget-burn-down-chart"
           highcharts={Highcharts}
-          options={{
-            ...options,
-            chart: {
-              ...options.chart,
-              width: budgetBlockDimensions.width,
-              height: budgetBlockDimensions.height
-            }
-          }}
+          options={options}
         />
       </div>
     </div>
