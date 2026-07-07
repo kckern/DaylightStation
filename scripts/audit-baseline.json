@@ -6,7 +6,7 @@
   "apps-no-config-internals": 10,
   "apps-no-fs": 13,
   "apps-no-fileio": 8,
-  "adapters-no-config-singleton": 10,
+  "adapters-no-config-singleton": 0,
   "adapters-no-rendering": 1,
   "adapters-no-cross-adapter": 5,
   "rendering-no-adapters-apps": 0,

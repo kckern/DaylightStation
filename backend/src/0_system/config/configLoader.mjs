@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { deepMerge } from '../utils/deepMerge.mjs';
+import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../utils/householdDirs.mjs';
 
 /**
  * Load all config from the data directory.
@@ -121,41 +122,10 @@ function loadAllHouseholds(dataDir) {
   return households;
 }
 
-/**
- * List household directories in the data directory.
- * Matches: household/ and household-{name}/ patterns.
- */
-export function listHouseholdDirs(dataDir) {
-  if (!fs.existsSync(dataDir)) return [];
-
-  return fs.readdirSync(dataDir)
-    .filter(name => {
-      if (name.startsWith('.') || name.startsWith('_')) return false;
-      // Only match 'household' exactly or 'household-*' pattern
-      if (name !== 'household' && !name.startsWith('household-')) return false;
-      return fs.statSync(path.join(dataDir, name)).isDirectory();
-    });
-}
-
-/**
- * Parse household ID from folder name.
- * household/ -> 'default'
- * household-jones/ -> 'jones'
- */
-export function parseHouseholdId(folderName) {
-  if (folderName === 'household') return 'default';
-  return folderName.replace(/^household-/, '');
-}
-
-/**
- * Convert household ID to folder name.
- * 'default' -> 'household'
- * 'jones' -> 'household-jones'
- */
-export function toFolderName(householdId) {
-  if (householdId === 'default') return 'household';
-  return `household-${householdId}`;
-}
+// Household directory helpers now live in system utils so adapters can import
+// them without pulling in the config singleton. Re-exported here for the many
+// existing callers that expect them on configLoader.
+export { listHouseholdDirs, parseHouseholdId, toFolderName };
 
 /**
  * Load apps for a household.
