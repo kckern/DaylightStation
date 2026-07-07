@@ -167,6 +167,9 @@ export class BudgetCompilationService {
     // Calculate short-term totals
     const shortTermStatus = this.#calculateShortTermStatus(shortTermBuckets);
 
+    // Whole-period rollup — must run after surplus allocation, which mutates monthlyBudget
+    const aggregate = this.#buildAggregate(monthlyBudget);
+
     return {
       budgetStart,
       budgetEnd,
@@ -176,7 +179,8 @@ export class BudgetCompilationService {
       totalBudget,
       shortTermBuckets,
       shortTermStatus,
-      transferTransactions
+      transferTransactions,
+      aggregate
     };
   }
 
@@ -708,6 +712,52 @@ export class BudgetCompilationService {
     }
 
     return buckets;
+  }
+
+  /**
+   * Whole-period rollup of the monthly breakdown. Single source of truth
+   * for the dashboard's "Total" row drill-in — the frontend previously
+   * hand-aggregated this itself (2026-07-06 audit §4.4). Numeric totals +
+   * income transactions only; per-category transaction lists stay in the
+   * per-month records (the frontend already merges those on demand).
+   */
+  #buildAggregate(monthlyBudget) {
+    const aggregate = {
+      income: 0,
+      nonBonusIncome: 0,
+      spending: 0,
+      surplus: 0,
+      monthlySpending: 0,
+      monthlyDebits: 0,
+      monthlyCredits: 0,
+      dayToDaySpending: 0,
+      incomeTransactions: [],
+      monthlyCategories: {}
+    };
+
+    for (const month of Object.keys(monthlyBudget)) {
+      const m = monthlyBudget[month] || {};
+      aggregate.income += m.income || 0;
+      aggregate.nonBonusIncome += m.nonBonusIncome || 0;
+      aggregate.spending += m.spending || 0;
+      aggregate.surplus += m.surplus || 0;
+      aggregate.monthlySpending += m.monthlySpending || 0;
+      aggregate.monthlyDebits += m.monthlyDebits || 0;
+      aggregate.monthlyCredits += m.monthlyCredits || 0;
+      aggregate.dayToDaySpending += m.dayToDaySpending || 0;
+      aggregate.incomeTransactions.push(...(m.incomeTransactions || []));
+
+      for (const [cat, data] of Object.entries(m.monthlyCategories || {})) {
+        if (!aggregate.monthlyCategories[cat]) {
+          aggregate.monthlyCategories[cat] = { amount: 0, credits: 0, debits: 0 };
+        }
+        aggregate.monthlyCategories[cat].amount += data.amount || 0;
+        aggregate.monthlyCategories[cat].credits += data.credits || 0;
+        aggregate.monthlyCategories[cat].debits += data.debits || 0;
+      }
+    }
+
+    return aggregate;
   }
 
   /**
