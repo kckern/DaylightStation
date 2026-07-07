@@ -12,6 +12,7 @@
  */
 
 import moment from 'moment-timezone';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class WeightProcessor {
   #lifelogStore;
@@ -26,7 +27,7 @@ export class WeightProcessor {
    */
   constructor({ lifelogStore, timezone = 'America/Los_Angeles', logger = console }) {
     if (!lifelogStore) {
-      throw new Error('WeightProcessor requires lifelogStore');
+      throw new ValidationError('WeightProcessor requires lifelogStore', { code: 'MISSING_LIFELOG_STORE', field: 'lifelogStore' });
     }
 
     this.#lifelogStore = lifelogStore;

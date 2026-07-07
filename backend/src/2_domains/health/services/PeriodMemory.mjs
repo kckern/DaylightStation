@@ -1,5 +1,7 @@
 // backend/src/2_domains/health/services/PeriodMemory.mjs
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 const AGENT_ID = 'health-coach';
 const PERIOD_REMEMBERED_PREFIX = 'period.remembered.';
 const PERIOD_DEDUCED_PREFIX    = 'period.deduced.';
@@ -23,7 +25,7 @@ const DEFAULT_DEDUCED_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  */
 export class PeriodMemory {
   constructor(deps) {
-    if (!deps?.workingMemoryAdapter) throw new Error('PeriodMemory requires workingMemoryAdapter');
+    if (!deps?.workingMemoryAdapter) throw new ValidationError('PeriodMemory requires workingMemoryAdapter', { code: 'MISSING_WORKING_MEMORY_ADAPTER', field: 'workingMemoryAdapter' });
     this.adapter = deps.workingMemoryAdapter;
     this.playbookLoader = deps.playbookLoader ?? null;
     this.trendAnalyzer = deps.trendAnalyzer ?? null;
@@ -70,10 +72,10 @@ export class PeriodMemory {
 
   async rememberPeriod({ userId, slug, from, to, label, description = null }) {
     if (!SLUG_RE.test(slug)) {
-      throw new Error(`PeriodMemory: invalid slug "${slug}" (must match ${SLUG_RE})`);
+      throw new ValidationError(`PeriodMemory: invalid slug "${slug}" (must match ${SLUG_RE})`, { code: 'INVALID_SLUG', field: 'slug', value: slug });
     }
-    if (!from || !to) throw new Error('PeriodMemory: from and to are required');
-    if (!label) throw new Error('PeriodMemory: label is required');
+    if (!from || !to) throw new ValidationError('PeriodMemory: from and to are required', { code: 'MISSING_PERIOD_RANGE' });
+    if (!label) throw new ValidationError('PeriodMemory: label is required', { code: 'MISSING_PERIOD_LABEL', field: 'label' });
 
     const state = await this.adapter.load(AGENT_ID, userId);
     const entry = { from, to, label, description, promotedAt: new Date().toISOString() };
@@ -91,11 +93,11 @@ export class PeriodMemory {
 
   async deducePeriod({ userId, criteria, max_results = 3 }) {
     if (!this.trendAnalyzer) {
-      throw new Error('PeriodMemory.deducePeriod requires trendAnalyzer dep (provides detectSustained)');
+      throw new ValidationError('PeriodMemory.deducePeriod requires trendAnalyzer dep (provides detectSustained)', { code: 'MISSING_TREND_ANALYZER', field: 'trendAnalyzer' });
     }
-    if (!criteria?.metric) throw new Error('PeriodMemory.deducePeriod: criteria.metric is required');
+    if (!criteria?.metric) throw new ValidationError('PeriodMemory.deducePeriod: criteria.metric is required', { code: 'MISSING_CRITERIA_METRIC', field: 'metric' });
     if (!Number.isFinite(criteria.min_duration_days)) {
-      throw new Error('PeriodMemory.deducePeriod: criteria.min_duration_days is required');
+      throw new ValidationError('PeriodMemory.deducePeriod: criteria.min_duration_days is required', { code: 'MISSING_MIN_DURATION_DAYS', field: 'min_duration_days' });
     }
 
     // Map criteria to detectSustained's condition vocabulary.
@@ -107,7 +109,7 @@ export class PeriodMemory {
     } else if (typeof criteria.field_below === 'number') {
       condition = { field_below: criteria.field_below };
     } else {
-      throw new Error('PeriodMemory.deducePeriod: criteria must include value_range, field_above, or field_below');
+      throw new ValidationError('PeriodMemory.deducePeriod: criteria must include value_range, field_above, or field_below', { code: 'INVALID_DEDUCE_CRITERIA', field: 'criteria' });
     }
 
     const result = await this.trendAnalyzer.detectSustained({

@@ -6,12 +6,13 @@ import { MetricTrendAnalyzer } from './MetricTrendAnalyzer.mjs';
 import { PeriodMemory } from './PeriodMemory.mjs';
 import { HistoryReflector } from './HistoryReflector.mjs';
 import { PeriodResolver } from './PeriodResolver.mjs';
+import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 export class HealthAnalyticsService {
   constructor(deps) {
-    if (!deps?.healthStore)    throw new Error('HealthAnalyticsService requires healthStore');
-    if (!deps?.healthService)  throw new Error('HealthAnalyticsService requires healthService');
-    if (!deps?.periodResolver) throw new Error('HealthAnalyticsService requires periodResolver');
+    if (!deps?.healthStore)    throw new ValidationError('HealthAnalyticsService requires healthStore', { code: 'MISSING_HEALTH_STORE', field: 'healthStore' });
+    if (!deps?.healthService)  throw new ValidationError('HealthAnalyticsService requires healthService', { code: 'MISSING_HEALTH_SERVICE', field: 'healthService' });
+    if (!deps?.periodResolver) throw new ValidationError('HealthAnalyticsService requires periodResolver', { code: 'MISSING_PERIOD_RESOLVER', field: 'periodResolver' });
 
     // If the resolver was constructed without playbookLoader/workingMemoryAdapter,
     // and we have those deps, replace it with one that does.
@@ -75,25 +76,25 @@ export class HealthAnalyticsService {
 
   // PeriodMemory delegates (guarded)
   listPeriods(args) {
-    if (!this.periodMemory) throw new Error('HealthAnalyticsService.listPeriods requires workingMemoryAdapter dep');
+    if (!this.periodMemory) throw new DomainInvariantError('HealthAnalyticsService.listPeriods requires workingMemoryAdapter dep', { code: 'LIST_PERIODS_REQUIRES_WORKING_MEMORY' });
     return this.periodMemory.listPeriods(args);
   }
   deducePeriod(args) {
-    if (!this.periodMemory) throw new Error('HealthAnalyticsService.deducePeriod requires workingMemoryAdapter dep');
+    if (!this.periodMemory) throw new DomainInvariantError('HealthAnalyticsService.deducePeriod requires workingMemoryAdapter dep', { code: 'DEDUCE_PERIOD_REQUIRES_WORKING_MEMORY' });
     return this.periodMemory.deducePeriod(args);
   }
   rememberPeriod(args) {
-    if (!this.periodMemory) throw new Error('HealthAnalyticsService.rememberPeriod requires workingMemoryAdapter dep');
+    if (!this.periodMemory) throw new DomainInvariantError('HealthAnalyticsService.rememberPeriod requires workingMemoryAdapter dep', { code: 'REMEMBER_PERIOD_REQUIRES_WORKING_MEMORY' });
     return this.periodMemory.rememberPeriod(args);
   }
   forgetPeriod(args) {
-    if (!this.periodMemory) throw new Error('HealthAnalyticsService.forgetPeriod requires workingMemoryAdapter dep');
+    if (!this.periodMemory) throw new DomainInvariantError('HealthAnalyticsService.forgetPeriod requires workingMemoryAdapter dep', { code: 'FORGET_PERIOD_REQUIRES_WORKING_MEMORY' });
     return this.periodMemory.forgetPeriod(args);
   }
 
   // HistoryReflector delegate (guarded)
   analyzeHistory(args) {
-    if (!this.historyReflector) throw new Error('HealthAnalyticsService.analyzeHistory requires workingMemoryAdapter dep');
+    if (!this.historyReflector) throw new DomainInvariantError('HealthAnalyticsService.analyzeHistory requires workingMemoryAdapter dep', { code: 'ANALYZE_HISTORY_REQUIRES_WORKING_MEMORY' });
     return this.historyReflector.analyzeHistory(args);
   }
 }

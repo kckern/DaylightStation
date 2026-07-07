@@ -1,5 +1,7 @@
 // backend/src/2_domains/health/services/MetricRegistry.mjs
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 /**
  * Per-metric reader table. Each entry says where the metric lives in the
  * underlying datastore, how to extract a value from one row, and what kind
@@ -76,7 +78,7 @@ const REGISTRY = Object.freeze({
 export const MetricRegistry = Object.freeze({
   get(name) {
     const entry = REGISTRY[name];
-    if (!entry) throw new Error(`MetricRegistry: unknown metric "${name}"`);
+    if (!entry) throw new ValidationError(`MetricRegistry: unknown metric "${name}"`, { code: 'UNKNOWN_METRIC', field: 'metric', value: name });
     return entry;
   },
   list() {
