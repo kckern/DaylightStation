@@ -6,7 +6,11 @@ export class BeliefEvaluator {
     belief.addEvidence(evidence);
   }
 
-  calculateDormancyDecay(belief) {
+  /** @param {number} now - Current time as epoch ms (caller-supplied). */
+  calculateDormancyDecay(belief, now) {
+    if (typeof now !== 'number' || !Number.isFinite(now)) {
+      throw new Error('BeliefEvaluator.calculateDormancyDecay(belief, now): now (epoch ms) is required');
+    }
     if (belief.evidence_history.length === 0) {
       // No evidence at all — treat as fully dormant
       return 0;
@@ -14,7 +18,7 @@ export class BeliefEvaluator {
 
     const lastEvidence = belief.evidence_history[belief.evidence_history.length - 1];
     const lastDate = new Date(lastEvidence.date);
-    const daysSince = (Date.now() - lastDate.getTime()) / 86400000;
+    const daysSince = (now - lastDate.getTime()) / 86400000;
 
     if (daysSince <= DORMANCY_THRESHOLD_DAYS) return 0;
 

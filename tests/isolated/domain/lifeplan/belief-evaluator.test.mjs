@@ -40,7 +40,7 @@ describe('BeliefEvaluator', () => {
         id: 'b1', if: 'X', then: 'Y',
         evidence_history: [{ type: 'confirmation', date: yesterday }],
       });
-      expect(evaluator.calculateDormancyDecay(belief)).toBe(0);
+      expect(evaluator.calculateDormancyDecay(belief, Date.now())).toBe(0);
     });
 
     it('returns decay when untested > 60 days (~2% per month)', () => {
@@ -49,7 +49,7 @@ describe('BeliefEvaluator', () => {
         id: 'b1', if: 'X', then: 'Y', confidence: 0.8,
         evidence_history: [{ type: 'confirmation', date: ninetyDaysAgo }],
       });
-      const decay = evaluator.calculateDormancyDecay(belief);
+      const decay = evaluator.calculateDormancyDecay(belief, Date.now());
       // 90 days = ~3 months, 60 day grace = 1 month of decay at ~2%/month ≈ 0.02
       expect(decay).toBeGreaterThan(0);
       expect(decay).toBeLessThan(0.1);
@@ -58,7 +58,7 @@ describe('BeliefEvaluator', () => {
     it('returns 0 when no evidence history', () => {
       const belief = new Belief({ id: 'b1', if: 'X', then: 'Y' });
       // No evidence = dormant but no decay to apply (confidence is already initial)
-      const decay = evaluator.calculateDormancyDecay(belief);
+      const decay = evaluator.calculateDormancyDecay(belief, Date.now());
       expect(decay).toBeGreaterThanOrEqual(0);
     });
   });

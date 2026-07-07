@@ -62,23 +62,33 @@ export class Session {
    * Time-lapse recap lifecycle — the aggregate root owns its status transitions.
    * status: processing | ready | skipped | failed
    */
-  markTimelapseProcessing() {
-    this.timelapse = { status: 'processing', startedAt: Date.now() };
+  markTimelapseProcessing(now) {
+    Session.#requireNow(now);
+    this.timelapse = { status: 'processing', startedAt: now };
   }
 
-  attachTimelapse({ videoPath, durationSeconds = null, fps = null, frameCount = null }) {
+  attachTimelapse({ videoPath, durationSeconds = null, fps = null, frameCount = null, now }) {
     if (videoPath == null) {
       throw new ValidationError('videoPath required', { code: 'MISSING_VIDEO_PATH', field: 'videoPath' });
     }
-    this.timelapse = { status: 'ready', videoPath, durationSeconds, fps, frameCount, createdAt: Date.now() };
+    Session.#requireNow(now);
+    this.timelapse = { status: 'ready', videoPath, durationSeconds, fps, frameCount, createdAt: now };
   }
 
-  markTimelapseSkipped(reason = 'no-captures') {
-    this.timelapse = { status: 'skipped', reason, createdAt: Date.now() };
+  markTimelapseSkipped(reason = 'no-captures', now) {
+    Session.#requireNow(now);
+    this.timelapse = { status: 'skipped', reason, createdAt: now };
   }
 
-  markTimelapseFailed(error) {
-    this.timelapse = { status: 'failed', error: error?.message || String(error), failedAt: Date.now() };
+  markTimelapseFailed(error, now) {
+    Session.#requireNow(now);
+    this.timelapse = { status: 'failed', error: error?.message || String(error), failedAt: now };
+  }
+
+  static #requireNow(now) {
+    if (typeof now !== 'number' || !Number.isFinite(now)) {
+      throw new ValidationError('now (epoch ms) is required', { code: 'MISSING_CLOCK', field: 'now' });
+    }
   }
 
   /**

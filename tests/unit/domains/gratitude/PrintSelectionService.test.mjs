@@ -11,7 +11,7 @@ describe('selectItemsForPrint', () => {
 
   it('returns all items if count >= items.length', () => {
     const items = [makeItem('a'), makeItem('b')];
-    const result = selectItemsForPrint(items, 5);
+    const result = selectItemsForPrint(items, 5, Date.now());
     expect(result).toHaveLength(2);
   });
 
@@ -22,7 +22,7 @@ describe('selectItemsForPrint', () => {
 
   it('returns requested count', () => {
     const items = Array.from({ length: 10 }, (_, i) => makeItem(`item-${i}`, i + 1));
-    const result = selectItemsForPrint(items, 3);
+    const result = selectItemsForPrint(items, 3, Date.now());
     expect(result).toHaveLength(3);
   });
 
@@ -34,7 +34,7 @@ describe('selectItemsForPrint', () => {
     ];
     const counts = { 'printed-5x': 0, 'printed-0x': 0, 'printed-3x': 0 };
     for (let i = 0; i < 100; i++) {
-      const result = selectItemsForPrint(items, 1);
+      const result = selectItemsForPrint(items, 1, Date.now());
       counts[result[0].id]++;
     }
     expect(counts['printed-0x']).toBeGreaterThan(counts['printed-5x']);
@@ -42,7 +42,7 @@ describe('selectItemsForPrint', () => {
 
   it('returns items with correct structure', () => {
     const items = [makeItem('a')];
-    const result = selectItemsForPrint(items, 1);
+    const result = selectItemsForPrint(items, 1, Date.now());
     expect(result[0]).toHaveProperty('id', 'a');
     expect(result[0]).toHaveProperty('datetime');
     expect(result[0]).toHaveProperty('printCount');
