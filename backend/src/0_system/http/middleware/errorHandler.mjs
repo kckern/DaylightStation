@@ -92,6 +92,14 @@ export function errorHandlerMiddleware(options = {}) {
   if (shape === 'string') {
     return (err, req, res, next) => {
       const traceId = req.traceId || 'unknown';
+
+      // If the response has already started (e.g. a streaming proxy failed
+      // mid-pipe), we cannot rewrite status/body — delegate to Express's
+      // default handler, which aborts the connection cleanly.
+      if (res.headersSent) {
+        return next(err);
+      }
+
       const status = getHttpStatusByName(err);
 
       // Always log the REAL error server-side.
