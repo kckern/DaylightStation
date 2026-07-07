@@ -117,7 +117,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       // 4. Compute xAxis bounds spanning amortization + future projections.
       const amortMonths = (mortgage.amortization || []).map(r => moment(r.month, "YYYY-MM"));
       const planEndMonths = mortgage.paymentPlans
-        .map(({ info }) => moment(info.payoffDate, "MMMM YYYY"))
+        .map(({ info }) => moment(info.payoffMonth || info.payoffDate, ["YYYY-MM", "MMMM YYYY"]))
         .filter(m => m.isValid());
       const allMonths = [...amortMonths, ...planEndMonths].sort((a, b) => a.diff(b));
       const months = allMonths.length ? [allMonths[0], allMonths[allMonths.length - 1]] : [];

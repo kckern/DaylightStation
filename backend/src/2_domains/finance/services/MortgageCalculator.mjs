@@ -854,6 +854,7 @@ export class MortgageCalculator {
         totalInterest: this.#round(totalInterest),
         totalPayments: totalMonths,
         totalYears: (totalMonths / 12).toFixed(2),
+        payoffMonth,
         payoffDate: this.#formatPayoffDate(payoffMonth),
         rates: plan.rates || [],
         annualBudget: this.#round(totalPaid / Math.max(totalMonths / 12, 1)),
@@ -865,29 +866,22 @@ export class MortgageCalculator {
   }
 
   /**
-   * Find earliest and latest payoff dates from payment plans
+   * Find earliest and latest payoff months from payment plans.
+   * Compares YYYY-MM strings directly (lexicographic == chronological).
    * @private
    */
   #findPayoffRange(paymentPlans) {
-    let earliestPayoff = null;
-    let latestPayoff = null;
+    let earliestPayoff = '';
+    let latestPayoff = '';
 
     for (const { info } of paymentPlans) {
-      const payoffDate = this.#parsePayoffDate(info.payoffDate);
-      if (!payoffDate) continue;
-
-      if (!earliestPayoff || payoffDate < earliestPayoff) {
-        earliestPayoff = payoffDate;
-      }
-      if (!latestPayoff || payoffDate > latestPayoff) {
-        latestPayoff = payoffDate;
-      }
+      const month = info.payoffMonth;
+      if (!month) continue;
+      if (!earliestPayoff || month < earliestPayoff) earliestPayoff = month;
+      if (!latestPayoff || month > latestPayoff) latestPayoff = month;
     }
 
-    return {
-      earliestPayoff: earliestPayoff ? this.#formatYearMonth(earliestPayoff) : '',
-      latestPayoff: latestPayoff ? this.#formatYearMonth(latestPayoff) : ''
-    };
+    return { earliestPayoff, latestPayoff };
   }
 
   /**
@@ -896,8 +890,8 @@ export class MortgageCalculator {
    */
   #monthsDiff(start, end) {
     return Math.max(1,
-      (end.getFullYear() - start.getFullYear()) * 12 +
-      (end.getMonth() - start.getMonth())
+      (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+      (end.getUTCMonth() - start.getUTCMonth())
     );
   }
 
@@ -923,28 +917,6 @@ export class MortgageCalculator {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return `${monthNames[parseInt(month, 10) - 1]} ${year}`;
-  }
-
-  /**
-   * Parse payoff date from "Month YYYY" format
-   * @private
-   */
-  #parsePayoffDate(payoffStr) {
-    const monthNames = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-
-    const parts = payoffStr.split(' ');
-    if (parts.length !== 2) return null;
-
-    const monthIndex = monthNames.indexOf(parts[0]);
-    if (monthIndex === -1) return null;
-
-    const year = parseInt(parts[1], 10);
-    if (isNaN(year)) return null;
-
-    return new Date(year, monthIndex, 1);
   }
 
   /**
