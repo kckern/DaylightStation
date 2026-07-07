@@ -66,6 +66,58 @@ export class HttpClient extends IHttpClient {
     return this.#parseResponse(response);
   }
 
+  /**
+   * Perform a request WITHOUT throwing on non-2xx responses.
+   *
+   * Unlike get/post/put/delete (which throw HttpError on any non-ok status),
+   * this returns the full response shape so callers can inspect the status
+   * themselves — e.g. image proxies that fall back on 404, hubs that signal
+   * 409 contention, or binary downloads that read the content-type header.
+   * Still throws HttpError on network / timeout failure.
+   *
+   * @param {string} method - HTTP method (GET, POST, …)
+   * @param {string} url
+   * @param {Object} [options]
+   * @param {any}    [options.body] - Request body (JSON-stringified unless a string)
+   * @param {Object} [options.headers]
+   * @param {number} [options.timeout]
+   * @param {'buffer'|'text'|'json'} [options.responseType='json'] - How to decode the body.
+   *   'buffer' → Node Buffer; 'text' → raw string; 'json' → parsed JSON when the
+   *   response is application/json, otherwise the raw text.
+   * @returns {Promise<{status:number, headers:Object, ok:boolean, data:any}>}
+   */
+  async requestRaw(method, url, { body, headers, timeout, responseType = 'json' } = {}) {
+    const requestHeaders = { ...headers };
+    const fetchOptions = { method, headers: requestHeaders, timeout };
+
+    if (body !== undefined && body !== null) {
+      if (!requestHeaders['Content-Type'] && !requestHeaders['content-type']) {
+        requestHeaders['Content-Type'] = 'application/json';
+      }
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    const response = await this.#fetchWithTimeout(url, fetchOptions);
+    const responseHeaders = Object.fromEntries(response.headers.entries());
+
+    let data;
+    if (responseType === 'buffer') {
+      data = Buffer.from(await response.arrayBuffer());
+    } else if (responseType === 'text') {
+      data = await response.text();
+    } else {
+      const contentType = responseHeaders['content-type'] || '';
+      const text = await response.text();
+      if (contentType.includes('application/json')) {
+        try { data = JSON.parse(text); } catch { data = null; }
+      } else {
+        data = text;
+      }
+    }
+
+    return { status: response.status, headers: responseHeaders, ok: response.ok, data };
+  }
+
   async #request(method, url, body, options) {
     const headers = {
       'Content-Type': 'application/json',
