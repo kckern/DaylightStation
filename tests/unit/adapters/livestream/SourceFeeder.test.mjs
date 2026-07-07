@@ -6,7 +6,7 @@ import { EventEmitter } from 'events';
 const { mockSpawn } = vi.hoisted(() => ({ mockSpawn: vi.fn() }));
 vi.mock('child_process', () => ({ spawn: mockSpawn }));
 
-import { SourceFeeder } from '../../../backend/src/2_domains/livestream/SourceFeeder.mjs';
+import { SourceFeeder } from '../../../../backend/src/1_adapters/livestream/SourceFeeder.mjs';
 
 function createMockDecoder() {
   const proc = new EventEmitter();

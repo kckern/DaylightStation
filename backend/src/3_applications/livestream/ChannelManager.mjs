@@ -1,7 +1,7 @@
 import { PassThrough } from 'stream';
 import path from 'path';
 import { StreamChannel } from '../../2_domains/livestream/StreamChannel.mjs';
-import { SourceFeeder } from '../../2_domains/livestream/SourceFeeder.mjs';
+import { SourceFeeder } from '../../1_adapters/livestream/SourceFeeder.mjs';
 import { FFmpegStreamAdapter } from '../../1_adapters/livestream/FFmpegStreamAdapter.mjs';
 import { ProgramRunner } from '../../2_domains/livestream/ProgramRunner.mjs';
 
