@@ -6,13 +6,14 @@
  */
 
 import { configService } from '../config/index.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 /**
  * Get a date formatter for a specific timezone
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {Intl.DateTimeFormat}
  */
-function getFormatter(timezone = 'America/Los_Angeles') {
+function getFormatter(timezone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -28,10 +29,10 @@ function getFormatter(timezone = 'America/Los_Angeles') {
 /**
  * Format a date as a local timestamp string
  * @param {Date} [date=new Date()] - Date to format
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {string} Formatted timestamp (YYYY-MM-DD HH:mm:ss)
  */
-export function formatLocalTimestamp(date = new Date(), timezone = 'America/Los_Angeles') {
+export function formatLocalTimestamp(date = new Date(), timezone = DEFAULT_TIMEZONE) {
   try {
     const parts = getFormatter(timezone).formatToParts(date);
     const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
@@ -62,19 +63,19 @@ export function parseToDate(value) {
 
 /**
  * Get the current date in a timezone
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {string} Date in YYYY-MM-DD format
  */
-export function getCurrentDate(timezone = 'America/Los_Angeles') {
+export function getCurrentDate(timezone = DEFAULT_TIMEZONE) {
   return formatLocalTimestamp(new Date(), timezone).split(' ')[0];
 }
 
 /**
  * Get current hour in a specific timezone
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {number} Hour (0-23)
  */
-export function getCurrentHour(timezone = 'America/Los_Angeles') {
+export function getCurrentHour(timezone = DEFAULT_TIMEZONE) {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', {
     timeZone: timezone,
@@ -98,9 +99,9 @@ export class TimestampService {
    */
   getTimezone() {
     try {
-      return this.configService?.getTimezone?.() || 'America/Los_Angeles';
+      return this.configService?.getTimezone?.() || DEFAULT_TIMEZONE;
     } catch {
-      return 'America/Los_Angeles';
+      return DEFAULT_TIMEZONE;
     }
   }
 

@@ -10,12 +10,14 @@
  * and have no external dependencies or side effects.
  */
 
+import { DEFAULT_TIMEZONE } from './timezone.mjs';
+
 /**
  * Get a date formatter for a specific timezone
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {Intl.DateTimeFormat}
  */
-function getFormatter(timezone = 'America/Los_Angeles') {
+function getFormatter(timezone = DEFAULT_TIMEZONE) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
@@ -34,11 +36,11 @@ function getFormatter(timezone = 'America/Los_Angeles') {
  * Pure function - requires explicit date parameter, no implicit new Date().
  *
  * @param {Date} date - Date to format (required)
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {string} Formatted timestamp (YYYY-MM-DD HH:mm:ss)
  * @throws {Error} If date is not provided or invalid
  */
-export function formatLocalTimestamp(date, timezone = 'America/Los_Angeles') {
+export function formatLocalTimestamp(date, timezone = DEFAULT_TIMEZONE) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
     throw new Error('formatLocalTimestamp requires a valid Date parameter');
   }
@@ -77,10 +79,10 @@ export function parseToDate(value) {
  * Pure function - requires explicit date parameter.
  *
  * @param {Date} date - Date to format (required)
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {string} Date in YYYY-MM-DD format
  */
-export function getDateInTimezone(date, timezone = 'America/Los_Angeles') {
+export function getDateInTimezone(date, timezone = DEFAULT_TIMEZONE) {
   return formatLocalTimestamp(date, timezone).split(' ')[0];
 }
 
@@ -90,11 +92,11 @@ export function getDateInTimezone(date, timezone = 'America/Los_Angeles') {
  * Pure function - requires explicit date parameter.
  *
  * @param {Date} date - Date to get hour from (required)
- * @param {string} [timezone='America/Los_Angeles'] - IANA timezone
+ * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {number} Hour (0-23)
  * @throws {Error} If date is not provided or invalid
  */
-export function getHourInTimezone(date, timezone = 'America/Los_Angeles') {
+export function getHourInTimezone(date, timezone = DEFAULT_TIMEZONE) {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
     throw new Error('getHourInTimezone requires a valid Date parameter');
   }

@@ -20,7 +20,8 @@ const isCompositionRoot = (f) =>
 const isTest = (f) => f.includes('__tests__') || f.endsWith('.test.mjs');
 
 export const RULES = [
-  { rule: 'system-no-upward', layer: '0_system/', bad: s => /^#(domains|adapters|apps|applications|api|rendering)\//.test(s), exempt: isCompositionRoot },
+  // D4 shared-kernel exception: 0_system may import pure domain shared-kernel utils (#domains/core/utils/*)
+  { rule: 'system-no-upward', layer: '0_system/', bad: s => /^#(domains(?!\/core\/utils)|adapters|apps|applications|api|rendering)\//.test(s), exempt: isCompositionRoot },
   { rule: 'domains-no-adapters', layer: '2_domains/', bad: s => /^#(adapters|apps|applications|api|system|rendering)\//.test(s) },
   { rule: 'domains-no-node-io', layer: '2_domains/', bad: s => /^(node:)?(fs|fs\/promises|path|child_process)$/.test(s) },
   { rule: 'apps-no-adapters', layer: '3_applications/', bad: s => /^#adapters\//.test(s) || /1_adapters\//.test(s) },
