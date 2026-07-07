@@ -105,7 +105,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
         setPairMode(null);
         setPairDesc('');
         await reload();
-        setPairNotice('Pair saved and data refreshed \u2014 reopen this drawer to see updated amounts.');
+        setPairNotice('Pair saved \u2014 amounts updated.');
       } catch (err) {
         setPairNotice(`Failed to create pair: ${err.message}`);
       }
@@ -116,7 +116,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
       try {
         await DaylightAPI('api/v1/finance/pairs', { debit: transaction.id, credit: transaction.pairedWith }, 'DELETE');
         await reload();
-        setPairNotice('Pair removed and data refreshed \u2014 reopen this drawer to see updated amounts.');
+        setPairNotice('Pair removed \u2014 amounts updated.');
       } catch (err) {
         setPairNotice(`Failed to unpair: ${err.message}`);
       }

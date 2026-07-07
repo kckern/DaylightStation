@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
-import { Drawer } from "../drawer";
 import moment from 'moment';
 import { formatAsCurrency, PALETTE } from '../lib/format.mjs';
 
@@ -11,7 +10,6 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   if (!monthData || !monthData.dailyBalances) return {};
   setDrawerContent = setDrawerContent || (() => {});
   const dailyBalances = monthData.dailyBalances;
-  const transactions = monthData.transactions || [];
   const dayKeys = Object.keys(dailyBalances).filter(key => !key.endsWith('-start')).sort();
   if (!dayKeys.length) return {};
 
@@ -200,15 +198,10 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
           click: function (e) {
             const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
             setDrawerContent({
-              jsx: (
-                <Drawer
-                  setDrawerContent={setDrawerContent}
-                  header={header}
-                  transactions={transactions}
-                  highlightDate={e.point.category}
-                />
-              ),
-              meta: { title: header }
+              type: 'daytoday-month',
+              title: header,
+              month: inferredMonth,
+              highlightDate: e.point.category
             });
           }
         } : {}
