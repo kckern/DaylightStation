@@ -39,6 +39,25 @@ export const RULES = [
   { rule: 'no-deep-relative-layer-cross', layer: 'backend/src/', bad: s => /^(\.\.\/){3,}.*(0_system|1_adapters|1_rendering|2_domains|3_applications|4_api)\//.test(s) },
 ];
 
+// Content-based counters (count string occurrences, not imports). Ratcheted
+// alongside RULES against the same baseline.
+export const CONTENT_RULES = [
+  { rule: 'api-handrolled-500', layer: '4_api/', re: /res\.status\(500\)/ },
+  { rule: 'apps-success-false', layer: '3_applications/', re: /\{\s*success:\s*false/ },
+];
+
+export function scanContent(filePath, content) {
+  const out = [];
+  const lines = content.split('\n');
+  for (const r of CONTENT_RULES) {
+    if (!filePath.includes(r.layer)) continue;
+    lines.forEach((line, i) => {
+      if (r.re.test(line)) out.push({ rule: r.rule, file: filePath, line: i + 1, spec: line.trim() });
+    });
+  }
+  return out;
+}
+
 export function scanViolations(filePath, content) {
   const out = [];
   const lines = content.split('\n');
@@ -65,14 +84,17 @@ function walk(dir, acc = []) {
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   const args = process.argv.slice(2);
-  const all = walk('backend/src').flatMap(f => scanViolations(f, readFileSync(f, 'utf8')));
+  const files = walk('backend/src');
+  const all = files.flatMap(f => scanViolations(f, readFileSync(f, 'utf8')));
+  const allContent = files.flatMap(f => scanContent(f, readFileSync(f, 'utf8')));
   const counts = {};
   for (const r of RULES) counts[r.rule] = all.filter(v => v.rule === r.rule).length;
+  for (const r of CONTENT_RULES) counts[r.rule] = allContent.filter(v => v.rule === r.rule).length;
 
   const listArg = args.find(a => a.startsWith('--list='));
   if (listArg) {
     const rule = listArg.split('=')[1];
-    for (const v of all.filter(v => v.rule === rule)) console.log(`${v.file}:${v.line}  ${v.spec}`);
+    for (const v of [...all, ...allContent].filter(v => v.rule === rule)) console.log(`${v.file}:${v.line}  ${v.spec}`);
     process.exit(0);
   }
   const baselinePath = 'scripts/audit-baseline.json';

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanViolations, RULES } from '../../../scripts/audit-layer-imports.mjs';
+import { scanViolations, RULES, CONTENT_RULES } from '../../../scripts/audit-layer-imports.mjs';
 
 describe('audit-layer-imports', () => {
   it('flags a domain file importing an adapter', () => {
@@ -19,5 +19,8 @@ describe('audit-layer-imports', () => {
   });
   it('exposes a rule table', () => {
     expect(RULES.length).toBeGreaterThan(5);
+  });
+  it('content rules are represented', () => {
+    expect(CONTENT_RULES.map(r => r.rule)).toEqual(expect.arrayContaining(['api-handrolled-500', 'apps-success-false']));
   });
 });
