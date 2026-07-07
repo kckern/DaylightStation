@@ -1,4 +1,4 @@
-import { Satellite } from '../../../2_domains/concierge/Satellite.mjs';
+import { Satellite } from '#domains/concierge/Satellite.mjs';
 
 export class YamlSatelliteRegistry {
   #configService;

@@ -1,6 +1,6 @@
 // backend/src/4_api/v1/agents/createAgentMemoryRouter.mjs
 import express from 'express';
-import { WorkingMemoryState } from '../../../3_applications/agents/framework/WorkingMemory.mjs';
+import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
 
 /**
  * Memory CRUD endpoints — admin/debug surface for inspecting and clearing

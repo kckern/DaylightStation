@@ -13,8 +13,8 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
-import { deriveMatte, rgbToHsv } from '../../../2_domains/art/deriveMatte.mjs';
-import { eligibleByRecency } from '../../../2_domains/art/recencyWindow.mjs';
+import { deriveMatte, rgbToHsv } from '#domains/art/deriveMatte.mjs';
+import { eligibleByRecency } from '#domains/art/recencyWindow.mjs';
 import { createArtRecencyStore } from './artRecencyStore.mjs';
 
 const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
