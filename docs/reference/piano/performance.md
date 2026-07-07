@@ -220,6 +220,15 @@ failure — the piano-bridge APK — and give it authority to act. See
 The in-app `SELF_HEAL_RESTART` stays **off** — the bridge-hosted ladder is the self-heal now, and
 unlike the in-app restart it can escalate past `restartApp` to a real reboot when nothing else works.
 
+## Playback timing vs. rendering (sheet music)
+
+MIDI playback rhythm must never depend on the frame clock — on this tablet rAF is the
+throttled clock. The 2026-07-06 audit found the score transport ticking on rAF with
+untimestamped `send()`s (rhythm inherits every frame stall) plus a per-note whole-kiosk
+React render cascade via the MIDI context. Remediation plan (timestamped lookahead
+scheduling, AudioContext-clock metronome, context split):
+[`docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`](../../_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md).
+
 ---
 
 *Subsystem overview: [README.md](./README.md). Hardware and tablet setup: [kiosk-setup.md](./kiosk-setup.md).*
