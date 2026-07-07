@@ -341,9 +341,26 @@ export class MortgageCalculator {
         let bridgeBalance = lastStatementBalance;
         let cumIntRunning = cumulativeInterest;
 
+        // Cycle 'YYYY-MM' (bill-month label) covers (prev cutoff, cycleEnd]
+        // where cycleEnd = cutoffDay of the month BEFORE the label.
+        const cycleEndOf = (cycle) => {
+          const [cy, cm] = cycle.split('-').map(Number);
+          let ey = cy, em = cm - 1;
+          if (em < 1) { em = 12; ey--; }
+          return `${ey}-${String(em).padStart(2, '0')}-${String(cutoffDay).padStart(2, '0')}`;
+        };
+
         for (const cycle of walkCycles) {
           const cycleTxns = bridgeByCycle[cycle] || [];
-          if (cycleTxns.length === 0) continue;
+          // A COMPLETED cycle with no payments still accrues interest — emit
+          // it (2026-07-06 audit §1.6). But skip empty cycles that are
+          // (a) still in flight as of asOfDate (a full month of interest
+          // would be pre-accrued and the projection start pushed a month
+          // into the future), or (b) already covered by the last statement.
+          if (cycleTxns.length === 0) {
+            const cycleEnd = cycleEndOf(cycle);
+            if (cycleEnd > asOfIso || cycleEnd <= lastStatementDate) continue;
+          }
 
           const opening = bridgeBalance;
           const interestAccrued = this.#round(opening * monthlyRate);
@@ -386,32 +403,7 @@ export class MortgageCalculator {
           const lastBridgeClosing = bridgeRecords[bridgeRecords.length - 1].closingBalance;
           const drift = this.#round(buxferCachedBalance - lastBridgeClosing);
 
-          if (Math.abs(drift) > 0.01) {
-            const totalBridgeInterest = bridgeRecords.reduce(
-              (s, r) => s + r.interestAccrued, 0
-            );
-
-            for (const record of bridgeRecords) {
-              const weight = totalBridgeInterest > 0
-                ? record.interestAccrued / totalBridgeInterest
-                : 1 / bridgeRecords.length;
-              const adj = this.#round(drift * weight);
-              record.reconciliationAdj = adj;
-              record.interestAccrued = this.#round(record.interestAccrued + adj);
-              record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
-            }
-
-            let walkBal = bridgeRecords[0].openingBalance;
-            let cumInt = cumulativeInterest;
-            for (const record of bridgeRecords) {
-              record.openingBalance = this.#round(walkBal);
-              walkBal += record.interestAccrued;
-              cumInt += record.interestAccrued;
-              walkBal -= record.totalPaid;
-              record.closingBalance = this.#round(walkBal);
-              record.cumulativeInterest = this.#round(cumInt);
-            }
-          }
+          this.#reconcileDrift(bridgeRecords, drift, bridgeRecords[0].openingBalance, cumulativeInterest);
 
           totalInterestPaid += bridgeRecords.reduce((s, r) => s + r.interestAccrued, 0);
           totalPrincipalPaid += bridgeRecords.reduce((s, r) => s + r.principalPaid, 0);
@@ -454,44 +446,15 @@ export class MortgageCalculator {
       ? Math.abs(bridgeRecords[bridgeRecords.length - 1].closingBalance)
       : (lastStatementBalance != null ? lastStatementBalance : Math.abs(balance));
 
-    // Start projections from the month after the last amortization month
-    const lastAmortMonth = amortization.length > 0
-      ? amortization[amortization.length - 1].month
-      : null;
-    let projectionStartDate;
-    if (lastAmortMonth) {
-      const [y, m] = lastAmortMonth.split('-').map(Number);
-      projectionStartDate = new Date(Date.UTC(y, m, 1)); // month after
-    } else {
-      projectionStartDate = new Date(asOfDate);
-    }
-
-    const projectionBalance = -currentBalance;
-
-    const paymentPlansFilled = this.calculatePaymentPlans({
-      balance: projectionBalance,
+    const paymentPlansFilled = this.#buildProjections({
+      amortization,
+      projectionBalance: -currentBalance,
       interestRate,
       minimumPayment,
       paymentPlans,
-      startDate: projectionStartDate
+      asOfDate,
+      totalPaid
     });
-
-    // Add a "Historical Pace" plan derived from actual payment average
-    if (amortization.length > 0) {
-      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
-      const historicalPlan = this.calculatePaymentPlans({
-        balance: projectionBalance,
-        interestRate,
-        minimumPayment: avgMonthlyPayment,
-        paymentPlans: [{
-          id: 'historical',
-          title: 'Historical Pace',
-          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
-        }],
-        startDate: projectionStartDate
-      });
-      paymentPlansFilled.push(...historicalPlan);
-    }
 
     const startingBalance = mortgageStartValue;
     const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
@@ -572,48 +535,20 @@ export class MortgageCalculator {
       };
     });
 
-    // Start projections from the month after the last amortization month
-    // so the first plan month connects seamlessly to the last reconstructed balance
-    const lastAmortMonth = amortization.length > 0
-      ? amortization[amortization.length - 1].month
-      : null;
-    let projectionStartDate;
-    if (lastAmortMonth) {
-      const [y, m] = lastAmortMonth.split('-').map(Number);
-      projectionStartDate = new Date(Date.UTC(y, m, 1)); // month after (0-indexed: m is already next)
-    } else {
-      projectionStartDate = new Date(asOfDate);
-    }
-
     // Use the reconstructed closing balance (reconciled to actual) as the projection start
     const projectionBalance = amortization.length > 0
       ? -amortization[amortization.length - 1].closingBalance
       : balance;
 
-    const paymentPlansFilled = this.calculatePaymentPlans({
-      balance: projectionBalance,
+    const paymentPlansFilled = this.#buildProjections({
+      amortization,
+      projectionBalance,
       interestRate,
       minimumPayment,
       paymentPlans,
-      startDate: projectionStartDate
+      asOfDate,
+      totalPaid
     });
-
-    // Add a "Historical Pace" plan derived from actual payment average
-    if (amortization.length > 0) {
-      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
-      const historicalPlan = this.calculatePaymentPlans({
-        balance: projectionBalance,
-        interestRate,
-        minimumPayment: avgMonthlyPayment,
-        paymentPlans: [{
-          id: 'historical',
-          title: 'Historical Pace',
-          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
-        }],
-        startDate: projectionStartDate
-      });
-      paymentPlansFilled.push(...historicalPlan);
-    }
 
     const { earliestPayoff, latestPayoff } = this.#findPayoffRange(paymentPlansFilled);
 
@@ -625,7 +560,7 @@ export class MortgageCalculator {
       totalPrincipalPaid,
       monthlyRent,
       monthlyEquity,
-      percentPaidOff: this.#round(percentPaidOff),
+      percentPaidOff,
       balance: Math.abs(balance),
       interestRate,
       earliestPayoff,
@@ -709,29 +644,7 @@ export class MortgageCalculator {
     // Reconcile against anchor balance
     if (records.length > 0) {
       const drift = this.#round(actualBalance - Math.abs(records[records.length - 1].closingBalance));
-      if (Math.abs(drift) > 0.01) {
-        const totalInterest = records.reduce((sum, r) => sum + r.interestAccrued, 0);
-        let cumulativeAdj = 0;
-        for (const record of records) {
-          const weight = totalInterest > 0 ? record.interestAccrued / totalInterest : 1 / records.length;
-          const adj = this.#round(drift * weight);
-          record.reconciliationAdj = adj;
-          record.interestAccrued = this.#round(record.interestAccrued + adj);
-          record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
-          cumulativeAdj += adj;
-        }
-        // Recompute balances and cumulative interest after adjustment
-        balance = mortgageStartValue;
-        cumulativeInterest = 0;
-        for (const record of records) {
-          record.openingBalance = this.#round(balance);
-          balance += record.interestAccrued;
-          cumulativeInterest += record.interestAccrued;
-          balance -= record.totalPaid;
-          record.closingBalance = this.#round(balance);
-          record.cumulativeInterest = this.#round(cumulativeInterest);
-        }
-      }
+      this.#reconcileDrift(records, drift, mortgageStartValue, 0);
     }
 
     return records;
@@ -842,6 +755,13 @@ export class MortgageCalculator {
       }
     }
 
+    if (currentBalance > 0.01) {
+      throw new ValidationError(
+        `Payment plan "${plan.id || plan.title || 'unnamed'}" did not amortize within ${MAX_ITERATIONS} months — payments do not cover interest`,
+        { code: 'PLAN_DOES_NOT_AMORTIZE', details: { planId: plan.id, remainingBalance: this.#round(currentBalance) } }
+      );
+    }
+
     const payoffMonth = months[months.length - 1]?.month || `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`;
     const totalMonths = months.length || 1;
 
@@ -854,6 +774,7 @@ export class MortgageCalculator {
         totalInterest: this.#round(totalInterest),
         totalPayments: totalMonths,
         totalYears: (totalMonths / 12).toFixed(2),
+        payoffMonth,
         payoffDate: this.#formatPayoffDate(payoffMonth),
         rates: plan.rates || [],
         annualBudget: this.#round(totalPaid / Math.max(totalMonths / 12, 1)),
@@ -865,29 +786,75 @@ export class MortgageCalculator {
   }
 
   /**
-   * Find earliest and latest payoff dates from payment plans
+   * First month AFTER the last amortization record — where projections begin
+   * so the first plan month joins the last reconstructed balance seamlessly.
    * @private
    */
-  #findPayoffRange(paymentPlans) {
-    let earliestPayoff = null;
-    let latestPayoff = null;
+  #projectionStartAfter(amortization, asOfDate) {
+    if (amortization.length > 0) {
+      const [y, m] = amortization[amortization.length - 1].month.split('-').map(Number);
+      return new Date(Date.UTC(y, m, 1)); // m is 1-indexed → this is the next month, 0-indexed
+    }
+    return new Date(asOfDate);
+  }
 
-    for (const { info } of paymentPlans) {
-      const payoffDate = this.#parsePayoffDate(info.payoffDate);
-      if (!payoffDate) continue;
+  /**
+   * Configured payment-plan projections plus the derived "Historical Pace"
+   * plan. Shared tail of both build paths.
+   * @private
+   */
+  #buildProjections({ amortization, projectionBalance, interestRate, minimumPayment, paymentPlans, asOfDate, totalPaid }) {
+    const projectionStartDate = this.#projectionStartAfter(amortization, asOfDate);
 
-      if (!earliestPayoff || payoffDate < earliestPayoff) {
-        earliestPayoff = payoffDate;
-      }
-      if (!latestPayoff || payoffDate > latestPayoff) {
-        latestPayoff = payoffDate;
+    const plans = this.calculatePaymentPlans({
+      balance: projectionBalance,
+      interestRate,
+      minimumPayment,
+      paymentPlans,
+      startDate: projectionStartDate
+    });
+
+    if (amortization.length > 0) {
+      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
+      try {
+        plans.push(...this.calculatePaymentPlans({
+          balance: projectionBalance,
+          interestRate,
+          minimumPayment: avgMonthlyPayment,
+          paymentPlans: [{
+            id: 'historical',
+            title: 'Historical Pace',
+            subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
+          }],
+          startDate: projectionStartDate
+        }));
+      } catch (err) {
+        // Historical Pace is derived, not configured — an interest-only payment
+        // history must not fail the whole compile. Configured plans still throw.
+        if (err?.code !== 'PLAN_DOES_NOT_AMORTIZE') throw err;
       }
     }
 
-    return {
-      earliestPayoff: earliestPayoff ? this.#formatYearMonth(earliestPayoff) : '',
-      latestPayoff: latestPayoff ? this.#formatYearMonth(latestPayoff) : ''
-    };
+    return plans;
+  }
+
+  /**
+   * Find earliest and latest payoff months from payment plans.
+   * Compares YYYY-MM strings directly (lexicographic == chronological).
+   * @private
+   */
+  #findPayoffRange(paymentPlans) {
+    let earliestPayoff = '';
+    let latestPayoff = '';
+
+    for (const { info } of paymentPlans) {
+      const month = info.payoffMonth;
+      if (!month) continue;
+      if (!earliestPayoff || month < earliestPayoff) earliestPayoff = month;
+      if (!latestPayoff || month > latestPayoff) latestPayoff = month;
+    }
+
+    return { earliestPayoff, latestPayoff };
   }
 
   /**
@@ -896,8 +863,8 @@ export class MortgageCalculator {
    */
   #monthsDiff(start, end) {
     return Math.max(1,
-      (end.getFullYear() - start.getFullYear()) * 12 +
-      (end.getMonth() - start.getMonth())
+      (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+      (end.getUTCMonth() - start.getUTCMonth())
     );
   }
 
@@ -926,25 +893,38 @@ export class MortgageCalculator {
   }
 
   /**
-   * Parse payoff date from "Month YYYY" format
+   * Distribute `drift` across records proportional to each record's interest
+   * accrual (equal weights when total interest is 0), then re-walk balances
+   * from `openingPrincipal`. The LAST record absorbs the rounding residual so
+   * the walked closing balance lands exactly on the anchor.
+   * Mutates records in place. No-op for empty input or sub-cent drift.
    * @private
    */
-  #parsePayoffDate(payoffStr) {
-    const monthNames = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
+  #reconcileDrift(records, drift, openingPrincipal, startingCumulativeInterest = 0) {
+    if (!records.length || Math.abs(drift) <= 0.01) return;
 
-    const parts = payoffStr.split(' ');
-    if (parts.length !== 2) return null;
+    const totalInterest = records.reduce((s, r) => s + r.interestAccrued, 0);
+    let distributed = 0;
+    records.forEach((record, i) => {
+      const weight = totalInterest > 0 ? record.interestAccrued / totalInterest : 1 / records.length;
+      let adj = this.#round(drift * weight);
+      if (i === records.length - 1) adj = this.#round(drift - distributed); // residual sweep
+      distributed = this.#round(distributed + adj);
+      record.reconciliationAdj = adj;
+      record.interestAccrued = this.#round(record.interestAccrued + adj);
+      record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
+    });
 
-    const monthIndex = monthNames.indexOf(parts[0]);
-    if (monthIndex === -1) return null;
-
-    const year = parseInt(parts[1], 10);
-    if (isNaN(year)) return null;
-
-    return new Date(year, monthIndex, 1);
+    let balance = openingPrincipal;
+    let cumulativeInterest = startingCumulativeInterest;
+    for (const record of records) {
+      record.openingBalance = this.#round(balance);
+      balance += record.interestAccrued;
+      cumulativeInterest += record.interestAccrued;
+      balance -= record.totalPaid;
+      record.closingBalance = this.#round(balance);
+      record.cumulativeInterest = this.#round(cumulativeInterest);
+    }
   }
 
   /**

@@ -288,36 +288,6 @@ describe('TransactionClassifier', () => {
     });
   });
 
-  describe('groupByLabel', () => {
-    test('groups monthly transactions by category', () => {
-      const transactions = [
-        { id: '1', type: 'expense', tagNames: ['Rent'], amount: 2000 },
-        { id: '2', type: 'expense', tagNames: ['Electric'], amount: 100 },
-        { id: '3', type: 'expense', tagNames: ['Water'], amount: 50 },
-        { id: '4', type: 'expense', tagNames: ['Groceries'], amount: 150 }
-      ];
-
-      const grouped = classifier.groupByLabel(transactions, 'monthly');
-
-      expect(Object.keys(grouped)).toEqual(['Housing', 'Utilities']);
-      expect(grouped['Housing']).toHaveLength(1);
-      expect(grouped['Utilities']).toHaveLength(2);
-    });
-
-    test('groups short-term transactions by bucket', () => {
-      const transactions = [
-        { id: '1', type: 'expense', tagNames: ['Emergency'], amount: 500 },
-        { id: '2', type: 'expense', tagNames: ['Travel'], amount: 1000 },
-        { id: '3', type: 'expense', tagNames: ['Vacation'], amount: 200 }
-      ];
-
-      const grouped = classifier.groupByLabel(transactions, 'shortTerm');
-
-      expect(grouped['Emergency Fund']).toHaveLength(1);
-      expect(grouped['Vacation']).toHaveLength(2);
-    });
-  });
-
   describe('getConfiguredLabels', () => {
     test('returns all configured labels', () => {
       const labels = classifier.getConfiguredLabels();

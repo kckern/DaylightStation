@@ -186,7 +186,13 @@ describe('MortgageCalculator', () => {
       const config = {
         mortgageStartValue: 300000,
         accountId: 'mortgage-1',
-        startDate: '2020-01-01',
+        // Aligned with the transaction window (was 2020-01-01): a startDate
+        // years before any recorded payment makes reconstructAmortization
+        // walk dozens of unpaid $0 months, tanking the derived Historical
+        // Pace average below the interest-coverage floor (audit 1.6 fallout
+        // — that plan now legitimately throws PLAN_DOES_NOT_AMORTIZE instead
+        // of silently truncating).
+        startDate: '2026-01-01',
         interestRate: 0.065,
         minimumPayment: 2000,
         paymentPlans: [{ id: 'default', title: 'Current Plan' }]
@@ -602,7 +608,10 @@ describe('MortgageCalculator', () => {
       });
 
       const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
-      expect(bridgeRows.map(r => r.month)).toEqual(['2026-06']);
+      // 2026-05 is a completed cycle with no payments — it now accrues
+      // interest as its own row instead of vanishing (audit 1.6).
+      expect(bridgeRows.map(r => r.month)).toEqual(['2026-05', '2026-06']);
+      expect(bridgeRows[0].totalPaid).toBe(0);
 
       const firstProjMonth = result.paymentPlans[0].months[0].month;
       expect(firstProjMonth).toBe('2026-07');
@@ -750,18 +759,14 @@ describe('MortgageCalculator', () => {
       expect(result[0].months.length).toBeLessThan(5);
     });
 
-    test('prevents infinite loop with cap', () => {
-      // Very low payment that would take forever
-      const result = calculator.calculatePaymentPlans({
+    test('throws instead of silently truncating a plan that can never amortize', () => {
+      expect(() => calculator.calculatePaymentPlans({
         balance: -1000000,
-        interestRate: 0.20, // Very high rate
-        minimumPayment: 100, // Very low payment (less than monthly interest)
+        interestRate: 0.20, // monthly interest far exceeds the payment
+        minimumPayment: 100,
         paymentPlans: [{ id: 'test' }],
         startDate: new Date('2026-01-01')
-      });
-
-      // Should cap at 1000 iterations
-      expect(result[0].months.length).toBeLessThanOrEqual(1000);
+      })).toThrow(/did not amortize/);
     });
 
     test('handles rate change fee', () => {

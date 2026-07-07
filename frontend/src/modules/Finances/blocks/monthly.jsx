@@ -20,7 +20,7 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
             >{olderMonths.length} Previous Months</Button>
           </Menu.Target>
           <Menu.Dropdown>
-            {olderMonths.reverse().map((month) => {
+            {[...olderMonths].reverse().map((month) => {
               const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
               return (
                 <Menu.Item key={month} onClick={() => setActiveMonth(month)}>
@@ -223,7 +223,6 @@ function BudgetTable({ setDrawerContent, budget }) {
       month: activeBudget["monthlyBudget"][month],
       daytoday: activeBudget["dayToDayBudget"][month]
     };
-    console.log("Period data", month, key, periodData);
     return periodData;
   }
 
