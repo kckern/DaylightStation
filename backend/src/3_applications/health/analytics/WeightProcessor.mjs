@@ -8,7 +8,7 @@
  * - Calorie balance estimation
  * - Interpolation for missing days
  *
- * @module 2_domains/health/services/WeightProcessor
+ * @module apps/health/analytics/WeightProcessor
  */
 
 import moment from 'moment-timezone';

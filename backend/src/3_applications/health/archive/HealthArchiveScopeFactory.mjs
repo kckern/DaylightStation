@@ -20,7 +20,7 @@
  * playbook at all), the factory returns a scope built from
  * `DEFAULT_WORKOUT_SOURCES` only (= `['strava', 'garmin']`).
  *
- * @module domains/health/services/HealthArchiveScopeFactory
+ * @module apps/health/archive/HealthArchiveScopeFactory
  */
 
 import {

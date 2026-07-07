@@ -1,6 +1,6 @@
 // tests/isolated/domain/health/services/HistoryReflector.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { HistoryReflector } from '../../../../../backend/src/2_domains/health/services/HistoryReflector.mjs';
+import { HistoryReflector } from '../../../../../backend/src/3_applications/health/analytics/HistoryReflector.mjs';
 
 function makeReflector(overrides = {}) {
   const aggregator = {

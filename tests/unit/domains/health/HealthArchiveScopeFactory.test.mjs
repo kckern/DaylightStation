@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
-import { HealthArchiveScopeFactory } from '#domains/health/services/HealthArchiveScopeFactory.mjs';
+import { HealthArchiveScopeFactory } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
 
 const PROJECT_ROOT = '/srv/daylight';
 const DATA_ROOT = path.join(PROJECT_ROOT, 'data');

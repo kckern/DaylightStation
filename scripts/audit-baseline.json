@@ -1,7 +1,7 @@
 {
   "system-no-upward": 0,
   "domains-no-adapters": 0,
-  "domains-no-node-io": 3,
+  "domains-no-node-io": 1,
   "apps-no-adapters": 30,
   "apps-no-config-internals": 10,
   "apps-no-fs": 13,

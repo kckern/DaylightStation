@@ -22,13 +22,14 @@
  */
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { BUILT_IN_CATEGORIES } from '../entities/HealthArchiveManifest.mjs';
+import { BUILT_IN_CATEGORIES } from '#domains/health/entities/HealthArchiveManifest.mjs';
 import {
   FLOOR_EXCLUSIONS,
   compileAdditions,
   matchesExclusion,
-} from '../policies/PrivacyExclusions.mjs';
+} from '#domains/health/policies/PrivacyExclusions.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { ConfigurationError } from '#system/utils/errors/index.mjs';
 
 export class HealthArchiveIngestion {
   /**
@@ -38,8 +39,7 @@ export class HealthArchiveIngestion {
    * @param {Object} [deps.logger] - Optional logger; defaults to `console`.
    */
   constructor({ fs, logger } = {}) {
-    // TODO(P2.1): infra guard — becomes ConfigurationError/InfrastructureError after relocation
-    if (!fs) throw new Error('HealthArchiveIngestion requires fs adapter');
+    if (!fs) throw new ConfigurationError('HealthArchiveIngestion requires fs adapter', { code: 'MISSING_FS_ADAPTER', key: 'fs' });
     this.fs = fs;
     this.logger = logger || console;
   }

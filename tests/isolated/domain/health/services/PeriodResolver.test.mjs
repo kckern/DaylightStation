@@ -1,6 +1,6 @@
 // tests/isolated/domain/health/services/PeriodResolver.test.mjs
 import { describe, it, expect } from 'vitest';
-import { PeriodResolver } from '../../../../../backend/src/2_domains/health/services/PeriodResolver.mjs';
+import { PeriodResolver } from '../../../../../backend/src/3_applications/health/analytics/PeriodResolver.mjs';
 
 // Anchor "today" so date math is deterministic.
 const NOW = new Date('2026-05-05T12:00:00Z');

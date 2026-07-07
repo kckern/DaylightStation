@@ -1,4 +1,4 @@
-// backend/src/2_domains/health/services/MetricTrendAnalyzer.mjs
+// backend/src/3_applications/health/analytics/MetricTrendAnalyzer.mjs
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 

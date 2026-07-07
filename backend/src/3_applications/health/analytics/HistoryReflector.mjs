@@ -1,4 +1,4 @@
-// backend/src/2_domains/health/services/HistoryReflector.mjs
+// backend/src/3_applications/health/analytics/HistoryReflector.mjs
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
@@ -20,6 +20,7 @@ export class HistoryReflector {
     this.aggregator = deps.aggregator;
     this.trendAnalyzer = deps.trendAnalyzer;
     this.periodMemory = deps.periodMemory;
+    this.logger = deps.logger || null;
   }
 
   /**
@@ -39,7 +40,8 @@ export class HistoryReflector {
         try {
           const r = await this.periodMemory.deducePeriod({ userId, criteria });
           return r.candidates || [];
-        } catch {
+        } catch (e) {
+          this.logger?.warn?.('health.history_reflect.deduce_period.failed', { error: e.message });
           return [];
         }
       })
@@ -62,7 +64,10 @@ export class HistoryReflector {
           const desc = ch.description ?? `regime change`;
           observations.push(`${metric} at ${ch.date}: ${desc}`);
         }
-      } catch { /* best-effort */ }
+      } catch (e) {
+        this.logger?.warn?.('health.history_reflect.regime_change.failed', { metric, error: e.message });
+        /* best-effort */
+      }
     }
 
     return { summary, candidates, observations };

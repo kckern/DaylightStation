@@ -1,4 +1,4 @@
-// backend/src/2_domains/health/services/HealthAnalyticsService.mjs
+// backend/src/3_applications/health/analytics/HealthAnalyticsService.mjs
 
 import { MetricAggregator } from './MetricAggregator.mjs';
 import { MetricComparator } from './MetricComparator.mjs';

@@ -17,7 +17,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { WeightProcessor } from '#backend/src/2_domains/health/services/WeightProcessor.mjs';
+import { WeightProcessor } from '#apps/health/analytics/WeightProcessor.mjs';
 
 /**
  * Withings measurement type codes
