@@ -52,6 +52,23 @@ export function getCurrentHour(timezone = DEFAULT_TIMEZONE) {
   return parseInt(timeStr, 10);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TIMEZONE CONTRACT (nowTs / nowTs24 / nowDate / nowMonth)
+//
+// These helpers format against DEFAULT_TIMEZONE (the household default, currently
+// America/Los_Angeles), NOT a per-deployment configured `system.timezone`.
+// Consequence: persisted timestamps produced here — log keys, entry dates,
+// filenames, etc. — will NOT follow a changed `system.timezone`.
+//
+// This was DECOUPLED from configService in P1.7 (audit S-4): previously these
+// read `system.timezone` via configService. It is behavior-preserving today only
+// because system.yml's timezone == LA == DEFAULT_TIMEZONE. It is a silent
+// contract change if that ever diverges.
+//
+// If a configurable timezone is genuinely needed, thread it from callers (pass a
+// timezone argument down) rather than reintroducing a config-singleton read here.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Current timestamp in 12-hour format, in the household default timezone.
  * @returns {string} YYYY-MM-DD HH:MM:SS am/pm
