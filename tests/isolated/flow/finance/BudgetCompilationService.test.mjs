@@ -265,6 +265,26 @@ describe('BudgetCompilationService', () => {
     });
   });
 
+  describe('aggregate budget period', () => {
+    it('each budget period carries a backend-compiled aggregate that matches the sum of its months', async () => {
+      const { budgets } = await service.compile();
+      for (const period of Object.values(budgets)) {
+        expect(period.aggregate).toBeDefined();
+        const months = Object.values(period.monthlyBudget);
+        const sum = (key) => months.reduce((s, m) => s + (m[key] || 0), 0);
+        expect(period.aggregate.income).toBeCloseTo(sum('income'), 6);
+        expect(period.aggregate.surplus).toBeCloseTo(sum('surplus'), 6);
+        expect(period.aggregate.dayToDaySpending).toBeCloseTo(sum('dayToDaySpending'), 6);
+        expect(period.aggregate.incomeTransactions.length)
+          .toBe(months.reduce((s, m) => s + (m.incomeTransactions || []).length, 0));
+        for (const [cat, agg] of Object.entries(period.aggregate.monthlyCategories)) {
+          const catSum = months.reduce((s, m) => s + (m.monthlyCategories?.[cat]?.debits || 0), 0);
+          expect(agg.debits).toBeCloseTo(catSum, 6);
+        }
+      }
+    });
+  });
+
   describe('mortgage calculations', () => {
     it('calculates mortgage status from config', async () => {
       const result = await service.compile();
