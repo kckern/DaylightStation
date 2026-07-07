@@ -9,7 +9,7 @@
  * Provides matches(date) honoring the chosen pattern.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const DAY_NAMES = Object.freeze(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
 const STRING_VALUES = Object.freeze(['all', 'weekdays', 'weekends']);

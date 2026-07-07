@@ -1,7 +1,7 @@
 /**
  * JobExecution Entity - Represents a single execution of a job
  */
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class JobExecution {
   constructor({

@@ -5,7 +5,7 @@
 export const NOTIFICATION_CHANNELS = ['telegram', 'email', 'push', 'sms'];
 export const NOTIFICATION_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class Notification {
   constructor({

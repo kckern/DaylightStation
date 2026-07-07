@@ -6,7 +6,7 @@
  * Immutable, value-equality semantics.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * SlotColor value object — non-empty lowercase string.

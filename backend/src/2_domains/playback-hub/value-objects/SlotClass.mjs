@@ -6,7 +6,7 @@
  * a Home-Assistant-managed speaker; private devices are personal headsets.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const ALLOWED = Object.freeze(['private', 'public']);
 

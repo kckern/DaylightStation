@@ -7,7 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { isValidQuizCategory } from '../value-objects/QuizCategory.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * QuizQuestion entity

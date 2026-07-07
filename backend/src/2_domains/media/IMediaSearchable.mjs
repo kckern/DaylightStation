@@ -1,5 +1,5 @@
 // backend/src/2_domains/media/IMediaSearchable.mjs
-import { ValidationError } from '../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} MediaSearchQuery
