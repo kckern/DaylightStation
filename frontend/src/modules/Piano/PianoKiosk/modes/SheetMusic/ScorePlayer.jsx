@@ -127,7 +127,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // NUMBERS↔INDICES and INDICES↔step spans. A `focus` resolves to a step span
   // [lo, hi]; the follow tracker loops within it and taps/seeks clamp into it.
   // Learn-only for now (Polish reuses this in a later task).
-  const sections = parsed?.sections || [];
+  const sections = useMemo(() => parsed?.sections || [], [parsed]);
   const range = useMemo(
     () => (focus && (mode === 'learn' || mode === 'polish') && layout.measures ? rangeSteps(layout.measures, focus) : null),
     [focus, mode, layout.measures],
@@ -158,7 +158,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const parts = useMemo(() => partsOf(layout.notes), [layout.notes]);
   const staffSig = parts.map((p) => p.staff).join(',');
   const partLabels = staffLabels(parts.map((p) => p.staff));
-  const barParts = parts.map((p, i) => ({ staff: p.staff, label: partLabels[i] }));
+  // Memoized so the memoized transport bar can bail across a step advance (a fresh
+  // array each render would defeat React.memo on ScoreViewControls). Keyed to the
+  // staff signature + labels, which only change on re-engrave.
+  const barParts = useMemo(
+    () => parts.map((p, i) => ({ staff: p.staff, label: partLabels[i] })),
+    [parts, staffSig], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const [roles, setRoles] = useState({});
   const [activeParts, setActiveParts] = useState({});
@@ -633,6 +639,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
   const onCloseSummary = useCallback(() => setSummaryOpen(false), []);
 
+  // Stable toggles for the transport bar. Passing fresh inline arrows here would
+  // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
+  // whole bar would reconcile on every cursor-step advance. Functional updaters →
+  // empty deps → stable identity → the memoized body bails per step.
+  const onToggleFlow = useCallback(() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')), []);
+  const onTogglePlayAlong = useCallback(() => setPlayAlong((v) => !v), []);
+  const onToggleKeyboard = useCallback(() => setKeyboardVisible((v) => !v), []);
+  const onToggleClick = useCallback(() => setClickOn((v) => !v), []);
+  const onToggleScoring = useCallback(() => setScoringOn((v) => !v), []);
+
   const toggleRun = useCallback(() => {
     if (running) {
       transport.pause();
@@ -787,7 +803,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         page={perfPage.page}
         pages={perfPage.pages}
         flow={flow}
-        onToggleFlow={() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped'))}
+        onToggleFlow={onToggleFlow}
         scale={scale}
         onScale={setScale}
         tempoMult={tempoMult}
@@ -795,7 +811,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         transpose={transpose}
         onTranspose={onTranspose}
         playAlong={playAlong}
-        onTogglePlayAlong={() => setPlayAlong((v) => !v)}
+        onTogglePlayAlong={onTogglePlayAlong}
         parts={barParts}
         activeParts={activeParts}
         roles={roles}
@@ -807,11 +823,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onArmLoop={onArmLoop}
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
-        onToggleKeyboard={() => setKeyboardVisible((v) => !v)}
+        onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
-        onToggleClick={() => setClickOn((v) => !v)}
+        onToggleClick={onToggleClick}
         scoringOn={scoringOn}
-        onToggleScoring={() => setScoringOn((v) => !v)}
+        onToggleScoring={onToggleScoring}
         meta={meta}
       />
 
