@@ -42,15 +42,17 @@ export const ZONE_PRIORITY = Object.freeze({
 });
 
 /**
- * Zone colors (for UI display)
+ * Zone colors (for UI display) — the single canonical backend zone palette.
+ * ZoneService.getZoneColor and the timelapse renderer both source these values;
+ * do not re-declare zone hex colors elsewhere in the backend.
  * @type {Object.<string, string>}
  */
 export const ZONE_COLORS = Object.freeze({
-  [ZoneName.COOL]: '#3498db',   // blue
-  [ZoneName.ACTIVE]: '#2ecc71', // green
-  [ZoneName.WARM]: '#f1c40f',   // yellow
-  [ZoneName.HOT]: '#e67e22',    // orange
-  [ZoneName.FIRE]: '#e74c3c',   // red
+  [ZoneName.COOL]: '#3B82F6',   // blue
+  [ZoneName.ACTIVE]: '#10B981', // green
+  [ZoneName.WARM]: '#F59E0B',   // yellow
+  [ZoneName.HOT]: '#F97316',    // orange
+  [ZoneName.FIRE]: '#EF4444',   // red
 });
 
 /**
