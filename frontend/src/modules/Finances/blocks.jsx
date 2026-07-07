@@ -13,7 +13,7 @@ export { formatAsCurrency } from './lib/format.mjs';
 
     return (
       <div className="budget-block">
-      <h2 onClick={() => setDrawerContent(Transfers)}>Transfers</h2>
+      <h2 onClick={() => setDrawerContent({ meta: { title: 'Transfers' }, jsx: Transfers })}>Transfers</h2>
       <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
         <table className="transaction-table" style={{ width: "100%" }}>
         <thead>
@@ -69,17 +69,12 @@ export { formatAsCurrency } from './lib/format.mjs';
     .filter((txn) => txn?.expenseAmount > 0);
 
     const setTransactionFilter = (filterString) => {
-
       const txns = allTransactionsFromAllMonths.filter((txn) => txn.tagNames?.includes(filterString));
-      console.log({txns,filterString});
-      setDrawerContent(
-        <Drawer
-          setDrawerContent={setDrawerContent}
-          transactions={txns}  
-        />
-      );
-
-    }
+      setDrawerContent({
+        meta: { title: `Spending: ${filterString}` },
+        jsx: <Drawer setDrawerContent={setDrawerContent} transactions={txns} />
+      });
+    };
     const budgetKey =activeBudget.budgetStart;
     return (
       <div className="budget-block">

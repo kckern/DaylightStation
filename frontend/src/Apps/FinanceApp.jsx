@@ -239,7 +239,7 @@ export function BudgetViewer({ budget, mortgage, finance }) {
           padding="md"
           className="txn-drawer"
         >
-          {drawerContent?.jsx || drawerContent}
+          {drawerContent?.jsx}
         </Drawer>
         <div className="grid-container">
           <BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} />
