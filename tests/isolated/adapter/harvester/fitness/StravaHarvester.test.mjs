@@ -53,7 +53,11 @@ describe('StravaHarvester', () => {
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
         authStore: mockAuthStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         logger: mockLogger
       });
 
@@ -82,7 +86,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: '/tmp/test-fitness-history',
         logger: mockLogger
       });
@@ -118,7 +126,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         logger: mockLogger
       });
 
@@ -139,7 +151,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         logger: mockLogger
       });
 
@@ -239,7 +255,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,
@@ -286,7 +306,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,
@@ -330,7 +354,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,
@@ -388,7 +416,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,
@@ -449,7 +481,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,
@@ -511,7 +547,11 @@ describe('StravaHarvester', () => {
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        clientId: mockConfigService.getSecret('STRAVA_CLIENT_ID'),
+        redirectUri: mockConfigService.getSecret('STRAVA_URL'),
+        mediaDir: mockConfigService.getMediaDir(),
         fitnessHistoryDir: tmpDir,
         timezone: 'America/Los_Angeles',
         logger: mockLogger,

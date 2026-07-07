@@ -60,7 +60,11 @@ const stubStravaClient = {
 const harvester = new StravaHarvester({
   stravaClient: stubStravaClient,
   lifelogStore,
-  configService,
+  getUserAuth: (service, user) => configService.getUserAuth(service, user),
+  getUserDir: (user) => configService.getUserDir(user),
+  clientId: configService.getSecret('STRAVA_CLIENT_ID'),
+  redirectUri: configService.getSecret('STRAVA_URL'),
+  mediaDir: configService.getMediaDir?.(),
   fitnessHistoryDir,
 });
 

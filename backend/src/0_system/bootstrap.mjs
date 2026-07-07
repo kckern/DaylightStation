@@ -4014,6 +4014,30 @@ export function createHarvesterServices(config) {
   };
 
   // ==========================================================================
+  // Resolved config values for harvesters (composition root owns configService)
+  // Harvesters receive narrow accessors + resolved values, never the singleton.
+  // ==========================================================================
+  const harvesterTimezone = configService?.getTimezone?.() || 'America/Los_Angeles';
+  const getUserAuth = (service, user) => configService.getUserAuth(service, user);
+  const getHouseholdAuth = (service) => configService.getHouseholdAuth(service);
+  const getUserHouseholdId = (user) => configService.getUserHouseholdId(user);
+  const getHouseholdConfig = (householdId) => configService.getHouseholdConfig(householdId);
+  const getUserDir = (user) => configService.getUserDir(user);
+  const secret = (key) => configService?.getSecret?.(key);
+  const googleClientId = secret('GOOGLE_CLIENT_ID');
+  const googleClientSecret = secret('GOOGLE_CLIENT_SECRET');
+  const googleRedirectUri = secret('GOOGLE_REDIRECT_URI');
+  const googleRefreshToken = secret('GOOGLE_REFRESH_TOKEN');
+  const clickupAdapterConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
+  const weatherConfig = configService?.isReady?.()
+    ? (configService.get?.('weather') || configService.getAdapterConfig?.('weather'))
+    : null;
+  const weatherLat = weatherConfig?.lat || secret('WEATHER_LAT');
+  const weatherLng = weatherConfig?.lng || secret('WEATHER_LNG');
+  const weatherTimezone = weatherConfig?.timezone;
+  const mediaDir = configService?.getMediaDir?.();
+
+  // ==========================================================================
   // Productivity Harvesters
   // ==========================================================================
 
@@ -4023,7 +4047,9 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      apiKey: secret('TODOIST_KEY'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4034,7 +4060,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      getHouseholdAuth,
+      adapterConfig: clickupAdapterConfig,
+      apiKey: secret('CLICKUP_PK'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4044,7 +4074,8 @@ export function createHarvesterServices(config) {
     registerHarvester('github', () => new GitHubHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4058,7 +4089,10 @@ export function createHarvesterServices(config) {
     registerHarvester('lastfm', () => new LastfmHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      lastfmUser: secret('LAST_FM_USER'),
+      apiKey: secret('LAST_FM_API_KEY') || secret('LASTFM_API_KEY') || secret('LASTFM_APIKEY'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4068,7 +4102,8 @@ export function createHarvesterServices(config) {
     registerHarvester('reddit', () => new RedditHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4114,7 +4149,9 @@ export function createHarvesterServices(config) {
     registerHarvester('foursquare', () => new FoursquareHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      token: secret('FOURSQUARE_TOKEN'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4129,7 +4166,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      googleClientId,
+      googleClientSecret,
+      googleRedirectUri,
+      googleRefreshToken,
       logger,
     }));
   }
@@ -4137,10 +4178,14 @@ export function createHarvesterServices(config) {
   // Google Calendar - requires httpClient
   if (httpClient) {
     registerHarvester('gcal', () => new GCalHarvester({
-      httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      googleClientId,
+      googleClientSecret,
+      googleRedirectUri,
+      googleRefreshToken,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4155,7 +4200,9 @@ export function createHarvesterServices(config) {
       gmailClientFactory: effectiveGmailClientFactory,
       aiGateway: effectiveAiGateway,
       lifelogStore,
-      configService,
+      getUserHouseholdId,
+      getHouseholdConfig,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4166,7 +4213,7 @@ export function createHarvesterServices(config) {
     registerHarvester('buxfer', () => new BuxferHarvester({
       buxferAdapter,
       lifelogStore,
-      configService,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4181,7 +4228,12 @@ export function createHarvesterServices(config) {
       stravaClient,
       lifelogStore,
       authStore,
-      configService,
+      getUserAuth,
+      getUserDir,
+      clientId: secret('STRAVA_CLIENT_ID'),
+      redirectUri: secret('STRAVA_URL'),
+      mediaDir,
+      timezone: harvesterTimezone,
       fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
       logger,
     }));
@@ -4193,7 +4245,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       authStore,
-      configService,
+      getUserAuth,
+      clientId: secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
+      clientSecret: secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
+      redirectUri: secret('WITHINGS_REDIRECT'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4218,7 +4274,10 @@ export function createHarvesterServices(config) {
   if (sharedStore) {
     registerHarvester('weather', () => new WeatherHarvester({
       sharedStore,
-      configService,
+      lat: weatherLat,
+      lng: weatherLng,
+      weatherTimezone,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
