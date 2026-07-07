@@ -1,21 +1,17 @@
 import moment from "moment";
 import React, { useState, useMemo, useEffect } from "react";
-import Highcharts, { attr } from 'highcharts';
+import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import HighchartsTreeGraph from "highcharts/modules/treegraph";
-import HighchartsDrilldown from "highcharts/modules/drilldown";
 import HighchartsTreeMap from "highcharts/modules/treemap";
+import HC_More from "highcharts/highcharts-more";
 
 HighchartsTreeMap(Highcharts);
-HighchartsTreeGraph(Highcharts);
-HighchartsDrilldown(Highcharts);
+HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
-import HC_More from "highcharts/highcharts-more";
-HC_More(Highcharts);
 import { formatAsCurrency } from "./blocks";
 import { baseUrl } from '../../Apps/FinanceApp.jsx';
 
-import externalIcon from "../../assets/icons/external.svg";;
+import externalIcon from "../../assets/icons/external.svg";
 
 export function Drawer({ cellKey, transactions, periodData }) {
 

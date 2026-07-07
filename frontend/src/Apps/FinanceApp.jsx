@@ -236,7 +236,6 @@ function Header({
 export function BudgetViewer({ budget, mortgage, setBudgetData }) {
 
   const [drawerContent, setDrawerContent] = useState(null);
-  const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
 
   const [activeBudgetKey, setActiveBudgetKey] = useState(() => {
     const keys = Object.keys(budget);
@@ -274,12 +273,10 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
         <BudgetShortTerm
           setDrawerContent={setDrawerContent}
           budget={activeBudget}
-          budgetBlockDimensions={budgetBlockDimensions}
         />
         <BudgetDayToDay
           setDrawerContent={setDrawerContent}
           budget={activeBudget}
-          budgetBlockDimensions={budgetBlockDimensions}
         />
         <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
         <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
