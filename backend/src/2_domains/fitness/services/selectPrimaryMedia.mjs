@@ -57,10 +57,10 @@ export function buildSelectionConfig(plex) {
 
 /**
  * Build a warmup checker function from config.
- * Exported so buildStravaDescription can reuse it for warmup annotation.
+ * Exported so buildActivityDescription can reuse it for warmup annotation.
  *
  * IMPORTANT: This checker is warmup-only. Deprioritized labels are NOT
- * matched here, because buildStravaDescription uses this to add a "(warmup)"
+ * matched here, because buildActivityDescription uses this to add a "(warmup)"
  * annotation in the Strava description — kids videos must not get that tag.
  *
  * @param {Object} [config]

@@ -13,8 +13,8 @@
 import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
-import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
-import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
+import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
+import { buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 
 const RECONCILE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
@@ -155,7 +155,7 @@ export class StravaReconciliationService {
    */
   async #pass1SessionToStrava(session, activity, selectionConfig) {
     // Build what we would enrich with (pass {} so the builder never short-circuits)
-    const enrichment = buildStravaDescription(session, {}, selectionConfig);
+    const enrichment = buildActivityDescription(session, {}, selectionConfig);
     if (!enrichment) return false;
 
     const pushed = session.strava?.pushed || {};

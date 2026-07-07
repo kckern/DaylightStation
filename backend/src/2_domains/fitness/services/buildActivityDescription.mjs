@@ -1,30 +1,34 @@
 /**
- * buildStravaDescription
+ * buildActivityDescription
  *
- * Pure function that builds a Strava activity name and description
- * from a DaylightStation fitness session.
+ * Pure domain policy that builds an activity name and description from a
+ * DaylightStation fitness session. Provider-agnostic in shape: the caller
+ * passes the current activity (`{ name, description }`) so the same logic
+ * serves any fitness activity provider; Strava is merely the current consumer.
  *
  * Title:       primary episode (warmup-aware) → "Show — Episode"
  * Description: voice memos, then all episodes chronologically
  *              (warmups annotated), then music tracks one-per-line
  *
- * @module adapters/fitness/buildStravaDescription
+ * @module domains/fitness/services/buildActivityDescription
  */
 
 import { selectPrimaryMedia, buildWarmupChecker } from './selectPrimaryMedia.mjs';
 
+// The consuming activity platform (Strava) caps the description field at 700
+// characters; descriptions are truncated to fit.
 const STRAVA_DESC_LIMIT = 700;
 
 /**
- * Build Strava activity enrichment payload from a session.
+ * Build an activity enrichment payload from a session.
  *
  * @param {Object} session - Parsed session YAML data
- * @param {Object} [currentActivity] - Current Strava activity (for skip logic)
+ * @param {Object} [currentActivity] - Current provider activity (for skip logic)
  * @param {Object} [warmupConfig] - { warmup_labels, warmup_description_tags, warmup_title_patterns }
  * @returns {{ name: string|null, description: string|null }|null}
  *   null if nothing to enrich
  */
-export function buildStravaDescription(session, currentActivity = {}, warmupConfig = null) {
+export function buildActivityDescription(session, currentActivity = {}, warmupConfig = null) {
   const events = session?.timeline?.events || [];
 
   // Extract media events — separate episodes from music tracks
@@ -190,4 +194,4 @@ function _formatMediaLabel(media) {
   return null;
 }
 
-export default buildStravaDescription;
+export default buildActivityDescription;
