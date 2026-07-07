@@ -40,6 +40,22 @@ describe('createClickScheduler', () => {
     s.stop();
   });
 
+  it('guards non-positive bpm — start(<=0) schedules nothing and never loops', () => {
+    // Without the `bpm > 0` guard, a negative bpm makes periodS < 0, so
+    // `nextBeat += periodS` decreases forever and the while loop hangs the tab.
+    // With the guard, start() returns early: no blips, no timer.
+    for (const bad of [-120, 0]) {
+      const ac = fakeCtx();
+      const blips = [];
+      const s = createClickScheduler({ getCtx: () => ac, scheduleBlip: (_a, t) => blips.push(t) });
+      s.start(bad);
+      expect(blips.length).toBe(0);
+      ac.currentTime = 10; vi.advanceTimersByTime(1000); // no timer should be firing
+      expect(blips.length).toBe(0);
+      s.stop();
+    }
+  });
+
   it('stop halts future scheduling', () => {
     const ac = fakeCtx();
     const blips = [];
