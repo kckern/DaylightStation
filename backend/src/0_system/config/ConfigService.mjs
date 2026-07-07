@@ -9,6 +9,7 @@
  */
 
 import { loadYaml, loadYamlFromPath, listYamlFiles } from '#system/utils/FileIO.mjs';
+import { ConfigurationError } from '#system/utils/errors/index.mjs';
 
 export class ConfigService {
   #config;
@@ -303,7 +304,11 @@ export class ConfigService {
     const household = this.#config.households?.[hid];
 
     if (!household) {
-      throw new Error(`Household not found: ${hid}`);
+      throw new ConfigurationError(`Household not found: ${hid}`, {
+        code: 'HOUSEHOLD_NOT_FOUND',
+        key: 'households',
+        details: { householdId: hid },
+      });
     }
 
     const folderName = household._folderName || hid;

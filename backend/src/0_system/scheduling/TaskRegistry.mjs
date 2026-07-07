@@ -3,6 +3,7 @@
  */
 
 import { nowTs24 } from '../utils/index.mjs';
+import { SchedulerError } from '../utils/errors/index.mjs';
 
 export class TaskRegistry {
   constructor() {
@@ -20,7 +21,10 @@ export class TaskRegistry {
    */
   register(name, config) {
     if (!name || !config.handler) {
-      throw new Error('Task requires name and handler');
+      throw new SchedulerError('Task requires name and handler', {
+        code: 'TASK_INVALID',
+        details: { name },
+      });
     }
     this.tasks.set(name, {
       name,
@@ -60,13 +64,22 @@ export class TaskRegistry {
   async execute(name) {
     const task = this.tasks.get(name);
     if (!task) {
-      throw new Error(`Task not found: ${name}`);
+      throw new SchedulerError(`Task not found: ${name}`, {
+        code: 'TASK_NOT_FOUND',
+        details: { name },
+      });
     }
     if (!task.enabled) {
-      throw new Error(`Task disabled: ${name}`);
+      throw new SchedulerError(`Task disabled: ${name}`, {
+        code: 'TASK_DISABLED',
+        details: { name },
+      });
     }
     if (this.running.has(name)) {
-      throw new Error(`Task already running: ${name}`);
+      throw new SchedulerError(`Task already running: ${name}`, {
+        code: 'TASK_RUNNING',
+        details: { name },
+      });
     }
 
     this.running.set(name, Date.now());

@@ -11,6 +11,7 @@
 
 import path from 'path';
 import { loadYaml } from '../utils/FileIO.mjs';
+import { ConfigurationError } from '../utils/errors/index.mjs';
 
 /**
  * Environment variable interpolation pattern
@@ -93,7 +94,10 @@ export function loadBotConfig(botName, options = {}) {
   const { configDir, skipCache = false, schema = null } = options;
 
   if (!configDir) {
-    throw new Error('configDir is required');
+    throw new ConfigurationError('configDir is required', {
+      code: 'CONFIG_DIR_REQUIRED',
+      key: 'configDir',
+    });
   }
 
   // Check cache
@@ -136,7 +140,11 @@ export function loadBotConfig(botName, options = {}) {
       const errors = result.error.issues.map(issue =>
         `${issue.path.join('.')}: ${issue.message}`
       ).join('\n');
-      throw new Error(`Configuration validation failed for ${botName}:\n${errors}`);
+      throw new ConfigurationError(`Configuration validation failed for ${botName}:\n${errors}`, {
+        code: 'CONFIG_VALIDATION_FAILED',
+        key: botName,
+        details: { errors },
+      });
     }
     config = result.data;
   }
