@@ -99,6 +99,59 @@ throttle.
    watching `perf.diagnostics` fps during play. If injection doesn't un-throttle, this is the wrong
    lever and the gfxinfo/cpufreq capture (step 2) is needed to find the real one.
 
+### The 2026-07-07 live check: Adaptive power saving found ARMED; the throttle is episodic, not a constant idle clock
+
+A remote settings audit (via the piano-bridge — see "no-ADB settings channel" below) plus a
+controlled aged-page measurement, run while the kiosk was healthy:
+
+| Check | Result |
+|---|---|
+| `low_power` / `low_power_sticky` (battery saver) | 0 / 0 at check time |
+| **`adaptive_power_saving_setting`** | **1 — ARMED. Samsung flips battery saver on/off autonomously by "usage patterns."** Disabled 2026-07-07: `pbctl setsetting global adaptive_power_saving_setting 0` (revert: set 1). **Must stay 0.** |
+| `app_standby_enabled` | 1 (usage buckets active — a never-touched kiosk can decay buckets; bucket read needs adb) |
+| GOS (`com.samsung.android.game.gos`) | present; whether FKB is game-classified is unchecked (needs adb) |
+| Thermal | all sensors ~26 °C, battery 24.9 °C — ruled out with data |
+| CPU | all cores at max 1.8 GHz |
+| `stay_on_while_plugged_in`=7, `wifi_sleep_policy`=2 | keepawake settings intact |
+
+**Why adaptive power saving matters:** Chromium changes *main-thread* scheduling when the OS
+reports power-save (timer wake-up alignment/throttling) while **compositor-thread animations
+keep running** — exactly the observed signature (keep-alive dot smooth, app unresponsive).
+And the Samsung automation is (a) episodic by design and (b) a **persisted setting that
+survives reboot** — matching both "the jank comes and goes with no page-side cause" and
+"sometimes a reboot doesn't fix it."
+
+**Control measurement that reframes the throttle:** a **2.5-hour-old page** (screen off in
+daydream ~2 h) was woken via FKB REST `screenOn` — *not touch* — and immediately read
+**60 fps, held at every 1-minute sample for ≥6 minutes with zero input**. So the 4–8 fps clamp is NOT
+a constant "no-touch-for-N-minutes" clock; it is **episodic**, active only under some system
+state — consistent with power-save-gated scheduling. The earlier "input-recency" framing
+likely described the *boost that masks* the state, not the throttle's own timer. During the
+next live episode the FIRST command to run is:
+`pbctl getsetting global low_power` (1 = smoking gun).
+
+**The no-ADB settings channel:** adb-over-wifi dies on reboot, but the piano-bridge APK
+(`pbctl`) reads/writes Android settings without it — `getsetting/setsetting <global|secure|system> <key>`
+(per-key reads work from the app uid; `exec settings list` is permission-blocked) plus
+`exec`, `diag` (thermal/battery/cpu), and `kiosk` (beat-derived fps **without reloading the
+page** — the only honest aged-page probe; the CLI `jank`/`fps` probes reload and reset page age).
+
+**Follow-ups:**
+1. **Settings sentry (recommended):** the watchdog beat-check should assert
+   `low_power == 0` and `adaptive_power_saving_setting == 0` and correct drift — One UI
+   surfaces can re-arm them.
+2. **One USB session** to re-arm `adb tcpip 5555` unlocks the deep checks: `dumpsys
+   batterystats` power-save transitions correlated against `piano.watchdog.jank-start`
+   timestamps (the historical H1 test), `am get-standby-bucket` for FKB *and*
+   `com.google.android.webview`, GOS classification, and a perfetto capture during a live
+   episode.
+3. **Watchdog refinement:** a screen-off daydream session was classified `DEAD` and burned
+   55 L1 touch-bursts against a dark screen. Screen-off should classify as `SLEEPING` (beats
+   legitimately stop when rAF suspends) with L1 skipped.
+
+Full hypothesis set, the compositor-alive/main-dead constraint analysis, and the ordered
+attack plan: [`docs/_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md`](../../_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md).
+
 ### The 2026-07-01 regression: removing the keep-alive video
 
 Commit `7de308f70` ("gut KeepAliveVideo to CSS-only vsync driver") shipped in the 12:31 build on
@@ -118,6 +171,16 @@ driver, now opaque near-background color instead of ghost opacity. Telemetry (`k
 `keepalive.play-blocked` / `keepalive.stalled`) shows whether the media path is live on-device.
 Do not remove either driver based on a fresh-page measurement — validate on an **aged page**
 (>30 min) via `piano.watchdog` before believing any "X alone is sufficient" claim.
+
+> **Current state (diverges from the above):** the belt-and-suspenders pair was later
+> consolidated — per direction, for aesthetics — to a **single 3×2 px CSS crawl dot at
+> `rgba(255,255,255,0.22)`** (`KeepAliveVideo.jsx`, `.piano-keepalive-crawl` in
+> `PianoApp.scss`). The video driver and its telemetry are gone. Note the risk this section
+> itself documents: a deliberately minimal-contrast animation is in the same class as the
+> ghost-opacity driver that Chrome 149 unscheduled as imperceptible (and the dot's own
+> `z-index` comment records that occlusion-culling already defeated one iteration). If
+> aged-page decay episodes recur, the cheap first experiment is raising the dot's
+> contrast/opacity before deeper work — see the 2026-07-07 hypotheses doc, § 5.
 
 ### Self-heal a dead kiosk page
 
