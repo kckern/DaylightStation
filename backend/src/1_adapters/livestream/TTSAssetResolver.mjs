@@ -5,7 +5,7 @@ import { IAudioAssetResolver } from '../../2_domains/livestream/IAudioAssetResol
 
 /**
  * TTSAssetResolver — resolves audio specs to playable file paths.
- * File specs pass through. TTS specs are generated via TTSAdapter and cached.
+ * File specs pass through. TTS specs are generated via OpenAITTSAdapter and cached.
  */
 export class TTSAssetResolver extends IAudioAssetResolver {
   #ttsAdapter;

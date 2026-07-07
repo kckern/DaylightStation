@@ -148,7 +148,7 @@ import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 
 // Hardware adapter imports
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
-import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
+import { OpenAITTSAdapter } from '#adapters/hardware/tts/OpenAITTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
 import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelectorAdapter.mjs';
@@ -2228,11 +2228,11 @@ export function createTranscodePrewarmService(config) {
  * @param {string} [config.defaultVoice='alloy'] - Default voice
  * @param {Object} config.httpClient - HTTP client for API requests
  * @param {Object} [config.logger] - Logger instance
- * @returns {TTSAdapter}
+ * @returns {OpenAITTSAdapter}
  */
 export function createTTSAdapterInstance(config) {
   const { logger = console, httpClient, ...ttsConfig } = config;
-  return new TTSAdapter(ttsConfig, { httpClient, logger });
+  return new OpenAITTSAdapter(ttsConfig, { httpClient, logger });
 }
 
 /**
@@ -2274,7 +2274,7 @@ export function createHardwareAdapters(config) {
   // TTS adapter (optional - requires OpenAI API key and httpClient)
   let ttsAdapter = null;
   if (config.tts?.apiKey && httpClient) {
-    ttsAdapter = new TTSAdapter(
+    ttsAdapter = new OpenAITTSAdapter(
       {
         apiKey: config.tts.apiKey,
         model: config.tts.model,

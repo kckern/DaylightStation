@@ -14,7 +14,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * Create TTS router
  * @param {Object} config
- * @param {import('#adapters/hardware/tts/TTSAdapter.mjs').TTSAdapter} config.ttsAdapter
+ * @param {import('#adapters/hardware/tts/OpenAITTSAdapter.mjs').OpenAITTSAdapter} config.ttsAdapter
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
@@ -133,7 +133,7 @@ export function createTTSRouter(config) {
  * @param {Object} options
  * @param {express.Response} res
  * @param {Object} logger
- * @param {TTSAdapter} ttsAdapter
+ * @param {OpenAITTSAdapter} ttsAdapter
  */
 async function generateAndStream(text, options, res, logger, ttsAdapter) {
   logger.info?.('tts.generate.request', {
