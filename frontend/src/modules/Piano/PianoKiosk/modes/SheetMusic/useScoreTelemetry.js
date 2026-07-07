@@ -22,6 +22,7 @@ export function useScoreTelemetry({ id }) {
   const gaps = useRef([]);
   const stalls = useRef(0);
   const follow = useRef([]);
+  const leads = useRef([]);
 
   const startSession = useCallback((scoreId) => logger.info('session-log.start', { scoreId }), [logger]);
 
@@ -43,14 +44,27 @@ export function useScoreTelemetry({ id }) {
     }
   }, [logger]);
 
+  const recordSchedule = useCallback((ev, leadMs) => {
+    leads.current.push(leadMs);
+    // A negative lead means the tick woke later than the event's due time — the
+    // note was sent with a past timestamp (dispatches immediately, audibly late).
+    // Rare by design; each one is worth a line.
+    if (leadMs < 0) logger.warn('score.playback.sched-late', { note: ev.note, leadMs: Math.round(leadMs) });
+  }, [logger]);
+
   const flushPlayback = useCallback((mode) => {
     const d = summarizeDrift(drifts.current, { stallMs: STALL_MS });
+    const l = leads.current;
+    const meanLeadMs = l.length ? Math.round(l.reduce((a, b) => a + b, 0) / l.length) : 0;
     logger.info('score.playback.stats', {
       mode, events: d.count,
       meanDriftMs: Math.round(d.meanDriftMs), p95DriftMs: Math.round(d.p95DriftMs), maxDriftMs: Math.round(d.maxDriftMs),
       stalls: stalls.current, maxFrameGapMs: Math.round(Math.max(0, ...gaps.current, 0)),
+      scheduled: l.length, meanLeadMs,
+      minLeadMs: l.length ? Math.round(Math.min(...l)) : 0,
+      schedLate: l.filter((x) => x < 0).length,
     });
-    drifts.current = []; gaps.current = []; stalls.current = 0;
+    drifts.current = []; gaps.current = []; stalls.current = 0; leads.current = [];
   }, [logger]);
 
   const recordFollowHit = useCallback(({ step, note, expectedMs, actualMs }) => {
@@ -69,7 +83,7 @@ export function useScoreTelemetry({ id }) {
     follow.current = [];
   }, [logger]);
 
-  return { startSession, logLoad, logLoadFailed, recordFire, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
+  return { startSession, logLoad, logLoadFailed, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
 }
 
 function pct(arr, pred) { return arr.length ? Math.round((arr.filter(pred).length / arr.length) * 100) : 0; }

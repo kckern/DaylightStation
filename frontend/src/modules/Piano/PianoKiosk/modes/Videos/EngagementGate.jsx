@@ -1,5 +1,5 @@
 import { useMemo, useEffect } from 'react';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { generateCardPitches, evaluateMatch } from '../../../PianoFlashcards/flashcardEngine.js';
 import { ActionStaff } from '../../../components/ActionStaff.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
@@ -17,7 +17,7 @@ function logger() {
  * (the parent's dismissGate). Does not unmount the video.
  */
 export default function EngagementGate({ open, onDismiss }) {
-  const { activeNotes } = usePianoMidi();
+  const { activeNotes } = usePianoMidiNotes();
 
   // Pick one random note when the gate opens (re-randomized each open).
   const targetPitches = useMemo(

@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 const midiState = { activeNotes: new Map() };
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => midiState,
+  usePianoMidiNotes: () => midiState,
 }));
 
 const evaluateMatch = vi.fn(() => 'idle');

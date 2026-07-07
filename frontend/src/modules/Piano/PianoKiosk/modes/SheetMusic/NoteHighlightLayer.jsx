@@ -35,8 +35,7 @@ export default function NoteHighlightLayer({ step, activeParts = {}, struck, mis
             key={`${box.staff}:${box.midi}:${i}`}
             className={`piano-score-note piano-score-note--${state}`}
             style={{
-              left: box.x - w / 2,
-              top: box.top,
+              transform: `translate3d(${box.x - w / 2}px, ${box.top}px, 0)`,
               width: w,
               height: box.bottom - box.top,
               '--nh-color': accent,

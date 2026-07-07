@@ -19,7 +19,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 const pressNote = vi.fn();
 const releaseNote = vi.fn();
 const midiMock = vi.hoisted(() => ({}));
-vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => midiMock }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => midiMock, usePianoMidiNotes: () => midiMock }));
 vi.mock('../../PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     config: {

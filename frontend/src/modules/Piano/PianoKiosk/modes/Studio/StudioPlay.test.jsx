@@ -4,7 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // --- mocks -----------------------------------------------------------------
 const activeNotes = new Map();
 vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ activeNotes, noteHistory: [], pressNote: vi.fn(), releaseNote: vi.fn() }),
+  usePianoMidi: () => ({ pressNote: vi.fn(), releaseNote: vi.fn() }),
+  usePianoMidiNotes: () => ({ activeNotes, noteHistory: [], sustainPedal: false, isPlaying: false }),
 }));
 
 // Heavy presentational children are irrelevant here; stub the waterfall/keys/icon.
