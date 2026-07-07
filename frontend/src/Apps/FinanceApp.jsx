@@ -27,15 +27,15 @@ export default function App() {
   return (
     <MantineProvider>
       {error && (
-        <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
+        <div className="finance-error-banner">
           <strong>{error.source === 'refresh' ? 'Refresh failed — showing the last loaded data.' : 'Failed to load finance data.'}</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(error.error?.message || error.error)}</div>
+          <div className="finance-error-detail">{String(error.error?.message || error.error)}</div>
           <Button onClick={retry} variant="outline" color="red">Retry</Button>
         </div>
       )}
       {!error && !data && (
-        <div style={{ padding: '1rem' }}>
-          <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, backgroundColor: '#f8f9fa', padding: '1rem', textAlign: 'center', color: '#495057' }}>
+        <div className="finance-loading">
+          <div className="finance-loading-card">
             <strong>Loading...</strong>
           </div>
         </div>
@@ -53,7 +53,6 @@ function ReloadButton({ finance }) {
   const { refresh, refreshing } = finance;
   return (
     <button
-      style={{ float: 'right' }}
       className={refreshing ? 'reload reloading' : 'reload'}
       onClick={refresh}
       disabled={refreshing}
@@ -84,9 +83,9 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
 
   return (
     <header>
-      <h1 style={{ display: 'flex', alignItems: 'center', padding: '0 1rem' }}>
-        <div style={{ flex: 1 }} />
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+      <h1 className="finance-header-bar">
+        <div className="finance-header-spacer" />
+        <div className="finance-header-center">
           <Select
             data={budgetOptions}
             value={activeBudgetKey}
@@ -103,18 +102,17 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
               },
               rightSection: { pointerEvents: 'none' },
             }}
-            rightSection={<span style={{ fontSize: '1rem' }}>▼</span>}
+            rightSection={<span className="finance-header-caret">▼</span>}
             clearable={false}
           />
         </div>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div className="finance-header-actions">
           <ReloadButton finance={finance} />
           <button
             className="payroll-btn"
             onClick={() => setDrawerContent({ type: 'payroll', title: 'Sync Payroll' })}
             title="Sync Payroll"
             aria-label="Sync payroll"
-            style={{ fontSize: '1.5rem', cursor: 'pointer', background: 'none', border: 'none', marginLeft: '0.5rem' }}
           >
             💰
           </button>

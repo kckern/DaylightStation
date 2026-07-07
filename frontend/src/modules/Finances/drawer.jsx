@@ -140,7 +140,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
               {pairMode && (
-                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="pair-banner">
                   <span>Select the offsetting transaction for: <strong>{pairMode.sourceTransaction.description}</strong></span>
                   <TextInput
                     size="xs"
@@ -149,13 +149,13 @@ export function Drawer({ cellKey, transactions, periodData }) {
                     onChange={(e) => setPairDesc(e.target.value)}
                     style={{ flex: 1 }}
                   />
-                  <button onClick={() => { setPairMode(null); setPairDesc(''); }} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                  <button className="pair-banner-cancel" onClick={() => { setPairMode(null); setPairDesc(''); }}>Cancel</button>
                 </div>
               )}
               {pairNotice && (
-                <div style={{ padding: '8px 12px', background: '#2d2d3a', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="pair-notice">
                   <span>{pairNotice}</span>
-                  <button onClick={() => setPairNotice(null)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}>×</button>
+                  <button className="pair-notice-dismiss" onClick={() => setPairNotice(null)}>×</button>
                 </div>
               )}
                 <table className="transactions-table">
@@ -179,7 +179,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                         aria-sort={sortConfig.key === 'amount' ? sortConfig.direction : 'none'}>
                         Amount {getSortIcon('amount')}
                       </th>
-                      <th onClick={() => handleSorting('description')} style={{ textAlign: 'left' }}
+                      <th onClick={() => handleSorting('description')} className="th-left"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('description'); } }}
                         aria-sort={sortConfig.key === 'description' ? sortConfig.direction : 'none'}>
@@ -191,7 +191,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                         aria-sort={sortConfig.key === 'tagNames' ? sortConfig.direction : 'none'}>
                         Tags {getSortIcon('tagNames')}
                       </th>
-                      <th style={{ width: '2rem' }}></th>
+                      <th className="actions-th"></th>
                     </tr>
                   </thead>
                     <tbody>
@@ -228,32 +228,25 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                           {transaction.description}{memo}{pairBadge}
                                           {hasId && !pairMode && (
                                             <img src={externalIcon} alt="" aria-hidden="true"
-                                              style={{ width: '0.8em', height: '0.8em', marginLeft: '0.4em', opacity: 0.4, verticalAlign: 'baseline' }} />
+                                              className="row-external-icon" />
                                           )}
                                         </td>
                                         <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
                                         <td className="actions-col" onClick={(e) => e.stopPropagation()}>
                                           {hasId && !pairMode && (
-                                            <div style={{ position: 'relative' }}>
+                                            <div className="txn-menu-wrap">
                                               <button
                                                 className="txn-menu-btn"
                                                 onClick={() => setMenuOpenId(menuOpenId === transaction.id ? null : transaction.id)}
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: '0.9rem', color: '#888' }}
                                                 aria-label="Transaction actions"
                                               >⋯</button>
                                               {menuOpenId === transaction.id && (
-                                                <div className="txn-menu-dropdown" style={{
-                                                  position: 'absolute', right: 0, top: '100%', zIndex: 10,
-                                                  background: '#1a1a2e', border: '1px solid #333', borderRadius: '4px',
-                                                  minWidth: '120px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-                                                }}>
+                                                <div className="txn-menu-dropdown">
                                                   {transaction.paired ? (
                                                     <button className="txn-menu-item" onClick={() => handleUnpair(transaction)}
-                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
                                                     >Unpair</button>
                                                   ) : (
                                                     <button className="txn-menu-item" onClick={() => handleStartPair(transaction)}
-                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
                                                     >Pair</button>
                                                   )}
                                                 </div>
@@ -291,7 +284,7 @@ function DrawerSummary({ sortedTransactions, summary }) {
               <img
                 src={externalIcon}
                 alt="external link"
-                style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
+                className="external-link-icon"
               />
             </a>
           )}
@@ -933,15 +926,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
         <span key={i}>
           <span
         {...pressable(() => handleBackClick(i), {
-          style: {
-            fontWeight: i === crumbs.length - 1 ? "bold" : "normal",
-            color: "black",
-            textDecoration: "none",
-            cursor: "pointer",
-            backgroundColor: "#00000022",
-            borderRadius: "4px",
-            padding: "0 1ex",
-          }
+          className: i === crumbs.length - 1 ? 'drill-crumb drill-crumb--current' : 'drill-crumb'
         })}
           >
         {c}
@@ -958,10 +943,9 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
   };
 
   return (
-    //max-width: 900px; margin: 0px auto; height:100%; display:flex; flex-direction: column
-    <div style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ textAlign: "center", padding: "0.5ex 0"}}>
-        <span style={{ marginLeft: 10 }}>{renderBreadcrumbs(handleBackClick)}</span>
+    <div className="drill-chart-wrap">
+      <div className="drill-crumb-row">
+        <span className="drill-crumbs">{renderBreadcrumbs(handleBackClick)}</span>
       </div>
       <HighchartsReact highcharts={Highcharts} options={chartOptions} />
     </div>

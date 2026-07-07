@@ -31,8 +31,8 @@ export function PayrollSyncContent() {
   };
 
   return (
-    <div style={{ padding: '1rem' }}>
-      <p style={{ marginBottom: '1rem', color: '#666' }}>
+    <div className="payroll-sync">
+      <p className="payroll-sync-hint">
         Enter your payroll session token to sync paychecks. Leave empty to use stored credentials.
       </p>
       <TextInput
@@ -41,18 +41,18 @@ export function PayrollSyncContent() {
         value={token}
         onChange={(e) => setToken(e.target.value)}
         disabled={syncing}
-        style={{ marginBottom: '1rem' }}
+        mb="md"
       />
       <Button onClick={handleSync} loading={syncing} disabled={syncing} fullWidth>
         {syncing ? 'Syncing...' : 'Sync Payroll'}
       </Button>
       {error && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fee', borderRadius: 4, color: '#c00' }}>
+        <div className="payroll-sync-error">
           {error}
         </div>
       )}
       {result && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#efe', borderRadius: 4, color: '#060' }}>
+        <div className="payroll-sync-success">
           Payroll synced successfully!
         </div>
       )}

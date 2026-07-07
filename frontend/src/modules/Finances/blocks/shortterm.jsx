@@ -206,7 +206,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         <div className="budget-block">
             <h2>Short Term Savings</h2>
             <div className="budget-block-content">
-                <div className="status-badge" style={{ textAlign: 'center' }}>
+                <div className="status-badge-row">
                     {statusBadge}
                 </div>
                 <HighchartsReact
