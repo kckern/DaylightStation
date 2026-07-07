@@ -1,6 +1,7 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
 import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
+import { calculateCost } from "../lib/costOfCapital.mjs";
 import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -529,36 +530,28 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const [amount, setAmount] = useState(1000);
     const commonAmounts = [1000, 5000, 10000, 25000, 50000];
 
-    const calculateCost = (extraAmount, plan) => {
-      const currentBalance = mortgage.balance;
-      const rate = mortgage.interestRate;
+    const costFor = (extraAmount, plan) => calculateCost({
+      balance: mortgage.balance,
+      interestRate: mortgage.interestRate,
+      extraAmount,
+      plan
+    });
 
-      const baseInterest = plan.info.totalInterest;
-      const baseMonths = plan.info.totalPayments;
+    // Recomputes only when the typed amount or the mortgage changes.
+    const planCosts = useMemo(
+      () => mortgage.paymentPlans.map((plan) => ({ plan, cost: costFor(amount, plan) })),
+      [amount, mortgage]
+    );
 
-      let balance = currentBalance + extraAmount;
-      let totalInterest = 0;
-      let months = 0;
-      const monthlyRate = rate / 12;
-
-      while (balance > 0.01 && months < 1000) {
-        const interest = balance * monthlyRate;
-        totalInterest += interest;
-        balance += interest;
-
-        let payment = plan.months[months]?.amountPaid || plan.months[plan.months.length - 1]?.amountPaid || 0;
-        if (payment > balance) payment = balance;
-        balance -= payment;
-        months++;
-      }
-
-      const additionalInterest = Math.round((totalInterest - baseInterest) * 100) / 100;
-      const trueCost = extraAmount + additionalInterest;
-      const multiplier = trueCost / extraAmount;
-      const delayMonths = months - baseMonths;
-
-      return { additionalInterest, trueCost, multiplier, delayMonths };
-    };
+    // The quick-reference table does NOT depend on the typed amount —
+    // previously it re-simulated 5 amounts × N plans on every keystroke.
+    const quickReference = useMemo(
+      () => commonAmounts.map((amt) => ({
+        amt,
+        costs: mortgage.paymentPlans.map((plan) => costFor(amt, plan))
+      })),
+      [mortgage]
+    );
 
     return (
       <div>
@@ -573,39 +566,36 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           />
         </div>
 
-        {mortgage.paymentPlans.map(plan => {
-          const cost = calculateCost(amount, plan);
-          return (
-            <div key={plan.info.id} style={{
-              marginBottom: '1rem',
-              padding: '1rem',
-              border: '1px solid #333',
-              borderRadius: '8px'
-            }}>
-              <div style={{ fontSize: '1.2em', marginBottom: '0.5rem' }}>
-                <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
-                <b style={{ color: PALETTE.interest }}>{formatAsCurrency(cost.trueCost)}</b>
-                <span style={{ color: '#888', marginLeft: '0.5rem' }}>({plan.info.title})</span>
-              </div>
-              <table style={{ width: '100%', maxWidth: 400 }}>
-                <tbody>
-                  <tr>
-                    <td style={{ color: '#888' }}>Additional interest:</td>
-                    <td style={{ color: '#c00' }}>{formatAsCurrency(cost.additionalInterest)}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ color: '#888' }}>Cost multiplier:</td>
-                    <td>{cost.multiplier.toFixed(3)}×</td>
-                  </tr>
-                  <tr>
-                    <td style={{ color: '#888' }}>Payoff delay:</td>
-                    <td>+{cost.delayMonths} month{cost.delayMonths !== 1 ? 's' : ''}</td>
-                  </tr>
-                </tbody>
-              </table>
+        {planCosts.map(({ plan, cost }) => (
+          <div key={plan.info.id} style={{
+            marginBottom: '1rem',
+            padding: '1rem',
+            border: '1px solid #333',
+            borderRadius: '8px'
+          }}>
+            <div style={{ fontSize: '1.2em', marginBottom: '0.5rem' }}>
+              <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
+              <b style={{ color: PALETTE.interest }}>{formatAsCurrency(cost.trueCost)}</b>
+              <span style={{ color: '#888', marginLeft: '0.5rem' }}>({plan.info.title})</span>
             </div>
-          );
-        })}
+            <table style={{ width: '100%', maxWidth: 400 }}>
+              <tbody>
+                <tr>
+                  <td style={{ color: '#888' }}>Additional interest:</td>
+                  <td style={{ color: '#c00' }}>{formatAsCurrency(cost.additionalInterest)}</td>
+                </tr>
+                <tr>
+                  <td style={{ color: '#888' }}>Cost multiplier:</td>
+                  <td>{cost.multiplier.toFixed(3)}×</td>
+                </tr>
+                <tr>
+                  <td style={{ color: '#888' }}>Payoff delay:</td>
+                  <td>+{cost.delayMonths} month{cost.delayMonths !== 1 ? 's' : ''}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ))}
 
         <h3 style={{ marginTop: '2rem' }}>Quick Reference</h3>
         <table style={{ width: '100%' }} className="mortgage-table">
@@ -618,18 +608,15 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             </tr>
           </thead>
           <tbody className="mortgage-table-body">
-            {commonAmounts.map(amt => (
+            {quickReference.map(({ amt, costs }) => (
               <tr key={amt}>
                 <td>{formatAsCurrency(amt)}</td>
-                {mortgage.paymentPlans.map(plan => {
-                  const cost = calculateCost(amt, plan);
-                  return (
-                    <td key={plan.info.id}>
-                      +{formatAsCurrency(cost.additionalInterest)}{' '}
-                      <span style={{ color: '#888' }}>({cost.multiplier.toFixed(2)}×)</span>
-                    </td>
-                  );
-                })}
+                {costs.map((cost, i) => (
+                  <td key={mortgage.paymentPlans[i].info.id}>
+                    +{formatAsCurrency(cost.additionalInterest)}{' '}
+                    <span style={{ color: '#888' }}>({cost.multiplier.toFixed(2)}×)</span>
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
