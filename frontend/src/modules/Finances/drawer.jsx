@@ -8,9 +8,11 @@ import HC_More from "highcharts/highcharts-more";
 HighchartsTreeMap(Highcharts);
 HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
+import { TextInput } from '@mantine/core';
 import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
 import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { useFinanceReload } from './FinanceDataContext.jsx';
 
 import externalIcon from "../../assets/icons/external.svg";
 
@@ -69,6 +71,16 @@ export function Drawer({ cellKey, transactions, periodData }) {
 
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [pairMode, setPairMode] = useState(null);
+    const reload = useFinanceReload();
+    const [pairDesc, setPairDesc] = useState('');
+    const [pairNotice, setPairNotice] = useState(null);
+
+    useEffect(() => {
+      if (menuOpenId == null) return;
+      const close = () => setMenuOpenId(null);
+      document.addEventListener('click', close);
+      return () => document.removeEventListener('click', close);
+    }, [menuOpenId]);
 
     const handleRowClick = (transaction) => {
       if(!transaction.id) return;
@@ -85,14 +97,16 @@ export function Drawer({ cellKey, transactions, periodData }) {
       const isSourceExpense = source.expenseAmount > 0;
       const debit = isSourceExpense ? source.id : targetTransaction.id;
       const credit = isSourceExpense ? targetTransaction.id : source.id;
-      const desc = prompt('Pair description (optional):') || `${source.description} \u2194 ${targetTransaction.description}`;
+      const desc = pairDesc.trim() || `${source.description} \u2194 ${targetTransaction.description}`;
 
       try {
         await DaylightAPI('api/v1/finance/pairs', { debit, credit, desc }, 'POST');
         setPairMode(null);
-        window.location.reload();
+        setPairDesc('');
+        await reload();
+        setPairNotice('Pair saved and data refreshed \u2014 reopen this drawer to see updated amounts.');
       } catch (err) {
-        console.error('Failed to create pair:', err);
+        setPairNotice(`Failed to create pair: ${err.message}`);
       }
     };
 
@@ -100,9 +114,10 @@ export function Drawer({ cellKey, transactions, periodData }) {
       setMenuOpenId(null);
       try {
         await DaylightAPI('api/v1/finance/pairs', { debit: transaction.id, credit: transaction.pairedWith }, 'DELETE');
-        window.location.reload();
+        await reload();
+        setPairNotice('Pair removed and data refreshed \u2014 reopen this drawer to see updated amounts.');
       } catch (err) {
-        console.error('Failed to unpair:', err);
+        setPairNotice(`Failed to unpair: ${err.message}`);
       }
     };
 
@@ -124,9 +139,22 @@ export function Drawer({ cellKey, transactions, periodData }) {
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
               {pairMode && (
-                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>Select the offsetting transaction for: <strong>{pairMode.sourceTransaction.description}</strong></span>
-                  <button onClick={() => setPairMode(null)} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                  <TextInput
+                    size="xs"
+                    placeholder="Pair description (optional)"
+                    value={pairDesc}
+                    onChange={(e) => setPairDesc(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button onClick={() => { setPairMode(null); setPairDesc(''); }} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                </div>
+              )}
+              {pairNotice && (
+                <div style={{ padding: '8px 12px', background: '#2d2d3a', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{pairNotice}</span>
+                  <button onClick={() => setPairNotice(null)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}>×</button>
                 </div>
               )}
                 <table className="transactions-table">
