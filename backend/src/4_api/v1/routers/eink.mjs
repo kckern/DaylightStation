@@ -34,7 +34,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * @param {Object} config
- * @param {import('#applications/eink/EinkPanelService.mjs').EinkPanelService} config.einkPanelService
+ * @param {import('#apps/eink/EinkPanelService.mjs').EinkPanelService} config.einkPanelService
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */

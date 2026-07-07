@@ -14,6 +14,6 @@
   "api-no-apps": 16,
   "api-no-domains": 12,
   "api-no-config": 2,
-  "no-applications-alias": 3,
+  "no-applications-alias": 0,
   "no-deep-relative-layer-cross": 40
 }
