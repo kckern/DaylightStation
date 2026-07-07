@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import http from 'node:http';
 import { createAgentMemoryRouter } from './createAgentMemoryRouter.mjs';
-import { WorkingMemoryState } from '../../../3_applications/agents/framework/WorkingMemory.mjs';
+import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
 
 const silentLogger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
