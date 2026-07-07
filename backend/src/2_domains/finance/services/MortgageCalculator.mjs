@@ -341,9 +341,26 @@ export class MortgageCalculator {
         let bridgeBalance = lastStatementBalance;
         let cumIntRunning = cumulativeInterest;
 
+        // Cycle 'YYYY-MM' (bill-month label) covers (prev cutoff, cycleEnd]
+        // where cycleEnd = cutoffDay of the month BEFORE the label.
+        const cycleEndOf = (cycle) => {
+          const [cy, cm] = cycle.split('-').map(Number);
+          let ey = cy, em = cm - 1;
+          if (em < 1) { em = 12; ey--; }
+          return `${ey}-${String(em).padStart(2, '0')}-${String(cutoffDay).padStart(2, '0')}`;
+        };
+
         for (const cycle of walkCycles) {
           const cycleTxns = bridgeByCycle[cycle] || [];
-          if (cycleTxns.length === 0) continue;
+          // A COMPLETED cycle with no payments still accrues interest — emit
+          // it (2026-07-06 audit §1.6). But skip empty cycles that are
+          // (a) still in flight as of asOfDate (a full month of interest
+          // would be pre-accrued and the projection start pushed a month
+          // into the future), or (b) already covered by the last statement.
+          if (cycleTxns.length === 0) {
+            const cycleEnd = cycleEndOf(cycle);
+            if (cycleEnd > asOfIso || cycleEnd <= lastStatementDate) continue;
+          }
 
           const opening = bridgeBalance;
           const interestAccrued = this.#round(opening * monthlyRate);
@@ -738,6 +755,13 @@ export class MortgageCalculator {
       }
     }
 
+    if (currentBalance > 0.01) {
+      throw new ValidationError(
+        `Payment plan "${plan.id || plan.title || 'unnamed'}" did not amortize within ${MAX_ITERATIONS} months — payments do not cover interest`,
+        { code: 'PLAN_DOES_NOT_AMORTIZE', details: { planId: plan.id, remainingBalance: this.#round(currentBalance) } }
+      );
+    }
+
     const payoffMonth = months[months.length - 1]?.month || `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`;
     const totalMonths = months.length || 1;
 
@@ -792,17 +816,23 @@ export class MortgageCalculator {
 
     if (amortization.length > 0) {
       const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
-      plans.push(...this.calculatePaymentPlans({
-        balance: projectionBalance,
-        interestRate,
-        minimumPayment: avgMonthlyPayment,
-        paymentPlans: [{
-          id: 'historical',
-          title: 'Historical Pace',
-          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
-        }],
-        startDate: projectionStartDate
-      }));
+      try {
+        plans.push(...this.calculatePaymentPlans({
+          balance: projectionBalance,
+          interestRate,
+          minimumPayment: avgMonthlyPayment,
+          paymentPlans: [{
+            id: 'historical',
+            title: 'Historical Pace',
+            subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
+          }],
+          startDate: projectionStartDate
+        }));
+      } catch (err) {
+        // Historical Pace is derived, not configured — an interest-only payment
+        // history must not fail the whole compile. Configured plans still throw.
+        if (err?.code !== 'PLAN_DOES_NOT_AMORTIZE') throw err;
+      }
     }
 
     return plans;
