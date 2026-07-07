@@ -42,18 +42,6 @@ function downsampleZones(zones, targetRows) {
   return result;
 }
 
-function downsampleValues(arr, targetRows) {
-  if (!arr || arr.length <= targetRows) return arr || [];
-  const windowSize = Math.max(1, Math.ceil(arr.length / targetRows));
-  const result = [];
-  for (let i = 0; i < arr.length; i += windowSize) {
-    const window = arr.slice(i, i + windowSize);
-    const valid = window.filter(v => v != null);
-    result.push(valid.length > 0 ? Math.max(...valid) : null);
-  }
-  return result;
-}
-
 // ─── Renderer Factory ─────────────────────────────────────
 
 /**
@@ -533,7 +521,6 @@ export function createFitnessReceiptRenderer(config) {
     ctx.fillText('LEADERBOARD', margin, y);
     y += lbHeaderHeight;
 
-    const zoneOrder = ['cool', 'active', 'warm', 'hot', 'fire'];
     const zoneDensity = { cool: 6, active: 4, warm: 3, hot: 2, fire: 0 };
     const zoneLabelsMap = { cool: 'Cool', active: 'Active', warm: 'Warm', hot: 'Hot', fire: 'Fire' };
     const numBuckets = theme.leaderboard.histogramBuckets;
@@ -639,7 +626,7 @@ export function createFitnessReceiptRenderer(config) {
           // Pick zone with most votes; on tie prefer higher intensity
           let bestZone = 'cool';
           let bestCount = 0;
-          for (const zone of zoneOrder) {
+          for (const zone of ZONE_ORDER) {
             const count = votes[zone] || 0;
             if (count > bestCount || (count === bestCount && count > 0 && zoneIntensity(zone) > zoneIntensity(bestZone))) {
               bestZone = zone;
