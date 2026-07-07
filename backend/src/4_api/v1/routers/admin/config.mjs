@@ -19,6 +19,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 // Directories users can list, read, and write (relative to data root)
 const ALLOWED_DIRS = [
@@ -126,31 +127,25 @@ export function createAdminConfigRouter(config) {
   // GET /files - List all editable config files
   // ===========================================================================
 
-  router.get('/files', (req, res) => {
-    try {
-      const dataRoot = getDataRoot();
-      const files = [];
+  router.get('/files', asyncHandler((req, res) => {
+    const dataRoot = getDataRoot();
+    const files = [];
 
-      for (const dir of ALL_DIRS) {
-        const absDir = path.join(dataRoot, dir);
-        files.push(...collectYamlFiles(absDir, dataRoot));
-      }
-
-      logger.info?.('admin.config.files.listed', { count: files.length });
-
-      res.json({ files, count: files.length });
-    } catch (error) {
-      logger.error?.('admin.config.files.list.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to list config files' });
+    for (const dir of ALL_DIRS) {
+      const absDir = path.join(dataRoot, dir);
+      files.push(...collectYamlFiles(absDir, dataRoot));
     }
-  });
+
+    logger.info?.('admin.config.files.listed', { count: files.length });
+
+    res.json({ files, count: files.length });
+  }));
 
   // ===========================================================================
   // GET /files/* - Read a config file
   // ===========================================================================
 
-  router.get('/files/*', (req, res) => {
-    try {
+  router.get('/files/*', asyncHandler((req, res) => {
       const rawPath = req.params[0];
       if (!rawPath) {
         return res.status(400).json({ error: 'File path is required' });
@@ -212,18 +207,13 @@ export function createAdminConfigRouter(config) {
         size: stat.size,
         modified: stat.mtime.toISOString()
       });
-    } catch (error) {
-      logger.error?.('admin.config.file.read.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to read config file' });
-    }
-  });
+  }));
 
   // ===========================================================================
   // PUT /files/* - Write a config file
   // ===========================================================================
 
-  router.put('/files/*', (req, res) => {
-    try {
+  router.put('/files/*', asyncHandler((req, res) => {
       const rawPath = req.params[0];
       if (!rawPath) {
         return res.status(400).json({ error: 'File path is required' });
@@ -316,11 +306,9 @@ export function createAdminConfigRouter(config) {
         size: stat.size,
         modified: stat.mtime.toISOString()
       });
-    } catch (error) {
-      logger.error?.('admin.config.file.write.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to write config file' });
-    }
-  });
+  }));
+
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }
