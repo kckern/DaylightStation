@@ -57,6 +57,7 @@ function ReloadButton({ finance }) {
       className={refreshing ? 'reload reloading' : 'reload'}
       onClick={refresh}
       disabled={refreshing}
+      aria-label="Refresh finance data"
     >
       {refreshing ? <img src={spinner} alt="loading" /> : '🔄'}
     </button>
@@ -112,6 +113,7 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
             className="payroll-btn"
             onClick={() => setDrawerContent({ type: 'payroll', title: 'Sync Payroll' })}
             title="Sync Payroll"
+            aria-label="Sync payroll"
             style={{ fontSize: '1.5rem', cursor: 'pointer', background: 'none', border: 'none', marginLeft: '0.5rem' }}
           >
             💰

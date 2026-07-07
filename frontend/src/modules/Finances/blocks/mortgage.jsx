@@ -3,6 +3,7 @@ import { formatAsCurrency } from "../blocks";
 import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
 import { calculateCost } from "../lib/costOfCapital.mjs";
 import { EmptyState } from "../EmptyState.jsx";
+import { pressable } from "../lib/a11y.mjs";
 import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -26,10 +27,9 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
   return (
     <div className="budget-block" style={{ display: 'flex', flexDirection: 'column' }}>
-      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer', flexShrink: 0 }}>Mortgage</h2>
+      <h2 {...pressable(handleTitleClick, { 'aria-label': 'Open mortgage account in Buxfer (new tab)', style: { cursor: 'pointer', flexShrink: 0 } })}>Mortgage</h2>
       <div
-        onClick={() => openDrawer('amortization')}
-        style={{ cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' }}
+        {...pressable(() => openDrawer('amortization'), { 'aria-label': 'Open mortgage details', style: { cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' } })}
       >
         {hasData ? <MortgageChart mortgage={mortgage} /> : <EmptyState message="No mortgage data" />}
       </div>

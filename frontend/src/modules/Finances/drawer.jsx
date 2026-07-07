@@ -12,6 +12,7 @@ import { TextInput } from '@mantine/core';
 import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
 import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
 import { groupSmall } from './lib/groupSmall.mjs';
+import { pressable } from './lib/a11y.mjs';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { useFinanceReload } from './FinanceDataContext.jsx';
 
@@ -160,19 +161,34 @@ export function Drawer({ cellKey, transactions, periodData }) {
                 <table className="transactions-table">
                 <thead>
                     <tr>
-                      <th onClick={() => handleSorting('date')}>
+                      <th onClick={() => handleSorting('date')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('date'); } }}
+                        aria-sort={sortConfig.key === 'date' ? sortConfig.direction : 'none'}>
                         Date {getSortIcon('date')}
                       </th>
-                      <th onClick={() => handleSorting('accountName')}>
+                      <th onClick={() => handleSorting('accountName')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('accountName'); } }}
+                        aria-sort={sortConfig.key === 'accountName' ? sortConfig.direction : 'none'}>
                         Account {getSortIcon('accountName')}
                       </th>
-                      <th onClick={() => handleSorting('amount')}>
+                      <th onClick={() => handleSorting('amount')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('amount'); } }}
+                        aria-sort={sortConfig.key === 'amount' ? sortConfig.direction : 'none'}>
                         Amount {getSortIcon('amount')}
                       </th>
-                      <th onClick={() => handleSorting('description')} style={{ textAlign: 'left' }}>
+                      <th onClick={() => handleSorting('description')} style={{ textAlign: 'left' }}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('description'); } }}
+                        aria-sort={sortConfig.key === 'description' ? sortConfig.direction : 'none'}>
                         Description {getSortIcon('description')}
                       </th>
-                      <th onClick={() => handleSorting('tagNames')}>
+                      <th onClick={() => handleSorting('tagNames')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('tagNames'); } }}
+                        aria-sort={sortConfig.key === 'tagNames' ? sortConfig.direction : 'none'}>
                         Tags {getSortIcon('tagNames')}
                       </th>
                       <th style={{ width: '2rem' }}></th>
@@ -202,7 +218,9 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                     <tr key={guid} className={rowClassName + (pairMode ? ' pair-selectable' : '')}
                                       onClick={() => pairMode ? handleSelectPairTarget(transaction) : handleRowClick(transaction)}
                                       title={pairMode ? 'Select as offsetting transaction' : (hasId ? 'Open in Buxfer (new tab)' : undefined)}
-                                      style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}>
+                                      style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}
+                                      tabIndex={0}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (pairMode ? handleSelectPairTarget : handleRowClick)(transaction); } }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
@@ -221,6 +239,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                                 className="txn-menu-btn"
                                                 onClick={() => setMenuOpenId(menuOpenId === transaction.id ? null : transaction.id)}
                                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: '0.9rem', color: '#888' }}
+                                                aria-label="Transaction actions"
                                               >⋯</button>
                                               {menuOpenId === transaction.id && (
                                                 <div className="txn-menu-dropdown" style={{
@@ -913,16 +932,17 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
       return (
         <span key={i}>
           <span
-        onClick={() => handleBackClick(i)}
-        style={{
-          fontWeight: i === crumbs.length - 1 ? "bold" : "normal",
-          color: "black",
-          textDecoration: "none",
-          cursor: "pointer",
-          backgroundColor: "#00000022",
-          borderRadius: "4px",
-          padding: "0 1ex",
-        }}
+        {...pressable(() => handleBackClick(i), {
+          style: {
+            fontWeight: i === crumbs.length - 1 ? "bold" : "normal",
+            color: "black",
+            textDecoration: "none",
+            cursor: "pointer",
+            backgroundColor: "#00000022",
+            borderRadius: "4px",
+            padding: "0 1ex",
+          }
+        })}
           >
         {c}
           </span>
