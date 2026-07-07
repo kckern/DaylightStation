@@ -1,1 +1,4 @@
 *.local.json
+secret-patterns.local.txt
+# re-include hook scripts (root .gitignore ignores *.sh globally)
+!hooks/*.sh
