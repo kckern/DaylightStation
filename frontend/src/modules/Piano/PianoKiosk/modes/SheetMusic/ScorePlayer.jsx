@@ -82,7 +82,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
-  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null });
+  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState('learn');
   const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
@@ -114,6 +114,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const steps = layout.steps;
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
+
+  // Overlay geometry must match what's on screen: after a zoom/flow change the
+  // sheet repaints immediately but extraction may be deferred (holdExtraction) —
+  // until onLayout catches up, cursor/notehead coords belong to the OLD engrave
+  // and must not be drawn. Null/undefined layout.flow/scale (pre-first-layout)
+  // are treated as fresh so the very first paint isn't hidden.
+  const layoutFresh = (!layout.flow || layout.flow === flow) && (layout.scale == null || layout.scale === scale);
 
   // ── Learn focus range (practice a section / custom loop) ──────────────────────
   // Sections come from rehearsal marks (measure NUMBERS); `layout.measures` maps
@@ -417,7 +424,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the other flow (mid re-engrave — coordinates would be stale).
   useEffect(() => {
     if (mode === 'perform' || !current) return;
-    if (layout.flow && layout.flow !== flow) return;
+    if (!layoutFresh) return;
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     if (!el || !rdr) return;
@@ -434,7 +441,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // avoids a vertical micro-scroll on every step within a system.
       if (Math.abs(targetTop - el.scrollTop) > el.clientHeight * 0.18) tweenScrollTo(el, { top: targetTop });
     }
-  }, [step, flow, mode, current, layout.flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, flow, mode, current, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
   // Perform page indicator — a rough page = floor(scrollPos / viewport) + 1 over
@@ -724,8 +731,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   return (
     <div className="piano-score-player">
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
-        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady}>
-          {mode !== 'perform' && current && (
+        <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
+          {mode !== 'perform' && current && layoutFresh && (
             <div
               ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
@@ -738,14 +745,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
               }}
             />
           )}
-          {showGrades && (
+          {showGrades && layoutFresh && (
             <MeasureGradeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
               grades={grades}
             />
           )}
-          {mode !== 'perform' && (
+          {mode !== 'perform' && layoutFresh && (
             <NoteHighlightLayer
               step={steps[step]}
               activeParts={activeParts}

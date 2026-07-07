@@ -133,6 +133,34 @@ describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   });
 });
 
+describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
+  it('hides the cursor while the reported layout scale is stale, shows it once it matches', async () => {
+    // The renderer reports a layout whose scale (1.3) does NOT match the player's
+    // current scale (1) — a pre-zoom (deferred-extraction) layout. Overlays must
+    // stay hidden until onLayout catches up.
+    h.layoutExtras = { scale: 1.3 };
+    renderPlayer();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-cursor')).toBeNull(); // stale → hidden
+
+    // Move the Size slider to 1.3 → the mock re-fires onLayout with scale 1.3,
+    // which now MATCHES the player's scale → layout is fresh → cursor appears.
+    fireEvent.click(screen.getByRole('button', { name: /size/i }));
+    const slider = screen.getByRole('slider', { name: /size/i });
+    fireEvent.change(slider, { target: { value: '1.3' } });
+    fireEvent.mouseUp(slider);
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-cursor')).not.toBeNull(); // fresh → shown
+  });
+
+  it('shows the cursor on the initial layout (null scale/flow treated as fresh)', async () => {
+    renderPlayer();
+    await act(async () => {});
+    // Default mock reports flow 'wrapped' (matches) and no scale (null → fresh).
+    expect(document.querySelector('.piano-score-cursor')).not.toBeNull();
+  });
+});
+
 describe('ScorePlayer — Perform mode pedal page-turn', () => {
   it('turns one page per pedal press (rising edge), not per CC message', async () => {
     const scrollBy = vi.fn();
