@@ -17,6 +17,16 @@ describe('audit-layer-imports', () => {
       "import fs from 'node:fs';");
     expect(v.some(r => r.rule === 'apps-no-fs')).toBe(true);
   });
+  it('allows 0_system to import the domain shared-kernel utils (D4)', () => {
+    const v = scanViolations('backend/src/0_system/utils/time.mjs',
+      "import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';");
+    expect(v.some(r => r.rule === 'system-no-upward')).toBe(false);
+  });
+  it('still flags 0_system importing a non-core domain', () => {
+    const v = scanViolations('backend/src/0_system/x.mjs',
+      "import { Foo } from '#domains/fitness/entities/Foo.mjs';");
+    expect(v.some(r => r.rule === 'system-no-upward')).toBe(true);
+  });
   it('exposes a rule table', () => {
     expect(RULES.length).toBeGreaterThan(5);
   });
