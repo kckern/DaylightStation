@@ -123,7 +123,7 @@ survives reboot** — matching both "the jank comes and goes with no page-side c
 
 **Control measurement that reframes the throttle:** a **2.5-hour-old page** (screen off in
 daydream ~2 h) was woken via FKB REST `screenOn` — *not touch* — and immediately read
-**60 fps, held at every 1-minute sample for ≥6 minutes with zero input**. So the 4–8 fps clamp is NOT
+**60 fps, held at every 1-minute sample for a full 10 minutes with zero input**. So the 4–8 fps clamp is NOT
 a constant "no-touch-for-N-minutes" clock; it is **episodic**, active only under some system
 state — consistent with power-save-gated scheduling. The earlier "input-recency" framing
 likely described the *boost that masks* the state, not the throttle's own timer. During the
