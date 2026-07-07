@@ -253,6 +253,27 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic.mock.calls.length).toBeGreaterThan(panicsAtPause); // delayed panic for late-dispatched note-ons
   });
 
+  it('resume within the flush window cancels the stale delayed panic (does not cut resumed playback)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // playing, note sounding
+    screen.getByText('❚❚').click();        // pause → immediate flush + delayed panic armed
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // still inside the ~460ms window
+    h.sendPanic.mockClear();
+    screen.getByText('▶').click();          // resume within the window → must cancel the stale panic
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(500)); // advance past where the stale panic would have fired
+    expect(h.sendPanic).not.toHaveBeenCalled(); // resumed playback was NOT cut
+  });
+
   it('tempo control scales the Listen performance timeline', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // written = 1000ms/quarter
     renderPlayer();
