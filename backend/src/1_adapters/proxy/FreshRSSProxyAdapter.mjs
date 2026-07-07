@@ -7,8 +7,6 @@
  * @module adapters/proxy
  */
 
-import { configService } from '#system/config/index.mjs';
-
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -129,21 +127,6 @@ export class FreshRSSProxyAdapter {
   getTimeout() {
     return 30000;
   }
-}
-
-/**
- * Create a FreshRSSProxyAdapter from ConfigService
- * @param {Object} [options]
- * @returns {FreshRSSProxyAdapter}
- */
-export function createFreshRSSProxyAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('freshrss') || {};
-  const host = adapterConfig.host;
-  const username = configService.getSecret('FRESHRSS_USERNAME');
-  const password = configService.getSecret('FRESHRSS_PASSWORD');
-  const apiKey = configService.getSecret('FRESHRSS_API_KEY');
-
-  return new FreshRSSProxyAdapter({ host, username, password, apiKey }, options);
 }
 
 export default FreshRSSProxyAdapter;

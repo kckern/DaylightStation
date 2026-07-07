@@ -18,7 +18,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IConversationDatastore } from '#apps/common/ports/IConversationDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { listHouseholdDirs, parseHouseholdId } from '#system/config/configLoader.mjs';
+import { listHouseholdDirs, parseHouseholdId } from '#system/utils/householdDirs.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {
   #userDataService;

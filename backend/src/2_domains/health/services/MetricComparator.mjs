@@ -1,6 +1,7 @@
 // backend/src/2_domains/health/services/MetricComparator.mjs
 
 import { MetricRegistry } from './MetricRegistry.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Comparison and correlation primitives. Builds on MetricAggregator —
@@ -20,10 +21,10 @@ import { MetricRegistry } from './MetricRegistry.mjs';
  */
 export class MetricComparator {
   constructor(deps) {
-    if (!deps?.aggregator)     throw new Error('MetricComparator requires aggregator');
-    if (!deps?.periodResolver) throw new Error('MetricComparator requires periodResolver');
-    if (!deps?.healthStore)    throw new Error('MetricComparator requires healthStore');
-    if (!deps?.healthService)  throw new Error('MetricComparator requires healthService');
+    if (!deps?.aggregator)     throw new ValidationError('MetricComparator requires aggregator', { code: 'MISSING_AGGREGATOR', field: 'aggregator' });
+    if (!deps?.periodResolver) throw new ValidationError('MetricComparator requires periodResolver', { code: 'MISSING_PERIOD_RESOLVER', field: 'periodResolver' });
+    if (!deps?.healthStore)    throw new ValidationError('MetricComparator requires healthStore', { code: 'MISSING_HEALTH_STORE', field: 'healthStore' });
+    if (!deps?.healthService)  throw new ValidationError('MetricComparator requires healthService', { code: 'MISSING_HEALTH_SERVICE', field: 'healthService' });
     this.aggregator = deps.aggregator;
     this.periodResolver = deps.periodResolver;
     this.healthStore = deps.healthStore;
@@ -298,7 +299,7 @@ const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
 function buildDateMatcher(condition) {
   if ('weekday' in condition) {
     const idx = WEEKDAY_INDEX[condition.weekday];
-    if (idx === undefined) throw new Error(`MetricComparator: unknown weekday "${condition.weekday}"`);
+    if (idx === undefined) throw new ValidationError(`MetricComparator: unknown weekday "${condition.weekday}"`, { code: 'UNKNOWN_WEEKDAY', field: 'weekday', value: condition.weekday });
     return (date) => new Date(date + 'T00:00:00Z').getUTCDay() === idx;
   }
   if ('weekend' in condition) {
@@ -319,7 +320,7 @@ function buildDateMatcher(condition) {
   if ('tracked' in condition || 'workout' in condition) {
     return () => true;
   }
-  throw new Error(`MetricComparator: unknown condition shape ${JSON.stringify(condition)}`);
+  throw new ValidationError(`MetricComparator: unknown condition shape ${JSON.stringify(condition)}`, { code: 'UNKNOWN_CONDITION_SHAPE', field: 'condition', value: condition });
 }
 
 function describeCondition(condition) {

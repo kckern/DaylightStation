@@ -15,7 +15,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -27,7 +26,8 @@ export class TodoistHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
   #currentStore;
-  #configService;
+  #getUserAuth;
+  #apiKey;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -41,7 +41,8 @@ export class TodoistHarvester extends IHarvester {
    * @param {Object} config.httpClient - HTTP client (axios-compatible)
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} [config.currentStore] - Store for current data YAML
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.apiKey] - Todoist API key (from secrets)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -50,8 +51,9 @@ export class TodoistHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     currentStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    apiKey,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -66,7 +68,8 @@ export class TodoistHarvester extends IHarvester {
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
     this.#currentStore = currentStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#apiKey = apiKey;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -118,8 +121,8 @@ export class TodoistHarvester extends IHarvester {
       this.#logger.info?.('todoist.harvest.start', { username, daysBack });
 
       // Get API key
-      const auth = this.#configService?.getUserAuth?.('todoist', username) || {};
-      const apiKey = auth.api_key || configService.getSecret('TODOIST_KEY');
+      const auth = this.#getUserAuth?.('todoist', username) || {};
+      const apiKey = auth.api_key || this.#apiKey;
 
       if (!apiKey) {
         throw new InfrastructureError('Todoist API key not found', {

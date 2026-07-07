@@ -37,6 +37,8 @@
  * @module domains/health/entities
  */
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 const VALID_SOURCES = new Set(['inbody', 'bodyspec_dexa', 'other']);
 const VALID_DEVICE_TYPES = new Set(['clinical_BIA', 'DEXA', 'consumer_BIA']);
 const VALID_BMR_METHODS = new Set(['measured', 'katch_mcardle', 'estimated']);
@@ -81,7 +83,7 @@ export class HealthScan {
     // Required fields presence
     for (const field of REQUIRED_FIELDS) {
       if (raw[field] === undefined || raw[field] === null) {
-        throw new Error(`HealthScan: missing required field "${field}"`);
+        throw new ValidationError(`HealthScan: missing required field "${field}"`, { code: 'MISSING_REQUIRED_FIELD', field });
       }
     }
 

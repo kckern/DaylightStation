@@ -3,4 +3,4 @@
  * @module adapters/hardware/tts
  */
 
-export { TTSAdapter, createTTSAdapter } from './TTSAdapter.mjs';
+export { OpenAITTSAdapter } from './OpenAITTSAdapter.mjs';

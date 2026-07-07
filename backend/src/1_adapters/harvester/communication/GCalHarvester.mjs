@@ -17,7 +17,6 @@ import { google } from 'googleapis';
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -28,7 +27,11 @@ export class GCalHarvester extends IHarvester {
   #lifelogStore;
   #currentStore;
   #sharedStore;
-  #configService;
+  #getUserAuth;
+  #googleClientId;
+  #googleClientSecret;
+  #googleRedirectUri;
+  #googleRefreshToken;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -38,7 +41,11 @@ export class GCalHarvester extends IHarvester {
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} config.currentStore - Store for current calendar state
    * @param {Object} [config.sharedStore] - Store for household shared calendar
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.googleClientId] - Google OAuth client id (from secrets)
+   * @param {string} [config.googleClientSecret] - Google OAuth client secret (from secrets)
+   * @param {string} [config.googleRedirectUri] - Google OAuth redirect URI (from secrets)
+   * @param {string} [config.googleRefreshToken] - Fallback Google refresh token (from secrets)
    * @param {string} [config.timezone] - Timezone for date formatting
    * @param {Object} [config.logger] - Logger instance
    */
@@ -46,8 +53,12 @@ export class GCalHarvester extends IHarvester {
     lifelogStore,
     currentStore,
     sharedStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    googleClientId,
+    googleClientSecret,
+    googleRedirectUri,
+    googleRefreshToken,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -62,7 +73,11 @@ export class GCalHarvester extends IHarvester {
     this.#lifelogStore = lifelogStore;
     this.#currentStore = currentStore;
     this.#sharedStore = sharedStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#googleClientId = googleClientId;
+    this.#googleClientSecret = googleClientSecret;
+    this.#googleRedirectUri = googleRedirectUri;
+    this.#googleRefreshToken = googleRefreshToken;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -229,11 +244,11 @@ export class GCalHarvester extends IHarvester {
    * @private
    */
   async #createCalendarClient(username) {
-    const GOOGLE_CLIENT_ID = this.#configService?.getSecret?.('GOOGLE_CLIENT_ID');
-    const GOOGLE_CLIENT_SECRET = this.#configService?.getSecret?.('GOOGLE_CLIENT_SECRET');
-    const GOOGLE_REDIRECT_URI = this.#configService?.getSecret?.('GOOGLE_REDIRECT_URI');
-    const auth = this.#configService?.getUserAuth?.('google', username) || {};
-    const refreshToken = auth.refresh_token || this.#configService?.getSecret?.('GOOGLE_REFRESH_TOKEN');
+    const GOOGLE_CLIENT_ID = this.#googleClientId;
+    const GOOGLE_CLIENT_SECRET = this.#googleClientSecret;
+    const GOOGLE_REDIRECT_URI = this.#googleRedirectUri;
+    const auth = this.#getUserAuth?.('google', username) || {};
+    const refreshToken = auth.refresh_token || this.#googleRefreshToken;
 
     if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
       throw new InfrastructureError('Google Calendar credentials not found', {

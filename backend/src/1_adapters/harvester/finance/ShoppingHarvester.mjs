@@ -17,7 +17,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -94,7 +93,8 @@ export class ShoppingHarvester extends IHarvester {
   #gmailClientFactory;
   #aiGateway;
   #lifelogStore;
-  #configService;
+  #getUserHouseholdId;
+  #getHouseholdConfig;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -104,7 +104,8 @@ export class ShoppingHarvester extends IHarvester {
    * @param {Function} config.gmailClientFactory - Factory to create Gmail client (username) => gmail
    * @param {Object} config.aiGateway - AI gateway for receipt extraction
    * @param {Object} config.lifelogStore - Store for shopping data
-   * @param {Object} config.configService - ConfigService for credentials and config
+   * @param {(username: string) => string} [config.getUserHouseholdId] - Resolves a user's household id
+   * @param {(householdId: string) => Object} [config.getHouseholdConfig] - Resolves a household's config
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -112,8 +113,9 @@ export class ShoppingHarvester extends IHarvester {
     gmailClientFactory,
     aiGateway,
     lifelogStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserHouseholdId,
+    getHouseholdConfig,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -140,7 +142,8 @@ export class ShoppingHarvester extends IHarvester {
     this.#gmailClientFactory = gmailClientFactory;
     this.#aiGateway = aiGateway;
     this.#lifelogStore = lifelogStore;
-    this.#configService = configService;
+    this.#getUserHouseholdId = getUserHouseholdId;
+    this.#getHouseholdConfig = getHouseholdConfig;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -395,8 +398,8 @@ export class ShoppingHarvester extends IHarvester {
    */
   #loadConfig(username) {
     try {
-      const householdId = this.#configService?.getUserHouseholdId?.(username);
-      const config = this.#configService?.getHouseholdConfig?.(householdId);
+      const householdId = this.#getUserHouseholdId?.(username);
+      const config = this.#getHouseholdConfig?.(householdId);
       const shoppingConfig = config?.shopping;
 
       if (shoppingConfig?.enabled === false) {

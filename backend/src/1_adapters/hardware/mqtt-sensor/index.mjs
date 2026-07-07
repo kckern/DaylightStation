@@ -3,4 +3,4 @@
  * @module adapters/hardware/mqtt-sensor
  */
 
-export { MQTTSensorAdapter, createMQTTSensorAdapter } from './MQTTSensorAdapter.mjs';
+export { MQTTSensorAdapter } from './MQTTSensorAdapter.mjs';

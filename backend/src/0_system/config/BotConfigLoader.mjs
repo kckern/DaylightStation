@@ -11,6 +11,8 @@
 
 import path from 'path';
 import { loadYaml } from '../utils/FileIO.mjs';
+import { ConfigurationError } from '../utils/errors/index.mjs';
+import { deepMerge } from '../utils/deepMerge.mjs';
 
 /**
  * Environment variable interpolation pattern
@@ -57,30 +59,6 @@ function interpolateEnvVars(value) {
 }
 
 /**
- * Deep merge two objects
- * Arrays are replaced, not concatenated
- * @param {object} base - Base object
- * @param {object} override - Override object
- * @returns {object} - Merged object
- */
-function deepMerge(base, override) {
-  if (!override) return base;
-  if (!base) return override;
-
-  const result = { ...base };
-
-  for (const [key, value] of Object.entries(override)) {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = deepMerge(result[key], value);
-    } else {
-      result[key] = value;
-    }
-  }
-
-  return result;
-}
-
-/**
  * Load and merge bot configuration
  * @param {string} botName - Name of the bot (nutribot, journalist, etc.)
  * @param {object} options - Options
@@ -93,7 +71,10 @@ export function loadBotConfig(botName, options = {}) {
   const { configDir, skipCache = false, schema = null } = options;
 
   if (!configDir) {
-    throw new Error('configDir is required');
+    throw new ConfigurationError('configDir is required', {
+      code: 'CONFIG_DIR_REQUIRED',
+      key: 'configDir',
+    });
   }
 
   // Check cache
@@ -136,7 +117,11 @@ export function loadBotConfig(botName, options = {}) {
       const errors = result.error.issues.map(issue =>
         `${issue.path.join('.')}: ${issue.message}`
       ).join('\n');
-      throw new Error(`Configuration validation failed for ${botName}:\n${errors}`);
+      throw new ConfigurationError(`Configuration validation failed for ${botName}:\n${errors}`, {
+        code: 'CONFIG_VALIDATION_FAILED',
+        key: botName,
+        details: { errors },
+      });
     }
     config = result.data;
   }

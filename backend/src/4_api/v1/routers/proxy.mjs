@@ -2,7 +2,7 @@
 import express from 'express';
 import fs from 'fs';
 import nodePath from 'path';
-import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { streamFileWithRanges } from '#system/http/streamFile.mjs';
 import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
 import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
@@ -286,7 +286,7 @@ export function createProxyRouter(config) {
       const adapter = registry.get('local-content');
 
       if (!adapter) {
-        return res.status(500).json({ error: 'LocalContent adapter not configured' });
+        return res.status(503).json({ error: 'LocalContent adapter not configured' });
       }
 
       // Map type to prefix
@@ -340,7 +340,7 @@ export function createProxyRouter(config) {
    * Passthrough proxy for Plex API requests (thumbnails, transcodes, etc.)
    * Requires ProxyService to be configured for Plex.
    */
-  router.use('/plex', async (req, res) => {
+  router.use('/plex', async (req, res, next) => {
     try {
       // Use ProxyService - required for Plex proxying
       if (proxyService?.isConfigured?.('plex')) {
@@ -351,10 +351,8 @@ export function createProxyRouter(config) {
       // No fallback - ProxyService is required
       return res.status(503).json({ error: 'Plex proxy not configured (ProxyService required)' });
     } catch (err) {
-      console.error('[proxy] plex error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
+      if (res.headersSent) return res.end();
+      next(err);
     }
   });
 
@@ -363,7 +361,7 @@ export function createProxyRouter(config) {
    * Passthrough proxy for Immich API requests (thumbnails, videos, etc.)
    * Requires ProxyService to be configured for Immich.
    */
-  router.use('/immich', async (req, res) => {
+  router.use('/immich', async (req, res, next) => {
     try {
       if (proxyService?.isConfigured?.('immich')) {
         await proxyService.proxy('immich', req, res);
@@ -373,10 +371,8 @@ export function createProxyRouter(config) {
       // No fallback - ProxyService is required
       return res.status(503).json({ error: 'Immich proxy not configured (ProxyService required)' });
     } catch (err) {
-      console.error('[proxy] immich error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
+      if (res.headersSent) return res.end();
+      next(err);
     }
   });
 
@@ -506,7 +502,7 @@ export function createProxyRouter(config) {
    * Passthrough proxy for Audiobookshelf API requests (audio, covers, etc.)
    * Uses ProxyService for streaming with Bearer token auth
    */
-  router.use('/abs', async (req, res) => {
+  router.use('/abs', async (req, res, next) => {
     try {
       // Use ProxyService if available
       if (proxyService?.isConfigured?.('audiobookshelf')) {
@@ -517,10 +513,8 @@ export function createProxyRouter(config) {
       // No fallback for now - ABS requires ProxyService
       return res.status(503).json({ error: 'Audiobookshelf proxy not configured' });
     } catch (err) {
-      console.error('[proxy] audiobookshelf error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
+      if (res.headersSent) return res.end();
+      next(err);
     }
   });
 
@@ -787,6 +781,11 @@ export function createProxyRouter(config) {
       else res.end();
     }
   }));
+
+  // Errors that propagate out of the passthrough proxies (plex/immich/abs) map
+  // by name/status and hide internals on 5xx; streaming failures after headers
+  // are sent delegate to Express's default handler.
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }

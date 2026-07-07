@@ -20,9 +20,10 @@ async function readYamlDoc(filePath, logger, event) {
 
 // artmode.yml → { presets, defaults, frames }. `defaults` are merged beneath
 // every preset; `frames` is the named frame-variety catalog (insets + mat + crop).
-export async function loadArtmodeConfig(dataPath, logger = console) {
+// `householdDir` is the resolved household base dir (ConfigService.getHouseholdPath('')).
+export async function loadArtmodeConfig(householdDir, logger = console) {
   const doc = await readYamlDoc(
-    path.join(dataPath, 'household', 'config', 'artmode.yml'), logger, 'artmode.config.read_failed');
+    path.join(householdDir, 'config', 'artmode.yml'), logger, 'artmode.config.read_failed');
   return {
     presets: doc.presets || {}, defaults: doc.defaults || {}, frames: doc.frames || {},
     schedule: Array.isArray(doc.schedule) ? doc.schedule : [],
@@ -31,10 +32,10 @@ export async function loadArtmodeConfig(dataPath, logger = console) {
 
 // art.yml → the named collection catalog (the query definitions). Used to let a
 // bare collection name resolve as a preset, so `art:baroque` needs no passthrough
-// preset in artmode.yml.
-export async function loadArtCollections(dataPath, logger = console) {
+// preset in artmode.yml. `householdDir` is the resolved household base dir.
+export async function loadArtCollections(householdDir, logger = console) {
   const doc = await readYamlDoc(
-    path.join(dataPath, 'household', 'config', 'art.yml'), logger, 'art.collections.read_failed');
+    path.join(householdDir, 'config', 'art.yml'), logger, 'art.collections.read_failed');
   return doc.collections || {};
 }
 

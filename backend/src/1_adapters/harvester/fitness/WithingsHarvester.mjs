@@ -16,7 +16,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { WeightProcessor } from '#backend/src/2_domains/health/services/WeightProcessor.mjs';
 
@@ -40,7 +39,10 @@ export class WithingsHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
   #authStore;
-  #configService;
+  #getUserAuth;
+  #clientId;
+  #clientSecret;
+  #redirectUri;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -52,7 +54,10 @@ export class WithingsHarvester extends IHarvester {
    * @param {Object} config.httpClient - HTTP client with get/post methods
    * @param {Object} config.lifelogStore - Store for reading/writing lifelog YAML
    * @param {Object} config.authStore - Store for reading/writing auth tokens
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.clientId] - Withings OAuth client id (from secrets)
+   * @param {string} [config.clientSecret] - Withings OAuth client secret (from secrets)
+   * @param {string} [config.redirectUri] - Withings OAuth redirect URI (from secrets)
    * @param {Object} [config.weightProcessor] - WeightProcessor for analytics (auto-created if not provided)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
@@ -61,9 +66,12 @@ export class WithingsHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     authStore,
-    configService,
+    getUserAuth,
+    clientId,
+    clientSecret,
+    redirectUri,
     weightProcessor,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -84,7 +92,10 @@ export class WithingsHarvester extends IHarvester {
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
     this.#authStore = authStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#clientId = clientId;
+    this.#clientSecret = clientSecret;
+    this.#redirectUri = redirectUri;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -239,7 +250,7 @@ export class WithingsHarvester extends IHarvester {
       // Read from disk (authStore) to get latest refresh token,
       // NOT configService which caches at boot and never reloads.
       const authData = (await this.#authStore?.load?.(username, 'withings'))
-        || this.#configService?.getUserAuth?.('withings', username)
+        || this.#getUserAuth?.('withings', username)
         || {};
       const refresh = authData.refresh || authData.refresh_token;
 
@@ -249,11 +260,9 @@ export class WithingsHarvester extends IHarvester {
       }
 
       // Get credentials
-      const clientId = this.#configService?.getSecret?.('WITHINGS_CLIENT_ID') ||
-                       this.#configService?.getSecret?.('WITHINGS_CLIENT');
-      const clientSecret = this.#configService?.getSecret?.('WITHINGS_CLIENT_SECRET') ||
-                          this.#configService?.getSecret?.('WITHINGS_SECRET');
-      const redirectUri = this.#configService?.getSecret?.('WITHINGS_REDIRECT');
+      const clientId = this.#clientId;
+      const clientSecret = this.#clientSecret;
+      const redirectUri = this.#redirectUri;
 
       if (!clientId || !clientSecret) {
         this.#logger.error?.('withings.auth.credentials_missing', { message: 'WITHINGS_CLIENT_ID/SECRET missing' });

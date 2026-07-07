@@ -19,7 +19,6 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
 
@@ -33,7 +32,11 @@ export class StravaHarvester extends IHarvester {
   #stravaClient;
   #lifelogStore;
   #authStore;
-  #configService;
+  #getUserAuth;
+  #getUserDir;
+  #clientId;
+  #redirectUri;
+  #mediaDir;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -45,7 +48,11 @@ export class StravaHarvester extends IHarvester {
    * @param {Object} config.stravaClient - Strava API client { refreshToken, getActivities, getActivityStreams }
    * @param {Object} config.lifelogStore - Store for reading/writing lifelog YAML
    * @param {Object} config.authStore - Store for reading/writing auth tokens
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {(username: string) => string} [config.getUserDir] - Resolves a user's data directory
+   * @param {string} [config.clientId] - Strava OAuth client id (from secrets)
+   * @param {string} [config.redirectUri] - Strava OAuth redirect URI (from secrets)
+   * @param {string} [config.mediaDir] - Media root directory for archiving
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {number} [config.rateLimitDelayMs=5000] - Delay between stream fetches
    * @param {string|null} [config.fitnessHistoryDir=null] - Path to fitness history YAML directory
@@ -55,8 +62,12 @@ export class StravaHarvester extends IHarvester {
     stravaClient,
     lifelogStore,
     authStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    getUserDir,
+    clientId,
+    redirectUri,
+    mediaDir,
+    timezone = 'America/Los_Angeles',
     rateLimitDelayMs = 5000,
     fitnessHistoryDir = null,
     logger = console,
@@ -79,7 +90,11 @@ export class StravaHarvester extends IHarvester {
     this.#stravaClient = stravaClient;
     this.#lifelogStore = lifelogStore;
     this.#authStore = authStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#getUserDir = getUserDir;
+    this.#clientId = clientId;
+    this.#redirectUri = redirectUri;
+    this.#mediaDir = mediaDir;
     this.#timezone = timezone;
     this.#rateLimitDelayMs = rateLimitDelayMs;
     this.#logger = logger;
@@ -274,8 +289,8 @@ export class StravaHarvester extends IHarvester {
    * @returns {Object} Object with authorization URL
    */
   reauthSequence(options = {}) {
-    const clientId = this.#configService?.getSecret?.('STRAVA_CLIENT_ID');
-    const defaultRedirectUri = this.#configService?.getSecret?.('STRAVA_URL') ||
+    const clientId = this.#clientId;
+    const defaultRedirectUri = this.#redirectUri ||
                                'http://localhost:3000/api/auth/strava/callback';
     const redirectUri = options.redirectUri || defaultRedirectUri;
 
@@ -298,7 +313,7 @@ export class StravaHarvester extends IHarvester {
       // Read from disk (authStore) to get latest refresh token,
       // NOT configService which caches at boot and never reloads.
       const authData = (await this.#authStore?.load?.(username, 'strava'))
-        || this.#configService?.getUserAuth?.('strava', username)
+        || this.#getUserAuth?.('strava', username)
         || {};
       const refreshToken = authData.refresh;
 
@@ -582,7 +597,14 @@ export class StravaHarvester extends IHarvester {
    * @private
    */
   #getMediaArchiveDir() {
-    const mediaDir = this.#configService?.getMediaDir?.() || './media';
+    const mediaDir = this.#mediaDir;
+    if (!mediaDir) {
+      throw new InfrastructureError('StravaHarvester requires mediaDir for media archiving', {
+        code: 'MISSING_CONFIG',
+        service: 'Strava',
+        field: 'mediaDir'
+      });
+    }
     return path.join(mediaDir, 'archives', 'strava');
   }
 
@@ -591,7 +613,14 @@ export class StravaHarvester extends IHarvester {
    * @private
    */
   #getUserStravaDir(username) {
-    const userDir = this.#configService?.getUserDir?.(username) || `./data/users/${username}`;
+    const userDir = this.#getUserDir?.(username);
+    if (!userDir) {
+      throw new InfrastructureError('StravaHarvester requires getUserDir to resolve user directory', {
+        code: 'MISSING_CONFIG',
+        service: 'Strava',
+        field: 'getUserDir'
+      });
+    }
     return path.join(userDir, 'lifelog', 'strava');
   }
 
