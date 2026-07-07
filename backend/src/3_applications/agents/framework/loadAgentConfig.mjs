@@ -1,5 +1,7 @@
 // backend/src/3_applications/agents/framework/loadAgentConfig.mjs
 
+import { deepMerge } from '#system/utils/deepMerge.mjs';
+
 // Hardcoded defaults match the SAFE state — Mastra Memory layers all
 // disabled. Re-enable in agents.yml overrides once upstream Mastra
 // (memory/schema-compat) bugs are fixed.
@@ -27,18 +29,6 @@ const HARDCODED_DEFAULTS = Object.freeze({
     },
   },
 });
-
-function deepMerge(base, override) {
-  if (override === null || override === undefined) return base;
-  if (typeof base !== 'object' || base === null) return override;
-  if (typeof override !== 'object') return override;
-  if (Array.isArray(base) || Array.isArray(override)) return override;
-  const out = { ...base };
-  for (const key of Object.keys(override)) {
-    out[key] = (key in base) ? deepMerge(base[key], override[key]) : override[key];
-  }
-  return out;
-}
 
 /**
  * Load and resolve an agent's memory configuration.

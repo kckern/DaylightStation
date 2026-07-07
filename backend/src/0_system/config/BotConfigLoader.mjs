@@ -12,6 +12,7 @@
 import path from 'path';
 import { loadYaml } from '../utils/FileIO.mjs';
 import { ConfigurationError } from '../utils/errors/index.mjs';
+import { deepMerge } from '../utils/deepMerge.mjs';
 
 /**
  * Environment variable interpolation pattern
@@ -55,30 +56,6 @@ function interpolateEnvVars(value) {
   }
 
   return value;
-}
-
-/**
- * Deep merge two objects
- * Arrays are replaced, not concatenated
- * @param {object} base - Base object
- * @param {object} override - Override object
- * @returns {object} - Merged object
- */
-function deepMerge(base, override) {
-  if (!override) return base;
-  if (!base) return override;
-
-  const result = { ...base };
-
-  for (const [key, value] of Object.entries(override)) {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = deepMerge(result[key], value);
-    } else {
-      result[key] = value;
-    }
-  }
-
-  return result;
 }
 
 /**

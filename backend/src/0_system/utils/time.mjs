@@ -1,64 +1,31 @@
 /**
- * Time utilities
+ * Time utilities (system layer)
  * @module infrastructure/utils/time
  *
- * Timezone-aware timestamp formatting.
+ * Thin system-layer facade over the domain shared-kernel time utilities
+ * (#domains/core/utils/time.mjs, the SSOT). Adds `new Date()` defaults and the
+ * household-default-timezone convenience wrappers (nowTs / nowTs24 / nowDate /
+ * nowMonth). These format directly against DEFAULT_TIMEZONE (the household
+ * default) — no dependency on any config singleton (S-4).
  */
 
-import { configService } from '../config/index.mjs';
+import {
+  formatLocalTimestamp as _formatLocalTimestamp,
+  parseToDate,
+  getDateInTimezone,
+} from '#domains/core/utils/time.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
-/**
- * Get a date formatter for a specific timezone
- * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
- * @returns {Intl.DateTimeFormat}
- */
-function getFormatter(timezone = DEFAULT_TIMEZONE) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  });
-}
+export { parseToDate };
 
 /**
- * Format a date as a local timestamp string
+ * Format a date as a local timestamp string (24-hour)
  * @param {Date} [date=new Date()] - Date to format
  * @param {string} [timezone=DEFAULT_TIMEZONE] - IANA timezone
  * @returns {string} Formatted timestamp (YYYY-MM-DD HH:mm:ss)
  */
 export function formatLocalTimestamp(date = new Date(), timezone = DEFAULT_TIMEZONE) {
-  try {
-    const parts = getFormatter(timezone).formatToParts(date);
-    const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-    const year = asMap.year;
-    const month = asMap.month;
-    const day = asMap.day;
-    const hour = asMap.hour;
-    const minute = asMap.minute;
-    const second = asMap.second;
-    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
-  } catch (err) {
-    // Fallback to ISO without timezone formatting
-    return new Date(date).toISOString().replace('T', ' ').split('.')[0];
-  }
-}
-
-/**
- * Parse a value to a Date object
- * @param {any} value - Value to parse
- * @returns {Date|null}
- */
-export function parseToDate(value) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (!isNaN(parsed.getTime())) return parsed;
-  return null;
+  return _formatLocalTimestamp(date, timezone);
 }
 
 /**
@@ -67,7 +34,7 @@ export function parseToDate(value) {
  * @returns {string} Date in YYYY-MM-DD format
  */
 export function getCurrentDate(timezone = DEFAULT_TIMEZONE) {
-  return formatLocalTimestamp(new Date(), timezone).split(' ')[0];
+  return getDateInTimezone(new Date(), timezone);
 }
 
 /**
@@ -80,150 +47,78 @@ export function getCurrentHour(timezone = DEFAULT_TIMEZONE) {
   const timeStr = now.toLocaleTimeString('en-US', {
     timeZone: timezone,
     hour: 'numeric',
-    hour12: false
+    hour12: false,
   });
   return parseInt(timeStr, 10);
 }
 
 /**
- * TimestampService - Centralized timestamp formatting with system timezone support
+ * Current timestamp in 12-hour format, in the household default timezone.
+ * @returns {string} YYYY-MM-DD HH:MM:SS am/pm
  */
-export class TimestampService {
-  constructor(configService) {
-    this.configService = configService;
-  }
+export function nowTs() {
+  const date = new Date();
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: DEFAULT_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }).formatToParts(date);
 
-  /**
-   * Get system timezone from config
-   * @returns {string} IANA timezone
-   */
-  getTimezone() {
-    try {
-      return this.configService?.getTimezone?.() || DEFAULT_TIMEZONE;
-    } catch {
-      return DEFAULT_TIMEZONE;
-    }
-  }
-
-  /**
-   * Format date with custom options
-   * @param {Date} [date=new Date()] - Date to format
-   * @param {Object} [options] - Intl.DateTimeFormat options
-   * @param {string} [timezone] - Override timezone
-   * @returns {string}
-   */
-  format(date = new Date(), options = {}, timezone = null) {
-    const tz = timezone || this.getTimezone();
-    try {
-      return new Intl.DateTimeFormat('en-US', {
-        timeZone: tz,
-        ...options,
-      }).format(date);
-    } catch (err) {
-      return date.toISOString();
-    }
-  }
-
-  /**
-   * Get current timestamp in 12-hour format
-   * @returns {string} YYYY-MM-DD HH:MM:SS am/pm
-   */
-  now() {
-    const tz = this.getTimezone();
-    const date = new Date();
-    
-    try {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-      }).formatToParts(date);
-
-      const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-      const year = asMap.year;
-      const month = asMap.month;
-      const day = asMap.day;
-      const hour = asMap.hour;
-      const minute = asMap.minute;
-      const second = asMap.second;
-      const dayPeriod = asMap.dayPeriod?.toLowerCase() || 'am';
-
-      return `${year}-${month}-${day} ${hour}:${minute}:${second} ${dayPeriod}`;
-    } catch (err) {
-      // Fallback
-      return formatLocalTimestamp(date, tz);
-    }
-  }
-
-  /**
-   * Get current timestamp in 24-hour format
-   * @returns {string} YYYY-MM-DD HH:MM:SS
-   */
-  now24() {
-    const tz = this.getTimezone();
-    return formatLocalTimestamp(new Date(), tz);
-  }
-
-  /**
-   * Get current date
-   * @returns {string} YYYY-MM-DD
-   */
-  date() {
-    return getCurrentDate(this.getTimezone());
-  }
-
-  /**
-   * Get current month
-   * @returns {string} YYYY-MM
-   */
-  month() {
-    const tz = this.getTimezone();
-    const date = new Date();
-    
-    try {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz,
-        year: 'numeric',
-        month: '2-digit',
-      }).formatToParts(date);
-
-      const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-      return `${asMap.year}-${asMap.month}`;
-    } catch {
-      return getCurrentDate(tz).slice(0, 7);
-    }
+    const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    const dayPeriod = asMap.dayPeriod?.toLowerCase() || 'am';
+    return `${asMap.year}-${asMap.month}-${asMap.day} ${asMap.hour}:${asMap.minute}:${asMap.second} ${dayPeriod}`;
+  } catch (err) {
+    return formatLocalTimestamp(date, DEFAULT_TIMEZONE);
   }
 }
 
-// Lazy-initialize singleton to avoid circular dependency
-let _ts;
-export const ts = new Proxy({}, {
-  get(target, prop) {
-    if (!_ts) {
-      _ts = new TimestampService(configService);
-    }
-    return _ts[prop];
-  }
-});
+/**
+ * Current timestamp in 24-hour format, in the household default timezone.
+ * @returns {string} YYYY-MM-DD HH:MM:SS
+ */
+export function nowTs24() {
+  return formatLocalTimestamp(new Date(), DEFAULT_TIMEZONE);
+}
 
-// Convenience functions
-export const nowTs = () => ts.now();
-export const nowTs24 = () => ts.now24();
-export const nowDate = () => ts.date();
-export const nowMonth = () => ts.month();
+/**
+ * Current date (YYYY-MM-DD) in the household default timezone.
+ * @returns {string}
+ */
+export function nowDate() {
+  return getCurrentDate(DEFAULT_TIMEZONE);
+}
+
+/**
+ * Current month (YYYY-MM) in the household default timezone.
+ * @returns {string}
+ */
+export function nowMonth() {
+  const date = new Date();
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: DEFAULT_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+    }).formatToParts(date);
+
+    const asMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    return `${asMap.year}-${asMap.month}`;
+  } catch {
+    return getCurrentDate(DEFAULT_TIMEZONE).slice(0, 7);
+  }
+}
 
 export default {
   formatLocalTimestamp,
   parseToDate,
   getCurrentDate,
   getCurrentHour,
-  TimestampService,
-  ts,
   nowTs,
   nowTs24,
   nowDate,

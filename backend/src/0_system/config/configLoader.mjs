@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { deepMerge } from '../utils/deepMerge.mjs';
 
 /**
  * Load all config from the data directory.
@@ -78,18 +79,6 @@ function loadSystemConfig(dataDir) {
       )
     ),
   };
-}
-
-function deepMerge(target, source) {
-  const result = { ...target };
-  for (const key of Object.keys(source)) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = deepMerge(result[key] ?? {}, source[key]);
-    } else {
-      result[key] = source[key];
-    }
-  }
-  return result;
 }
 
 // ─── Adapters ─────────────────────────────────────────────────
