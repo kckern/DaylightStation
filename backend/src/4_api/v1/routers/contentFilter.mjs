@@ -15,9 +15,9 @@ import yaml from 'js-yaml';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ dataDir, logger = console } = {}) {
+export function createContentFilterRouter({ householdDir, logger = console } = {}) {
   const router = express.Router();
-  const root = path.join(dataDir, 'household', 'shared', 'content-filter');
+  const root = path.join(householdDir, 'shared', 'content-filter');
 
   const readYaml = (p) => {
     try { return existsSync(p) ? (yaml.load(readFileSync(p, 'utf8')) || null) : null; }
