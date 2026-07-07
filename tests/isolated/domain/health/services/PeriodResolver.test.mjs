@@ -212,7 +212,7 @@ describe('PeriodResolver — named periods (Plan 4)', () => {
 
   it('throws when slug not found in any source', async () => {
     const r = makeResolver({ playbook: { named_periods: {} } });
-    await expect(r.resolve({ named: 'unknown-slug' }, { userId: 'kc' })).rejects.toThrow(/named period not found/);
+    await expect(r.resolve({ named: 'unknown-slug' }, { userId: 'kc' })).rejects.toThrow(/NamedPeriod not found/);
   });
 
   it('throws when no playbook/workingMemory deps wired', async () => {
