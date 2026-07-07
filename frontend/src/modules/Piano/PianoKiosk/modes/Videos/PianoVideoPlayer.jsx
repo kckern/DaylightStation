@@ -2,7 +2,7 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import usePlayerController from '../../../../Player/usePlayerController.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoMix } from '../../PianoMixContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -30,7 +30,8 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
-  const { activeNotes, pressNote, releaseNote } = usePianoMidi();
+  const { pressNote, releaseNote } = usePianoMidi();
+  const { activeNotes } = usePianoMidiNotes();
   const { mediaLevel } = usePianoMix();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);

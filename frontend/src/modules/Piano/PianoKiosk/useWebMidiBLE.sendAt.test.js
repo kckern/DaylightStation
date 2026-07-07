@@ -33,7 +33,7 @@ describe('sendNoteAt / sendNoteOffAt', () => {
     });
     expect(output.send).toHaveBeenCalledWith([0x90, 60, 90], 12345.5);
     // The scheduled note must NOT light the on-screen keyboard.
-    expect(result.current.activeNotes.has(60)).toBe(false);
+    expect(result.current.notes.getSnapshot().activeNotes.has(60)).toBe(false);
   });
 
   it('sends note-off with the exact wall timestamp', async () => {

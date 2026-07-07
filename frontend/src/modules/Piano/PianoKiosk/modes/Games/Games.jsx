@@ -2,7 +2,7 @@ import { useMemo, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
@@ -82,7 +82,8 @@ function GameHost() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
+  const { pressNote, releaseNote } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { config } = usePianoKioskConfig();
   const entry = getGameEntry(gameId);
 

@@ -10,7 +10,7 @@ import {
   usePianoRoster,
   resolvePianoConfig,
 } from '../modules/Piano/PianoKiosk/PianoConfig.jsx';
-import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
+import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
@@ -149,7 +149,7 @@ export function ConnectGate({ children }) {
  */
 function ScreensaverDriver() {
   const { config } = usePianoKioskConfig();
-  const { activeNotes, noteHistory } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   usePianoScreensaver({
     deviceId: config.screensaver?.deviceId,
     activeNotes,
@@ -163,7 +163,8 @@ function ScreensaverDriver() {
 
 function PianoShell() {
   const { config, pianoId, basePath } = usePianoKioskConfig();
-  const { activeNotes, noteHistory, subscribe } = usePianoMidi();
+  const { subscribe } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
