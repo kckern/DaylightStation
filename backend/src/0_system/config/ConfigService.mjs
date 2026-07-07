@@ -10,6 +10,7 @@
 
 import { loadYaml, loadYamlFromPath, listYamlFiles } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 export class ConfigService {
   #config;
@@ -96,7 +97,7 @@ export class ConfigService {
   getHouseholdTimezone(householdId) {
     const hid = householdId ?? this.getDefaultHouseholdId();
     return this.#config.households?.[hid]?.timezone
-        ?? this.#config.system?.timezone ?? 'UTC';
+        ?? this.#config.system?.timezone ?? DEFAULT_TIMEZONE;
   }
 
   getUserHouseholdId(username) {
@@ -578,7 +579,7 @@ export class ConfigService {
   }
 
   getTimezone() {
-    return this.#config.system?.timezone ?? 'America/Los_Angeles';
+    return this.#config.system?.timezone ?? DEFAULT_TIMEZONE;
   }
 
   /**
