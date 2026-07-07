@@ -9,7 +9,7 @@ import { jest } from '@jest/globals';
 import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
 import { initConfigService, resetConfigService, configService } from '#system/config/index.mjs';
 import { userDataService } from '#system/config/UserDataService.mjs';
-import { getDataPath } from '../../../../../../tests/_lib/configHelper.mjs';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 // Get data dir from config helper (SSOT)
 const DATA_DIR = getDataPath();
@@ -101,7 +101,7 @@ describe('LifelogAggregator', () => {
   describe('JournalistContainer integration', () => {
     it('should work when userDataService is injected into container', async () => {
       // Dynamically import to avoid circular dependency issues
-      const { JournalistContainer } = await import('../../../../3_applications/journalist/JournalistContainer.mjs');
+      const { JournalistContainer } = await import('#apps/journalist/JournalistContainer.mjs');
 
       // Minimal config for container
       const config = {
@@ -134,7 +134,7 @@ describe('LifelogAggregator', () => {
     });
 
     it('should fail gracefully when userDataService is NOT injected (reproduces bug)', async () => {
-      const { JournalistContainer } = await import('../../../../3_applications/journalist/JournalistContainer.mjs');
+      const { JournalistContainer } = await import('#apps/journalist/JournalistContainer.mjs');
 
       const config = {
         username,
