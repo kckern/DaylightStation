@@ -1,20 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
-import moment from 'moment';
+import { PALETTE } from "../lib/format.mjs";
+import { budgetProgress } from "../lib/budgetMath.mjs";
 
-export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimensions }) {
+export function BudgetShortTerm({ setDrawerContent, budget }) {
 
 
-    const { budgetStart, budgetEnd, shortTermBuckets, shortTermStatus } = budget;
+    const { budgetStart, budgetEnd } = budget;
+    const shortTermBuckets = budget.shortTermBuckets || {};
+    const shortTermStatus = budget.shortTermStatus || { budget: 0, credits: 0, debits: 0, balance: 0 };
     const buckets = Object.keys(shortTermBuckets);
 
-    const weekCount = moment(budgetEnd).diff(moment(budgetStart), 'weeks');
-    const currentWeek = moment().diff(moment(budgetStart), 'weeks');
-    const weeksLeft = weekCount - currentWeek;
-    const currentTime = currentWeek / weekCount;
+    const { processedData, options } = useMemo(() => {
+    const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
 
     const processedData = buckets.map((label) => {
         const item = shortTermBuckets[label];
@@ -39,9 +40,8 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
         };
     }).sort((a, b) => {
         if (a.category === 'Unbudgeted') return 1;
-        if (a.extendedBudget > b.extendedBudget) return -1;
-        if (a.extendedBudget < b.extendedBudget) return 1;
-        return 0;
+        if (b.category === 'Unbudgeted') return -1;
+        return b.extendedBudget - a.extendedBudget;
     });
 
     const series = [
@@ -49,20 +49,20 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
             name: 'allotted',
             data: processedData.map((item) => ({
                 y: item.allotted,
-                color: item.overage > 0 ? '#c1121f' : item.balance === 0 ? '#023e8a' : '#0077b6'
+                color: item.overage > 0 ? PALETTE.over : item.balance === 0 ? PALETTE.spentDone : PALETTE.spent
             })),
             stack: 'shortTerm'
         },
         {
             name: 'overage',
             data: processedData.map((item) => item.overage),
-            color: '#82000A',
+            color: PALETTE.overDark,
             stack: 'shortTerm'
         },
         {
             name: 'remaining',
             data: processedData.map((item) => item.remaining),
-            color: '#AAAAAA',
+            color: PALETTE.remaining,
             stack: 'shortTerm'
         },
     ];
@@ -81,9 +81,10 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
                   <br/>
                   <small class="category-label" style="color:#AAA; font-size:0.7rem">
                     ${formatAsCurrency(item.budget)}
-                    ${item.credits > 0 ? ` <b class='green' style="color:#759c82">+ ${formatAsCurrency(item.credits)}</b>` : ''}
+                    ${item.credits > 0 ? ` <b class='green' style="color:${PALETTE.gain}">+ ${formatAsCurrency(item.credits)}</b>` : ''}
                   </small>
                 </div>`),
+            labels: { useHTML: true },
             reversed: true
         },
         yAxis: {
@@ -95,7 +96,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
             tickWidth: 0,
             plotLines: [{
                 color: '#EEEEEE',
-                value: (1 - currentTime) * 100,
+                value: (1 - progress) * 100,
                 width: 1.5,
                 dashStyle: 'dash',
                 zIndex: 5
@@ -117,7 +118,7 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
                   : 0;
                 return `<b>${item.category}</b><br/>
                         ${count} transactions<br/>
-                        ${100 - (percentageSpent||0)}% remaining<br/>
+                        ${Math.max(0, 100 - (percentageSpent || 0))}% remaining<br/>
                         $${rateRemaining}/week`;
             }
         },
@@ -165,6 +166,8 @@ export function BudgetShortTerm({ setDrawerContent, budget, budgetBlockDimension
         },
         series
     };
+    return { processedData, options };
+    }, [budget, setDrawerContent]);
 
     function gatherTransactions(key) {
         const shortTermLabels = Object.keys(shortTermBuckets);

@@ -1,21 +1,20 @@
 import moment from "moment";
 import React, { useState, useMemo, useEffect } from "react";
-import Highcharts, { attr } from 'highcharts';
+import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import HighchartsTreeGraph from "highcharts/modules/treegraph";
-import HighchartsDrilldown from "highcharts/modules/drilldown";
 import HighchartsTreeMap from "highcharts/modules/treemap";
+import HC_More from "highcharts/highcharts-more";
 
 HighchartsTreeMap(Highcharts);
-HighchartsTreeGraph(Highcharts);
-HighchartsDrilldown(Highcharts);
+HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
-import HC_More from "highcharts/highcharts-more";
-HC_More(Highcharts);
-import { formatAsCurrency } from "./blocks";
-import { baseUrl } from '../../Apps/FinanceApp.jsx';
+import { TextInput } from '@mantine/core';
+import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
+import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
+import { useFinanceReload } from './FinanceDataContext.jsx';
 
-import externalIcon from "../../assets/icons/external.svg";;
+import externalIcon from "../../assets/icons/external.svg";
 
 export function Drawer({ cellKey, transactions, periodData }) {
 
@@ -66,20 +65,22 @@ export function Drawer({ cellKey, transactions, periodData }) {
       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
       return 0;
 
-    })   
-    
-    .filter(transaction => {
-          const { tags, description, label, bucket } = transactionFilter || {};
-          let showMe = true;
-          if(tags && !tags.some(tag => transaction.tagNames.includes(tag))) showMe = false;
-          if(showMe && description && !transaction.description.includes(description)) showMe = false;
-          if(showMe && label && transaction.label !== label) showMe = false;
-          if(showMe && bucket && transaction.bucket !== bucket) showMe = false;
-          return showMe;
-        });
+    })
+
+    .filter((transaction) => matchesTransactionFilter(transaction, transactionFilter));
 
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [pairMode, setPairMode] = useState(null);
+    const reload = useFinanceReload();
+    const [pairDesc, setPairDesc] = useState('');
+    const [pairNotice, setPairNotice] = useState(null);
+
+    useEffect(() => {
+      if (menuOpenId == null) return;
+      const close = () => setMenuOpenId(null);
+      document.addEventListener('click', close);
+      return () => document.removeEventListener('click', close);
+    }, [menuOpenId]);
 
     const handleRowClick = (transaction) => {
       if(!transaction.id) return;
@@ -88,6 +89,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
 
     const handleStartPair = (transaction) => {
       setMenuOpenId(null);
+      setPairNotice(null);
       setPairMode({ sourceTransaction: transaction });
     };
 
@@ -96,32 +98,27 @@ export function Drawer({ cellKey, transactions, periodData }) {
       const isSourceExpense = source.expenseAmount > 0;
       const debit = isSourceExpense ? source.id : targetTransaction.id;
       const credit = isSourceExpense ? targetTransaction.id : source.id;
-      const desc = prompt('Pair description (optional):') || `${source.description} \u2194 ${targetTransaction.description}`;
+      const desc = pairDesc.trim() || `${source.description} \u2194 ${targetTransaction.description}`;
 
       try {
-        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ debit, credit, desc })
-        });
+        await DaylightAPI('api/v1/finance/pairs', { debit, credit, desc }, 'POST');
         setPairMode(null);
-        window.location.reload();
+        setPairDesc('');
+        await reload();
+        setPairNotice('Pair saved and data refreshed \u2014 reopen this drawer to see updated amounts.');
       } catch (err) {
-        console.error('Failed to create pair:', err);
+        setPairNotice(`Failed to create pair: ${err.message}`);
       }
     };
 
     const handleUnpair = async (transaction) => {
       setMenuOpenId(null);
       try {
-        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ debit: transaction.id, credit: transaction.pairedWith })
-        });
-        window.location.reload();
+        await DaylightAPI('api/v1/finance/pairs', { debit: transaction.id, credit: transaction.pairedWith }, 'DELETE');
+        await reload();
+        setPairNotice('Pair removed and data refreshed \u2014 reopen this drawer to see updated amounts.');
       } catch (err) {
-        console.error('Failed to unpair:', err);
+        setPairNotice(`Failed to unpair: ${err.message}`);
       }
     };
 
@@ -143,9 +140,22 @@ export function Drawer({ cellKey, transactions, periodData }) {
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
               {pairMode && (
-                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span>Select the offsetting transaction for: <strong>{pairMode.sourceTransaction.description}</strong></span>
-                  <button onClick={() => setPairMode(null)} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                  <TextInput
+                    size="xs"
+                    placeholder="Pair description (optional)"
+                    value={pairDesc}
+                    onChange={(e) => setPairDesc(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button onClick={() => { setPairMode(null); setPairDesc(''); }} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                </div>
+              )}
+              {pairNotice && (
+                <div style={{ padding: '8px 12px', background: '#2d2d3a', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{pairNotice}</span>
+                  <button onClick={() => setPairNotice(null)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}>×</button>
                 </div>
               )}
                 <table className="transactions-table">
@@ -192,11 +202,18 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                 return (
                                     <tr key={guid} className={rowClassName + (pairMode ? ' pair-selectable' : '')}
                                       onClick={() => pairMode ? handleSelectPairTarget(transaction) : handleRowClick(transaction)}
+                                      title={pairMode ? 'Select as offsetting transaction' : (hasId ? 'Open in Buxfer (new tab)' : undefined)}
                                       style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
-                                        <td className="description-col">{transaction.description}{memo}{pairBadge}</td>
+                                        <td className="description-col">
+                                          {transaction.description}{memo}{pairBadge}
+                                          {hasId && !pairMode && (
+                                            <img src={externalIcon} alt="" aria-hidden="true"
+                                              style={{ width: '0.8em', height: '0.8em', marginLeft: '0.4em', opacity: 0.4, verticalAlign: 'baseline' }} />
+                                          )}
+                                        </td>
                                         <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
                                         <td className="actions-col" onClick={(e) => e.stopPropagation()}>
                                           {hasId && !pairMode && (
@@ -239,24 +256,27 @@ export function Drawer({ cellKey, transactions, periodData }) {
 
 
 function DrawerSummary({ sortedTransactions, summary }) {
+  const MAX_LINKED_TIDS = 100; // Buxfer/browser URL length limit
+  const linkedIds = sortedTransactions.map((tx) => tx.id).filter(Boolean).slice(0, MAX_LINKED_TIDS);
 
   return (
     <div className="budget-drawer-summary">
       {sortedTransactions.length > 0 && (
         <span>
           {sortedTransactions.length} Transactions{" "}
-          <a
-            target="_blank"
-            href={`https://www.buxfer.com/transactions?tids=${sortedTransactions
-              .map((tx) => tx.id)
-              .join(",")}`}
-          >
-            <img
-              src={externalIcon}
-              alt="external link"
-              style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
-            />
-          </a>
+          {linkedIds.length > 0 && (
+            <a
+              target="_blank"
+              title={linkedIds.length < sortedTransactions.length ? `Opens first ${MAX_LINKED_TIDS} in Buxfer` : 'Open in Buxfer'}
+              href={`https://www.buxfer.com/transactions?tids=${linkedIds.join(",")}`}
+            >
+              <img
+                src={externalIcon}
+                alt="external link"
+                style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
+              />
+            </a>
+          )}
         </span>
       )}
       {summary.spent > 0 && <span>Spent: {formatAsCurrency(summary.spent)}</span>}
@@ -282,7 +302,7 @@ function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }
 
 function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
-
+  const options = useMemo(() => {
   const {month} = periodData;
 
   const incomeSum = month.income;
@@ -341,12 +361,12 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
   const data = [
     ... mergedIncome,
-    { name: 'Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
+    { name: 'Income', isIntermediateSum: true, color: PALETTE.income  , filter: { bucket: "income" }},
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),
-    { name: 'Cash Flow', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
-    { name: 'Day-to-Day Spending', y: -dayToDaySum , color: `#432454`  , filter: { bucket: "day" }},
-    { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? `#c1121f` : `#759c82`}
+    { name: 'Cash Flow', isIntermediateSum: true, color: PALETTE.cashFlow , filter: { bucket: "monthly" }},
+    { name: 'Day-to-Day Spending', y: -dayToDaySum , color: PALETTE.dayToDay  , filter: { bucket: "day" }},
+    { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? PALETTE.over : PALETTE.gain}
   ];
 
   const options = {
@@ -360,12 +380,14 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       }
     },
     xAxis: { type: 'category' },
-    yAxis: { 
-        formatter: function() { 
-            return formatAsCurrency(Math.abs(this.value)); 
-        }, 
-        title: { text: '' }, 
-        min: Math.min(0, surplusValue), 
+    yAxis: {
+        labels: {
+            formatter: function () {
+                return formatAsCurrency(Math.abs(this.value));
+            }
+        },
+        title: { text: '' },
+        min: Math.min(0, surplusValue),
         max: maxValue,
         plotLines: [{
             value: 0,
@@ -376,18 +398,21 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
         plotBands: [{
             from: Math.min(0, surplusValue),
             to: 0,
-            color: 'rgba(255, 100, 0, 0.1)' // Light red color with some transparency
+            color: 'rgba(255, 100, 0, 0.1)'
         }]
     },
     legend: { enabled: false },
-    tooltip: { 
-        formatter: function() {
-            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of income`;
-        }, 
+    tooltip: {
+        formatter: function () {
+            const pctLine = (this.y != null && incomeSum)
+                ? `<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of income`
+                : '';
+            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}${pctLine}`;
+        },
     },
     series: [{
-      upColor: `#759c82`,
-      color: `#c1121f`,
+      upColor: PALETTE.gain,
+      color: PALETTE.over,
       data,
       dataLabels: { 
       enabled: true,
@@ -409,6 +434,8 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       }
     }]
   };
+  return options;
+  }, [periodData, setTransactionFilter]);
 
   return <div className="waterfall-chart">
                 <HighchartsReact
@@ -426,6 +453,7 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
     '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7'
   ];
 
+  const options = useMemo(() => {
   const tagColorMap = {};
   let colorIndex = 0;
 
@@ -548,6 +576,8 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
       }
     }
   };
+  return options;
+  }, [transactions, setTransactionFilter]);
 
   return (
     <div className="treemap-chart">
@@ -568,10 +598,6 @@ const MAX_ITEMS = 10;
 function safeGetTag(tx) {
   if (!tx || !Array.isArray(tx.tagNames) || !tx.tagNames[0]) return "Other";
   return tx.tagNames[0];
-}
-
-function formatCurrency(v) {
-  return v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${Math.round(v)}`;
 }
 
 function buildDrillData(transactions) {
@@ -687,7 +713,7 @@ function buildDrillData(transactions) {
         y: parseFloat(x.pctOfOther.toFixed(2)),
         pctOfGrand: x.pctOfGrand,
         valueReal: x.value,
-        valueFormatted: formatCurrency(x.value),
+        valueFormatted: formatCompactCurrency(x.value),
         drilldown: null,
         txList: x.txList
       }))
@@ -704,7 +730,7 @@ function buildDrillData(transactions) {
           y: parseFloat(sumPctOfOther.toFixed(2)),
           pctOfGrand: sumPctOfGrand,
           valueReal: sumVal2,
-          valueFormatted: formatCurrency(sumVal2),
+          valueFormatted: formatCompactCurrency(sumVal2),
           drilldown: "Other2",
           txList: allMinor2Tx
         });
@@ -732,7 +758,7 @@ function buildDrillData(transactions) {
           y: parseFloat(((value / other2Val) * 100).toFixed(2)),
           pctOfGrand: (value / grandTotal) * 100,
           valueReal: value,
-          valueFormatted: formatCurrency(value),
+          valueFormatted: formatCompactCurrency(value),
           drilldown: null
         }));
         d3Items.sort((a, b) => b.y - a.y);
@@ -754,35 +780,26 @@ function buildDrillData(transactions) {
   return { topData: top, drillSeries: series, grandTotal };
 }
 
-export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, budgetKey }) {
-  const [componentKey, setComponentKey] = useState(0);
-
-  // Force a "nuke" rebuild of the component on transactions or budgetKey change.
-  useEffect(() => {
-    setComponentKey((prev) => prev + 1);
-  }, [transactions, budgetKey]);
-
+export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }) {
   const [drillStack, setDrillStack] = useState([transactions || []]);
   const [crumbs, setCrumbs] = useState([]);
   const [grandTotal, setGrandTotal] = useState(0);
-  const getGrandTotal = () => { return grandTotal || 0; };
-    
 
-  // Re-initialize drillStack and crumb whenever the component is "nuked" and remounted.
+  // Re-initialize drillStack and crumbs whenever transactions change.
   useEffect(() => {
     const { grandTotal } = buildDrillData(transactions || []);
     setGrandTotal(grandTotal);
     setDrillStack([transactions || []]);
-    setCrumbs([`Total: ${formatCurrency(grandTotal)}`]);
-  }, [componentKey, transactions]);
+    setCrumbs([`Total: ${formatCompactCurrency(grandTotal)}`]);
+  }, [transactions]);
 
   const currentTransactions = drillStack[drillStack.length - 1];
   const { topData, drillSeries } = useMemo(() => buildDrillData(currentTransactions), [currentTransactions]);
 
   const buildCrumbLabel = (point) => {
     const percentOfTop = (point.valueReal / grandTotal) * 100;
-    if (point.name === "Other") {
-      return `${formatCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
+    if (point.name === "Other" || point.name === "Other2") {
+      return `${formatCompactCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
     }
     return point.name;
   };
@@ -842,7 +859,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
       formatter() {
         const p = this.point;
         const pct = (p.pctOfGrand || 0).toFixed(1) + "%";
-        const amt = formatCurrency(p.valueReal || 0);
+        const amt = formatCompactCurrency(p.valueReal || 0);
         return `<div style="line-height:1.2"><strong>${pct}</strong><br/>${p.name}<br/><em>${amt}</em></div>`;
       }
     },
@@ -931,7 +948,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
           y: pt.valueReal,
           pctOfGrand: pt.pctOfGrand,
           valueReal: pt.valueReal,
-          valueFormatted: formatCurrency(pt.valueReal),
+          valueFormatted: formatCompactCurrency(pt.valueReal),
           drilldown: pt.drilldown
         }))
       },
@@ -944,7 +961,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
           y: pt.y,
           pctOfGrand: pt.pctOfGrand,
           valueReal: pt.valueReal,
-          valueFormatted: formatCurrency(pt.valueReal),
+          valueFormatted: formatCompactCurrency(pt.valueReal),
           drilldown: pt.drilldown
         }))
       }
@@ -984,7 +1001,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
 
   return (
     //max-width: 900px; margin: 0px auto; height:100%; display:flex; flex-direction: column
-    <div key={componentKey} style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ textAlign: "center", padding: "0.5ex 0"}}>
         <span style={{ marginLeft: 10 }}>{renderBreadcrumbs(handleBackClick)}</span>
       </div>
