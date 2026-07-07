@@ -157,7 +157,13 @@ describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
     renderPlayer();
     await act(async () => {});
     // Default mock reports flow 'wrapped' (matches) and no scale (null → fresh).
-    expect(document.querySelector('.piano-score-cursor')).not.toBeNull();
+    const cursor = document.querySelector('.piano-score-cursor');
+    expect(cursor).not.toBeNull();
+    // Positioned via a compositor-path transform (not left/top): first event
+    // x=100, top=10, scale=1 → translateX = 100 - 9 = 91.
+    expect(cursor.style.transform).toBe('translate3d(91px, 10px, 0)');
+    expect(cursor.style.left).toBe('');
+    expect(cursor.style.top).toBe('');
   });
 });
 
