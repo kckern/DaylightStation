@@ -341,6 +341,7 @@ button.reload{
     font-size: 2rem;
     margin-left: -2.5rem;
     width: 3.5rem;
+    float: right;
 }
 
 .mortgage-table-body tr:nth-child(odd) td{
@@ -427,6 +428,7 @@ button.reload{
   grid-template-columns: repeat(5, 1fr);
   gap: 0.25rem 0.5rem;
   padding: 0.5rem;
+  flex-shrink: 0;
   div {
     display: flex;
     flex-direction: column;
@@ -449,4 +451,273 @@ button.reload{
 .transactions-table th:focus-visible {
   outline: 2px solid #4c8ffc;
   outline-offset: -1px;
+}
+
+// ── Structural styles migrated from inline (audit 2.7) ──
+
+// FinanceApp.jsx / FinanceErrorBoundary.jsx
+.finance-error-banner {
+  margin: 1rem;
+  padding: 1rem;
+  border: 1px solid #c00;
+  border-radius: 8px;
+  background: #fee;
+  color: #600;
+}
+.finance-error-detail {
+  margin: 0.5rem 0;
+  font-size: 0.9em;
+}
+.finance-loading {
+  padding: 1rem;
+}
+.finance-loading-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+  padding: 1rem;
+  text-align: center;
+  color: #495057;
+}
+.finance-header-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+}
+.finance-header-spacer {
+  flex: 1;
+}
+.finance-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+.finance-header-actions {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+.finance-header-caret {
+  font-size: 1rem;
+}
+.payroll-btn {
+  font-size: 1.5rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  margin-left: 0.5rem;
+}
+
+// PayrollSync.jsx
+.payroll-sync {
+  padding: 1rem;
+}
+.payroll-sync-hint {
+  margin-bottom: 1rem;
+  color: #666;
+}
+.payroll-sync-error {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #fee;
+  border-radius: 4px;
+  color: #c00;
+}
+.payroll-sync-success {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #efe;
+  border-radius: 4px;
+  color: #060;
+}
+
+// drawer.jsx
+.pair-banner {
+  padding: 8px 12px;
+  background: #1a3a5c;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pair-banner-cancel {
+  background: none;
+  border: 1px solid #666;
+  color: #ccc;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 2px 8px;
+}
+.pair-notice {
+  padding: 8px 12px;
+  background: #2d2d3a;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pair-notice-dismiss {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+}
+.th-left {
+  text-align: left;
+}
+.actions-th {
+  width: 2rem;
+}
+.row-external-icon {
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.4em;
+  opacity: 0.4;
+  vertical-align: baseline;
+}
+.txn-menu-wrap {
+  position: relative;
+}
+.txn-menu-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 0.9rem;
+  color: #888;
+}
+.txn-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.txn-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.external-link-icon {
+  width: 1em;
+  height: 1em;
+  margin-bottom: -0.2em;
+}
+.drill-chart-wrap {
+  max-width: 900px;
+  margin: 0px auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.drill-crumb-row {
+  text-align: center;
+  padding: 0.5ex 0;
+}
+.drill-crumbs {
+  margin-left: 10px;
+}
+.drill-crumb {
+  color: black;
+  text-decoration: none;
+  cursor: pointer;
+  background-color: #00000022;
+  border-radius: 4px;
+  padding: 0 1ex;
+  font-weight: normal;
+}
+.drill-crumb--current {
+  font-weight: bold;
+}
+
+// blocks/mortgage.jsx
+.mortgage-flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.mortgage-title {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mortgage-chart-trigger {
+  cursor: pointer;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.cell-right {
+  text-align: right;
+}
+.plan-subtitle {
+  font-size: 0.8em;
+  color: #888;
+}
+.coc-card {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+.coc-headline {
+  font-size: 1.2em;
+  margin-bottom: 0.5rem;
+}
+.coc-plan-label {
+  color: #888;
+  margin-left: 0.5rem;
+}
+.coc-table {
+  width: 100%;
+  max-width: 400px;
+}
+.coc-quickref-title {
+  margin-top: 2rem;
+}
+.coc-amount-wrap {
+  margin-bottom: 1.5rem;
+}
+.mortgage-chart-wrap {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+.mortgage-plan-select {
+  margin-bottom: 1rem;
+}
+.mortgage-table-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.text-muted {
+  color: #888;
+}
+.text-debit {
+  color: #c00;
+}
+
+// blocks.jsx
+.transfer-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+  width: 100%;
+}
+.transaction-table {
+  width: 100%;
+}
+
+// blocks/shortterm.jsx
+.status-badge-row {
+  text-align: center;
 }

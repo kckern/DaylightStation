@@ -23,9 +23,9 @@ export class FinanceErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
+        <div className="finance-error-banner">
           <strong>{this.props.label || 'Finance dashboard'} crashed.</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(this.state.error?.message || this.state.error)}</div>
+          <div className="finance-error-detail">{String(this.state.error?.message || this.state.error)}</div>
           <Button onClick={() => this.setState({ error: null })} variant="outline" color="red" size="xs">Retry render</Button>
         </div>
       );

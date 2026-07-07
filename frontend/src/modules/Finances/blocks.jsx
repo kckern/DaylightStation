@@ -26,11 +26,11 @@ export const collectSpendingTransactions = (budget) => {
     return (
       <div className="budget-block">
       <h2 {...pressable(() => setDrawerContent({ type: 'transfers', title: 'Transfers' }), { 'aria-label': 'Open transfers' })}>Transfers</h2>
-      <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
+      <div className="budget-block-content transfer-scroll">
         {transferTransactions.length === 0 ? (
           <EmptyState message="No transfers this period" />
         ) : (
-          <table className="transaction-table" style={{ width: "100%" }}>
+          <table className="transaction-table">
           <thead>
             <tr>
             <th>Date</th>
