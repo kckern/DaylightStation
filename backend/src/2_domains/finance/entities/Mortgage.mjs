@@ -2,7 +2,7 @@
  * Mortgage Entity - Represents a mortgage loan
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class Mortgage {
   constructor({

@@ -36,6 +36,7 @@ Use cases in `3_applications/` coordinate domain entities and call abstract gate
 ### ALLOWED imports in `3_applications/`
 
 - `2_domains/` - Entities, value objects, domain services
+- `1_rendering/` - Server-side renderers (inject as a port where practical) (Decision D2, 2026-07-06)
 - `0_system/utils/` - Pure utilities (time, formatting, uuid)
 - External packages for domain logic (moment-timezone, uuid)
 
@@ -287,6 +288,8 @@ export class NutribotContainer {
 | Use lazy initialization (`if (!this.#x)`) | Avoid creating unused instances |
 | Validate required dependencies in getters | Fail fast with clear errors |
 | Never import adapters in container | Adapters injected by bootstrap |
+
+> **Containers never import concrete adapters — no exceptions (Decision D1, 2026-07-06).** The Container is the wiring seam; bootstrap constructs the concrete adapters and injects them.
 
 ---
 

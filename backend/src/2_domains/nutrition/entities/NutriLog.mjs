@@ -7,11 +7,11 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { shortId, shortIdFromUuid, isUuid } from '../../core/utils/id.mjs';
-import { formatLocalTimestamp } from '../../core/utils/time.mjs';
+import { shortId, shortIdFromUuid, isUuid } from '#domains/core/utils/id.mjs';
+import { formatLocalTimestamp } from '#domains/core/utils/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
 import { getMealTimeFromHour, validateNutriLog, LogStatuses } from './schemas.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * NutriLog entity - aggregate root for food logging

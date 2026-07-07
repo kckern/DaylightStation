@@ -7,7 +7,7 @@
  * just enforces shape correctness so impossible commands never reach the gateway.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { QueueRef } from './QueueRef.mjs';
 
 const ACTIONS = Object.freeze(['play', 'stop', 'pause', 'next', 'prev', 'volume']);

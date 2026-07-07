@@ -48,6 +48,9 @@ config.app-local.yml
 !scripts/migrate-lists-to-watchlists.mjs
 !scripts/migrate-content-structure.sh
 !scripts/migrate-watch-state.mjs
+!scripts/audit-baseline.unit.txt
+!scripts/audit-layer-imports.mjs
+!scripts/audit-baseline.json
 *.log
 .github/copilot-instructions.md
 # Skill local configs

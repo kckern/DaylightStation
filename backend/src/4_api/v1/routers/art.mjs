@@ -6,8 +6,8 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
-import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/content/art/artmodeConfig.mjs';
+import { resolvePreset } from '#adapters/content/art/presetResolver.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Art API router

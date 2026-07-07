@@ -8,7 +8,7 @@
  * - Interest vs principal breakdowns
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} PaymentPlanConfig

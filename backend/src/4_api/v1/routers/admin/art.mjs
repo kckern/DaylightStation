@@ -2,10 +2,10 @@ import express from 'express';
 import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
-import { createArtSource } from '../../../../1_adapters/content/art/sources/artSource.mjs';
-import { mergeWorkMetadata, filterWorks } from '../../../../1_adapters/content/art/workMetadata.mjs';
-import { matchesCollection } from '../../../../1_adapters/content/art/collections.mjs';
-import { loadArtCollections } from '../../../../1_adapters/content/art/artmodeConfig.mjs';
+import { createArtSource } from '#adapters/content/art/sources/artSource.mjs';
+import { mergeWorkMetadata, filterWorks } from '#adapters/content/art/workMetadata.mjs';
+import { matchesCollection } from '#adapters/content/art/collections.mjs';
+import { loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Admin Art router — curate the classic file-based art library.

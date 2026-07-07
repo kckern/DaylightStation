@@ -3,7 +3,7 @@
  */
 
 import { Notification } from '../entities/Notification.mjs';
-import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 export class NotificationService {
   constructor({ notificationStore, channels = {} }) {

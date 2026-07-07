@@ -8,8 +8,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { validateFoodItem } from './schemas.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
-import { shortId, shortIdFromUuid } from '../../core/utils/id.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
+import { shortId, shortIdFromUuid } from '#domains/core/utils/id.mjs';
 
 /**
  * FoodItem value object

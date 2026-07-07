@@ -392,17 +392,6 @@ function drawCoin(ctx, cx, cy, r) {
   ctx.restore();
 }
 
-function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
 // Flat image panel: cover-fills its rect edge-to-edge, no border/shadow/rounding.
 function drawPanel(ctx, img, x, y, w, h, { flip = false }) {
   ctx.save();
@@ -509,13 +498,6 @@ function drawChart(ctx, chart, x, y, w, h) {
     ctx.fillText(formatCoins(e.value), labelX, e.y);
   }
   ctx.textBaseline = 'middle';
-}
-
-function containRect(iw, ih, rx, ry, rw, rh) {
-  const scale = Math.min(rw / iw, rh / ih);
-  const w = Math.round(iw * scale);
-  const h = Math.round(ih * scale);
-  return { x: rx + Math.round((rw - w) / 2), y: ry + Math.round((rh - h) / 2), w, h };
 }
 
 function drawCover(ctx, img, dx, dy, dw, dh) {

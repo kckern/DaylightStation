@@ -11,9 +11,9 @@
  * by the SaveScheduledFire use case.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
-import { DomainInvariantError } from '../../core/errors/DomainInvariantError.mjs';
-import { EntityNotFoundError } from '../../core/errors/EntityNotFoundError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
+import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { DayPattern } from '../value-objects/DayPattern.mjs';
 import { QueueRef } from '../value-objects/QueueRef.mjs';
 
