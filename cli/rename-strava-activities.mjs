@@ -23,7 +23,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import dotenv from 'dotenv';
-import { buildStravaDescription } from '../backend/src/1_adapters/fitness/buildStravaDescription.mjs';
+import { buildActivityDescription } from '../backend/src/2_domains/fitness/services/buildActivityDescription.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -331,7 +331,7 @@ async function resolvePayload(session, row) {
   if (session) {
     try {
       await hydrateSessionMedia(session);
-      const result = buildStravaDescription(session, {});
+      const result = buildActivityDescription(session, {});
       if (result?.name) return { ...result, source: 'session' };
     } catch { /* fall through to TSV */ }
   }
@@ -478,7 +478,7 @@ async function renameOnStrava(rows) {
     const preview = renames.slice(offset, offset + Math.min(limit, 20));
     for (const r of preview) {
       if (r.session) {
-        const result = buildStravaDescription(r.session, {});
+        const result = buildActivityDescription(r.session, {});
         const title = result?.name || '(needs Plex hydration)';
         console.log(`  ${r.stravaId} \u2192 [session] ${title}`);
       } else {

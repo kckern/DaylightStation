@@ -22,8 +22,8 @@
 import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
-import { buildStravaDescription } from '../../1_adapters/fitness/buildStravaDescription.mjs';
-import { buildSelectionConfig } from '../../1_adapters/fitness/selectPrimaryMedia.mjs';
+import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
+import { buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 import { userService } from '#system/config/index.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
@@ -233,7 +233,7 @@ export class FitnessActivityEnrichmentService {
       const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
 
       // Build enrichment payload
-      const enrichment = buildStravaDescription(session, currentActivity, selectionConfig);
+      const enrichment = buildActivityDescription(session, currentActivity, selectionConfig);
       if (!enrichment) {
         this.#logger.info?.('strava.enrichment.nothing_to_enrich', { activityId });
         this.#jobStore.update(activityId, {
@@ -731,7 +731,7 @@ export class FitnessActivityEnrichmentService {
     const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
 
     // Build fresh description with the new memo included
-    const enrichment = buildStravaDescription(augmentedSession, {}, selectionConfig);
+    const enrichment = buildActivityDescription(augmentedSession, {}, selectionConfig);
     if (!enrichment?.description) {
       this.#logger.debug?.('strava.voice_memo_backfill.no_description', { sessionId, activityId });
       return;
