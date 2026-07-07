@@ -454,44 +454,15 @@ export class MortgageCalculator {
       ? Math.abs(bridgeRecords[bridgeRecords.length - 1].closingBalance)
       : (lastStatementBalance != null ? lastStatementBalance : Math.abs(balance));
 
-    // Start projections from the month after the last amortization month
-    const lastAmortMonth = amortization.length > 0
-      ? amortization[amortization.length - 1].month
-      : null;
-    let projectionStartDate;
-    if (lastAmortMonth) {
-      const [y, m] = lastAmortMonth.split('-').map(Number);
-      projectionStartDate = new Date(Date.UTC(y, m, 1)); // month after
-    } else {
-      projectionStartDate = new Date(asOfDate);
-    }
-
-    const projectionBalance = -currentBalance;
-
-    const paymentPlansFilled = this.calculatePaymentPlans({
-      balance: projectionBalance,
+    const paymentPlansFilled = this.#buildProjections({
+      amortization,
+      projectionBalance: -currentBalance,
       interestRate,
       minimumPayment,
       paymentPlans,
-      startDate: projectionStartDate
+      asOfDate,
+      totalPaid
     });
-
-    // Add a "Historical Pace" plan derived from actual payment average
-    if (amortization.length > 0) {
-      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
-      const historicalPlan = this.calculatePaymentPlans({
-        balance: projectionBalance,
-        interestRate,
-        minimumPayment: avgMonthlyPayment,
-        paymentPlans: [{
-          id: 'historical',
-          title: 'Historical Pace',
-          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
-        }],
-        startDate: projectionStartDate
-      });
-      paymentPlansFilled.push(...historicalPlan);
-    }
 
     const startingBalance = mortgageStartValue;
     const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
@@ -572,48 +543,20 @@ export class MortgageCalculator {
       };
     });
 
-    // Start projections from the month after the last amortization month
-    // so the first plan month connects seamlessly to the last reconstructed balance
-    const lastAmortMonth = amortization.length > 0
-      ? amortization[amortization.length - 1].month
-      : null;
-    let projectionStartDate;
-    if (lastAmortMonth) {
-      const [y, m] = lastAmortMonth.split('-').map(Number);
-      projectionStartDate = new Date(Date.UTC(y, m, 1)); // month after (0-indexed: m is already next)
-    } else {
-      projectionStartDate = new Date(asOfDate);
-    }
-
     // Use the reconstructed closing balance (reconciled to actual) as the projection start
     const projectionBalance = amortization.length > 0
       ? -amortization[amortization.length - 1].closingBalance
       : balance;
 
-    const paymentPlansFilled = this.calculatePaymentPlans({
-      balance: projectionBalance,
+    const paymentPlansFilled = this.#buildProjections({
+      amortization,
+      projectionBalance,
       interestRate,
       minimumPayment,
       paymentPlans,
-      startDate: projectionStartDate
+      asOfDate,
+      totalPaid
     });
-
-    // Add a "Historical Pace" plan derived from actual payment average
-    if (amortization.length > 0) {
-      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
-      const historicalPlan = this.calculatePaymentPlans({
-        balance: projectionBalance,
-        interestRate,
-        minimumPayment: avgMonthlyPayment,
-        paymentPlans: [{
-          id: 'historical',
-          title: 'Historical Pace',
-          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
-        }],
-        startDate: projectionStartDate
-      });
-      paymentPlansFilled.push(...historicalPlan);
-    }
 
     const { earliestPayoff, latestPayoff } = this.#findPayoffRange(paymentPlansFilled);
 
@@ -625,7 +568,7 @@ export class MortgageCalculator {
       totalPrincipalPaid,
       monthlyRent,
       monthlyEquity,
-      percentPaidOff: this.#round(percentPaidOff),
+      percentPaidOff,
       balance: Math.abs(balance),
       interestRate,
       earliestPayoff,
@@ -863,6 +806,53 @@ export class MortgageCalculator {
       },
       months
     };
+  }
+
+  /**
+   * First month AFTER the last amortization record — where projections begin
+   * so the first plan month joins the last reconstructed balance seamlessly.
+   * @private
+   */
+  #projectionStartAfter(amortization, asOfDate) {
+    if (amortization.length > 0) {
+      const [y, m] = amortization[amortization.length - 1].month.split('-').map(Number);
+      return new Date(Date.UTC(y, m, 1)); // m is 1-indexed → this is the next month, 0-indexed
+    }
+    return new Date(asOfDate);
+  }
+
+  /**
+   * Configured payment-plan projections plus the derived "Historical Pace"
+   * plan. Shared tail of both build paths.
+   * @private
+   */
+  #buildProjections({ amortization, projectionBalance, interestRate, minimumPayment, paymentPlans, asOfDate, totalPaid }) {
+    const projectionStartDate = this.#projectionStartAfter(amortization, asOfDate);
+
+    const plans = this.calculatePaymentPlans({
+      balance: projectionBalance,
+      interestRate,
+      minimumPayment,
+      paymentPlans,
+      startDate: projectionStartDate
+    });
+
+    if (amortization.length > 0) {
+      const avgMonthlyPayment = this.#round(totalPaid / amortization.length);
+      plans.push(...this.calculatePaymentPlans({
+        balance: projectionBalance,
+        interestRate,
+        minimumPayment: avgMonthlyPayment,
+        paymentPlans: [{
+          id: 'historical',
+          title: 'Historical Pace',
+          subtitle: `Avg ${Math.round(avgMonthlyPayment).toLocaleString()}/mo based on actuals`
+        }],
+        startDate: projectionStartDate
+      }));
+    }
+
+    return plans;
   }
 
   /**
