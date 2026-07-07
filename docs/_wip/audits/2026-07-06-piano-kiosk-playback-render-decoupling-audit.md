@@ -424,3 +424,47 @@ pitfalls):
    Web-MIDI timestamps are **not** being honored over Android BLE-MIDI — lower the lookahead
    and compare, and treat rhythm immunity as only partial (main-thread jitter removed, BLE/link
    jitter remains).
+
+### Post-implementation adversarial review (2026-07-06)
+
+A whole-branch adversarial review (intent-vs-reality, beyond the per-task reviews) surfaced
+the following. Dispositions recorded honestly:
+
+- **🔴 Regression FOUND & FIXED — screensaver blanks / who-prompt pops during Listen**
+  (`069af7bc3`). Listen now performs via `sendNoteAt` (no `activeNotes` churn), so the
+  screensaver + who-is-playing — which key on note activity — lost their wake signal and could
+  blank the screen or pop a modal mid-performance. Fixed by gating both on the **existing global
+  `playing` flag** (the same gate `useInactivityReturn` already used), via a new
+  `usePianoScreensaver` `keepAlive` param. Required hoisting `PianoPlaybackProvider` above
+  `ScreensaverDriver` (it previously sat below it, so the driver read the default `playing:false`
+  — the fix would otherwise have been inert). Bonus: the provider is now no longer remounted by
+  `ConnectGate`. **`useInactivityReturn` was NOT regressed** (it already received `playing`).
+
+- **🟡 R1 scope, honestly stated.** R1 made `usePianoMidi()`'s value identity-stable and moved
+  the note-store off React state, so **machine (Listen) playback no longer storms the render
+  tree** (the reported symptom) and command/status-only consumers stop re-rendering per note.
+  BUT `PianoShell` (`PianoApp.jsx`) subscribes to `usePianoMidiNotes()` for who-is-playing /
+  inactivity / screensaver activity detection, so **human playing still re-renders the shell
+  subtree per note** — unchanged from pre-branch (NOT a regression), but the audit's "benefits
+  all modes incl. games/studio" for *human input* is only partially realized. A further
+  optimization (edge-detection hooks reading the store imperatively instead of via
+  `usePianoMidiNotes`) is deferred.
+
+- **🟡 Rhythm-immunity caveat, sharpened.** The audio plane is immune to main-thread jitter
+  *up to the lookahead window*: if a main-thread stall exceeds `lookaheadMs` (~400 ms — and
+  performance.md documents ~0.8 s worst-case under the throttle), notes due inside the gap are
+  sent with **past timestamps** → dispatched immediately → the same catch-up burst. The
+  `schedLate` telemetry counts exactly these; the on-device protocol (above) is what confirms
+  whether it happens in practice. This is the honest bound on "never skips."
+
+- **🔵 Edge limitations (documented, not fixed):** (a) a quick pause→resume→pause squeeze can
+  leave a scheduled note-on overlapping a re-scheduled duplicate (usually a benign double-attack;
+  a stuck note is conceivable) — the analogous seek case is already commented in `ScorePlayer`;
+  (b) `layoutFresh` checks `flow`/`scale` but not container width, so a mid-play resize leaves
+  overlays on stale geometry until pause (near-theoretical on the fixed-width kiosk); (c) a
+  mid-Listen **transpose** sounds the old key until pause, because the re-engrave (and its pitch
+  re-extraction) is deferred by `holdExtraction`.
+
+- **Not over-engineered.** Scope tracks the audit; the deferrals (R2/R5/E1.3/continuous-pan) are
+  reasonable. The remaining gate on "done" is the **on-device validation run** above — the
+  branch's central claim is unproven on the SM-T590 until then.
