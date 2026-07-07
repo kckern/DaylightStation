@@ -16,7 +16,6 @@ import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activePa
 import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
-import { playClick } from './click.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
@@ -272,7 +271,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useMetronomeClick({
     enabled: clickOn && (mode === 'learn' || mode === 'listen'),
     bpm: clickBpm,
-    onTick: playClick,
   });
 
   const flashWrong = useCallback(() => {

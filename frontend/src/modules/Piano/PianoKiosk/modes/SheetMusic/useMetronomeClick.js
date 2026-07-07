@@ -1,20 +1,25 @@
 import { useEffect, useRef } from 'react';
+import { createClickScheduler } from './clickScheduler.js';
 
 /**
- * useMetronomeClick — a tempo-locked tick scheduler. While `enabled`, calls
- * `onTick` every 60000/bpm ms; the caller makes the sound (this stays audio-
- * agnostic so it's testable). Restarts on bpm/enabled change; clears on unmount.
+ * useMetronomeClick — audio-clock metronome. While `enabled`, beats are
+ * scheduled ahead on the AudioContext clock (see clickScheduler.js) so the
+ * click stays locked under main-thread jank. bpm changes retune the period
+ * live WITHOUT restarting (phase is kept).
  */
-export function useMetronomeClick({ enabled, bpm, onTick }) {
-  const onTickRef = useRef(onTick);
-  onTickRef.current = onTick;
+export function useMetronomeClick({ enabled, bpm, createScheduler = createClickScheduler }) {
+  const schedRef = useRef(null);
+  const bpmRef = useRef(bpm); bpmRef.current = bpm;
 
   useEffect(() => {
-    if (!enabled || !(bpm > 0)) return undefined;
-    const period = 60000 / bpm;
-    const id = setInterval(() => onTickRef.current?.(), period);
-    return () => clearInterval(id);
-  }, [enabled, bpm]);
+    if (!enabled || !(bpmRef.current > 0)) return undefined;
+    const s = createScheduler();
+    schedRef.current = s;
+    s.start(bpmRef.current);
+    return () => { s.stop(); schedRef.current = null; };
+  }, [enabled, createScheduler]);
+
+  useEffect(() => { if (bpm > 0) schedRef.current?.setBpm(bpm); }, [bpm]);
 }
 
 export default useMetronomeClick;
