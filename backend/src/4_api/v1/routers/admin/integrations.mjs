@@ -18,6 +18,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 /**
  * Create Admin Integrations Router
@@ -101,118 +102,108 @@ export function createAdminIntegrationsRouter(config) {
   // GET / - List all integrations with status
   // ===========================================================================
 
-  router.get('/', (req, res) => {
-    try {
-      const integrations = readIntegrations();
-      const services = readServices();
-      const env = getEnvironment();
+  router.get('/', asyncHandler((req, res) => {
+    const integrations = readIntegrations();
+    const services = readServices();
+    const env = getEnvironment();
 
-      const providers = [];
+    const providers = [];
 
-      for (const [category, entries] of Object.entries(integrations)) {
-        // Handle messaging specially (nested structure)
-        if (category === 'messaging') {
-          const platforms = new Set();
-          for (const [app, appEntries] of Object.entries(entries)) {
-            if (Array.isArray(appEntries)) {
-              appEntries.forEach(e => platforms.add(e.platform));
-            }
+    for (const [category, entries] of Object.entries(integrations)) {
+      // Handle messaging specially (nested structure)
+      if (category === 'messaging') {
+        const platforms = new Set();
+        for (const [app, appEntries] of Object.entries(entries)) {
+          if (Array.isArray(appEntries)) {
+            appEntries.forEach(e => platforms.add(e.platform));
           }
-          platforms.forEach(platform => {
-            providers.push({
-              provider: platform,
-              category: 'messaging',
-              url: getServiceUrl(services, platform, env),
-              hasAuth: checkAuthExists(platform),
-            });
-          });
-          continue;
         }
-
-        if (!Array.isArray(entries)) continue;
-
-        entries.forEach(entry => {
+        platforms.forEach(platform => {
           providers.push({
-            provider: entry.provider,
-            category,
-            config: entry,
-            url: getServiceUrl(services, entry.provider, env),
-            hasAuth: checkAuthExists(entry.provider),
+            provider: platform,
+            category: 'messaging',
+            url: getServiceUrl(services, platform, env),
+            hasAuth: checkAuthExists(platform),
           });
         });
+        continue;
       }
 
-      logger.info?.('admin.integrations.listed', { count: providers.length });
-      res.json({ integrations: providers });
-    } catch (error) {
-      logger.error?.('admin.integrations.list.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to list integrations' });
+      if (!Array.isArray(entries)) continue;
+
+      entries.forEach(entry => {
+        providers.push({
+          provider: entry.provider,
+          category,
+          config: entry,
+          url: getServiceUrl(services, entry.provider, env),
+          hasAuth: checkAuthExists(entry.provider),
+        });
+      });
     }
-  });
+
+    logger.info?.('admin.integrations.listed', { count: providers.length });
+    res.json({ integrations: providers });
+  }));
 
   // ===========================================================================
   // GET /:provider - Detail for a specific provider
   // ===========================================================================
 
-  router.get('/:provider', (req, res) => {
-    try {
-      const providerName = req.params.provider;
-      const integrations = readIntegrations();
-      const services = readServices();
-      const env = getEnvironment();
+  router.get('/:provider', asyncHandler((req, res) => {
+    const providerName = req.params.provider;
+    const integrations = readIntegrations();
+    const services = readServices();
+    const env = getEnvironment();
 
-      // Find which category this provider belongs to
-      let found = null;
-      for (const [category, entries] of Object.entries(integrations)) {
-        if (category === 'messaging') {
-          // Check if providerName is a platform in messaging
-          for (const [app, appEntries] of Object.entries(entries)) {
-            if (Array.isArray(appEntries) && appEntries.some(e => e.platform === providerName)) {
-              found = {
-                provider: providerName,
-                category: 'messaging',
-                apps: Object.keys(entries).filter(a => {
-                  const ae = entries[a];
-                  return Array.isArray(ae) && ae.some(e => e.platform === providerName);
-                })
-              };
-              break;
-            }
+    // Find which category this provider belongs to
+    let found = null;
+    for (const [category, entries] of Object.entries(integrations)) {
+      if (category === 'messaging') {
+        // Check if providerName is a platform in messaging
+        for (const [app, appEntries] of Object.entries(entries)) {
+          if (Array.isArray(appEntries) && appEntries.some(e => e.platform === providerName)) {
+            found = {
+              provider: providerName,
+              category: 'messaging',
+              apps: Object.keys(entries).filter(a => {
+                const ae = entries[a];
+                return Array.isArray(ae) && ae.some(e => e.platform === providerName);
+              })
+            };
+            break;
           }
-          if (found) break;
-          continue;
         }
-
-        if (!Array.isArray(entries)) continue;
-
-        const entry = entries.find(e => e.provider === providerName);
-        if (entry) {
-          found = { ...entry, category };
-          break;
-        }
+        if (found) break;
+        continue;
       }
 
-      if (!found) {
-        return res.status(404).json({ error: `Provider "${providerName}" not found` });
+      if (!Array.isArray(entries)) continue;
+
+      const entry = entries.find(e => e.provider === providerName);
+      if (entry) {
+        found = { ...entry, category };
+        break;
       }
-
-      const detail = {
-        ...found,
-        url: getServiceUrl(services, providerName, env),
-        hasAuth: checkAuthExists(providerName),
-        authLocations: {
-          household: fs.existsSync(path.join(getDataRoot(), `household/auth/${providerName}.yml`)),
-          system: fs.existsSync(path.join(getDataRoot(), `system/auth/${providerName}.yml`)),
-        },
-      };
-
-      logger.info?.('admin.integrations.detail', { provider: providerName });
-      res.json({ integration: detail });
-    } catch (error) {
-      logger.error?.('admin.integrations.detail.failed', { error: error.message });
-      res.status(500).json({ error: 'Failed to read integration detail' });
     }
-  });
+
+    if (!found) {
+      return res.status(404).json({ error: `Provider "${providerName}" not found` });
+    }
+
+    const detail = {
+      ...found,
+      url: getServiceUrl(services, providerName, env),
+      hasAuth: checkAuthExists(providerName),
+      authLocations: {
+        household: fs.existsSync(path.join(getDataRoot(), `household/auth/${providerName}.yml`)),
+        system: fs.existsSync(path.join(getDataRoot(), `system/auth/${providerName}.yml`)),
+      },
+    };
+
+    logger.info?.('admin.integrations.detail', { provider: providerName });
+    res.json({ integration: detail });
+  }));
 
   // ===========================================================================
   // POST /:provider/test - Placeholder health check
@@ -229,6 +220,8 @@ export function createAdminIntegrationsRouter(config) {
       timestamp: new Date().toISOString(),
     });
   });
+
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }
