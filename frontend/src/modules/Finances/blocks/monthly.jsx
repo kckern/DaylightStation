@@ -1,8 +1,98 @@
 import moment from "moment";
 import React, { useEffect, useState } from "react";
-import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
 import { Menu, Button, Group } from '@mantine/core';
+
+export const loadAnticipatedTransactions = (budget, month, key) => {
+  const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
+  const accountName = "Anticipated";
+  switch (key) {
+    case "month":
+      return [
+        ...loadAnticipatedTransactions(budget, month, "fixed"),
+        ...loadAnticipatedTransactions(budget, month, "day"),
+        ...loadAnticipatedTransactions(budget, month, "income")
+      ];
+    case "income":
+      return budget["monthlyBudget"][month].incomeTransactions.map((paycheck) => ({
+        date: paycheck.date,
+        accountName,
+        amount: paycheck.amount,
+        expenseAmount: paycheck.amount,
+        description: paycheck.description || "Paycheck",
+        tagNames: ["Income"],
+        label: 'Income',
+        bucket: 'income'
+      }));
+    case "fixed":
+      return Object.keys(budget["monthlyBudget"][month].monthlyCategories).map((cat) => ({
+        date,
+        accountName,
+        amount: budget["monthlyBudget"][month].monthlyCategories[cat].amount,
+        expenseAmount: budget["monthlyBudget"][month].monthlyCategories[cat].amount,
+        description: cat,
+        tagNames: [cat],
+        label: cat
+      }));
+    case "day":
+      return [{
+        date,
+        accountName,
+        amount: budget["dayToDayBudget"][month].budget,
+        expenseAmount: budget["dayToDayBudget"][month].budget,
+        description: "Day-to-Day Spending",
+        tagNames: ["Day-to-Day"],
+        label: "Day-to-Day Spending",
+        bucket: "day"
+      }];
+  }
+  return [];
+};
+
+export const loadCellTransactions = (budget, month, key) => {
+  if (!month) {
+    return Object.keys(budget["monthlyBudget"]).flatMap(m => loadCellTransactions(budget, m, key));
+  }
+
+  const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
+  if (isFuture) {
+    return loadAnticipatedTransactions(budget, month, key);
+  }
+  switch (key) {
+    case "month":
+      return [
+        ...loadCellTransactions(budget, month, "fixed"),
+        ...loadCellTransactions(budget, month, "day"),
+        ...loadCellTransactions(budget, month, "income")
+      ];
+    case "fixed":
+      return Object.keys(budget["monthlyBudget"][month].monthlyCategories).flatMap(cat => budget["monthlyBudget"][month].monthlyCategories[cat].transactions) || [];
+    case "day":
+      return budget["dayToDayBudget"][month].transactions || [];
+    case "income":
+      return budget["monthlyBudget"][month].incomeTransactions || [];
+    default:
+      return [];
+  }
+};
+
+const EMPTY_AGGREGATE = {
+  income: 0, nonBonusIncome: 0, spending: 0, surplus: 0,
+  monthlySpending: 0, monthlyDebits: 0, monthlyCredits: 0,
+  dayToDaySpending: 0, incomeTransactions: [], monthlyCategories: {}
+};
+
+export const getPeriodData = (budget, month) => {
+  if (!month) {
+    // Whole-period rollup is compiled backend-side (SSoT); the empty
+    // fallback covers a pre-recompile finances.yml.
+    return { month: budget.aggregate || EMPTY_AGGREGATE };
+  }
+  return {
+    month: budget["monthlyBudget"][month],
+    daytoday: budget["dayToDayBudget"][month]
+  };
+};
 
 export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
   const recentMonths = monthKeys.slice(-6); // Get the most recent 6 months
@@ -67,99 +157,16 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
 function BudgetTable({ setDrawerContent, budget }) {
   const activeBudget = budget;
 
-  const loadAnticipatedTransactions = (month, key) => {
-    const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
-    const accountName = "Anticipated";
-    switch (key) {
-      case "month":
-        return [...loadAnticipatedTransactions(month, "fixed"), ...loadAnticipatedTransactions(month, "day"), ...loadAnticipatedTransactions(month, "income")];
-      case "income":
-        return activeBudget["monthlyBudget"][month].incomeTransactions.map((paycheck) => ({
-          date: paycheck.date,
-          accountName,
-          amount: paycheck.amount,
-          expenseAmount: paycheck.amount,
-          description: paycheck.description || "Paycheck",
-          tagNames: ["Income"],
-          label: 'Income',
-          bucket: 'income'
-        }));
-      case "fixed":
-        return Object.keys(activeBudget["monthlyBudget"][month].monthlyCategories).map((cat) => ({
-          date,
-          accountName,
-          amount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
-          expenseAmount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
-          description: cat,
-          tagNames: [cat],
-          label: cat
-        }));
-      case "day":
-        return [{
-          date,
-          accountName,
-          amount: activeBudget["dayToDayBudget"][month].budget,
-          expenseAmount: activeBudget["dayToDayBudget"][month].budget,
-          description: "Day-to-Day Spending",
-          tagNames: ["Day-to-Day"],
-          label: "Day-to-Day Spending",
-          bucket: "day"
-        }];
-    }
-    return [];
-  }
-  const loadTransactions = (month, key) => {
-    if (!month) {
-      return Object.keys(activeBudget["monthlyBudget"]).flatMap(m => loadTransactions(m, key));
-    }
-
-    const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
-    if (isFuture) {
-      return loadAnticipatedTransactions(month, key);
-    }
-    switch (key) {
-      case "month":
-        return [...loadTransactions(month, "fixed"), ...loadTransactions(month, "day"), ...loadTransactions(month, "income")];
-      case "fixed":
-        return Object.keys(activeBudget["monthlyBudget"][month].monthlyCategories).flatMap(cat => activeBudget["monthlyBudget"][month].monthlyCategories[cat].transactions) || [];
-      case "day":
-        return activeBudget["dayToDayBudget"][month].transactions || [];
-      case "income":
-        return activeBudget["monthlyBudget"][month].incomeTransactions || [];
-      default:
-        return [];
-    }
-  }
-
-  const EMPTY_AGGREGATE = {
-    income: 0, nonBonusIncome: 0, spending: 0, surplus: 0,
-    monthlySpending: 0, monthlyDebits: 0, monthlyCredits: 0,
-    dayToDaySpending: 0, incomeTransactions: [], monthlyCategories: {}
-  };
-
-  function getPeriodData(month) {
-    if (!month) {
-      // Whole-period rollup is compiled backend-side (SSoT); the empty
-      // fallback covers a pre-recompile finances.yml.
-      return { month: activeBudget.aggregate || EMPTY_AGGREGATE };
-    }
-    return {
-      month: activeBudget["monthlyBudget"][month],
-      daytoday: activeBudget["dayToDayBudget"][month]
-    };
-  }
-
-
   const handleCellClick = (month, key) => {
-
-
-    const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
-    const periodData = getPeriodData(month);
     const monthString = month ? moment(month, "YYYY-MM").format("MMM ‘YY") : "Entire Budget Period";
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
     const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : key === "day" ? "Day-to-Day Spending" : "Cash Flow";
-    const content = <Drawer transactions={transactions} cellKey={key} periodData={periodData} />;
-    setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
+    setDrawerContent({
+      type: 'monthly-cell',
+      title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}`,
+      month,
+      cellKey: key
+    });
   }
 
 

@@ -13,10 +13,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   const { accountId } = mortgage;
 
   const openDrawer = (tab = 'amortization') => {
-    setDrawerContent({
-      meta: { title: 'Mortgage Details' },
-      jsx: <MortgageDrawer mortgage={mortgage} defaultTab={tab} />
-    });
+    setDrawerContent({ type: 'mortgage', title: 'Mortgage Details', tab });
   };
 
   const handleTitleClick = () => {
@@ -358,7 +355,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     );
   }
 
-  function MortgageDrawer({ mortgage, defaultTab = 'amortization' }) {
+  export function MortgageDrawer({ mortgage, defaultTab = 'amortization' }) {
     const [selectedPlanId, setSelectedPlanId] = useState(
       mortgage.paymentPlans[0]?.info?.id || null
     );
