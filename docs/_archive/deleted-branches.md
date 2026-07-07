@@ -119,3 +119,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-02 | feature/piano-screen-power-sync | c10e7b7cc | Piano-power → tablet-screen authority service (HA power sensor → FKB backlight; edge/debounce/reconcile/verify-retry-escalate, disabled by default). Merged as cb87b38f1. |
 | 2026-07-02 | feature/midi-loop-library | ec4af9cda | Foundational MIDI loop library (ingest CLI + shared/music theory core: chords/layerMatch/loopScheduler/loopQuery). Superseded — its files are all in main and the Producer overhaul was built on them. Deleted (unmerged branch pointer; work already integrated). |
 | 2026-07-04 | feat/piano-producer-ux-overhaul | f6aa5e35e | Piano Producer UX+taxonomy overhaul (merged to main, deployed) |
+| 2026-07-06 | refactor/ddd-compliance-p0 | 3983105a82a45021dabd39b4cb0fafb4157f95ea | DDD remediation Phase P0 (merged to main via 8acdf4106) |
