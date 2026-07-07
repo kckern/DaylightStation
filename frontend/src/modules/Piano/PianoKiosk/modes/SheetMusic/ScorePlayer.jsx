@@ -757,8 +757,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               ref={cursorRef}
               className={`piano-score-cursor${wrong ? ' is-wrong' : ''}${jump ? ' is-jump' : ''}`}
               style={{
-                left: current.x - 9 * scale,
-                top: current.top,
+                transform: `translate3d(${current.x - 9 * scale}px, ${current.top}px, 0)`,
                 width: Math.round(18 * scale),
                 height: Math.max(40 * scale, current.bottom - current.top),
                 '--cursor-color': cursorColor,
