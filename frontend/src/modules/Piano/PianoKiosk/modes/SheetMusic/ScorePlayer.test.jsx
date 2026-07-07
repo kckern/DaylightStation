@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   layoutExtras: {},
   pressNote: vi.fn(),
   releaseNote: vi.fn(),
+  sendNoteAt: vi.fn(),
+  sendNoteOffAt: vi.fn(),
   sendPanic: vi.fn(),
 }));
 
@@ -37,6 +39,8 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
     subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
     pressNote: h.pressNote,
     releaseNote: h.releaseNote,
+    sendNoteAt: h.sendNoteAt,
+    sendNoteOffAt: h.sendNoteOffAt,
     sendPanic: h.sendPanic,
   }),
 }));
@@ -81,6 +85,7 @@ const renderPlayer = () =>
 beforeEach(() => {
   h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
   h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
+  h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
 });
 
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
@@ -199,11 +204,53 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('▶').click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    expect(h.pressNote).toHaveBeenCalledWith(40, expect.any(Number)); // LH performed
-    expect(h.pressNote).toHaveBeenCalledWith(64, expect.any(Number)); // RH performed too — full jukebox
+    // Audio plane: performed via timestamped sends (NOT pressNote — machine
+    // playback never lights the keyboard as human input).
+    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH performed
+    expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH performed too — full jukebox
+    expect(h.pressNote).not.toHaveBeenCalled();
     screen.getByText('❚❚').click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
+  });
+
+  it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(50)); // scheduled ahead — no timer advance strictly needed
+    expect(h.sendNoteAt).toHaveBeenCalled();
+    const [note, vel, atWall] = h.sendNoteAt.mock.calls[0];
+    expect(note).toBe(64);
+    expect(typeof vel).toBe('number');
+    expect(typeof atWall).toBe('number'); // Web-MIDI wall timestamp, not undefined
+    expect(h.pressNote).not.toHaveBeenCalled(); // machine playback never lights the keyboard
+  });
+
+  it('pause sends an immediate flush AND a delayed panic after the lookahead window', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // note 40 scheduled + sounding
+    h.sendPanic.mockClear();
+    screen.getByText('❚❚').click(); // pause
+    await act(async () => {});
+    const panicsAtPause = h.sendPanic.mock.calls.length;
+    expect(panicsAtPause).toBeGreaterThanOrEqual(1); // immediate flush killed the sounding note
+    act(() => vi.advanceTimersByTime(500)); // > lookaheadMs (400) + 60
+    expect(h.sendPanic.mock.calls.length).toBeGreaterThan(panicsAtPause); // delayed panic for late-dispatched note-ons
   });
 
   it('tempo control scales the Listen performance timeline', async () => {
