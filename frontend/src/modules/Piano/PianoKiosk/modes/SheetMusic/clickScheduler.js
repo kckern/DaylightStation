@@ -32,6 +32,7 @@ export function createClickScheduler({
 
   return {
     start(bpm) {
+      if (!(bpm > 0)) return; // guard: bpm<=0 → negative period → tick loops forever
       const ac = getCtx();
       if (!ac) return; // no WebAudio (jsdom) — silent no-op, same as playClick
       if (ac.state === 'suspended') ac.resume();
@@ -48,6 +49,9 @@ export function createClickScheduler({
       // the tempo change takes effect from the next beat, not from "now".
       nextBeat += newPeriod - periodS;
       periodS = newPeriod;
+      // Avoid a past-timestamped catch-up burst on a big speed-up (e.g. 30→180).
+      const now = getCtx()?.currentTime;
+      if (now != null && nextBeat < now) nextBeat = now;
     },
     stop() { if (timer != null) { clearInterval(timer); timer = null; } },
   };

@@ -34,8 +34,10 @@ export function scheduleBlipAt(ac, t) {
 export function playClick() {
   const ac = audioContext();
   if (!ac) return;
-  if (ac.state === 'suspended') ac.resume();
-  scheduleBlipAt(ac, ac.currentTime);
+  try {
+    if (ac.state === 'suspended') ac.resume();
+    scheduleBlipAt(ac, ac.currentTime);
+  } catch { /* audio device gone — ignore */ }
 }
 
 export default playClick;
