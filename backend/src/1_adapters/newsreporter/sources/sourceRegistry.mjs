@@ -1,7 +1,7 @@
-import { HttpSourceAdapter } from '#adapters/newsreporter/sources/HttpSourceAdapter.mjs';
-import { RssSourceAdapter } from '#adapters/newsreporter/sources/RssSourceAdapter.mjs';
-import { HarvesterSourceAdapter } from '#adapters/newsreporter/sources/HarvesterSourceAdapter.mjs';
-import { AgentSourceAdapter } from '#adapters/newsreporter/sources/AgentSourceAdapter.mjs';
+import { HttpSourceAdapter } from './HttpSourceAdapter.mjs';
+import { RssSourceAdapter } from './RssSourceAdapter.mjs';
+import { HarvesterSourceAdapter } from './HarvesterSourceAdapter.mjs';
+import { AgentSourceAdapter } from './AgentSourceAdapter.mjs';
 import { ValidationError } from '#system/utils/errors/index.mjs';
 
 /**
