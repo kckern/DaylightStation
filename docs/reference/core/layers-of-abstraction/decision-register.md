@@ -1,0 +1,15 @@
+# DDD Compliance Decision Register
+
+> Authoritative record of the architecture rulings (D1–D7) made during the DDD compliance remediation. These are FINAL — record them, don't re-debate. Source analysis: [`docs/_wip/audits/2026-07-06-ddd-layer-compliance-mega-audit.md`](../../../_wip/audits/2026-07-06-ddd-layer-compliance-mega-audit.md). Execution plan: [`docs/_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md`](../../../_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md).
+
+Each ruling below is referenced from the layer guideline docs as `Decision D#`. When a task references a Decision, the ruling here is settled and not up for re-litigation during execution.
+
+| ID | Question | Ruling | Rationale (one line) | Date |
+|----|----------|--------|----------------------|------|
+| **D1** | May application Containers import concrete adapters? | **No.** Containers never import concrete adapters — no exceptions. Bootstrap injects them. | The Container is the wiring seam, not the composition root; importing adapters couples the app layer to `1_adapters/`. | 2026-07-06 |
+| **D2** | May `3_applications` import `1_rendering`? | **Yes**, allowed. Injection as a port is preferred where practical. | Renderers are presentation, not external I/O; `backend-architecture.md` already treats `1_rendering` as app-consumable. | 2026-07-06 |
+| **D3** | Where do ports live — domain or application? | Ports live in `3_applications/*/ports/` **only**. Existing `2_domains/*/ports/` migrate. `ILifelogExtractor` is explicitly **DEFERRED** to the serialization migration plan. | Ports express what the *application* needs from outside; the domain is pure logic with no external dependencies. | 2026-07-06 |
+| **D4** | What is the SSOT for pure time helpers? | `2_domains/core/utils/time.mjs` is the SSOT. `0_system/utils/time.mjs` becomes a thin compat re-export. Hardcoded LA default stays for now. | Pure time math is domain-foundation logic; one source avoids drift between two copies. | 2026-07-06 |
+| **D5** | May `3_applications` use `#system/utils/FileIO.mjs`? | **Banned** in `3_applications`. Data operations go through datastore ports. | The app layer must not know storage mechanics; enforced by the `apps-no-fileio` audit rule. | 2026-07-06 |
+| **D6** | How is the domain hierarchy table scoped, and where does `content` sit? | The level table is extended to cover **every** domain folder. `content` is promoted to **Level 1 (shared)**, making the two peer imports (fitness→content, barcode→content) legal. | `content` is a cross-cutting capability consumed by multiple feature domains, not a peer feature. | 2026-07-06 |
+| **D7** | Must adapters `extends` their port when one exists? | **Yes** — where a port file exists, flagship gateway/datastore adapters MUST `extends` it. Zero-importer port files are deleted, not kept as aspiration. Internal helpers/parsers are exempt. | An unimplemented port is dead documentation; enforcing `extends` keeps the contract real. | 2026-07-06 |
