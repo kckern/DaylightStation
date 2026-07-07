@@ -5,6 +5,7 @@ import { MonthTabs } from "./monthly";
 import moment from 'moment';
 import { formatAsCurrency, PALETTE } from '../lib/format.mjs';
 import { useToday } from '../hooks/useToday.mjs';
+import { EmptyState } from '../EmptyState.jsx';
 
 export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
   override = override || {};
@@ -225,7 +226,8 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 
 export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
 
-  const months = Object.keys(budget.dayToDayBudget);
+  const dayToDayBudget = budget.dayToDayBudget || {};
+  const months = Object.keys(dayToDayBudget);
   const currentMonth = moment().format("YYYY-MM");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
   const nonFutureMonths = months.filter((m) => m <= currentMonth);
@@ -237,17 +239,21 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
     />
   );
   useEffect(() => {
-    if (budget.dayToDayBudget[activeMonth] !== undefined) return;
-    const available = Object.keys(budget.dayToDayBudget).filter((m) => m <= currentMonth).sort();
-    setActiveMonth(available[available.length - 1] ?? Object.keys(budget.dayToDayBudget)[0]);
-  }, [activeMonth, budget.dayToDayBudget, currentMonth]);
+    if (dayToDayBudget[activeMonth] !== undefined) return;
+    const available = Object.keys(dayToDayBudget).filter((m) => m <= currentMonth).sort();
+    setActiveMonth(available[available.length - 1] ?? Object.keys(dayToDayBudget)[0]);
+  }, [activeMonth, dayToDayBudget, currentMonth]);
 
-  const monthData = budget.dayToDayBudget[activeMonth] || {};
+  const monthData = dayToDayBudget[activeMonth] || {};
   const today = useToday();
   const options = useMemo(
     () => buildDayToDayBudgetOptions(monthData, setDrawerContent, { now: today }),
     [monthData, setDrawerContent, today]
   );
+
+  if (Object.keys(budget.dayToDayBudget || {}).length === 0) {
+    return (<div className="budget-block"><h2>Day-to-day Spending</h2><EmptyState /></div>);
+  }
 
   return (
     <div className="budget-block">

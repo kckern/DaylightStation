@@ -57,10 +57,8 @@ export function Drawer({ cellKey, transactions, periodData }) {
           return value;
       };
 
-      const keyToUse = sortConfig.key === 'amount' ? 'expenseAmount' : sortConfig.key;
-
-      const aValue = parseValue(a[keyToUse]);
-      const bValue = parseValue(b[keyToUse]);
+      const aValue = parseValue(a[sortConfig.key]);
+      const bValue = parseValue(b[sortConfig.key]);
 
       if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;

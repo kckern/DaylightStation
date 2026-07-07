@@ -101,7 +101,8 @@ export class TransactionClassifier {
     const reserved = new Set([...this.#incomeTags, ...this.#dayToDayTags]);
     const collisions = [...new Set([
       ...Object.keys(this.#monthlyTagDict),
-      ...Object.keys(this.#shortTermTagDict)
+      ...Object.keys(this.#shortTermTagDict),
+      ...Object.keys(this.#transferTagDict)
     ])].filter(key => reserved.has(key));
     if (collisions.length > 0) {
       throw new ValidationError(

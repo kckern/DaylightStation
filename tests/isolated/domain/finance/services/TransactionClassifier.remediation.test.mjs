@@ -47,6 +47,13 @@ describe('TransactionClassifier remediation', () => {
     })).toThrow(/collision/i);
   });
 
+  test('throws when a transferTag collides with income/dayToDay tags', () => {
+    expect(() => new TransactionClassifier({
+      income: { tags: ['RSU Vest'] },
+      monthly: [{ label: 'Long-term Savings', tags: ['Brokerage'], transferTags: ['RSU Vest'] }]
+    })).toThrow(/collision/i);
+  });
+
   test('non-colliding config constructs fine', () => {
     expect(() => new TransactionClassifier({
       income: { tags: ['Paycheck'] },
