@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { formatAsCurrency } from "../blocks";
 import { EmptyState } from "../EmptyState.jsx";
 import { Menu, Button, Group } from '@mantine/core';
+import { pressable } from "../lib/a11y.mjs";
 
 export const loadAnticipatedTransactions = (budget, month, key) => {
   const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
@@ -191,11 +192,11 @@ function BudgetTable({ setDrawerContent, budget }) {
       const surplusClassName = surplus >= 0 ? "surplus positive" : "surplus negative";
       return (
         <tr key={month} className={rowClassName}>
-          <td onClick={() => handleCellClick(month, 'month')}>{monthMoment.format("MMM ‘YY")}</td>
-          <td onClick={() => handleCellClick(month, 'income')}>{formatAsCurrency(income)}</td>
-          <td onClick={() => handleCellClick(month, 'fixed')}>{formatAsCurrency(monthlySpending)}</td>
-          <td onClick={() => handleCellClick(month, 'day')}>{formatAsCurrency(dayToDaySpending)}</td>
-          <td onClick={()=>handleCellClick(month, 'month')} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'))}>{monthMoment.format("MMM ‘YY")}</td>
+          <td {...pressable(() => handleCellClick(month, 'income'))}>{formatAsCurrency(income)}</td>
+          <td {...pressable(() => handleCellClick(month, 'fixed'))}>{formatAsCurrency(monthlySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'day'))}>{formatAsCurrency(dayToDaySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'))} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
         </tr>
       );
     });
@@ -205,11 +206,11 @@ function BudgetTable({ setDrawerContent, budget }) {
 
     const sumRow = (
       <tr key="sum" className="sum">
-      <td onClick={() => handleCellClick(null, 'month')}>Total</td>
-      <td onClick={() => handleCellClick(null, 'income')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'fixed')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'day')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'month')} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'))}>Total</td>
+      <td {...pressable(() => handleCellClick(null, 'income'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
+      <td {...pressable(() => handleCellClick(null, 'fixed'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
+      <td {...pressable(() => handleCellClick(null, 'day'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'))} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
       </tr>
     );
 

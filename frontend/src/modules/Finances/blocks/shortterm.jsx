@@ -6,6 +6,7 @@ import { EmptyState } from "../EmptyState.jsx";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
 import { useToday } from "../hooks/useToday.mjs";
+import { pressable } from "../lib/a11y.mjs";
 
 export const gatherShortTermTransactions = (budget, key) => {
   const shortTermBuckets = budget.shortTermBuckets || {};
@@ -186,13 +187,13 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
 
     const statusBadge = (
         <span className="status-badge">
-            <span onClick={() => handleStatusClick('budget')} className="amount">
+            <span {...pressable(() => handleStatusClick('budget'), { className: 'amount' })}>
                 {formatAsCurrency(shortTermStatus.budget)}
             </span> +
-            <span onClick={() => handleStatusClick('gained')} className="gained">
+            <span {...pressable(() => handleStatusClick('gained'), { className: 'gained' })}>
                 {formatAsCurrency(shortTermStatus.credits)}
             </span> -
-            <span onClick={() => handleStatusClick('spent')} className="spent">
+            <span {...pressable(() => handleStatusClick('spent'), { className: 'spent' })}>
                 {formatAsCurrency(shortTermStatus.debits)}
             </span> =
             <span className="remaining">

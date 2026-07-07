@@ -1,5 +1,6 @@
 import { SpendingPieDrilldownChart } from "./drawer";
 import { EmptyState } from "./EmptyState.jsx";
+import { pressable } from "./lib/a11y.mjs";
 export { formatAsCurrency } from './lib/format.mjs';
 
 export const collectSpendingTransactions = (budget) => {
@@ -24,7 +25,7 @@ export const collectSpendingTransactions = (budget) => {
 
     return (
       <div className="budget-block">
-      <h2 onClick={() => setDrawerContent({ type: 'transfers', title: 'Transfers' })}>Transfers</h2>
+      <h2 {...pressable(() => setDrawerContent({ type: 'transfers', title: 'Transfers' }), { 'aria-label': 'Open transfers' })}>Transfers</h2>
       <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
         {transferTransactions.length === 0 ? (
           <EmptyState message="No transfers this period" />
