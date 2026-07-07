@@ -86,9 +86,10 @@ export class TransactionClassifier {
 
     // Build short-term tag dictionary: tag -> label
     this.#shortTermTagDict = (config.shortTerm || []).reduce((acc, { tags, label }) => {
+      const bucketLabel = label || FALLBACK_LABEL;
       (tags || []).forEach(tag => {
-        acc[tag] = label;
-        acc[label] = label; // Also map label to itself
+        acc[tag] = bucketLabel;
+        acc[bucketLabel] = bucketLabel; // Also map label to itself
       });
       return acc;
     }, {});
@@ -163,28 +164,6 @@ export class TransactionClassifier {
     }
 
     return buckets;
-  }
-
-  /**
-   * Group transactions by their labels within a bucket
-   * @param {Transaction[]} transactions - Already classified transactions
-   * @param {'monthly'|'shortTerm'} bucketType - Bucket type to group
-   * @returns {Object<string, Transaction[]>} Transactions grouped by label
-   */
-  groupByLabel(transactions, bucketType) {
-    const grouped = {};
-
-    for (const txn of transactions) {
-      const { label, bucket } = (txn.label && txn.bucket) ? txn : this.classify(txn);
-      if (bucket !== bucketType) continue;
-
-      if (!grouped[label]) {
-        grouped[label] = [];
-      }
-      grouped[label].push({ ...txn, label, bucket });
-    }
-
-    return grouped;
   }
 
   /**

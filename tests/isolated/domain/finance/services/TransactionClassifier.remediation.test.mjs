@@ -25,14 +25,11 @@ describe('TransactionClassifier remediation', () => {
     expect(result).toEqual({ label: 'Uncategorized', bucket: 'monthly' });
   });
 
-  test('groupByLabel reuses pre-classified label/bucket instead of re-classifying', () => {
+  test('missing shortTerm label falls back to Uncategorized', () => {
     const classifier = new TransactionClassifier({
-      monthly: [{ label: 'Utilities', tags: ['Electric'] }]
+      shortTerm: [{ tags: ['MysteryFund'] }]
     });
-    // Pre-classified txn whose label deliberately disagrees with its tags:
-    // if groupByLabel re-classified, it would land under 'Utilities'.
-    const txn = { type: 'expense', tagNames: ['Electric'], label: 'Overridden', bucket: 'monthly' };
-    const grouped = classifier.groupByLabel([txn], 'monthly');
-    expect(Object.keys(grouped)).toEqual(['Overridden']);
+    const result = classifier.classify({ type: 'expense', tagNames: ['MysteryFund'] });
+    expect(result).toEqual({ label: 'Uncategorized', bucket: 'shortTerm' });
   });
 });
