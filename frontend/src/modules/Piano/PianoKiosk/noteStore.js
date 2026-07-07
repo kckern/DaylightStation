@@ -5,12 +5,12 @@
 // (2026-07-06 decoupling audit R1). Snapshots are immutable-per-change, as
 // useSyncExternalStore requires.
 //
-// Behavior mirrors useWebMidiBLE.js's volatile-state logic EXACTLY so the later
-// rewire is a no-behavior-change swap:
-//   - noteOn   ← applyNoteOn      (useWebMidiBLE.js:134-139)
-//   - noteOff  ← applyNoteOff     (useWebMidiBLE.js:141-154)
-//   - sustain  ← handleRawMidi CC64 branch (useWebMidiBLE.js:175-177)
-//   - sweepStale ← 2s cleanup effect (useWebMidiBLE.js:363-386)
+// Behavior mirrors the pre-R1 useWebMidiBLE volatile-state logic EXACTLY so the
+// rewire onto this store was a no-behavior-change swap:
+//   - noteOn     ← applyNoteOn (new Map().set + handleNoteOn)
+//   - noteOff    ← applyNoteOff (has()-guarded delete + findLastActive/closeNote)
+//   - sustain    ← handleRawMidi CC64 branch
+//   - sweepStale ← the 2s stale-note cleanup effect
 
 import {
   STALE_NOTE_MS, findLastActive, closeNote, trimHistory,
