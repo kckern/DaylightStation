@@ -11,7 +11,7 @@
  * can safely retry.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const REASONS = Object.freeze([
   'not-found',

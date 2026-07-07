@@ -9,7 +9,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { GratitudeItem } from './GratitudeItem.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} SelectionData

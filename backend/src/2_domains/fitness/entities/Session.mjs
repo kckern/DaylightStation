@@ -7,7 +7,7 @@
  *   - events: { timestamp, type, data }[] - discrete events during session
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { SessionId } from '../value-objects/SessionId.mjs';
 
 export class Session {

@@ -4,7 +4,7 @@
  * Zones: cool < active < warm < hot < fire
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
   ZONE_NAMES as _ZONE_NAMES,
   ZONE_PRIORITY as _ZONE_PRIORITY,

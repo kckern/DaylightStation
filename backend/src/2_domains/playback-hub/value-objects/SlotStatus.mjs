@@ -17,7 +17,7 @@
  * any earlier transformation from the raw mpv-introspection format.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const REQUIRED_KEYS = Object.freeze([
   'position', 'color', 'bt_connected', 'paused', 'now_playing',
