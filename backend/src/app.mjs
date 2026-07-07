@@ -2624,18 +2624,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Test infrastructure router (dev/test only)
   const { createTestRouter } = await import('./4_api/v1/routers/test.mjs');
-  const {
-    enablePlexShutoff,
-    disablePlexShutoff,
-    getPlexShutoffStatus
-  } = await import('#adapters/proxy/PlexProxyAdapter.mjs');
+  // Shutoff-valve test controls target the live registered Plex proxy instance
+  // (per-instance state, no module-level singleton). Null when Plex isn't configured.
+  const plexProxyAdapter = contentProxyService.getAdapter('plex');
+  const plexShutoffControls = plexProxyAdapter
+    ? {
+        enable: (opts) => plexProxyAdapter.enableShutoff(opts),
+        disable: () => plexProxyAdapter.disableShutoff(),
+        getStatus: () => plexProxyAdapter.getShutoffStatus()
+      }
+    : null;
 
   v1Routers.test = createTestRouter({
-    plexShutoffControls: {
-      enable: enablePlexShutoff,
-      disable: disablePlexShutoff,
-      getStatus: getPlexShutoffStatus
-    },
+    plexShutoffControls,
     logger: rootLogger.child({ module: 'test-api' })
   });
 
