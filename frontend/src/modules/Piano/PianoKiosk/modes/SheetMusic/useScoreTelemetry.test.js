@@ -32,6 +32,24 @@ describe('useScoreTelemetry', () => {
     expect(stats[2]).toMatchObject({ mode: 'play', maxDriftMs: 200, stalls: 1 });
   });
 
+  it('collects schedule leads and reports them in playback stats', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => {
+      result.current.recordSchedule({ note: 60 }, 350);
+      result.current.recordSchedule({ note: 62 }, 120);
+      result.current.recordSchedule({ note: 64 }, -20);
+      result.current.flushPlayback('listen');
+    });
+    const stats = logged.find(([, e]) => e === 'score.playback.stats')[2];
+    expect(stats.meanLeadMs).toBe(150);
+    expect(stats.minLeadMs).toBe(-20);
+    expect(stats.schedLate).toBe(1);
+    expect(stats.scheduled).toBe(3);
+    const warn = logged.find(([lvl, e]) => lvl === 'warn' && e === 'score.playback.sched-late');
+    expect(warn).toBeTruthy();
+    expect(warn[2]).toMatchObject({ leadMs: -20 });
+  });
+
   it('startSession opens a session log', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
     act(() => result.current.startSession('score-1'));
