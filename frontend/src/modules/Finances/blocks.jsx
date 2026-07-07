@@ -1,19 +1,5 @@
 import { Drawer, SpendingPieDrilldownChart } from "./drawer";
-export const formatAsCurrency = (value, abr) => {
-  const isNegative = value < 0;
-  const absoluteValue = Math.abs(value);
-  //if nan or infinity return Ø
-  if (!isFinite(absoluteValue)) return `$Ø`;
-
-  let formattedValue;
-  if (abr === "K") {
-    formattedValue = (absoluteValue / 1000).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    return isNegative ? `-$${formattedValue}K` : `$${formattedValue}K`;
-  } else {
-    formattedValue = absoluteValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    return isNegative ? `-$${formattedValue}` : `$${formattedValue}`;
-  }
-};
+export { formatAsCurrency } from './lib/format.mjs';
   // BudgetHoldings.jsx
   export function BudgetHoldings({ setDrawerContent, budget }) {
 

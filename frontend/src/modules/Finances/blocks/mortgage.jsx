@@ -1,5 +1,6 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
+import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
 import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -158,7 +159,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             x: 8,
             y: -8,
             formatter() {
-              return `<b>$${(this.y / 1000).toFixed(1)}k</b>`;
+              return `<b>${formatAsCurrency(this.y, 'K')}</b>`;
             },
             style: {
               color: '#1f2937',
@@ -220,7 +221,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           zIndex: 3
         })),
         {
-          color: '#dc2626',
+          color: PALETTE.today,
           width: 2,
           value: moment().valueOf(),
           dashStyle: 'ShortDash',
@@ -231,7 +232,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             align: 'left',
             x: 4,
             y: 12,
-            style: { color: '#dc2626', fontWeight: 'bold', fontSize: '11px' }
+            style: { color: PALETTE.today, fontWeight: 'bold', fontSize: '11px' }
           }
         }
       ]
@@ -246,7 +247,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         minorTickInterval: 25000,
         labels: {
           formatter() {
-            return `$${(this.value / 1000).toFixed(0)}k`;
+            return formatCompactCurrency(this.value);
           },
           style: { color: '#999' }
         },
@@ -268,7 +269,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         name: "Balance",
         type: "area",
         data: pastData,
-        color: "#4c8ffc",
+        color: PALETTE.balance,
         fillOpacity: 0.3,
         zIndex: 1
       },
@@ -276,7 +277,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         name: "Cumulative Interest",
         type: "area",
         data: cumulativeInterestData,
-        color: "#ff9800",
+        color: PALETTE.interest,
         fillOpacity: 0.25,
         zIndex: 0
       },
@@ -324,7 +325,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
         </Tooltip>
         <Tooltip label="Total interest paid to the lender so far — the cost of borrowing, gone forever." multiline w={260} withArrow>
-          <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
+          <div><span>Interest</span><b style={{ color: PALETTE.interest }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
         </Tooltip>
         <Tooltip label="Average monthly principal paydown across the loan's lifetime so far — your equity-building rate per month." multiline w={280} withArrow>
           <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
@@ -585,7 +586,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             }}>
               <div style={{ fontSize: '1.2em', marginBottom: '0.5rem' }}>
                 <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
-                <b style={{ color: '#ff9800' }}>{formatAsCurrency(cost.trueCost)}</b>
+                <b style={{ color: PALETTE.interest }}>{formatAsCurrency(cost.trueCost)}</b>
                 <span style={{ color: '#888', marginLeft: '0.5rem' }}>({plan.info.title})</span>
               </div>
               <table style={{ width: '100%', maxWidth: 400 }}>

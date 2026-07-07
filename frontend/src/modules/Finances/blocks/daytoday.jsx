@@ -4,11 +4,7 @@ import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
 import { Drawer } from "../drawer";
 import moment from 'moment';
-
-const formatAsCurrency = (value) => {
-  if (!value && value !== 0) return '$Ø';
-  return `$${Math.round(value).toLocaleString()}`;
-};
+import { formatAsCurrency, PALETTE } from '../lib/format.mjs';
 
 export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
   override = override || {};
@@ -38,7 +34,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     return {
       y: day.displayBalance ?? Math.abs(day.endingBalance),
       actualBalance: day.endingBalance,
-      color: overspent ? '#c1121f' : (highlightToday || isFirstDay) ? '#0077b6' : (isWeekend ? '#777' : undefined)
+      color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined)
     };
   });
 
@@ -75,7 +71,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     ? projectedData[projectedData.length - 1]
     : 0;
 
-  const projectionColor = endingProjectedBalance < 0 ? '#780000' : '#2a9d8f';
+  const projectionColor = endingProjectedBalance < 0 ? PALETTE.projectionOver : PALETTE.projectionOk;
 
   projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
     y: val,
