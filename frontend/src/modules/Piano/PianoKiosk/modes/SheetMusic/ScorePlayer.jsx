@@ -654,7 +654,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       transport.pause();
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
-      logger.info('score.transport.pause', { step });
+      logger.info('score.transport.pause', { step: stepRef.current });
     } else {
       // A quick pause→resume must cancel the pending delayed panic — otherwise it
       // fires ~lookahead+60ms INTO the resumed run and cuts whatever's sounding.
@@ -663,9 +663,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
       clearTimeout(flushTimerRef.current);
       transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
       transport.play();
-      logger.info('score.transport.play', { step, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+      logger.info('score.transport.play', { step: stepRef.current, mode, bpm: tempoMap[0]?.bpm, tempoMult });
     }
-  }, [running, transport, mode, silenceScheduled, flushPlaybackNow, logger, step, stepTimeline, tempoMap, tempoMult]);
+    // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
+    // `step` closure — so `step` is deliberately OUT of the dep array. That keeps
+    // `toggleRun` referentially stable across cursor-step advances, letting the
+    // memoized ScoreTransportButtons bail per step during playback.
+  }, [running, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
