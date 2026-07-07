@@ -16,7 +16,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -28,7 +27,10 @@ export class ClickUpHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
   #currentStore;
-  #configService;
+  #getUserAuth;
+  #getHouseholdAuth;
+  #adapterConfig;
+  #apiKey;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -38,7 +40,10 @@ export class ClickUpHarvester extends IHarvester {
    * @param {Object} config.httpClient - HTTP client for API requests
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} [config.currentStore] - Store for current data YAML
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {(service: string) => Object} [config.getHouseholdAuth] - Household-level auth accessor
+   * @param {Object} [config.adapterConfig] - Resolved ClickUp adapter config (statuses, team_id, etc.)
+   * @param {string} [config.apiKey] - ClickUp API key (from secrets)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -46,8 +51,11 @@ export class ClickUpHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     currentStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    getHouseholdAuth,
+    adapterConfig,
+    apiKey,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -68,7 +76,10 @@ export class ClickUpHarvester extends IHarvester {
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
     this.#currentStore = currentStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#getHouseholdAuth = getHouseholdAuth;
+    this.#adapterConfig = adapterConfig;
+    this.#apiKey = apiKey;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -99,7 +110,7 @@ export class ClickUpHarvester extends IHarvester {
    * @returns {Promise<{ current: number, lifelog: { created: number, completed: number }, status: string }>}
    */
   async harvest(username, options = {}) {
-    const clickupConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
+    const clickupConfig = this.#adapterConfig || null;
     const {
       daysBack = 7,
       statuses = clickupConfig?.statuses || [],
@@ -127,9 +138,9 @@ export class ClickUpHarvester extends IHarvester {
       this.#logger.info?.('clickup.harvest.start', { username, daysBack });
 
       // Get auth
-      const auth = this.#configService?.getHouseholdAuth?.('clickup') ||
-                   this.#configService?.getUserAuth?.('clickup', username) || {};
-      const apiKey = auth.api_key || configService.getSecret('CLICKUP_PK');
+      const auth = this.#getHouseholdAuth?.('clickup') ||
+                   this.#getUserAuth?.('clickup', username) || {};
+      const apiKey = auth.api_key || this.#apiKey;
       const teamId = auth.workspace_id || clickupConfig?.team_id;
 
       if (!apiKey) {

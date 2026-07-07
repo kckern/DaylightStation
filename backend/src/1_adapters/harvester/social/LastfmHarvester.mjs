@@ -16,7 +16,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -26,7 +25,9 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 export class LastfmHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
-  #configService;
+  #getUserAuth;
+  #lastfmUser;
+  #apiKey;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -35,15 +36,19 @@ export class LastfmHarvester extends IHarvester {
    * @param {Object} config
    * @param {Object} config.httpClient - HTTP client for API requests
    * @param {Object} config.lifelogStore - Store for lifelog YAML
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.lastfmUser] - Default Last.fm username (from secrets)
+   * @param {string} [config.apiKey] - Last.fm API key (from secrets)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
     httpClient,
     lifelogStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    lastfmUser,
+    apiKey,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -63,7 +68,9 @@ export class LastfmHarvester extends IHarvester {
 
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#lastfmUser = lastfmUser;
+    this.#apiKey = apiKey;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -116,8 +123,8 @@ export class LastfmHarvester extends IHarvester {
       this.#logger.info?.('lastfm.harvest.start', { username, maxPages, fullSync });
 
       // Get auth
-      const auth = this.#configService?.getUserAuth?.('lastfm', username) || {};
-      const lastfmUser = auth.username || this.#configService?.getSecret?.('LAST_FM_USER');
+      const auth = this.#getUserAuth?.('lastfm', username) || {};
+      const lastfmUser = auth.username || this.#lastfmUser;
       const apiKey = this.#resolveApiKey(auth);
 
       if (!apiKey) {
@@ -237,20 +244,8 @@ export class LastfmHarvester extends IHarvester {
    * @private
    */
   #resolveApiKey(auth) {
-    const candidates = [
-      'LAST_FM_API_KEY',
-      'LASTFM_API_KEY',
-      'LASTFM_APIKEY',
-    ];
-
-    // Check injected configService first
-    for (const key of candidates) {
-      const val = this.#configService?.getSecret?.(key);
-      if (val) return val;
-    }
-
-
-    // Check auth
+    // Prefer the constructor-resolved secret, then per-user auth
+    if (this.#apiKey) return this.#apiKey;
     if (auth?.key) return auth.key;
 
     return null;

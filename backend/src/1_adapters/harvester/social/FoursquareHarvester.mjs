@@ -16,7 +16,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // Foursquare API version date (required param)
@@ -33,7 +32,8 @@ export class FoursquareHarvester extends IHarvester {
   #httpClient;
   #lifelogStore;
   #authStore;
-  #configService;
+  #getUserAuth;
+  #token;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -43,7 +43,8 @@ export class FoursquareHarvester extends IHarvester {
    * @param {Object} config.httpClient - HTTP client for API requests
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} config.authStore - Store for OAuth tokens
-   * @param {Object} config.configService - ConfigService for credentials
+   * @param {(service: string, username: string) => Object} [config.getUserAuth] - Per-user auth accessor
+   * @param {string} [config.token] - Foursquare API token (from secrets)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -51,8 +52,9 @@ export class FoursquareHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     authStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    getUserAuth,
+    token,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -73,7 +75,8 @@ export class FoursquareHarvester extends IHarvester {
     this.#httpClient = httpClient;
     this.#lifelogStore = lifelogStore;
     this.#authStore = authStore;
-    this.#configService = configService;
+    this.#getUserAuth = getUserAuth;
+    this.#token = token;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -130,8 +133,8 @@ export class FoursquareHarvester extends IHarvester {
       });
 
       // Get OAuth token
-      const auth = this.#configService?.getUserAuth?.('foursquare', username) || {};
-      const token = auth.token || this.#configService?.getSecret?.('FOURSQUARE_TOKEN');
+      const auth = this.#getUserAuth?.('foursquare', username) || {};
+      const token = auth.token || this.#token;
 
       if (!token) {
         throw new InfrastructureError('Foursquare OAuth token not configured', {
