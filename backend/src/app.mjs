@@ -965,8 +965,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     };
 
     // Feed source adapters (extracted from FeedAssemblyService)
+    // Shared system HttpClient for all raw-HTTP feed adapters (P1.9).
+    const feedHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'feed-http' }) });
     const redditAdapter = new RedditFeedAdapter({
       dataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'reddit-feed' }),
     });
     const weatherAdapter = new WeatherFeedAdapter({
@@ -1014,14 +1017,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const pipedHost = configService.resolveServiceUrl('piped');
     const youtubeContentAdapter = pipedHost ? new YouTubeAdapter({
       host: pipedHost,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'youtube-adapter' }),
     }) : null;
     const youtubeAdapter = googleAuth?.api_key ? new YouTubeFeedAdapter({
       apiKey: googleAuth.api_key,
       youtubeAdapter: youtubeContentAdapter,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'youtube-feed' }),
     }) : null;
     const googleNewsAdapter = new GoogleNewsFeedAdapter({
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'googlenews-feed' }),
     });
     const komgaAuth = configService.getHouseholdAuth('komga');
@@ -1034,6 +1040,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       apiKey: komgaAuth.token,
       webUrl: configService.resolveServiceWebUrl('komga'),
       dataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'komga-feed' }),
     }) : null;
 
@@ -1045,6 +1052,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const goodreadsFeedAdapter = new GoodreadsFeedAdapter({
       userDataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'goodreads-feed' }),
     });
 
@@ -1054,6 +1062,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       token: audiobookshelfConfig.token,
       mediaDir: mediaBasePath,
       webUrl: configService.resolveServiceWebUrl('audiobookshelf'),
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
     }) : null;
 
@@ -1078,6 +1087,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     const webContentAdapter = new WebContentAdapter({
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'web-content' }),
     });
     const feedContentService = new FeedContentService({

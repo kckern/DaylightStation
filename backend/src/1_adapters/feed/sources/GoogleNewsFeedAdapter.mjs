@@ -13,6 +13,8 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
+import { translateVendorError } from '#system/utils/errors/index.mjs';
 
 const RSS_BASE = 'https://news.google.com/rss/search';
 const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
@@ -29,12 +31,14 @@ export const GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS = [
 
 export class GoogleNewsFeedAdapter extends IFeedSourceAdapter {
   #logger;
+  #httpClient;
   /** @type {Map<string, { items: Object[], ts: number }>} */
   #cache = new Map();
 
-  constructor({ logger = console }) {
+  constructor({ logger = console, httpClient } = {}) {
     super();
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   get sourceType() { return 'googlenews'; }
@@ -120,10 +124,19 @@ export class GoogleNewsFeedAdapter extends IFeedSourceAdapter {
       ceid: 'US:en',
     });
 
-    const res = await fetch(`${RSS_BASE}?${params}`);
-    if (!res.ok) throw new Error(`Google News RSS ${res.status}`);
+    let res;
+    try {
+      res = await this.#httpClient.get(`${RSS_BASE}?${params}`);
+    } catch (err) {
+      this.#logger.warn?.('googlenews.rss.failed', { topic, status: err.status });
+      throw translateVendorError({ status: err.status }, { op: 'fetchTopic' });
+    }
+    if (!res.ok) {
+      this.#logger.warn?.('googlenews.rss.failed', { topic, status: res.status });
+      throw translateVendorError({ status: res.status }, { op: 'fetchTopic' });
+    }
 
-    const xml = await res.text();
+    const xml = typeof res.data === 'string' ? res.data : String(res.data ?? '');
     const items = this.#parseRSS(xml, topic, maxResults, query);
     this.#putInCache(cacheKey, items);
     return items;
