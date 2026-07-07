@@ -4,14 +4,14 @@
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { STREAM_FORMATS } from './StreamFormat.mjs';
+import { isStreamFormat } from './StreamFormat.mjs';
 
 /**
  * Normalized output of any IStreamResolver. Immutable.
  */
 export class StreamResult {
   constructor({ format, mediaUrl, title = null, poster = null, duration = null, headers = null }) {
-    if (!STREAM_FORMATS.has(format)) {
+    if (!isStreamFormat(format)) {
       throw new ValidationError(`Invalid stream format: ${format}`, { field: 'format' });
     }
     if (!mediaUrl || typeof mediaUrl !== 'string') {
