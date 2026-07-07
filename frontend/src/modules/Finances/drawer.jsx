@@ -348,12 +348,14 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       }
     },
     xAxis: { type: 'category' },
-    yAxis: { 
-        formatter: function() { 
-            return formatAsCurrency(Math.abs(this.value)); 
-        }, 
-        title: { text: '' }, 
-        min: Math.min(0, surplusValue), 
+    yAxis: {
+        labels: {
+            formatter: function () {
+                return formatAsCurrency(Math.abs(this.value));
+            }
+        },
+        title: { text: '' },
+        min: Math.min(0, surplusValue),
         max: maxValue,
         plotLines: [{
             value: 0,
@@ -364,14 +366,17 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
         plotBands: [{
             from: Math.min(0, surplusValue),
             to: 0,
-            color: 'rgba(255, 100, 0, 0.1)' // Light red color with some transparency
+            color: 'rgba(255, 100, 0, 0.1)'
         }]
     },
     legend: { enabled: false },
-    tooltip: { 
-        formatter: function() {
-            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of income`;
-        }, 
+    tooltip: {
+        formatter: function () {
+            const pctLine = (this.y != null && incomeSum)
+                ? `<br/>${(Math.abs(this.y) / incomeSum * 100).toFixed(0)}% of income`
+                : '';
+            return `<b>${this.point.name}</b><br/>${formatAsCurrency(this.y)}${pctLine}`;
+        },
     },
     series: [{
       upColor: PALETTE.gain,
