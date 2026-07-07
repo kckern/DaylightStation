@@ -41,6 +41,8 @@
  * @module domains/health/entities
  */
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 const SUPPORTED_TYPES = new Set(['boolean', 'numeric', 'text']);
 
 /**
@@ -128,7 +130,7 @@ function parseBooleanDimension(raw, dim) {
   const validKeys = new Set(Object.keys(fieldDecls));
   for (const key of Object.keys(raw)) {
     if (!validKeys.has(key)) {
-      throw new Error(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`);
+      throw new ValidationError(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`, { code: 'UNKNOWN_DIMENSION_KEY', field: dim.key, value: key });
     }
   }
 
@@ -168,7 +170,7 @@ function parseNumericDimension(raw, dim) {
   const validKeys = new Set(Object.keys(fieldDecls));
   for (const key of Object.keys(raw)) {
     if (!validKeys.has(key)) {
-      throw new Error(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`);
+      throw new ValidationError(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`, { code: 'UNKNOWN_DIMENSION_KEY', field: dim.key, value: key });
     }
   }
 
@@ -228,7 +230,7 @@ function parseTextDimension(raw, dim) {
   const validKeys = new Set(Object.keys(fieldDecls));
   for (const key of Object.keys(raw)) {
     if (!validKeys.has(key)) {
-      throw new Error(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`);
+      throw new ValidationError(`DailyCoachingEntry.${dim.key}: unknown key "${key}"`, { code: 'UNKNOWN_DIMENSION_KEY', field: dim.key, value: key });
     }
   }
 
@@ -305,7 +307,7 @@ export class DailyCoachingEntry {
     const declaredKeys = new Set(this.schema.map(d => d.key));
     for (const key of Object.keys(raw)) {
       if (!declaredKeys.has(key)) {
-        throw new Error(`DailyCoachingEntry: unknown top-level key "${key}"`);
+        throw new ValidationError(`DailyCoachingEntry: unknown top-level key "${key}"`, { code: 'UNKNOWN_TOP_LEVEL_KEY', field: 'coaching', value: key });
       }
     }
 

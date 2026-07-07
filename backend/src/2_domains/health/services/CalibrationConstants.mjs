@@ -28,6 +28,8 @@
  * @module domains/health/services/CalibrationConstants
  */
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 const ADJACENCY_WINDOW_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -47,8 +49,8 @@ export class CalibrationConstants {
    * @param {object} [opts.logger] structured logger; falls back to console
    */
   constructor({ healthScanStore, weightStore, logger } = {}) {
-    if (!healthScanStore) throw new Error('CalibrationConstants requires healthScanStore');
-    if (!weightStore) throw new Error('CalibrationConstants requires weightStore');
+    if (!healthScanStore) throw new ValidationError('CalibrationConstants requires healthScanStore', { code: 'MISSING_HEALTH_SCAN_STORE', field: 'healthScanStore' });
+    if (!weightStore) throw new ValidationError('CalibrationConstants requires weightStore', { code: 'MISSING_WEIGHT_STORE', field: 'weightStore' });
     this.#healthScanStore = healthScanStore;
     this.#weightStore = weightStore;
     this.#logger = logger || console;

@@ -70,6 +70,7 @@ import {
   compileAdditions,
   matchesExclusion,
 } from '../policies/PrivacyExclusions.mjs';
+import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 // Workout-source segments must look like a path-safe identifier — no slashes,
@@ -137,16 +138,18 @@ function buildSharedTails(workoutSources) {
  */
 function normalizeWorkoutSources(sources) {
   if (!Array.isArray(sources)) {
-    throw new Error(
+    throw new ValidationError(
       `HealthArchiveScope: workoutSources must be an array (got: ${String(sources)})`,
+      { code: 'INVALID_WORKOUT_SOURCES', field: 'workoutSources', value: sources },
     );
   }
   const seen = new Set();
   const out = [];
   for (const raw of sources) {
     if (typeof raw !== 'string' || !WORKOUT_SOURCE_PATTERN.test(raw)) {
-      throw new Error(
+      throw new ValidationError(
         `HealthArchiveScope: invalid workoutSource "${String(raw)}" — must match ${WORKOUT_SOURCE_PATTERN}`,
+        { code: 'INVALID_WORKOUT_SOURCE', field: 'workoutSource', value: raw },
       );
     }
     if (seen.has(raw)) continue;
@@ -182,13 +185,15 @@ export class HealthArchiveScope {
    */
   constructor({ dataRoot, mediaRoot, workoutSources, additionalPrivacyExclusions } = {}) {
     if (!dataRoot || typeof dataRoot !== 'string' || !path.isAbsolute(dataRoot)) {
-      throw new Error(
+      throw new ValidationError(
         `HealthArchiveScope: dataRoot must be an absolute path string (got: ${String(dataRoot)})`,
+        { code: 'INVALID_DATA_ROOT', field: 'dataRoot', value: dataRoot },
       );
     }
     if (!mediaRoot || typeof mediaRoot !== 'string' || !path.isAbsolute(mediaRoot)) {
-      throw new Error(
+      throw new ValidationError(
         `HealthArchiveScope: mediaRoot must be an absolute path string (got: ${String(mediaRoot)})`,
+        { code: 'INVALID_MEDIA_ROOT', field: 'mediaRoot', value: mediaRoot },
       );
     }
     this.#dataRoot = path.normalize(dataRoot);
@@ -235,8 +240,9 @@ export class HealthArchiveScope {
    */
   static assertValidUserId(userId) {
     if (!userId || typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
-      throw new Error(
+      throw new ValidationError(
         `HealthArchiveScope: invalid userId — must match ${USER_ID_PATTERN}: ${String(userId)}`,
+        { code: 'INVALID_USER_ID', field: 'userId', value: userId },
       );
     }
   }
@@ -258,12 +264,12 @@ export class HealthArchiveScope {
    */
   static validatePathSegment(segment) {
     if (!segment || typeof segment !== 'string') {
-      throw new Error('HealthArchiveScope: path segment must be a non-empty string');
+      throw new ValidationError('HealthArchiveScope: path segment must be a non-empty string', { code: 'INVALID_PATH_SEGMENT', field: 'segment', value: segment });
     }
     // NUL check BEFORE normalize — Node preserves NULs through normalize
     // today, but don't depend on that across versions.
     if (segment.includes('\0')) {
-      throw new Error(`HealthArchiveScope: unsafe path segment (NUL byte): ${JSON.stringify(segment)}`);
+      throw new ValidationError(`HealthArchiveScope: unsafe path segment (NUL byte): ${JSON.stringify(segment)}`, { code: 'UNSAFE_PATH_SEGMENT_NUL', field: 'segment', value: segment });
     }
     const normalized = path.normalize(segment);
     // After normalization, any traversal yields a leading '..' or absolute
@@ -274,7 +280,7 @@ export class HealthArchiveScope {
       normalized.startsWith('/') ||
       !/^[a-zA-Z0-9._/-]+$/.test(normalized)
     ) {
-      throw new Error(`HealthArchiveScope: unsafe path segment: ${segment}`);
+      throw new ValidationError(`HealthArchiveScope: unsafe path segment: ${segment}`, { code: 'UNSAFE_PATH_SEGMENT', field: 'segment', value: segment });
     }
     return normalized;
   }
@@ -350,8 +356,9 @@ export class HealthArchiveScope {
     HealthArchiveScope.assertValidUserId(userId);
 
     if (!this.isReadable(absPath, userId)) {
-      throw new Error(
+      throw new DomainInvariantError(
         `HealthArchiveScope: path not readable for user ${userId}: ${String(absPath)}`,
+        { code: 'PATH_NOT_READABLE' },
       );
     }
   }
