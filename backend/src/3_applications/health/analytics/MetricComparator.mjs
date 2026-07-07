@@ -1,6 +1,6 @@
-// backend/src/2_domains/health/services/MetricComparator.mjs
+// backend/src/3_applications/health/analytics/MetricComparator.mjs
 
-import { MetricRegistry } from './MetricRegistry.mjs';
+import { MetricRegistry } from '#domains/health/services/MetricRegistry.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**

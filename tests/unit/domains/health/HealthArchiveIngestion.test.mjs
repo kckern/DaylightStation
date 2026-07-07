@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { HealthArchiveIngestion } from '#domains/health/services/HealthArchiveIngestion.mjs';
+import { HealthArchiveIngestion } from '#apps/health/archive/HealthArchiveIngestion.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 

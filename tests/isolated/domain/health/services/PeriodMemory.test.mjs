@@ -1,6 +1,6 @@
 // tests/isolated/domain/health/services/PeriodMemory.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { PeriodMemory } from '../../../../../backend/src/2_domains/health/services/PeriodMemory.mjs';
+import { PeriodMemory } from '../../../../../backend/src/3_applications/health/analytics/PeriodMemory.mjs';
 
 // Fake WorkingMemoryState with KV semantics
 function makeState(initial = {}) {

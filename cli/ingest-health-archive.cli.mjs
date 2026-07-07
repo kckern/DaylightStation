@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs/promises';
 import yaml from 'js-yaml';
 
-import { HealthArchiveIngestion } from '#domains/health/services/HealthArchiveIngestion.mjs';
+import { HealthArchiveIngestion } from '#apps/health/archive/HealthArchiveIngestion.mjs';
 import {
   HealthArchiveManifest,
   BUILT_IN_CATEGORIES,

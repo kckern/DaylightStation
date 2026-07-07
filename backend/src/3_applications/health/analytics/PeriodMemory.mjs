@@ -1,4 +1,4 @@
-// backend/src/2_domains/health/services/PeriodMemory.mjs
+// backend/src/3_applications/health/analytics/PeriodMemory.mjs
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 

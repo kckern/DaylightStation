@@ -1,6 +1,6 @@
-// backend/src/2_domains/health/services/MetricAggregator.mjs
+// backend/src/3_applications/health/analytics/MetricAggregator.mjs
 
-import { MetricRegistry } from './MetricRegistry.mjs';
+import { MetricRegistry } from '#domains/health/services/MetricRegistry.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const STATS = ['mean', 'median', 'min', 'max', 'count', 'sum', 'p25', 'p75', 'stdev'];
@@ -41,6 +41,7 @@ export class MetricAggregator {
     this.healthStore = deps.healthStore;
     this.healthService = deps.healthService;
     this.periodResolver = deps.periodResolver;
+    this.logger = deps.logger || null;
   }
 
   /**
@@ -233,6 +234,7 @@ export class MetricAggregator {
           }
           return row;
         } catch (err) {
+          this.logger?.warn?.('health.metric_snapshot.failed', { metric, error: err.message });
           return { metric, error: err.message };
         }
       })

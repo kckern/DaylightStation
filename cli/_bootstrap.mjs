@@ -368,8 +368,8 @@ export async function getHealthAnalytics() {
     const { dataService }            = await import('#system/config/index.mjs');
     const { YamlHealthDatastore }    = await import('#adapters/persistence/yaml/YamlHealthDatastore.mjs');
     const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
-    const { HealthAnalyticsService } = await import('#domains/health/services/HealthAnalyticsService.mjs');
-    const { PeriodResolver }         = await import('#domains/health/services/PeriodResolver.mjs');
+    const { HealthAnalyticsService } = await import('#apps/health/analytics/HealthAnalyticsService.mjs');
+    const { PeriodResolver }         = await import('#apps/health/analytics/PeriodResolver.mjs');
     const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
     const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
     const { readFile }               = await import('node:fs/promises');

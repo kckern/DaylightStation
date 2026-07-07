@@ -1,4 +1,4 @@
-// backend/src/2_domains/health/services/PeriodResolver.mjs
+// backend/src/3_applications/health/analytics/PeriodResolver.mjs
 
 /**
  * Resolves polymorphic period inputs into a concrete `{ from, to, label, source }`

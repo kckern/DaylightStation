@@ -21,7 +21,7 @@ import fsPromises from 'node:fs/promises';
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
-import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
+import { HealthArchiveScope } from '#apps/health/archive/HealthArchiveScope.mjs';
 
 const AGGREGATIONS = ['daily', 'weekly_avg', 'monthly_avg', 'quarterly_avg', 'yearly_avg'];
 
@@ -35,7 +35,7 @@ const READ_NOTES_PREFIXES = ['notes/', 'scans/'];
  * Hard-validate userId at every tool boundary. Tools that accept user-supplied
  * filenames (read_notes_file) additionally call
  * `HealthArchiveScope.assertReadable(absPath, userId)` before any disk access.
- * See backend/src/2_domains/health/services/HealthArchiveScope.mjs for the
+ * See backend/src/3_applications/health/archive/HealthArchiveScope.mjs for the
  * F-106 whitelist.
  *
  * Errors are caught by each tool's outer try/catch and surfaced as

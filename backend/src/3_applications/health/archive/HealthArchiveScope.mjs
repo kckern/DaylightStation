@@ -63,13 +63,13 @@
  *     the check is on the path string callers pass in, not the file they
  *     actually open. Callers should pass the same path they intend to read.
  *
- * @module domains/health/services/HealthArchiveScope
+ * @module apps/health/archive/HealthArchiveScope
  */
 import path from 'node:path';
 import {
   compileAdditions,
   matchesExclusion,
-} from '../policies/PrivacyExclusions.mjs';
+} from '#domains/health/policies/PrivacyExclusions.mjs';
 import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const USER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;

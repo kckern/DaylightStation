@@ -25,7 +25,7 @@
  * Stateful by design: instances are loaded once per request and re-queried
  * via the synchronous `getCorrected*` accessors. `load()` is idempotent.
  *
- * @module domains/health/services/CalibrationConstants
+ * @module apps/health/analytics/CalibrationConstants
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
