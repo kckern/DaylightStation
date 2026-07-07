@@ -44,7 +44,7 @@ export const RULES = [
 // alongside RULES against the same baseline.
 export const CONTENT_RULES = [
   { rule: 'api-handrolled-500', layer: '4_api/', re: /res\.status\(500\)/ },
-  { rule: 'apps-success-false', layer: '3_applications/', re: /\{\s*success:\s*false/ },
+  { rule: 'apps-success-false', layer: '3_applications/', re: /\bsuccess:\s*false\b/ },
 ];
 
 export function scanContent(filePath, content) {

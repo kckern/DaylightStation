@@ -5,7 +5,12 @@
  * Recursively merges `over` onto `base`, returning a new object:
  *   - `undefined` override values are skipped (base value preserved).
  *   - Arrays are replaced wholesale (override wins), never concatenated.
- *   - Non-object / null values replace the base value.
+ *   - Non-null, non-object override values replace the base value.
+ *   - A `null` override does NOT overwrite an existing base value: because the
+ *     merge uses `over ?? base`, null is treated like absent for keys already
+ *     present in base. A null override only takes effect for keys NOT present
+ *     in base (where it lands as the value). Consequence: overlay/override
+ *     files cannot use `key: null` to CLEAR an inherited base value.
  * Inputs are not mutated.
  *
  * @param {*} base - Base value

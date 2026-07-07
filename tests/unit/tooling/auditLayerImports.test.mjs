@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanViolations, RULES, CONTENT_RULES } from '../../../scripts/audit-layer-imports.mjs';
+import { scanViolations, scanContent, RULES, CONTENT_RULES } from '../../../scripts/audit-layer-imports.mjs';
 
 describe('audit-layer-imports', () => {
   it('flags a domain file importing an adapter', () => {
@@ -32,5 +32,25 @@ describe('audit-layer-imports', () => {
   });
   it('content rules are represented', () => {
     expect(CONTENT_RULES.map(r => r.rule)).toEqual(expect.arrayContaining(['api-handrolled-500', 'apps-success-false']));
+  });
+  it('scanContent flags a hand-rolled 500 in a 4_api file', () => {
+    const v = scanContent('backend/src/4_api/x/router.mjs',
+      "  return res.status(500).json({ error: 'boom' });");
+    expect(v.some(r => r.rule === 'api-handrolled-500')).toBe(true);
+  });
+  it('scanContent flags success:false in a 3_applications file', () => {
+    const v = scanContent('backend/src/3_applications/x/Svc.mjs',
+      "    return { success: false, error: err.message };");
+    expect(v.some(r => r.rule === 'apps-success-false')).toBe(true);
+  });
+  it('scanContent flags success:false even when reordered after other keys', () => {
+    const v = scanContent('backend/src/3_applications/x/Svc.mjs',
+      "    return { error: err.message, success: false };");
+    expect(v.some(r => r.rule === 'apps-success-false')).toBe(true);
+  });
+  it('scanContent does not flag content in the wrong layer', () => {
+    const v = scanContent('backend/src/2_domains/x/Foo.mjs',
+      "    return { success: false };");
+    expect(v.length).toBe(0);
   });
 });

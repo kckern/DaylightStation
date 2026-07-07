@@ -17,6 +17,17 @@ describe('deepMerge (system SSOT)', () => {
     expect(deepMerge({ a: 1 }, { a: undefined })).toEqual({ a: 1 });
   });
 
+  it('does NOT clear an existing base value with a null override', () => {
+    // null override for a key present in base is treated like absent (over ?? base)
+    expect(deepMerge({ a: 1 }, { a: null })).toEqual({ a: 1 });
+    expect(deepMerge({ a: { b: 2 } }, { a: null })).toEqual({ a: { b: 2 } });
+  });
+
+  it('lands a null override for keys NOT present in base', () => {
+    expect(deepMerge({}, { a: null })).toEqual({ a: null });
+    expect(deepMerge({ x: 1 }, { y: null })).toEqual({ x: 1, y: null });
+  });
+
   it('treats a null base as replaceable by the override', () => {
     expect(deepMerge(null, { a: 1 })).toEqual({ a: 1 });
     expect(deepMerge({ a: null }, { a: { b: 2 } })).toEqual({ a: { b: 2 } });
