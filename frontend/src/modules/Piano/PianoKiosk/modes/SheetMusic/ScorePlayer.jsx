@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
-import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
@@ -58,7 +58,7 @@ function nearestEvent(events, x, y) {
  */
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
-  const { activeNotes, subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+  const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
@@ -760,8 +760,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
       {keyboardVisible && (
         <div className="piano-score-player__keys">
-          <PianoKeyboard
-            activeNotes={activeNotes}
+          <LiveKeyboard
             targetNotes={targetNotes}
             dimTarget={mode === 'learn'}
             startNote={kb.startNote}

@@ -34,7 +34,6 @@ const deriveNotes = (steps) => steps.flatMap((s) => s.notes.map((n) => ({ midi: 
 
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
-    activeNotes: new Map(),
     subscribe: (fn) => { h.noteCb = fn; return () => { h.noteCb = null; }; },
     subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
     pressNote: h.pressNote,
@@ -43,6 +42,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
     sendNoteOffAt: h.sendNoteOffAt,
     sendPanic: h.sendPanic,
   }),
+  usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false }),
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
