@@ -225,9 +225,53 @@ unlike the in-app restart it can escalate past `restartApp` to a real reboot whe
 MIDI playback rhythm must never depend on the frame clock — on this tablet rAF is the
 throttled clock. The 2026-07-06 audit found the score transport ticking on rAF with
 untimestamped `send()`s (rhythm inherits every frame stall) plus a per-note whole-kiosk
-React render cascade via the MIDI context. Remediation plan (timestamped lookahead
-scheduling, AudioContext-clock metronome, context split):
-[`docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`](../../_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md).
+React render cascade via the MIDI context.
+
+> **Status: IMPLEMENTED** on branch `worktree-piano-playback-decoupling` (2026-07-06). All
+> Piano + MusicNotation unit tests green (157 files / 1583 tests). **On-device timing is NOT
+> yet validated** — see the caveat below. Audit + finding→commit map:
+> [`docs/_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md`](../../_wip/audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md).
+
+**The design (two clocks).** The **audio plane** — MIDI note sends — is scheduled ~400 ms
+ahead as timestamped Web-MIDI sends off a coarse `setInterval` (NOT rAF), so Chromium's
+browser-process MIDI service dispatches them on time even if the page's main thread freezes.
+The **visual plane** — cursor and key light-up — fires at musical due-time and is *allowed to
+be late*. The metronome click likewise moved onto the **AudioContext clock** (lookahead beat
+scheduling). Separately, the R1 note-store change moved live-note state out of the MIDI
+context value so note events no longer re-render the whole kiosk — only the leaf consumers
+that display live notes. OSMD geometry extraction is **time-boxed (8 ms/slice)** and
+**deferred while the transport is playing** (a stale-layout guard hides overlays until the
+geometry walk catches up).
+
+**Two-stage pause flush (contract).** Sends already handed to the MIDI service can't be
+reliably recalled, so pause does two things: an **immediate** silence (note-offs for sounding
+notes), then a **delayed `sendPanic()`** (CC120+123) after `lookahead + 60 ms` to sweep any
+notes whose scheduled timestamp had already left. A quick resume **cancels** that pending
+delayed panic (so resuming inside the window doesn't cut the resumed notes). Worst case on
+pause: ≤ one lookahead window of tail notes clipped — same felt behavior as before.
+
+**Telemetry to watch on-device.** `score.playback.stats` now carries `meanLeadMs` /
+`minLeadMs` / `schedLate`. Success = leads stay ~300–400 ms and `schedLate ≈ 0` **even while
+the frame-drift telemetry stays ugly under the throttle** (that divergence is the whole
+point: rhythm healthy, visuals frame-bound). Extraction defer/release emits
+`musicxml.extract-deferred` / `musicxml.extract-released`.
+
+> **HONEST CAVEAT — unvalidated on hardware.** The unit tests prove the *logic* (two-plane
+> scheduling, pause-flush ordering, telemetry math, store equivalence, metronome, extraction
+> budgeting). They **cannot** prove on-device timing. Two OPEN QUESTIONS from the audit remain
+> UNVALIDATED on the physical tablet + Jamcorder chain:
+> 1. **Whether Chrome-149 WebView Web-MIDI honors future timestamps faithfully over Android
+>    BLE-MIDI.** If the BLE-MIDI packet timestamps aren't honored, rhythm immunity is only
+>    *partial* (the main-thread jitter is removed, but BLE/link jitter remains). Ear-test a
+>    scheduled dense passage on the MDG-400.
+> 2. **Whether the OS input-recency rAF throttle still degrades VISUALS during hands-on-keys
+>    play.** The audio plane is immune by design; the **cursor is not** and will still stutter
+>    at 4–8 fps until the `PianoTouchService` tap-wake (or another OS lever) is validated.
+>
+> Run the audit's on-device validation checklist (aged-page protocol, dense score ≥120 bpm
+> hands-off + while zooming, pull `score.playback.stats`, confirm `schedLate ≈ 0` while
+> frame-drift stays ugly, ear-test the pause tail, confirm no stuck notes) before believing
+> the rhythm fix on this hardware.
 
 ---
 

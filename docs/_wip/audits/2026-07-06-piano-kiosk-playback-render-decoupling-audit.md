@@ -1,5 +1,12 @@
 # Piano Kiosk — Playback/Render Decoupling Performance Audit
 
+> **Status (2026-07-06): IMPLEMENTED** on branch `worktree-piano-playback-decoupling`.
+> All Piano + MusicNotation unit tests green (157 files / 1583 tests); each task TDD'd,
+> spec-reviewed, and code-quality-reviewed. See "Implementation status" at the bottom for the
+> finding→commit map, what was verified, what remains deferred, and the on-device validation
+> that is **still required and not yet done** — the unit suite proves the logic, not the
+> physical timing.
+
 **Date:** 2026-07-06
 **Scope:** `frontend/src/modules/Piano/PianoKiosk/` with deep focus on `modes/SheetMusic/`
 (ScorePlayer, useScoreTransport, useMetronomeClick, useFollowTracker, overlays), the shared
@@ -348,3 +355,72 @@ Load-time `score.load` telemetry already measures fetch/openToReady; keep watchi
 (tempo map / drift-free anchor / OSMD reuse — all landed; this audit builds on that as-built state),
 [2026-06-22 kiosk design/UX sins](./2026-06-22-piano-kiosk-design-ux-sins-audit.md).
 Device pathology reference: [piano/performance.md](../../reference/piano/performance.md).*
+
+---
+
+## Implementation status (2026-07-06)
+
+Executed on branch `worktree-piano-playback-decoupling` per
+[`docs/_wip/plans/2026-07-06-piano-kiosk-playback-render-decoupling.md`](../plans/2026-07-06-piano-kiosk-playback-render-decoupling.md).
+11 implementation tasks, each TDD'd, spec-reviewed, and code-quality-reviewed. All Piano +
+MusicNotation unit tests green (157 files / 1583 tests). **On-device timing validation is
+still required and not yet done** — see below.
+
+### Finding → commit
+
+| Audit finding / Task | Commit(s) | What landed |
+|---|---|---|
+| T2 — timestamped MIDI senders | `dde5b2728` | `sendNoteAt`/`sendNoteOffAt` (no React state side effects) |
+| T1/A2 — two-plane lookahead transport | `66293637a` | `useScoreTransport` rewritten: `setInterval`-driven (not rAF), `onSchedule` audio plane ~400 ms ahead, `onEvent` visual plane at due time |
+| T1 success-metric telemetry | `4bd4b2bfa` | `recordSchedule` + `meanLeadMs`/`minLeadMs`/`schedLate` in `score.playback.stats` |
+| T1/T2 audio-plane wiring; T4 musical-time step stamps | `13615c27c`, `08f343702` | ScorePlayer sends via timestamped senders; two-stage pause flush (immediate silence + delayed panic after lookahead + 60 ms; stale-panic-on-resume cleared) |
+| T3 — AudioContext-clock metronome | `3119f8bbb`, `e8422fabb` | `clickScheduler.js` lookahead beat scheduling; non-positive-bpm hang guard |
+| E1.1 — time-boxed extraction | `26b582f40` | `extractLayoutSliced` yields on an 8 ms budget instead of every 256 steps |
+| R1 — external note store + consumer migration | `45c9a2643`, `50af927ae`, `811bddecc` | live-note state moved to `noteStore`; `usePianoMidi()` value now identity-stable per note; 13 consumers → `usePianoMidiNotes()`/`LiveKeyboard` |
+| E1.2 — defer extraction while playing + stale-layout guard | `4d84fa449`, `ff6046ba6` | `holdExtraction` prop defers geometry walk during playback; `layoutFresh` hides overlays until layout catches up; defer/release debug logging |
+| R3 — memoize transport bar | `dbd36dde4`, `630b6f5e5` | `ScoreTransportBar` split into memoized sub-sections; step advance re-renders only the position readout |
+| R4 — transform-positioned cursor/chips | `1f81908ad` | cursor + note-highlight chips positioned via `transform: translate3d` (compositor path) |
+
+### Deferred (not done — reasons)
+
+- **A3** metronome count-in — audio-policy decision pending. (T3's AudioContext scheduler
+  gives it a foundation.)
+- **A4** beat-based (vs melody-onset) cursor advancement.
+- **E1.3** reflow-free notehead geometry — measure first (the time-box + defer already remove
+  the worst mid-play stalls).
+- **R2** explicit rAF-coalesced visual state — largely absorbed by the interval-tick batching
+  + R1 store; no separate coalescer built.
+- **R5** memoized target/lit Sets — marginal after R1.
+- **Continuous time-based pan** — the retargeting tween already removes the stutter.
+- **Producer-mode per-note re-render** — unchanged from pre-refactor; an optimization
+  opportunity, not a regression introduced here.
+
+### Verified
+
+- **Unit (all green):** transport two-plane scheduling (audio-ahead vs visual-at-due);
+  two-stage pause flush ordering + stale-panic-on-resume clearing; schedule-lead telemetry
+  math (`meanLeadMs`/`minLeadMs`/`schedLate`); note-store equivalence (identity-stable value,
+  per-note leaf updates); AudioContext metronome scheduling + non-positive-bpm guard;
+  time-boxed / deferred extraction; transport-bar memoization; transform-based positioning.
+- Each of the 11 tasks was spec-reviewed and code-quality-reviewed before commit.
+
+### On-device validation (REQUIRED, not yet done)
+
+The unit suite proves the *logic*; it cannot prove the physical timing on the SM-T590 +
+Jamcorder + MDG-400 chain. Run this before trusting the fix on hardware (per performance.md
+pitfalls):
+
+1. **Aged-page protocol:** measure on a page with >30 min uptime, screen on, no touch for
+   ≥2 min before the run (to be inside the OS input-recency throttle) — fresh-page probes lie.
+2. **Play a dense score in Listen at ♩≥120**, both (a) hands-off / idle-glass and (b) while
+   pinch-zooming mid-playback.
+3. **Pull `score.playback.stats`** and confirm `schedLate ≈ 0` and leads healthy (~300–400 ms)
+   **while the frame-drift telemetry stays ugly** under the throttle — that divergence is the
+   success signal (audio immune, visuals frame-bound).
+4. **Ear-test the pause tail on the MDG-400:** pause must silence promptly; confirm the
+   delayed panic sweeps any scheduled-but-unsounded notes and that a quick resume does not cut
+   the resumed notes. **Confirm no stuck notes.**
+5. **Fallback:** if notes audibly jitter *despite* `schedLate ≈ 0`, then Chrome-149 WebView's
+   Web-MIDI timestamps are **not** being honored over Android BLE-MIDI — lower the lookahead
+   and compare, and treat rhythm immunity as only partial (main-thread jitter removed, BLE/link
+   jitter remains).
