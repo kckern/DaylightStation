@@ -6,6 +6,7 @@ import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { useState, useMemo } from 'react';
+import { useToday } from '../hooks/useToday.mjs';
 
 
 
@@ -34,6 +35,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 }
 
   export default function MortgageChart({ mortgage, zoomable = false }) {
+    const today = useToday();
     const { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines } = useMemo(() => {
       const todayMs = moment().valueOf();
       const amort = mortgage?.amortization || [];
@@ -168,7 +170,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       }
 
       return { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines };
-    }, [mortgage]);
+    }, [mortgage, today]);
   
     // Early-exit if we have no months at all:
     if (!months.length) return null;
