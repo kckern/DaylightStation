@@ -59,7 +59,7 @@ function nearestEvent(events, x, y) {
  */
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
-  const { activeNotes, subscribe, subscribeRaw, pressNote, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+  const { activeNotes, subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
@@ -199,7 +199,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     clearTimeout(flushTimerRef.current);
     flushTimerRef.current = setTimeout(() => sendPanic?.(), (transportRef.current?.lookaheadMs ?? 400) + 60);
   }, [silence, sendPanic]);
-  useEffect(() => () => clearTimeout(flushTimerRef.current), []);
+  // No standalone clearTimeout-on-unmount here: the single unmount teardown below
+  // calls silenceScheduled(), and its delayed panic is DESIRED to fire after we're
+  // gone (note-ons already dispatched to the MIDI service, up to lookaheadMs in the
+  // future, would otherwise drone with no note-off). sendPanic comes from the MIDI
+  // context, which outlives this component, so that post-unmount timer is safe.
 
   // Flush playback telemetry only when a Polish/Listen run actually produced fires.
   // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
@@ -528,12 +532,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     lastAdvanceRef.current = performance.now();
     // Seek jumps idxRef past pending note_offs — flush sounding notes first
     // (Listen mode) so a skipped-over note doesn't drone on the piano.
+    // NOTE: unlike pause→resume, we deliberately do NOT clear the delayed panic
+    // here — the transport keeps playing, so the panic still needs to fire to
+    // kill pre-seek queued note-ons whose note-offs the jump skipped. Accepted
+    // minor limitation: it can also clip a post-seek note once at the +lookahead
+    // mark; a one-time clip is preferable to stranding a pre-seek note (drone).
     if (mode === 'listen') silenceScheduled();
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
   }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger]);
 
+  // Single unmount teardown: immediate silence + one delayed panic (see the
+  // silenceScheduled note above). One effect → order-independent by construction.
   useEffect(() => () => silenceScheduled(), [silenceScheduled]);
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
@@ -624,6 +635,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       flushPlaybackNow();
       logger.info('score.transport.pause', { step });
     } else {
+      // A quick pause→resume must cancel the pending delayed panic — otherwise it
+      // fires ~lookahead+60ms INTO the resumed run and cuts whatever's sounding.
+      // (toggleRun is the only resume entry point; reset()/onDone stop the
+      // transport first, so their pending panic is harmless.)
+      clearTimeout(flushTimerRef.current);
       transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
       transport.play();
       logger.info('score.transport.play', { step, mode, bpm: tempoMap[0]?.bpm, tempoMult });
