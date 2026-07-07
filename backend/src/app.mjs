@@ -107,9 +107,6 @@ import { createAgentMetaRouter } from './4_api/v1/agents/createAgentMetaRouter.m
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
-// Routing toggle system
-import { loadRoutingConfig } from './0_system/routing/index.mjs';
-
 // UPC Gateway for barcode lookups
 import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 
@@ -284,19 +281,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     app: 'api',
     context: { env: process.env.NODE_ENV }
   });
-
-  // ==========================================================================
-  // Routing Toggle System
-  // ==========================================================================
-
-  let routingConfig;
-  try {
-    routingConfig = loadRoutingConfig('./backend/config/routing.yml');
-    rootLogger.info('routing.toggle.loaded', { default: routingConfig.default });
-  } catch (error) {
-    rootLogger.warn('routing.toggle.fallback', { error: error.message });
-    routingConfig = { default: 'legacy', routing: {} };
-  }
 
   // ==========================================================================
   // Auth System
