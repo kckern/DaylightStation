@@ -18,7 +18,7 @@ backend/
 │   ├── 2_domains/      # Business logic (pure, no I/O)
 │   ├── 3_applications/ # Use cases, orchestration
 │   ├── 4_api/          # HTTP routes, handlers
-│   └── server.mjs      # Entry point
+│   └── app.mjs         # App factory / composition root (run via backend/index.js)
 └── _legacy/            # Legacy code (being phased out)
 ```
 
@@ -146,7 +146,7 @@ HTTP layer - Express routers and handlers.
 
 | File | Port | Purpose |
 |------|------|---------|
-| `src/server.mjs` | 3111/3112 | Main application server (webhooks included) |
+| `backend/index.js` | 3111/3112 | Main application server (webhooks included) |
 
 ---
 

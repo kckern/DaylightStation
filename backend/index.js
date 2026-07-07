@@ -73,7 +73,7 @@ async function main() {
       console.error('[Bootstrap] Config validation failed:', err.message);
       process.exit(1);
     }
-    // Ignore "already initialized" errors - can happen if server.mjs was loaded first
+    // Ignore "already initialized" errors - can happen if app.mjs was loaded first
     if (!err.message?.includes('already initialized')) {
       throw err;
     }
