@@ -62,12 +62,16 @@ export class Belief {
     return Math.max(0, Math.min(1, raw + biasAdjustment + samplePenalty));
   }
 
-  isDormant() {
+  /** @param {number} now - Current time as epoch ms (caller-supplied). */
+  isDormant(now) {
+    if (typeof now !== 'number' || !Number.isFinite(now)) {
+      throw new Error('Belief.isDormant(now): now (epoch ms) is required');
+    }
     if (this.evidence_history.length === 0) return true;
 
     const lastEvidence = this.evidence_history[this.evidence_history.length - 1];
     const lastDate = new Date(lastEvidence.date);
-    const daysSince = (Date.now() - lastDate.getTime()) / 86400000;
+    const daysSince = (now - lastDate.getTime()) / 86400000;
     return daysSince > DORMANCY_THRESHOLD_DAYS;
   }
 

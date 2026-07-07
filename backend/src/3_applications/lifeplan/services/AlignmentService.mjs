@@ -56,10 +56,11 @@ export class AlignmentService {
 
   #computePriorities(plan, snapshot, today) {
     const items = [];
+    const nowMs = this.#clock ? this.#clock.now().getTime() : Date.now();
 
     // 1. Dormant beliefs
     for (const belief of plan.beliefs) {
-      if (belief.isDormant() && !belief.isTerminal()) {
+      if (belief.isDormant(nowMs) && !belief.isTerminal()) {
         items.push({
           type: 'dormant_belief',
           title: `Test belief: "${belief.if} → ${belief.then}"`,

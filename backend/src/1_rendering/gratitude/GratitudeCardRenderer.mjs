@@ -45,9 +45,10 @@ export function createGratitudeCardRenderer(config) {
 
     const gratitudeItems = selections.gratitude || [];
     const hopesItems = selections.hopes || [];
+    const nowMs = Date.now();
 
     const selectedGratitude = gratitudeItems.length > 0
-      ? selectItemsForPrint(gratitudeItems, theme.selection.gratitudeCount).map(s => ({
+      ? selectItemsForPrint(gratitudeItems, theme.selection.gratitudeCount, nowMs).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName
@@ -55,7 +56,7 @@ export function createGratitudeCardRenderer(config) {
       : [];
 
     const selectedHopes = hopesItems.length > 0
-      ? selectItemsForPrint(hopesItems, theme.selection.hopesCount).map(s => ({
+      ? selectItemsForPrint(hopesItems, theme.selection.hopesCount, nowMs).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName
