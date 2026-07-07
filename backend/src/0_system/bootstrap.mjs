@@ -13,6 +13,7 @@ import { SystemBotLoader } from './registries/SystemBotLoader.mjs';
 
 // EventBus imports
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
+import { HttpClient } from './services/HttpClient.mjs';
 
 // Content domain imports
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
@@ -668,7 +669,11 @@ export function createContentRegistry(config, deps = {}) {
     // identity for YouTube. Cascades Piped → stream (yt-dlp) → iframe embed.
     const pipedHost = configService?.resolveServiceUrl?.('piped') || null;
     const pipedAdapter = pipedHost
-      ? new YouTubeAdapter({ host: pipedHost, logger: logger.child?.({ module: 'youtube-adapter' }) || logger })
+      ? new YouTubeAdapter({
+          host: pipedHost,
+          httpClient: new HttpClient({ logger }),
+          logger: logger.child?.({ module: 'youtube-adapter' }) || logger,
+        })
       : null;
     registry.register(
       new YouTubeContentSource({ pipedAdapter, streamAdapter, logger }),
@@ -1364,7 +1369,7 @@ export function createFeedServices(config) {
 
   const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
 
-  const webContentGateway = new WebContentAdapter({ logger });
+  const webContentGateway = new WebContentAdapter({ httpClient: new HttpClient({ logger }), logger });
 
   const headlineService = new HeadlineService({
     headlineStore,
@@ -1904,6 +1909,7 @@ export async function createPlaybackHubServices(config) {
   const gateway = new HttpPlaybackHubAdapter({
     baseUrl,
     requestTimeoutSec,
+    httpClient: new HttpClient({ logger }),
     logger,
   });
 
@@ -3534,6 +3540,7 @@ export async function createAgentsServices(config) {
       const pagedMediaGateway = new KomgaPagedMediaAdapter({
         client: komgaClient,
         apiKey: komgaAuth.token,
+        httpClient: new HttpClient({ logger }),
         logger,
       });
       const tocCacheDatastore = new YamlTocCacheDatastore({ dataService, configService });

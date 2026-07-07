@@ -1,5 +1,7 @@
 // backend/src/1_adapters/content/media/youtube/YouTubeAdapter.mjs
 
+import { HttpClient } from '#system/services/HttpClient.mjs';
+
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const PIPED_TIMEOUT_MS = 5000;
 const CIRCUIT_BREAK_THRESHOLD = 3;
@@ -12,14 +14,16 @@ const CIRCUIT_BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 export class YouTubeAdapter {
   #host;
   #logger;
+  #httpClient;
   #cache = new Map();
   #consecutiveFailures = 0;
   #circuitBrokenUntil = 0;
 
-  constructor({ host, logger = console }) {
+  constructor({ host, logger = console, httpClient } = {}) {
     if (!host) throw new Error('YouTubeAdapter requires host (Piped API URL)');
     this.#host = host.replace(/\/$/, '');
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   /**
@@ -44,17 +48,12 @@ export class YouTubeAdapter {
     if (cached) return this.#selectStreams(cached, quality);
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PIPED_TIMEOUT_MS);
+      const res = await this.#httpClient.get(
+        `${this.#host}/streams/${encodeURIComponent(videoId)}`,
+        { timeout: PIPED_TIMEOUT_MS }
+      );
 
-      const res = await fetch(`${this.#host}/streams/${encodeURIComponent(videoId)}`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) throw new Error(`Piped API ${res.status}`);
-
-      const data = await res.json();
+      const data = res.data;
       this.#consecutiveFailures = 0;
       this.#putInCache(cacheKey, data);
       return this.#selectStreams(data, quality);

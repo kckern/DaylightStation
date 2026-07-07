@@ -4,6 +4,7 @@ import { RedditFeedAdapter } from '#adapters/feed/sources/RedditFeedAdapter.mjs'
 
 describe('RedditFeedAdapter — preview dimensions', () => {
   let adapter;
+  let mockHttpClient;
   const mockLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
   const mockDataService = {
     user: { read: vi.fn().mockReturnValue(null) },
@@ -12,21 +13,20 @@ describe('RedditFeedAdapter — preview dimensions', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockLogger.warn.mockClear();
-    adapter = new RedditFeedAdapter({ dataService: mockDataService, logger: mockLogger });
-  });
-
-  afterEach(() => {
-    global.fetch = undefined;
+    // Mock the injected system HttpClient (get() returns {ok,status,data}).
+    mockHttpClient = { get: vi.fn() };
+    adapter = new RedditFeedAdapter({ dataService: mockDataService, logger: mockLogger, httpClient: mockHttpClient });
   });
 
   function mockRedditResponse(posts) {
-    global.fetch = vi.fn().mockResolvedValue({
+    mockHttpClient.get.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({
+      status: 200,
+      data: {
         data: {
           children: posts.map(p => ({ kind: 't3', data: { stickied: false, ...p } })),
         },
-      }),
+      },
     });
   }
 

@@ -14,6 +14,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 import imageSize from 'image-size';
 import fs from 'fs';
 import path from 'path';
@@ -25,6 +26,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   #mediaDir;
   #webUrl;
   #logger;
+  #httpClient;
   #prefetching = false;
 
   /**
@@ -34,8 +36,9 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
    * @param {string} deps.mediaDir - Base media directory for cache storage
    * @param {string} [deps.webUrl] - Browser-accessible ABS URL for reader links
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ absClient, token, mediaDir, webUrl = null, logger = console }) {
+  constructor({ absClient, token, mediaDir, webUrl = null, logger = console, httpClient } = {}) {
     super();
     if (!absClient) throw new Error('ABSEbookFeedAdapter requires absClient');
     if (!token) throw new Error('ABSEbookFeedAdapter requires token');
@@ -45,6 +48,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     this.#mediaDir = mediaDir;
     this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   #cachePath(bookId) {
@@ -313,13 +317,13 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   async #getCoverDimensions(bookId) {
     try {
       const host = this.#absClient.host;
-      const res = await fetch(`${host}/api/items/${bookId}/cover`, {
+      const res = await this.#httpClient.requestRaw('GET', `${host}/api/items/${bookId}/cover`, {
         headers: { 'Authorization': `Bearer ${this.#token}` },
-        signal: AbortSignal.timeout(10000),
+        responseType: 'buffer',
+        timeout: 10000,
       });
       if (!res.ok) return { width: 2, height: 3 };
-      const buf = Buffer.from(await res.arrayBuffer());
-      const dims = imageSize(buf);
+      const dims = imageSize(res.data);
       return { width: dims.width, height: dims.height };
     } catch {
       return { width: 2, height: 3 };
@@ -334,16 +338,12 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
    * @returns {Promise<Array<{id: number, title: string}>>}
    */
   async #extractEpubToc(bookId) {
+    // downloadBuffer throws HttpError on non-2xx, which #getChapters catches.
     const host = this.#absClient.host;
-    const epubResponse = await fetch(`${host}/api/items/${bookId}/ebook`, {
+    const buffer = await this.#httpClient.downloadBuffer(`${host}/api/items/${bookId}/ebook`, {
       headers: { 'Authorization': `Bearer ${this.#token}` },
-      signal: AbortSignal.timeout(30000),
+      timeout: 30000,
     });
-    if (!epubResponse.ok) {
-      throw new Error(`Failed to download EPUB: ${epubResponse.status}`);
-    }
-
-    const buffer = Buffer.from(await epubResponse.arrayBuffer());
 
     const AdmZip = (await import('adm-zip')).default;
     const zip = new AdmZip(buffer);
