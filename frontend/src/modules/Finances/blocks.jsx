@@ -5,7 +5,8 @@ export { formatAsCurrency } from './lib/format.mjs';
 
     const activeBudget = budget;
 
-    const transferTransactions = activeBudget.transferTransactions?.transactions.sort((a, b) => new Date(b.date) - new Date(a.date)) || [];
+    const transferTransactions = [...(activeBudget.transferTransactions?.transactions || [])]
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
 
 
     
@@ -29,7 +30,7 @@ export { formatAsCurrency } from './lib/format.mjs';
           const formattedDate = new Date(date).toLocaleDateString();
           const formattedAmount = formatAsCurrency(amount);
             return (
-            <tr key={index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
+            <tr key={txn.id || index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
               <td>{formattedDate}</td>
               <td>{description}</td>
               <td>{formattedAmount}</td>
@@ -42,8 +43,7 @@ export { formatAsCurrency } from './lib/format.mjs';
       </div>
     );
   }
-  
-  // BudgetMortgage.jsx
+
   export function BudgetSpending({ setDrawerContent, budget }) {
 
     const activeBudget = budget;
@@ -65,7 +65,6 @@ export { formatAsCurrency } from './lib/format.mjs';
     const allTransactionsFromAllMonths = dayToDayTransactionsAllMonths
     .concat(monthlyTransactionsAllMonths)
     .concat(shortTermTransactions)
-    //.filter((txn) => !["Housing", "Taxes", "Health Insurance", "Utilities", "Long-term Savings"].includes(txn.label))
     .filter((txn) => txn?.expenseAmount > 0);
 
     const setTransactionFilter = (filterString) => {
