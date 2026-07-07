@@ -386,32 +386,7 @@ export class MortgageCalculator {
           const lastBridgeClosing = bridgeRecords[bridgeRecords.length - 1].closingBalance;
           const drift = this.#round(buxferCachedBalance - lastBridgeClosing);
 
-          if (Math.abs(drift) > 0.01) {
-            const totalBridgeInterest = bridgeRecords.reduce(
-              (s, r) => s + r.interestAccrued, 0
-            );
-
-            for (const record of bridgeRecords) {
-              const weight = totalBridgeInterest > 0
-                ? record.interestAccrued / totalBridgeInterest
-                : 1 / bridgeRecords.length;
-              const adj = this.#round(drift * weight);
-              record.reconciliationAdj = adj;
-              record.interestAccrued = this.#round(record.interestAccrued + adj);
-              record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
-            }
-
-            let walkBal = bridgeRecords[0].openingBalance;
-            let cumInt = cumulativeInterest;
-            for (const record of bridgeRecords) {
-              record.openingBalance = this.#round(walkBal);
-              walkBal += record.interestAccrued;
-              cumInt += record.interestAccrued;
-              walkBal -= record.totalPaid;
-              record.closingBalance = this.#round(walkBal);
-              record.cumulativeInterest = this.#round(cumInt);
-            }
-          }
+          this.#reconcileDrift(bridgeRecords, drift, bridgeRecords[0].openingBalance, cumulativeInterest);
 
           totalInterestPaid += bridgeRecords.reduce((s, r) => s + r.interestAccrued, 0);
           totalPrincipalPaid += bridgeRecords.reduce((s, r) => s + r.principalPaid, 0);
@@ -652,29 +627,7 @@ export class MortgageCalculator {
     // Reconcile against anchor balance
     if (records.length > 0) {
       const drift = this.#round(actualBalance - Math.abs(records[records.length - 1].closingBalance));
-      if (Math.abs(drift) > 0.01) {
-        const totalInterest = records.reduce((sum, r) => sum + r.interestAccrued, 0);
-        let cumulativeAdj = 0;
-        for (const record of records) {
-          const weight = totalInterest > 0 ? record.interestAccrued / totalInterest : 1 / records.length;
-          const adj = this.#round(drift * weight);
-          record.reconciliationAdj = adj;
-          record.interestAccrued = this.#round(record.interestAccrued + adj);
-          record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
-          cumulativeAdj += adj;
-        }
-        // Recompute balances and cumulative interest after adjustment
-        balance = mortgageStartValue;
-        cumulativeInterest = 0;
-        for (const record of records) {
-          record.openingBalance = this.#round(balance);
-          balance += record.interestAccrued;
-          cumulativeInterest += record.interestAccrued;
-          balance -= record.totalPaid;
-          record.closingBalance = this.#round(balance);
-          record.cumulativeInterest = this.#round(cumulativeInterest);
-        }
-      }
+      this.#reconcileDrift(records, drift, mortgageStartValue, 0);
     }
 
     return records;
@@ -907,6 +860,41 @@ export class MortgageCalculator {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return `${monthNames[parseInt(month, 10) - 1]} ${year}`;
+  }
+
+  /**
+   * Distribute `drift` across records proportional to each record's interest
+   * accrual (equal weights when total interest is 0), then re-walk balances
+   * from `openingPrincipal`. The LAST record absorbs the rounding residual so
+   * the walked closing balance lands exactly on the anchor.
+   * Mutates records in place. No-op for empty input or sub-cent drift.
+   * @private
+   */
+  #reconcileDrift(records, drift, openingPrincipal, startingCumulativeInterest = 0) {
+    if (!records.length || Math.abs(drift) <= 0.01) return;
+
+    const totalInterest = records.reduce((s, r) => s + r.interestAccrued, 0);
+    let distributed = 0;
+    records.forEach((record, i) => {
+      const weight = totalInterest > 0 ? record.interestAccrued / totalInterest : 1 / records.length;
+      let adj = this.#round(drift * weight);
+      if (i === records.length - 1) adj = this.#round(drift - distributed); // residual sweep
+      distributed = this.#round(distributed + adj);
+      record.reconciliationAdj = adj;
+      record.interestAccrued = this.#round(record.interestAccrued + adj);
+      record.principalPaid = this.#round(record.totalPaid - record.interestAccrued);
+    });
+
+    let balance = openingPrincipal;
+    let cumulativeInterest = startingCumulativeInterest;
+    for (const record of records) {
+      record.openingBalance = this.#round(balance);
+      balance += record.interestAccrued;
+      cumulativeInterest += record.interestAccrued;
+      balance -= record.totalPaid;
+      record.closingBalance = this.#round(balance);
+      record.cumulativeInterest = this.#round(cumulativeInterest);
+    }
   }
 
   /**
