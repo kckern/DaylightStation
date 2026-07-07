@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
@@ -248,8 +248,10 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
   }, [activeMonth, budget.dayToDayBudget, currentMonth]);
 
   const monthData = budget.dayToDayBudget[activeMonth] || {};
-  const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
-
+  const options = useMemo(
+    () => buildDayToDayBudgetOptions(monthData, setDrawerContent),
+    [monthData, setDrawerContent]
+  );
 
   return (
     <div className="budget-block">
@@ -257,7 +259,6 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
       <div className="budget-block-content">
         {monthHeader}
         <HighchartsReact
-          key={activeMonth}
           className="budget-burn-down-chart"
           highcharts={Highcharts}
           options={options}

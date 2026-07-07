@@ -301,7 +301,7 @@ function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }
 
 function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
-
+  const options = useMemo(() => {
   const {month} = periodData;
 
   const incomeSum = month.income;
@@ -433,6 +433,8 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       }
     }]
   };
+  return options;
+  }, [periodData, setTransactionFilter]);
 
   return <div className="waterfall-chart">
                 <HighchartsReact
@@ -450,6 +452,7 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
     '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7'
   ];
 
+  const options = useMemo(() => {
   const tagColorMap = {};
   let colorIndex = 0;
 
@@ -572,6 +575,8 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
       }
     }
   };
+  return options;
+  }, [transactions, setTransactionFilter]);
 
   return (
     <div className="treemap-chart">
@@ -774,34 +779,25 @@ function buildDrillData(transactions) {
   return { topData: top, drillSeries: series, grandTotal };
 }
 
-export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, budgetKey }) {
-  const [componentKey, setComponentKey] = useState(0);
-
-  // Force a "nuke" rebuild of the component on transactions or budgetKey change.
-  useEffect(() => {
-    setComponentKey((prev) => prev + 1);
-  }, [transactions, budgetKey]);
-
+export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }) {
   const [drillStack, setDrillStack] = useState([transactions || []]);
   const [crumbs, setCrumbs] = useState([]);
   const [grandTotal, setGrandTotal] = useState(0);
-  const getGrandTotal = () => { return grandTotal || 0; };
-    
 
-  // Re-initialize drillStack and crumb whenever the component is "nuked" and remounted.
+  // Re-initialize drillStack and crumbs whenever transactions change.
   useEffect(() => {
     const { grandTotal } = buildDrillData(transactions || []);
     setGrandTotal(grandTotal);
     setDrillStack([transactions || []]);
     setCrumbs([`Total: ${formatCompactCurrency(grandTotal)}`]);
-  }, [componentKey, transactions]);
+  }, [transactions]);
 
   const currentTransactions = drillStack[drillStack.length - 1];
   const { topData, drillSeries } = useMemo(() => buildDrillData(currentTransactions), [currentTransactions]);
 
   const buildCrumbLabel = (point) => {
     const percentOfTop = (point.valueReal / grandTotal) * 100;
-    if (point.name === "Other") {
+    if (point.name === "Other" || point.name === "Other2") {
       return `${formatCompactCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
     }
     return point.name;
@@ -1004,7 +1000,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
 
   return (
     //max-width: 900px; margin: 0px auto; height:100%; display:flex; flex-direction: column
-    <div key={componentKey} style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ textAlign: "center", padding: "0.5ex 0"}}>
         <span style={{ marginLeft: 10 }}>{renderBreadcrumbs(handleBackClick)}</span>
       </div>

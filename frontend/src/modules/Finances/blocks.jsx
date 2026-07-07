@@ -75,12 +75,11 @@ export { formatAsCurrency } from './lib/format.mjs';
         jsx: <Drawer setDrawerContent={setDrawerContent} transactions={txns} />
       });
     };
-    const budgetKey =activeBudget.budgetStart;
     return (
       <div className="budget-block">
         <h2>Spending</h2>
         <div className="budget-block-content">
-          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter}  budgetKey={budgetKey} />
+          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
         </div>
       </div>
     );

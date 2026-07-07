@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
@@ -15,6 +15,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const shortTermStatus = budget.shortTermStatus || { budget: 0, credits: 0, debits: 0, balance: 0 };
     const buckets = Object.keys(shortTermBuckets);
 
+    const { processedData, options } = useMemo(() => {
     const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
 
     const processedData = buckets.map((label) => {
@@ -166,6 +167,8 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         },
         series
     };
+    return { processedData, options };
+    }, [budget, setDrawerContent]);
 
     function gatherTransactions(key) {
         const shortTermLabels = Object.keys(shortTermBuckets);
