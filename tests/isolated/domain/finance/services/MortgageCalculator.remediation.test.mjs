@@ -65,4 +65,54 @@ describe('MortgageCalculator remediation', () => {
       expect(totalAdj).toBeCloseTo(0.10, 2);
     });
   });
+
+  describe('bridge months without payments', () => {
+    test('emits an amortization row (interest accrues, nothing paid) for a skipped cycle', () => {
+      const statementData = {
+        statements: {
+          '2026-04': {
+            statementDate: '2026-03-06',
+            principalBalance: 172374.64,
+            transactions: [
+              { date: '2026-03-01', principal: 2508.88, interest: 920.81, escrow: 866.17, total: 4295.86 }
+            ]
+          }
+        }
+      };
+      const result = calculator.calculateMortgageStatus({
+        config: {
+          mortgageStartValue: 400000,
+          accountId: 'm1',
+          startDate: '2024-06-01',
+          interestRate: 0.0625,
+          minimumPayment: 4088.89,
+          paymentPlans: [{ id: 'minimum', title: 'Minimum' }]
+        },
+        balance: -169000,
+        // Only txn is in the 2026-06 cycle (date > 2026-04-06 cutoff+month) —
+        // the 2026-05 cycle has no payments and previously vanished.
+        transactions: [{ date: '2026-04-20', amount: 4295.86, description: 'Mortgage Payment' }],
+        statementData,
+        asOfDate: new Date('2026-05-05')
+      });
+
+      const skipped = result.amortization.find(r => r.month === '2026-05');
+      expect(skipped).toBeDefined();
+      expect(skipped.totalPaid).toBe(0);
+      expect(skipped.payments).toEqual([]);
+      expect(skipped.interestAccrued).toBeGreaterThan(0);
+    });
+  });
+
+  describe('non-amortizing plans', () => {
+    test('throws PLAN_DOES_NOT_AMORTIZE when payments never cover interest', () => {
+      expect(() => calculator.calculatePaymentPlans({
+        balance: -1000000,
+        interestRate: 0.20,
+        minimumPayment: 100,
+        paymentPlans: [{ id: 'doomed', title: 'Doomed' }],
+        startDate: new Date('2026-01-01')
+      })).toThrow(/did not amortize/);
+    });
+  });
 });
