@@ -5,7 +5,6 @@ import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
-import moment from 'moment';
 
 export function BudgetShortTerm({ setDrawerContent, budget }) {
 
