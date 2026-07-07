@@ -16,7 +16,7 @@
  */
 
 import { IPlaybackHubGateway } from '../ports/IPlaybackHubGateway.mjs';
-import { CommandResult } from '../../../2_domains/playback-hub/value-objects/CommandResult.mjs';
+import { CommandResult } from '#domains/playback-hub/value-objects/CommandResult.mjs';
 
 export class FakeHubGateway extends IPlaybackHubGateway {
   #statusFixture = [];

@@ -81,15 +81,27 @@ When bounded contexts need to communicate, define explicit relationships:
 ```
 Level 0 (foundation):   core (errors, utils, base types)
                           ↑
-Level 1 (shared):       messaging, scheduling, entropy
+Level 1 (shared):       content, common, messaging, notification,
+                        scheduling, entropy
                           ↑
-Level 2 (features):     fitness, nutrition, finance, content,
-                        journaling, gratitude, home-automation
+Level 2 (features):     ambient, art, barcode, concierge, cost, feed,
+                        finance, fitness, gratitude, home-automation,
+                        journaling, lifeplan, livestream, media,
+                        nutrition, playback-hub, trigger
                           ↑
-Level 3 (aggregators):  lifelog, health, journalist
+Level 3 (aggregators):  health, journalist, lifelog, weekly-review
 ```
 
 **Rule:** Import DOWN only. Level 3 can use Level 2, but Level 2 cannot use Level 3.
+
+The table below assigns **every** domain folder in `2_domains/` a level (Decision D6, 2026-07-06). `content` is Level 1 (shared), which legalizes `fitness → content` and `barcode → content`. Every new domain must be added to this table in the same PR that creates it.
+
+| Level | Domain folders |
+|-------|----------------|
+| **0 — Foundation** | `core` |
+| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
+| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
+| **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ---
 

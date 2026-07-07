@@ -6,7 +6,7 @@
  */
 
 import { MessageQueue } from '../entities/MessageQueue.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Check if response allows continuing the queue

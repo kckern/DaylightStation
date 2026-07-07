@@ -24,10 +24,10 @@
  * Returns one merged CommandResult; the API layer renders 200/502 from it.
  */
 
-import { PlayCommand } from '../../../2_domains/playback-hub/value-objects/PlayCommand.mjs';
-import { QueueRef } from '../../../2_domains/playback-hub/value-objects/QueueRef.mjs';
-import { CommandResult } from '../../../2_domains/playback-hub/value-objects/CommandResult.mjs';
-import { InfrastructureError } from '../../../0_system/utils/errors/InfrastructureError.mjs';
+import { PlayCommand } from '#domains/playback-hub/value-objects/PlayCommand.mjs';
+import { QueueRef } from '#domains/playback-hub/value-objects/QueueRef.mjs';
+import { CommandResult } from '#domains/playback-hub/value-objects/CommandResult.mjs';
+import { InfrastructureError } from '#system/utils/errors/InfrastructureError.mjs';
 
 const GROUP_TARGETS = new Set(['all', 'all-private', 'all-public']);
 

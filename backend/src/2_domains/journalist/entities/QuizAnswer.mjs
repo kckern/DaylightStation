@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * QuizAnswer entity

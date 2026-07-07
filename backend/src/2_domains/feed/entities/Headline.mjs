@@ -7,7 +7,7 @@
  * @module domains/feed/entities
  */
 
-import { shortIdFromUuid } from '../../core/utils/id.mjs';
+import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
 
 export class Headline {
   #id; #source; #title; #desc; #link; #timestamp;

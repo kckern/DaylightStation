@@ -6,7 +6,6 @@ export { INutriListDatastore, isNutriListDatastore } from './INutriListDatastore
 export { INutriLogDatastore, isNutriLogDatastore } from './INutriLogDatastore.mjs';
 
 // Gateway ports
-export { IMessagingGateway, isMessagingGateway } from './IMessagingGateway.mjs';
 export { IResponseContext, isResponseContext } from './IResponseContext.mjs';
 export { IFoodParser, isFoodParser } from './IFoodParser.mjs';
 export { INutritionLookup, isNutritionLookup } from './INutritionLookup.mjs';

@@ -9,7 +9,7 @@
  * overnight window). Start is inclusive, end is exclusive.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { QueueRef } from './QueueRef.mjs';
 
 const TIME_RX = /^([01]\d|2[0-3]):[0-5]\d$/;

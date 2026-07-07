@@ -2,7 +2,7 @@
  * Conversation Entity - Represents a chat conversation
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class Conversation {
   constructor({

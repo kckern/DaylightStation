@@ -10,7 +10,7 @@
  * - transfer: Internal transfers between accounts
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} BucketConfig

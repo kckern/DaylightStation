@@ -10,7 +10,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Selection } from '../entities/Selection.mjs';
 import { GratitudeItem } from '../entities/GratitudeItem.mjs';
-import { DomainInvariantError, EntityNotFoundError, ValidationError } from '../../core/errors/index.mjs';
+import { DomainInvariantError, EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Valid categories

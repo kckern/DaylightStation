@@ -1,0 +1,14 @@
+# Unit-test baseline captured 2026-07-07 (branch refactor/ddd-compliance-p0)
+# GATE-UNIT: a task REGRESSES if tests_passed < 410, tests_failed > 23,
+# suites_passed < 53, or suites_failed > 66. These counts are deterministic
+# across runs. Many suite failures are the pre-existing environmental
+# vitest/jest interop error "Cannot redefine property: Symbol($$jest-matchers-object)"
+# plus known failures per docs/_wip/audits/2026-04-25-pre-existing-test-failures-audit.md.
+# Do not chase pre-existing failures; do not add new ones.
+suites_total: 119
+suites_passed: 53
+suites_failed: 66
+tests_total: 433
+tests_passed: 410
+tests_failed: 23
+tests_skipped: 0

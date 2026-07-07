@@ -1,6 +1,6 @@
 import express from 'express';
 import { safeSegment } from './lib/emulatorPaths.mjs';
-import { buildCatalog, resolveGameRules } from '../../../3_applications/emulator/EmulatorCatalog.mjs';
+import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';

@@ -3,7 +3,7 @@
  */
 
 import { Budget } from '../entities/Budget.mjs';
-import { EntityNotFoundError } from '../../core/errors/index.mjs';
+import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 export class BudgetService {
   constructor({ budgetStore, transactionSource }) {

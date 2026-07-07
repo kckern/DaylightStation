@@ -1,6 +1,6 @@
 // backend/src/domains/content/entities/MediaProgress.mjs
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {Object} MediaProgressProps

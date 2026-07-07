@@ -10,8 +10,8 @@
  * back to YAML doesn't synthesize default fields the user never wrote.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
-import { DomainInvariantError } from '../../core/errors/DomainInvariantError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 const KEYS = Object.freeze(['default', 'min', 'max']);
 const DEFAULTS = Object.freeze({ default: 60, min: 0, max: 100 });

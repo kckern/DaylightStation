@@ -1,6 +1,6 @@
 // backend/src/domains/content/entities/Item.mjs
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { ItemId } from '../value-objects/ItemId.mjs';
 
 /**

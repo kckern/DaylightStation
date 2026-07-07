@@ -15,8 +15,8 @@
  */
 
 import { IHubConfigRepository } from '../ports/IHubConfigRepository.mjs';
-import { HubConfig } from '../../../2_domains/playback-hub/entities/HubConfig.mjs';
-import { EntityNotFoundError } from '../../../2_domains/core/errors/EntityNotFoundError.mjs';
+import { HubConfig } from '#domains/playback-hub/entities/HubConfig.mjs';
+import { EntityNotFoundError } from '#domains/core/errors/EntityNotFoundError.mjs';
 
 export class FakeHubConfigRepository extends IHubConfigRepository {
   /** @type {HubConfig|null} */ #config;

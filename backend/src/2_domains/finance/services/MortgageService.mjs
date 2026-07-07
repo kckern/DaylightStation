@@ -3,7 +3,7 @@
  */
 
 import { Mortgage } from '../entities/Mortgage.mjs';
-import { EntityNotFoundError } from '../../core/errors/index.mjs';
+import { EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 export class MortgageService {
   constructor({ mortgageStore }) {

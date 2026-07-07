@@ -1,6 +1,6 @@
 // backend/src/1_domains/lifelog/entities/NutriLog.mjs
 import { FoodItem } from './FoodItem.mjs';
-import { ValidationError, DomainInvariantError } from '../../core/errors/index.mjs';
+import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 /**
  * @typedef {'pending'|'accepted'|'rejected'|'deleted'} NutriLogStatus
