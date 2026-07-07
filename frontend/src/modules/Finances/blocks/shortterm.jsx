@@ -4,6 +4,7 @@ import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
 import { PALETTE } from "../lib/format.mjs";
+import { budgetProgress } from "../lib/budgetMath.mjs";
 import moment from 'moment';
 
 export function BudgetShortTerm({ setDrawerContent, budget }) {
@@ -12,10 +13,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const { budgetStart, budgetEnd, shortTermBuckets, shortTermStatus } = budget;
     const buckets = Object.keys(shortTermBuckets);
 
-    const weekCount = moment(budgetEnd).diff(moment(budgetStart), 'weeks');
-    const currentWeek = moment().diff(moment(budgetStart), 'weeks');
-    const weeksLeft = weekCount - currentWeek;
-    const currentTime = currentWeek / weekCount;
+    const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
 
     const processedData = buckets.map((label) => {
         const item = shortTermBuckets[label];
@@ -40,9 +38,8 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         };
     }).sort((a, b) => {
         if (a.category === 'Unbudgeted') return 1;
-        if (a.extendedBudget > b.extendedBudget) return -1;
-        if (a.extendedBudget < b.extendedBudget) return 1;
-        return 0;
+        if (b.category === 'Unbudgeted') return -1;
+        return b.extendedBudget - a.extendedBudget;
     });
 
     const series = [
@@ -85,6 +82,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                     ${item.credits > 0 ? ` <b class='green' style="color:${PALETTE.gain}">+ ${formatAsCurrency(item.credits)}</b>` : ''}
                   </small>
                 </div>`),
+            labels: { useHTML: true },
             reversed: true
         },
         yAxis: {
@@ -96,7 +94,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
             tickWidth: 0,
             plotLines: [{
                 color: '#EEEEEE',
-                value: (1 - currentTime) * 100,
+                value: (1 - progress) * 100,
                 width: 1.5,
                 dashStyle: 'dash',
                 zIndex: 5
@@ -118,7 +116,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                   : 0;
                 return `<b>${item.category}</b><br/>
                         ${count} transactions<br/>
-                        ${100 - (percentageSpent||0)}% remaining<br/>
+                        ${Math.max(0, 100 - (percentageSpent || 0))}% remaining<br/>
                         $${rateRemaining}/week`;
             }
         },
