@@ -174,7 +174,7 @@ describe('ArtAdapter.getThumbnailUrl', () => {
     it('maps a preset name to its collection', async () => {
       const seen = [];
       const adapter = createArtAdapter({
-        dataPath: dpath,
+        householdDir: path.join(dpath, 'household'),
         collections: { americana: { folder: 'americana' } },
         artSource: fakeSource((def) => { seen.push(def); return [cand('flag', 'landscape')]; }),
       });

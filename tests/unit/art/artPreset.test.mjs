@@ -20,7 +20,7 @@ const res = () => {
 };
 const call = async (key) => {
   const r = res();
-  await presetHandler(createArtRouter({ artAdapter, dataPath, logger }))({ params: { key } }, r, (e) => { if (e) throw e; });
+  await presetHandler(createArtRouter({ artAdapter, householdDir: path.join(dataPath, 'household'), logger }))({ params: { key } }, r, (e) => { if (e) throw e; });
   return r;
 };
 

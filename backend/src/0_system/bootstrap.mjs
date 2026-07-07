@@ -211,6 +211,7 @@ import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
+import { toFolderName } from './config/configLoader.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
@@ -565,7 +566,10 @@ export function createContentRegistry(config, deps = {}) {
   // Reads query YAML files from household/config/lists/queries/ and user config/queries/
   let savedQueryService = null;
   if (listDataPath) {
-    const queriesDir = path.join(listDataPath, 'household', 'config', 'lists', 'queries');
+    // configService isn't a required dep here (unit tests call createContentRegistry
+    // with listDataPath but no configService), so resolve the default-household
+    // folder name via the SSOT resolver instead of hardcoding the literal.
+    const queriesDir = path.join(listDataPath, toFolderName('default'), 'config', 'lists', 'queries');
 
     // Build list of user query directories from data path
     // listDataPath is the root data dir (contains household/ and users/)

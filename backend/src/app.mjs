@@ -549,7 +549,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
-  const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
+  const contentPrefixesPath = configService.getHouseholdPath('config/content-prefixes');
   const contentPrefixes = loadYamlStatic(contentPrefixesPath) || {};
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
@@ -1277,7 +1277,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   const artAdapter = createArtAdapter({
     imgBasePath,
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     collections: artConfig.collections || {},
     immichSource: artImmichSource,
     logger: rootLogger.child({ module: 'art-adapter' })
@@ -1295,7 +1295,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   v1Routers.art = createArtRouter({
     artAdapter,
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'art-api' })
   });
 
@@ -1313,7 +1313,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Reads data/household/shared/content-filter/.
   v1Routers['content-filter'] = createContentFilterRouter({
-    dataDir: configService.getDataDir(),
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'content-filter-api' }),
   });
 
@@ -1369,7 +1369,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Config router - serves configuration to frontend
   v1Routers.config = createConfigRouter({
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'config-api' })
   });
 
@@ -2550,7 +2550,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const ambientDataDir = configService.getDataDir();
   const ambientScheduler = new AmbientSchedulerService({
     loadSchedule: async () => normalizeWindows(
-      (await loadArtmodeConfig(ambientDataDir, rootLogger)).schedule,
+      (await loadArtmodeConfig(configService.getHouseholdPath(''), rootLogger)).schedule,
       { defaultDevice: 'livingroom-tv' },
     ),
     tracker: screenContentTracker,
@@ -2587,7 +2587,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Screens router for screen configurations
   v1Routers.screens = createScreensRouter({
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'screens-api' })
   });
 
@@ -2706,7 +2706,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     const weeklyReviewService = new WeeklyReviewService(
-      { dataPath: dataBasePath, mediaPath: mediaBasePath, householdId },
+      { dataPath: dataBasePath, householdDir: configService.getHouseholdPath('', householdId), mediaPath: mediaBasePath, householdId },
       {
         immichAdapter: weeklyReviewImmichAdapter,
         calendarData: weeklyReviewCalendarAdapter,
