@@ -11,9 +11,9 @@ import {
 import { shortId } from '#domains/core/utils/id.mjs';
 import { userService } from '#system/config/UserService.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { encodeMidiFile } from '#applications/piano/midiFile.mjs';
-import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#applications/piano/courseProgress.mjs';
-import { getManifest } from '#applications/piano/loopManifest.mjs';
+import { encodeMidiFile } from '#apps/piano/midiFile.mjs';
+import { excludeReferenceUnits, isRecent, rankAndCapUsers } from '#apps/piano/courseProgress.mjs';
+import { getManifest } from '#apps/piano/loopManifest.mjs';
 
 /**
  * Piano kiosk API.
