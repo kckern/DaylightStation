@@ -324,6 +324,28 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  /**
+   * Timestamped note senders — the audio plane of the score transport. `atMs` is
+   * an absolute performance.now()-domain time; Chromium queues the message in the
+   * browser-process MIDI service and dispatches it on schedule regardless of
+   * main-thread jank (the whole point — see the 2026-07-06 decoupling audit T2).
+   * Deliberately NO applyNoteOn/applyNoteOff: scheduled notes must not light the
+   * keyboard ahead of when they sound; visuals fire separately at due time.
+   */
+  const sendNoteAt = useCallback((note, velocity = 80, atMs, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f], atMs);
+    return true;
+  }, []);
+
+  const sendNoteOffAt = useCallback((note, atMs, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0x80 | (channel & 0x0f), note & 0x7f, 0], atMs);
+    return true;
+  }, []);
+
   /** Schedule an array of {t, type:'note_on'|'note_off', note, velocity} events (t in ms from now). */
   const scheduleNotes = useCallback((events, channel = 0) => {
     const out = outputRef.current;
@@ -405,12 +427,14 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     sendPanic,
     sendNote,
     sendNoteOff,
+    sendNoteAt,
+    sendNoteOffAt,
     scheduleNotes,
     subscribe,
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
