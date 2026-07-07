@@ -12,6 +12,8 @@
 
 import { ValidationError } from '../../core/errors/index.mjs';
 
+const FALLBACK_LABEL = 'Uncategorized';
+
 /**
  * @typedef {Object} BucketConfig
  * @property {Object} income - Income configuration
@@ -64,7 +66,7 @@ export class TransactionClassifier {
 
     // Build monthly tag dictionary: tag -> label
     this.#monthlyTagDict = (config.monthly || []).reduce((acc, { tags, label }) => {
-      const categoryLabel = label || 'Shopping';
+      const categoryLabel = label || FALLBACK_LABEL;
       tags?.forEach(tag => {
         acc[tag] = categoryLabel;
         acc[categoryLabel] = categoryLabel; // Also map label to itself
@@ -75,7 +77,7 @@ export class TransactionClassifier {
     // Build transfer tag dictionary: tags that route transfers to monthly
     // Uses transferTags from monthly config items if specified, otherwise falls back to label
     this.#transferTagDict = (config.monthly || []).reduce((acc, { tags, label, transferTags }) => {
-      const categoryLabel = label || 'Shopping';
+      const categoryLabel = label || FALLBACK_LABEL;
       if (transferTags) {
         transferTags.forEach(tag => { acc[tag] = categoryLabel; });
       }
@@ -124,16 +126,16 @@ export class TransactionClassifier {
       return { label: 'Day-to-Day', bucket: 'day' };
     }
 
-    // Check for monthly expenses
-    const monthlyTags = Object.keys(this.#monthlyTagDict);
-    if (this.#arraysOverlap(monthlyTags, txnTags)) {
-      return { label: this.#monthlyTagDict[mainTag] || 'Monthly', bucket: 'monthly' };
+    // Check for monthly expenses — label from the matching tag, wherever it sits
+    const monthlyTag = txnTags.find(tag => this.#monthlyTagDict[tag] !== undefined);
+    if (monthlyTag) {
+      return { label: this.#monthlyTagDict[monthlyTag], bucket: 'monthly' };
     }
 
     // Check for short-term buckets
-    const shortTermTags = Object.keys(this.#shortTermTagDict);
-    if (this.#arraysOverlap(shortTermTags, txnTags)) {
-      return { label: this.#shortTermTagDict[mainTag] || 'Short-term', bucket: 'shortTerm' };
+    const shortTermTag = txnTags.find(tag => this.#shortTermTagDict[tag] !== undefined);
+    if (shortTermTag) {
+      return { label: this.#shortTermTagDict[shortTermTag], bucket: 'shortTerm' };
     }
 
     // Default to unbudgeted (goes to short-term bucket)
@@ -173,7 +175,7 @@ export class TransactionClassifier {
     const grouped = {};
 
     for (const txn of transactions) {
-      const { label, bucket } = this.classify(txn);
+      const { label, bucket } = (txn.label && txn.bucket) ? txn : this.classify(txn);
       if (bucket !== bucketType) continue;
 
       if (!grouped[label]) {
