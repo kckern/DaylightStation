@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { useStudioRecorder } from './useStudioRecorder.js';
 import StudioPlay from './StudioPlay.jsx';
@@ -21,7 +21,8 @@ import StudioPlayback from './StudioPlayback.jsx';
  */
 export function Studio() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-studio' }), []);
-  const { isPlaying, subscribe, connected } = usePianoMidi();
+  const { subscribe, connected } = usePianoMidi();
+  const { isPlaying } = usePianoMidiNotes();
   const { currentUser } = usePianoUser();
   const { recording, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
 
 let _logger;
@@ -19,7 +19,7 @@ function logger() {
  */
 export function useEngagementGate({ pause, play, isPaused, isSequential, timeoutSeconds = 90, onEngagementConfirmed }) {
   const [gateOpen, setGateOpen] = useState(false);
-  const { activeNotes } = usePianoMidi();
+  const { activeNotes } = usePianoMidiNotes();
   const lastActivityRef = useRef(Date.now());
   const gateOpenRef = useRef(false);
 

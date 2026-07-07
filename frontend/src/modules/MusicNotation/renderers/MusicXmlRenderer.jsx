@@ -29,10 +29,16 @@ function logger() {
  * @param {(p:number) => void} [onProgress] - extraction progress fraction 0..1
  * @param {() => void} [onReady] - fired once geometry extraction completes and
  *   the play-along overlay can be armed (the sheet is already painted before this)
+ * @param {boolean} [holdExtraction] - when true, the sheet still PAINTS on a
+ *   re-engrave/repaint but the expensive geometry-extraction cursor walk is
+ *   DEFERRED (the transport is playing; we won't stall the main thread). The owed
+ *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, onLayout, onProgress, onReady, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, onLayout, onProgress, onReady, holdExtraction = false, children }) {
   const hostRef = useRef(null);
+  const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
+  const pendingExtractRef = useRef(false); // an extraction was deferred while held
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [failed, setFailed] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -80,7 +86,10 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // stale-guarded so a superseded render can never clobber the live one.
     const reportProgress = (p) => { if (!stale()) { setProgress(p); onProgress?.(p); } };
     const publish = (res, engWidth, engHeight, engFlow) => {
-      onLayout?.({ ...res, width: engWidth, height: engHeight, flow: engFlow });
+      // `scale` (closed over from this effect run) lets the consumer detect a
+      // stale pre-zoom layout: after a zoom the sheet repaints immediately but a
+      // held extraction hasn't republished geometry yet, so overlays must wait.
+      onLayout?.({ ...res, width: engWidth, height: engHeight, flow: engFlow, scale });
       onReady?.(); // exactly once per successful extraction
     };
 
@@ -97,11 +106,16 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
             if (stale()) return;
             setFailed(false);
             setDims({ width: rr.width, height: rr.height }); // PAINT (sheet visible)
-            const res = await extractLayoutSliced(osmdRef.current, {
-              yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
-            });
-            if (stale() || !res) return;
-            publish(res, rr.width, rr.height, flow);
+            if (holdRef.current) {
+              pendingExtractRef.current = true; // painted; geometry extraction deferred until released
+              logger().debug('musicxml.extract-deferred', { path: 'repaint', scale, flow });
+            } else {
+              const res = await extractLayoutSliced(osmdRef.current, {
+                yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
+              });
+              if (stale() || !res) return;
+              publish(res, rr.width, rr.height, flow);
+            }
             return;
           } catch (err) {
             if (stale()) return;
@@ -120,11 +134,16 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         setDims({ width: eng.width, height: eng.height }); // PAINT
         setFailed(false);
         setRendering(false); // sheet is visible; hide the "Engraving…" veil
-        const res = await extractLayoutSliced(eng.osmd, {
-          yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
-        });
-        if (stale() || !res) return;
-        publish(res, eng.width, eng.height, eng.flow);
+        if (holdRef.current) {
+          pendingExtractRef.current = true; // painted; geometry extraction deferred until released
+          logger().debug('musicxml.extract-deferred', { path: 'engrave', scale, flow });
+        } else {
+          const res = await extractLayoutSliced(eng.osmd, {
+            yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
+          });
+          if (stale() || !res) return;
+          publish(res, eng.width, eng.height, eng.flow);
+        }
       } catch (err) {
         if (stale()) return;
         setFailed(true);
@@ -137,6 +156,18 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     })();
     return () => { if (renderSeq.current === seq) renderSeq.current++; };
   }, [musicXml, width, flow, scale, transpose, onLayout, onProgress, onReady, resizeKey]);
+
+  // Release: once holding ends and an extraction is owed, re-run the render effect
+  // (cheap repaint + the deferred geometry walk) so overlays catch up. NOTE:
+  // holdExtraction is deliberately NOT in the main effect's deps — a play/pause
+  // flip must never re-engrave unless an extraction was actually deferred.
+  useEffect(() => {
+    if (!holdExtraction && pendingExtractRef.current) {
+      pendingExtractRef.current = false;
+      logger().debug('musicxml.extract-released', {});
+      setResizeKey((k) => k + 1); // re-run render effect: cheap repaint + owed extraction
+    }
+  }, [holdExtraction]);
 
   const showPlaceholder = !musicXml || failed;
   return (
