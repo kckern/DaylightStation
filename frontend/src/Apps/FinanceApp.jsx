@@ -219,9 +219,10 @@ export function BudgetViewer({ budget, mortgage, finance }) {
   });
   const activeBudget = budget[activeBudgetKey];
   const availableBudgetKeys = Object.keys(budget);
+  const financeContextValue = useMemo(() => ({ reload: finance.load }), [finance.load]);
 
   return (
-    <FinanceDataContext.Provider value={{ reload: finance.load }}>
+    <FinanceDataContext.Provider value={financeContextValue}>
       <div className="budget-viewer">
         <Header
           availableBudgetKeys={availableBudgetKeys}

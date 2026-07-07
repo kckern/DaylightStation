@@ -89,6 +89,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
 
     const handleStartPair = (transaction) => {
       setMenuOpenId(null);
+      setPairNotice(null);
       setPairMode({ sourceTransaction: transaction });
     };
 
