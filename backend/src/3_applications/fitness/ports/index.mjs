@@ -12,3 +12,4 @@ export {
   assertFitnessSyncerGateway
 } from './IFitnessSyncerGateway.mjs';
 export { IZoneLedController } from './IZoneLedController.mjs';
+export { IActivityGateway, isActivityGateway } from './IActivityGateway.mjs';

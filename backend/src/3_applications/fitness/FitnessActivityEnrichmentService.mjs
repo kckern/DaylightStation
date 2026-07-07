@@ -8,7 +8,7 @@
  * 1. Receive webhook event → check circuit breaker → write durable job
  * 2. Scan fitness history for matching activityId
  * 3. Build enrichment payload (title + description)
- * 4. PUT to provider API via stravaClient port
+ * 4. PUT to provider API via activityGateway port (IActivityGateway)
  * 5. Update job status
  *
  * Circuit breaker (3 layers):
@@ -23,9 +23,7 @@ import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
-import { buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
-import { userService } from '#system/config/index.mjs';
 import { buildStravaSessionTimeline } from '../../2_domains/fitness/services/StravaSessionBuilder.mjs';
 import { encodeSingleSeries } from '../../2_domains/fitness/services/TimelineService.mjs';
 
@@ -37,10 +35,12 @@ const GPS_DISTANCE_THRESHOLD_METERS = 100;  // activities below this are treated
 const MIN_OVERLAP_FRACTION = 0.5;           // matched session must overlap ≥50% of activity elapsed_time
 
 export class FitnessActivityEnrichmentService {
-  #stravaClient;
+  #activityGateway;
   #jobStore;
   #authStore;
   #configService;
+  #selectionConfig;
+  #resolveDisplayName;
   #fitnessHistoryDir;
   #reconciliationService;
   #logger;
@@ -50,19 +50,23 @@ export class FitnessActivityEnrichmentService {
 
   /**
    * @param {Object} config
-   * @param {Object} config.stravaClient - StravaClientAdapter instance
-   * @param {Object} config.jobStore - StravaWebhookJobStore instance
+   * @param {Object} config.activityGateway - IActivityGateway implementation (external activity provider)
+   * @param {Object} config.jobStore - Webhook job store instance
    * @param {Object} config.authStore - { loadUserAuth(provider, username) } for OAuth tokens
    * @param {Object} config.configService - ConfigService
+   * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
+   * @param {Function} [config.resolveDisplayName] - (userId) => display name; defaults to identity
    * @param {string} config.fitnessHistoryDir - Path to fitness history dir
-   * @param {Object} [config.reconciliationService] - StravaReconciliationService instance
+   * @param {Object} [config.reconciliationService] - ActivityReconciliationService instance
    * @param {Object} [config.logger]
    */
-  constructor({ stravaClient, jobStore, authStore, configService, fitnessHistoryDir, reconciliationService, logger = console }) {
-    this.#stravaClient = stravaClient;
+  constructor({ activityGateway, jobStore, authStore, configService, selectionConfig, resolveDisplayName, fitnessHistoryDir, reconciliationService, logger = console }) {
+    this.#activityGateway = activityGateway;
     this.#jobStore = jobStore;
     this.#authStore = authStore;
     this.#configService = configService;
+    this.#selectionConfig = selectionConfig;
+    this.#resolveDisplayName = resolveDisplayName || ((userId) => userId);
     this.#fitnessHistoryDir = fitnessHistoryDir;
     this.#reconciliationService = reconciliationService || null;
     this.#logger = logger;
@@ -166,7 +170,7 @@ export class FitnessActivityEnrichmentService {
       await this._ensureAuth();
 
       // Fetch activity from provider (need start_date + duration for time matching)
-      const currentActivity = await this.#stravaClient.getActivity(activityId);
+      const currentActivity = await this.#activityGateway.getActivity(activityId);
       if (!currentActivity?.start_date) {
         this.#logger.warn?.('strava.enrichment.activity_fetch_failed', { activityId });
         if (attempt < MAX_RETRIES) {
@@ -193,7 +197,7 @@ export class FitnessActivityEnrichmentService {
           activityType: currentActivity.type,
         });
 
-        const created = await this._createStravaOnlySession(currentActivity, this.#stravaClient);
+        const created = await this._createStravaOnlySession(currentActivity, this.#activityGateway);
         this.#jobStore.update(activityId, {
           status: 'completed',
           completedAt: new Date().toISOString(),
@@ -230,7 +234,7 @@ export class FitnessActivityEnrichmentService {
       }
 
       // Build selection config for primary media selection
-      const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
+      const selectionConfig = this.#selectionConfig;
 
       // Build enrichment payload
       const enrichment = buildActivityDescription(session, currentActivity, selectionConfig);
@@ -251,7 +255,7 @@ export class FitnessActivityEnrichmentService {
       if (enrichment.name) updatePayload.name = enrichment.name;
       if (enrichment.description) updatePayload.description = enrichment.description;
 
-      await this.#stravaClient.updateActivity(activityId, updatePayload);
+      await this.#activityGateway.updateActivity(activityId, updatePayload);
 
       // Record provenance of what we pushed so reconciliation can later tell
       // our pushes apart from manual Strava edits (and propagate local
@@ -468,7 +472,7 @@ export class FitnessActivityEnrichmentService {
    * Ensure the provider client has a valid access token.
    */
   async _ensureAuth() {
-    if (this.#stravaClient.hasAccessToken()) return;
+    if (this.#activityGateway.hasAccessToken()) return;
 
     // Load user auth — default to head of household
     const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
@@ -480,7 +484,7 @@ export class FitnessActivityEnrichmentService {
     }
 
     this.#logger.info?.('strava.enrichment.auth.refreshing', { username });
-    await this.#stravaClient.refreshToken(auth.refresh);
+    await this.#activityGateway.refreshToken(auth.refresh);
     this.#logger.info?.('strava.enrichment.auth.refreshed', { username });
   }
 
@@ -490,7 +494,7 @@ export class FitnessActivityEnrichmentService {
    * @param {Object} activity - Strava activity object from API
    * @returns {{ sessionId: string, filePath: string }}
    */
-  async _createStravaOnlySession(activity, stravaClient = null) {
+  async _createStravaOnlySession(activity, activityGateway = null) {
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
     const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
     const startLocal = moment(activity.start_date).tz(tz);
@@ -501,7 +505,7 @@ export class FitnessActivityEnrichmentService {
 
     // Fetch HR data and build timeline
     let timelineData = null;
-    const hrPerSecond = await this._fetchHRData(activity, stravaClient);
+    const hrPerSecond = await this._fetchHRData(activity, activityGateway);
     if (hrPerSecond) {
       timelineData = buildStravaSessionTimeline(hrPerSecond);
     }
@@ -551,7 +555,7 @@ export class FitnessActivityEnrichmentService {
       timezone: tz,
       participants: {
         [username]: {
-          display_name: userService.resolveDisplayName(username),
+          display_name: this.#resolveDisplayName(username),
           is_primary: true,
           strava: {
             activityId: activity.id,
@@ -628,14 +632,14 @@ export class FitnessActivityEnrichmentService {
    * @private
    * Fetch per-second heart rate data from Strava activity streams.
    * @param {Object} activity - Strava activity object
-   * @param {Object} stravaClient - StravaClientAdapter instance
+   * @param {Object} activityGateway - IActivityGateway implementation
    * @returns {number[]|null} Per-second HR array, or null
    */
-  async _fetchHRData(activity, stravaClient) {
-    if (!stravaClient || !activity.has_heartrate) return null;
+  async _fetchHRData(activity, activityGateway) {
+    if (!activityGateway || !activity.has_heartrate) return null;
 
     try {
-      const streams = await stravaClient.getActivityStreams(activity.id, ['heartrate']);
+      const streams = await activityGateway.getActivityStreams(activity.id, ['heartrate']);
       if (streams?.heartrate?.data?.length > 1) {
         this.#logger.info?.('strava.enrichment.hr_from_api', {
           activityId: activity.id,
@@ -728,7 +732,7 @@ export class FitnessActivityEnrichmentService {
     };
 
     // Build selection config for primary media selection
-    const selectionConfig = buildSelectionConfig(this.#configService.getAppConfig('fitness')?.plex);
+    const selectionConfig = this.#selectionConfig;
 
     // Build fresh description with the new memo included
     const enrichment = buildActivityDescription(augmentedSession, {}, selectionConfig);
@@ -741,14 +745,14 @@ export class FitnessActivityEnrichmentService {
     await this._ensureAuth();
 
     // Fetch current Strava activity to compare
-    const currentActivity = await this.#stravaClient.getActivity(activityId);
+    const currentActivity = await this.#activityGateway.getActivity(activityId);
     if (currentActivity?.description?.trim() === enrichment.description.trim()) {
       this.#logger.debug?.('strava.voice_memo_backfill.unchanged', { sessionId, activityId });
       return;
     }
 
     // Push description only
-    await this.#stravaClient.updateActivity(activityId, { description: enrichment.description });
+    await this.#activityGateway.updateActivity(activityId, { description: enrichment.description });
 
     // Record provenance of the pushed description so a later reconcile treats
     // it as ours rather than a manual edit.

@@ -88,10 +88,12 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
     };
 
     service = new FitnessActivityEnrichmentService({
-      stravaClient: mockStravaClient,
+      activityGateway: mockStravaClient,
       jobStore: mockJobStore,
       authStore: mockAuthStore,
       configService: mockConfigService,
+      selectionConfig: {},
+      resolveDisplayName: (userId) => userId === 'testuser' ? 'Test User' : userId,
       fitnessHistoryDir: tmpDir,
       logger: mockLogger,
     });

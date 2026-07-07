@@ -7,7 +7,7 @@
  * activity). They are never real workouts; the Strava activity has the
  * actual data. This helper is invoked from:
  *   1. FitnessActivityEnrichmentService._createStravaOnlySession (webhook path)
- *   2. StravaReconciliationService.reconcile (periodic + post-webhook)
+ *   2. ActivityReconciliationService.reconcile (periodic + post-webhook)
  *   3. cli/scripts/backfill-strava-enrichment.mjs (historical backfill)
  *
  * Conservative absorption rules — a session is deleted only if ALL hold:
