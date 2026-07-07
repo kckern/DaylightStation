@@ -1,5 +1,14 @@
 # Piano Kiosk Playback/Render Decoupling Implementation Plan
 
+> **Status (2026-07-06): EXECUTED** on branch `worktree-piano-playback-decoupling`. All 12
+> tasks done (Task 6/7 combined into an atomic R1 note-store migration). Unit suite green
+> (157 files / 1583 tests); the 2 pre-existing `frontend/src/Apps/` failures are confirmed
+> unrelated (they fail identically at the pre-branch baseline). Commit SHAs and the
+> finding→commit map are in the audit's
+> [Implementation status](../audits/2026-07-06-piano-kiosk-playback-render-decoupling-audit.md#implementation-status-2026-07-06).
+> **On-device validation is still pending** — see that section's checklist. Task bodies below
+> are the original plan, left as written.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make sheet-music MIDI playback rhythm immune to main-thread jank on the SM-T590 kiosk by moving audio timing onto timestamped Web-MIDI sends and the AudioContext clock, and by cutting the per-note React render cascade.
