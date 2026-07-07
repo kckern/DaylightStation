@@ -7,8 +7,6 @@
  * @module adapters/proxy
  */
 
-import { configService } from '#system/config/index.mjs';
-
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -116,19 +114,6 @@ export class AudiobookshelfProxyAdapter {
   getTimeout() {
     return 60000;
   }
-}
-
-/**
- * Create an AudiobookshelfProxyAdapter from ConfigService
- * @param {Object} [options]
- * @returns {AudiobookshelfProxyAdapter}
- */
-export function createAudiobookshelfProxyAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('audiobookshelf') || {};
-  const host = adapterConfig.host;
-  const token = configService.getSecret('AUDIOBOOKSHELF_TOKEN');
-
-  return new AudiobookshelfProxyAdapter({ host, token }, options);
 }
 
 export default AudiobookshelfProxyAdapter;

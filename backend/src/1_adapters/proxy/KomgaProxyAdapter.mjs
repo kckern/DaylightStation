@@ -7,8 +7,6 @@
  * @module adapters/proxy
  */
 
-import { configService } from '#system/config/index.mjs';
-
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -116,19 +114,6 @@ export class KomgaProxyAdapter {
   getTimeout() {
     return 60000;
   }
-}
-
-/**
- * Create a KomgaProxyAdapter from ConfigService
- * @param {Object} [options]
- * @returns {KomgaProxyAdapter}
- */
-export function createKomgaProxyAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('komga') || {};
-  const host = adapterConfig.host;
-  const apiKey = configService.getSecret('KOMGA_API_KEY');
-
-  return new KomgaProxyAdapter({ host, apiKey }, options);
 }
 
 export default KomgaProxyAdapter;
