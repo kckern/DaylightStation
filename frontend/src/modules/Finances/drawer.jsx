@@ -8,7 +8,7 @@ import HC_More from "highcharts/highcharts-more";
 HighchartsTreeMap(Highcharts);
 HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
-import { formatAsCurrency } from "./blocks";
+import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
 import { baseUrl } from '../../Apps/FinanceApp.jsx';
 
 import externalIcon from "../../assets/icons/external.svg";
@@ -337,12 +337,12 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
 
   const data = [
     ... mergedIncome,
-    { name: 'Income', isIntermediateSum: true, color: `#304529`  , filter: { bucket: "income" }},
+    { name: 'Income', isIntermediateSum: true, color: PALETTE.income  , filter: { bucket: "income" }},
     ... categoryCredits.sort((a, b) => a.y - b.y),
     ... categoryDebits.sort((a, b) => a.y - b.y),
-    { name: 'Cash Flow', isIntermediateSum: true, color: `#660000` , filter: { bucket: "monthly" }},
-    { name: 'Day-to-Day Spending', y: -dayToDaySum , color: `#432454`  , filter: { bucket: "day" }},
-    { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? `#c1121f` : `#759c82`}
+    { name: 'Cash Flow', isIntermediateSum: true, color: PALETTE.cashFlow , filter: { bucket: "monthly" }},
+    { name: 'Day-to-Day Spending', y: -dayToDaySum , color: PALETTE.dayToDay  , filter: { bucket: "day" }},
+    { name: !isNegative  ? 'Surplus' : 'Deficit',   isSum: true, color: isNegative ? PALETTE.over : PALETTE.gain}
   ];
 
   const options = {
@@ -382,8 +382,8 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
         }, 
     },
     series: [{
-      upColor: `#759c82`,
-      color: `#c1121f`,
+      upColor: PALETTE.gain,
+      color: PALETTE.over,
       data,
       dataLabels: { 
       enabled: true,
@@ -566,10 +566,6 @@ function safeGetTag(tx) {
   return tx.tagNames[0];
 }
 
-function formatCurrency(v) {
-  return v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${Math.round(v)}`;
-}
-
 function buildDrillData(transactions) {
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return { topData: [], drillSeries: [], grandTotal: 0 };
@@ -683,7 +679,7 @@ function buildDrillData(transactions) {
         y: parseFloat(x.pctOfOther.toFixed(2)),
         pctOfGrand: x.pctOfGrand,
         valueReal: x.value,
-        valueFormatted: formatCurrency(x.value),
+        valueFormatted: formatCompactCurrency(x.value),
         drilldown: null,
         txList: x.txList
       }))
@@ -700,7 +696,7 @@ function buildDrillData(transactions) {
           y: parseFloat(sumPctOfOther.toFixed(2)),
           pctOfGrand: sumPctOfGrand,
           valueReal: sumVal2,
-          valueFormatted: formatCurrency(sumVal2),
+          valueFormatted: formatCompactCurrency(sumVal2),
           drilldown: "Other2",
           txList: allMinor2Tx
         });
@@ -728,7 +724,7 @@ function buildDrillData(transactions) {
           y: parseFloat(((value / other2Val) * 100).toFixed(2)),
           pctOfGrand: (value / grandTotal) * 100,
           valueReal: value,
-          valueFormatted: formatCurrency(value),
+          valueFormatted: formatCompactCurrency(value),
           drilldown: null
         }));
         d3Items.sort((a, b) => b.y - a.y);
@@ -769,7 +765,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
     const { grandTotal } = buildDrillData(transactions || []);
     setGrandTotal(grandTotal);
     setDrillStack([transactions || []]);
-    setCrumbs([`Total: ${formatCurrency(grandTotal)}`]);
+    setCrumbs([`Total: ${formatCompactCurrency(grandTotal)}`]);
   }, [componentKey, transactions]);
 
   const currentTransactions = drillStack[drillStack.length - 1];
@@ -778,7 +774,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
   const buildCrumbLabel = (point) => {
     const percentOfTop = (point.valueReal / grandTotal) * 100;
     if (point.name === "Other") {
-      return `${formatCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
+      return `${formatCompactCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
     }
     return point.name;
   };
@@ -838,7 +834,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
       formatter() {
         const p = this.point;
         const pct = (p.pctOfGrand || 0).toFixed(1) + "%";
-        const amt = formatCurrency(p.valueReal || 0);
+        const amt = formatCompactCurrency(p.valueReal || 0);
         return `<div style="line-height:1.2"><strong>${pct}</strong><br/>${p.name}<br/><em>${amt}</em></div>`;
       }
     },
@@ -927,7 +923,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
           y: pt.valueReal,
           pctOfGrand: pt.pctOfGrand,
           valueReal: pt.valueReal,
-          valueFormatted: formatCurrency(pt.valueReal),
+          valueFormatted: formatCompactCurrency(pt.valueReal),
           drilldown: pt.drilldown
         }))
       },
@@ -940,7 +936,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter, 
           y: pt.y,
           pctOfGrand: pt.pctOfGrand,
           valueReal: pt.valueReal,
-          valueFormatted: formatCurrency(pt.valueReal),
+          valueFormatted: formatCompactCurrency(pt.valueReal),
           drilldown: pt.drilldown
         }))
       }

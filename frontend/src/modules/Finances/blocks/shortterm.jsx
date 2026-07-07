@@ -3,6 +3,7 @@ import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
+import { PALETTE } from "../lib/format.mjs";
 import moment from 'moment';
 
 export function BudgetShortTerm({ setDrawerContent, budget }) {
@@ -49,20 +50,20 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
             name: 'allotted',
             data: processedData.map((item) => ({
                 y: item.allotted,
-                color: item.overage > 0 ? '#c1121f' : item.balance === 0 ? '#023e8a' : '#0077b6'
+                color: item.overage > 0 ? PALETTE.over : item.balance === 0 ? PALETTE.spentDone : PALETTE.spent
             })),
             stack: 'shortTerm'
         },
         {
             name: 'overage',
             data: processedData.map((item) => item.overage),
-            color: '#82000A',
+            color: PALETTE.overDark,
             stack: 'shortTerm'
         },
         {
             name: 'remaining',
             data: processedData.map((item) => item.remaining),
-            color: '#AAAAAA',
+            color: PALETTE.remaining,
             stack: 'shortTerm'
         },
     ];
@@ -81,7 +82,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                   <br/>
                   <small class="category-label" style="color:#AAA; font-size:0.7rem">
                     ${formatAsCurrency(item.budget)}
-                    ${item.credits > 0 ? ` <b class='green' style="color:#759c82">+ ${formatAsCurrency(item.credits)}</b>` : ''}
+                    ${item.credits > 0 ? ` <b class='green' style="color:${PALETTE.gain}">+ ${formatAsCurrency(item.credits)}</b>` : ''}
                   </small>
                 </div>`),
             reversed: true
