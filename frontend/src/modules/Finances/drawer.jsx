@@ -9,7 +9,7 @@ HighchartsTreeMap(Highcharts);
 HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
 import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
-import { baseUrl } from '../../Apps/FinanceApp.jsx';
+import { DaylightAPI } from '../../lib/api.mjs';
 
 import externalIcon from "../../assets/icons/external.svg";
 
@@ -95,11 +95,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
       const desc = prompt('Pair description (optional):') || `${source.description} \u2194 ${targetTransaction.description}`;
 
       try {
-        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ debit, credit, desc })
-        });
+        await DaylightAPI('api/v1/finance/pairs', { debit, credit, desc }, 'POST');
         setPairMode(null);
         window.location.reload();
       } catch (err) {
@@ -110,11 +106,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
     const handleUnpair = async (transaction) => {
       setMenuOpenId(null);
       try {
-        await fetch(`${baseUrl}/api/v1/finance/pairs`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ debit: transaction.id, credit: transaction.pairedWith })
-        });
+        await DaylightAPI('api/v1/finance/pairs', { debit: transaction.id, credit: transaction.pairedWith }, 'DELETE');
         window.location.reload();
       } catch (err) {
         console.error('Failed to unpair:', err);
