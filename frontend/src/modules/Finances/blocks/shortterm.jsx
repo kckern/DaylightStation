@@ -4,6 +4,7 @@ import HighchartsReact from 'highcharts-react-official';
 import { formatAsCurrency } from "../blocks";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
+import { useToday } from "../hooks/useToday.mjs";
 
 export const gatherShortTermTransactions = (budget, key) => {
   const shortTermBuckets = budget.shortTermBuckets || {};
@@ -23,6 +24,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const shortTermBuckets = budget.shortTermBuckets || {};
     const shortTermStatus = budget.shortTermStatus || { budget: 0, credits: 0, debits: 0, balance: 0 };
     const buckets = Object.keys(shortTermBuckets);
+    const today = useToday();
 
     const { processedData, options } = useMemo(() => {
     const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
@@ -170,7 +172,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         series
     };
     return { processedData, options };
-    }, [budget, setDrawerContent]);
+    }, [budget, setDrawerContent, today]);
 
     const handleStatusClick = (key) => {
         const header = key === 'budget' ? 'Short Term Budget' : key === 'spent' ? 'Spent' : 'Gained';

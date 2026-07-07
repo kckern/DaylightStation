@@ -4,6 +4,7 @@ import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
 import moment from 'moment';
 import { formatAsCurrency, PALETTE } from '../lib/format.mjs';
+import { useToday } from '../hooks/useToday.mjs';
 
 export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
   override = override || {};
@@ -31,7 +32,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     const highlightToday = isCurrentMonth && idx === today;
     const overspent = day.overspent;
     return {
-      y: day.displayBalance ?? Math.abs(day.endingBalance),
+      y: day.endingBalance,
       actualBalance: day.endingBalance,
       color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined)
     };
@@ -158,8 +159,9 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       }] : []
     },
     yAxis: {
-      min: 0,
+      min: Math.min(0, ...dayKeys.map(k => dailyBalances[k].endingBalance ?? 0)),
       max: Math.max(initialBudget, ...actualData.map(d => d.y || 0)),
+      plotLines: [{ value: 0, color: '#666', width: 1, zIndex: 3 }],
       title: { text: '' },
       labels: {
         formatter: function () {
@@ -241,9 +243,10 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
   }, [activeMonth, budget.dayToDayBudget, currentMonth]);
 
   const monthData = budget.dayToDayBudget[activeMonth] || {};
+  const today = useToday();
   const options = useMemo(
-    () => buildDayToDayBudgetOptions(monthData, setDrawerContent),
-    [monthData, setDrawerContent]
+    () => buildDayToDayBudgetOptions(monthData, setDrawerContent, { now: today }),
+    [monthData, setDrawerContent, today]
   );
 
   return (
