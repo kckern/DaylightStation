@@ -19,10 +19,11 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const firstDayKey = dayKeys[0];
   const lastDayKey = dayKeys[dayKeys.length - 1];
   const inferredMonth = monthData.month || moment(firstDayKey).format('YYYY-MM');
-  const currentMonth = moment().format('YYYY-MM');
+  const now = override.now ? moment(override.now) : moment();
+  const currentMonth = now.format('YYYY-MM');
   const daysInMonth = moment(inferredMonth).daysInMonth();
   const isCurrentMonth = inferredMonth === currentMonth;
-  const today = moment().date() - 1; // Convert to 0-based for array indexing
+  const today = now.date() - 1; // Convert to 0-based for array indexing
 
   // Build the actual data series
   const actualData = dayKeys.map((dateKey, idx) => {
@@ -67,11 +68,12 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
   const lastIndex = projectedDataWithNulls.length - 1;
 
-  const endingProjectedBalance = projectedData.length
-    ? projectedData[projectedData.length - 1]
+  // Color reflects where the pace ACTUALLY lands, not the 0-clamped plot value —
+  // Math.max(0, …) on plotted points made the "over budget" red unreachable.
+  const endingProjectedUnclamped = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
+    ? actualData[today].y - (daysInMonth - today) * averageDailyBurn
     : 0;
-
-  const projectionColor = endingProjectedBalance < 0 ? PALETTE.projectionOver : PALETTE.projectionOk;
+  const projectionColor = endingProjectedUnclamped < 0 ? PALETTE.projectionOver : PALETTE.projectionOk;
 
   projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
     y: val,
@@ -159,7 +161,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     },
     yAxis: {
       min: 0,
-      max: initialBudget,
+      max: Math.max(initialBudget, ...actualData.map(d => d.y || 0)),
       title: { text: '' },
       labels: {
         formatter: function () {
@@ -240,13 +242,10 @@ export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
     />
   );
   useEffect(() => {
-    const activeMonthIsInCurrentBudget = budget.dayToDayBudget[activeMonth] !== undefined;
-
-    if (!activeMonthIsInCurrentBudget) {
-      const firstMonth = nonFutureMonths.reverse()[0];
-      setActiveMonth(firstMonth);
-    }
-  }, [activeMonth, budget.dayToDayBudget, nonFutureMonths]);
+    if (budget.dayToDayBudget[activeMonth] !== undefined) return;
+    const available = Object.keys(budget.dayToDayBudget).filter((m) => m <= currentMonth).sort();
+    setActiveMonth(available[available.length - 1] ?? Object.keys(budget.dayToDayBudget)[0]);
+  }, [activeMonth, budget.dayToDayBudget, currentMonth]);
 
   const monthData = budget.dayToDayBudget[activeMonth] || {};
   const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
