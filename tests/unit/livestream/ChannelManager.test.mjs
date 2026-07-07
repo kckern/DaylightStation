@@ -17,7 +17,7 @@ vi.mock('../../../backend/src/1_adapters/livestream/FFmpegStreamAdapter.mjs', ()
 });
 
 // Mock SourceFeeder
-vi.mock('../../../backend/src/2_domains/livestream/SourceFeeder.mjs', () => {
+vi.mock('../../../backend/src/1_adapters/livestream/SourceFeeder.mjs', () => {
   return {
     SourceFeeder: vi.fn().mockImplementation(function ({ onNeedTrack }) {
       this.playFile = vi.fn();
