@@ -1,42 +1,48 @@
 /**
- * StravaReconciliationService
+ * ActivityReconciliationService
  *
- * Scans recent fitness sessions and reconciles them with Strava:
- *   Pass 1 (Session → Strava): Re-enrich missed or stale activities
- *   Pass 2 (Strava → Session): Pull manually-entered Strava descriptions back as strava_notes
+ * Scans recent fitness sessions and reconciles them with an external activity
+ * provider (via IActivityGateway; Strava is the current implementation):
+ *   Pass 1 (Session → Provider): Re-enrich missed or stale activities
+ *   Pass 2 (Provider → Session): Pull manually-entered provider descriptions
+ *                                back as strava_notes
  *
- * Triggered non-blocking after each Strava webhook enrichment.
+ * Triggered non-blocking after each provider webhook enrichment.
  *
- * @module applications/fitness/StravaReconciliationService
+ * @module applications/fitness/ActivityReconciliationService
  */
 
 import path from 'path';
 import moment from 'moment-timezone';
 import { loadYamlSafe, listYamlFiles, dirExists, saveYaml } from '#system/utils/FileIO.mjs';
 import { buildActivityDescription } from '#domains/fitness/services/buildActivityDescription.mjs';
-import { buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 import { absorbOverlappingSlivers } from './sliverAbsorption.mjs';
 
 const RECONCILE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const INTER_SESSION_DELAY_MS = 200;
-const DEFAULT_LOOKBACK_DAYS = 10;
 
-export class StravaReconciliationService {
-  #stravaClient;
-  #configService;
+export class ActivityReconciliationService {
+  #activityGateway;
+  #lookbackDays;
+  #selectionConfig;
+  #timezone;
   #fitnessHistoryDir;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.stravaClient - StravaClientAdapter instance (shared, already authenticated)
-   * @param {Object} config.configService - ConfigService for reading fitness config + timezone
+   * @param {Object} config.activityGateway - IActivityGateway implementation (shared, already authenticated)
+   * @param {number} config.lookbackDays - Days of session history to sweep
+   * @param {Object} config.selectionConfig - Primary-media selection config (from buildSelectionConfig)
+   * @param {string} config.timezone - IANA timezone for the date-range sweep
    * @param {string} config.fitnessHistoryDir - Path to fitness history directory
    * @param {Object} [config.logger]
    */
-  constructor({ stravaClient, configService, fitnessHistoryDir, logger = console }) {
-    this.#stravaClient = stravaClient;
-    this.#configService = configService;
+  constructor({ activityGateway, lookbackDays, selectionConfig, timezone, fitnessHistoryDir, logger = console }) {
+    this.#activityGateway = activityGateway;
+    this.#lookbackDays = lookbackDays;
+    this.#selectionConfig = selectionConfig;
+    this.#timezone = timezone;
     this.#fitnessHistoryDir = fitnessHistoryDir;
     this.#logger = logger;
   }
@@ -45,11 +51,9 @@ export class StravaReconciliationService {
    * Run reconciliation across the lookback window.
    */
   async reconcile() {
-    const fitnessConfig = this.#configService.getAppConfig('fitness');
-    const plex = fitnessConfig?.plex || {};
-    const lookbackDays = plex.reconciliation_lookback_days ?? DEFAULT_LOOKBACK_DAYS;
-    const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const selectionConfig = buildSelectionConfig(plex);
+    const lookbackDays = this.#lookbackDays;
+    const tz = this.#timezone || 'America/Los_Angeles';
+    const selectionConfig = this.#selectionConfig;
 
     const dates = this.#buildDateRange(lookbackDays, tz);
     this.#logger.info?.('strava.reconciliation.start', { lookbackDays, dates: dates.length });
@@ -81,7 +85,7 @@ export class StravaReconciliationService {
         }
 
         try {
-          const activity = await this.#stravaClient.getActivity(activityId);
+          const activity = await this.#activityGateway.getActivity(activityId);
           if (!activity) continue;
 
           // Pass 1: Session → Strava (re-enrichment)
@@ -185,7 +189,7 @@ export class StravaReconciliationService {
 
     if (Object.keys(updatePayload).length === 0) return false;
 
-    await this.#stravaClient.updateActivity(String(activity.id), updatePayload);
+    await this.#activityGateway.updateActivity(String(activity.id), updatePayload);
 
     // Record provenance so future manual edits on Strava are respected and not
     // clobbered by a later reconcile.
@@ -260,4 +264,4 @@ export class StravaReconciliationService {
   }
 }
 
-export default StravaReconciliationService;
+export default ActivityReconciliationService;

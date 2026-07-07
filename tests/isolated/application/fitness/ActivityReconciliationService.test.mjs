@@ -13,10 +13,10 @@ vi.mock('fs', async () => {
 });
 
 const { unlinkSync } = await import('fs');
-const { StravaReconciliationService } = await import('#apps/fitness/StravaReconciliationService.mjs');
+const { ActivityReconciliationService } = await import('#apps/fitness/ActivityReconciliationService.mjs');
 const { loadYamlSafe, listYamlFiles, dirExists, saveYaml } = await import('#system/utils/FileIO.mjs');
 
-describe('StravaReconciliationService — Pass 3: sliver absorption', () => {
+describe('ActivityReconciliationService — Pass 3: sliver absorption', () => {
   let service;
   let stravaClient;
   let configService;
@@ -51,9 +51,11 @@ describe('StravaReconciliationService — Pass 3: sliver absorption', () => {
       getAppConfig: () => ({}),
       getTimezone: () => 'America/Los_Angeles',
     };
-    service = new StravaReconciliationService({
-      stravaClient,
-      configService,
+    service = new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
       fitnessHistoryDir: '/tmp/fake-history',
       logger,
     });
@@ -187,7 +189,7 @@ describe('StravaReconciliationService — Pass 3: sliver absorption', () => {
   });
 });
 
-describe('StravaReconciliationService — Pass 1: title/description correction', () => {
+describe('ActivityReconciliationService — Pass 1: title/description correction', () => {
   let service;
   let stravaClient;
   let configService;
@@ -234,9 +236,11 @@ describe('StravaReconciliationService — Pass 1: title/description correction',
     };
     stravaClient = { getActivity: vi.fn(), updateActivity: vi.fn().mockResolvedValue({}) };
     listYamlFiles.mockReturnValue(['corrected-session']);
-    service = new StravaReconciliationService({
-      stravaClient,
-      configService,
+    service = new ActivityReconciliationService({
+      activityGateway: stravaClient,
+      lookbackDays: 10,
+      selectionConfig: {},
+      timezone: 'America/Los_Angeles',
       fitnessHistoryDir: '/tmp/fake-history',
       logger,
     });

@@ -1722,13 +1722,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
       const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
-      const { StravaReconciliationService } = await import('./3_applications/fitness/StravaReconciliationService.mjs');
+      const { ActivityReconciliationService } = await import('./3_applications/fitness/ActivityReconciliationService.mjs');
+      const { buildSelectionConfig } = await import('#domains/fitness/services/selectPrimaryMedia.mjs');
 
       const stravaClient = new StravaClientAdapter({
         httpClient: axios,
         configService,
         logger: rootLogger.child({ module: 'strava-client' }),
       });
+
+      // Resolve fitness config at the composition root and inject pre-resolved
+      // values into the use cases (they stay provider-/config-agnostic).
+      const stravaPlexConfig = configService.getAppConfig('fitness')?.plex || {};
+      const stravaSelectionConfig = buildSelectionConfig(stravaPlexConfig);
+      const stravaLookbackDays = stravaPlexConfig.reconciliation_lookback_days ?? 10;
+      const stravaTimezone = configService.getTimezone?.() || 'America/Los_Angeles';
 
       const stravaVerifyToken = configService.getSystemAuth?.('strava', 'verify_token') || '';
       const stravaWebhookAdapter = new StravaWebhookAdapter({
@@ -1741,20 +1749,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
-      stravaReconciliationService = new StravaReconciliationService({
-        stravaClient,
-        configService,
+      stravaReconciliationService = new ActivityReconciliationService({
+        activityGateway: stravaClient,
+        lookbackDays: stravaLookbackDays,
+        selectionConfig: stravaSelectionConfig,
+        timezone: stravaTimezone,
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
       stravaEnrichmentService = new FitnessActivityEnrichmentService({
-        stravaClient,
+        activityGateway: stravaClient,
         jobStore,
         authStore: {
           loadUserAuth: (provider, username) => configService.getUserAuth?.(provider, username),
         },
         configService,
+        selectionConfig: stravaSelectionConfig,
+        resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
         reconciliationService: stravaReconciliationService,
         logger: rootLogger.child({ module: 'strava-enrichment' }),
