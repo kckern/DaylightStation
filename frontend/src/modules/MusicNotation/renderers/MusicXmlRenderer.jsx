@@ -108,6 +108,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
             setDims({ width: rr.width, height: rr.height }); // PAINT (sheet visible)
             if (holdRef.current) {
               pendingExtractRef.current = true; // painted; geometry extraction deferred until released
+              logger().debug('musicxml.extract-deferred', { path: 'repaint', scale, flow });
             } else {
               const res = await extractLayoutSliced(osmdRef.current, {
                 yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
@@ -135,6 +136,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         setRendering(false); // sheet is visible; hide the "Engraving…" veil
         if (holdRef.current) {
           pendingExtractRef.current = true; // painted; geometry extraction deferred until released
+          logger().debug('musicxml.extract-deferred', { path: 'engrave', scale, flow });
         } else {
           const res = await extractLayoutSliced(eng.osmd, {
             yieldFn: scheduleYield, onProgress: reportProgress, shouldAbort: stale,
@@ -162,6 +164,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
   useEffect(() => {
     if (!holdExtraction && pendingExtractRef.current) {
       pendingExtractRef.current = false;
+      logger().debug('musicxml.extract-released', {});
       setResizeKey((k) => k + 1); // re-run render effect: cheap repaint + owed extraction
     }
   }, [holdExtraction]);
