@@ -59,7 +59,7 @@ function nearestEvent(events, x, y) {
  */
 export default function ScorePlayer({ score: scoreMeta }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
-  const { activeNotes, subscribe, subscribeRaw, pressNote, releaseNote, sendPanic } = usePianoMidi();
+  const { activeNotes, subscribe, subscribeRaw, pressNote, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
@@ -68,7 +68,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // holding the returned object: the object identity is fresh every render, and
   // the renderer's engrave effect depends on `onReady` — a churning identity
   // would re-fire onLayout/onReady endlessly (infinite re-engrave loop).
-  const { startSession, logLoad, recordFire, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
+  const { startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
@@ -188,6 +188,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     sendPanic?.();
   }, [releaseNote, sendPanic]);
 
+  // Scheduled sends already handed to the MIDI service can't be recalled
+  // (MIDIOutput.clear() is unreliable on this WebView) — flush twice: now for
+  // everything sounding, and once more after the lookahead window for note-ons
+  // that dispatch after the first flush. All pending timestamps are <=
+  // pause-time + lookahead, so the delayed panic covers the whole tail.
+  const flushTimerRef = useRef(null);
+  const silenceScheduled = useCallback(() => {
+    silence();
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => sendPanic?.(), (transportRef.current?.lookaheadMs ?? 400) + 60);
+  }, [silence, sendPanic]);
+  useEffect(() => () => clearTimeout(flushTimerRef.current), []);
+
   // Flush playback telemetry only when a Polish/Listen run actually produced fires.
   // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
   // so the unmount flush doesn't double-emit a summary the pause/stop/done path
@@ -199,7 +212,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const transport = useScoreTransport({
     timeline: mode === 'polish' || mode === 'listen' ? playTimeline : [],
-    onEvent: (e) => {
+    // AUDIO PLANE — runs up to lookaheadMs ahead; must touch NO React state
+    // beyond the sounding ledger (used only for flush bookkeeping). Sends carry
+    // the transport's wall timestamp so the MIDI service dispatches on time even
+    // if this tick woke late. These do NOT light the keyboard — machine playback
+    // was never human input; noteheads still light via `struck` at due time.
+    onSchedule: (e, atWall, leadMs) => {
+      if (e.type === 'note_on') {
+        sendNoteAt?.(e.note, e.velocity ?? 80, atWall);
+        soundingRef.current.add(e.note);
+      } else {
+        sendNoteOffAt?.(e.note, atWall);
+        soundingRef.current.delete(e.note);
+      }
+      pendingPlaybackRef.current = true;
+      recordSchedule(e, leadMs);
+    },
+    // VISUAL PLANE — fires at musical due time; allowed to be late (just a late
+    // frame). Advances the cursor and lights struck noteheads; no MIDI here.
+    onEvent: (e, dueWall) => {
       if (e.kind === 'step' || e.type == null) {
         // Focus loop (at tempo): once the cursor passes the range out-point, wrap
         // back to the in-point so a practice range repeats. Seek positions come from
@@ -211,21 +242,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
           setStruck(() => new Set());
           return;
         }
+        stepStartRef.current = dueWall; // musical step start (audit T4) — not commit time
         setStep(e.index);
         setStruck(() => new Set()); // new step starts dark; notes light as they sound
         return;
       }
       if (e.type === 'note_on') {
-        pressNote?.(e.note, e.velocity ?? 80);
-        soundingRef.current.add(e.note);
         setStruck((prev) => { const n = new Set(prev); n.add(e.note); return n; }); // bouncing-ball light-up
-      } else {
-        releaseNote?.(e.note);
-        soundingRef.current.delete(e.note);
       }
     },
+    // Polish has no note events (silent step timeline), so onSchedule never runs
+    // there — mark a run pending here too, so the unmount-flush guard still emits
+    // a Polish run's stats when the view is left mid-run.
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
-    onDone: () => { if (mode === 'listen') silence(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
+    onDone: () => { if (mode === 'listen') silenceScheduled(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
   const running = transport.playing;
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
@@ -258,7 +288,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
   const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
-  useEffect(() => { stepStartRef.current = performance.now(); }, [step]);
+  // stepStartRef is stamped in the transport's onEvent (musical due time), not
+  // here — a commit-time stamp would fold render lateness into the drift proxy.
   const driftForNote = useCallback(() => performance.now() - stepStartRef.current, []);
   const expectedForMeasure = useCallback((m) => {
     const meas = layout.measures?.[m];
@@ -497,13 +528,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     lastAdvanceRef.current = performance.now();
     // Seek jumps idxRef past pending note_offs — flush sounding notes first
     // (Listen mode) so a skipped-over note doesn't drone on the piano.
-    if (mode === 'listen') silence();
+    if (mode === 'listen') silenceScheduled();
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silence, tempoMult, loopArm, range, measureIndexOfStep, logger]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger]);
 
-  useEffect(() => () => silence(), [silence]);
+  useEffect(() => () => silenceScheduled(), [silenceScheduled]);
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
@@ -542,7 +573,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
     transport.stop();
-    silence();
+    silenceScheduled();
     setStruck(() => new Set());
     // Focus is a Learn + Polish practice affordance — release it on any mode change
     // so the range never bleeds into Listen/Perform (and starts clean on re-entry).
@@ -552,7 +583,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setKeyboardVisible(id !== 'perform');
     setMode(id);
     logMode({ mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silence, logMode]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -573,14 +604,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const reset = useCallback(() => {
     transport.stop();
-    if (mode === 'listen') silence();
+    if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
     setStep(0);
     setStruck(() => new Set());
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silence, flushPlaybackNow]);
+  }, [transport, mode, silenceScheduled, flushPlaybackNow]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -589,7 +620,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const toggleRun = useCallback(() => {
     if (running) {
       transport.pause();
-      if (mode === 'listen') silence();
+      if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
       logger.info('score.transport.pause', { step });
     } else {
@@ -597,7 +628,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       transport.play();
       logger.info('score.transport.play', { step, mode, bpm: tempoMap[0]?.bpm, tempoMult });
     }
-  }, [running, transport, mode, silence, flushPlaybackNow, logger, step, stepTimeline, tempoMap, tempoMult]);
+  }, [running, transport, mode, silenceScheduled, flushPlaybackNow, logger, step, stepTimeline, tempoMap, tempoMult]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
@@ -605,7 +636,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       const next = cyclePart(role);
       setRoles((r) => ({ ...r, [staff]: next }));
       if (running) { transport.pause(); flushPlaybackNow(); }
-      silence(); // role change invalidates the note timeline mid-flight
+      silenceScheduled(); // role change invalidates the note timeline mid-flight
       logger.info('score.listen.part', { staff, role: next });
     } else {
       // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
@@ -615,7 +646,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
       logger.info('score.active-part', { staff, on: !activeParts[staff] });
     }
-  }, [mode, roles, running, transport, flushPlaybackNow, silence, logger, activeParts, parts]);
+  }, [mode, roles, running, transport, flushPlaybackNow, silenceScheduled, logger, activeParts, parts]);
 
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total
