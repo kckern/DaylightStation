@@ -1,4 +1,5 @@
 import { SpendingPieDrilldownChart } from "./drawer";
+import { EmptyState } from "./EmptyState.jsx";
 export { formatAsCurrency } from './lib/format.mjs';
 
 export const collectSpendingTransactions = (budget) => {
@@ -25,29 +26,33 @@ export const collectSpendingTransactions = (budget) => {
       <div className="budget-block">
       <h2 onClick={() => setDrawerContent({ type: 'transfers', title: 'Transfers' })}>Transfers</h2>
       <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
-        <table className="transaction-table" style={{ width: "100%" }}>
-        <thead>
-          <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transferTransactions.map((txn, index) => {
-          const { date, description, amount, id } = txn;
-          const formattedDate = new Date(date).toLocaleDateString();
-          const formattedAmount = formatAsCurrency(amount);
-            return (
-            <tr key={txn.id || index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
-              <td>{formattedDate}</td>
-              <td>{description}</td>
-              <td>{formattedAmount}</td>
+        {transferTransactions.length === 0 ? (
+          <EmptyState message="No transfers this period" />
+        ) : (
+          <table className="transaction-table" style={{ width: "100%" }}>
+          <thead>
+            <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Amount</th>
             </tr>
-            );
-          })}
-        </tbody>
-        </table>
+          </thead>
+          <tbody>
+            {transferTransactions.map((txn, index) => {
+            const { date, description, amount, id } = txn;
+            const formattedDate = new Date(date).toLocaleDateString();
+            const formattedAmount = formatAsCurrency(amount);
+              return (
+              <tr key={txn.id || index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
+                <td>{formattedDate}</td>
+                <td>{description}</td>
+                <td>{formattedAmount}</td>
+              </tr>
+              );
+            })}
+          </tbody>
+          </table>
+        )}
       </div>
       </div>
     );
@@ -68,7 +73,11 @@ export const collectSpendingTransactions = (budget) => {
       <div className="budget-block">
         <h2>Spending</h2>
         <div className="budget-block-content">
-          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
+          {allTransactionsFromAllMonths.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
+          )}
         </div>
       </div>
     );

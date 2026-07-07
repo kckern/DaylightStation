@@ -2,6 +2,7 @@ import moment from "moment";
 import { formatAsCurrency } from "../blocks";
 import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
 import { calculateCost } from "../lib/costOfCapital.mjs";
+import { EmptyState } from "../EmptyState.jsx";
 import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
@@ -21,6 +22,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     window.open(`https://www.buxfer.com/account?id=${accountId}`, "_blank");
   };
 
+  const hasData = !!(mortgage?.amortization?.length || mortgage?.paymentPlans?.length);
+
   return (
     <div className="budget-block" style={{ display: 'flex', flexDirection: 'column' }}>
       <h2 onClick={handleTitleClick} style={{ cursor: 'pointer', flexShrink: 0 }}>Mortgage</h2>
@@ -28,7 +31,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         onClick={() => openDrawer('amortization')}
         style={{ cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' }}
       >
-        <MortgageChart mortgage={mortgage} />
+        {hasData ? <MortgageChart mortgage={mortgage} /> : <EmptyState message="No mortgage data" />}
       </div>
     </div>
   );

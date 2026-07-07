@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { formatAsCurrency } from "../blocks";
+import { EmptyState } from "../EmptyState.jsx";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
 import { useToday } from "../hooks/useToday.mjs";
@@ -173,6 +174,10 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     };
     return { processedData, options };
     }, [budget, setDrawerContent, today]);
+
+    if (buckets.length === 0) {
+        return (<div className="budget-block"><h2>Short Term Savings</h2><EmptyState /></div>);
+    }
 
     const handleStatusClick = (key) => {
         const header = key === 'budget' ? 'Short Term Budget' : key === 'spent' ? 'Spent' : 'Gained';

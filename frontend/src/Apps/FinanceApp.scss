@@ -413,6 +413,15 @@ button.reload{
   background-color: #1a2a3a;
 }
 
+.budget-block-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  color: #888;
+  font-style: italic;
+}
+
 .mortgage-summary-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

@@ -1,6 +1,7 @@
 import moment from "moment";
 import React, { useEffect, useState } from "react";
 import { formatAsCurrency } from "../blocks";
+import { EmptyState } from "../EmptyState.jsx";
 import { Menu, Button, Group } from '@mantine/core';
 
 export const loadAnticipatedTransactions = (budget, month, key) => {
@@ -156,6 +157,10 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
   
 function BudgetTable({ setDrawerContent, budget }) {
   const activeBudget = budget;
+
+  if (!activeBudget.monthlyBudget || Object.keys(activeBudget.monthlyBudget).length === 0) {
+    return <EmptyState message="No budget months in this period" />;
+  }
 
   const handleCellClick = (month, key) => {
     const monthString = month ? moment(month, "YYYY-MM").format("MMM ‘YY") : "Entire Budget Period";

@@ -1,4 +1,4 @@
-import { useState, useMemo, Component } from 'react';
+import { useState, useMemo } from 'react';
 import { Button, MantineProvider, Select, Drawer } from '@mantine/core';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { BudgetHoldings, BudgetSpending } from '../modules/Finances/blocks.jsx';
@@ -8,6 +8,7 @@ import { BudgetShortTerm } from '../modules/Finances/blocks/shortterm.jsx';
 import { BudgetDayToDay } from '../modules/Finances/blocks/daytoday.jsx';
 import { useFinanceData } from '../modules/Finances/hooks/useFinanceData.mjs';
 import { FinanceDataContext } from '../modules/Finances/FinanceDataContext.jsx';
+import { FinanceErrorBoundary } from '../modules/Finances/FinanceErrorBoundary.jsx';
 import DrawerHost from '../modules/Finances/DrawerHost.jsx';
 import 'react-modern-drawer/dist/index.css';
 import './FinanceApp.scss';
@@ -18,44 +19,18 @@ import { getChildLogger } from '../lib/logging/singleton.js';
 
 const financeLogger = getChildLogger({ app: 'finance' });
 
-/** A render crash in any block must not blank the whole dashboard (audit 5.2). */
-class FinanceErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-  componentDidCatch(error, info) {
-    financeLogger.error('finance.render.crash', { error: String(error), stack: info?.componentStack });
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
-          <strong>Finance dashboard crashed.</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(this.state.error?.message || this.state.error)}</div>
-          <Button onClick={() => window.location.reload()} variant="outline" color="red">Reload</Button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function App() {
   useDocumentTitle('Finances');
   const finance = useFinanceData();
-  const { data, error, load } = finance;
+  const { data, error, load, retry } = finance;
 
   return (
     <MantineProvider>
       {error && (
         <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
-          <strong>Failed to load finance data.</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(error.message || error)}</div>
-          <Button onClick={load} variant="outline" color="red">Retry</Button>
+          <strong>{error.source === 'refresh' ? 'Refresh failed — showing the last loaded data.' : 'Failed to load finance data.'}</strong>
+          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(error.error?.message || error.error)}</div>
+          <Button onClick={retry} variant="outline" color="red">Retry</Button>
         </div>
       )}
       {!error && !data && (
@@ -185,12 +160,12 @@ export function BudgetViewer({ budget, mortgage, finance }) {
           <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />
         </Drawer>
         <div className="grid-container">
-          <BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetShortTerm setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetDayToDay setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
-          <BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} />
+          <FinanceErrorBoundary label="Monthly Cash Flow"><BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Short Term Savings"><BudgetShortTerm setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Day-to-day Spending"><BudgetDayToDay setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Spending"><BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Mortgage"><BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Transfers"><BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
         </div>
       </div>
     </FinanceDataContext.Provider>
