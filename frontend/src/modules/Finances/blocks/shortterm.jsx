@@ -10,7 +10,9 @@ import moment from 'moment';
 export function BudgetShortTerm({ setDrawerContent, budget }) {
 
 
-    const { budgetStart, budgetEnd, shortTermBuckets, shortTermStatus } = budget;
+    const { budgetStart, budgetEnd } = budget;
+    const shortTermBuckets = budget.shortTermBuckets || {};
+    const shortTermStatus = budget.shortTermStatus || { budget: 0, credits: 0, debits: 0, balance: 0 };
     const buckets = Object.keys(shortTermBuckets);
 
     const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);

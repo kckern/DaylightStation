@@ -9,6 +9,7 @@ HighchartsTreeMap(Highcharts);
 HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 
 import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
+import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
 import { DaylightAPI } from '../../lib/api.mjs';
 
 import externalIcon from "../../assets/icons/external.svg";
@@ -62,17 +63,9 @@ export function Drawer({ cellKey, transactions, periodData }) {
       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
       return 0;
 
-    })   
-    
-    .filter(transaction => {
-          const { tags, description, label, bucket } = transactionFilter || {};
-          let showMe = true;
-          if(tags && !tags.some(tag => transaction.tagNames.includes(tag))) showMe = false;
-          if(showMe && description && !transaction.description.includes(description)) showMe = false;
-          if(showMe && label && transaction.label !== label) showMe = false;
-          if(showMe && bucket && transaction.bucket !== bucket) showMe = false;
-          return showMe;
-        });
+    })
+
+    .filter((transaction) => matchesTransactionFilter(transaction, transactionFilter));
 
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [pairMode, setPairMode] = useState(null);
@@ -180,11 +173,18 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                 return (
                                     <tr key={guid} className={rowClassName + (pairMode ? ' pair-selectable' : '')}
                                       onClick={() => pairMode ? handleSelectPairTarget(transaction) : handleRowClick(transaction)}
+                                      title={pairMode ? 'Select as offsetting transaction' : (hasId ? 'Open in Buxfer (new tab)' : undefined)}
                                       style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
-                                        <td className="description-col">{transaction.description}{memo}{pairBadge}</td>
+                                        <td className="description-col">
+                                          {transaction.description}{memo}{pairBadge}
+                                          {hasId && !pairMode && (
+                                            <img src={externalIcon} alt="" aria-hidden="true"
+                                              style={{ width: '0.8em', height: '0.8em', marginLeft: '0.4em', opacity: 0.4, verticalAlign: 'baseline' }} />
+                                          )}
+                                        </td>
                                         <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
                                         <td className="actions-col" onClick={(e) => e.stopPropagation()}>
                                           {hasId && !pairMode && (
@@ -227,24 +227,27 @@ export function Drawer({ cellKey, transactions, periodData }) {
 
 
 function DrawerSummary({ sortedTransactions, summary }) {
+  const MAX_LINKED_TIDS = 100; // Buxfer/browser URL length limit
+  const linkedIds = sortedTransactions.map((tx) => tx.id).filter(Boolean).slice(0, MAX_LINKED_TIDS);
 
   return (
     <div className="budget-drawer-summary">
       {sortedTransactions.length > 0 && (
         <span>
           {sortedTransactions.length} Transactions{" "}
-          <a
-            target="_blank"
-            href={`https://www.buxfer.com/transactions?tids=${sortedTransactions
-              .map((tx) => tx.id)
-              .join(",")}`}
-          >
-            <img
-              src={externalIcon}
-              alt="external link"
-              style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
-            />
-          </a>
+          {linkedIds.length > 0 && (
+            <a
+              target="_blank"
+              title={linkedIds.length < sortedTransactions.length ? `Opens first ${MAX_LINKED_TIDS} in Buxfer` : 'Open in Buxfer'}
+              href={`https://www.buxfer.com/transactions?tids=${linkedIds.join(",")}`}
+            >
+              <img
+                src={externalIcon}
+                alt="external link"
+                style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
+              />
+            </a>
+          )}
         </span>
       )}
       {summary.spent > 0 && <span>Spent: {formatAsCurrency(summary.spent)}</span>}
