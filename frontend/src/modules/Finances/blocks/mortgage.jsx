@@ -36,11 +36,9 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 }
 
   export default function MortgageChart({ mortgage, zoomable = false }) {
-    if (!mortgage?.amortization && !mortgage?.transactions) return null;
-
     const { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines } = useMemo(() => {
       const todayMs = moment().valueOf();
-      const amort = mortgage.amortization || [];
+      const amort = mortgage?.amortization || [];
 
       // 1. Build sawtooth pastData using each record's actual asOfDate (not
       // its calendar-month label, which is the lender's billing-cycle name and
@@ -82,7 +80,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       // Plotting endBalance=0 at calendar month-end would create a flat tail
       // (artificial bend). Instead, interpolate the payoff date within the
       // month based on (partial last payment / full prior payment).
-      const futureSeries = mortgage.paymentPlans.map((plan) => {
+      const futureSeries = (mortgage?.paymentPlans || []).map((plan) => {
         const data = [];
         if (plan.months.length > 0) {
           data.push([todayMs, plan.months[0].startBalance]);
@@ -111,8 +109,8 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       });
 
       // 4. Compute xAxis bounds spanning amortization + future projections.
-      const amortMonths = (mortgage.amortization || []).map(r => moment(r.month, "YYYY-MM"));
-      const planEndMonths = mortgage.paymentPlans
+      const amortMonths = amort.map(r => moment(r.month, "YYYY-MM"));
+      const planEndMonths = (mortgage?.paymentPlans || [])
         .map(({ info }) => moment(info.payoffMonth || info.payoffDate, ["YYYY-MM", "MMMM YYYY"]))
         .filter(m => m.isValid());
       const allMonths = [...amortMonths, ...planEndMonths].sort((a, b) => a.diff(b));
