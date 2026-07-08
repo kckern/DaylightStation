@@ -5,7 +5,7 @@ import nodePath from 'path';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { streamFileWithRanges } from '#system/http/streamFile.mjs';
 import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
-import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
+import { compositeHeroImage } from '#rendering/canvas/compositeHero.mjs';
 
 const HLS_CONTENT_TYPES = new Set([
   'application/vnd.apple.mpegurl',

@@ -10,7 +10,7 @@
  * resolved data as input and never fetches.
  */
 
-import { loadImage } from '#system/canvas/index.mjs';
+import { loadImage } from '#rendering/canvas/index.mjs';
 
 /**
  * @param {Object} sources - { [key]: { source: '/api/...', image?: '<field>' } }

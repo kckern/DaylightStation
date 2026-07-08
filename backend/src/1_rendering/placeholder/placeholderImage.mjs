@@ -1,6 +1,14 @@
+/**
+ * Placeholder image renderer — dark PNG tile with centered label text.
+ * @module 1_rendering/placeholder/placeholderImage
+ *
+ * Pure presentation: the caller resolves WHERE the label font lives (a
+ * filesystem path) and passes it in — this module never consults env vars
+ * or config for paths.
+ */
+
 import { createCanvas, registerFont } from 'canvas';
-import path from 'path';
-import { fileExists } from './FileIO.mjs';
+import { existsSync } from 'node:fs';
 
 // Image generation constants
 const SIZE = 500;
@@ -9,28 +17,38 @@ const MIN_FONT_SIZE = 12;
 const FONT_SIZE_STEP = 2;
 const TEXT_PADDING = 40;
 
-// Attempt to register Roboto Condensed font
-const mediaPath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
-const fontPath = path.join(mediaPath, 'fonts/RobotoCondensed-Regular.ttf');
+// node-canvas font registration is process-global and must happen before any
+// canvas is created; register each supplied face at most once.
+const registeredFontPaths = new Set();
 
-try {
-  if (fileExists(fontPath)) {
-    registerFont(fontPath, { family: 'Roboto Condensed' });
+function ensureFontRegistered(fontPath) {
+  if (!fontPath || registeredFontPaths.has(fontPath)) return;
+  registeredFontPaths.add(fontPath);
+  try {
+    if (existsSync(fontPath)) {
+      registerFont(fontPath, { family: 'Roboto Condensed' });
+    }
+  } catch (err) {
+    console.warn('placeholderImage: Failed to register Roboto Condensed font:', err.message);
   }
-} catch (err) {
-  console.warn('placeholderImage: Failed to register Roboto Condensed font:', err.message);
 }
 
 /**
  * Generate a placeholder PNG with the media path displayed
  * @param {string} displayText - Text to show (e.g., "sfx/intro")
+ * @param {Object} [options]
+ * @param {string} [options.fontPath] - Absolute path to the Roboto Condensed
+ *   face to register (resolved by the caller). Falls back to system fonts
+ *   when omitted or missing.
  * @returns {Buffer} PNG image buffer
  */
-export function generatePlaceholderImage(displayText) {
+export function generatePlaceholderImage(displayText, { fontPath } = {}) {
   // Input validation with fallback
   if (!displayText || typeof displayText !== 'string') {
     displayText = 'unknown';
   }
+
+  ensureFontRegistered(fontPath);
 
   const canvas = createCanvas(SIZE, SIZE);
   const ctx = canvas.getContext('2d');

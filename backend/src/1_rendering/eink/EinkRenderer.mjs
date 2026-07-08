@@ -9,7 +9,7 @@
  * never fetches.
  */
 
-import { CanvasRenderer } from '#system/canvas/index.mjs';
+import { CanvasRenderer } from '../canvas/index.mjs';
 import { resolveLayout } from './PanelRenderer.mjs';
 import * as registry from './widgets/registry.mjs';
 import { registerBuiltins } from './widgets/builtins.mjs';

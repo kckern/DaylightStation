@@ -1,6 +1,6 @@
 /**
  * Canvas Drawing Utilities
- * @module 0_system/canvas/drawingUtils
+ * @module 1_rendering/canvas/drawingUtils
  *
  * Pure functions for common canvas drawing operations.
  * No state, no side effects - just drawing primitives.
