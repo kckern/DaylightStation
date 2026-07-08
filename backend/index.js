@@ -175,9 +175,18 @@ async function main() {
     // - WebSocket: /ws/* handled by WebSocket middleware
     // - Frontend: everything else served as static files (Docker) or 404 (dev)
     return app(req, res, (err) => {
-      if (err && !res.headersSent) {
+      if (res.headersSent) return;
+      if (err) {
         res.statusCode = 500;
         res.end('Internal Server Error');
+      } else {
+        // Express matched no route. Because we invoke app() with an out-callback,
+        // Express's default 404 (finalhandler) never runs — without this branch the
+        // request would hang forever (observed: any /api/v1 typo held the socket
+        // open until client timeout). Only unmatched /api/v1|/ws paths reach here;
+        // the SPA fallback in app.mjs serves index.html for everything else.
+        res.statusCode = 404;
+        res.end('Not Found');
       }
     });
   });
