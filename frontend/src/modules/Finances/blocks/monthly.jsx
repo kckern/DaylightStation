@@ -190,13 +190,17 @@ function BudgetTable({ setDrawerContent, budget }) {
 
       const {income, monthlySpending, dayToDaySpending, surplus} = periodData;
       const surplusClassName = surplus >= 0 ? "surplus positive" : "surplus negative";
+      // Cells are role=button (keyboard-operable), which drops their implicit
+      // table-cell row/column context — a screen reader would otherwise
+      // announce a bare "$20,209". Give each an explicit self-describing name.
+      const full = monthMoment.format("MMMM YYYY");
       return (
         <tr key={month} className={rowClassName}>
-          <td {...pressable(() => handleCellClick(month, 'month'))}>{monthMoment.format("MMM ‘YY")}</td>
-          <td {...pressable(() => handleCellClick(month, 'income'))}>{formatAsCurrency(income)}</td>
-          <td {...pressable(() => handleCellClick(month, 'fixed'))}>{formatAsCurrency(monthlySpending)}</td>
-          <td {...pressable(() => handleCellClick(month, 'day'))}>{formatAsCurrency(dayToDaySpending)}</td>
-          <td {...pressable(() => handleCellClick(month, 'month'))} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'), { 'aria-label': `${full} cash flow` })}>{monthMoment.format("MMM ‘YY")}</td>
+          <td {...pressable(() => handleCellClick(month, 'income'), { 'aria-label': `${full} income: ${formatAsCurrency(income)}` })}>{formatAsCurrency(income)}</td>
+          <td {...pressable(() => handleCellClick(month, 'fixed'), { 'aria-label': `${full} monthly spending: ${formatAsCurrency(monthlySpending)}` })}>{formatAsCurrency(monthlySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'day'), { 'aria-label': `${full} day-to-day spending: ${formatAsCurrency(dayToDaySpending)}` })}>{formatAsCurrency(dayToDaySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'), { 'aria-label': `${full} surplus: ${formatAsCurrency(surplus || 0)}` })} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
         </tr>
       );
     });
@@ -204,13 +208,16 @@ function BudgetTable({ setDrawerContent, budget }) {
     const surplusClassName = totalSurplus >= 0 ? "surplus positive" : "surplus negative";
     
 
+    const totalIncome = months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0);
+    const totalMonthly = months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0);
+    const totalDayToDay = months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0);
     const sumRow = (
       <tr key="sum" className="sum">
-      <td {...pressable(() => handleCellClick(null, 'month'))}>Total</td>
-      <td {...pressable(() => handleCellClick(null, 'income'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
-      <td {...pressable(() => handleCellClick(null, 'fixed'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
-      <td {...pressable(() => handleCellClick(null, 'day'))}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
-      <td {...pressable(() => handleCellClick(null, 'month'))} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'), { 'aria-label': 'Whole budget period cash flow' })}>Total</td>
+      <td {...pressable(() => handleCellClick(null, 'income'), { 'aria-label': `Total income: ${formatAsCurrency(totalIncome)}` })}>{formatAsCurrency(totalIncome)}</td>
+      <td {...pressable(() => handleCellClick(null, 'fixed'), { 'aria-label': `Total monthly spending: ${formatAsCurrency(totalMonthly)}` })}>{formatAsCurrency(totalMonthly)}</td>
+      <td {...pressable(() => handleCellClick(null, 'day'), { 'aria-label': `Total day-to-day spending: ${formatAsCurrency(totalDayToDay)}` })}>{formatAsCurrency(totalDayToDay)}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'), { 'aria-label': `Total surplus: ${formatAsCurrency(totalSurplus)}` })} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
       </tr>
     );
 
