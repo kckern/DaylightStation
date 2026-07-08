@@ -5,6 +5,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createPianoRouter } from '../../../backend/src/4_api/v1/routers/piano.mjs';
+import { YamlPianoStudioDatastore } from '../../../backend/src/1_adapters/piano/YamlPianoStudioDatastore.mjs';
+import { PianoContainer } from '../../../backend/src/3_applications/piano/PianoContainer.mjs';
 
 const noop = { warn: () => {}, info: () => {}, debug: () => {}, error: () => {}, child: () => noop };
 let tmp, app;
@@ -38,12 +40,17 @@ beforeEach(() => {
   const configService = {
     // Household-scoped resolver — mirrors ConfigService.getHouseholdPath.
     getHouseholdPath: (rel) => path.join(tmp, rel),
-    // createPianoRouter touches getMediaDir() at construction (lessons root).
     getMediaDir: () => path.join(tmp, 'media'),
+    getHouseholdAppConfig: () => ({}),
+    getUserProfile: () => null,
   };
+  // Persistence + the two course algorithms live in the container now; the
+  // router is thin and takes only the container.
+  const studioDatastore = new YamlPianoStudioDatastore({ configService, logger: noop });
+  const pianoContainer = new PianoContainer({ studioDatastore, configService, logger: noop });
   app = express();
   app.use(express.json());
-  app.use('/piano', createPianoRouter({ configService, logger: noop }));
+  app.use('/piano', createPianoRouter({ pianoContainer, logger: noop }));
 });
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
