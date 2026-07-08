@@ -217,6 +217,8 @@ import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_sy
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
+import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
+import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
@@ -1707,12 +1709,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Piano kiosk API — per-user studio, preferences, lesson progress, and
-  // course video progress. fitnessPlayableService provides Plex enrichment
-  // for the /courses/:id/playable endpoint.
-  v1Routers.piano = createPianoRouter({
+  // course video progress. Composition root: build the persistence adapter +
+  // PianoContainer (persistence + the two course algorithms), inject the
+  // container into the thin router. fitnessPlayableService provides Plex
+  // enrichment for the /courses/:id/playable + /courses/progress endpoints.
+  const pianoStudioDatastore = new YamlPianoStudioDatastore({
     configService,
+    userService,
+    logger: rootLogger.child({ module: 'piano-datastore' })
+  });
+  const pianoContainer = new PianoContainer({
+    studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
+    configService,
+    logger: rootLogger.child({ module: 'piano-api' })
+  });
+  v1Routers.piano = createPianoRouter({
+    pianoContainer,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
