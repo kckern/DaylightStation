@@ -1,6 +1,6 @@
 /**
  * NutriReport Theme
- * @module 2_adapters/nutribot/rendering/nutriReportTheme
+ * @module 1_rendering/nutribot/nutriReportTheme
  *
  * Presentation factors for nutrition report rendering.
  * Contains all sizes, fonts, colors, and layout constants.
