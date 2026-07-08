@@ -378,7 +378,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const dataBasePath = configService.getDataDir();
   const mediaBasePath = configService.getMediaDir();
   const householdId = configService.getDefaultHouseholdId() || 'default';
-  const householdDir = userDataService.getHouseholdDir(householdId);
+  const householdDir = dataService.household.resolveDir('', householdId);
 
   // DevProxy for forwarding webhooks to local dev machine
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
@@ -639,7 +639,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Health domain
   const healthServices = createHealthServices({
     dataService,
-    userDataService,
     configService,
     logger: rootLogger
   });
@@ -676,9 +675,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'cost' })
   });
 
-  // Entropy domain - use UserDataService for user-specific data (replaces legacy io.mjs)
-  const userLoadFile = (username, service) => userDataService.getLifelogData(username, service);
-  const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
+  // Entropy domain - use DataService for user-specific data (replaces legacy io.mjs)
+  const userLoadFile = (username, service) => dataService.user.read(`lifelog/${service}`, username);
+  const userLoadCurrent = (username, service) => dataService.user.read(`current/${service}`, username);
   const ArchiveService = (await import('./3_applications/content/services/ArchiveService.mjs')).default;
   const entropyServices = createEntropyServices({
     io: { userLoadFile, userLoadCurrent },
@@ -1193,9 +1192,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Harvester application services
   // Create shared IO functions for lifelog persistence
-  const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
-  // Current store needs direct writeUserData (no 'lifelog/' prefix)
-  const userSaveFileDirect = (username, path, data) => userDataService.writeUserData(username, path, data);
+  const userSaveFile = (username, service, data) => dataService.user.write(`lifelog/${service}`, data, username);
+  // Current store needs a direct user write (no 'lifelog/' prefix)
+  const userSaveFileDirect = (username, path, data) => dataService.user.write(path, data, username);
 
   // Image saving for Infinity harvester (mirrors legacy io.saveImage behavior)
   // Images are saved to media/img/{folder}/{uid}.jpg with 24-hour caching
@@ -1204,8 +1203,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Household-level file saving for Infinity harvester state
   const householdSaveFile = (relativePath, data) => {
-    // Save to household[-{hid}]/state/{path}
-    return userDataService.saveHouseholdData(householdId, relativePath, data);
+    // Save to household[-{hid}]/{path}
+    return dataService.household.write(relativePath, data, householdId);
   };
 
   const harvesterIo = {
@@ -1214,15 +1213,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveFileDirect,
     saveImage,
     householdSaveFile,
-    userLoadAuth: (username, service) => userDataService.getAuthToken(username, service),
-    userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
+    userLoadAuth: (username, service) => dataService.user.read(`auth/${service}`, username),
+    userSaveAuth: (username, service, data) => dataService.user.write(`auth/${service}`, data, username),
   };
 
   const harvesterServices = createHarvesterServices({
     io: harvesterIo,
     httpClient: axios,
     configService,
-    userDataService,
     dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
     aiGateway: sharedAiGateway, // Shared OpenAI adapter
@@ -2172,7 +2170,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const nutribotAiGateway = sharedAiGateway;
 
   const messagingServices = createMessagingServices({
-    userDataService,
+    dataService,
     telegram: {
       token: configService.getSystemAuth('telegram', 'nutribot') || ''  // Default adapter uses nutribot token
     },
@@ -2199,7 +2197,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   // Per-user storage: users/{username}/conversations/nutribot/
   const nutribotStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'nutribot',
     userResolver,
     logger: rootLogger.child({ module: 'nutribot-state' })
@@ -2210,7 +2208,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const nutribotServices = await createNutribotServices({
     configService,
-    userDataService,
+    dataService,
     telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
     upcGateway,
@@ -2253,7 +2251,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for journalist
   // Per-user storage: users/{username}/conversations/journalist/
   const journalistStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'journalist',
     userResolver,
     logger: rootLogger.child({ module: 'journalist-state' })
@@ -2294,7 +2292,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for homebot
   // Per-user storage: users/{username}/conversations/homebot/
   const homebotStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'homebot',
     userResolver,
     logger: rootLogger.child({ module: 'homebot-state' })
