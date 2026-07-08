@@ -1,5 +1,23 @@
-import { Drawer, SpendingPieDrilldownChart } from "./drawer";
-export { formatAsCurrency } from './lib/format.mjs';
+import { SpendingPieDrilldownChart } from "./drawer";
+import { EmptyState } from "./EmptyState.jsx";
+import { pressable } from "./lib/a11y.mjs";
+// A bare `export { x } from ...` re-export creates NO local binding — this
+// file also CALLS formatAsCurrency, so import it and re-export explicitly.
+import { formatAsCurrency } from './lib/format.mjs';
+export { formatAsCurrency };
+
+export const collectSpendingTransactions = (budget) => {
+  const monthsDayToDay = Object.keys(budget.dayToDayBudget || {});
+  const monthsMonthly = Object.keys(budget.monthlyBudget || {});
+  const shortTermBuckets = Object.keys(budget.shortTermBuckets || {});
+  const dayToDay = monthsDayToDay.flatMap((m) => budget.dayToDayBudget[m].transactions || []);
+  const monthly = monthsMonthly.flatMap((m) =>
+    Object.values(budget.monthlyBudget[m].monthlyCategories || {}).flatMap((c) => c.transactions || [])
+  );
+  const shortTerm = shortTermBuckets.flatMap((b) => budget.shortTermBuckets[b].transactions || []);
+  return [...dayToDay, ...monthly, ...shortTerm].filter((txn) => txn?.expenseAmount > 0);
+};
+
   // BudgetHoldings.jsx
   export function BudgetHoldings({ setDrawerContent, budget }) {
 
@@ -8,37 +26,37 @@ export { formatAsCurrency } from './lib/format.mjs';
     const transferTransactions = [...(activeBudget.transferTransactions?.transactions || [])]
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-
-    
-    const Transfers = <Drawer setDrawerContent={setDrawerContent} header="Transfers" transactions={transferTransactions || []} />;
-
     return (
       <div className="budget-block">
-      <h2 onClick={() => setDrawerContent({ meta: { title: 'Transfers' }, jsx: Transfers })}>Transfers</h2>
-      <div className="budget-block-content" style={{ maxHeight: "400px", overflowY: "auto" , width: "100%" }}>
-        <table className="transaction-table" style={{ width: "100%" }}>
-        <thead>
-          <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transferTransactions.map((txn, index) => {
-          const { date, description, amount, id } = txn;
-          const formattedDate = new Date(date).toLocaleDateString();
-          const formattedAmount = formatAsCurrency(amount);
-            return (
-            <tr key={txn.id || index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
-              <td>{formattedDate}</td>
-              <td>{description}</td>
-              <td>{formattedAmount}</td>
+      <h2 {...pressable(() => setDrawerContent({ type: 'transfers', title: 'Transfers' }), { 'aria-label': 'Open transfers' })}>Transfers</h2>
+      <div className="budget-block-content transfer-scroll">
+        {transferTransactions.length === 0 ? (
+          <EmptyState message="No transfers this period" />
+        ) : (
+          <table className="transaction-table">
+          <thead>
+            <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Amount</th>
             </tr>
-            );
-          })}
-        </tbody>
-        </table>
+          </thead>
+          <tbody>
+            {transferTransactions.map((txn, index) => {
+            const { date, description, amount, id } = txn;
+            const formattedDate = new Date(date).toLocaleDateString();
+            const formattedAmount = formatAsCurrency(amount);
+              return (
+              <tr key={txn.id || index} onClick={() => window.open(`https://www.buxfer.com/transactions?tids=${id}`, "_blank")}>
+                <td>{formattedDate}</td>
+                <td>{description}</td>
+                <td>{formattedAmount}</td>
+              </tr>
+              );
+            })}
+          </tbody>
+          </table>
+        )}
       </div>
       </div>
     );
@@ -50,35 +68,20 @@ export { formatAsCurrency } from './lib/format.mjs';
 
     const budgetStartDate = new Date(activeBudget.startDate);
 
-    const monthsDayToDay = Object.keys(activeBudget.dayToDayBudget);
-    const monthsMonthly = Object.keys(activeBudget.monthlyBudget);
-    const shortTermBuckets = Object.keys(activeBudget.shortTermBuckets);
-
-    const dayToDayTransactionsAllMonths = monthsDayToDay.map((month) => activeBudget.dayToDayBudget[month].transactions).flat();
-    const monthlyTransactionsAllMonths = monthsMonthly.map((month) => {
-      const categories = Object.keys(activeBudget.monthlyBudget[month].monthlyCategories);
-      return categories.map((category) => activeBudget.monthlyBudget[month].monthlyCategories[category].transactions).flat();
-    }).flat();
-
-    const shortTermTransactions = shortTermBuckets.map((bucket) => activeBudget.shortTermBuckets[bucket].transactions).flat();
-
-    const allTransactionsFromAllMonths = dayToDayTransactionsAllMonths
-    .concat(monthlyTransactionsAllMonths)
-    .concat(shortTermTransactions)
-    .filter((txn) => txn?.expenseAmount > 0);
+    const allTransactionsFromAllMonths = collectSpendingTransactions(activeBudget);
 
     const setTransactionFilter = (filterString) => {
-      const txns = allTransactionsFromAllMonths.filter((txn) => txn.tagNames?.includes(filterString));
-      setDrawerContent({
-        meta: { title: `Spending: ${filterString}` },
-        jsx: <Drawer setDrawerContent={setDrawerContent} transactions={txns} />
-      });
+      setDrawerContent({ type: 'spending-tag', title: `Spending: ${filterString}`, tag: filterString });
     };
     return (
       <div className="budget-block">
         <h2>Spending</h2>
         <div className="budget-block-content">
-          <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
+          {allTransactionsFromAllMonths.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <SpendingPieDrilldownChart transactions={allTransactionsFromAllMonths} key={budgetStartDate.toString()} setTransactionFilter={setTransactionFilter} />
+          )}
         </div>
       </div>
     );

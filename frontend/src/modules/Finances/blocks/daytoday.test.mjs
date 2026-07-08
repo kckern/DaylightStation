@@ -6,7 +6,7 @@ function monthData({ startingBalance, dailyBurn, throughDay }) {
   const dailyBalances = { '2026-03-start': { startingBalance } };
   for (let d = 1; d <= throughDay; d++) {
     const key = `2026-03-${String(d).padStart(2, '0')}`;
-    dailyBalances[key] = { endingBalance: startingBalance - dailyBurn * d, overspent: false };
+    dailyBalances[key] = { endingBalance: startingBalance - dailyBurn * d, overspent: startingBalance - dailyBurn * d < 0 };
   }
   return { month: '2026-03', dailyBalances, transactions: [] };
 }
@@ -39,5 +39,17 @@ describe('buildDayToDayBudgetOptions', () => {
     data.dailyBalances['2026-03-03'].endingBalance = 350; // credit pushed above budget
     const options = buildDayToDayBudgetOptions(data, null, { now: '2026-03-05' });
     expect(options.yAxis.max).toBeGreaterThanOrEqual(350);
+  });
+
+  test('overspent days plot true negative balances and the axis includes them', () => {
+    // $300 budget at $60/day goes negative on day 6 (300 - 360 = -60).
+    const options = buildDayToDayBudgetOptions(
+      monthData({ startingBalance: 300, dailyBurn: 60, throughDay: 6 }),
+      null,
+      { now: '2026-03-06' }
+    );
+    const actual = options.series.find(s => s.name === 'Actual Data');
+    expect(actual.data[5].y).toBe(-60);
+    expect(options.yAxis.min).toBeLessThanOrEqual(-60);
   });
 });

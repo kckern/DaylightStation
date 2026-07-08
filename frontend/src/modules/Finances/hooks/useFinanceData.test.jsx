@@ -24,6 +24,8 @@ describe('useFinanceData', () => {
     DaylightAPI.mockRejectedValueOnce(new Error('HTTP 500'));
     const { result } = renderHook(() => useFinanceData());
     await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(result.current.error.source).toBe('load');
+    expect(result.current.error.error).toBeTruthy();
     expect(result.current.data).toBeNull();
   });
 
@@ -54,5 +56,7 @@ describe('useFinanceData', () => {
     await act(() => result.current.refresh());
     expect(result.current.refreshing).toBe(false);
     expect(result.current.error).toBeTruthy();
+    expect(result.current.error.source).toBe('refresh');
+    expect(result.current.error.error).toBeTruthy();
   });
 });

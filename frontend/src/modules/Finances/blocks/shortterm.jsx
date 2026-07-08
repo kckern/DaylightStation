@@ -1,10 +1,23 @@
 import React, { useMemo } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { Drawer } from "../drawer";
 import { formatAsCurrency } from "../blocks";
+import { EmptyState } from "../EmptyState.jsx";
 import { PALETTE } from "../lib/format.mjs";
 import { budgetProgress } from "../lib/budgetMath.mjs";
+import { useToday } from "../hooks/useToday.mjs";
+import { pressable } from "../lib/a11y.mjs";
+
+export const gatherShortTermTransactions = (budget, key) => {
+  const shortTermBuckets = budget.shortTermBuckets || {};
+  const all = Object.keys(shortTermBuckets)
+    .reduce((acc, label) => acc.concat(shortTermBuckets[label].transactions), [])
+    .sort((b, a) => a.amount - b.amount);
+  if (key === 'budget') return all;
+  if (key === 'spent') return all.filter(t => t.expenseAmount > 0);
+  if (key === 'gained') return all.filter(t => t.expenseAmount < 0);
+  return [];
+};
 
 export function BudgetShortTerm({ setDrawerContent, budget }) {
 
@@ -13,6 +26,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const shortTermBuckets = budget.shortTermBuckets || {};
     const shortTermStatus = budget.shortTermStatus || { budget: 0, credits: 0, debits: 0, balance: 0 };
     const buckets = Object.keys(shortTermBuckets);
+    const today = useToday();
 
     const { processedData, options } = useMemo(() => {
     const { weeksLeft, progress } = budgetProgress(budgetStart, budgetEnd);
@@ -152,14 +166,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                 events: {
                     click: function (event) {
                         const category = processedData[event.point.index];
-                        const content = (
-                            <Drawer
-                                header={category.category}
-                                transactions={category.transactions}
-                                setDrawerContent={setDrawerContent}
-                            />
-                        );
-                        setDrawerContent({ jsx: content, meta: { title: category.category } });
+                        setDrawerContent({ type: 'shortterm-bucket', title: category.category, bucket: category.category });
                     }
                 }
             }
@@ -167,37 +174,26 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         series
     };
     return { processedData, options };
-    }, [budget, setDrawerContent]);
+    }, [budget, setDrawerContent, today]);
 
-    function gatherTransactions(key) {
-        const shortTermLabels = Object.keys(shortTermBuckets);
-        const alltransactions = shortTermLabels.reduce((acc, label) => {
-            const item = shortTermBuckets[label];
-            return acc.concat(item.transactions);
-        }, []).sort((b, a) => a.amount - b.amount);
-
-        if (key === 'budget') return alltransactions;
-        if (key === 'spent') return alltransactions.filter(transaction => transaction.expenseAmount > 0);
-        if (key === 'gained') return alltransactions.filter(transaction => transaction.expenseAmount < 0);
-        return [];
+    if (buckets.length === 0) {
+        return (<div className="budget-block"><h2>Short Term Savings</h2><EmptyState /></div>);
     }
 
     const handleStatusClick = (key) => {
-        const transactions = gatherTransactions(key);
         const header = key === 'budget' ? 'Short Term Budget' : key === 'spent' ? 'Spent' : 'Gained';
-        const content = <Drawer setDrawerContent={setDrawerContent} header={header} transactions={transactions} />;
-        setDrawerContent({ jsx: content, meta: { title: header } });
+        setDrawerContent({ type: 'shortterm-status', title: header, statusKey: key });
     };
 
     const statusBadge = (
         <span className="status-badge">
-            <span onClick={() => handleStatusClick('budget')} className="amount">
+            <span {...pressable(() => handleStatusClick('budget'), { className: 'amount' })}>
                 {formatAsCurrency(shortTermStatus.budget)}
             </span> +
-            <span onClick={() => handleStatusClick('gained')} className="gained">
+            <span {...pressable(() => handleStatusClick('gained'), { className: 'gained' })}>
                 {formatAsCurrency(shortTermStatus.credits)}
             </span> -
-            <span onClick={() => handleStatusClick('spent')} className="spent">
+            <span {...pressable(() => handleStatusClick('spent'), { className: 'spent' })}>
                 {formatAsCurrency(shortTermStatus.debits)}
             </span> =
             <span className="remaining">
@@ -210,7 +206,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
         <div className="budget-block">
             <h2>Short Term Savings</h2>
             <div className="budget-block-content">
-                <div className="status-badge" style={{ textAlign: 'center' }}>
+                <div className="status-badge-row">
                     {statusBadge}
                 </div>
                 <HighchartsReact

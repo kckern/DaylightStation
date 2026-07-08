@@ -93,6 +93,23 @@ export class TransactionClassifier {
       });
       return acc;
     }, {});
+
+    // The monthly/shortTerm dicts deliberately map each category LABEL to
+    // itself (label-as-tag matching). Labels and tags therefore share one
+    // namespace with the income/dayToDay tag lists — a key appearing in
+    // both would be resolved silently by branch order. Fail loud instead.
+    const reserved = new Set([...this.#incomeTags, ...this.#dayToDayTags]);
+    const collisions = [...new Set([
+      ...Object.keys(this.#monthlyTagDict),
+      ...Object.keys(this.#shortTermTagDict),
+      ...Object.keys(this.#transferTagDict)
+    ])].filter(key => reserved.has(key));
+    if (collisions.length > 0) {
+      throw new ValidationError(
+        `Classifier config collision: ${collisions.sort().join(', ')} appear in income/dayToDay tags AND in monthly/shortTerm buckets`,
+        { code: 'CLASSIFIER_TAG_COLLISION', collisions }
+      );
+    }
   }
 
   /**

@@ -439,7 +439,7 @@ describe('MortgageCalculator', () => {
 
       expect(result.balance).toBe(172374.64);
       // No bridge rows
-      expect(result.amortization.every(r => r.source !== 'buxfer')).toBe(true);
+      expect(result.amortization.every(r => r.source !== 'ledger')).toBe(true);
     });
 
     test('extends amortization with bridge rows for post-statement Buxfer activity', () => {
@@ -473,7 +473,7 @@ describe('MortgageCalculator', () => {
       // Returned balance should match Buxfer cached, not stale statement
       expect(result.balance).toBeCloseTo(155381.92, 1);
 
-      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
+      const bridgeRows = result.amortization.filter(r => r.source === 'ledger');
 
       // Bridge labels use the lender's billing-cycle convention (cutoff
       // day inferred from statementDate=2026-03-06 → day 6). Cycle for a
@@ -575,7 +575,7 @@ describe('MortgageCalculator', () => {
 
       expect(result.balance).toBeCloseTo(78500, 1);
 
-      const bridgeRow = result.amortization.find(r => r.source === 'buxfer');
+      const bridgeRow = result.amortization.find(r => r.source === 'ledger');
       expect(bridgeRow).toBeDefined();
       expect(bridgeRow.month).toBe('2026-03');
       expect(bridgeRow.reconciliationAdj).toBeCloseTo(-400, 0);
@@ -607,7 +607,7 @@ describe('MortgageCalculator', () => {
         asOfDate: new Date('2026-05-15')
       });
 
-      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
+      const bridgeRows = result.amortization.filter(r => r.source === 'ledger');
       // 2026-05 is a completed cycle with no payments — it now accrues
       // interest as its own row instead of vanishing (audit 1.6).
       expect(bridgeRows.map(r => r.month)).toEqual(['2026-05', '2026-06']);

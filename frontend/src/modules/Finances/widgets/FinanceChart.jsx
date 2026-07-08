@@ -1,14 +1,14 @@
 
-import { buildDayToDayBudgetOptions } from '../Finances/blocks/daytoday'
+import { buildDayToDayBudgetOptions } from '../blocks/daytoday'
 import HighchartsReact from 'highcharts-react-official'
 import Highcharts from 'highcharts'
-import { DaylightAPI } from '../../lib/api.mjs'
+import { DaylightAPI } from '../../../lib/api.mjs'
 import { useEffect, useState } from 'react'
 import moment from 'moment'
-import './Finance.scss'
-import upArrow from '../../assets/icons/upGreen.svg';
-import downArrow from '../../assets/icons/downRed.svg';
-import { formatAsCurrency } from '../Finances/blocks'
+import './FinanceChart.scss'
+import upArrow from '../../../assets/icons/upGreen.svg';
+import downArrow from '../../../assets/icons/downRed.svg';
+import { formatAsCurrency } from '../blocks'
 
 function buildBaselineOptions(monthData) {
   const budget = monthData.budget || 0;

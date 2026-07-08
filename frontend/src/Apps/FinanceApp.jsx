@@ -1,5 +1,5 @@
-import { useState, useMemo, Component } from 'react';
-import { Button, MantineProvider, Select, TextInput, Drawer } from '@mantine/core';
+import { useState, useMemo } from 'react';
+import { Button, MantineProvider, Select, Drawer } from '@mantine/core';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import { BudgetHoldings, BudgetSpending } from '../modules/Finances/blocks.jsx';
 import { BudgetMortgage } from '../modules/Finances/blocks/mortgage.jsx';
@@ -8,7 +8,8 @@ import { BudgetShortTerm } from '../modules/Finances/blocks/shortterm.jsx';
 import { BudgetDayToDay } from '../modules/Finances/blocks/daytoday.jsx';
 import { useFinanceData } from '../modules/Finances/hooks/useFinanceData.mjs';
 import { FinanceDataContext } from '../modules/Finances/FinanceDataContext.jsx';
-import { DaylightAPI } from '../lib/api.mjs';
+import { FinanceErrorBoundary } from '../modules/Finances/FinanceErrorBoundary.jsx';
+import DrawerHost from '../modules/Finances/DrawerHost.jsx';
 import 'react-modern-drawer/dist/index.css';
 import './FinanceApp.scss';
 import '@mantine/core/styles.css';
@@ -18,52 +19,23 @@ import { getChildLogger } from '../lib/logging/singleton.js';
 
 const financeLogger = getChildLogger({ app: 'finance' });
 
-const syncPayroll = (token) =>
-  DaylightAPI('api/v1/finance/payroll/sync', token ? { token } : {}, 'POST');
-
-/** A render crash in any block must not blank the whole dashboard (audit 5.2). */
-class FinanceErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-  componentDidCatch(error, info) {
-    financeLogger.error('finance.render.crash', { error: String(error), stack: info?.componentStack });
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
-          <strong>Finance dashboard crashed.</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(this.state.error?.message || this.state.error)}</div>
-          <Button onClick={() => window.location.reload()} variant="outline" color="red">Reload</Button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function App() {
   useDocumentTitle('Finances');
   const finance = useFinanceData();
-  const { data, error, load } = finance;
+  const { data, error, load, retry } = finance;
 
   return (
     <MantineProvider>
       {error && (
-        <div style={{ margin: '1rem', padding: '1rem', border: '1px solid #c00', borderRadius: 8, background: '#fee', color: '#600' }}>
-          <strong>Failed to load finance data.</strong>
-          <div style={{ margin: '0.5rem 0', fontSize: '0.9em' }}>{String(error.message || error)}</div>
-          <Button onClick={load} variant="outline" color="red">Retry</Button>
+        <div className="finance-error-banner">
+          <strong>{error.source === 'refresh' ? 'Refresh failed — showing the last loaded data.' : 'Failed to load finance data.'}</strong>
+          <div className="finance-error-detail">{String(error.error?.message || error.error)}</div>
+          <Button onClick={retry} variant="outline" color="red">Retry</Button>
         </div>
       )}
       {!error && !data && (
-        <div style={{ padding: '1rem' }}>
-          <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, backgroundColor: '#f8f9fa', padding: '1rem', textAlign: 'center', color: '#495057' }}>
+        <div className="finance-loading">
+          <div className="finance-loading-card">
             <strong>Loading...</strong>
           </div>
         </div>
@@ -81,65 +53,13 @@ function ReloadButton({ finance }) {
   const { refresh, refreshing } = finance;
   return (
     <button
-      style={{ float: 'right' }}
       className={refreshing ? 'reload reloading' : 'reload'}
       onClick={refresh}
       disabled={refreshing}
+      aria-label="Refresh finance data"
     >
       {refreshing ? <img src={spinner} alt="loading" /> : '🔄'}
     </button>
-  );
-}
-
-function PayrollSyncContent() {
-  const [token, setToken] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    setError(null);
-    setResult(null);
-    try {
-      const response = await syncPayroll(token);
-      setResult(response);
-      financeLogger.info('finance.payroll.sync.success', { response });
-    } catch (err) {
-      setError(err.message);
-      financeLogger.error('finance.payroll.sync.error', { error: err.message });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  return (
-    <div style={{ padding: '1rem' }}>
-      <p style={{ marginBottom: '1rem', color: '#666' }}>
-        Enter your payroll session token to sync paychecks. Leave empty to use stored credentials.
-      </p>
-      <TextInput
-        label="Session Token"
-        placeholder="Paste token here (optional)"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        disabled={syncing}
-        style={{ marginBottom: '1rem' }}
-      />
-      <Button onClick={handleSync} loading={syncing} disabled={syncing} fullWidth>
-        {syncing ? 'Syncing...' : 'Sync Payroll'}
-      </Button>
-      {error && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fee', borderRadius: 4, color: '#c00' }}>
-          {error}
-        </div>
-      )}
-      {result && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#efe', borderRadius: 4, color: '#060' }}>
-          Payroll synced successfully!
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -163,9 +83,9 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
 
   return (
     <header>
-      <h1 style={{ display: 'flex', alignItems: 'center', padding: '0 1rem' }}>
-        <div style={{ flex: 1 }} />
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+      <h1 className="finance-header-bar">
+        <div className="finance-header-spacer" />
+        <div className="finance-header-center">
           <Select
             data={budgetOptions}
             value={activeBudgetKey}
@@ -182,20 +102,17 @@ function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey,
               },
               rightSection: { pointerEvents: 'none' },
             }}
-            rightSection={<span style={{ fontSize: '1rem' }}>▼</span>}
+            rightSection={<span className="finance-header-caret">▼</span>}
             clearable={false}
           />
         </div>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div className="finance-header-actions">
           <ReloadButton finance={finance} />
           <button
             className="payroll-btn"
-            onClick={() => setDrawerContent({
-              meta: { title: 'Sync Payroll' },
-              jsx: <PayrollSyncContent />
-            })}
+            onClick={() => setDrawerContent({ type: 'payroll', title: 'Sync Payroll' })}
             title="Sync Payroll"
-            style={{ fontSize: '1.5rem', cursor: 'pointer', background: 'none', border: 'none', marginLeft: '0.5rem' }}
+            aria-label="Sync payroll"
           >
             💰
           </button>
@@ -234,21 +151,23 @@ export function BudgetViewer({ budget, mortgage, finance }) {
         <Drawer
           opened={!!drawerContent}
           onClose={() => setDrawerContent(null)}
-          title={drawerContent?.meta?.title}
+          title={drawerContent?.title}
           size="90vw"
           position="right"
           padding="md"
           className="txn-drawer"
         >
-          {drawerContent?.jsx}
+          <FinanceErrorBoundary label="Drawer">
+            <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />
+          </FinanceErrorBoundary>
         </Drawer>
         <div className="grid-container">
-          <BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetShortTerm setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetDayToDay setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
-          <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
-          <BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} />
+          <FinanceErrorBoundary label="Monthly Cash Flow"><BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Short Term Savings"><BudgetShortTerm setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Day-to-day Spending"><BudgetDayToDay setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Spending"><BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Mortgage"><BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Transfers"><BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
         </div>
       </div>
     </FinanceDataContext.Provider>

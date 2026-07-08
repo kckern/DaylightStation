@@ -8,7 +8,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  */
 export function useFinanceData() {
   const [data, setData] = useState(null);       // { budgets, mortgage } | null
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null);     // { source: 'load'|'refresh', error } | null
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -17,7 +17,7 @@ export function useFinanceData() {
       const { budgets, mortgage } = await DaylightAPI('api/v1/finance/data');
       setData({ budgets, mortgage });
     } catch (err) {
-      setError(err);
+      setError({ source: 'load', error: err });
     }
   }, []);
 
@@ -29,11 +29,13 @@ export function useFinanceData() {
       await DaylightAPI('api/v1/finance/refresh', {}, 'POST');
       await load();
     } catch (err) {
-      setError(err);
+      setError({ source: 'refresh', error: err });
     } finally {
       setRefreshing(false);
     }
   }, [load]);
 
-  return { data, error, refreshing, load, refresh };
+  const retry = error?.source === 'refresh' ? refresh : load;
+
+  return { data, error, refreshing, load, refresh, retry };
 }
