@@ -1,7 +1,10 @@
 import { SpendingPieDrilldownChart } from "./drawer";
 import { EmptyState } from "./EmptyState.jsx";
 import { pressable } from "./lib/a11y.mjs";
-export { formatAsCurrency } from './lib/format.mjs';
+// A bare `export { x } from ...` re-export creates NO local binding — this
+// file also CALLS formatAsCurrency, so import it and re-export explicitly.
+import { formatAsCurrency } from './lib/format.mjs';
+export { formatAsCurrency };
 
 export const collectSpendingTransactions = (budget) => {
   const monthsDayToDay = Object.keys(budget.dayToDayBudget || {});
