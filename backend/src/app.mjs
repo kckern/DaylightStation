@@ -120,6 +120,13 @@ import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHan
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
+// Admin app-services (constructed HERE at the composition root and injected into
+// the admin router; keeps 4_api/**/admin/* free of #apps imports).
+import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
+import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
+import { AppsConfigService } from '#apps/admin/AppsConfigService.mjs';
+import { SchedulerAdminService } from '#apps/admin/SchedulerAdminService.mjs';
+import { IntegrationsQueryService } from '#apps/admin/IntegrationsQueryService.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
 import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
@@ -2623,6 +2630,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'auth-api' })
   });
 
+  // Admin app-services — constructed at the composition root and injected into the
+  // admin router so 4_api/**/admin/* never imports #apps. Persistence + rules live
+  // in these services; the sub-routers are thin HTTP shells.
+  const adminApiLogger = rootLogger.child({ module: 'admin-api' });
+  const householdAdminService = new HouseholdAdminService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
+  });
+  const yamlConfigFileService = new YamlConfigFileService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger
+  });
+  const appsConfigService = new AppsConfigService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'apps' }) || adminApiLogger
+  });
+  const schedulerAdminService = new SchedulerAdminService({
+    configService,
+    // Real manual-run path: the same orchestrator the scheduling loop uses.
+    schedulerOrchestrator,
+    logger: adminApiLogger.child?.({ submodule: 'scheduler' }) || adminApiLogger
+  });
+  const integrationsQueryService = new IntegrationsQueryService({
+    configService,
+    // Environment resolved at the composition root (was process.env in the router).
+    environment: process.env.DAYLIGHT_ENV || 'docker',
+    logger: adminApiLogger.child?.({ submodule: 'integrations' }) || adminApiLogger
+  });
+
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
     userDataService,
@@ -2631,7 +2667,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     mediaDownloadService,
     eventBus,
-    logger: rootLogger.child({ module: 'admin-api' })
+    householdAdminService,
+    yamlConfigFileService,
+    appsConfigService,
+    schedulerAdminService,
+    integrationsQueryService,
+    logger: adminApiLogger
   });
 
   // Test infrastructure router (dev/test only)
