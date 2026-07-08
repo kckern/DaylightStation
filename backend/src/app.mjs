@@ -856,13 +856,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
-  // Livestream engine
+  // Livestream engine — concrete adapters composed here, injected as factories
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
+  const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
+  const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
   const programsBasePath = `${configService.getDataDir()}/household/apps/livestream/programs`;
   const channelManager = new ChannelManager({
     mediaBasePath,
     programsBasePath,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    createStreamAdapter: (opts) => new FFmpegStreamAdapter(opts),
+    createSourceFeeder: (opts) => new SourceFeeder(opts),
     logger: rootLogger.child({ module: 'livestream' }),
   });
 

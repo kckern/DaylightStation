@@ -184,7 +184,8 @@ import { RedditImageProxyAdapter } from '#adapters/proxy/RedditImageProxyAdapter
 
 // Feed domain imports
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
-import { RssHeadlineHarvester } from '#adapters/feed/RssHeadlineHarvester.mjs';
+import { RssHeadlineHarvester, SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
+import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
 import { WebContentAdapter } from '#adapters/feed/WebContentAdapter.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
@@ -1385,6 +1386,9 @@ export function createFeedServices(config) {
     config: {
       configPath: 'config/feed',
       defaults: { retentionHours: 48, maxPerSource: 10, dedupeWordCount: 8 },
+      // Vendor placeholder-image lists injected as values (adapter-owned constants)
+      blockedImageUrls: SOURCE_BLOCKED_IMAGE_URLS,
+      blockedImagePatterns: GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS,
     },
     webContentGateway,
     logger,

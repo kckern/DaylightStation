@@ -8,9 +8,6 @@
  * @module applications/feed/services
  */
 
-import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
-import { SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
-
 export class HeadlineService {
   #headlineStore;
   #harvester;
@@ -18,6 +15,8 @@ export class HeadlineService {
   #configPath;
   #defaults;
   #webContentGateway;
+  #blockedImageUrls;
+  #blockedImagePatterns;
   #logger;
 
   constructor({ headlineStore, harvester, dataService, config = {}, webContentGateway, logger = console }) {
@@ -32,6 +31,12 @@ export class HeadlineService {
       ...config.defaults,
     };
     this.#webContentGateway = webContentGateway || null;
+    // Vendor-specific generic-placeholder image lists, injected as VALUES from
+    // the composition root (they live with the feed adapters).
+    this.#blockedImageUrls = config.blockedImageUrls instanceof Set
+      ? config.blockedImageUrls
+      : new Set(config.blockedImageUrls || []);
+    this.#blockedImagePatterns = config.blockedImagePatterns || [];
     this.#logger = logger;
   }
 
@@ -262,8 +267,8 @@ export class HeadlineService {
    */
   #isGenericImage(url) {
     if (!url) return false;
-    if (SOURCE_BLOCKED_IMAGE_URLS.has(url)) return true;
-    return GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS.some(re => re.test(url));
+    if (this.#blockedImageUrls.has(url)) return true;
+    return this.#blockedImagePatterns.some(re => re.test(url));
   }
 
   /**

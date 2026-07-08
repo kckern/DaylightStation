@@ -1,4 +1,4 @@
-import { normalizeListItem, extractContentId } from '#adapters/content/list/listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId } from '#domains/content/utils/listConfigNormalizer.mjs';
 
 const items = [
   { input: 'media: sfx/intro', label: 'Intro' },

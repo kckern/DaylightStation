@@ -17,7 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { denormalizeItem } from '../../backend/src/1_adapters/content/list/listConfigNormalizer.mjs';
+import { denormalizeItem } from '../../backend/src/2_domains/content/utils/listConfigNormalizer.mjs';
 
 // =============================================================================
 // Configuration
