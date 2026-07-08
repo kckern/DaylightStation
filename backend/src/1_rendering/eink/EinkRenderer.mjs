@@ -3,13 +3,14 @@
  * @module 1_rendering/eink/EinkRenderer
  *
  * Server-side equivalent of ScreenRenderer.jsx.
- * Takes a screen config (layout tree + data sources + theme), resolves data,
- * computes layout, and draws widgets onto a canvas.
+ * Takes a screen config (layout tree + theme) and ALREADY-RESOLVED data,
+ * computes layout, and draws widgets onto a canvas. Data acquisition lives in
+ * the application layer (3_applications/eink/DataResolver.mjs) — this module
+ * never fetches.
  */
 
 import { CanvasRenderer } from '#system/canvas/index.mjs';
 import { resolveLayout } from './PanelRenderer.mjs';
-import { resolveData } from './providers/DataResolver.mjs';
 import * as registry from './widgets/registry.mjs';
 import { registerBuiltins } from './widgets/builtins.mjs';
 import { FONT_FACES } from './widgets/lib/fonts.mjs';
@@ -47,11 +48,12 @@ const DEFAULT_THEME = {
 };
 
 /**
- * @param {Object} screenConfig - { layout, data, theme, width, height }
- * @param {Object} [options]
- * @param {string} [options.baseUrl] - Backend base URL for data fetching
+ * @param {Object} screenConfig - { layout, theme, width, height }
+ * @param {Object} options
+ * @param {Object} options.data - REQUIRED. Already-resolved data keyed by source
+ *   name (see 3_applications/eink/DataResolver.mjs). The renderer draws what it
+ *   receives; it never fetches. Pass `{}` for data-free layouts.
  * @param {string} [options.fontDir] - Font directory path
- * @param {Object} [options.dataOverride] - Skip fetching, use this data directly
  * @param {boolean} [options.grayscale=true] - emit a compact 8-bit grayscale PNG
  *   (mono panels, e.g. E1003 Gray16). Pass false for full-colour panels (e.g.
  *   E1004 Spectra-6) to emit an RGB PNG the panel firmware colour-dithers itself.
@@ -59,11 +61,19 @@ const DEFAULT_THEME = {
  */
 export async function render(screenConfig, options = {}) {
   const {
-    baseUrl,          // injected from household config by the caller; no host literal here
+    data,
     fontDir = '/usr/share/fonts',
-    dataOverride,
     grayscale = true,
   } = options;
+
+  if (!data || typeof data !== 'object') {
+    const err = new TypeError(
+      'EinkRenderer.render requires options.data (already-resolved data map) — '
+      + 'resolve it in the application layer via 3_applications/eink/DataResolver.mjs'
+    );
+    err.code = 'EINK_RENDER_DATA_REQUIRED';
+    throw err;
+  }
 
   const width = screenConfig.width || 1600;
   const height = screenConfig.height || 1200;
@@ -71,10 +81,6 @@ export async function render(screenConfig, options = {}) {
 
   // Ensure built-in widgets are registered
   registerBuiltins();
-
-  // Resolve data — the render path preloads images (loadImages) so widgets like
-  // PhotoWidget have ready pixels; the /config snapshot deliberately does not.
-  const data = dataOverride || await resolveData(screenConfig.data, baseUrl, { loadImages: true });
 
   // Create canvas and register the base font (Roboto Condensed) so widgets can
   // address it by name. Missing faces degrade gracefully (synthetic bold).
