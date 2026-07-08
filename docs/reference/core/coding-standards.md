@@ -219,6 +219,31 @@ class Session {
 }
 ```
 
+### No Entity Serialization Methods
+
+New entities MUST NOT define `toJSON()` / `static fromJSON()`; datastores own
+hydration/dehydration (see the adapter-layer Hydration Pattern and
+`docs/_wip/plans/2026-07-08-serialization-ownership-migration.md`). The storage
+format is an adapter concern — an entity that serializes itself couples the
+domain model to the file shape.
+
+```javascript
+// GOOD - datastore owns both directions; entity exposes getters
+class YamlFooDatastore extends IFooDatastore {
+  #hydrate(raw) { return new Foo({ id: raw.id, name: raw.name }); }
+  #dehydrate(foo) { return { id: foo.id, name: foo.name }; }
+}
+
+// BAD - entity defines its own storage format
+class Foo {
+  toJSON() { return { id: this.#id, name: this.#name }; }
+  static fromJSON(data) { return new Foo(data); }
+}
+```
+
+Existing entity `toJSON()`s are ratcheted by the `domains-tojson` rule in
+`scripts/audit-layer-imports.mjs` — the count may only fall.
+
 ---
 
 ## Function Patterns

@@ -45,7 +45,9 @@ export class GratitudeItem {
   }
 
   /**
-   * Convert to plain object
+   * Convert to plain object.
+   * Transitional: retained for API response DTOs (4_api/v1/routers/gratitude.mjs).
+   * Storage (de)hydration lives in YamlGratitudeDatastore, NOT here.
    * @returns {GratitudeItemData}
    */
   toJSON() {
@@ -53,15 +55,6 @@ export class GratitudeItem {
       id: this.#id,
       text: this.#text
     };
-  }
-
-  /**
-   * Create from plain object
-   * @param {GratitudeItemData} data
-   * @returns {GratitudeItem}
-   */
-  static fromJSON(data) {
-    return new GratitudeItem(data);
   }
 }
 

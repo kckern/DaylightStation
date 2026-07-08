@@ -93,7 +93,9 @@ export class Selection {
   }
 
   /**
-   * Convert to plain object
+   * Convert to plain object.
+   * Transitional: retained for API response DTOs (4_api/v1/routers/gratitude.mjs).
+   * Storage (de)hydration lives in YamlGratitudeDatastore, NOT here.
    * @returns {SelectionData}
    */
   toJSON() {
@@ -104,15 +106,6 @@ export class Selection {
       datetime: this.#datetime,
       printed: [...this.#printed]
     };
-  }
-
-  /**
-   * Create from plain object
-   * @param {SelectionData} data
-   * @returns {Selection}
-   */
-  static fromJSON(data) {
-    return new Selection(data);
   }
 
   /**

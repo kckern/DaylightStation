@@ -1,6 +1,11 @@
 // tests/unit/domains/messaging/services/ConversationService.test.mjs
 import { vi } from 'vitest';
 import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
+import { Conversation } from '#domains/messaging/entities/Conversation.mjs';
+
+// The datastore port returns hydrated Conversation entities (serialization-
+// ownership migration, phase 1) — mocks must honor that contract.
+const asEntity = (data) => new Conversation(data);
 
 describe('ConversationService', () => {
   let service;
@@ -56,12 +61,12 @@ describe('ConversationService', () => {
 
   describe('getConversation', () => {
     test('returns conversation by ID', async () => {
-      mockStore.findById.mockResolvedValue({
+      mockStore.findById.mockResolvedValue(asEntity({
         id: 'conv-123',
         participants: ['user-1', 'user-2'],
         messages: [],
         startedAt: '2026-01-11T12:00:00.000Z'
-      });
+      }));
 
       const conv = await service.getConversation('conv-123');
 
@@ -80,11 +85,11 @@ describe('ConversationService', () => {
 
   describe('getOrCreateConversation', () => {
     test('returns existing conversation', async () => {
-      mockStore.findByParticipants.mockResolvedValue({
+      mockStore.findByParticipants.mockResolvedValue(asEntity({
         id: 'conv-existing',
         participants: ['user-1', 'user-2'],
         messages: []
-      });
+      }));
 
       const nowMs = Date.now();
       const conv = await service.getOrCreateConversation(['user-1', 'user-2'], nowMs);
@@ -107,12 +112,12 @@ describe('ConversationService', () => {
 
   describe('addMessage', () => {
     test('adds message to conversation', async () => {
-      mockStore.findById.mockResolvedValue({
+      mockStore.findById.mockResolvedValue(asEntity({
         id: 'conv-123',
         participants: ['user-1', 'user-2'],
         messages: [],
         startedAt: '2026-01-11T12:00:00.000Z'
-      });
+      }));
 
       const message = await service.addMessage('conv-123', {
         senderId: 'user-1',
@@ -147,7 +152,7 @@ describe('ConversationService', () => {
     };
 
     test('returns all messages', async () => {
-      mockStore.findById.mockResolvedValue(conversationData);
+      mockStore.findById.mockResolvedValue(asEntity(conversationData));
 
       const messages = await service.getMessages('conv-123');
 
@@ -155,7 +160,7 @@ describe('ConversationService', () => {
     });
 
     test('filters by senderId', async () => {
-      mockStore.findById.mockResolvedValue(conversationData);
+      mockStore.findById.mockResolvedValue(asEntity(conversationData));
 
       const messages = await service.getMessages('conv-123', { senderId: 'user-1' });
 
@@ -164,7 +169,7 @@ describe('ConversationService', () => {
     });
 
     test('filters by type', async () => {
-      mockStore.findById.mockResolvedValue(conversationData);
+      mockStore.findById.mockResolvedValue(asEntity(conversationData));
 
       const messages = await service.getMessages('conv-123', { type: 'voice' });
 
@@ -173,7 +178,7 @@ describe('ConversationService', () => {
     });
 
     test('applies limit', async () => {
-      mockStore.findById.mockResolvedValue(conversationData);
+      mockStore.findById.mockResolvedValue(asEntity(conversationData));
 
       const messages = await service.getMessages('conv-123', { limit: 2 });
 
@@ -194,16 +199,16 @@ describe('ConversationService', () => {
 
   describe('getConversationSummary', () => {
     test('returns summary with stats', async () => {
-      mockStore.findById.mockResolvedValue({
+      mockStore.findById.mockResolvedValue(asEntity({
         id: 'conv-123',
         participants: ['user-1', 'user-2'],
         messages: [
-          { id: 'msg-1', content: 'Hello' },
-          { id: 'msg-2', content: 'Hi' }
+          { id: 'msg-1', content: 'Hello', timestamp: '2026-01-11T12:00:30.000Z' },
+          { id: 'msg-2', content: 'Hi', timestamp: '2026-01-11T12:01:00.000Z' }
         ],
         startedAt: '2026-01-11T12:00:00.000Z',
         lastMessageAt: '2026-01-11T12:01:00.000Z'
-      });
+      }));
 
       const summary = await service.getConversationSummary('conv-123');
 
@@ -225,12 +230,12 @@ describe('ConversationService', () => {
     const archiveTimestamp = '2026-01-11T13:00:00.000Z';
 
     test('marks conversation as archived', async () => {
-      mockStore.findById.mockResolvedValue({
+      mockStore.findById.mockResolvedValue(asEntity({
         id: 'conv-123',
         participants: [],
         messages: [],
         metadata: {}
-      });
+      }));
 
       const conv = await service.archiveConversation('conv-123', archiveTimestamp);
 
@@ -256,17 +261,17 @@ describe('ConversationService', () => {
 
   describe('getStatistics', () => {
     test('returns conversation statistics', async () => {
-      mockStore.findById.mockResolvedValue({
+      mockStore.findById.mockResolvedValue(asEntity({
         id: 'conv-123',
         participants: ['user-1', 'user-2'],
         messages: [
-          { senderId: 'user-1', type: 'text' },
-          { senderId: 'user-1', type: 'text' },
-          { senderId: 'user-2', type: 'voice' }
+          { senderId: 'user-1', type: 'text', timestamp: '2026-01-11T12:00:00.000Z' },
+          { senderId: 'user-1', type: 'text', timestamp: '2026-01-11T12:01:00.000Z' },
+          { senderId: 'user-2', type: 'voice', timestamp: '2026-01-11T12:02:00.000Z' }
         ],
         startedAt: '2026-01-11T12:00:00.000Z',
         lastMessageAt: '2026-01-11T12:05:00.000Z'
-      });
+      }));
 
       const stats = await service.getStatistics('conv-123');
 

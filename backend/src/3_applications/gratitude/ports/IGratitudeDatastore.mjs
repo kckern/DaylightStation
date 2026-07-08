@@ -4,7 +4,14 @@
  * Interface for gratitude data persistence.
  * Implementations handle storage of options, selections, and discarded items.
  *
- * @module domains/gratitude/ports
+ * The datastore owns hydration/dehydration: item/selection methods accept and
+ * return domain ENTITIES (GratitudeItem, Selection), never raw storage-shaped
+ * plain objects. Snapshot methods handle pre-shaped plain DTOs.
+ *
+ * @typedef {import('#domains/gratitude/entities/GratitudeItem.mjs').GratitudeItem} GratitudeItem
+ * @typedef {import('#domains/gratitude/entities/Selection.mjs').Selection} Selection
+ *
+ * @module applications/gratitude/ports
  */
 
 /**
@@ -47,17 +54,17 @@ export class IGratitudeDatastore {
    * Get options for a category
    * @param {string} householdId
    * @param {Category} category
-   * @returns {Promise<GratitudeItemData[]>}
+   * @returns {Promise<GratitudeItem[]>}
    */
   async getOptions(householdId, category) {
     throw new Error('IGratitudeDatastore.getOptions must be implemented');
   }
 
   /**
-   * Set options for a category
+   * Set items for a full storage key (e.g. 'options.gratitude', 'discarded.hopes')
    * @param {string} householdId
-   * @param {Category} category
-   * @param {GratitudeItemData[]} items
+   * @param {string} key - Full storage key including the category suffix
+   * @param {GratitudeItem[]} items
    * @returns {Promise<void>}
    */
   async setOptions(householdId, category, items) {
@@ -68,7 +75,7 @@ export class IGratitudeDatastore {
    * Add an option
    * @param {string} householdId
    * @param {Category} category
-   * @param {GratitudeItemData} item
+   * @param {GratitudeItem} item
    * @returns {Promise<void>}
    */
   async addOption(householdId, category, item) {
@@ -92,7 +99,7 @@ export class IGratitudeDatastore {
    * Get selections for a category
    * @param {string} householdId
    * @param {Category} category
-   * @returns {Promise<SelectionData[]>}
+   * @returns {Promise<Selection[]>}
    */
   async getSelections(householdId, category) {
     throw new Error('IGratitudeDatastore.getSelections must be implemented');
@@ -102,7 +109,7 @@ export class IGratitudeDatastore {
    * Add a selection
    * @param {string} householdId
    * @param {Category} category
-   * @param {SelectionData} selection
+   * @param {Selection} selection
    * @returns {Promise<void>}
    */
   async addSelection(householdId, category, selection) {
@@ -114,7 +121,7 @@ export class IGratitudeDatastore {
    * @param {string} householdId
    * @param {Category} category
    * @param {string} selectionId
-   * @returns {Promise<SelectionData|null>}
+   * @returns {Promise<Selection|null>}
    */
   async removeSelection(householdId, category, selectionId) {
     throw new Error('IGratitudeDatastore.removeSelection must be implemented');
@@ -138,7 +145,7 @@ export class IGratitudeDatastore {
    * Get discarded items for a category
    * @param {string} householdId
    * @param {Category} category
-   * @returns {Promise<GratitudeItemData[]>}
+   * @returns {Promise<GratitudeItem[]>}
    */
   async getDiscarded(householdId, category) {
     throw new Error('IGratitudeDatastore.getDiscarded must be implemented');
@@ -148,7 +155,7 @@ export class IGratitudeDatastore {
    * Add to discarded
    * @param {string} householdId
    * @param {Category} category
-   * @param {GratitudeItemData} item
+   * @param {GratitudeItem} item
    * @returns {Promise<void>}
    */
   async addDiscarded(householdId, category, item) {
