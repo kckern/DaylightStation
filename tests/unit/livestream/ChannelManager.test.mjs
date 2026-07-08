@@ -2,35 +2,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PassThrough } from 'stream';
 
-// Mock FFmpegStreamAdapter
-vi.mock('../../../backend/src/1_adapters/livestream/FFmpegStreamAdapter.mjs', () => {
-  return {
-    FFmpegStreamAdapter: vi.fn().mockImplementation(function () {
-      this.start = vi.fn(() => new PassThrough());
-      this.stop = vi.fn();
-      this.addClient = vi.fn(() => 'client-1');
-      this.removeClient = vi.fn();
-      this.isRunning = true;
-      this.clientCount = 0;
-    }),
-  };
-});
-
-// Mock SourceFeeder
-vi.mock('../../../backend/src/1_adapters/livestream/SourceFeeder.mjs', () => {
-  return {
-    SourceFeeder: vi.fn().mockImplementation(function ({ onNeedTrack }) {
-      this.playFile = vi.fn();
-      this.playSilence = vi.fn();
-      this.playAmbientLoop = vi.fn();
-      this.stop = vi.fn();
-      this.currentFile = null;
-      this._onNeedTrack = onNeedTrack;
-    }),
-  };
-});
-
 import { ChannelManager } from '../../../backend/src/3_applications/livestream/ChannelManager.mjs';
+
+// Adapters are injected as factories by the composition root; tests inject mocks.
+function makeMockStreamAdapter() {
+  return {
+    start: vi.fn(() => new PassThrough()),
+    stop: vi.fn(),
+    addClient: vi.fn(() => 'client-1'),
+    removeClient: vi.fn(),
+    isRunning: true,
+    clientCount: 0,
+  };
+}
+
+function makeMockFeeder({ onNeedTrack }) {
+  return {
+    playFile: vi.fn(),
+    playSilence: vi.fn(),
+    playAmbientLoop: vi.fn(),
+    stop: vi.fn(),
+    currentFile: null,
+    _onNeedTrack: onNeedTrack,
+  };
+}
 
 describe('ChannelManager', () => {
   let manager;
@@ -42,6 +37,8 @@ describe('ChannelManager', () => {
     manager = new ChannelManager({
       mediaBasePath: '/media',
       broadcastEvent: mockBroadcast,
+      createStreamAdapter: vi.fn((opts) => makeMockStreamAdapter(opts)),
+      createSourceFeeder: vi.fn((opts) => makeMockFeeder(opts)),
       logger: mockLogger,
     });
   });

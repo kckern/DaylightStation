@@ -11,7 +11,7 @@ import {
   loadYaml,
   getStats
 } from '#system/utils/FileIO.mjs';
-import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId, normalizeListConfig } from '#domains/content/utils/listConfigNormalizer.mjs';
 import { getCurrentDate } from '#system/utils/time.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';

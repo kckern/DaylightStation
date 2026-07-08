@@ -1,4 +1,6 @@
-// backend/src/1_adapters/content/list/listConfigNormalizer.mjs
+// backend/src/2_domains/content/utils/listConfigNormalizer.mjs
+// Pure content-shape logic (list-item normalization/denormalization) — no I/O.
+// Shared by the content app layer, list adapters, and CLI migration scripts.
 
 /**
  * Normalize YAML list item input field.
