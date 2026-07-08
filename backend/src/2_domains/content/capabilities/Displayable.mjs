@@ -1,6 +1,6 @@
 // backend/src/2_domains/content/capabilities/Displayable.mjs
 import { Item } from '../entities/Item.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Displayable capability - static images for ambient display

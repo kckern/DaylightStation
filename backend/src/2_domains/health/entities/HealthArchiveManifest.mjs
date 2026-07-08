@@ -18,6 +18,8 @@
  * @module domains/health/entities
  */
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 /**
  * The six categories the codebase has historical knowledge of. Acts as the
  * floor — every user gets these without playbook config. Adding to this set
@@ -65,10 +67,10 @@ export class HealthArchiveManifest {
     recordCounts = {},
     validCategories,
   }) {
-    if (!userId) throw new Error('HealthArchiveManifest requires userId');
+    if (!userId) throw new ValidationError('HealthArchiveManifest requires userId', { code: 'MISSING_USER_ID', field: 'userId' });
     const allowed = validCategories ? new Set(validCategories) : VALID_CATEGORIES;
     if (!allowed.has(category)) {
-      throw new Error(`HealthArchiveManifest: invalid category "${category}"`);
+      throw new ValidationError(`HealthArchiveManifest: invalid category "${category}"`, { code: 'INVALID_CATEGORY', field: 'category', value: category });
     }
     this.userId = userId;
     this.category = category;

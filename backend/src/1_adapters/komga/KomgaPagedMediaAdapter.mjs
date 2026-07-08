@@ -1,6 +1,7 @@
 // backend/src/1_adapters/komga/KomgaPagedMediaAdapter.mjs
 
 import { IPagedMediaGateway } from '#apps/agents/paged-media-toc/ports/IPagedMediaGateway.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 /**
  * KomgaPagedMediaAdapter — Komga implementation of IPagedMediaGateway.
@@ -15,14 +16,16 @@ export class KomgaPagedMediaAdapter extends IPagedMediaGateway {
   #host;
   #apiKey;
   #logger;
+  #httpClient;
 
   /**
    * @param {Object} deps
    * @param {import('../content/readable/komga/KomgaClient.mjs').KomgaClient} deps.client - KomgaClient instance
    * @param {string} deps.apiKey - Komga API key (for image fetch headers)
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ client, apiKey, logger = console }) {
+  constructor({ client, apiKey, logger = console, httpClient } = {}) {
     super();
     if (!client) throw new Error('KomgaPagedMediaAdapter requires client');
     if (!apiKey) throw new Error('KomgaPagedMediaAdapter requires apiKey');
@@ -30,6 +33,7 @@ export class KomgaPagedMediaAdapter extends IPagedMediaGateway {
     this.#host = client.host;
     this.#apiKey = apiKey;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   async getRecentBooks(seriesId, limit) {
@@ -62,19 +66,25 @@ export class KomgaPagedMediaAdapter extends IPagedMediaGateway {
     const maxRetries = 3;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const res = await fetch(url, {
+        const res = await this.#httpClient.requestRaw('GET', url, {
           headers: { 'X-API-Key': this.#apiKey, 'Accept': 'image/jpeg' },
-          signal: AbortSignal.timeout(timeoutMs),
+          responseType: 'buffer',
+          timeout: timeoutMs,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const contentType = res.headers.get('content-type') || 'image/jpeg';
+        const buffer = res.data;
+        const contentType = res.headers['content-type'] || 'image/jpeg';
         return {
           imageDataUri: `data:${contentType};base64,${buffer.toString('base64')}`,
           sizeBytes: buffer.length,
         };
       } catch (err) {
-        if (attempt < maxRetries && /SSL|ECONNRESET|socket|ETIMEDOUT/i.test(err.message)) {
+        // Transient-network errors surface as HttpError (code/isTransient) from
+        // HttpClient; also keep the message regex for the raw-error case.
+        const transient = err?.isTransient
+          || ['ECONNRESET', 'ETIMEDOUT', 'TIMEOUT', 'NETWORK_ERROR'].includes(err?.code)
+          || /SSL|ECONNRESET|socket|ETIMEDOUT/i.test(err?.message || '');
+        if (attempt < maxRetries && transient) {
           const delay = attempt * 2000;
           this.#logger.warn?.('paged-media.fetch.retry', { url, attempt, delay, error: err.message });
           await new Promise(r => setTimeout(r, delay));

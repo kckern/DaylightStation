@@ -10,6 +10,6 @@
  */
 
 export { ThermalPrinterAdapter, ThermalPrinterRegistry } from './thermal-printer/index.mjs';
-export { TTSAdapter, createTTSAdapter } from './tts/index.mjs';
-export { MQTTSensorAdapter, createMQTTSensorAdapter } from './mqtt-sensor/index.mjs';
+export { OpenAITTSAdapter } from './tts/index.mjs';
+export { MQTTSensorAdapter } from './mqtt-sensor/index.mjs';
 export { EpaperAdapter, EPAPER_PALETTE, EPAPER_WIDTH, EPAPER_HEIGHT } from './epaper/index.mjs';

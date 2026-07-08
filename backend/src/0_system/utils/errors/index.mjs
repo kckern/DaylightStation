@@ -26,6 +26,16 @@ export {
   isRateLimitError,
 } from './InfrastructureError.mjs';
 
+export {
+  translateVendorError,
+  isTransientStatus,
+} from './vendorError.mjs';
+
+export { ConfigurationError } from './ConfigurationError.mjs';
+export { SchedulerError } from './SchedulerError.mjs';
+export { EventBusError } from './EventBusError.mjs';
+export { FileIOError } from './FileIOError.mjs';
+
 /**
  * Get HTTP status code from an error
  * @param {Error} error

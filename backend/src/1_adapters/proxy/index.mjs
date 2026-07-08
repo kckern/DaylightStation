@@ -7,8 +7,8 @@
  * @module adapters/proxy
  */
 
-export { PlexProxyAdapter, createPlexProxyAdapter } from './PlexProxyAdapter.mjs';
-export { ImmichProxyAdapter, createImmichProxyAdapter } from './ImmichProxyAdapter.mjs';
-export { AudiobookshelfProxyAdapter, createAudiobookshelfProxyAdapter } from './AudiobookshelfProxyAdapter.mjs';
-export { FreshRSSProxyAdapter, createFreshRSSProxyAdapter } from './FreshRSSProxyAdapter.mjs';
-export { KomgaProxyAdapter, createKomgaProxyAdapter } from './KomgaProxyAdapter.mjs';
+export { PlexProxyAdapter } from './PlexProxyAdapter.mjs';
+export { ImmichProxyAdapter } from './ImmichProxyAdapter.mjs';
+export { AudiobookshelfProxyAdapter } from './AudiobookshelfProxyAdapter.mjs';
+export { FreshRSSProxyAdapter } from './FreshRSSProxyAdapter.mjs';
+export { KomgaProxyAdapter } from './KomgaProxyAdapter.mjs';

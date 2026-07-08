@@ -9,24 +9,28 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export class RedditFeedAdapter extends IFeedSourceAdapter {
   #dataService;
   #logger;
+  #httpClient;
   #rotationIndex = 0;
 
   /**
    * @param {Object} deps
    * @param {Object} deps.dataService - DataService for reading user config
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ dataService, logger = console }) {
+  constructor({ dataService, logger = console, httpClient } = {}) {
     super();
     if (!dataService) throw new Error('RedditFeedAdapter requires dataService');
     this.#dataService = dataService;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   get sourceType() { return 'reddit'; }
@@ -140,12 +144,12 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     const postId = meta.postId || localId;
     const subreddit = meta.subreddit || 'all';
     try {
-      const res = await fetch(
+      const res = await this.#httpClient.get(
         `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/comments/${encodeURIComponent(postId)}.json`,
         { headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' } }
       );
       if (!res.ok) return null;
-      const data = await res.json();
+      const data = res.data;
 
       const post = data?.[0]?.data?.children?.[0]?.data;
       const comments = data?.[1]?.data?.children || [];
@@ -314,16 +318,25 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
   async #fetchMultiSubreddit(subreddits, limit, query, attempt = 0) {
     const combined = subreddits.join('+');
     const url = `https://www.reddit.com/r/${combined}.json?limit=${limit}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
-    });
+    let res;
+    try {
+      res = await this.#httpClient.get(url, {
+        headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
+      });
+    } catch (err) {
+      if (err.status === 429 && attempt < 2) {
+        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+        return this.#fetchMultiSubreddit(subreddits, limit, query, attempt + 1);
+      }
+      return [];
+    }
     if (res.status === 429 && attempt < 2) {
       await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
       return this.#fetchMultiSubreddit(subreddits, limit, query, attempt + 1);
     }
     if (!res.ok) return [];
 
-    const data = await res.json();
+    const data = res.data;
     const posts = data?.data?.children || [];
 
     return posts
@@ -335,16 +348,25 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     const combined = subreddits.join('+');
     const afterParam = afterToken ? `&after=${afterToken}` : '';
     const url = `https://www.reddit.com/r/${combined}.json?limit=${limit}${afterParam}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
-    });
+    let res;
+    try {
+      res = await this.#httpClient.get(url, {
+        headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
+      });
+    } catch (err) {
+      if (err.status === 429 && attempt < 2) {
+        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+        return this.#fetchMultiSubredditPaginated(subreddits, limit, query, afterToken, attempt + 1);
+      }
+      return { items: [], after: null };
+    }
     if (res.status === 429 && attempt < 2) {
       await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
       return this.#fetchMultiSubredditPaginated(subreddits, limit, query, afterToken, attempt + 1);
     }
     if (!res.ok) return { items: [], after: null };
 
-    const data = await res.json();
+    const data = res.data;
     const posts = data?.data?.children || [];
     const after = data?.data?.after || null;
 

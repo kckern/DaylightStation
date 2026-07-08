@@ -1,5 +1,6 @@
 import canvasPkg from 'canvas';
 import { fileURLToPath } from 'node:url';
+import { ZONE_COLORS } from '#domains/fitness/entities/Zone.mjs';
 
 const { createCanvas, loadImage, registerFont } = canvasPkg;
 
@@ -347,13 +348,16 @@ function drawBand(ctx, x, y, w, h, accent) {
 }
 
 // Zone series persist single-letter codes (h/m/w/a/c); also accept full words.
+// Color values are sourced from the domain canonical palette (ZONE_COLORS) so the
+// recap stays in sync with the live/UI zone colors; only labels are renderer-local.
+// The recap taxonomy's top code is 'm'/'max' (== the domain's 'fire' zone).
 function zoneMeta(zone) {
   switch (String(zone).toLowerCase()) {
-    case 'h': case 'hot': return { label: 'HOT', color: '#ff4d4f' };
-    case 'm': case 'max': return { label: 'MAX', color: '#ff1f4f' };
-    case 'w': case 'warm': return { label: 'WARM', color: '#ffa940' };
-    case 'a': case 'active': return { label: 'ACTIVE', color: '#52c41a' };
-    case 'c': case 'cool': case 'cold': return { label: 'COOL', color: '#40a9ff' };
+    case 'h': case 'hot': return { label: 'HOT', color: ZONE_COLORS.hot };
+    case 'm': case 'max': return { label: 'MAX', color: ZONE_COLORS.fire };
+    case 'w': case 'warm': return { label: 'WARM', color: ZONE_COLORS.warm };
+    case 'a': case 'active': return { label: 'ACTIVE', color: ZONE_COLORS.active };
+    case 'c': case 'cool': case 'cold': return { label: 'COOL', color: ZONE_COLORS.cool };
     default: return { label: String(zone).toUpperCase(), color: '#d9d9d9' };
   }
 }
@@ -390,17 +394,6 @@ function drawCoin(ctx, cx, cy, r) {
   ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(200,150,31,0.6)'; ctx.lineWidth = Math.max(1, r * 0.08); ctx.stroke();
   ctx.restore();
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
 }
 
 // Flat image panel: cover-fills its rect edge-to-edge, no border/shadow/rounding.
@@ -509,13 +502,6 @@ function drawChart(ctx, chart, x, y, w, h) {
     ctx.fillText(formatCoins(e.value), labelX, e.y);
   }
   ctx.textBaseline = 'middle';
-}
-
-function containRect(iw, ih, rx, ry, rw, rh) {
-  const scale = Math.min(rw / iw, rh / ih);
-  const w = Math.round(iw * scale);
-  const h = Math.round(ih * scale);
-  return { x: rx + Math.round((rw - w) / 2), y: ry + Math.round((rh - h) / 2), w, h };
 }
 
 function drawCover(ctx, img, dx, dy, dw, dh) {

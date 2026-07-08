@@ -17,9 +17,9 @@
  *   6. Return the saved ScheduledFire.
  */
 
-import { ScheduledFire } from '../../../2_domains/playback-hub/entities/ScheduledFire.mjs';
-import { DayPattern } from '../../../2_domains/playback-hub/value-objects/DayPattern.mjs';
-import { QueueRef } from '../../../2_domains/playback-hub/value-objects/QueueRef.mjs';
+import { ScheduledFire } from '#domains/playback-hub/entities/ScheduledFire.mjs';
+import { DayPattern } from '#domains/playback-hub/value-objects/DayPattern.mjs';
+import { QueueRef } from '#domains/playback-hub/value-objects/QueueRef.mjs';
 
 export class SaveScheduledFire {
   /** @type {import('../ports/IHubConfigRepository.mjs').IHubConfigRepository} */ #repo;

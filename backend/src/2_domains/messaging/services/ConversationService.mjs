@@ -4,7 +4,7 @@
 
 import { Conversation } from '../entities/Conversation.mjs';
 import { Message } from '../entities/Message.mjs';
-import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 export class ConversationService {
   constructor({ conversationStore }) {

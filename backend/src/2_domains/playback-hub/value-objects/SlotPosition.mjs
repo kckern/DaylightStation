@@ -6,7 +6,7 @@
  * Immutable, value-equality semantics.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * SlotPosition value object — positive integer identifying a hub slot.

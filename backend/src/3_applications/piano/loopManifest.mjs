@@ -5,8 +5,8 @@
 
 import path from 'path';
 import { listFiles, readFile, getStats } from '#system/utils/FileIO.mjs';
-import { musicXmlToNotes, readBrickMeta } from '../../../../shared/music/musicXmlToNotes.mjs';
-import { harmonicTimeline } from '../../../../shared/music/harmonicTimeline.mjs';
+import { musicXmlToNotes, readBrickMeta } from '#shared/music/musicXmlToNotes.mjs';
+import { harmonicTimeline } from '#shared/music/harmonicTimeline.mjs';
 
 const TYPE_FOLDERS = ['chords', 'basslines', 'melodies', 'ideas', 'percussion'];
 const SKIP_HARMONY = new Set(['groove', 'percussion']);

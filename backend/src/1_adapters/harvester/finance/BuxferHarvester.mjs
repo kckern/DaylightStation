@@ -15,7 +15,6 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const DEFAULT_DAYS_BACK = 30;
@@ -27,7 +26,6 @@ const DEFAULT_DAYS_BACK = 30;
 export class BuxferHarvester extends IHarvester {
   #buxferAdapter;
   #lifelogStore;
-  #configService;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -36,15 +34,13 @@ export class BuxferHarvester extends IHarvester {
    * @param {Object} config
    * @param {Object} config.buxferAdapter - BuxferAdapter instance
    * @param {Object} config.lifelogStore - Store for lifelog YAML
-   * @param {Object} config.configService - ConfigService for credentials
    * @param {string} [config.timezone] - Timezone for date formatting
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
     buxferAdapter,
     lifelogStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -64,7 +60,6 @@ export class BuxferHarvester extends IHarvester {
 
     this.#buxferAdapter = buxferAdapter;
     this.#lifelogStore = lifelogStore;
-    this.#configService = configService;
     this.#timezone = timezone;
     this.#logger = logger;
 

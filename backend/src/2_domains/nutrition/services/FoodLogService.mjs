@@ -9,7 +9,7 @@
  */
 
 import { NutriLog } from '../entities/NutriLog.mjs';
-import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 export class FoodLogService {
   #store;

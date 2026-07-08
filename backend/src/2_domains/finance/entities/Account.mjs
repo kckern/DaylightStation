@@ -2,7 +2,7 @@
  * Account Entity - Represents a financial account
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class Account {
   constructor({

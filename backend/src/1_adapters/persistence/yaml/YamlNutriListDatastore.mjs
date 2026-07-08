@@ -20,7 +20,7 @@ import {
   saveYaml
 } from '#system/utils/FileIO.mjs';
 import { INutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
-import { shortIdFromUuid } from '#system/utils/shortId.mjs';
+import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;

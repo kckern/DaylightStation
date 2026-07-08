@@ -6,9 +6,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "B=$(git branch --show-current 2>/dev/null || echo '?'); M=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' '); C=$(sudo docker inspect --format='{{.State.Status}}' daylight-station 2>/dev/null || echo 'unknown'); BP=$(ss -tlnp 2>/dev/null | grep -q ':3112' && echo 'UP' || echo 'DOWN'); AP=$(ss -tlnp 2>/dev/null | grep -q ':3111' && echo 'UP' || echo 'DOWN'); jq -n --arg msg \"Branch: $B | $M files changed | Container: $C | :3112 $BP :3111 $AP\" '{\"systemMessage\": $msg}'",
-            "timeout": 10,
-            "statusMessage": "Loading session context..."
+            "command": "B=$(git branch --show-current 2>/dev/null || echo '?'); M=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' '); git fetch origin main --quiet 2>/dev/null; BH=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo '?'); HS=$(ssh -o ConnectTimeout=3 -o BatchMode=yes homeserver.local 'cd /opt/Code/DaylightStation && git fetch origin --quiet 2>/dev/null; git rev-list --count origin/main..HEAD' 2>/dev/null || echo '?'); C=$(sudo docker inspect --format='{{.State.Status}}' daylight-station 2>/dev/null || echo 'unknown'); chk() { if command -v ss >/dev/null 2>&1; then ss -tlnp 2>/dev/null | grep -q \":$1\"; else lsof -nP -iTCP:\"$1\" -sTCP:LISTEN >/dev/null 2>&1; fi; }; BP=$(chk 3112 && echo 'UP' || echo 'DOWN'); AP=$(chk 3111 && echo 'UP' || echo 'DOWN'); jq -n --arg msg \"Branch: $B | $M files changed | behind origin/main: $BH | homeserver unpushed: $HS | Container: $C | :3112 $BP :3111 $AP\" '{\"systemMessage\": $msg}'",
+            "timeout": 20,
+            "statusMessage": "Loading session context (git sync + ports)..."
           }
         ]
       }
@@ -42,6 +42,29 @@
           {
             "type": "command",
             "command": "afplay /System/Library/Sounds/Glass.aiff"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/secret-guard.sh\"",
+            "timeout": 15,
+            "statusMessage": "Secret guard: scanning diff..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r 'if ((.tool_input.file_path // \"\") | test(\"frontend/src/\")) and (((.tool_input.file_path // \"\") | test(\"lib/logging\")) | not) then (.tool_input.new_string // .tool_input.content // \"\") else empty end' | grep -qE 'console\\.(log|debug|warn|info|error)\\(' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"Raw console.* call added under frontend/src/. CLAUDE.md requires the structured logging framework (frontend/src/lib/logging/) — use getLogger().child({component}) and logger.debug/info/warn/error. Raw console.error is acceptable only in pre-existing .catch() blocks. Replace it unless it clearly qualifies.\"}}' || true",
+            "timeout": 10
           }
         ]
       }

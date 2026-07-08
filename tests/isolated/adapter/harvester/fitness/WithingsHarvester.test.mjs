@@ -61,7 +61,10 @@ describe('WithingsHarvester', () => {
       httpClient: mockHttpClient,
       lifelogStore: mockLifelogStore,
       authStore: mockAuthStore,
-      configService: mockConfigService,
+      getUserAuth: mockConfigService.getUserAuth,
+      clientId: mockConfigService.getSecret('WITHINGS_CLIENT_ID'),
+      clientSecret: mockConfigService.getSecret('WITHINGS_CLIENT_SECRET'),
+      redirectUri: mockConfigService.getSecret('WITHINGS_REDIRECT'),
       timezone: 'America/Los_Angeles',
       logger: mockLogger
     });
@@ -85,7 +88,10 @@ describe('WithingsHarvester', () => {
         httpClient: mockHttpClient,
         lifelogStore: mockLifelogStore,
         authStore: mockAuthStore,
-        configService: mockConfigService,
+        getUserAuth: mockConfigService.getUserAuth,
+      clientId: mockConfigService.getSecret('WITHINGS_CLIENT_ID'),
+      clientSecret: mockConfigService.getSecret('WITHINGS_CLIENT_SECRET'),
+      redirectUri: mockConfigService.getSecret('WITHINGS_REDIRECT'),
         logger: mockLogger
       });
       expect(instance).toBeInstanceOf(WithingsHarvester);

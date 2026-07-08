@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   layoutExtras: {},
   pressNote: vi.fn(),
   releaseNote: vi.fn(),
+  sendNoteAt: vi.fn(),
+  sendNoteOffAt: vi.fn(),
   sendPanic: vi.fn(),
 }));
 
@@ -32,13 +34,15 @@ const deriveNotes = (steps) => steps.flatMap((s) => s.notes.map((n) => ({ midi: 
 
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
-    activeNotes: new Map(),
     subscribe: (fn) => { h.noteCb = fn; return () => { h.noteCb = null; }; },
     subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
     pressNote: h.pressNote,
     releaseNote: h.releaseNote,
+    sendNoteAt: h.sendNoteAt,
+    sendNoteOffAt: h.sendNoteOffAt,
     sendPanic: h.sendPanic,
   }),
+  usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false }),
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
@@ -81,6 +85,7 @@ const renderPlayer = () =>
 beforeEach(() => {
   h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
   h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
+  h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
 });
 
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
@@ -125,6 +130,40 @@ describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
     expect(screen.getByText('1 / 4')).toBeTruthy();
     play(63); // a real wrong note near the melody → flash
     expect(document.querySelector('.piano-score-cursor.is-wrong')).not.toBeNull();
+  });
+});
+
+describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
+  it('hides the cursor while the reported layout scale is stale, shows it once it matches', async () => {
+    // The renderer reports a layout whose scale (1.3) does NOT match the player's
+    // current scale (1) — a pre-zoom (deferred-extraction) layout. Overlays must
+    // stay hidden until onLayout catches up.
+    h.layoutExtras = { scale: 1.3 };
+    renderPlayer();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-cursor')).toBeNull(); // stale → hidden
+
+    // Move the Size slider to 1.3 → the mock re-fires onLayout with scale 1.3,
+    // which now MATCHES the player's scale → layout is fresh → cursor appears.
+    fireEvent.click(screen.getByRole('button', { name: /size/i }));
+    const slider = screen.getByRole('slider', { name: /size/i });
+    fireEvent.change(slider, { target: { value: '1.3' } });
+    fireEvent.mouseUp(slider);
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-cursor')).not.toBeNull(); // fresh → shown
+  });
+
+  it('shows the cursor on the initial layout (null scale/flow treated as fresh)', async () => {
+    renderPlayer();
+    await act(async () => {});
+    // Default mock reports flow 'wrapped' (matches) and no scale (null → fresh).
+    const cursor = document.querySelector('.piano-score-cursor');
+    expect(cursor).not.toBeNull();
+    // Positioned via a compositor-path transform (not left/top): first event
+    // x=100, top=10, scale=1 → translateX = 100 - 9 = 91.
+    expect(cursor.style.transform).toBe('translate3d(91px, 10px, 0)');
+    expect(cursor.style.left).toBe('');
+    expect(cursor.style.top).toBe('');
   });
 });
 
@@ -199,11 +238,74 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('▶').click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    expect(h.pressNote).toHaveBeenCalledWith(40, expect.any(Number)); // LH performed
-    expect(h.pressNote).toHaveBeenCalledWith(64, expect.any(Number)); // RH performed too — full jukebox
+    // Audio plane: performed via timestamped sends (NOT pressNote — machine
+    // playback never lights the keyboard as human input).
+    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH performed
+    expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH performed too — full jukebox
+    expect(h.pressNote).not.toHaveBeenCalled();
     screen.getByText('❚❚').click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
+  });
+
+  it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(50)); // scheduled ahead — no timer advance strictly needed
+    expect(h.sendNoteAt).toHaveBeenCalled();
+    const [note, vel, atWall] = h.sendNoteAt.mock.calls[0];
+    expect(note).toBe(64);
+    expect(typeof vel).toBe('number');
+    expect(typeof atWall).toBe('number'); // Web-MIDI wall timestamp, not undefined
+    expect(h.pressNote).not.toHaveBeenCalled(); // machine playback never lights the keyboard
+  });
+
+  it('pause sends an immediate flush AND a delayed panic after the lookahead window', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // note 40 scheduled + sounding
+    h.sendPanic.mockClear();
+    screen.getByText('❚❚').click(); // pause
+    await act(async () => {});
+    const panicsAtPause = h.sendPanic.mock.calls.length;
+    expect(panicsAtPause).toBeGreaterThanOrEqual(1); // immediate flush killed the sounding note
+    act(() => vi.advanceTimersByTime(500)); // > lookaheadMs (400) + 60
+    expect(h.sendPanic.mock.calls.length).toBeGreaterThan(panicsAtPause); // delayed panic for late-dispatched note-ons
+  });
+
+  it('resume within the flush window cancels the stale delayed panic (does not cut resumed playback)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // playing, note sounding
+    screen.getByText('❚❚').click();        // pause → immediate flush + delayed panic armed
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100)); // still inside the ~460ms window
+    h.sendPanic.mockClear();
+    screen.getByText('▶').click();          // resume within the window → must cancel the stale panic
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(500)); // advance past where the stale panic would have fired
+    expect(h.sendPanic).not.toHaveBeenCalled(); // resumed playback was NOT cut
   });
 
   it('tempo control scales the Listen performance timeline', async () => {

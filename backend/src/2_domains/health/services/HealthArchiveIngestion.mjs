@@ -28,6 +28,7 @@ import {
   compileAdditions,
   matchesExclusion,
 } from '../policies/PrivacyExclusions.mjs';
+import { ValidationError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 export class HealthArchiveIngestion {
   /**
@@ -37,6 +38,7 @@ export class HealthArchiveIngestion {
    * @param {Object} [deps.logger] - Optional logger; defaults to `console`.
    */
   constructor({ fs, logger } = {}) {
+    // TODO(P2.1): infra guard — becomes ConfigurationError/InfrastructureError after relocation
     if (!fs) throw new Error('HealthArchiveIngestion requires fs adapter');
     this.fs = fs;
     this.logger = logger || console;
@@ -71,13 +73,13 @@ export class HealthArchiveIngestion {
     customCategories,
     additionalPrivacyExclusions,
   }) {
-    if (!userId) throw new Error('HealthArchiveIngestion.ingest requires userId');
+    if (!userId) throw new ValidationError('HealthArchiveIngestion.ingest requires userId', { code: 'MISSING_USER_ID', field: 'userId' });
     const validCategories = new Set([
       ...BUILT_IN_CATEGORIES,
       ...(customCategories ? Array.from(customCategories) : []),
     ]);
     if (!validCategories.has(category)) {
-      throw new Error(`Unknown category: ${category}`);
+      throw new ValidationError(`Unknown category: ${category}`, { code: 'UNKNOWN_CATEGORY', field: 'category', value: category });
     }
     const compiledAdditions = compileAdditions(additionalPrivacyExclusions);
     if (matchesExclusion(sourcePath, compiledAdditions)) {
@@ -89,7 +91,7 @@ export class HealthArchiveIngestion {
         this.logger.info?.('privacy.addition_matched', { userId, category, sourcePath });
       }
       this.logger.warn?.('ingest.exclusion_rejected', { userId, category, sourcePath });
-      throw new Error(`Source path matches exclusion pattern: ${sourcePath}`);
+      throw new DomainInvariantError(`Source path matches exclusion pattern: ${sourcePath}`, { code: 'EXCLUSION_PATTERN_MATCHED', details: { sourcePath } });
     }
     if (customCategories
         && Array.from(customCategories).includes(category)

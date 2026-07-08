@@ -1,5 +1,7 @@
 // backend/src/2_domains/health/services/HistoryReflector.mjs
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 /**
  * Reflective composition over the analytical primitives. Surfaces a
  * multi-metric snapshot, candidate periods worth remembering, and
@@ -12,9 +14,9 @@
  */
 export class HistoryReflector {
   constructor(deps) {
-    if (!deps?.aggregator)    throw new Error('HistoryReflector requires aggregator');
-    if (!deps?.trendAnalyzer) throw new Error('HistoryReflector requires trendAnalyzer');
-    if (!deps?.periodMemory)  throw new Error('HistoryReflector requires periodMemory');
+    if (!deps?.aggregator)    throw new ValidationError('HistoryReflector requires aggregator', { code: 'MISSING_AGGREGATOR', field: 'aggregator' });
+    if (!deps?.trendAnalyzer) throw new ValidationError('HistoryReflector requires trendAnalyzer', { code: 'MISSING_TREND_ANALYZER', field: 'trendAnalyzer' });
+    if (!deps?.periodMemory)  throw new ValidationError('HistoryReflector requires periodMemory', { code: 'MISSING_PERIOD_MEMORY', field: 'periodMemory' });
     this.aggregator = deps.aggregator;
     this.trendAnalyzer = deps.trendAnalyzer;
     this.periodMemory = deps.periodMemory;

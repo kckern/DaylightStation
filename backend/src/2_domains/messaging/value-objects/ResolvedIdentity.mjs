@@ -6,7 +6,7 @@
  * Immutable. Created by platform-specific identity adapters.
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { ConversationId } from './ConversationId.mjs';
 
 export class ResolvedIdentity {

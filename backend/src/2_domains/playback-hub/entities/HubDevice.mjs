@@ -15,8 +15,8 @@
  * mutated. The new instance re-runs the invariant check.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
-import { DomainInvariantError } from '../../core/errors/DomainInvariantError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { SlotPosition } from '../value-objects/SlotPosition.mjs';
 import { SlotColor } from '../value-objects/SlotColor.mjs';
 import { SlotClass } from '../value-objects/SlotClass.mjs';

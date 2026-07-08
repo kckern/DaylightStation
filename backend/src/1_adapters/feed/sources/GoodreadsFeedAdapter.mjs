@@ -9,16 +9,19 @@
 
 import imageSize from 'image-size';
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
   #logger;
+  #httpClient;
 
-  constructor({ userDataService, logger = console }) {
+  constructor({ userDataService, logger = console, httpClient } = {}) {
     super();
     if (!userDataService) throw new Error('GoodreadsFeedAdapter requires userDataService');
     this.#userDataService = userDataService;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   get sourceType() { return 'goodreads'; }
@@ -26,10 +29,9 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
 
   async #getImageDimensions(url) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const res = await this.#httpClient.requestRaw('GET', url, { responseType: 'buffer', timeout: 5000 });
       if (!res.ok) return {};
-      const buf = Buffer.from(await res.arrayBuffer());
-      const dims = imageSize(buf);
+      const dims = imageSize(res.data);
       return { imageWidth: dims.width, imageHeight: dims.height };
     } catch {
       return {};

@@ -13,7 +13,7 @@
 
 import crypto from 'crypto';
 import { CronExpressionParser } from 'cron-parser';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class SchedulerService {
   constructor({ timezone = 'America/Los_Angeles' }) {

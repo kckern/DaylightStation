@@ -27,9 +27,9 @@
  *     thrown from HubDevice constructor; the save is NOT attempted.
  */
 
-import { VolumeBounds } from '../../../2_domains/playback-hub/value-objects/VolumeBounds.mjs';
-import { ContinuousSchedule } from '../../../2_domains/playback-hub/value-objects/ContinuousSchedule.mjs';
-import { QueueRef } from '../../../2_domains/playback-hub/value-objects/QueueRef.mjs';
+import { VolumeBounds } from '#domains/playback-hub/value-objects/VolumeBounds.mjs';
+import { ContinuousSchedule } from '#domains/playback-hub/value-objects/ContinuousSchedule.mjs';
+import { QueueRef } from '#domains/playback-hub/value-objects/QueueRef.mjs';
 
 /**
  * Normalize a wire-shape patch (snake_case + plain values) into the domain

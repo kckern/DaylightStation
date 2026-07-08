@@ -7,7 +7,7 @@ import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
 import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { useStudioPlayback } from './useStudioPlayback.js';
@@ -125,7 +125,8 @@ export default function StudioPlayback() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currentUser } = usePianoUser();
-  const { activeNotes, noteHistory, pressNote, releaseNote, connected } = usePianoMidi();
+  const { pressNote, releaseNote, connected } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
   const [take, setTake] = useState(undefined); // undefined=loading, null=missing
 

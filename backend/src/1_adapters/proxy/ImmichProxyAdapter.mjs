@@ -7,8 +7,6 @@
  * @module adapters/proxy
  */
 
-import { configService } from '#system/config/index.mjs';
-
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -129,19 +127,6 @@ export class ImmichProxyAdapter {
   getTimeout() {
     return 30000;
   }
-}
-
-/**
- * Create an ImmichProxyAdapter from ConfigService
- * @param {Object} [options]
- * @returns {ImmichProxyAdapter}
- */
-export function createImmichProxyAdapter(options = {}) {
-  const adapterConfig = configService.getAdapterConfig('immich') || {};
-  const host = adapterConfig.host;
-  const apiKey = configService.getSecret('IMMICH_API_KEY');
-
-  return new ImmichProxyAdapter({ host, apiKey }, options);
 }
 
 export default ImmichProxyAdapter;

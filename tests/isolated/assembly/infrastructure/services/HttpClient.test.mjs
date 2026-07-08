@@ -145,4 +145,58 @@ describe('HttpClient', () => {
       expect(result.length).toBe(4);
     });
   });
+
+  describe('requestRaw()', () => {
+    it('does NOT throw on non-2xx and returns status + ok=false', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: () => Promise.resolve('{"error":"nope"}')
+      });
+
+      const result = await client.requestRaw('GET', 'https://api.example.com/missing');
+
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(404);
+      expect(result.data).toEqual({ error: 'nope' });
+    });
+
+    it('returns a Buffer with headers when responseType is "buffer"', async () => {
+      const mockData = new Uint8Array([9, 8, 7]).buffer;
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        arrayBuffer: () => Promise.resolve(mockData)
+      });
+
+      const result = await client.requestRaw('GET', 'https://example.com/img.png', { responseType: 'buffer' });
+
+      expect(Buffer.isBuffer(result.data)).toBe(true);
+      expect(result.data.length).toBe(3);
+      expect(result.headers['content-type']).toBe('image/png');
+      expect(result.ok).toBe(true);
+    });
+
+    it('returns raw text when responseType is "text"', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        text: () => Promise.resolve('hello world')
+      });
+
+      const result = await client.requestRaw('GET', 'https://example.com/txt', { responseType: 'text' });
+
+      expect(result.data).toBe('hello world');
+    });
+
+    it('still throws HttpError on network failure', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('boom'));
+
+      await expect(client.requestRaw('GET', 'https://example.com/x'))
+        .rejects.toThrow(HttpError);
+    });
+  });
 });

@@ -16,7 +16,7 @@ describe('GET /api/v1/config/player', () => {
   it('returns on_deck config from player.yml', async () => {
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: '/opt/Code/DaylightStation-on-deck/data',
+      householdDir: '/opt/Code/DaylightStation-on-deck/data/household',
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -27,7 +27,7 @@ describe('GET /api/v1/config/player', () => {
   it('returns defaults when config file is missing', async () => {
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: `/tmp/nonexistent-data-${Date.now()}`,
+      householdDir: `/tmp/nonexistent-data-${Date.now()}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -46,7 +46,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -67,7 +67,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -88,7 +88,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -109,7 +109,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -130,7 +130,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger: makeLogger(),
     }));
     const res = await request(app).get('/api/v1/config/player');
@@ -150,7 +150,7 @@ describe('GET /api/v1/config/player', () => {
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
-      dataPath: tmpDir,
+      householdDir: `${tmpDir}/household`,
       logger,
     }));
     const res = await request(app).get('/api/v1/config/player');

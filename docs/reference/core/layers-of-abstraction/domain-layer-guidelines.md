@@ -321,6 +321,8 @@ session.complete(parseToDate(new Date()));
 
 **Existing `2_domains/*/ports/` folders should be migrated to `3_applications/`.**
 
+> **(Decision D3, 2026-07-06 — confirmed.)** `2_domains/media/ports/` and `livestream/IAudioAssetResolver` are migrated to the application layer. `ILifelogExtractor` is explicitly **DEFERRED** to the serialization migration plan and remains in place until then. See the [decision register](./decision-register.md).
+
 ---
 
 ## Cross-Domain Dependencies
@@ -330,13 +332,25 @@ session.complete(parseToDate(new Date()));
 ```
 Level 0 (foundation):   core
                           ↑
-Level 1 (shared):       messaging, ai, scheduling, entropy
+Level 1 (shared):       content, common, messaging, notification,
+                        scheduling, entropy
                           ↑
-Level 2 (features):     fitness, nutrition, finance, media, content,
-                        journaling, gratitude, home-automation
+Level 2 (features):     ambient, art, barcode, concierge, cost, feed,
+                        finance, fitness, gratitude, home-automation,
+                        journaling, lifeplan, livestream, media,
+                        nutrition, playback-hub, trigger
                           ↑
-Level 3 (aggregators):  lifelog, health, journalist
+Level 3 (aggregators):  health, journalist, lifelog, weekly-review
 ```
+
+**Every domain folder in `2_domains/` is assigned a level below (Decision D6, 2026-07-06). `content` is a Level 1 shared capability — the peer imports `fitness → content` and `barcode → content` are legal. Every new domain must be added to this table in the same PR that creates it.**
+
+| Level | Domain folders |
+|-------|----------------|
+| **0 — Foundation** | `core` |
+| **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
+| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
+| **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ### Rules
 

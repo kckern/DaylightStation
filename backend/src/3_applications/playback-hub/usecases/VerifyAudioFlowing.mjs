@@ -14,7 +14,7 @@
  *   - All other errors bubble too.
  */
 
-import { ValidationError } from '../../../2_domains/core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
 export class VerifyAudioFlowing {
   /** @type {import('../ports/IPlaybackHubGateway.mjs').IPlaybackHubGateway} */ #gateway;

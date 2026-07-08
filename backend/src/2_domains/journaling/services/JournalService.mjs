@@ -3,7 +3,7 @@
  */
 
 import { JournalEntry } from '../entities/JournalEntry.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class JournalService {
   constructor({ journalStore }) {

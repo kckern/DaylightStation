@@ -24,7 +24,7 @@ const res = () => {
 };
 const call = async (id) => {
   const r = res();
-  await getHandler(createScreensRouter({ dataPath, logger }))({ params: { screenId: id } }, r, (e) => { if (e) throw e; });
+  await getHandler(createScreensRouter({ householdDir: path.join(dataPath, 'household'), logger }))({ params: { screenId: id } }, r, (e) => { if (e) throw e; });
   return r;
 };
 

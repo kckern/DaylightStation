@@ -4,7 +4,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import PianoTile from './PianoTile.jsx';
-import { PianoKeyboard } from '../components/PianoKeyboard.jsx';
+import LiveKeyboard from './LiveKeyboard.jsx';
 
 // Order maps to the 4-column grid, row by row (top row, then bottom row):
 //   Courses  Lessons  Sheet Music  Studio      ← far-left = Courses, far-right = Studio
@@ -27,7 +27,7 @@ export const PIANO_MODES = [
 export function PianoMenu() {
   const navigate = useNavigate();
   const { pianoId, basePath, config } = usePianoKioskConfig();
-  const { activeNotes, pressNote, releaseNote } = usePianoMidi();
+  const { pressNote, releaseNote } = usePianoMidi();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
 
@@ -50,8 +50,7 @@ export function PianoMenu() {
       {/* Live keyboard at the foot of the home screen: lights up to the played
           notes (and is touch-playable). No waterfall, no staff — just feedback. */}
       <div className="piano-home__keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
+        <LiveKeyboard
           startNote={kb.startNote}
           endNote={kb.endNote}
           onNoteOn={pressNote}

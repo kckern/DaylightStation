@@ -30,6 +30,7 @@
 import { CommandResult } from '../../2_domains/playback-hub/value-objects/CommandResult.mjs';
 import { SlotStatus } from '../../2_domains/playback-hub/value-objects/SlotStatus.mjs';
 import { InfrastructureError } from '../../0_system/utils/errors/InfrastructureError.mjs';
+import { HttpClient } from '../../0_system/services/HttpClient.mjs';
 
 const VALID_REASONS = new Set(CommandResult.REASONS);
 
@@ -37,15 +38,17 @@ export class HttpPlaybackHubAdapter {
   /** @type {string} */ #baseUrl;
   /** @type {number} */ #timeoutMs;
   /** @type {object} */ #logger;
+  /** @type {import('../../0_system/services/HttpClient.mjs').HttpClient} */ #httpClient;
 
   /**
    * @param {{
    *   baseUrl: string,
    *   requestTimeoutSec?: number,
-   *   logger?: object
+   *   logger?: object,
+   *   httpClient?: import('../../0_system/services/HttpClient.mjs').HttpClient
    * }} opts
    */
-  constructor({ baseUrl, requestTimeoutSec = 2, logger } = {}) {
+  constructor({ baseUrl, requestTimeoutSec = 2, logger, httpClient } = {}) {
     if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
       throw new InfrastructureError('HttpPlaybackHubAdapter requires baseUrl', {
         code: 'MISSING_CONFIG', field: 'baseUrl', value: baseUrl
@@ -59,6 +62,7 @@ export class HttpPlaybackHubAdapter {
     this.#baseUrl = baseUrl.replace(/\/$/, '');
     this.#timeoutMs = Math.max(1, Math.round(requestTimeoutSec * 1000));
     this.#logger = logger || console;
+    this.#httpClient = httpClient || new HttpClient({ logger: this.#logger });
   }
 
   /**
@@ -234,25 +238,19 @@ export class HttpPlaybackHubAdapter {
    */
   async #request(method, path, body) {
     const url = `${this.#baseUrl}${path}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
 
     let response;
     try {
-      const init = {
-        method,
-        signal: controller.signal,
-        headers: { 'Accept': 'application/json' }
-      };
-      if (body !== null && body !== undefined) {
-        init.headers['Content-Type'] = 'application/json';
-        init.body = JSON.stringify(body);
-      }
-      response = await fetch(url, init);
+      response = await this.#httpClient.requestRaw(method, url, {
+        body: body === undefined ? null : body,
+        headers: { 'Accept': 'application/json' },
+        responseType: 'text',
+        timeout: this.#timeoutMs
+      });
     } catch (err) {
-      clearTimeout(timer);
-      // AbortError on signal abort — surface as a clear timeout error.
-      if (err && (err.name === 'AbortError' || err.code === 'ABORT_ERR')) {
+      // HttpClient surfaces network/timeout as HttpError; map to hub errors.
+      // AbortError (timeout) is coded 'TIMEOUT' by HttpError.fromNetworkError.
+      if (err && (err.code === 'TIMEOUT' || err.name === 'AbortError' || err.code === 'ABORT_ERR')) {
         throw new InfrastructureError(
           `playback hub request timeout after ${this.#timeoutMs}ms: ${method} ${path}`,
           { code: 'HUB_TIMEOUT', timeoutMs: this.#timeoutMs, method, path }
@@ -262,12 +260,10 @@ export class HttpPlaybackHubAdapter {
         `playback hub network error: ${method} ${path}: ${err.message}`,
         { code: 'HUB_NETWORK_ERROR', method, path, cause: err.message }
       );
-    } finally {
-      clearTimeout(timer);
     }
 
     // Parse body — defensively. Empty body for some error responses is fine.
-    const text = await response.text().catch(() => '');
+    const text = typeof response.data === 'string' ? response.data : '';
     let parsed = null;
     if (text.length > 0) {
       try {

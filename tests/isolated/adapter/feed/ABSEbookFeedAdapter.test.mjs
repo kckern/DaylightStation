@@ -13,9 +13,11 @@ const mockAbsClient = {
   host: 'https://abs.example.com',
 };
 
-// Mock global fetch for EPUB downloads
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+// Mock the injected system HttpClient. EPUB downloads use downloadBuffer()
+// (returns a Buffer); cover fetches use requestRaw({responseType:'buffer'}).
+const mockDownloadBuffer = vi.fn();
+const mockRequestRaw = vi.fn();
+const mockHttpClient = { downloadBuffer: mockDownloadBuffer, requestRaw: mockRequestRaw };
 
 // Temp dir for cache (replaces mockDataService)
 let tmpDir;
@@ -26,6 +28,7 @@ function createAdapter(overrides = {}) {
     token: 'test-token',
     mediaDir: tmpDir,
     webUrl: 'https://abs.example.com',
+    httpClient: mockHttpClient,
     logger: { warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
     ...overrides,
   });
@@ -67,17 +70,12 @@ async function buildMockEpub(chapters, { withContent = true } = {}) {
   return zip.toBuffer();
 }
 
-// Helper: mock fetch to return an EPUB buffer, then a failed cover response
+// Helper: queue an EPUB buffer download, then a failed cover response.
 function mockFetchEpub(epubBuffer) {
-  // First call: EPUB download
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    arrayBuffer: async () => epubBuffer.buffer.slice(
-      epubBuffer.byteOffset, epubBuffer.byteOffset + epubBuffer.byteLength
-    ),
-  });
-  // Second call: cover image fetch (fail → fallback to 2:3)
-  mockFetch.mockResolvedValueOnce({ ok: false });
+  // #extractEpubToc → downloadBuffer returns the EPUB Buffer directly.
+  mockDownloadBuffer.mockResolvedValueOnce(epubBuffer);
+  // #getCoverDimensions → requestRaw cover fetch fails → fallback to 2:3.
+  mockRequestRaw.mockResolvedValueOnce({ ok: false, status: 404 });
 }
 
 describe('ABSEbookFeedAdapter', () => {
@@ -234,7 +232,7 @@ describe('ABSEbookFeedAdapter', () => {
     }, 'testuser');
 
     expect(items).toHaveLength(1);
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockDownloadBuffer).not.toHaveBeenCalled();
   });
 
   test('builds correct genre filter for ABS API', async () => {
@@ -549,7 +547,7 @@ describe('ABSEbookFeedAdapter', () => {
 
     expect(result.cached).toBe(0);
     expect(result.skipped).toBe(1);
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockDownloadBuffer).not.toHaveBeenCalled();
   });
 
   test('prefetchAll with force rebuilds existing caches', async () => {

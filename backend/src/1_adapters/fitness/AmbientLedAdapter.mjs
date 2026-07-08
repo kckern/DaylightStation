@@ -12,11 +12,10 @@
  *
  * Works with any home automation provider (Home Assistant, Hubitat, etc.)
  */
-import { ZONE_PRIORITY } from '#domains/fitness/entities/Zone.mjs';
+import { ZONE_PRIORITY, ZONE_ORDER } from '#domains/fitness/entities/Zone.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
 const ZONE_LOSS_GRACE_PERIOD_MS = 30000; // 30 seconds grace before turning off
 
 /**

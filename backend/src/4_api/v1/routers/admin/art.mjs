@@ -2,10 +2,10 @@ import express from 'express';
 import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
-import { createArtSource } from '../../../../1_adapters/content/art/sources/artSource.mjs';
-import { mergeWorkMetadata, filterWorks } from '../../../../1_adapters/content/art/workMetadata.mjs';
-import { matchesCollection } from '../../../../1_adapters/content/art/collections.mjs';
-import { loadArtCollections } from '../../../../1_adapters/content/art/artmodeConfig.mjs';
+import { createArtSource } from '#adapters/content/art/sources/artSource.mjs';
+import { mergeWorkMetadata, filterWorks } from '#adapters/content/art/workMetadata.mjs';
+import { matchesCollection } from '#adapters/content/art/collections.mjs';
+import { loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Admin Art router — curate the classic file-based art library.
@@ -18,11 +18,11 @@ import { loadArtCollections } from '../../../../1_adapters/content/art/artmodeCo
  *
  * @param {Object} config
  * @param {string} config.mediaPath - base media dir; images live under <mediaPath>/img/art/<scope>/
- * @param {string} [config.dataPath] - base data dir; collection defs come from <dataPath>/household/config/art.yml
- * @param {Function} [config.getCollections] - test seam: async () => collectionsMap (overrides dataPath load)
+ * @param {string} [config.householdDir] - resolved household base dir; collection defs come from <householdDir>/config/art.yml
+ * @param {Function} [config.getCollections] - test seam: async () => collectionsMap (overrides householdDir load)
  * @param {Object} [config.logger=console]
  */
-export function createAdminArtRouter({ mediaPath, dataPath, getCollections, logger = console }) {
+export function createAdminArtRouter({ mediaPath, householdDir, getCollections, logger = console }) {
   const router = express.Router();
   const imgBasePath = path.join(mediaPath, 'img');
   const artSource = createArtSource({ imgBasePath, logger });
@@ -34,7 +34,7 @@ export function createAdminArtRouter({ mediaPath, dataPath, getCollections, logg
   const loadCollections = getCollections || (async () => {
     if (_collections) return _collections;
     try {
-      _collections = dataPath ? await loadArtCollections(dataPath, logger) : {};
+      _collections = householdDir ? await loadArtCollections(householdDir, logger) : {};
     } catch (err) {
       logger.warn?.('admin.art.collections.load_failed', { error: err.message });
       _collections = {};

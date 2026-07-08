@@ -27,6 +27,7 @@ import {
   HealthArchiveScope,
   DEFAULT_WORKOUT_SOURCES,
 } from './HealthArchiveScope.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -60,10 +61,10 @@ export class HealthArchiveScopeFactory {
     now = () => Date.now(),
   } = {}) {
     if (!dataRoot || typeof dataRoot !== 'string') {
-      throw new Error('HealthArchiveScopeFactory: dataRoot is required');
+      throw new ValidationError('HealthArchiveScopeFactory: dataRoot is required', { code: 'MISSING_DATA_ROOT', field: 'dataRoot', value: dataRoot });
     }
     if (!mediaRoot || typeof mediaRoot !== 'string') {
-      throw new Error('HealthArchiveScopeFactory: mediaRoot is required');
+      throw new ValidationError('HealthArchiveScopeFactory: mediaRoot is required', { code: 'MISSING_MEDIA_ROOT', field: 'mediaRoot', value: mediaRoot });
     }
     this.#dataRoot = dataRoot;
     this.#mediaRoot = mediaRoot;

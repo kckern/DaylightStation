@@ -13,6 +13,7 @@ import { SystemBotLoader } from './registries/SystemBotLoader.mjs';
 
 // EventBus imports
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
+import { HttpClient } from './services/HttpClient.mjs';
 
 // Content domain imports
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
@@ -147,7 +148,7 @@ import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 
 // Hardware adapter imports
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
-import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
+import { OpenAITTSAdapter } from '#adapters/hardware/tts/OpenAITTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
 import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelectorAdapter.mjs';
@@ -211,6 +212,7 @@ import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
+import { toFolderName } from './config/configLoader.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
@@ -565,7 +567,10 @@ export function createContentRegistry(config, deps = {}) {
   // Reads query YAML files from household/config/lists/queries/ and user config/queries/
   let savedQueryService = null;
   if (listDataPath) {
-    const queriesDir = path.join(listDataPath, 'household', 'config', 'lists', 'queries');
+    // configService isn't a required dep here (unit tests call createContentRegistry
+    // with listDataPath but no configService), so resolve the default-household
+    // folder name via the SSOT resolver instead of hardcoding the literal.
+    const queriesDir = path.join(listDataPath, toFolderName('default'), 'config', 'lists', 'queries');
 
     // Build list of user query directories from data path
     // listDataPath is the root data dir (contains household/ and users/)
@@ -664,7 +669,11 @@ export function createContentRegistry(config, deps = {}) {
     // identity for YouTube. Cascades Piped → stream (yt-dlp) → iframe embed.
     const pipedHost = configService?.resolveServiceUrl?.('piped') || null;
     const pipedAdapter = pipedHost
-      ? new YouTubeAdapter({ host: pipedHost, logger: logger.child?.({ module: 'youtube-adapter' }) || logger })
+      ? new YouTubeAdapter({
+          host: pipedHost,
+          httpClient: new HttpClient({ logger }),
+          logger: logger.child?.({ module: 'youtube-adapter' }) || logger,
+        })
       : null;
     registry.register(
       new YouTubeContentSource({ pipedAdapter, streamAdapter, logger }),
@@ -1360,7 +1369,7 @@ export function createFeedServices(config) {
 
   const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
 
-  const webContentGateway = new WebContentAdapter({ logger });
+  const webContentGateway = new WebContentAdapter({ httpClient: new HttpClient({ logger }), logger });
 
   const headlineService = new HeadlineService({
     headlineStore,
@@ -1900,6 +1909,7 @@ export async function createPlaybackHubServices(config) {
   const gateway = new HttpPlaybackHubAdapter({
     baseUrl,
     requestTimeoutSec,
+    httpClient: new HttpClient({ logger }),
     logger,
   });
 
@@ -2218,11 +2228,11 @@ export function createTranscodePrewarmService(config) {
  * @param {string} [config.defaultVoice='alloy'] - Default voice
  * @param {Object} config.httpClient - HTTP client for API requests
  * @param {Object} [config.logger] - Logger instance
- * @returns {TTSAdapter}
+ * @returns {OpenAITTSAdapter}
  */
 export function createTTSAdapterInstance(config) {
   const { logger = console, httpClient, ...ttsConfig } = config;
-  return new TTSAdapter(ttsConfig, { httpClient, logger });
+  return new OpenAITTSAdapter(ttsConfig, { httpClient, logger });
 }
 
 /**
@@ -2264,7 +2274,7 @@ export function createHardwareAdapters(config) {
   // TTS adapter (optional - requires OpenAI API key and httpClient)
   let ttsAdapter = null;
   if (config.tts?.apiKey && httpClient) {
-    ttsAdapter = new TTSAdapter(
+    ttsAdapter = new OpenAITTSAdapter(
       {
         apiKey: config.tts.apiKey,
         model: config.tts.model,
@@ -3530,6 +3540,7 @@ export async function createAgentsServices(config) {
       const pagedMediaGateway = new KomgaPagedMediaAdapter({
         client: komgaClient,
         apiKey: komgaAuth.token,
+        httpClient: new HttpClient({ logger }),
         logger,
       });
       const tocCacheDatastore = new YamlTocCacheDatastore({ dataService, configService });
@@ -3653,8 +3664,8 @@ export async function createConciergeServices(config) {
   if (!mediaLogsDir) throw new Error('createConciergeServices: mediaLogsDir required');
 
   const { YamlSatelliteRegistry } = await import('#adapters/persistence/yaml/YamlSatelliteRegistry.mjs');
-  const { ConciergePolicyEvaluator } = await import('#applications/agents/concierge/policy/ConciergePolicyEvaluator.mjs');
-  const { MediaJudge } = await import('#applications/agents/concierge/services/MediaJudge.mjs');
+  const { ConciergePolicyEvaluator } = await import('#apps/agents/concierge/policy/ConciergePolicyEvaluator.mjs');
+  const { MediaJudge } = await import('#apps/agents/concierge/services/MediaJudge.mjs');
 
   // Mastra reads OPENAI_API_KEY from process.env — bridge from ConfigService.
   const openaiKey = configService.getSecret?.('OPENAI_API_KEY');
@@ -3788,7 +3799,7 @@ export async function createConciergeServices(config) {
       // lookup callables composed here dispatch by item.source / by the
       // single configured voice source to the right adapter. This is the
       // only place in the concierge wiring that names specific content sources.
-      const { MediaPolicyGate } = await import('#applications/agents/concierge/services/MediaPolicyGate.mjs');
+      const { MediaPolicyGate } = await import('#apps/agents/concierge/services/MediaPolicyGate.mjs');
       const labelLookup = async (item, _opts = {}) => {
         const adapter = contentRegistry?.get?.(item?.source);
         if (typeof adapter?.getAncestorLabels === 'function') {
@@ -4003,6 +4014,30 @@ export function createHarvesterServices(config) {
   };
 
   // ==========================================================================
+  // Resolved config values for harvesters (composition root owns configService)
+  // Harvesters receive narrow accessors + resolved values, never the singleton.
+  // ==========================================================================
+  const harvesterTimezone = configService?.getTimezone?.() || 'America/Los_Angeles';
+  const getUserAuth = (service, user) => configService.getUserAuth(service, user);
+  const getHouseholdAuth = (service) => configService.getHouseholdAuth(service);
+  const getUserHouseholdId = (user) => configService.getUserHouseholdId(user);
+  const getHouseholdConfig = (householdId) => configService.getHouseholdConfig(householdId);
+  const getUserDir = (user) => configService.getUserDir(user);
+  const secret = (key) => configService?.getSecret?.(key);
+  const googleClientId = secret('GOOGLE_CLIENT_ID');
+  const googleClientSecret = secret('GOOGLE_CLIENT_SECRET');
+  const googleRedirectUri = secret('GOOGLE_REDIRECT_URI');
+  const googleRefreshToken = secret('GOOGLE_REFRESH_TOKEN');
+  const clickupAdapterConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
+  const weatherConfig = configService?.isReady?.()
+    ? (configService.get?.('weather') || configService.getAdapterConfig?.('weather'))
+    : null;
+  const weatherLat = weatherConfig?.lat || secret('WEATHER_LAT');
+  const weatherLng = weatherConfig?.lng || secret('WEATHER_LNG');
+  const weatherTimezone = weatherConfig?.timezone;
+  const mediaDir = configService?.getMediaDir?.();
+
+  // ==========================================================================
   // Productivity Harvesters
   // ==========================================================================
 
@@ -4012,7 +4047,9 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      apiKey: secret('TODOIST_KEY'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4023,7 +4060,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      getHouseholdAuth,
+      adapterConfig: clickupAdapterConfig,
+      apiKey: secret('CLICKUP_PK'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4033,7 +4074,8 @@ export function createHarvesterServices(config) {
     registerHarvester('github', () => new GitHubHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4047,7 +4089,10 @@ export function createHarvesterServices(config) {
     registerHarvester('lastfm', () => new LastfmHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      lastfmUser: secret('LAST_FM_USER'),
+      apiKey: secret('LAST_FM_API_KEY') || secret('LASTFM_API_KEY') || secret('LASTFM_APIKEY'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4057,7 +4102,8 @@ export function createHarvesterServices(config) {
     registerHarvester('reddit', () => new RedditHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4103,7 +4149,9 @@ export function createHarvesterServices(config) {
     registerHarvester('foursquare', () => new FoursquareHarvester({
       httpClient,
       lifelogStore,
-      configService,
+      getUserAuth,
+      token: secret('FOURSQUARE_TOKEN'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4118,7 +4166,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      googleClientId,
+      googleClientSecret,
+      googleRedirectUri,
+      googleRefreshToken,
       logger,
     }));
   }
@@ -4126,10 +4178,14 @@ export function createHarvesterServices(config) {
   // Google Calendar - requires httpClient
   if (httpClient) {
     registerHarvester('gcal', () => new GCalHarvester({
-      httpClient,
       lifelogStore,
       currentStore: effectiveCurrentStore,
-      configService,
+      getUserAuth,
+      googleClientId,
+      googleClientSecret,
+      googleRedirectUri,
+      googleRefreshToken,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4144,7 +4200,9 @@ export function createHarvesterServices(config) {
       gmailClientFactory: effectiveGmailClientFactory,
       aiGateway: effectiveAiGateway,
       lifelogStore,
-      configService,
+      getUserHouseholdId,
+      getHouseholdConfig,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4155,7 +4213,7 @@ export function createHarvesterServices(config) {
     registerHarvester('buxfer', () => new BuxferHarvester({
       buxferAdapter,
       lifelogStore,
-      configService,
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4170,7 +4228,12 @@ export function createHarvesterServices(config) {
       stravaClient,
       lifelogStore,
       authStore,
-      configService,
+      getUserAuth,
+      getUserDir,
+      clientId: secret('STRAVA_CLIENT_ID'),
+      redirectUri: secret('STRAVA_URL'),
+      mediaDir,
+      timezone: harvesterTimezone,
       fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
       logger,
     }));
@@ -4182,7 +4245,11 @@ export function createHarvesterServices(config) {
       httpClient,
       lifelogStore,
       authStore,
-      configService,
+      getUserAuth,
+      clientId: secret('WITHINGS_CLIENT_ID') || secret('WITHINGS_CLIENT'),
+      clientSecret: secret('WITHINGS_CLIENT_SECRET') || secret('WITHINGS_SECRET'),
+      redirectUri: secret('WITHINGS_REDIRECT'),
+      timezone: harvesterTimezone,
       logger,
     }));
   }
@@ -4207,7 +4274,10 @@ export function createHarvesterServices(config) {
   if (sharedStore) {
     registerHarvester('weather', () => new WeatherHarvester({
       sharedStore,
-      configService,
+      lat: weatherLat,
+      lng: weatherLng,
+      weatherTimezone,
+      timezone: harvesterTimezone,
       logger,
     }));
   }

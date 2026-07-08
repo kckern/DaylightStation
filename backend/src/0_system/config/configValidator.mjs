@@ -6,6 +6,7 @@
  */
 
 import { configSchema } from './configSchema.mjs';
+import { toFolderName } from './configLoader.mjs';
 
 /**
  * Error thrown when config validation fails.
@@ -47,7 +48,7 @@ export function validateConfig(config, dataDir) {
   } else {
     for (const [hid, household] of Object.entries(config.households)) {
       // Use flat structure: household/ for 'default', household-{id}/ for others
-      const folderName = household._folderName || (hid === 'default' ? 'household' : `household-${hid}`);
+      const folderName = household._folderName || toFolderName(hid);
       checkedPaths.push(`${dataDir}/${folderName}/config/household.yml`);
       validateObject(household, configSchema.households.valueSchema, `households.${hid}`, errors);
     }

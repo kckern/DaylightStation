@@ -6,8 +6,8 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
-import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/content/art/artmodeConfig.mjs';
+import { resolvePreset } from '#adapters/content/art/presetResolver.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Art API router
@@ -18,7 +18,7 @@ import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/conte
  * @returns {express.Router}
  */
 export function createArtRouter(config = {}) {
-  const { artAdapter, dataPath, logger = console } = config;
+  const { artAdapter, householdDir, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -50,8 +50,8 @@ export function createArtRouter(config = {}) {
     '/preset/:key',
     asyncHandler(async (req, res) => {
       const { key } = req.params;
-      const { presets, defaults, frames } = await loadArtmodeConfig(dataPath, logger);
-      const collections = await loadArtCollections(dataPath, logger);
+      const { presets, defaults, frames } = await loadArtmodeConfig(householdDir, logger);
+      const collections = await loadArtCollections(householdDir, logger);
       const known = Object.prototype.hasOwnProperty.call(presets, key)
         || Object.prototype.hasOwnProperty.call(collections, key);
       if (!known) {
