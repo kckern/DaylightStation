@@ -140,8 +140,8 @@ describe('Message', () => {
     });
   });
 
-  describe('toJSON/fromJSON', () => {
-    test('round-trips message data', () => {
+  describe('toJSON (transitional API DTO)', () => {
+    test('round-trips message data through the constructor', () => {
       const original = new Message({
         id: 'msg-123',
         conversationId: 'conv-456',
@@ -153,8 +153,10 @@ describe('Message', () => {
         metadata: { edited: true }
       });
 
+      // Datastores hydrate via the constructor; static fromJSON was removed
+      // (serialization-ownership migration, phase 1)
       const json = original.toJSON();
-      const restored = Message.fromJSON(json);
+      const restored = new Message(json);
 
       expect(restored.id).toBe(original.id);
       expect(restored.conversationId).toBe(original.conversationId);
