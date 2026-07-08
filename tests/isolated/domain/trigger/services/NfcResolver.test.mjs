@@ -235,4 +235,38 @@ describe('NfcResolver — metadata-only tags', () => {
     expect(result.service).toBe('turn_on');
     expect(result.entity).toBe('light.kitchen');
   });
+
+  describe('tag metadata exclusion', () => {
+    it('scanned_at and note do not leak into intent.params', () => {
+      const registry = {
+        locations: { livingroom: { action: 'play-next', target: 'livingroom-tv' } },
+        tags: {
+          '04_28_d4_71_cc_2a_81': {
+            global: { scanned_at: '2026-05-10 11:51:19', note: 'Eyes shuts', plex: '621568' },
+            overrides: {},
+          },
+        },
+      };
+      const intent = NfcResolver.resolve({
+        location: 'livingroom', value: '04_28_D4_71_CC_2A_81',
+        registry, contentIdResolver: makeContentIdResolver(),
+      });
+      expect(intent).not.toBeNull();
+      expect(intent.content).toBe('plex:621568');
+      expect(intent.params).not.toHaveProperty('scanned_at');
+      expect(intent.params).not.toHaveProperty('note');
+    });
+
+    it('metadata-only tag still resolves to null (unknown-tag capture flow)', () => {
+      const registry = {
+        locations: { livingroom: { action: 'play-next', target: 'livingroom-tv' } },
+        tags: { 'aa_bb': { global: { scanned_at: '2026-01-01 00:00:00', note: 'unnamed' }, overrides: {} } },
+      };
+      const intent = NfcResolver.resolve({
+        location: 'livingroom', value: 'aa_bb',
+        registry, contentIdResolver: makeContentIdResolver(),
+      });
+      expect(intent).toBeNull();
+    });
+  });
 });

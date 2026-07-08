@@ -29,8 +29,14 @@ const RESERVED_KEYS = new Set([
   'end', 'end_location',
 ]);
 
+// Tag bookkeeping written by YamlTriggerConfigRepository on first scan.
+// Never actionable, never a shorthand candidate, and — critically — never
+// forwarded in intent.params: params become the device-URL query string,
+// where a leaked scanned_at was mis-parsed as a content id (2026-07-07 bug).
+const METADATA_KEYS = new Set(['scanned_at', 'note']);
+
 function expandShorthand(merged, contentIdResolver) {
-  const candidates = Object.entries(merged).filter(([k]) => !RESERVED_KEYS.has(k));
+  const candidates = Object.entries(merged).filter(([k]) => !RESERVED_KEYS.has(k) && !METADATA_KEYS.has(k));
   if (candidates.length === 0) return null;
   if (candidates.length > 1) {
     const resolvable = candidates.filter(([k, v]) => contentIdResolver?.resolve(`${k}:${v}`));
@@ -105,6 +111,7 @@ export class NfcResolver {
     const params = {};
     for (const [k, v] of Object.entries(merged)) {
       if (RESERVED_KEYS.has(k)) continue;
+      if (METADATA_KEYS.has(k)) continue;
       if (k === consumedKey) continue;
       params[k] = v;
     }
