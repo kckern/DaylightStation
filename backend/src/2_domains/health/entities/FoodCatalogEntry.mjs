@@ -55,21 +55,8 @@ export class FoodCatalogEntry {
     return this.normalizedName.includes(query.toLowerCase().trim());
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      normalizedName: this.normalizedName,
-      nutrients: { ...this.nutrients },
-      source: this.source,
-      barcodeUpc: this.barcodeUpc,
-      useCount: this.useCount,
-      lastUsed: this.lastUsed,
-      createdAt: this.createdAt,
-    };
-  }
-
-  static fromJSON(data) {
-    return new FoodCatalogEntry(data);
-  }
+  // Serialization is owned by the persistence adapter (YamlFoodCatalogDatastore
+  // #hydrate/#dehydrate), not the entity — audit D-3, serialization migration
+  // phase 2. The entity exposes its fields as public properties for the
+  // dehydrator; it deliberately no longer carries toJSON()/fromJSON().
 }
