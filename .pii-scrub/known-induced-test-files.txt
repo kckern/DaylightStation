@@ -1,0 +1,14 @@
+backend/src/2_domains/fitness/services/groupSessions.test.mjs
+backend/src/3_applications/fitness/activities/CycleGameProvider.test.mjs
+backend/src/3_applications/fitness/services/SessionGroupingService.detail.test.mjs
+frontend/src/modules/Fitness/lib/cycleGame/participantIdentity.test.js
+frontend/src/modules/Fitness/player/overlays/lookupUserName.test.js
+frontend/src/modules/Fitness/widgets/CycleGame/CycleGameContainer.checkpoint.test.jsx
+frontend/src/modules/Health/ChatOverlay/ChatOverlay.test.jsx
+frontend/src/modules/Piano/PianoKiosk/usePianoPreferences.test.js
+tests/isolated/adapter/harvester/fitness/StravaHarvester.test.mjs
+tests/isolated/agents/echo/EchoAgent.baseAgent.test.mjs
+tests/isolated/agents/framework/BaseAgent.buildPromptSections.test.mjs
+tests/isolated/application/fitness/SessionService.test.mjs
+tests/isolated/domain/fitness/legacy/session-serializer-v3.unit.test.mjs
+tests/live/api/content/unified-play.test.mjs

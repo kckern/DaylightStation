@@ -1,0 +1,35 @@
+regex:kc@kckern\.com==>user_1@example.com
+regex:\bgrandpa-kern\b==>user_10
+regex:\bgrandma-kern\b==>user_11
+regex:\bKC Kern\b==>User_1
+regex:\bFELIX\b==>USER_2
+regex:\bFelix\b(?! Lullabye)==>User_2
+regex:\bfelix\b==>user_2
+regex:\bMILO\b==>USER_3
+regex:\bMilo\b==>User_3
+regex:\bmilo\b==>user_3
+regex:\bALAN\b==>USER_4
+regex:\bAlan\b==>User_4
+regex:\balan\b==>user_4
+regex:\bSOREN\b==>USER_5
+regex:\bSoren\b==>User_5
+regex:\bsoren\b==>user_5
+regex:\bJIN\b==>USER_6
+regex:\bJin\b==>User_6
+regex:\bjin\b==>user_6
+regex:\bLILA\b==>USER_7
+regex:\bLila\b==>User_7
+regex:\blila\b==>user_7
+regex:\bFINN\b==>USER_8
+regex:\bFinn\b==>User_8
+regex:\bfinn\b==>user_8
+regex:\bELIZABETH\b==>USER_9
+regex:\bElizabeth\b==>User_9
+regex:\belizabeth\b==>user_9
+regex:\b28688\b==>90001
+regex:\b28691\b==>90002
+regex:\b28812\b==>90003
+regex:\b28999\b==>90004
+regex:\b29413\b==>90005
+regex:\b48291\b==>90006
+regex:\b64614\b==>90007
