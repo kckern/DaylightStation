@@ -255,6 +255,13 @@ import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
+
+// NewsReporter imports (adapters/renderer constructed here; container receives instances)
+import { NewsReporterContainer } from '#apps/newsreporter/NewsReporterContainer.mjs';
+import { ReportReceiptRenderer } from '#rendering/newsreporter/ReportReceiptRenderer.mjs';
+import { createSourceRegistry as createNewsSourceRegistry } from '#adapters/newsreporter/sources/sourceRegistry.mjs';
+import { NewsReporterJobDatastore } from '#adapters/newsreporter/NewsReporterJobDatastore.mjs';
+import { YamlReportRunDatastore } from '#adapters/persistence/yaml/YamlReportRunDatastore.mjs';
 import { buildMastraMemory } from '#system/memory/buildMastraMemory.mjs';
 import { LifeplanGuideAgent } from '#apps/agents/lifeplan-guide/LifeplanGuideAgent.mjs';
 import { YamlConversationStore } from '#adapters/agents/YamlConversationStore.mjs';
@@ -3905,6 +3912,71 @@ export async function createConciergeServices(config) {
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
  */
+/**
+ * Create NewsReporter services — composition wiring for the newsreporter
+ * domain. Constructs the concrete adapters and renderer here and injects
+ * INSTANCES into NewsReporterContainer.build (Decision D1: containers never
+ * import concrete 1_adapters / 1_rendering classes).
+ *
+ * The framework default consolidation model is config-resolved here from the
+ * system agents config (`agents.yml` → `models.newsreporter`), falling back
+ * to the historical 'openai/gpt-4o'. It cannot live in newsreporter.yml —
+ * that file is reporter-keyed (every top-level key is a reporter id), so a
+ * settings key would surface as a phantom reporter job.
+ *
+ * @param {Object} config
+ * @param {Object} config.configService - ConfigService
+ * @param {Object} config.printerRegistry - Printer registry ({ resolve })
+ * @param {Object} config.dataService - DataService (report-run history)
+ * @param {Object} config.httpClient - HTTP client for source fetching
+ * @param {string} [config.model] - Explicit default-model override
+ * @param {string|null} [config.mediaDir] - Media dir for agent transcripts
+ * @param {Object} [config.logger]
+ * @returns {{ service: Object, jobDatastore: Object, executor: Object }}
+ */
+export function createNewsReporterServices(config) {
+  const {
+    configService,
+    printerRegistry,
+    dataService,
+    httpClient,
+    model = null,
+    mediaDir = null,
+    logger = console,
+  } = config;
+
+  const agentsConfig = configService?.getAppConfig?.('agents') || {};
+  const defaultModel = model || agentsConfig?.models?.newsreporter || 'openai/gpt-4o';
+
+  // Memoized per-model agent-runtime factory. Honors each reporter's
+  // consolidate.model without re-creating a MastraAdapter on every call.
+  const runtimeCache = new Map();
+  const runtimeFor = (m) => {
+    const key = m || defaultModel;
+    if (!runtimeCache.has(key)) {
+      runtimeCache.set(key, new MastraAdapter({ model: key, logger, mediaDir }));
+    }
+    return runtimeCache.get(key);
+  };
+
+  const renderer = new ReportReceiptRenderer();
+  const sourceRegistry = createNewsSourceRegistry({ httpClient, logger });
+  const jobDatastore = new NewsReporterJobDatastore({ configService, logger });
+  const history = new YamlReportRunDatastore({ dataService, logger });
+
+  return NewsReporterContainer.build({
+    configService,
+    runtimeFor,
+    defaultModel,
+    renderer,
+    sourceRegistry,
+    jobDatastore,
+    history,
+    printerRegistry,
+    logger,
+  });
+}
+
 export function createHarvesterServices(config) {
   const {
     io,

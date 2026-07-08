@@ -6,6 +6,9 @@
  */
 
 import { LifeplanContainer } from '#apps/lifeplan/LifeplanContainer.mjs';
+import { YamlLifePlanStore } from '#adapters/persistence/yaml/YamlLifePlanStore.mjs';
+import { YamlLifeplanMetricsStore } from '#adapters/persistence/yaml/YamlLifeplanMetricsStore.mjs';
+import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremonyRecordStore.mjs';
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
 import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
@@ -28,8 +31,13 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
 export function bootstrapLifeplan(deps) {
   const { dataPath, aggregator, notificationService, clock, logger } = deps;
 
-  // Core container with DI
-  const container = new LifeplanContainer({ dataPath });
+  // Persistence stores (constructed here at the composition root; the
+  // container receives instances per Decision D1)
+  const container = new LifeplanContainer({
+    lifePlanStore: new YamlLifePlanStore({ basePath: dataPath }),
+    metricsStore: new YamlLifeplanMetricsStore({ basePath: dataPath }),
+    ceremonyRecordStore: new YamlCeremonyRecordStore({ basePath: dataPath }),
+  });
 
   // Application services
   const feedbackService = new FeedbackService({
