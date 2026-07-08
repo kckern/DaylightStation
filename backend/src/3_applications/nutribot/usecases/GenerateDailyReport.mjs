@@ -9,6 +9,51 @@
 import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
+ * Decide which date a `/report` should render.
+ *
+ * A report should always SHOW the report, not gate on whether "today" happens
+ * to have an entry. So when the caller didn't ask for a specific date and today
+ * has no logs, fall back to the most recent day that DOES have logs (on or
+ * before today) — the report's history chart already trails the prior days up
+ * to that anchor, giving "everything up until today". Never picks a future
+ * date, and an explicit requested date always wins.
+ *
+ * @param {Object} args
+ * @param {string} [args.requestedDate]        explicit date the caller asked for
+ * @param {string} args.today                  today's date (YYYY-MM-DD, user tz)
+ * @param {boolean} args.todayHasLogs          whether `today` has accepted logs
+ * @param {string|null} [args.mostRecentLoggedDate]  latest accepted-log date <= today
+ * @returns {string} the date to report on
+ */
+export function pickReportDate({ requestedDate, today, todayHasLogs, mostRecentLoggedDate }) {
+  if (requestedDate) return requestedDate;
+  if (todayHasLogs) return today;
+  if (mostRecentLoggedDate && mostRecentLoggedDate <= today) return mostRecentLoggedDate;
+  return today;
+}
+
+/**
+ * The most recent CALENDAR day (<= today) that has an accepted log, by
+ * `meal.date` — NOT by entry/accept order. This is the crux of the back-dating
+ * bug: logging a meal today but dated to 2026-06-27 must NOT make the report
+ * anchor on 06-27; the anchor stays the latest real day (e.g. 2026-07-07).
+ * Undated logs and any dated in the future are ignored.
+ *
+ * @param {Array<{meal?: {date?: string}}>} logs  accepted logs
+ * @param {string} today                          today's date (YYYY-MM-DD)
+ * @returns {string|null} the max meal.date <= today, or null if none
+ */
+export function mostRecentLoggedDate(logs, today) {
+  let latest = null;
+  for (const log of logs || []) {
+    const d = log?.meal?.date;
+    if (!d || d > today) continue;
+    if (!latest || d > latest) latest = d;
+  }
+  return latest;
+}
+
+/**
  * Generate daily nutrition report use case
  */
 export class GenerateDailyReport {
@@ -62,8 +107,9 @@ export class GenerateDailyReport {
    */
   async execute(input) {
     const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId, responseContext } = input;
-    const date = input.date || this.#getTodayDate(userId);
-    const anchorDateForHistory = date;
+    const today = this.#getTodayDate(userId);
+    let date = input.date || today;
+    let anchorDateForHistory = date;
 
     this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate, hasResponseContext: !!responseContext });
 
@@ -120,8 +166,23 @@ export class GenerateDailyReport {
         }
       }
 
-      // 2. Get daily summary
-      const summary = await this.#foodLogStore.getDailySummary(userId, date);
+      // 2. Get daily summary. A /report should SHOW the report — when the caller
+      //    didn't ask for a specific date and today has nothing, anchor on the
+      //    most recent CALENDAR day that has logs (by meal.date, not entry order,
+      //    so back-dated logging never drags the anchor backwards). Only skip if
+      //    the user has never logged anything at all.
+      let summary = await this.#foodLogStore.getDailySummary(userId, date);
+
+      if (summary.logCount === 0 && !input.date) {
+        const fallbackDate = await this.#getMostRecentLoggedDate(userId, today);
+        const resolved = pickReportDate({ requestedDate: undefined, today, todayHasLogs: false, mostRecentLoggedDate: fallbackDate });
+        if (resolved !== date) {
+          this.#logger.info?.('report.generate.fallbackDate', { userId, requestedDate: date, fallbackDate: resolved });
+          date = resolved;
+          anchorDateForHistory = resolved;
+          summary = await this.#foodLogStore.getDailySummary(userId, date);
+        }
+      }
 
       if (summary.logCount === 0) {
         this.#logger.info?.('report.generate.skipped', { userId, date, reason: 'no_logs' });
@@ -308,6 +369,17 @@ export class GenerateDailyReport {
       this.#logger.debug?.('report.getTimezone.failed', { error: e.message });
     }
     return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
+  }
+
+  /**
+   * The most recent calendar day (<= today) that has an accepted log, keyed by
+   * meal.date. Delegates to the module-level mostRecentLoggedDate so the "max by
+   * date, not by entry order" rule is unit-tested independently of the store.
+   * @private
+   */
+  async #getMostRecentLoggedDate(userId, today) {
+    const logs = await this.#foodLogStore.findAll(userId, { status: 'accepted' });
+    return mostRecentLoggedDate(logs, today);
   }
 
   /**
