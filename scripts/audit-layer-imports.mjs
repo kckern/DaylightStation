@@ -45,6 +45,8 @@ export const RULES = [
 export const CONTENT_RULES = [
   { rule: 'api-handrolled-500', layer: '4_api/', re: /res\.status\(500\)/ },
   { rule: 'apps-success-false', layer: '3_applications/', re: /\bsuccess:\s*false\b/ },
+  // UserDataService is deprecated (Task P2.8): no NEW consumers outside its home dir.
+  { rule: 'no-userdataservice', layer: 'backend/src/', re: /userDataService/i, exclude: '0_system/config/' },
 ];
 
 export function scanContent(filePath, content) {
@@ -52,6 +54,7 @@ export function scanContent(filePath, content) {
   const lines = content.split('\n');
   for (const r of CONTENT_RULES) {
     if (!filePath.includes(r.layer)) continue;
+    if (r.exclude && filePath.includes(r.exclude)) continue;
     lines.forEach((line, i) => {
       if (r.re.test(line)) out.push({ rule: r.rule, file: filePath, line: i + 1, spec: line.trim() });
     });
