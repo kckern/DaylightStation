@@ -47,14 +47,9 @@ import {
   createHealthApiRouter,
   createHealthDashboardApiRouter,
   createGratitudeServices,
-  createGratitudeApiRouter,
   createHomeAutomationAdapters,
-  createHomeAutomationApiRouter,
-  createHomeDashboardApiRouter,
   createPlaybackHubServices,
   createDeviceServices,
-  createDeviceApiRouter,
-  createTriggerApiRouter,
   createWakeAndLoadService,
   createDispatchIdempotencyService,
   createTranscodePrewarmService,
@@ -62,7 +57,6 @@ import {
   createProxyService,
   createMessagingServices,
   createJournalistServices,
-  createJournalistApiRouter,
   createHomebotServices,
   createHomebotApiRouter,
   createNutribotServices,
@@ -86,6 +80,11 @@ import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
 import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
+import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
+import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
+import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
+import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
