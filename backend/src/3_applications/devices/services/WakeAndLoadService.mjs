@@ -627,7 +627,11 @@ export class WakeAndLoadService {
 
     // Arm the playback watchdog — non-blocking. The response returns now;
     // the watchdog fires asynchronously if playback never starts.
-    if (result.ok && !isAdopt && contentQuery.queue) {
+    // Armed for ANY resolvable content query (queue, play, play-next, …) —
+    // gating on `queue` alone let play-next dispatches fail silently
+    // (2026-07-07 NFC bug: trigger.fired ok:true, nothing played, no alarm).
+    // #armPlaybackWatchdog no-ops when no content id resolves.
+    if (result.ok && !isAdopt) {
       this.#armPlaybackWatchdog({
         deviceId, dispatchId, topic, contentQuery
       });
@@ -712,13 +716,13 @@ export class WakeAndLoadService {
     // Extract a content identifier for watchdog matching.
     // Preference order: prewarmContentId (set by Task 2 when Plex prewarm
     // resolves a named queue to an actual content id) > explicit contentId
-    // > raw queue/play/list values (which are only useful when they already
-    // look like content ids, e.g. queue=plex:1).
+    // > shared CONTENT_ID_KEYS resolution (queue, play, play-next, hymn, …)
+    // > list. resolveContentId keeps this in lockstep with the WS-envelope
+    // delivery paths, so play-next dispatches are watched too (2026-07-07 bug).
     const expectedContentId =
       contentQuery.prewarmContentId
       || contentQuery.contentId
-      || contentQuery.queue
-      || contentQuery.play
+      || resolveContentId(contentQuery)?.contentId
       || contentQuery.list;
     if (!expectedContentId) return;
 
