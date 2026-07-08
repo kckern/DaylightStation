@@ -9,7 +9,8 @@
 
 import moment from 'moment-timezone';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawBorder, flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
+import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
 
 /**
@@ -42,9 +43,6 @@ export function createGratitudeCardRenderer(config) {
     const margin = theme.layout.margin;
     const lineHeight = theme.layout.lineHeight;
     const itemMaxWidth = width - margin * 2 - 40;
-    const fontPath = fontDir
-      ? `${fontDir}/${theme.fonts.fontPath}`
-      : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
 
     // Already selected by the caller — the renderer never decides what prints.
     const selections = await getSelectionsForPrint();
@@ -53,13 +51,14 @@ export function createGratitudeCardRenderer(config) {
     const selectedGratitude = selections.gratitude || [];
     const selectedHopes = selections.hopes || [];
 
-    const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
-
-    try {
-      registerFont(fontPath, { family: fontFamily });
-    } catch (fontError) {
-      // Font loading is optional - will fall back to system fonts
-    }
+    // Registers the card font (falls back to system fonts if unavailable).
+    const { createNodeCanvas } = await initCanvas({
+      width: 1,
+      height: 1,
+      fontDir,
+      fontFile: theme.fonts.fontPath,
+      fontFamily,
+    });
 
     // Calculate height needed for an item (wrapped text + optional attribution)
     function calculateItemHeight(item) {
@@ -104,14 +103,11 @@ export function createGratitudeCardRenderer(config) {
     ctx.fillRect(0, 0, width, height);
 
     // Black border
-    ctx.strokeStyle = theme.colors.border;
-    ctx.lineWidth = theme.layout.borderWidth;
-    ctx.strokeRect(
-      theme.layout.borderOffset,
-      theme.layout.borderOffset,
-      width - theme.layout.borderOffset * 2,
-      height - theme.layout.borderOffset * 2
-    );
+    drawBorder(ctx, width, height, {
+      offset: theme.layout.borderOffset,
+      lineWidth: theme.layout.borderWidth,
+      color: theme.colors.border,
+    });
 
     // Draw an item with text wrapping and contributor attribution
     function drawItem(item, startY, indent, maxWidth) {

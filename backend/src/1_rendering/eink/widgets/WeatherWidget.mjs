@@ -14,6 +14,7 @@
  * a 16-gray panel; never emit a non-theme color literal here.
  */
 
+import { roundRect } from '#rendering/lib/LayoutHelpers.mjs';
 import { font } from './lib/fonts.mjs';
 
 const WMO_CODES = {
@@ -289,18 +290,4 @@ export function draw(ctx, box, data, theme) {
   }
 
   ctx.restore();
-}
-
-function roundRect(ctx, rx, ry, rw, rh, r) {
-  ctx.beginPath();
-  ctx.moveTo(rx + r, ry);
-  ctx.lineTo(rx + rw - r, ry);
-  ctx.arcTo(rx + rw, ry, rx + rw, ry + r, r);
-  ctx.lineTo(rx + rw, ry + rh - r);
-  ctx.arcTo(rx + rw, ry + rh, rx + rw - r, ry + rh, r);
-  ctx.lineTo(rx + r, ry + rh);
-  ctx.arcTo(rx, ry + rh, rx, ry + rh - r, r);
-  ctx.lineTo(rx, ry + r);
-  ctx.arcTo(rx, ry, rx + r, ry, r);
-  ctx.closePath();
 }

@@ -14,6 +14,7 @@
  * bloat the download (see lib/greyscale).
  */
 
+import { drawCover } from '#rendering/lib/LayoutHelpers.mjs';
 import { font } from './lib/fonts.mjs';
 
 const PLACARD_H = 100;
@@ -40,17 +41,11 @@ export function draw(ctx, box, data, theme) {
   }
 
   // Cover-fit: scale to fill the whole box, centre-crop the overflow.
-  const scale = Math.max(w / img.width, h / img.height);
-  const dw = img.width * scale;
-  const dh = img.height * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
-
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.clip();
-  ctx.drawImage(img, dx, dy, dw, dh);
+  drawCover(ctx, img, x, y, w, h);
   ctx.restore();
 
   // Caption placard. The final canvas-wide luma reduction (EinkRenderer) turns the
