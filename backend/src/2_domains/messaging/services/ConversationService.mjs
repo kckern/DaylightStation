@@ -38,10 +38,10 @@ export class ConversationService {
 
   /**
    * Get conversation by ID
+   * @returns {Promise<Conversation|null>} Hydrated by the datastore
    */
   async getConversation(id) {
-    const data = await this.conversationStore.findById(id);
-    return data ? Conversation.fromJSON(data) : null;
+    return this.conversationStore.findById(id);
   }
 
   /**
@@ -55,7 +55,7 @@ export class ConversationService {
     // Try to find existing conversation
     const existing = await this.conversationStore.findByParticipants(participants);
     if (existing) {
-      return Conversation.fromJSON(existing);
+      return existing;
     }
 
     // Create new conversation
@@ -66,16 +66,14 @@ export class ConversationService {
    * Get conversations for a participant
    */
   async getConversationsForParticipant(participantId) {
-    const conversations = await this.conversationStore.findByParticipant(participantId);
-    return conversations.map(c => Conversation.fromJSON(c));
+    return this.conversationStore.findByParticipant(participantId);
   }
 
   /**
    * Get active conversations (with recent messages)
    */
   async getActiveConversations(thresholdMinutes = 60) {
-    const conversations = await this.conversationStore.findActive(thresholdMinutes);
-    return conversations.map(c => Conversation.fromJSON(c));
+    return this.conversationStore.findActive(thresholdMinutes);
   }
 
   /**
@@ -98,7 +96,7 @@ export class ConversationService {
       ? messageData
       : new Message({ ...messageData, conversationId, timestamp: effectiveTimestamp });
 
-    conversation.addMessage(message.toJSON());
+    conversation.addMessage(message);
     await this.conversationStore.save(conversation);
 
     return message;
@@ -113,7 +111,8 @@ export class ConversationService {
       return [];
     }
 
-    let messages = conversation.messages.map(m => Message.fromJSON(m));
+    // Conversation holds Message entities — no rehydration needed
+    let messages = [...conversation.messages];
 
     // Apply filters
     if (options.senderId) {

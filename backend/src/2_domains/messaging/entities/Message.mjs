@@ -138,6 +138,8 @@ export class Message {
     return this.getAgeMinutes(nowMs) <= thresholdMinutes;
   }
 
+  // Transitional: retained for API response DTOs (4_api/v1/routers/messaging.mjs).
+  // Storage (de)hydration lives in YamlConversationDatastore, NOT here.
   toJSON() {
     return {
       id: this.id,
@@ -151,10 +153,6 @@ export class Message {
       timestamp: this.timestamp,
       metadata: this.metadata
     };
-  }
-
-  static fromJSON(data) {
-    return new Message(data);
   }
 
   /**
