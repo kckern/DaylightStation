@@ -84,7 +84,7 @@ Counts: `grep -rln "toJSON()" backend/src/2_domains --include='*.mjs' | grep -v 
 | 1 | `messaging/entities/Conversation`, `Message` (+ service round-trip) | `persistence/yaml/YamlConversationDatastore` (save) | **1 — done** |
 | 2 | `gratitude/entities/GratitudeItem`, `Selection` (+ service round-trip) | `persistence/yaml/YamlGratitudeDatastore` (all reads/writes were plain; service did the (de)hydration) | **1 — done** |
 | 3 | `nutrition|lifelog/entities/NutriLog`, `FoodItem` | `persistence/yaml/YamlNutriLogDatastore` (7 sites), `YamlFoodLogDatastore` (1) | 2 (nutrition group) |
-| 4 | `health/entities/FoodCatalogEntry` | `persistence/yaml/YamlFoodCatalogDatastore` (2) | 2 (nutrition group) |
+| 4 | `health/entities/FoodCatalogEntry` | `persistence/yaml/YamlFoodCatalogDatastore` (2) | **2 — done** (datastore #hydrate/#dehydrate; entity toJSON/fromJSON removed; char test `foodCatalogStoredShape.char` in test:refactor; ratchet 70→69) |
 | 5 | `cost/entities/CostEntry`, `CostBudget` + 7 cost VOs (`Money`, `CostCategory`, `Attribution`, `BudgetPeriod`, `SpreadSource`, `Thresholds`, `Usage`) | `cost/YamlCostDatastore` (4) | 3 (cost group; VOs migrate with owning aggregate) |
 | 6 | `scheduling/entities/JobState`, `Job`, `JobExecution` | `scheduling/YamlStateDatastore` (2) | 4 (scheduling) |
 | 7 | `media/entities/MediaQueue` | `persistence/yaml/YamlMediaQueueDatastore` (2) | 5 (media/content) |
