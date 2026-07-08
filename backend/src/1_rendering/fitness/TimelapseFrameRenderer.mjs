@@ -1,6 +1,7 @@
 import canvasPkg from 'canvas';
 import { fileURLToPath } from 'node:url';
 import { ZONE_COLORS } from '#domains/fitness/entities/Zone.mjs';
+import { timelapseFrameTheme } from './timelapseFrameTheme.mjs';
 
 const { createCanvas, loadImage, registerFont } = canvasPkg;
 
@@ -43,15 +44,8 @@ function ensureFonts(fontDir) {
   }
 }
 
-const COL = {
-  text: '#ffffff',
-  textDim: 'rgba(255,255,255,0.62)',
-  coin: '#ffd24a',
-  coinRim: '#c8961f',
-  heart: '#ff5167',
-  cardBorder: 'rgba(255,255,255,0.9)',
-  bgFallback: '#0d0d0d',
-};
+const COL = timelapseFrameTheme.colors;
+const LAYOUT = timelapseFrameTheme.layout;
 
 export function createTimelapseFrameRenderer(config = {}) {
   const [OUT_W, OUT_H] = config.resolution || [1920, 1080];
@@ -69,10 +63,10 @@ export function createTimelapseFrameRenderer(config = {}) {
   const showStats = config.stat_strip !== false;
   ensureFonts(config.fontDir);
 
-  const margin = Math.round(W * 0.022);
-  const headerH = showScrims ? Math.round(H * 0.085) : 0;
-  const footerH = showStats ? Math.round(H * 0.185) : 0;
-  const titleFpx = Math.round(H * 0.04);
+  const margin = Math.round(W * LAYOUT.marginRatio);
+  const headerH = showScrims ? Math.round(H * LAYOUT.headerHRatio) : 0;
+  const footerH = showStats ? Math.round(H * LAYOUT.footerHRatio) : 0;
+  const titleFpx = Math.round(H * LAYOUT.titleFontRatio);
 
   async function renderFrame({ cameraBuffer, playerBuffer, posterBuffer = null, avatarBuffers = {}, equipmentBuffers = {}, descriptor }) {
     const canvas = createCanvas(W, H);
@@ -86,7 +80,7 @@ export function createTimelapseFrameRenderer(config = {}) {
     const contentTop = headerH;
     const contentBottom = H - footerH;
     const contentH = contentBottom - contentTop;
-    const seam = Math.round(W * 0.004);
+    const seam = Math.round(W * LAYOUT.seamRatio);
 
     // ---- Camera: RIGHT side, fills the full vertical space, flush to the right /
     // top / bottom edges, no border — the hero panel (shown whole at ~4:3).
