@@ -37,15 +37,11 @@ import {
   // Content domain
   createContentRegistry,
   createMediaProgressMemory,
-  createApiRouters,
   createFitnessServices,
   createFeedServices,
   createFinanceServices,
   createEntropyServices,
-  createEntropyApiRouter,
   createHealthServices,
-  createHealthApiRouter,
-  createHealthDashboardApiRouter,
   createGratitudeServices,
   createHomeAutomationAdapters,
   createPlaybackHubServices,
@@ -58,13 +54,8 @@ import {
   createMessagingServices,
   createJournalistServices,
   createHomebotServices,
-  createHomebotApiRouter,
   createNutribotServices,
-  createNutribotApiRouter,
   createLifelogServices,
-  createLifelogApiRouter,
-  createStaticApiRouter,
-  createCalendarApiRouter,
   createEventBus,
   createDeviceLivenessService,
   broadcastEvent,
@@ -77,6 +68,7 @@ import {
 } from '#composition/bootstrap.mjs';
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
 import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
 import { createCostApiRouter } from '#composition/modules/costApi.mjs';
@@ -85,6 +77,13 @@ import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
+import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
+import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
+import { createHealthApiRouter, createHealthDashboardApiRouter } from '#composition/modules/healthApi.mjs';
+import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
+import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
+import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
+import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
