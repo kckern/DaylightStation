@@ -78,7 +78,7 @@ export function buildSteps(recs) {
     // overlapping light-up chips. De-dupe by midi within a step (keep the first).
     if (step.seen.has(r.midi)) continue;
     step.seen.add(r.midi);
-    step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width });
+    step.notes.push({ midi: r.midi, staff: r.staff, x: r.x, top: r.top, bottom: r.bottom, width: r.width, el: r.el });
   }
   return [...byQuarter.values()]
     .map(({ seen, ...s }) => s) // drop the internal de-dupe set from the public shape
@@ -110,32 +110,40 @@ export function buildMeasures(steps) {
 }
 
 /**
- * On-screen box of a note's notehead, in the same offset-space as the cursor
- * (measured relative to opRect = the cursor's offsetParent rect). Returns null if
- * the graphical note or its SVG element is unavailable / not laid out, so the
- * caller falls back to the cursor-band box.
+ * The engraved SVG `<g>` for a note's notehead (OSMD's per-note group: notehead,
+ * stem, flag). The light-up overlay recolors this element directly instead of
+ * painting a rectangle over it. Null if the graphical note / element is missing.
  * @param {object} osmd
  * @param {object} n - OSMD Note
- * @param {DOMRect|null} opRect - bounding rect of the cursor element's offsetParent
- * @returns {{x:number,top:number,bottom:number,width:number}|null}
+ * @returns {SVGGElement|null}
  */
-function noteheadBox(osmd, n, opRect) {
-  if (!opRect) return null;
+function noteheadEl(osmd, n) {
   try {
-    const g = osmd?.EngravingRules?.GNote?.(n);
-    const el = g?.getSVGGElement?.();
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    if (!r || (!r.width && !r.height)) return null; // not rendered
-    return {
-      x: r.left - opRect.left + r.width / 2, // center-x, offset-space
-      top: r.top - opRect.top,
-      bottom: r.bottom - opRect.top,
-      width: r.width,
-    };
+    return osmd?.EngravingRules?.GNote?.(n)?.getSVGGElement?.() || null;
   } catch {
     return null; // malformed / unsupported — fall back
   }
+}
+
+/**
+ * On-screen box of a notehead SVG element, in the same offset-space as the cursor
+ * (measured relative to opRect = the cursor's offsetParent rect). Returns null if
+ * the element is unavailable / not laid out, so the caller falls back to the
+ * cursor-band box.
+ * @param {SVGGElement|null} el
+ * @param {DOMRect|null} opRect - bounding rect of the cursor element's offsetParent
+ * @returns {{x:number,top:number,bottom:number,width:number}|null}
+ */
+function boxOfEl(el, opRect) {
+  if (!el || !opRect) return null;
+  const r = el.getBoundingClientRect?.();
+  if (!r || (!r.width && !r.height)) return null; // not rendered
+  return {
+    x: r.left - opRect.left + r.width / 2, // center-x, offset-space
+    top: r.top - opRect.top,
+    bottom: r.bottom - opRect.top,
+    width: r.width,
+  };
 }
 
 /**
@@ -197,7 +205,8 @@ function makeCursorWalk(osmd) {
         onsetQuarter,
         durationQuarters: (n.Length?.RealValue ?? 0) * 4,
       });
-      const gbox = noteheadBox(osmd, n, opRect);
+      const el = noteheadEl(osmd, n);
+      const gbox = boxOfEl(el, opRect);
       if (gbox) graphicalHits++; else fallbackHits++;
       const box = gbox || fallbackBox;
       onsetRecords.push({
@@ -210,6 +219,7 @@ function makeCursorWalk(osmd) {
         top: box.top,
         bottom: box.bottom,
         width: box.width,
+        el, // engraved notehead <g> — recolored in place by the light-up overlay
       });
     }
   }
