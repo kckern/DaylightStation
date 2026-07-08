@@ -322,15 +322,15 @@ describe('YamlHeadlineCacheStore', () => {
         items: [{ title: 'Test', link: 'https://cnn.com/1', timestamp: '2026-02-15T09:00:00Z' }],
       });
 
-      const result = await store.loadSource('cnn', 'kckern');
-      expect(mockDataService.user.read).toHaveBeenCalledWith('cache/feed/headlines/cnn', 'kckern');
+      const result = await store.loadSource('cnn', 'user_1');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('cache/feed/headlines/cnn', 'user_1');
       expect(result.source).toBe('cnn');
       expect(result.items).toHaveLength(1);
     });
 
     test('returns null when no file exists', async () => {
       mockDataService.user.read.mockReturnValue(null);
-      const result = await store.loadSource('cnn', 'kckern');
+      const result = await store.loadSource('cnn', 'user_1');
       expect(result).toBeNull();
     });
   });
@@ -343,11 +343,11 @@ describe('YamlHeadlineCacheStore', () => {
         lastHarvest: '2026-02-15T10:00:00Z',
         items: [],
       };
-      await store.saveSource('cnn', data, 'kckern');
+      await store.saveSource('cnn', data, 'user_1');
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'cache/feed/headlines/cnn',
         expect.objectContaining({ source: 'cnn' }),
-        'kckern'
+        'user_1'
       );
     });
   });
@@ -366,7 +366,7 @@ describe('YamlHeadlineCacheStore', () => {
 
       // This test verifies the method exists and returns correct shape
       // Full integration test will verify file system listing
-      const result = await store.loadAllSources('kckern');
+      const result = await store.loadAllSources('user_1');
       expect(result).toBeDefined();
       expect(typeof result).toBe('object');
     });
@@ -386,14 +386,14 @@ describe('YamlHeadlineCacheStore', () => {
         ],
       });
 
-      const pruned = await store.pruneOlderThan('cnn', cutoff, 'kckern');
+      const pruned = await store.pruneOlderThan('cnn', cutoff, 'user_1');
       expect(pruned).toBe(1);
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'cache/feed/headlines/cnn',
         expect.objectContaining({
           items: [expect.objectContaining({ title: 'New' })],
         }),
-        'kckern'
+        'user_1'
       );
     });
   });
@@ -807,7 +807,7 @@ describe('HeadlineService', () => {
       },
     };
     mockConfigService = {
-      getHeadOfHousehold: jest.fn().mockReturnValue('kckern'),
+      getHeadOfHousehold: jest.fn().mockReturnValue('user_1'),
     };
     service = new HeadlineService({
       headlineStore: mockStore,
@@ -819,7 +819,7 @@ describe('HeadlineService', () => {
 
   describe('harvestAll', () => {
     test('harvests all configured sources', async () => {
-      const result = await service.harvestAll('kckern');
+      const result = await service.harvestAll('user_1');
 
       expect(mockHarvester.harvest).toHaveBeenCalledTimes(2);
       expect(mockStore.saveSource).toHaveBeenCalledTimes(2);
@@ -827,7 +827,7 @@ describe('HeadlineService', () => {
     });
 
     test('prunes old items after harvest', async () => {
-      await service.harvestAll('kckern');
+      await service.harvestAll('user_1');
       expect(mockStore.pruneOlderThan).toHaveBeenCalledTimes(2);
     });
 
@@ -836,7 +836,7 @@ describe('HeadlineService', () => {
         .mockResolvedValueOnce({ source: 'cnn', label: 'CNN', lastHarvest: new Date().toISOString(), items: [], error: 'fail' })
         .mockResolvedValueOnce({ source: 'abc', label: 'ABC', lastHarvest: new Date().toISOString(), items: [{ title: 'X' }] });
 
-      const result = await service.harvestAll('kckern');
+      const result = await service.harvestAll('user_1');
       expect(result.harvested).toBe(2);
       expect(result.errors).toBe(1);
     });
@@ -849,7 +849,7 @@ describe('HeadlineService', () => {
         abc: { source: 'abc', label: 'ABC News', items: [{ title: 'B' }] },
       });
 
-      const result = await service.getAllHeadlines('kckern');
+      const result = await service.getAllHeadlines('user_1');
       expect(result.sources).toHaveProperty('cnn');
       expect(result.sources).toHaveProperty('abc');
     });
@@ -863,14 +863,14 @@ describe('HeadlineService', () => {
         items: [{ title: 'A' }],
       });
 
-      const result = await service.getSourceHeadlines('cnn', 'kckern');
+      const result = await service.getSourceHeadlines('cnn', 'user_1');
       expect(result.source).toBe('cnn');
       expect(result.items).toHaveLength(1);
     });
 
     test('returns null for unknown source', async () => {
       mockStore.loadSource.mockResolvedValue(null);
-      const result = await service.getSourceHeadlines('unknown', 'kckern');
+      const result = await service.getSourceHeadlines('unknown', 'user_1');
       expect(result).toBeNull();
     });
   });
@@ -1080,7 +1080,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const categories = await adapter.getCategories('kckern');
+      const categories = await adapter.getCategories('user_1');
       expect(mockFetch).toHaveBeenCalledWith(
         `${freshrssHost}/api/greader.php/reader/api/0/tag/list?output=json`,
         expect.objectContaining({
@@ -1105,7 +1105,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const feeds = await adapter.getFeeds('kckern');
+      const feeds = await adapter.getFeeds('user_1');
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe('Hacker News');
     });
@@ -1128,7 +1128,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const items = await adapter.getItems('feed/1', 'kckern');
+      const items = await adapter.getItems('feed/1', 'user_1');
       expect(items).toHaveLength(1);
       expect(items[0].title).toBe('Test Article');
       expect(items[0].link).toBe('https://example.com/article');
@@ -1139,7 +1139,7 @@ describe('FreshRSSFeedAdapter', () => {
     test('sends edit-tag request', async () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
 
-      await adapter.markRead(['item-id-1'], 'kckern');
+      await adapter.markRead(['item-id-1'], 'user_1');
       expect(mockFetch).toHaveBeenCalledWith(
         `${freshrssHost}/api/greader.php/reader/api/0/edit-tag`,
         expect.objectContaining({
@@ -1152,13 +1152,13 @@ describe('FreshRSSFeedAdapter', () => {
   describe('auth', () => {
     test('reads API key from user auth file', async () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ tags: [] }) });
-      await adapter.getCategories('kckern');
-      expect(mockDataService.user.read).toHaveBeenCalledWith('auth/freshrss', 'kckern');
+      await adapter.getCategories('user_1');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('auth/freshrss', 'user_1');
     });
 
     test('throws when no API key configured', async () => {
       mockDataService.user.read.mockReturnValue(null);
-      await expect(adapter.getCategories('kckern')).rejects.toThrow('FreshRSS API key not configured');
+      await expect(adapter.getCategories('user_1')).rejects.toThrow('FreshRSS API key not configured');
     });
   });
 });
@@ -1391,7 +1391,7 @@ describe('Feed Router', () => {
       harvestAll: jest.fn().mockResolvedValue({ harvested: 2, errors: 0, totalItems: 15 }),
     };
     mockConfigService = {
-      getHeadOfHousehold: jest.fn().mockReturnValue('kckern'),
+      getHeadOfHousehold: jest.fn().mockReturnValue('user_1'),
     };
 
     const router = createFeedRouter({
@@ -1411,7 +1411,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/reader/categories');
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
-      expect(mockFreshRSSAdapter.getCategories).toHaveBeenCalledWith('kckern');
+      expect(mockFreshRSSAdapter.getCategories).toHaveBeenCalledWith('user_1');
     });
   });
 
@@ -1428,7 +1428,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/reader/items?feed=feed/1');
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
-      expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith('feed/1', 'kckern', expect.any(Object));
+      expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith('feed/1', 'user_1', expect.any(Object));
     });
 
     test('returns 400 without feed param', async () => {
@@ -1443,7 +1443,7 @@ describe('Feed Router', () => {
         .post('/api/v1/feed/reader/items/mark')
         .send({ itemIds: ['item1'], action: 'read' });
       expect(res.status).toBe(200);
-      expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(['item1'], 'kckern');
+      expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(['item1'], 'user_1');
     });
   });
 
@@ -1453,7 +1453,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/headlines');
       expect(res.status).toBe(200);
       expect(res.body.sources).toHaveProperty('cnn');
-      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('kckern');
+      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('user_1');
     });
   });
 
@@ -1476,7 +1476,7 @@ describe('Feed Router', () => {
       const res = await request(app).post('/api/v1/feed/headlines/harvest');
       expect(res.status).toBe(200);
       expect(res.body.harvested).toBe(2);
-      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('kckern');
+      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('user_1');
     });
   });
 });

@@ -21,32 +21,32 @@ The actual root cause is a **logging deficiency**: the `warning_started` event f
 
 | # | Time (UTC) | Participants | Required | Actual | Missing | Triggering User | HR | Zone Change |
 |---|-----------|-------------|----------|--------|---------|-----------------|-----|-------------|
-| 1 | 01:20:02 | 1 | 1 | 0 | milo | Milo | 0 | Active→Cool |
-| 2 | 01:25:40 | 3 | 3 | 2 | alan | Alan | 0 | Fire→Cool |
-| 3 | 01:32:11 | 3 | 3 | 2 | milo | Milo | 119 | Active→Cool |
-| 4 | 01:36:32 | 4 | 3 | 1 | milo,felix,alan | Milo/Felix | 119 | Active→Cool |
-| 5 | 01:37:01 | 4 | 3 | 2 | milo,alan | Alan | 124 | Active→Cool |
-| 6 | 01:37:14 | 4 | 3 | 2 | milo | Soren | 171 | Hot→Fire (trigger, not cause) |
-| 7 | 01:37:26 | 3 | 3 | 2 | alan | Alan | 123 | Active→Cool |
-| 8 | 01:38:51 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
-| 9 | 01:41:43 | 3 | 3 | 2 | alan | Alan | 122 | Active→Cool |
-| 10 | 01:43:43 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
-| 11 | 01:46:10 | 3 | 3 | 2 | alan | Alan | 123 | Active→Cool |
-| 12 | 01:47:44 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
-| 13 | 01:48:42 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
-| 14 | 01:50:05 | 3 | 3 | 2 | milo | Milo | 119 | Active→Cool |
-| 15 | 01:50:48 | 3 | 3 | 2 | milo | Milo | 119 | Active→Cool |
-| 16 | 01:51:15 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
-| 17 | 01:51:23 | 3 | 3 | 2 | alan | Alan | 123 | Active→Cool |
-| 18 | 01:51:30 | 3 | 3 | 2 | milo | Milo | 119 | Active→Cool |
-| 19 | 01:51:57 | 3 | 3 | 2 | alan | Alan | 124 | Active→Cool |
+| 1 | 01:20:02 | 1 | 1 | 0 | user_3 | User_3 | 0 | Active→Cool |
+| 2 | 01:25:40 | 3 | 3 | 2 | user_4 | User_4 | 0 | Fire→Cool |
+| 3 | 01:32:11 | 3 | 3 | 2 | user_3 | User_3 | 119 | Active→Cool |
+| 4 | 01:36:32 | 4 | 3 | 1 | user_3,user_2,user_4 | User_3/User_2 | 119 | Active→Cool |
+| 5 | 01:37:01 | 4 | 3 | 2 | user_3,user_4 | User_4 | 124 | Active→Cool |
+| 6 | 01:37:14 | 4 | 3 | 2 | user_3 | User_5 | 171 | Hot→Fire (trigger, not cause) |
+| 7 | 01:37:26 | 3 | 3 | 2 | user_4 | User_4 | 123 | Active→Cool |
+| 8 | 01:38:51 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
+| 9 | 01:41:43 | 3 | 3 | 2 | user_4 | User_4 | 122 | Active→Cool |
+| 10 | 01:43:43 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
+| 11 | 01:46:10 | 3 | 3 | 2 | user_4 | User_4 | 123 | Active→Cool |
+| 12 | 01:47:44 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
+| 13 | 01:48:42 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
+| 14 | 01:50:05 | 3 | 3 | 2 | user_3 | User_3 | 119 | Active→Cool |
+| 15 | 01:50:48 | 3 | 3 | 2 | user_3 | User_3 | 119 | Active→Cool |
+| 16 | 01:51:15 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
+| 17 | 01:51:23 | 3 | 3 | 2 | user_4 | User_4 | 123 | Active→Cool |
+| 18 | 01:51:30 | 3 | 3 | 2 | user_3 | User_3 | 119 | Active→Cool |
+| 19 | 01:51:57 | 3 | 3 | 2 | user_4 | User_4 | 124 | Active→Cool |
 
 ### Breakdown by Trigger
 
 | Trigger | Count | HR Values |
 |---------|-------|-----------|
-| Alan HR 122-124 | 12 | 122, 123, 123, 123, 124, 124, 124, 124, 124, 124, 124, 124 |
-| Milo HR 119 | 5 | 119, 119, 119, 119, 119 |
+| User_4 HR 122-124 | 12 | 122, 123, 123, 123, 124, 124, 124, 124, 124, 124, 124, 124 |
+| User_3 HR 119 | 5 | 119, 119, 119, 119, 119 |
 | Device disconnect (HR=0) | 2 | 0, 0 |
 
 ---
@@ -72,9 +72,9 @@ The local `userZoneMap` variable has the correct current data. `this._latestInpu
 
 ### Missing: Per-User Zone Thresholds
 
-The `warning_started` event logs `zone: "active"` and `missingUsers: ["alan"]` but never logs Alan's personal `active` zone threshold (125 BPM). To discover this, you must:
+The `warning_started` event logs `zone: "active"` and `missingUsers: ["user_4"]` but never logs User_4's personal `active` zone threshold (125 BPM). To discover this, you must:
 
-1. Find `data/users/alan/profile.yml`
+1. Find `data/users/user_4/profile.yml`
 2. Read `apps.fitness.heart_rate_zones.active: 125`
 3. Cross-reference with the HR from the zone_change event (124)
 4. Compute the delta manually: 124 - 125 = -1 BPM
@@ -83,7 +83,7 @@ This made the root cause invisible from logs alone.
 
 ### Missing: HR-vs-Threshold Delta
 
-If the warning event logged `{user: "alan", hr: 124, threshold: 125, delta: -1}`, the problem would be immediately obvious: 12 of 19 warnings are from a 1-3 BPM margin. Instead, this required correlating separate events and reading external files.
+If the warning event logged `{user: "user_4", hr: 124, threshold: 125, delta: -1}`, the problem would be immediately obvious: 12 of 19 warnings are from a 1-3 BPM margin. Instead, this required correlating separate events and reading external files.
 
 ---
 
@@ -95,15 +95,15 @@ From user profile YAMLs (`data/users/{id}/profile.yml`):
 
 | User | Birth Year | `active` Threshold | Session HR Range | Gap |
 |------|-----------|-------------------|-----------------|-----|
-| Alan | 2021 | 125 | 121-127 | 1-3 BPM below |
-| Milo | 2018 | 120 | 117-127 | 1 BPM below |
-| Felix | 2018 | 120 | 119-150+ | rarely below |
+| User_4 | 2021 | 125 | 121-127 | 1-3 BPM below |
+| User_3 | 2018 | 120 | 117-127 | 1 BPM below |
+| User_2 | 2018 | 120 | 119-150+ | rarely below |
 
-Alan's active threshold of 125 sits in the middle of his natural exercising HR range (121-127). His HR crosses the boundary repeatedly during normal exercise. Milo's threshold of 120 is similarly tight at his lower end (119).
+User_4's active threshold of 125 sits in the middle of his natural exercising HR range (121-127). His HR crosses the boundary repeatedly during normal exercise. User_3's threshold of 120 is similarly tight at his lower end (119).
 
 ### How Per-User Thresholds Work
 
-`UserManager.js:21` → `buildZoneConfig(globalZones, zoneOverrides)` → merges per-user `heart_rate_zones` overrides into the global zone config, replacing each zone's `min` value. For Alan:
+`UserManager.js:21` → `buildZoneConfig(globalZones, zoneOverrides)` → merges per-user `heart_rate_zones` overrides into the global zone config, replacing each zone's `min` value. For User_4:
 
 | Zone | Global min | Override | Final min |
 |------|-----------|----------|-----------|
@@ -113,7 +113,7 @@ Alan's active threshold of 125 sits in the middle of his natural exercising HR r
 | hot | 150 | 170 | 170 |
 | fire | 170 | 190 | 190 |
 
-So HR=124 for Alan → `cool` zone (< 125). HR=125 → `active` zone (≥ 125).
+So HR=124 for User_4 → `cool` zone (< 125). HR=125 → `active` zone (≥ 125).
 
 ### Governance Rule
 
@@ -124,7 +124,7 @@ base_requirement:
   - active: all
 ```
 
-ALL non-exempt participants must be in the `active` zone (or above). When Alan dips to 124 (1 BPM below his personal threshold of 125), governance fires a warning for the entire session.
+ALL non-exempt participants must be in the `active` zone (or above). When User_4 dips to 124 (1 BPM below his personal threshold of 125), governance fires a warning for the entire session.
 
 ### Hysteresis Is Working
 
@@ -143,7 +143,7 @@ A `warning_cooldown_seconds` config value (Task 1 of the remediation plan) that 
 1. **Masks the root cause.** The real issue is threshold calibration, not warning frequency.
 2. **Redundant with `grace_period_seconds`.** Both are 30-second timers. The grace period already provides a window; adding another window on top doesn't address the fundamental mismatch.
 3. **Doesn't trigger on the common path.** The cooldown only activates on `warning→unlocked` transitions. But 5 of 19 warnings escalated to `warning→locked→unlocked`, bypassing the cooldown entirely.
-4. **Would have been unnecessary** if the logs had surfaced the per-user thresholds and deltas — the fix would have been adjusting Alan's `active: 125` to a value below his exercising HR floor.
+4. **Would have been unnecessary** if the logs had surfaced the per-user thresholds and deltas — the fix would have been adjusting User_4's `active: 125` to a value below his exercising HR floor.
 
 ### Other Changes Made (Still Valid)
 
@@ -179,11 +179,11 @@ Add to `governance.warning_started` data:
 This would produce log entries like:
 ```json
 "participantsBelowThreshold": [
-  {"name": "alan", "hr": 124, "threshold": 125, "delta": -1, "zone": "cool", "requiredZone": "active"}
+  {"name": "user_4", "hr": 124, "threshold": 125, "delta": -1, "zone": "cool", "requiredZone": "active"}
 ]
 ```
 
-From this alone, the diagnosis is immediate: "Alan is 1 BPM below his threshold. Lower his threshold or adjust his profile."
+From this alone, the diagnosis is immediate: "User_4 is 1 BPM below his threshold. Lower his threshold or adjust his profile."
 
 ### P2: Revert or Reconsider `warning_cooldown_seconds`
 
@@ -192,8 +192,8 @@ The `warning_cooldown_seconds` mechanism (Task 1) should be reconsidered. It add
 ### P3: Threshold Calibration (Config Change)
 
 After fixing the logging, review per-user thresholds against actual session HR data. For this session:
-- **Alan:** `active: 125` → consider `active: 115` (his HR floor during exercise is ~121)
-- **Milo:** `active: 120` → consider `active: 115` (his HR floor during exercise is ~117)
+- **User_4:** `active: 125` → consider `active: 115` (his HR floor during exercise is ~121)
+- **User_3:** `active: 120` → consider `active: 115` (his HR floor during exercise is ~117)
 
 ---
 
@@ -201,7 +201,7 @@ After fixing the logging, review per-user thresholds against actual session HR d
 
 1. **Broken logging led to a broken diagnosis.** The `participantsBelowThreshold` field was designed to answer "who dropped and why" but always returned `[]`. This forced manual log correlation and external file reads, which delayed finding the root cause.
 
-2. **A missing 3 characters in the logs cost hours of investigation.** If the warning event had logged `hr: 124, threshold: 125`, the fix would have been "lower Alan's threshold" — a 1-line YAML change. Instead, 5 code changes were made.
+2. **A missing 3 characters in the logs cost hours of investigation.** If the warning event had logged `hr: 124, threshold: 125`, the fix would have been "lower User_4's threshold" — a 1-line YAML change. Instead, 5 code changes were made.
 
 3. **Symptom patches are attractive when observability is poor.** Without knowing the thresholds, "zone boundary oscillation" looked like a code problem requiring a code fix. With thresholds visible, it's obviously a calibration problem requiring a config fix.
 
@@ -216,8 +216,8 @@ After fixing the logging, review per-user thresholds against actual session HR d
 | `frontend/src/hooks/fitness/GovernanceEngine.js:713-734` | `_getParticipantsBelowThreshold()` stale data bug |
 | `frontend/src/hooks/fitness/GovernanceEngine.js:1498` | `_captureLatestInputs()` — called too late |
 | `frontend/src/hooks/fitness/GovernanceEngine.js:666-676` | `warning_started` log event |
-| `data/users/alan/profile.yml` | Alan's zone thresholds |
-| `data/users/milo/profile.yml` | Milo's zone thresholds |
+| `data/users/user_4/profile.yml` | User_4's zone thresholds |
+| `data/users/user_3/profile.yml` | User_3's zone thresholds |
 
 ---
 
@@ -260,9 +260,9 @@ That said, the audit's core point stands: the cooldown is a symptom patch. If th
 
 ### 5. P3 (Threshold Calibration) — Consider a Smaller Adjustment
 
-The suggested drop from `active: 125` to `active: 115` for Alan is a 10 BPM swing. With a floor of ~121 during exercise, 115 gives a 6 BPM buffer — which might be more than needed and could make the governance requirement too easy to satisfy (Alan would need to barely move to stay in the active zone).
+The suggested drop from `active: 125` to `active: 115` for User_4 is a 10 BPM swing. With a floor of ~121 during exercise, 115 gives a 6 BPM buffer — which might be more than needed and could make the governance requirement too easy to satisfy (User_4 would need to barely move to stay in the active zone).
 
-Consider `active: 118` instead: gives a 3 BPM buffer below his observed floor, still requires meaningful exertion, and eliminates the 1-BPM oscillation problem. Same logic for Milo — `active: 115` with a floor of ~117 gives only a 2 BPM buffer, which might still oscillate. Consider `active: 112` for a 5 BPM buffer.
+Consider `active: 118` instead: gives a 3 BPM buffer below his observed floor, still requires meaningful exertion, and eliminates the 1-BPM oscillation problem. Same logic for User_3 — `active: 115` with a floor of ~117 gives only a 2 BPM buffer, which might still oscillate. Consider `active: 112` for a 5 BPM buffer.
 
 ### 6. Lesson the Audit Doesn't State Explicitly
 

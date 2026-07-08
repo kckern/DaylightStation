@@ -11,7 +11,7 @@
  * Stages walked (≈90s total):
  *   1. Boot + sim controller ready
  *   2. Activate HR for two participants (engine sees a "session")
- *   3. Trigger cycle challenge for rider 'felix'
+ *   3. Trigger cycle challenge for rider 'user_2'
  *   4. INIT       — slate blue ring, 0 RPM       — 8s pause
  *   5. RAMP       — warm yellow ring, RPM 35     — 6s pause
  *   6. MAINTAIN   — green ring, RPM 75           — 8s pause
@@ -25,7 +25,7 @@ import { test, expect } from '@playwright/test';
 
 const URL = 'https://daylightlocal.kckern.net/fitness/play/674219';
 const EQUIPMENT_ID = 'cycle_ace';
-const RIDER_ID = 'felix';
+const RIDER_ID = 'user_2';
 
 const PAUSE = {
   short: 3000,

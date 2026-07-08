@@ -16,7 +16,7 @@ This report analyzes fitness session governance activity from production logs, f
 
 ### Session Start: 19:23:09
 - **Phase:** `null` → `pending`
-- **Participants:** 5 (kckern, felix, milo, alan, soren)
+- **Participants:** 5 (user_1, user_2, user_3, user_4, user_5)
 - **Media:** Video 606440 (governed content)
 - **Requirement:** All participants must reach "Active" zone (HR threshold governance)
 
@@ -24,20 +24,20 @@ This report analyzes fitness session governance activity from production logs, f
 **Duration:** ~3 minutes 18 seconds
 
 **Zone Activity:**
-- **19:23:15:** Felix enters Hot zone (174 bpm)
-- **19:23:20:** Felix drops to Cool zone (no HR reading)
-- **19:23:48:** KC Kern Cool → Active (101 bpm)
-- **19:23:51-57:** KC Kern oscillating Cool ↔ Active (99-102 bpm)
-- **19:24:21:** Felix enters Active zone (120 bpm)
-- **19:24:58-59:** Soren Active → Cool (142 bpm → null)
-- **19:25:09:** Milo enters Active zone (120 bpm)
-- **19:25:10:** Felix drops to Cool (119 bpm)
-- **19:25:21:** Felix re-enters Active (120 bpm)
-- **19:25:58:** Milo escalates to Warm zone (143 bpm)
-- **19:26:08:** Felix escalates to Warm zone (141 bpm)
-- **19:26:21:** Soren re-enters Active zone (125 bpm)
-- **19:26:25:** KC Kern escalates to Warm zone (121 bpm)
-- **19:26:27:** Alan enters Active zone (125 bpm)
+- **19:23:15:** User_2 enters Hot zone (174 bpm)
+- **19:23:20:** User_2 drops to Cool zone (no HR reading)
+- **19:23:48:** User_1 Cool → Active (101 bpm)
+- **19:23:51-57:** User_1 oscillating Cool ↔ Active (99-102 bpm)
+- **19:24:21:** User_2 enters Active zone (120 bpm)
+- **19:24:58-59:** User_5 Active → Cool (142 bpm → null)
+- **19:25:09:** User_3 enters Active zone (120 bpm)
+- **19:25:10:** User_2 drops to Cool (119 bpm)
+- **19:25:21:** User_2 re-enters Active (120 bpm)
+- **19:25:58:** User_3 escalates to Warm zone (143 bpm)
+- **19:26:08:** User_2 escalates to Warm zone (141 bpm)
+- **19:26:21:** User_5 re-enters Active zone (125 bpm)
+- **19:26:25:** User_1 escalates to Warm zone (121 bpm)
+- **19:26:27:** User_4 enters Active zone (125 bpm)
 
 **Governance Transition:** Requirements met → `unlocked` (all 5 participants in Active+ zones)
 
@@ -61,20 +61,20 @@ This report analyzes fitness session governance activity from production logs, f
   }
   ```
 - **User observation confirmed:** UI showed no user chips in warning zone
-- **Actual state:** All 5 participants in Active+ zones (Alan: Active, KC/Felix/Milo: Warm)
+- **Actual state:** All 5 participants in Active+ zones (User_4: Active, KC/User_2/User_3: Warm)
 - **Root cause:** Race condition where requirements array evaluates as empty after satisfaction, incorrectly interpreted as violation
 
 #### Cycle 2: 19:26:37-58
-- **19:26:37:** Alan drops Cool zone (123 bpm)
-- **19:26:41:** Alan re-enters Active (125 bpm)
-- **19:26:48:** Felix escalates to Hot zone (162 bpm)
+- **19:26:37:** User_4 drops Cool zone (123 bpm)
+- **19:26:41:** User_4 re-enters Active (125 bpm)
+- **19:26:48:** User_2 escalates to Hot zone (162 bpm)
 - **19:26:57:** **warning** → **unlocked** → **warning** (9ms double-transition)
 - New grace period: 30 seconds
 
 #### Cycle 3: 19:26:58
 - **warning** → **unlocked** (0.8 seconds unlocked)
 - **unlocked** → **warning** (11ms transition)
-- **Trigger:** Alan dropped to Cool zone immediately
+- **Trigger:** User_4 dropped to Cool zone immediately
 - New grace period: 30 seconds
 
 #### Cycle 4: 19:27:08
@@ -100,27 +100,27 @@ This report analyzes fitness session governance activity from production logs, f
   "reason": "requirements_not_met",
   "timeSinceWarningMs": null,
   "participantStates": [
-    {"id": "kckern", "zone": "warm", "hr": 120},
-    {"id": "felix", "zone": "hot", "hr": 169},
-    {"id": "milo", "zone": "warm", "hr": 163},
-    {"id": "alan", "zone": "active", "hr": 136},
-    {"id": "soren", "zone": "active", "hr": 135}
+    {"id": "user_1", "zone": "warm", "hr": 120},
+    {"id": "user_2", "zone": "hot", "hr": 169},
+    {"id": "user_3", "zone": "warm", "hr": 163},
+    {"id": "user_4", "zone": "active", "hr": 136},
+    {"id": "user_5", "zone": "active", "hr": 135}
   ],
   "challengeActive": false
 }
 ```
 
-**Observation:** At lock time, all participants had elevated heart rates (120-169 bpm) and were in Active+ zones. The lock may have been triggered by **Alan or Soren briefly dropping below Active threshold** just before the grace period expired.
+**Observation:** At lock time, all participants had elevated heart rates (120-169 bpm) and were in Active+ zones. The lock may have been triggered by **User_4 or User_5 briefly dropping below Active threshold** just before the grace period expired.
 
 #### Activity During Lock
-- **19:27:54:** Milo: Warm → Hot (166 bpm)
-- **19:27:59:** KC Kern: Warm → Active (114 bpm) [dropping]
-- **19:28:04:** Milo: Hot → Warm (164 bpm)
-- **19:28:33:** Felix: Hot → Warm (157 bpm)
-- **19:28:39:** Felix: Warm → Active (139 bpm) [dropping]
-- **19:28:57:** Soren: Active → Cool (no HR) [went idle]
-- **19:29:04:** Felix: Active → Warm (141 bpm) [recovering]
-- **19:29:24:** Felix: Warm → Active (138 bpm)
+- **19:27:54:** User_3: Warm → Hot (166 bpm)
+- **19:27:59:** User_1: Warm → Active (114 bpm) [dropping]
+- **19:28:04:** User_3: Hot → Warm (164 bpm)
+- **19:28:33:** User_2: Hot → Warm (157 bpm)
+- **19:28:39:** User_2: Warm → Active (139 bpm) [dropping]
+- **19:28:57:** User_5: Active → Cool (no HR) [went idle]
+- **19:29:04:** User_2: Active → Warm (141 bpm) [recovering]
+- **19:29:24:** User_2: Warm → Active (138 bpm)
 
 **Recovery:** Video paused at 19:27:49. Participants continued exercising but could not unlock until video was manually resumed or requirements explicitly re-met.
 
@@ -132,7 +132,7 @@ This report analyzes fitness session governance activity from production logs, f
 #### Cycle 1: 19:29:46-30:17
 - **locked** → **pending** (presumably video restarted)
 - **pending** → **warning** (0.6 seconds)
-- **Participant count:** 1 (only Felix active)
+- **Participant count:** 1 (only User_2 active)
 - **Grace period:** 30 seconds
 - **19:30:17:** **warning** → **locked** (grace period expired with only 1 participant)
 
@@ -141,29 +141,29 @@ This report analyzes fitness session governance activity from production logs, f
 {
   "reason": "requirements_not_met",
   "participantStates": [
-    {"id": "felix", "zone": "active", "hr": 123}
+    {"id": "user_2", "zone": "active", "hr": 123}
   ],
   "challengeActive": false
 }
 ```
 
-**Analysis:** Only Felix remained active (others stopped exercising). System correctly locked after 30-second grace period.
+**Analysis:** Only User_2 remained active (others stopped exercising). System correctly locked after 30-second grace period.
 
 #### Cycle 2: 19:30:22-50
-- **19:30:22:** Felix drops to Cool zone (116 bpm)
-- **19:30:33:** Felix re-enters Active (125 bpm)
+- **19:30:22:** User_2 drops to Cool zone (116 bpm)
+- **19:30:33:** User_2 re-enters Active (125 bpm)
 - **19:30:50:** **locked** → **pending** (manual unlock or requirement briefly met)
 
 #### Cycle 3: 19:30:51-54
 - **pending** → **warning** (0.4 seconds)
 - **Grace period:** 30 seconds
-- **Requirements:** Felix must stay in Active zone
-- **19:30:54:** Felix drops to Cool zone → warning triggered with full requirement details:
+- **Requirements:** User_2 must stay in Active zone
+- **19:30:54:** User_2 drops to Cool zone → warning triggered with full requirement details:
 
 ```json
 {
   "participantsBelowThreshold": [
-    {"name": "felix", "zone": "active", "required": 1}
+    {"name": "user_2", "zone": "active", "required": 1}
   ],
   "requirements": [{
     "zone": "active",
@@ -173,12 +173,12 @@ This report analyzes fitness session governance activity from production logs, f
     "requiredCount": 1,
     "actualCount": 0,
     "metUsers": [],
-    "missingUsers": ["felix"]
+    "missingUsers": ["user_2"]
   }]
 }
 ```
 
-**Session End:** Logs end at 19:30:54 with Felix in Cool zone and system in `warning` state.
+**Session End:** Logs end at 19:30:54 with User_2 in Cool zone and system in `warning` state.
 
 ---
 
@@ -194,31 +194,31 @@ This report analyzes fitness session governance activity from production logs, f
 
 ### Zone Transition Summary (by Participant)
 
-**KC Kern (kckern):**
+**User_1 (user_1):**
 - Zone changes: 8
 - Primary zones: Cool ↔ Active ↔ Warm
 - HR range: 99-121 bpm
 - Pattern: Stable with boundary oscillations
 
-**Felix:**
+**User_2:**
 - Zone changes: 19
 - Zone range: Cool → Active → Warm → Hot
 - HR range: 116-174 bpm
 - Pattern: High variability, frequent threshold crossings
 
-**Milo:**
+**User_3:**
 - Zone changes: 8
 - Primary zones: Active → Warm → Hot
 - HR range: 120-166 bpm
 - Pattern: Progressive escalation then cooldown
 
-**Alan:**
+**User_4:**
 - Zone changes: 8
 - Primary zones: Cool ↔ Active
 - HR range: 123-136 bpm
 - Pattern: Boundary oscillations (Cool/Active threshold)
 
-**Soren:**
+**User_5:**
 - Zone changes: 6
 - Primary zones: Cool ↔ Active
 - HR range: 125-142 bpm (dropped to null twice)
@@ -245,7 +245,7 @@ Each time requirements are **briefly satisfied** during a warning period, the gr
 **Recommendation:** Grace period should **not reset** once started. Use a separate "recovery window" concept if needed.
 
 ### 3. **Threshold Sensitivity**
-Participants Alan and Felix **oscillate** between Cool/Active zones frequently, suggesting:
+Participants User_4 and User_2 **oscillate** between Cool/Active zones frequently, suggesting:
 - Zone thresholds may be **too close to resting HR recovery** rates
 - Natural HR variability at zone boundaries causes false transitions
 - System interprets brief HR drops as non-compliance
@@ -264,7 +264,7 @@ Throughout the entire session:
 After the first **locked** event (19:27:49), participation dropped from **5 → 1 participant**. This suggests:
 - Video lock **discouraged continued participation**
 - Users may have assumed session ended or given up
-- Only Felix continued exercising solo
+- Only User_2 continued exercising solo
 
 **Recommendation:** Consider "redemption" mechanics or clearer feedback about recovery conditions.
 
@@ -282,7 +282,7 @@ active:
 ### Compliance Analysis
 - **Initial compliance:** Achieved at 19:26:27 (all 5 in Active+)
 - **Compliance duration:** < 1 second before cycling began
-- **Root cause:** Alan's zone boundary oscillations
+- **Root cause:** User_4's zone boundary oscillations
 
 ### Exemptions
 No exempted users observed in logs. All 5 participants were subject to governance rules.
@@ -324,11 +324,11 @@ When `allSatisfied = true`, the summaries may be empty, and subsequent evaluatio
 
 ### 1. **Null HR Values**
 Multiple instances of `"hr": null` logged during zone transitions:
-- **19:23:20:** Felix (Cool zone)
-- **19:24:59:** Soren (Cool zone)  
-- **19:28:57:** Soren (Cool zone)
-- **19:30:22:** Felix (Cool zone)
-- **19:30:54:** Felix (Cool zone)
+- **19:23:20:** User_2 (Cool zone)
+- **19:24:59:** User_5 (Cool zone)  
+- **19:28:57:** User_5 (Cool zone)
+- **19:30:22:** User_2 (Cool zone)
+- **19:30:54:** User_2 (Cool zone)
 
 **Implication:** Heart rate readings may be **intermittent** or sensors disconnected. Governance should handle null HR gracefully (maintain last known zone vs. immediately dropping to Cool).
 

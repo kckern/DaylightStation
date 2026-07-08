@@ -42,7 +42,7 @@ describe('normalizeListItem', () => {
   // ── Mixed format: input wins over stale action keys ───
   describe('mixed format (input + action key)', () => {
     it('input wins when both input and play exist with different values', () => {
-      const item = { title: 'Felix', input: 'plex:457387', play: { contentId: 'plex:457385' } };
+      const item = { title: 'User_2', input: 'plex:457387', play: { contentId: 'plex:457385' } };
       const result = normalizeListItem(item);
       expect(result.play.contentId).toBe('plex:457387');
       // stale play value is replaced
@@ -129,9 +129,9 @@ describe('normalizeListItem', () => {
     });
 
     it('extracts app ID from app:id/param format for Open action', () => {
-      const item = { label: 'Spotlight', input: 'app:family-selector/alan', action: 'Open' };
+      const item = { label: 'Spotlight', input: 'app:family-selector/user_4', action: 'Open' };
       const result = normalizeListItem(item);
-      expect(result.open).toBe('family-selector/alan');
+      expect(result.open).toBe('family-selector/user_4');
     });
   });
 
@@ -862,7 +862,7 @@ describe('round-trip: normalizeListConfig → serializeListConfig', () => {
     const raw = {
       title: 'FHE',
       items: [
-        { title: 'Felix', input: 'plex:457387', play: { contentId: 'plex:457385' }, uid: 'abc' }
+        { title: 'User_2', input: 'plex:457387', play: { contentId: 'plex:457385' }, uid: 'abc' }
       ]
     };
     const normalized = normalizeListConfig(raw);

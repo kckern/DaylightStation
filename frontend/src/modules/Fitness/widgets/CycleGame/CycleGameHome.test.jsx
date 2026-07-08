@@ -3,12 +3,12 @@ import { render, fireEvent, act } from '@testing-library/react';
 import CycleGameHome from './CycleGameHome.jsx';
 
 const bikes = [
-  { id: 'cycle_ace', name: 'CycleAce', rider: 'milo' },
+  { id: 'cycle_ace', name: 'CycleAce', rider: 'user_3' },
   { id: 'tricycle', name: 'Tricycle', rider: null }
 ];
 const people = [
-  { id: 'milo', name: 'Milo', avatarSrc: '/api/v1/static/img/users/milo', heartRate: 130, zoneId: 'hot', zoneColor: 'orange', hasHR: true },
-  { id: 'felix', name: 'Felix', avatarSrc: '/api/v1/static/img/users/felix', heartRate: null, zoneId: null, zoneColor: null, hasHR: false }
+  { id: 'user_3', name: 'User_3', avatarSrc: '/api/v1/static/img/users/user_3', heartRate: 130, zoneId: 'hot', zoneColor: 'orange', hasHR: true },
+  { id: 'user_2', name: 'User_2', avatarSrc: '/api/v1/static/img/users/user_2', heartRate: null, zoneId: null, zoneColor: null, hasHR: false }
 ];
 
 describe('CycleGameHome', () => {
@@ -107,8 +107,8 @@ describe('CycleGameHome', () => {
     // open picker for the empty tricycle slot
     fireEvent.click(getByTestId('bike-tricycle').querySelector('.cgh-slot__main'));
     expect(getByTestId('rider-picker')).toBeTruthy();
-    fireEvent.click(getByTestId('assign-felix'));
-    expect(onAssign).toHaveBeenCalledWith('tricycle', 'felix');
+    fireEvent.click(getByTestId('assign-user_2'));
+    expect(onAssign).toHaveBeenCalledWith('tricycle', 'user_2');
   });
 
   it('opens the rider picker when the add-rider hint (anywhere in the slot) is clicked', () => {
@@ -137,19 +137,19 @@ describe('CycleGameHome', () => {
 
   it('separates guests behind a tab; household shows on the main tab', () => {
     const mixed = [
-      { id: 'milo', name: 'Milo', hasHR: false, isGuest: false },
-      { id: 'lila', name: 'Lila', hasHR: false, isGuest: true }
+      { id: 'user_3', name: 'User_3', hasHR: false, isGuest: false },
+      { id: 'user_7', name: 'User_7', hasHR: false, isGuest: true }
     ];
     const { getByTestId, queryByTestId, getByRole } = render(
       <CycleGameHome bikes={bikes} people={mixed} records={[]} />
     );
     fireEvent.click(getByTestId('bike-tricycle').querySelector('.cgh-slot__main'));
-    // household tab is default: Milo present, Lila (guest) hidden
-    expect(getByTestId('assign-milo')).toBeTruthy();
-    expect(queryByTestId('assign-lila')).toBeNull();
-    // switch to Guests tab → Lila appears
+    // household tab is default: User_3 present, User_7 (guest) hidden
+    expect(getByTestId('assign-user_3')).toBeTruthy();
+    expect(queryByTestId('assign-user_7')).toBeNull();
+    // switch to Guests tab → User_7 appears
     fireEvent.click(getByRole('tab', { name: 'Guests' }));
-    expect(getByTestId('assign-lila')).toBeTruthy();
+    expect(getByTestId('assign-user_7')).toBeTruthy();
   });
 
   it('ghost picker: first tap focuses a card, second tap opens the roster submenu', () => {
@@ -159,10 +159,10 @@ describe('CycleGameHome', () => {
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
       participants: [
-        { id: 'milo', displayName: 'Milo', avatarSrc: '/x', isGhost: false },
-        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false }
+        { id: 'user_3', displayName: 'User_3', avatarSrc: '/x', isGhost: false },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/f', isGhost: false }
       ],
-      winnerName: 'Milo', goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
+      winnerName: 'User_3', goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
     }];
     const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} onSelectGhost={onSelectGhost} />
@@ -183,8 +183,8 @@ describe('CycleGameHome', () => {
     const onSelectGhost = vi.fn();
     const candidates = [{
       raceId: '20260605110000', day: '2026-06-05', timeOfDay: '11:00 am',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x', isGhost: false }],
-      winnerName: 'Milo'
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x', isGhost: false }],
+      winnerName: 'User_3'
     }];
     const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostCandidates={candidates} onSelectGhost={onSelectGhost} />
@@ -195,7 +195,7 @@ describe('CycleGameHome', () => {
     fireEvent.click(card); // single live rider → commit directly, no roster step
     expect(queryByTestId('ghost-roster')).toBeNull();
     expect(onSelectGhost).toHaveBeenCalledTimes(1);
-    expect(onSelectGhost.mock.calls[0][0].participants.map((p) => p.id)).toEqual(['milo']);
+    expect(onSelectGhost.mock.calls[0][0].participants.map((p) => p.id)).toEqual(['user_3']);
   });
 
   // Helper: open the roster for a candidate (two taps on its card).
@@ -213,11 +213,11 @@ describe('CycleGameHome', () => {
   it('roster: only live riders are selectable; ghosts are shown locked, never committed', () => {
     const onSelectGhost = vi.fn();
     const candidate = {
-      raceId: '20260604120000', day: '2026-06-04', timeOfDay: '12:00 pm', winnerName: 'Milo',
+      raceId: '20260604120000', day: '2026-06-04', timeOfDay: '12:00 pm', winnerName: 'User_3',
       participants: [
-        { id: 'milo', displayName: 'Milo', avatarSrc: '/m', isGhost: false },
-        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false },
-        { id: 'ghost:20260601:alan', displayName: 'Alan 👻', avatarSrc: '/a', isGhost: true }
+        { id: 'user_3', displayName: 'User_3', avatarSrc: '/m', isGhost: false },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/f', isGhost: false },
+        { id: 'ghost:20260601:user_4', displayName: 'User_4 👻', avatarSrc: '/a', isGhost: true }
       ]
     };
     const { getByTestId, getAllByTestId, queryAllByTestId } = render(
@@ -240,16 +240,16 @@ describe('CycleGameHome', () => {
     expect(cta.textContent).toContain('Race both');
     fireEvent.click(cta);
     const committed = onSelectGhost.mock.calls[0][0].participants;
-    expect(committed.map((p) => p.id)).toEqual(['milo', 'felix']);
+    expect(committed.map((p) => p.id)).toEqual(['user_3', 'user_2']);
   });
 
   it('roster: tapping a rider narrows the dynamic CTA and the committed field', () => {
     const onSelectGhost = vi.fn();
     const candidate = {
-      raceId: '20260604130000', day: '2026-06-04', timeOfDay: '1:00 pm', winnerName: 'Milo',
+      raceId: '20260604130000', day: '2026-06-04', timeOfDay: '1:00 pm', winnerName: 'User_3',
       participants: [
-        { id: 'milo', displayName: 'Milo', avatarSrc: '/m', isGhost: false },
-        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false }
+        { id: 'user_3', displayName: 'User_3', avatarSrc: '/m', isGhost: false },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/f', isGhost: false }
       ]
     };
     const { getByTestId, getAllByTestId } = render(
@@ -261,20 +261,20 @@ describe('CycleGameHome', () => {
 
     const cta = getByTestId('ghost-roster-start');
     expect(cta.textContent).toContain('Race both');
-    // Toggle Felix (second item) off → exactly one selected, CTA shows the name.
+    // Toggle User_2 (second item) off → exactly one selected, CTA shows the name.
     fireEvent.click(getAllByTestId('ghost-roster-item')[1]);
-    expect(cta.textContent).toContain('Race Milo');
+    expect(cta.textContent).toContain('Race User_3');
     fireEvent.click(cta);
-    expect(onSelectGhost.mock.calls[0][0].participants.map((p) => p.id)).toEqual(['milo']);
+    expect(onSelectGhost.mock.calls[0][0].participants.map((p) => p.id)).toEqual(['user_3']);
   });
 
   it('roster: CTA is disabled when no riders are selected', () => {
     // Two live riders so the roster opens (a single-rider race auto-commits).
     const candidate = {
-      raceId: '20260604140000', day: '2026-06-04', timeOfDay: '2:00 pm', winnerName: 'Milo',
+      raceId: '20260604140000', day: '2026-06-04', timeOfDay: '2:00 pm', winnerName: 'User_3',
       participants: [
-        { id: 'milo', displayName: 'Milo', avatarSrc: '/m', isGhost: false },
-        { id: 'felix', displayName: 'Felix', avatarSrc: '/f', isGhost: false }
+        { id: 'user_3', displayName: 'User_3', avatarSrc: '/m', isGhost: false },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/f', isGhost: false }
       ]
     };
     const { getByTestId, getAllByTestId } = openRoster(candidate);
@@ -316,14 +316,14 @@ describe('CycleGameHome', () => {
         bikes={bikes}
         people={people}
         records={[{
-          raceId: '20260602150118', winnerId: 'milo', winnerName: 'Milo',
-          winnerAvatar: '/api/v1/static/img/users/milo', others: [],
+          raceId: '20260602150118', winnerId: 'user_3', winnerName: 'User_3',
+          winnerAvatar: '/api/v1/static/img/users/user_3', others: [],
           speedLabel: '31 km/h', raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: '3:01p'
         }]}
       />
     );
     const row = getByTestId('record-20260602150118');
-    expect(row).toHaveTextContent('Milo');
+    expect(row).toHaveTextContent('User_3');
     expect(row).toHaveTextContent('31 km/h');
     expect(row).toHaveTextContent('3 km');
     // The day is now a once-per-day group header (not repeated on every row);
@@ -335,7 +335,7 @@ describe('CycleGameHome', () => {
 
   it('History groups rows by day: one header per day, time-only rows', () => {
     const mk = (raceId, whenDay, whenTime) => ({
-      raceId, winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/m', others: [],
+      raceId, winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/m', others: [],
       speedLabel: '28 km/h', raceLabel: '1 km', raceKind: 'distance', whenDay, whenTime
     });
     const { container } = render(
@@ -351,8 +351,8 @@ describe('CycleGameHome', () => {
 
   it('renders the History table: winner, SPEED + RACE columns, and when', () => {
     const records = [{
-      raceId: 'r1', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
-      others: [{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }],
+      raceId: 'r1', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a',
+      others: [{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b' }],
       speedLabel: '32 km/h', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p'
     }];
     const { getByTestId } = render(<CycleGameHome bikes={bikes} people={people} records={records} />);
@@ -365,7 +365,7 @@ describe('CycleGameHome', () => {
 
   it('renders an explained placeholder when the race produced no speed', () => {
     const records = [{
-      raceId: 'r-noscore', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a', others: [],
+      raceId: 'r-noscore', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a', others: [],
       speedLabel: null, raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTitle } = render(
@@ -377,7 +377,7 @@ describe('CycleGameHome', () => {
   it('History rows are clickable and fire onSelectRecord with the raceId', () => {
     const onSelectRecord = vi.fn();
     const records = [{
-      raceId: '20260603120000', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
+      raceId: '20260603120000', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a',
       others: [], speedLabel: '30 km/h', raceLabel: '3 km', raceKind: 'distance', whenDay: 'Today', whenTime: ''
     }];
     const { getByTestId } = render(
@@ -430,8 +430,8 @@ describe('CycleGameHome', () => {
   it('high scores: render above history and tap into the recap like a record', () => {
     const onSelectRecord = vi.fn();
     const highScores = [
-      { key: 'sprint', label: 'Fastest <5 min', valueLabel: '36.0 km/h', raceId: 'R1', holderName: 'Milo', holderAvatar: '/m' },
-      { key: 'endurance', label: 'Fastest 5 min+', valueLabel: '40.0 km/h', raceId: 'R2', holderName: 'Felix', holderAvatar: '/f' }
+      { key: 'sprint', label: 'Fastest <5 min', valueLabel: '36.0 km/h', raceId: 'R1', holderName: 'User_3', holderAvatar: '/m' },
+      { key: 'endurance', label: 'Fastest 5 min+', valueLabel: '40.0 km/h', raceId: 'R2', holderName: 'User_2', holderAvatar: '/f' }
     ];
     const { getByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} highScores={highScores} onSelectRecord={onSelectRecord} />
@@ -466,7 +466,7 @@ describe('CycleGameHome', () => {
   // starting grid as the real bikes.
   it('shows a phantom grid slot for each selected ghost rider, alongside the real bikes', () => {
     const ghostRoster = [
-      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+      { userId: 'ghost:20260701120000:user_1', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
     ];
     const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostRoster={ghostRoster} />
@@ -475,7 +475,7 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // The ghost gets its own lane in the same grid.
-    const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:kckern');
+    const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:user_1');
     expect(ghostSlot.textContent).toContain('KC 👻');
     expect(ghostSlot.className).toContain('cgh-slot--ghost');
   });
@@ -489,12 +489,12 @@ describe('CycleGameHome', () => {
 
   it('shows the ghost lane even with zero physical bikes (never the "no bikes" empty state)', () => {
     const ghostRoster = [
-      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+      { userId: 'ghost:20260701120000:user_1', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
     ];
     const { getByTestId, queryByText } = render(
       <CycleGameHome bikes={[]} people={people} records={[]} ghostRoster={ghostRoster} />
     );
-    expect(getByTestId('ghost-slot-ghost:20260701120000:kckern')).toBeTruthy();
+    expect(getByTestId('ghost-slot-ghost:20260701120000:user_1')).toBeTruthy();
     expect(queryByText(/No bikes detected/i)).toBeNull();
   });
 
@@ -528,7 +528,7 @@ describe('CycleGameHome', () => {
   it('applies is-focused class on the first-tapped ghost card', () => {
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x' }],
       goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
     }];
     const { getByTestId } = render(

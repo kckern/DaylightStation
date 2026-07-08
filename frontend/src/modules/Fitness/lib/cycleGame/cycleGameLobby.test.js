@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildRaceConfigFromCourse, formatClock } from './cycleGameLobby.js';
 
 describe('buildRaceConfigFromCourse', () => {
-  const riders = [{ userId: 'milo', wheelCircumferenceM: 2.1 }];
+  const riders = [{ userId: 'user_3', wheelCircumferenceM: 2.1 }];
   it('maps a distance course', () => {
     const cfg = buildRaceConfigFromCourse(
       { id: 'alps_3k', win_condition: 'distance', goal_m: 3000, background_plex_id: 'plex:1' },

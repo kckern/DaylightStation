@@ -4,8 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { PlayerSelect } from './PlayerSelect.jsx';
 
 const savers = [
-  { userId: 'soren', name: 'Soren', avatarSrc: '/s.png' },
-  { userId: 'milo', name: 'Milo', avatarSrc: '/m.png' },
+  { userId: 'user_5', name: 'User_5', avatarSrc: '/s.png' },
+  { userId: 'user_3', name: 'User_3', avatarSrc: '/m.png' },
 ];
 
 describe('PlayerSelect', () => {
@@ -20,8 +20,8 @@ describe('PlayerSelect', () => {
   it('lists savers and fires onLoad / onClaim / onDismiss', () => {
     const onLoad = vi.fn(); const onClaim = vi.fn(); const onDismiss = vi.fn();
     render(<PlayerSelect visible savers={savers} onLoad={onLoad} onClaim={onClaim} onDismiss={onDismiss} />);
-    fireEvent.click(screen.getByLabelText('Continue as Soren'));
-    expect(onLoad).toHaveBeenCalledWith('soren');
+    fireEvent.click(screen.getByLabelText('Continue as User_5'));
+    expect(onLoad).toHaveBeenCalledWith('user_5');
     fireEvent.click(screen.getByText('Save my game'));
     expect(onClaim).toHaveBeenCalled();
     fireEvent.click(screen.getByLabelText('Dismiss'));
@@ -29,8 +29,8 @@ describe('PlayerSelect', () => {
   });
 
   it('shows a message and an empty-saver hint', () => {
-    render(<PlayerSelect visible savers={[]} message="That's not Soren." onLoad={() => {}} onClaim={() => {}} onDismiss={() => {}} />);
-    expect(screen.getByText("That's not Soren.")).toBeTruthy();
+    render(<PlayerSelect visible savers={[]} message="That's not User_5." onLoad={() => {}} onClaim={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText("That's not User_5.")).toBeTruthy();
     expect(screen.getByText('No saved games yet')).toBeTruthy();
   });
 });

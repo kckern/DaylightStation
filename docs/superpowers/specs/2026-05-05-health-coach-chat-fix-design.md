@@ -35,7 +35,7 @@ The agent transcripts spec proved its value within hours: this spec is a direct 
 
 **Make the model's job smaller.** The model should not have to know its own user identity. The orchestrator knows. The adapter knows. The tools' execution context knows. The model is only there to reason about the user's question, pick the right tool, and write the answer. Anything else is a data-plumbing concern.
 
-**Single source of truth for "who is the user."** `configService.getHeadOfHousehold()` reads `data/household/config/household.yml` and returns the configured head (`kckern` in production). Six existing call sites already fall back to this — they should stop having to fall back, because the orchestrator does it once.
+**Single source of truth for "who is the user."** `configService.getHeadOfHousehold()` reads `data/household/config/household.yml` and returns the configured head (`user_1` in production). Six existing call sites already fall back to this — they should stop having to fall back, because the orchestrator does it once.
 
 **The cheatsheet steers, the strip-and-inject enforces.** The chat prompt's tool cheatsheet anchors the model on the right tools for the right question shape. The adapter's userId-strip-and-inject makes the userId arg structurally invisible to the model. Both layers compound: the model sees fewer wrong choices, and even if it tries to pass a bad userId, the adapter overrides.
 
@@ -73,7 +73,7 @@ Same pattern for `runInBackground`. `runAssignment` already takes `opts.userId` 
 
 **Wiring:** `AgentOrchestrator` constructor accepts a new `configService` dep. `bootstrap.mjs` passes it where the orchestrator is constructed (~line 2944). When `configService` isn't wired (legacy callers, tests), the resolver returns the raw userId untouched — no behavior change.
 
-**Effect:** every chat path through CoachChat (which currently sends `userId: 'default'`) lands in the agent with `userId: 'kckern'`. Every scheduled assignment that already passed a real userId is unaffected.
+**Effect:** every chat path through CoachChat (which currently sends `userId: 'default'`) lands in the agent with `userId: 'user_1'`. Every scheduled assignment that already passed a real userId is unaffected.
 
 ### Change 2: BaseAgent injects "Active User" into the assembled prompt
 
@@ -242,27 +242,27 @@ The dashboard prompt stays exactly as-is (just renamed file). Zero behavior chan
 1. CoachChat sends POST /api/v1/agents/health-coach/run
    { input: "what's my weight trend?", context: { userId: "default", attachments: [] } }
 
-2. AgentOrchestrator.run() receives. Resolves userId: "default" → "kckern".
-   Generates turnId. Forwards { context: { userId: "kckern", turnId, mode: "chat", ... } }
+2. AgentOrchestrator.run() receives. Resolves userId: "default" → "user_1".
+   Generates turnId. Forwards { context: { userId: "user_1", turnId, mode: "chat", ... } }
 
-3. HealthCoachAgent.run() (BaseAgent) calls getSystemPrompt({ userId: "kckern", mode: "chat" })
+3. HealthCoachAgent.run() (BaseAgent) calls getSystemPrompt({ userId: "user_1", mode: "chat" })
    → returns chatPrompt + personal-context bundle.
 
 4. BaseAgent.#assemblePrompt() prepends:
-   - Active User: kckern
+   - Active User: user_1
    (No attachments preamble — none sent.)
-   (Working memory empty for kckern in this case.)
+   (Working memory empty for user_1 in this case.)
 
 5. MastraAdapter.execute() builds the Mastra agent with the assembled prompt + tools.
-   Each tool's schema has userId stripped. Tool wrappers will inject userId:"kckern" silently.
+   Each tool's schema has userId stripped. Tool wrappers will inject userId:"user_1" silently.
 
 6. Model receives the prompt. Sees:
-   - "Active User: kckern"
+   - "Active User: user_1"
    - "metric_trajectory for trend questions"
    - Tool params don't include userId (no temptation to confabulate)
 
 7. Model calls metric_trajectory({ metric: "weight_lbs", period: { rolling: "last_30d" } })
-   Adapter merges userId: "kckern" into args. Tool runs with full info.
+   Adapter merges userId: "user_1" into args. Tool runs with full info.
 
 8. Tool returns { slope: -0.1, slopePerWeek: -0.7, direction: "down", rSquared: 0.85,
    start: { date: "...", value: 200 }, end: { date: "...", value: 197 } }
@@ -313,7 +313,7 @@ Compare to today's transcript (still on disk for reference): hallucinated userId
 - **Per-mode tool restrictions** (e.g., chat doesn't see dashboard-only tools). The model sees all registered tools regardless of mode. The cheatsheet is the only steering. YAGNI.
 - **Other agents' prompts.** Only HealthCoachAgent has the dashboard/chat split today. lifeplan-guide is already chat-mode by design; echo and paged-media-toc don't need this.
 - **Replacing `'default'` everywhere.** Frontend keeps sending `'default'` until we choose to refactor the userId resolution at the request layer. The orchestrator-side fix is sufficient and keeps the frontend simple.
-- **Eval / regression test for the chat path.** A "is the agent answering this question well?" test belongs in the eval pipeline (deferred from the agent transcripts spec). For this spec, we add a unit-level regression test that "what's my weight trend?" routes to `metric_trajectory` (or at minimum: calls a Plan-1+ analytical tool with `userId: 'kckern'`, not `'user123'`, not `'default'`).
+- **Eval / regression test for the chat path.** A "is the agent answering this question well?" test belongs in the eval pipeline (deferred from the agent transcripts spec). For this spec, we add a unit-level regression test that "what's my weight trend?" routes to `metric_trajectory` (or at minimum: calls a Plan-1+ analytical tool with `userId: 'user_1'`, not `'user123'`, not `'default'`).
 
 ---
 
@@ -325,8 +325,8 @@ Compare to today's transcript (still on disk for reference): hallucinated userId
   - `MastraAdapter` — schema strip removes userId; auto-inject merges from context; transcript captures merged args
   - `HealthCoachAgent.getSystemPrompt({mode})` — returns chat vs dashboard prompt; default = chat; bundle append works for both
 - **Integration:**
-  - Full `agent.run()` with `userId: 'default'` → resolves to `kckern` → assembled prompt has "Active User: kckern" → tool wrapper merges it in
-  - Regression: "what's my weight trend?" via the orchestrator with `userId: 'default'` lands a tool call with `userId: 'kckern'` (not `'user123'`, not `'default'`)
+  - Full `agent.run()` with `userId: 'default'` → resolves to `user_1` → assembled prompt has "Active User: user_1" → tool wrapper merges it in
+  - Regression: "what's my weight trend?" via the orchestrator with `userId: 'default'` lands a tool call with `userId: 'user_1'` (not `'user123'`, not `'default'`)
 
 ---
 

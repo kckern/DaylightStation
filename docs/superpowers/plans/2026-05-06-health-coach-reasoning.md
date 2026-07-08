@@ -2433,7 +2433,7 @@ sleep 12
 ```bash
 curl -sS -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"Am I under-reporting calories given my activity level? Show your work.","context":{"userId":"kckern"}}' \
+  -d '{"input":"Am I under-reporting calories given my activity level? Show your work.","context":{"userId":"user_1"}}' \
   | tee /tmp/parrot-test.json | python3 -c "
 import json, sys
 r = json.loads(sys.stdin.read())
@@ -2506,7 +2506,7 @@ All spec requirements covered.
 
 ## Notes for the implementer
 
-- **`personal_constants` data path.** The user profile YAML may not exist for all users yet. Task 6 Step 5 creates one for `kckern`; for others, the service throws a clear error message. Acceptable — users without profile data can't use the metabolic-reasoning playbooks until calibration is set.
+- **`personal_constants` data path.** The user profile YAML may not exist for all users yet. Task 6 Step 5 creates one for `user_1`; for others, the service throws a clear error message. Acceptable — users without profile data can't use the metabolic-reasoning playbooks until calibration is set.
 - **Period vocabulary.** Task 1's `#resolvePeriod` only handles rolling `last_Nd` and explicit `from/to`. Calendar periods (`{ calendar: '2024-Q3' }`) and named periods (`{ named: '2017-cut' }`) are deferred — the existing period resolution code in `LongitudinalToolFactory` or `HealthAnalyticsService` may have richer parsing already; the implementer can lift that pattern into `HealthQueryService.#resolvePeriod`. If unsure, ship with rolling+explicit only and iterate.
 - **`personal_constants` Mifflin formula sex correction.** The seed playbook for `under-reporting-calories` uses `+ 5` for men. For women it should be `- 161`. Playbook recipe notes this; the agent reads the user's `sex` from `personal_constants()` and adjusts the formula text it passes to `compute()`. No code branching needed.
 - **`query_event_log`.** The spec mentions it as a possible second tool (returning individual workouts/meals as rows). This plan defers it — `query_health({ granularity: 'raw' })` could cover it if needed; revisit if a playbook recipe genuinely requires per-event detail.

@@ -16,10 +16,10 @@ describe('FitnessSimulationController cycling', () => {
     mockSession = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', type: 'stationary_bike', cadence: 49904, eligible_users: ['felix', 'milo'] },
+          { id: 'cycle_ace', type: 'stationary_bike', cadence: 49904, eligible_users: ['user_2', 'user_3'] },
           { id: 'tricycle', type: 'stationary_bike', cadence: 7153, eligible_users: ['niels'] },
           // No cadence — should be filtered
-          { id: 'treadmill', type: 'treadmill', eligible_users: ['felix'] }
+          { id: 'treadmill', type: 'treadmill', eligible_users: ['user_2'] }
         ]
       },
       governanceEngine: {
@@ -57,7 +57,7 @@ describe('FitnessSimulationController cycling', () => {
     expect(list.length).toBe(2);
     expect(list[0].equipmentId).toBe('cycle_ace');
     expect(list[0].cadenceDeviceId).toBe('49904');
-    expect(list[0].eligibleUsers).toEqual(['felix', 'milo']);
+    expect(list[0].eligibleUsers).toEqual(['user_2', 'user_3']);
     expect(list[0].currentRpm).toBeNull();
     expect(list[0].isActive).toBe(false);
   });
@@ -100,16 +100,16 @@ describe('FitnessSimulationController cycling', () => {
   });
 
   it('triggerCycleChallenge delegates to engine', () => {
-    const result = controller.triggerCycleChallenge({ selectionId: 'default_0_0', riderId: 'felix' });
+    const result = controller.triggerCycleChallenge({ selectionId: 'default_0_0', riderId: 'user_2' });
     expect(mockSession.governanceEngine.triggerChallenge).toHaveBeenCalledWith({
-      type: 'cycle', selectionId: 'default_0_0', riderId: 'felix'
+      type: 'cycle', selectionId: 'default_0_0', riderId: 'user_2'
     });
     expect(result.success).toBe(true);
   });
 
   it('swapCycleRider delegates to engine', () => {
-    const result = controller.swapCycleRider('milo', { force: true });
-    expect(mockSession.governanceEngine.swapCycleRider).toHaveBeenCalledWith('milo', { force: true });
+    const result = controller.swapCycleRider('user_3', { force: true });
+    expect(mockSession.governanceEngine.swapCycleRider).toHaveBeenCalledWith('user_3', { force: true });
     expect(result.success).toBe(true);
   });
 

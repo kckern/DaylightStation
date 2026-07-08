@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A reusable, self-dismissing centered toast in the fitness video view, with the first caller being rider assignment ("Felix is riding the NiceDay").
+**Goal:** A reusable, self-dismissing centered toast in the fitness video view, with the first caller being rider assignment ("User_2 is riding the NiceDay").
 
 **Architecture:** A single-slot, latest-wins toast owned by `FitnessContext` (pure slot helpers + `push`/`dismiss`), rendered by a new presentational `FitnessToast` component mounted in `FitnessPlayerOverlay`. The rider-assignment toast is fired from the existing `rider_select` WS dispatch via a pure `buildRiderToast` mapper — purely additive, never replacing the `ingestData` call that sets the claim.
 
@@ -67,8 +67,8 @@ import {
 
 describe('fitnessToastSlot', () => {
   it('normalizeToast assigns the id and preserves provided fields', () => {
-    const out = normalizeToast({ title: 'Felix', subtitle: 'is riding', durationMs: 2000, variant: 'success' }, 7);
-    expect(out).toEqual({ id: 7, title: 'Felix', subtitle: 'is riding', durationMs: 2000, variant: 'success' });
+    const out = normalizeToast({ title: 'User_2', subtitle: 'is riding', durationMs: 2000, variant: 'success' }, 7);
+    expect(out).toEqual({ id: 7, title: 'User_2', subtitle: 'is riding', durationMs: 2000, variant: 'success' });
   });
 
   it('normalizeToast applies default duration and variant when omitted', () => {
@@ -161,16 +161,16 @@ import { describe, it, expect } from 'vitest';
 import { buildRiderToast } from './buildRiderToast.js';
 
 const resolvers = {
-  resolveUserName: (uid) => ({ felix: 'Felix' }[uid] || uid),
+  resolveUserName: (uid) => ({ user_2: 'User_2' }[uid] || uid),
   resolveEquipmentName: (eid) => ({ niceday: 'NiceDay' }[eid] || eid),
 };
 
 describe('buildRiderToast', () => {
   it('builds an avatar/title/subtitle payload from a rider_select event', () => {
-    const toast = buildRiderToast({ userId: 'felix', equipmentId: 'niceday' }, resolvers);
+    const toast = buildRiderToast({ userId: 'user_2', equipmentId: 'niceday' }, resolvers);
     expect(toast).toEqual({
-      avatarUrl: '/api/v1/static/img/users/felix',
-      title: 'Felix',
+      avatarUrl: '/api/v1/static/img/users/user_2',
+      title: 'User_2',
       subtitle: 'is riding the NiceDay',
       variant: 'success',
     });
@@ -260,14 +260,14 @@ describe('FitnessToast', () => {
   });
 
   it('renders the title and subtitle', () => {
-    render(<FitnessToast toast={{ id: 1, title: 'Felix', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
-    expect(screen.getByText('Felix')).toBeTruthy();
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
+    expect(screen.getByText('User_2')).toBeTruthy();
     expect(screen.getByText('is riding the NiceDay')).toBeTruthy();
   });
 
   it('calls onDone with the toast id after durationMs + exit', () => {
     const onDone = vi.fn();
-    render(<FitnessToast toast={{ id: 1, title: 'Felix', durationMs: 4000 }} onDone={onDone} />);
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', durationMs: 4000 }} onDone={onDone} />);
     expect(onDone).not.toHaveBeenCalled();
     act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
     expect(onDone).toHaveBeenCalledTimes(1);
@@ -704,4 +704,4 @@ Expected: all PASS.
 
 - [ ] **Manual E2E (after merge + deploy):** with a fitness session open and the NiceDay bike present, publish a selector press
   (`sudo docker exec daylight-station node -e "const m=require('mqtt');const c=m.connect('mqtt://mosquitto:1883');c.on('connect',()=>{c.publish('zigbee2mqtt-usb/Garage Cycling Selector',JSON.stringify({action:'1_single'}),()=>{c.end();process.exit(0);});});"`)
-  and confirm a centered toast ("Felix is riding the NiceDay") appears, the countdown bar depletes, and it fades/collapses after ~4s. Frontend logs show `fitness.toast.shown` / `fitness.toast.dismissed`.
+  and confirm a centered toast ("User_2 is riding the NiceDay") appears, the countdown bar depletes, and it fades/collapses after ~4s. Frontend logs show `fitness.toast.shown` / `fitness.toast.dismissed`.

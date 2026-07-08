@@ -200,7 +200,7 @@ Before considering this feature complete:
 
 ```yaml
 # data/users/kckern/config/queries/mar4-videos-photos.yml
-title: Alan Birthday Videos & Photos
+title: User_4 Birthday Videos & Photos
 type: immich
 sort: date_desc
 params:
@@ -214,7 +214,7 @@ slideshow:
   effect: kenburns
   zoom: 1.2
   transition: crossfade
-  focusPerson: Alan
+  focusPerson: User_4
 audio:
   contentId: music:anniversary
   behavior: pause

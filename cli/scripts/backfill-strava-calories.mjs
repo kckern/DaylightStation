@@ -35,7 +35,7 @@ const isDocker = existsSync('/.dockerenv');
 const baseDir = isDocker ? '/usr/src/app' : (process.env.DAYLIGHT_BASE_PATH || projectRoot);
 const dataDir = path.join(baseDir, 'data');
 
-const username = process.env.DAYLIGHT_USER || 'kckern';
+const username = process.env.DAYLIGHT_USER || 'user_1';
 const STRAVA_BASE = 'https://www.strava.com';
 
 const systemAuthPath = path.join(dataDir, 'system', 'auth', 'strava.yml');

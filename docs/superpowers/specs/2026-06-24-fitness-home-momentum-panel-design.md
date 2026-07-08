@@ -88,7 +88,7 @@ One flat glass panel (the existing home `panel-*` theme), sized for a TV, two ro
 ┌──────────────────────────────────────────────────────────────┐
 │  🔥 Kern Family · 6-day roll        612 / 750 min ▓▓▓▓▓▓▓▓░░  │  ← headline
 ├──────────────────────────────────────────────────────────────┤
-│  ◐ Felix   ◐ Dad    ◐ Milo   ◐ Alan   ◐ Soren                │  ← per-person
+│  ◐ User_2   ◐ Dad    ◐ User_3   ◐ User_4   ◐ User_5                │  ← per-person
 │  🔥5       🔥3       🔥8      🔥2      🔥1                     │
 │  142/150   98/150    150/150✓ 60/150   25/150                 │
 │  ▓▓▓▓░     ▓▓▓░      ▓▓▓▓▓    ▓▓░      ▓░                      │

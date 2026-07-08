@@ -109,13 +109,13 @@ Declares what each household **uses** from available integrations.
 
 household_id: default
 name: "Default Household"
-head: kckern
+head: user_1
 
 users:
-  - kckern
-  - elizabeth
-  - felix
-  - milo
+  - user_1
+  - user_9
+  - user_2
+  - user_3
 
 integrations:
 
@@ -155,9 +155,9 @@ integrations:
   # ─── Finance (1:N with user mapping) ───────────────────────
   finance:
     - provider: buxfer
-      users: [kckern, elizabeth]
+      users: [user_1, user_9]
     - provider: ynab
-      users: [felix, milo]
+      users: [user_2, user_3]
 
   # ─── Harvesters (1:N) ──────────────────────────────────────
   harvesters:
@@ -169,7 +169,7 @@ integrations:
 apps:
   fitness:
     enabled: true
-    primary_users: [kckern, felix]
+    primary_users: [user_1, user_2]
   nutribot:
     enabled: true
   journalist:

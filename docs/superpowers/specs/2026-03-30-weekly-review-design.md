@@ -30,7 +30,7 @@ layout:
     - widget: weekly-review
 config:
   immich:
-    priority_people: ["Felix", "Alan", "Soren", "Milo"]  # Immich person IDs/names
+    priority_people: ["User_2", "User_4", "User_5", "User_3"]  # Immich person IDs/names
   calendars:
     primary: "family"
     fallback: ["personal", "work"]
@@ -141,7 +141,7 @@ If a previous recording exists: show duration badge (e.g., "5:42 recorded").
           "id": "immich-asset-id",
           "thumbnail": "/proxy/immich/assets/{id}/thumbnail",
           "original": "/proxy/immich/assets/{id}/original",
-          "people": ["Felix", "Alan"],
+          "people": ["User_2", "User_4"],
           "isHero": true,
           "sessionIndex": 0,
           "takenAt": "2026-03-23T14:32:00Z"
@@ -216,8 +216,8 @@ data/household/common/weekly-review/
 week: "2026-03-23"
 recordedAt: "2026-03-29T19:30:00Z"
 duration: 342
-transcriptRaw: "so this week felix had soccer on sunday and then..."
-transcriptClean: "This week, Felix had soccer on Sunday and then..."
+transcriptRaw: "so this week user_2 had soccer on sunday and then..."
+transcriptClean: "This week, User_2 had soccer on Sunday and then..."
 ```
 
 ### `manifest.yml`

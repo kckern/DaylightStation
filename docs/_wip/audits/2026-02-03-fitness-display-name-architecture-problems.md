@@ -15,7 +15,7 @@ A feature that should have been a 10-line change ("show group_label when 2+ user
 
 ## The Symptom That Exposed the Disease
 
-**Expected:** When 2+ HR devices are active, show `group_label` ("Dad") instead of `display_name` ("KC Kern").
+**Expected:** When 2+ HR devices are active, show `group_label` ("Dad") instead of `display_name` ("User_1").
 
 **Reality:** Required tracing through:
 - `hrDisplayNameMap` (computes override correctly)
@@ -188,7 +188,7 @@ const hrDisplayNameMap = React.useMemo(() => {
 3. Stale closure bugs are common
 4. Testing requires understanding entire dependency graph
 
-**Evidence:** During debugging, we saw `hrDisplayNameMap` compute "Dad" but the render use "KC Kern" - a stale closure issue.
+**Evidence:** During debugging, we saw `hrDisplayNameMap` compute "Dad" but the render use "User_1" - a stale closure issue.
 
 ### Problem 4: Device Assignment Model Overloaded
 

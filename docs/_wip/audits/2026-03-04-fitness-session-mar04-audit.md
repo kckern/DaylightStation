@@ -21,11 +21,11 @@ Investigate three user-reported issues from the Mar 4 session:
 
 | User | Device | Active Threshold | Warm Threshold | Hot Threshold | Status |
 |------|--------|-----------------|----------------|---------------|--------|
-| Felix | 28812 | 120 | 140 | 160 | Active (auto-assigned) |
-| KC Kern | — | 100 (default) | 120 (default) | 140 (default) | Active (superuser) |
-| Milo | — | 120 | 140 | 165 | Active |
-| Alan | — | 125 | 150 | 170 | Active |
-| Soren | — | 125 | 150 | 170 | Intermittent (exempt) |
+| User_2 | 90003 | 120 | 140 | 160 | Active (auto-assigned) |
+| User_1 | — | 100 (default) | 120 (default) | 140 (default) | Active (superuser) |
+| User_3 | — | 120 | 140 | 165 | Active |
+| User_4 | — | 125 | 150 | 170 | Active |
+| User_5 | — | 125 | 150 | 170 | Intermittent (exempt) |
 
 ---
 
@@ -45,7 +45,7 @@ Investigate three user-reported issues from the Mar 4 session:
 | Phase changes | 7 total | HEALTHY |
 | Challenges issued | 9, all completed | HEALTHY |
 | FPS | 60 constant, 0 dropped frames | HEALTHY |
-| Governance locks | 1 (legitimate, Alan HR drop) | HEALTHY |
+| Governance locks | 1 (legitimate, User_4 HR drop) | HEALTHY |
 | Exit margin suppressions | 164 raw + 386 in final 60s aggregation | EXCESSIVE (see Bug 2) |
 
 ---
@@ -148,27 +148,27 @@ Users reported seeing their HR value displayed below the zone threshold, but the
 
 **164 `exit_margin_suppressed` events** in this session (sampled — true count much higher given aggregation).
 
-Example suppressions for Felix:
+Example suppressions for User_2:
 
 ```
-Line 103 (02:59:05): userId:felix, HR:118, committedZone:active, rawZone:cool
+Line 103 (02:59:05): userId:user_2, HR:118, committedZone:active, rawZone:cool
                       committedMin:120, exitThreshold:115, exitMarginBpm:5
-  → Felix at 118 BPM. Raw zone = cool (below 120). But displayed as "active"
+  → User_2 at 118 BPM. Raw zone = cool (below 120). But displayed as "active"
     because 118 > exitThreshold (115).
 
-Line 160 (03:00:12): userId:felix, HR:139, committedZone:warm, rawZone:active
+Line 160 (03:00:12): userId:user_2, HR:139, committedZone:warm, rawZone:active
                       committedMin:140, exitThreshold:135, exitMarginBpm:5
-  → Felix at 139 BPM. Raw zone = active (below 140). But displayed as "warm"
+  → User_2 at 139 BPM. Raw zone = active (below 140). But displayed as "warm"
     because 139 > exitThreshold (135).
 
-Line 1999 (03:15:37): userId:felix, HR:119, committedZone:active, rawZone:cool
+Line 1999 (03:15:37): userId:user_2, HR:119, committedZone:active, rawZone:cool
                        committedMin:120, exitThreshold:115, exitMarginBpm:5
-  → Felix at 119 BPM. 1 BPM below threshold, still shown as "active".
+  → User_2 at 119 BPM. 1 BPM below threshold, still shown as "active".
 ```
 
 Aggregated suppression counts (final 60s window, line 1998):
 ```
-Users suppressed: kckern:86, felix:124, milo:96, alan:80
+Users suppressed: user_1:86, user_2:124, user_3:96, user_4:80
 Total: 386 suppressions in 60 seconds
 ```
 
@@ -304,14 +304,14 @@ Option A is preferred — it's declarative and doesn't require state management.
 
 ```
 02:56:51  App mounted (kiosk mode)
-02:56:52  Session started — Felix auto-assigned (HR 76, cool)
-02:59:23  KC Kern joins (2 devices)
-02:59:48  Milo joins (3 devices)
+02:56:52  Session started — User_2 auto-assigned (HR 76, cool)
+02:59:23  User_1 joins (2 devices)
+02:59:48  User_3 joins (3 devices)
 03:00:05  Navigate to Game Cycling → Mario Kart 8 Deluxe
 03:00:16  Governance: null → pending (video locked, 3 participants)
 03:00:17  Playback started at t=2093, immediately paused (governance)
 03:00:18  Seek to 34:53 (resume point)
-03:00:58  Alan joins (4 devices)
+03:00:58  User_4 joins (4 devices)
 03:01:59  Governance: pending → unlocked (1m43s warmup). Playback resumed.
 03:02:04  Render FPS: 60
 03:02:17  Seek to 52:57
@@ -319,13 +319,13 @@ Option A is preferred — it's declarative and doesn't require state management.
 03:02:30  Challenge #1: "all hot" → downgraded to warm (during stall)
 03:02:40  User exits and re-enters — video restarts at t=3344
 03:03:31  Challenge #2: "1 warm" — completed in 224ms
-03:03:55  Governance: unlocked → warning (Alan HR 90, delta -35)
+03:03:55  Governance: unlocked → warning (User_4 HR 90, delta -35)
 03:04:25  Governance: warning → locked (grace expired)
           *** BUG 3: Chart visible behind lock overlay ***
-03:04:50  Governance: locked → unlocked (Alan recovered, HR 126)
+03:04:50  Governance: locked → unlocked (User_4 recovered, HR 126)
 03:05:18  Challenge #3: "some warm" 2 req — completed 28s
 03:06:39  Challenge #4: "some warm" 2 req — completed 99ms
-03:07:29  Challenge #5: "1 hot" 90s — completed 34.7s (Felix HR 160)
+03:07:29  Challenge #5: "1 hot" 90s — completed 34.7s (User_2 HR 160)
 03:09:16  Challenge #6: "1 warm" — completed 215ms
 03:10:47  Challenge #7: "some warm" 2 req, 45s
 03:12:15  Challenge #8: "most hot" → downgraded to warm, 2 req, 90s
@@ -346,9 +346,9 @@ Option A is preferred — it's declarative and doesn't require state management.
 | 2 | 03:01:59 | pending | unlocked | All active | 4 | Playing |
 | 3 | 03:02:40 | unlocked | null | User exit/re-enter | 0 | — |
 | 4 | 03:02:40 | null | unlocked | Immediate re-eval | 4 | Playing |
-| 5 | 03:03:55 | unlocked | warning | Alan HR drop (90) | 4 | Playing (warning) |
+| 5 | 03:03:55 | unlocked | warning | User_4 HR drop (90) | 4 | Playing (warning) |
 | 6 | 03:04:25 | warning | locked | Grace expired (30s) | 4 | **Locked** |
-| 7 | 03:04:50 | locked | unlocked | Alan recovered (126) | 5 | Playing |
+| 7 | 03:04:50 | locked | unlocked | User_4 recovered (126) | 5 | Playing |
 | 8 | 03:15:53 | unlocked | pending | No participants | 0 | Locked |
 
 **Assessment:** 8 phase changes in 20 minutes. All legitimate. No ghost oscillation. No rapid flipping. Governance engine is healthy.
@@ -360,10 +360,10 @@ Option A is preferred — it's declarative and doesn't require state management.
 | # | Time | Type | Required | Time Limit | Duration | Result |
 |---|------|------|----------|------------|----------|--------|
 | 1 | 03:02:30 | all hot→warm | 4 | 90s | — | Interrupted by exit/restart |
-| 2 | 03:03:31 | 1 warm | 1 | 45s | 224ms | Completed (Alan at hot) |
+| 2 | 03:03:31 | 1 warm | 1 | 45s | 224ms | Completed (User_4 at hot) |
 | 3 | 03:05:18 | some warm | 2 | 45s | 28s | Completed |
 | 4 | 03:06:39 | some warm | 2 | 45s | 99ms | Completed (already met) |
-| 5 | 03:07:29 | 1 hot | 1 | 90s | 34.7s | Completed (Felix HR 160) |
+| 5 | 03:07:29 | 1 hot | 1 | 90s | 34.7s | Completed (User_2 HR 160) |
 | 6 | 03:09:16 | 1 warm | 1 | 45s | 215ms | Completed (already met) |
 | 7 | 03:10:47 | some warm | 2 | 45s | — | Completed |
 | 8 | 03:12:15 | most hot→warm | 2 | 90s | — | Completed |
@@ -379,17 +379,17 @@ Option A is preferred — it's declarative and doesn't require state management.
 
 | Time | User | HR | Committed Zone | Raw Zone | Threshold | Exit Threshold |
 |------|------|----|----------------|----------|-----------|----------------|
-| 02:59:05 | Felix | 118 | active | cool | 120 | 115 |
-| 03:00:12 | Felix | 139 | warm | active | 140 | 135 |
-| 03:00:12 | Felix | 138 | warm | active | 140 | 135 |
-| 03:15:37 | Felix | 119 | active | cool | 120 | 115 |
+| 02:59:05 | User_2 | 118 | active | cool | 120 | 115 |
+| 03:00:12 | User_2 | 139 | warm | active | 140 | 135 |
+| 03:00:12 | User_2 | 138 | warm | active | 140 | 135 |
+| 03:15:37 | User_2 | 119 | active | cool | 120 | 115 |
 
 ### Aggregated Events
 
 | Time | Window | Users | Total Suppressions |
 |------|--------|-------|--------------------|
-| 03:00:12 | 60s | felix:15 | 25 (15 sampled+skipped) |
-| 03:15:37 | 60s | kckern:86, felix:124, milo:96, alan:80 | 396 (386 skipped + 10 sampled) |
+| 03:00:12 | 60s | user_2:15 | 25 (15 sampled+skipped) |
+| 03:15:37 | 60s | user_1:86, user_2:124, user_3:96, user_4:80 | 396 (386 skipped + 10 sampled) |
 
 **Assessment:** 396 suppressions in a single 60-second window means zone display is wrong ~6.6 times per second across all users. This is not occasional noise — it's the steady-state behavior whenever HR hovers near a zone boundary, which is most of the session.
 

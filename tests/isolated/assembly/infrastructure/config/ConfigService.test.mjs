@@ -139,7 +139,7 @@ describe('ConfigService', () => {
           apps: {
             chatbots: {
               identity_mappings: {
-                telegram: { '575596036': 'kckern' }
+                telegram: { '575596036': 'user_1' }
               }
             }
           }
@@ -152,14 +152,14 @@ describe('ConfigService', () => {
       const chatbotsConfig = svc.getHouseholdAppConfig('default', 'chatbots');
 
       expect(chatbotsConfig).toBeDefined();
-      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('user_1');
     });
 
     test('uses default household when not specified', () => {
       const svc = new ConfigService(mockConfig);
       const chatbotsConfig = svc.getHouseholdAppConfig(null, 'chatbots');
 
-      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('user_1');
     });
 
     test('returns null for non-existent app', () => {

@@ -11,12 +11,12 @@ A Playwright test that verifies the `group_label` fallback behavior in the fitne
 
 ## Background
 
-When a single user is exercising, the sidebar shows their full `display_name` (e.g., "KC Kern"). When multiple users join, the system switches to showing `group_label` for users who have one configured (e.g., "Dad"), making the UI more compact and familiar.
+When a single user is exercising, the sidebar shows their full `display_name` (e.g., "User_1"). When multiple users join, the system switches to showing `group_label` for users who have one configured (e.g., "Dad"), making the UI more compact and familiar.
 
 ### Config Sources
 
-- **kckern** (device 40475): `display_name: "KC Kern"`, `group_label: "Dad"`
-- **felix** (device 28812): `display_name: "Felix"`, no group_label
+- **user_1** (device 40475): `display_name: "User_1"`, `group_label: "Dad"`
+- **user_2** (device 90003): `display_name: "User_2"`, no group_label
 
 ### Trigger Condition
 
@@ -27,17 +27,17 @@ The switch happens when `heartRateDevices.length > 1` (see `FitnessContext.jsx:1
 ```
 1. Navigate to governed content
 2. Wait for FitnessSimController ready
-3. Activate kckern device (40475) → zone 'warm'
+3. Activate user_1 device (40475) → zone 'warm'
 4. Wait for sidebar to show device row
-5. ASSERT: kckern row shows "KC Kern"
-6. Activate felix device (28812) → zone 'warm'
-7. Poll until kckern row shows "Dad" (with timeout)
-8. ASSERT: kckern row shows "Dad"
-9. ASSERT: felix row shows "Felix"
+5. ASSERT: user_1 row shows "User_1"
+6. Activate user_2 device (90003) → zone 'warm'
+7. Poll until user_1 row shows "Dad" (with timeout)
+8. ASSERT: user_1 row shows "Dad"
+9. ASSERT: user_2 row shows "User_2"
 10. (SSOT) If governance overlay visible, assert it also shows "Dad"
-11. Deactivate felix device
-12. Poll until kckern row shows "KC Kern" (with timeout)
-13. ASSERT: kckern row shows "KC Kern"
+11. Deactivate user_2 device
+12. Poll until user_1 row shows "User_1" (with timeout)
+13. ASSERT: user_1 row shows "User_1"
 ```
 
 ## DOM Selectors
@@ -50,7 +50,7 @@ The device card has a title attribute containing the device ID:
 // FitnessUsers.jsx:1077-1078
 <div
   className="fitness-device ..."
-  title="Device: KC Kern (40475) - ..."
+  title="Device: User_1 (40475) - ..."
 >
 ```
 
@@ -125,20 +125,20 @@ test.describe('Group Label Fallback', () => {
       // Verify devices exist
       const devices = await sim.getDevices();
       const hasKckern = devices.some(d => String(d.deviceId) === '40475');
-      const hasFelix = devices.some(d => String(d.deviceId) === '28812');
-      expect(hasKckern, 'kckern device (40475) must exist').toBe(true);
-      expect(hasFelix, 'felix device (28812) must exist').toBe(true);
+      const hasFelix = devices.some(d => String(d.deviceId) === '90003');
+      expect(hasKckern, 'user_1 device (40475) must exist').toBe(true);
+      expect(hasFelix, 'user_2 device (90003) must exist').toBe(true);
 
       // Phase 1: Single device - should show display_name
       await sim.setZone('40475', 'warm');
-      await waitForDeviceName(page, '40475', 'KC Kern');
-      expect(await getDeviceName(page, '40475')).toBe('KC Kern');
+      await waitForDeviceName(page, '40475', 'User_1');
+      expect(await getDeviceName(page, '40475')).toBe('User_1');
 
       // Phase 2: Second device joins - should switch to group_label
-      await sim.setZone('28812', 'warm');
+      await sim.setZone('90003', 'warm');
       await waitForDeviceName(page, '40475', 'Dad');
       expect(await getDeviceName(page, '40475')).toBe('Dad');
-      expect(await getDeviceName(page, '28812')).toBe('Felix');
+      expect(await getDeviceName(page, '90003')).toBe('User_2');
 
       // SSOT check: if lock screen visible, verify label matches
       const govOverlay = page.locator('.governance-overlay');
@@ -150,9 +150,9 @@ test.describe('Group Label Fallback', () => {
       }
 
       // Phase 3: Second device drops - should restore display_name
-      await sim.stopDevice('28812');
-      await waitForDeviceName(page, '40475', 'KC Kern');
-      expect(await getDeviceName(page, '40475')).toBe('KC Kern');
+      await sim.stopDevice('90003');
+      await waitForDeviceName(page, '40475', 'User_1');
+      expect(await getDeviceName(page, '40475')).toBe('User_1');
 
     } finally {
       await sim.stopAll().catch(() => {});

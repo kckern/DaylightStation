@@ -148,7 +148,7 @@ test.describe('FHE Back Navigation Bug', () => {
 
     if (isBaseMenu && !isFHEMenu) {
       console.error('BUG CONFIRMED: Escape returned to BASE menu instead of FHE submenu');
-      console.error('Expected: FHE items (Opening Hymn, Spotlight, Felix, ...)');
+      console.error('Expected: FHE items (Opening Hymn, Spotlight, User_2, ...)');
       console.error('Got: Base menu items (Cartoons, Games, Music, ...)');
     }
 

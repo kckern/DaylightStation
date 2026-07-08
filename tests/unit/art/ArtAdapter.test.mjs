@@ -256,13 +256,13 @@ describe('ArtAdapter.collectionAssetIds (e-ink photo pool)', () => {
       },
     };
     const adapter = createArtAdapter({
-      collections: { all: {}, kids: { source: 'immich', people: ['Felix'], minPeople: 2 } },
+      collections: { all: {}, kids: { source: 'immich', people: ['User_2'], minPeople: 2 } },
       artSource: fakeSource(() => []),
       immichSource,
     });
     const ids = await adapter.collectionAssetIds('kids');
     expect(ids).toEqual(['aaa', 'bbb']);
-    expect(seen[0]).toEqual({ source: 'immich', people: ['Felix'], minPeople: 2 });
+    expect(seen[0]).toEqual({ source: 'immich', people: ['User_2'], minPeople: 2 });
   });
 
   it('returns [] for a non-immich (file-based art) collection', async () => {
@@ -276,7 +276,7 @@ describe('ArtAdapter.collectionAssetIds (e-ink photo pool)', () => {
   it('does NOT widen to the art pool when the immich collection is empty', async () => {
     let artCalled = false;
     const adapter = createArtAdapter({
-      collections: { all: {}, kids: { source: 'immich', people: ['Felix'] } },
+      collections: { all: {}, kids: { source: 'immich', people: ['User_2'] } },
       artSource: fakeSource(() => { artCalled = true; return [cand('land', 'landscape')]; }),
       immichSource: { resolveCandidates: async () => [] },
     });
@@ -286,7 +286,7 @@ describe('ArtAdapter.collectionAssetIds (e-ink photo pool)', () => {
 
   it('returns [] when the immich source is unavailable', async () => {
     const adapter = createArtAdapter({
-      collections: { all: {}, kids: { source: 'immich', people: ['Felix'] } },
+      collections: { all: {}, kids: { source: 'immich', people: ['User_2'] } },
       artSource: fakeSource(() => []),
       immichSource: null,
     });

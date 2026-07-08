@@ -388,31 +388,31 @@ Create `tests/unit/config/UserService.cadenceZones.test.mjs`:
 import { UserService } from '#system/config/UserService.mjs';
 
 const makeCfg = (profile) => ({
-  getUserProfile: (u) => (u === 'felix' ? profile : null),
+  getUserProfile: (u) => (u === 'user_2' ? profile : null),
   getAllUserProfiles: () => new Map()
 });
 
 describe('UserService — per-user cadence_zones hydration', () => {
   it('attaches cadence_zones from the profile to the hydrated user', () => {
     const svc = new UserService(makeCfg({
-      username: 'felix',
-      display_name: 'Felix',
+      username: 'user_2',
+      display_name: 'User_2',
       apps: { fitness: {
         heart_rate_zones: { active: 120 },
         cadence_zones: { cruising: 50, pushing: 80, sprint: 105 }
       } }
     }));
-    const [user] = svc.hydrateUsers(['felix']);
+    const [user] = svc.hydrateUsers(['user_2']);
     expect(user.cadence_zones).toEqual({ cruising: 50, pushing: 80, sprint: 105 });
     expect(user.zones).toEqual({ active: 120 }); // existing HR-zone hydration intact
   });
 
   it('omits cadence_zones when the profile has none', () => {
     const svc = new UserService(makeCfg({
-      username: 'felix',
+      username: 'user_2',
       apps: { fitness: { heart_rate_zones: { active: 100 } } }
     }));
-    const [user] = svc.hydrateUsers(['felix']);
+    const [user] = svc.hydrateUsers(['user_2']);
     expect(user.cadence_zones).toBeUndefined();
   });
 });
@@ -489,9 +489,9 @@ For each bike equipment add `wheel_circumference_m` (meters per wheel revolution
 - [ ] **Step 3: Add a per-user `cadence_zones` override to a test user**
 
 ```bash
-sudo docker exec daylight-station sh -c 'cat data/users/felix/profile.yml'
+sudo docker exec daylight-station sh -c 'cat data/users/user_2/profile.yml'
 ```
-Re-write `felix`'s profile adding under `apps.fitness:` (alongside `heart_rate_zones`):
+Re-write `user_2`'s profile adding under `apps.fitness:` (alongside `heart_rate_zones`):
 ```yaml
     cadence_zones:
       cruising: 50
@@ -508,10 +508,10 @@ curl -s http://localhost:3111/api/v1/fitness | jq '{
   cycle_game: .fitness.cycle_game // .cycle_game,
   zones: (.fitness.zones // .zones),
   equipment: (.fitness.equipment // .equipment),
-  felix: ((.fitness.users // .users).primary[] | select(.id=="felix") | {id, cadence_zones})
+  user_2: ((.fitness.users // .users).primary[] | select(.id=="user_2") | {id, cadence_zones})
 }'
 ```
-Expected: `cycle_game` present with `cadence_zones`/`hrless_multiplier`; each `zones[]` entry has `distance_multiplier`; each bike `equipment[]` has `wheel_circumference_m`; `felix.cadence_zones` shows `{cruising:50, pushing:80, sprint:105}`.
+Expected: `cycle_game` present with `cadence_zones`/`hrless_multiplier`; each `zones[]` entry has `distance_multiplier`; each bike `equipment[]` has `wheel_circumference_m`; `user_2.cadence_zones` shows `{cruising:50, pushing:80, sprint:105}`.
 
 - [ ] **Step 5: Record the verification**
 

@@ -43,13 +43,13 @@ describe('AppRegistryAdapter', () => {
       expect(item.metadata.appParam).toBeNull();
     });
 
-    it('resolves app with slash param (family-selector/alan)', async () => {
-      const item = await adapter.getItem('family-selector/alan');
+    it('resolves app with slash param (family-selector/user_4)', async () => {
+      const item = await adapter.getItem('family-selector/user_4');
       expect(item).not.toBeNull();
-      expect(item.id).toBe('app:family-selector/alan');
+      expect(item.id).toBe('app:family-selector/user_4');
       expect(item.title).toBe('Family Selector');
       expect(item.metadata.appId).toBe('family-selector');
-      expect(item.metadata.appParam).toBe('alan');
+      expect(item.metadata.appParam).toBe('user_4');
       expect(item.metadata.paramName).toBe('winner');
     });
 

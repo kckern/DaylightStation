@@ -550,13 +550,13 @@ describe('Cycle SM — cadence freshness', () => {
   it('lets the filter decay to 0 within 5s when the sensor stops broadcasting', () => {
     const session = new FitnessSession({ /* fixture */ });
     session.governanceEngine.triggerChallenge({
-      type: 'cycle', selectionId: 'default_0_7', riderId: 'kckern'
+      type: 'cycle', selectionId: 'default_0_7', riderId: 'user_1'
     });
     // 1) Inject one fresh sample.
     session.governanceEngine._latestInputs = {
       equipmentCadenceMap: { cycle_ace: { rpm: 80, ts: 1000 } },
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'warm' }
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'warm' }
     };
     session.governanceEngine.evaluate({ now: 1000 });
     // 2) Tick repeatedly with the SAME entry (sensor silent — input pipeline
@@ -616,14 +616,14 @@ function runCadenceSequence(samples) {
   session.governanceEngine.triggerChallenge({
     type: 'cycle',
     selectionId: 'default_0_7',
-    riderId: 'kckern'
+    riderId: 'user_1'
   });
   const states = [];
   for (const { rpm, ts } of samples) {
     session.governanceEngine._latestInputs = {
       equipmentCadenceMap: { cycle_ace: { rpm, ts } },
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'warm' }
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'warm' }
     };
     session.governanceEngine.evaluate({ now: ts });
     states.push(session.governanceEngine.challengeState?.activeChallenge?.cycleState);
@@ -662,14 +662,14 @@ describe('Cycle SM — sensor noise resilience', () => {
     ];
     const session = new FitnessSession({ /* fixture as above */ });
     session.governanceEngine.triggerChallenge({
-      type: 'cycle', selectionId: 'default_0_7', riderId: 'kckern'
+      type: 'cycle', selectionId: 'default_0_7', riderId: 'user_1'
     });
     let lastRpm = null;
     for (const { rpm, ts } of samples) {
       session.governanceEngine._latestInputs = {
         equipmentCadenceMap: { cycle_ace: { rpm, ts } },
-        activeParticipants: ['kckern'],
-        userZoneMap: { kckern: 'warm' }
+        activeParticipants: ['user_1'],
+        userZoneMap: { user_1: 'warm' }
       };
       session.governanceEngine.evaluate({ now: ts });
       lastRpm = session.governanceEngine.challengeState?.activeChallenge?.currentRpm;
@@ -810,8 +810,8 @@ describe('Cycle SM — init↔ramp gate symmetry', () => {
     for (let i = 0; i < 360; i += 1) { // 360 ticks * 200ms = 72 s
       session.governanceEngine._latestInputs = {
         equipmentCadenceMap: { cycle_ace: { rpm: 60, ts } },
-        activeParticipants: ['kckern'],
-        userZoneMap: { kckern: 'cool' }   // not in zone → baseReq fails
+        activeParticipants: ['user_1'],
+        userZoneMap: { user_1: 'cool' }   // not in zone → baseReq fails
       };
       session.governanceEngine.evaluate({ now: ts });
       states.push(session.governanceEngine.challengeState?.activeChallenge?.cycleState);
@@ -832,8 +832,8 @@ describe('Cycle SM — init↔ramp gate symmetry', () => {
     for (let i = 0; i < 360; i += 1) {
       session.governanceEngine._latestInputs = {
         equipmentCadenceMap: { cycle_ace: { rpm: 5, ts } },   // below minRpm 30
-        activeParticipants: ['kckern'],
-        userZoneMap: { kckern: 'cool' }
+        activeParticipants: ['user_1'],
+        userZoneMap: { user_1: 'cool' }
       };
       session.governanceEngine.evaluate({ now: ts });
       ts += 200;
@@ -950,8 +950,8 @@ describe('Cycle SM — init/ramp clocks pause when rider is idle', () => {
     for (let i = 0; i < 50; i += 1) { // 10 s of idle
       session.governanceEngine._latestInputs = {
         equipmentCadenceMap: { cycle_ace: { rpm: 5, ts } },
-        activeParticipants: ['kckern'],
-        userZoneMap: { kckern: 'cool' }
+        activeParticipants: ['user_1'],
+        userZoneMap: { user_1: 'cool' }
       };
       session.governanceEngine.evaluate({ now: ts });
       ts += 200;
@@ -1371,7 +1371,7 @@ const baseChallenge = {
   currentPhaseIndex: 0,
   totalPhases: 3,
   currentPhase: { hiRpm: 49, loRpm: 37 },
-  rider: { id: 'kckern', name: 'KC Kern' },
+  rider: { id: 'user_1', name: 'User_1' },
   currentRpm: 60,
   initRemainingMs: 23000,
   rampRemainingMs: null,

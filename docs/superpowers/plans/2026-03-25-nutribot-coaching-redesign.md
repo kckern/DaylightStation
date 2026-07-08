@@ -136,7 +136,7 @@ describe('ReconciliationToolFactory', () => {
     });
     const tools = factory.createTools();
     const tool = tools.find(t => t.name === 'get_reconciliation_summary');
-    const result = await tool.execute({ userId: 'kckern', days: 7 });
+    const result = await tool.execute({ userId: 'user_1', days: 7 });
     assert.ok(result.avgAccuracy !== undefined);
     assert.ok(result.days !== undefined);
     assert.ok(Array.isArray(result.days));
@@ -192,7 +192,7 @@ describe('MessagingChannelToolFactory', () => {
   it('creates send_channel_message tool', () => {
     const factory = new MessagingChannelToolFactory({
       messagingGateway: { sendMessage: mock.fn() },
-      configService: { getHeadOfHousehold: () => 'kckern' },
+      configService: { getHeadOfHousehold: () => 'user_1' },
     });
     const tools = factory.createTools();
     assert.equal(tools.length, 1);
@@ -203,7 +203,7 @@ describe('MessagingChannelToolFactory', () => {
     const sendMock = mock.fn(async () => ({ messageId: '999' }));
     const factory = new MessagingChannelToolFactory({
       messagingGateway: { sendMessage: sendMock },
-      configService: { getHeadOfHousehold: () => 'kckern' },
+      configService: { getHeadOfHousehold: () => 'user_1' },
       conversationId: 'telegram:b123_c456',
     });
     const tools = factory.createTools();
@@ -781,7 +781,7 @@ Expected: Should list `daily-dashboard`, `morning-brief`, `note-review`, `end-of
 ```bash
 curl -s -X POST http://localhost:3112/api/v1/agents/health-coach/assignments/morning-brief/run \
   -H "Content-Type: application/json" \
-  -d '{"userId":"kckern"}' | jq .
+  -d '{"userId":"user_1"}' | jq .
 ```
 
 Verify: Returns structured message with reconciliation data, sends to Telegram.
@@ -791,7 +791,7 @@ Verify: Returns structured message with reconciliation data, sends to Telegram.
 ```bash
 curl -s -X POST http://localhost:3112/api/v1/agents/health-coach/assignments/note-review/run \
   -H "Content-Type: application/json" \
-  -d '{"userId":"kckern"}' | jq .
+  -d '{"userId":"user_1"}' | jq .
 ```
 
 Verify: Returns `should_send: false` or a data-driven alert (not cheerleading).

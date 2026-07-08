@@ -57,8 +57,8 @@ export function searchApps(query) {
 }
 
 /**
- * Parse an app input string like "app:family-selector/felix" into structured data.
- * @param {string} input - Raw input (e.g., "app:family-selector/felix")
+ * Parse an app input string like "app:family-selector/user_2" into structured data.
+ * @param {string} input - Raw input (e.g., "app:family-selector/user_2")
  * @returns {{ appId: string, paramValue: string|null, label: string, paramName: string|null, fullId: string }|null}
  */
 export function resolveAppDisplay(input) {

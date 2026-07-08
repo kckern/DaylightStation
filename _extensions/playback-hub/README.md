@@ -256,10 +256,10 @@ pipewire wireplumber pipewire-pulse bluez
 
 ## Deployment
 
-Source of truth is this repo (`_extensions/playback-hub/`). Deploy via rsync to `kckern@10.0.0.109:/home/kckern/playback-hub/`. There is no systemd unit at present — the daemon is started by hand:
+Source of truth is this repo (`_extensions/playback-hub/`). Deploy via rsync to `user_1@10.0.0.109:/home/kckern/playback-hub/`. There is no systemd unit at present — the daemon is started by hand:
 
 ```bash
-ssh kckern@kckern-playback-hub \
+ssh user_1@kckern-playback-hub \
   'cd /home/kckern/playback-hub && nohup setsid bash playback-hub.sh monitor > /home/kckern/hub.log 2>&1 < /dev/null & disown'
 ```
 

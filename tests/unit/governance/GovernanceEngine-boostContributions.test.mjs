@@ -11,12 +11,12 @@ describe('GovernanceEngine boost contributions', () => {
     const engine = new GovernanceEngine(null);
     const active = { selection: { boost: { zoneMultipliers: { hot: 0.5, fire: 1.0 }, maxTotalMultiplier: 3.0 } } };
     const ctx = {
-      activeParticipants: ['felix', 'mom', 'milo'],
-      userZoneMap: { felix: 'fire', mom: 'warm', milo: 'hot' }
+      activeParticipants: ['user_2', 'mom', 'user_3'],
+      userZoneMap: { user_2: 'fire', mom: 'warm', user_3: 'hot' }
     };
     const { multiplier, contributors, contributions } = engine._computeBoostMultiplier(active, ctx);
     expect(multiplier).toBeCloseTo(2.5); // 1.0 + 1.0(fire) + 0.5(hot)
-    expect(contributors).toEqual(['felix', 'milo']);
-    expect(contributions).toEqual({ felix: 1.0, milo: 0.5 });
+    expect(contributors).toEqual(['user_2', 'user_3']);
+    expect(contributions).toEqual({ user_2: 1.0, user_3: 0.5 });
   });
 });

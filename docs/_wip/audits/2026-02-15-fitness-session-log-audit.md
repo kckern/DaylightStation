@@ -8,7 +8,7 @@
 
 ## Session Context
 
-Backend restart at 19:02 MST triggered WebSocket reconnection across all clients. Two frontend clients were active simultaneously: **Firefox on garage TV** (Linux x86_64) and **Chrome on MacBook**. A single ANT+ HR monitor (device 28688) was broadcasting. The session was a casual workout — not a high-intensity multi-participant scenario.
+Backend restart at 19:02 MST triggered WebSocket reconnection across all clients. Two frontend clients were active simultaneously: **Firefox on garage TV** (Linux x86_64) and **Chrome on MacBook**. A single ANT+ HR monitor (device 90001) was broadcasting. The session was a casual workout — not a high-intensity multi-participant scenario.
 
 ---
 
@@ -69,7 +69,7 @@ All thrashing events report `governancePhase: "pending"`, confirming the governa
 03:12:50  fs_20260215191250  → ended 561s (empty_roster), saved (ticks=0, series=4)
 ```
 
-**Root cause:** The pre-session buffer threshold log shows `firstIds: [28688, 28688, 28688]` — three samples from the **same** device, not from distinct devices. The arch doc says "3 valid HR samples from distinct devices" but the code counts total samples regardless of source.
+**Root cause:** The pre-session buffer threshold log shows `firstIds: [90001, 90001, 90001]` — three samples from the **same** device, not from distinct devices. The arch doc says "3 valid HR samples from distinct devices" but the code counts total samples regardless of source.
 
 The churn cycle: HR arrives → threshold met (same device x3) → session starts → device detected but user never appears on roster → 60s empty roster timeout → session ends → HR still arriving → threshold met again → repeat.
 

@@ -12,7 +12,7 @@ describe('GovernanceEngine cycle init state', () => {
     nowValue = 10000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     activeChallenge = {
-      type: 'cycle', rider: 'felix', cycleState: 'init',
+      type: 'cycle', rider: 'user_2', cycleState: 'init',
       initStartedAt: 10000, initElapsedMs: 0, initTotalMs: 60000,
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }

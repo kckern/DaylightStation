@@ -62,8 +62,8 @@ describe('YamlSessionDatastore - Strava session-level fields', () => {
       },
       timezone: 'America/Los_Angeles',
       participants: {
-        kckern: {
-          display_name: 'KC Kern',
+        user_1: {
+          display_name: 'User_1',
           is_primary: true,
           strava: {
             activityId: 12345678,
@@ -115,7 +115,7 @@ describe('YamlSessionDatastore - Strava session-level fields', () => {
       sessionId: '20260116090000',
       session: { id: '20260116090000', date, start: '2026-01-16 09:00:00', end: '2026-01-16 09:30:00', duration_seconds: 1800 },
       timezone: 'America/Los_Angeles',
-      participants: { kckern: { display_name: 'KC Kern', is_primary: true } },
+      participants: { user_1: { display_name: 'User_1', is_primary: true } },
       timeline: { series: {}, events: [], interval_seconds: 5, tick_count: 360, encoding: 'rle' },
       summary: { media: [], coins: { total: 0 }, voiceMemos: [] },
     };
@@ -211,10 +211,10 @@ describe('FitnessActivityEnrichmentService - Strava-only session creation', () =
     };
     mockAuthStore = { loadUserAuth: vi.fn() };
     mockConfigService = {
-      getHeadOfHousehold: () => 'kckern',
+      getHeadOfHousehold: () => 'user_1',
       getTimezone: () => 'America/Los_Angeles',
       getHouseholdPath: (sub) => path.join(tmpDir, sub),
-      resolveAthleteUser: () => 'kckern',
+      resolveAthleteUser: () => 'user_1',
     };
 
     service = new FitnessActivityEnrichmentService({
@@ -334,7 +334,7 @@ Then add the `_createStravaOnlySession` private method:
    */
   async _createStravaOnlySession(activity) {
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
     const startLocal = moment(activity.start_date_local || activity.start_date).tz(tz);
     const sessionId = startLocal.format('YYYYMMDDHHmmss');
     const date = startLocal.format('YYYY-MM-DD');
@@ -534,7 +534,7 @@ const writeMode = args.includes('--write');
 const numericArg = args.find(a => /^\d+$/.test(a));
 const defaultDays = Math.ceil(moment().diff(moment('2024-01-01'), 'days'));
 const daysBack = parseInt(numericArg || String(defaultDays), 10);
-const username = 'kckern';
+const username = 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 
 console.log(`Backfill Strava enrichment for ${username}, ${daysBack} days back`);
@@ -672,7 +672,7 @@ for (const [activityId, { data: archive, basename }] of stravaByActivityId) {
     timezone: TIMEZONE,
     participants: {
       [username]: {
-        display_name: 'KC Kern',
+        display_name: 'User_1',
         is_primary: true,
         strava: {
           activityId: Number(activityId),

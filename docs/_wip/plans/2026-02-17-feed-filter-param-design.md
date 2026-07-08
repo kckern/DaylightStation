@@ -26,7 +26,7 @@ Where `<expression>` is `prefix` or `prefix:rest`, with `rest` being comma-separ
 | `?filter=reddit` | `reddit` | (none) | Source `reddit`, all subsources |
 | `?filter=compass` | `compass` | (none) | Tier `compass`, all its sources |
 | `?filter=scripture-bom` | `scripture-bom` | (none) | Query file `scripture-bom.yml` |
-| `?filter=photos:felix` | `photos` | `felix` | Alias -> `immich`, subsource `felix` |
+| `?filter=photos:user_2` | `photos` | `user_2` | Alias -> `immich`, subsource `user_2` |
 | `?filter=headlines:cnn,cbs` | `headlines` | `cnn,cbs` | Source `headline`, subsources filtered |
 
 ### Combining with existing params
@@ -94,7 +94,7 @@ When the resolver returns subsources, they're added to the query object as `quer
 | `headlines` | Outlet/publisher names | `headlines:cnn,cbs` |
 | `youtube` | Channel IDs or names | `youtube:veritasium,3b1b` |
 | `googlenews` | Topic slugs | `googlenews:tech,science` |
-| `immich`/`photos` | Person/face names | `photos:felix` |
+| `immich`/`photos` | Person/face names | `photos:user_2` |
 | `freshrss` | Feed IDs or categories | `freshrss:hn,lobsters` |
 | `komga` | Series names/IDs | `komga:xmen` |
 | `plex` | Library/collection names | `plex:movies` |

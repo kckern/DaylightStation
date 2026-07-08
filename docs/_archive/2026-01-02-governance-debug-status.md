@@ -3,7 +3,7 @@
 ## Current Situation
 
 Looking at `dev.log`, I can see:
-1. **TreasureBox is working correctly** - processing ticks with participants: `["alan","milo","felix","soren","kckern"]`
+1. **TreasureBox is working correctly** - processing ticks with participants: `["user_4","user_3","user_2","user_5","user_1"]`
 2. **Zones are being resolved** - users have HR data and are in zones (warm, hot, fire)
 3. **NO GovernanceEngine logs** - This means either:
    - Frontend hasn't reloaded with new code yet
@@ -14,9 +14,9 @@ Looking at `dev.log`, I can see:
 ```json
 // From tick 10:
 {
-  "trackingId": "alan",
+  "trackingId": "user_4",
   "entityId": null,
-  "userId": "alan",
+  "userId": "user_4",
   "hr": 154
 }
 
@@ -24,12 +24,12 @@ Looking at `dev.log`, I can see:
 {
   "tick": 10,
   "perUserSize": 5,
-  "activeParticipants": ["alan","milo","felix","soren","kckern"],
-  "perUserKeys": ["alan","milo","felix","soren","kckern"]
+  "activeParticipants": ["user_4","user_3","user_2","user_5","user_1"],
+  "perUserKeys": ["user_4","user_3","user_2","user_5","user_1"]
 }
 ```
 
-**Key Insight**: The system is using userName (like "alan", "milo") as the trackingId, which is correct! Both FitnessSession and TreasureBox are consistent.
+**Key Insight**: The system is using userName (like "user_4", "user_3") as the trackingId, which is correct! Both FitnessSession and TreasureBox are consistent.
 
 ## What's Wrong
 
@@ -117,13 +117,13 @@ Once new code loads, you should see:
 // 1. FitnessSession prepares inputs:
 {
   "event": "governance.evaluate.inputs",
-  "activeParticipants": ["alan", "milo", "felix", "soren", "kckern"],
+  "activeParticipants": ["user_4", "user_3", "user_2", "user_5", "user_1"],
   "userZoneMap": {
-    "alan": "hot",
-    "milo": "fire",
-    "felix": "hot",
-    "soren": "hot",
-    "kckern": "warm"
+    "user_4": "hot",
+    "user_3": "fire",
+    "user_2": "hot",
+    "user_5": "hot",
+    "user_1": "warm"
   }
 }
 
@@ -132,7 +132,7 @@ Once new code loads, you should see:
   "event": "governance.evaluate.called",
   "hasMedia": true,
   "activeParticipantsCount": 5,
-  "activeParticipants": ["alan", "milo", ...],
+  "activeParticipants": ["user_4", "user_3", ...],
   "userZoneMap": {...}
 }
 ```

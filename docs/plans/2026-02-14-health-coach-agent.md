@@ -458,7 +458,7 @@ describe('HealthToolFactory', () => {
     it('should return weight data with current and trend', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_weight_trend');
-      const result = await tool.execute({ userId: 'kckern', days: 7 });
+      const result = await tool.execute({ userId: 'user_1', days: 7 });
 
       assert.ok(result.current, 'Should have current weight');
       assert.ok(result.current.lbs, 'Should have lbs');
@@ -470,7 +470,7 @@ describe('HealthToolFactory', () => {
       mockHealthStore.loadWeightData = async () => ({});
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_weight_trend');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.strictEqual(result.current, null);
       assert.deepStrictEqual(result.history, []);
@@ -481,7 +481,7 @@ describe('HealthToolFactory', () => {
     it('should return today nutrition data', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_today_nutrition');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.calories !== undefined);
       assert.ok(result.protein !== undefined);
@@ -492,7 +492,7 @@ describe('HealthToolFactory', () => {
     it('should return workouts from health data', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_recent_workouts');
-      const result = await tool.execute({ userId: 'kckern', days: 7 });
+      const result = await tool.execute({ userId: 'user_1', days: 7 });
 
       assert.ok(Array.isArray(result.workouts));
     });
@@ -503,7 +503,7 @@ describe('HealthToolFactory', () => {
       mockHealthStore.loadWeightData = async () => { throw new Error('Service unavailable'); };
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_weight_trend');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.error, 'Should have error field');
       assert.strictEqual(result.current, null);
@@ -835,7 +835,7 @@ describe('FitnessContentToolFactory', () => {
     it('should return program state from datastore', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_program_state');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.program);
       assert.strictEqual(result.program.id, 'p90x');
@@ -846,7 +846,7 @@ describe('FitnessContentToolFactory', () => {
       mockDataService.user.read = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_program_state');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.strictEqual(result.program, null);
     });
@@ -864,7 +864,7 @@ describe('FitnessContentToolFactory', () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'update_program_state');
       const result = await tool.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         state: { program: { id: 'p90x', current_day: 24, status: 'active' } },
       });
 
@@ -1073,11 +1073,11 @@ describe('DashboardToolFactory', () => {
       const tool = tools.find(t => t.name === 'write_dashboard');
       const dashboard = { generated_at: '2026-02-14T04:00:00Z', curated: {}, coach: { briefing: 'hi' } };
 
-      const result = await tool.execute({ userId: 'kckern', date: '2026-02-14', dashboard });
+      const result = await tool.execute({ userId: 'user_1', date: '2026-02-14', dashboard });
 
       assert.ok(result.success);
       assert.ok(writtenPath.includes('health-dashboard/2026-02-14'));
-      assert.strictEqual(writtenUser, 'kckern');
+      assert.strictEqual(writtenUser, 'user_1');
       assert.strictEqual(writtenData.generated_at, '2026-02-14T04:00:00Z');
     });
   });
@@ -1086,7 +1086,7 @@ describe('DashboardToolFactory', () => {
     it('should return goals from DataService', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_user_goals');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.goals);
       assert.strictEqual(result.goals.weight.target_lbs, 175);
@@ -1096,7 +1096,7 @@ describe('DashboardToolFactory', () => {
       mockDataService.user.read = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_user_goals');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.strictEqual(result.goals, null);
     });
@@ -1110,7 +1110,7 @@ describe('DashboardToolFactory', () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'log_coaching_note');
       const result = await tool.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         date: '2026-02-14',
         note: { type: 'observation', text: 'Consistent workout pattern this week' },
       });
@@ -1309,7 +1309,7 @@ describe('DailyDashboard', () => {
       const assignment = new DailyDashboard();
       const result = await assignment.gather({
         tools: mockTools,
-        userId: 'kckern',
+        userId: 'user_1',
         memory: new WorkingMemoryState(),
         logger: { info: () => {} },
       });
@@ -1326,7 +1326,7 @@ describe('DailyDashboard', () => {
       const assignment = new DailyDashboard();
       const result = await assignment.gather({
         tools: [], // no tools
-        userId: 'kckern',
+        userId: 'user_1',
         memory: new WorkingMemoryState(),
         logger: { info: () => {}, warn: () => {} },
       });
@@ -1411,7 +1411,7 @@ describe('DailyDashboard', () => {
         tools: mockTools,
         systemPrompt: 'test',
         agentId: 'health-coach',
-        userId: 'kckern',
+        userId: 'user_1',
         context: {},
         logger: { info: () => {}, warn: () => {} },
       });
@@ -1652,7 +1652,7 @@ describe('HealthCoachAgent', () => {
         },
       },
       configService: {
-        getHeadOfHousehold: () => 'kckern',
+        getHeadOfHousehold: () => 'user_1',
       },
     };
   });
@@ -1740,7 +1740,7 @@ describe('HealthCoachAgent', () => {
         // May fail on write — that's OK, we just check userId was injected
       }
 
-      assert.strictEqual(capturedUserId, 'kckern');
+      assert.strictEqual(capturedUserId, 'user_1');
     });
   });
 });

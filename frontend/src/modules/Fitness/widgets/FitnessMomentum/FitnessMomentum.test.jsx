@@ -8,14 +8,14 @@ const sessions = [
   {
     startTime: Date.now() - 3600000,
     durationMs: 30 * 60000,
-    participants: { kckern: { displayName: 'KC Kern', zoneMinutes: { active: 20, warm: 10, cool: 5 } } },
+    participants: { user_1: { displayName: 'User_1', zoneMinutes: { active: 20, warm: 10, cool: 5 } } },
   },
 ];
 vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => ({ sessions, total: 1 }) }));
 vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
   useFitnessScreen: () => ({
-    // kckern carries a group_label so the resolver should render "Dad", not "KC Kern".
-    roster: [{ id: 'kckern', name: 'KC Kern', group_label: 'Dad' }, { id: 'felix', name: 'Felix' }],
+    // user_1 carries a group_label so the resolver should render "Dad", not "User_1".
+    roster: [{ id: 'user_1', name: 'User_1', group_label: 'Dad' }, { id: 'user_2', name: 'User_2' }],
     householdLabel: 'Kern Family',
     windowDays: 7,
     compareWeeks: 4,
@@ -35,8 +35,8 @@ describe('FitnessMomentum', () => {
   it('resolves names through DisplayNameResolver (group label → "Dad")', () => {
     const { getByText, queryByText } = render(<FitnessMomentum />);
     expect(getByText('Dad')).toBeTruthy();
-    expect(queryByText('KC Kern')).toBeNull();
-    expect(getByText('Felix')).toBeTruthy();
+    expect(queryByText('User_1')).toBeNull();
+    expect(getByText('User_2')).toBeTruthy();
   });
 
   it('draws compareWeeks bars per person with the current week highlighted', () => {

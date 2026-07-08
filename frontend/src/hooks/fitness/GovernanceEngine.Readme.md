@@ -171,7 +171,7 @@ governance:
 equipment:
   - id: cycle_ace
     cadence: 49904
-    eligible_users: [kckern, felix, milo]   # REQUIRED for cycle challenges
+    eligible_users: [user_1, user_2, user_3]   # REQUIRED for cycle challenges
     ...
 ```
 

@@ -75,7 +75,7 @@ Household fitness config (`data/household/config/fitness.yml`):
 
 ```yaml
 locks:
-  emergency: [kckern, elizabeth]     # admins allowed to trigger AND release
+  emergency: [user_1, user_9]     # admins allowed to trigger AND release
 emergency:
   duration_sec: 1800                 # lockdown length (default 30 min)
   ha_script: garage_deactivate       # HA script.<name> fired on commit

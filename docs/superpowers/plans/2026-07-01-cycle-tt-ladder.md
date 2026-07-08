@@ -116,30 +116,30 @@ describe('computeLadder', () => {
   const W = { weekStart: '2026-06-29', weekEnd: '2026-07-06' };
   it('best-per-rider within the week, ranked ascending time for distance courses', () => {
     const entries = [
-      entry('20260629080000', '2026-06-29', [p('dad', 150), p('milo', 190)]),
-      entry('20260701080000', '2026-07-01', [p('milo', 170)]),
+      entry('20260629080000', '2026-06-29', [p('dad', 150), p('user_3', 190)]),
+      entry('20260701080000', '2026-07-01', [p('user_3', 170)]),
       entry('20260620080000', '2026-06-20', [p('dad', 140)]) // outside week
     ];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
     expect(l.standings).toEqual([
       { userId: 'dad', bestValue: 150, raceId: '20260629080000', attempts: 1 },
-      { userId: 'milo', bestValue: 170, raceId: '20260701080000', attempts: 2 }
+      { userId: 'user_3', bestValue: 170, raceId: '20260701080000', attempts: 2 }
     ]);
     expect(l.allTimeRecord).toEqual({ userId: 'dad', bestValue: 140, raceId: '20260620080000', date: '2026-06-20' });
     expect(l.week).toEqual({ start: '2026-06-29', end: '2026-07-06' });
   });
   it('time course ranks by max distance; zero distance never qualifies', () => {
     const entries = [entry('20260630080000', '2026-06-30',
-      [p('dad', null, 2100), p('milo', null, 2400), p('alan', null, 0)],
+      [p('dad', null, 2100), p('user_3', null, 2400), p('user_4', null, 0)],
       { course_id: 'endurance-5min', win_condition: 'time', time_cap_s: 300, goal_m: null })];
     const l = computeLadder({ course: COURSE_T, entries, ...W });
-    expect(l.standings.map((s) => s.userId)).toEqual(['milo', 'dad']);
+    expect(l.standings.map((s) => s.userId)).toEqual(['user_3', 'dad']);
   });
   it('excludes ghosts and null finish times (DNF) on distance courses', () => {
     const entries = [entry('20260630080000', '2026-06-30', [
       p('dad', 150),
       p('ghost:20260601080000:dad', 145, 1500, { isGhost: true }),
-      p('milo', null) // rode but never finished
+      p('user_3', null) // rode but never finished
     ])];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
     expect(l.standings).toHaveLength(1);
@@ -147,22 +147,22 @@ describe('computeLadder', () => {
   });
   it('tie goes to the earlier raceId', () => {
     const entries = [
-      entry('20260630080000', '2026-06-30', [p('milo', 150)]),
+      entry('20260630080000', '2026-06-30', [p('user_3', 150)]),
       entry('20260629080000', '2026-06-29', [p('dad', 150)])
     ];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
-    expect(l.standings.map((s) => s.userId)).toEqual(['dad', 'milo']);
+    expect(l.standings.map((s) => s.userId)).toEqual(['dad', 'user_3']);
   });
 });
 
 describe('computePersonalBest', () => {
   it('returns the all-time best for one rider, or best:null', () => {
     const entries = [
-      entry('20260620080000', '2026-06-20', [p('milo', 190)]),
-      entry('20260630080000', '2026-06-30', [p('milo', 170)])
+      entry('20260620080000', '2026-06-20', [p('user_3', 190)]),
+      entry('20260630080000', '2026-06-30', [p('user_3', 170)])
     ];
-    expect(computePersonalBest({ entries, course: COURSE_D, userId: 'milo' })).toEqual({
-      userId: 'milo', courseId: 'sprint-1500m',
+    expect(computePersonalBest({ entries, course: COURSE_D, userId: 'user_3' })).toEqual({
+      userId: 'user_3', courseId: 'sprint-1500m',
       best: { bestValue: 170, raceId: '20260630080000', date: '2026-06-30' }
     });
     expect(computePersonalBest({ entries, course: COURSE_D, userId: 'nobody' }).best).toBeNull();
@@ -557,7 +557,7 @@ describe('ladder + personal bests', () => {
     { id: '20260629080000', date: '2026-06-29', course_id: 'sprint-1500m', win_condition: 'distance', goal_m: 1500, time_cap_s: null,
       participants: [{ userId: 'dad', isGhost: false, final_time_s: 150, final_distance_m: 1500, placement: 1 }] },
     { id: '20260101080000', date: '2026-01-01', course_id: 'sprint-1500m', win_condition: 'distance', goal_m: 1500, time_cap_s: null,
-      participants: [{ userId: 'milo', isGhost: false, final_time_s: 140, final_distance_m: 1500, placement: 1 }] }
+      participants: [{ userId: 'user_3', isGhost: false, final_time_s: 140, final_distance_m: 1500, placement: 1 }] }
   ];
   const makeSvc = () => new CycleRaceService({ datastore: {
     listIndexEntries: async () => ENTRIES.map((e) => ({ ...e }))
@@ -568,7 +568,7 @@ describe('ladder + personal bests', () => {
       week: '2026-W27', householdId: 'household' });
     expect(l.course.id).toBe('sprint-1500m');
     expect(l.standings).toEqual([{ userId: 'dad', bestValue: 150, raceId: '20260629080000', attempts: 1 }]);
-    expect(l.allTimeRecord.userId).toBe('milo');
+    expect(l.allTimeRecord.userId).toBe('user_3');
   });
 
   it('getLadder returns null with no featured courses; throws BAD_WEEK on garbage', async () => {
@@ -578,9 +578,9 @@ describe('ladder + personal bests', () => {
   });
 
   it('getPersonalBest resolves the course from config, or infers it from indexed entries', async () => {
-    const withCfg = await makeSvc().getPersonalBest({ cycleGameConfig: CFG, userId: 'milo', courseId: 'sprint-1500m', householdId: 'h' });
+    const withCfg = await makeSvc().getPersonalBest({ cycleGameConfig: CFG, userId: 'user_3', courseId: 'sprint-1500m', householdId: 'h' });
     expect(withCfg.best).toEqual({ bestValue: 140, raceId: '20260101080000', date: '2026-01-01' });
-    const noCfg = await makeSvc().getPersonalBest({ cycleGameConfig: {}, userId: 'milo', courseId: 'sprint-1500m', householdId: 'h' });
+    const noCfg = await makeSvc().getPersonalBest({ cycleGameConfig: {}, userId: 'user_3', courseId: 'sprint-1500m', householdId: 'h' });
     expect(noCfg.best?.bestValue).toBe(140);
   });
 });
@@ -739,12 +739,12 @@ describe('GET /cycle-races/ladder', () => {
 
 describe('GET /cycle-races/personal-bests', () => {
   it('returns the PB and 400s on missing params', async () => {
-    const pb = { userId: 'milo', courseId: 'sprint-1500m', best: null };
+    const pb = { userId: 'user_3', courseId: 'sprint-1500m', best: null };
     const app = buildApp({ pb });
-    const ok = await request(app).get('/api/fitness/cycle-races/personal-bests?userId=milo&courseId=sprint-1500m');
+    const ok = await request(app).get('/api/fitness/cycle-races/personal-bests?userId=user_3&courseId=sprint-1500m');
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual(pb);
-    expect((await request(app).get('/api/fitness/cycle-races/personal-bests?userId=milo')).status).toBe(400);
+    expect((await request(app).get('/api/fitness/cycle-races/personal-bests?userId=user_3')).status).toBe(400);
     expect((await request(app).get('/api/fitness/cycle-races/personal-bests?courseId=x')).status).toBe(400);
   });
 });
@@ -897,7 +897,7 @@ const REC = {
   participants: {
     dad: { display_name: 'Dad', equipment: 'cycle_ace', final_distance_m: 1500, final_time_s: 150, placement: 1,
       distance_series: SessionSerializerV3.encodeSeries([0, 10, 20]) },
-    milo: { display_name: 'Milo', equipment: 'tricycle', final_distance_m: 1200, final_time_s: null, placement: 2,
+    user_3: { display_name: 'User_3', equipment: 'tricycle', final_distance_m: 1200, final_time_s: null, placement: 2,
       distance_series: SessionSerializerV3.encodeSeries([0, 5, 9]) }
   }
 };
@@ -1020,7 +1020,7 @@ import { courseStartOverride, pickRival, ladderDelta, daysLeft } from './ladder.
 const ROWS = [
   { userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 2 },
   { userId: 'mom', bestValue: 165, raceId: 'r2', attempts: 1 },
-  { userId: 'milo', bestValue: 190, raceId: 'r3', attempts: 3 }
+  { userId: 'user_3', bestValue: 190, raceId: 'r3', attempts: 3 }
 ];
 
 describe('courseStartOverride', () => {
@@ -1034,16 +1034,16 @@ describe('courseStartOverride', () => {
 
 describe('pickRival', () => {
   it('rung above for a ranked rider; self-pb for the leader; tail for unranked; none when empty', () => {
-    expect(pickRival({ standings: ROWS, riderId: 'milo' })).toEqual({ kind: 'above', raceId: 'r2', rivalUserId: 'mom' });
+    expect(pickRival({ standings: ROWS, riderId: 'user_3' })).toEqual({ kind: 'above', raceId: 'r2', rivalUserId: 'mom' });
     expect(pickRival({ standings: ROWS, riderId: 'dad' })).toEqual({ kind: 'self-pb', raceId: null, rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'milo' });
+    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'user_3' });
     expect(pickRival({ standings: [], riderId: 'dad' })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
   });
 });
 
 describe('ladderDelta', () => {
   it('reports rank, movement, and gap to the rung above', () => {
-    const before = [ROWS[0], ROWS[2], ROWS[1]]; // milo was 2nd
+    const before = [ROWS[0], ROWS[2], ROWS[1]]; // user_3 was 2nd
     const d = ladderDelta({ before, after: ROWS, userId: 'mom' });
     expect(d).toEqual({ rank: 2, prevRank: 3, movedUp: true, isLead: false, aboveUserId: 'dad', gapToAbove: 15 });
     expect(ladderDelta({ before, after: ROWS, userId: 'dad' }).isLead).toBe(true);
@@ -1155,11 +1155,11 @@ const LADDER = {
   week: { start: '2026-06-29', end: '2026-07-06' },
   standings: [
     { userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 2 },
-    { userId: 'milo', bestValue: 190.4, raceId: 'r2', attempts: 1 }
+    { userId: 'user_3', bestValue: 190.4, raceId: 'r2', attempts: 1 }
   ],
   allTimeRecord: { userId: 'dad', bestValue: 141, raceId: 'r0', date: '2026-05-12' }
 };
-const names = { dad: 'Dad', milo: 'Milo' };
+const names = { dad: 'Dad', user_3: 'User_3' };
 const resolveName = (id) => names[id] || id;
 
 describe('FeaturedCourseCard', () => {
@@ -1168,7 +1168,7 @@ describe('FeaturedCourseCard', () => {
     expect(screen.getByTestId('featured-course-card')).toBeTruthy();
     expect(screen.getByText('Sprint 1500')).toBeTruthy();
     expect(screen.getByTestId('featured-row-dad').textContent).toContain('2:30');
-    expect(screen.getByTestId('featured-row-milo').textContent).toContain('3:10');
+    expect(screen.getByTestId('featured-row-user_3').textContent).toContain('3:10');
     expect(screen.getByText(/2:21/).textContent).toBeTruthy(); // all-time record
     expect(screen.getByTestId('featured-ride')).toBeTruthy();
   });
@@ -1482,9 +1482,9 @@ git commit -m "feat(cycle-game): lobby ladder card + Ride It with rival-ghost pr
 ```javascript
 it('renders ladder notes when provided, nothing otherwise', () => {
   const { rerender } = render(<RaceResults standings={[]} riders={{}}
-    ladderNotes={['Milo: 2nd this week — 0:04 behind Dad', 'Dad: Ladder lead this week!']} />);
+    ladderNotes={['User_3: 2nd this week — 0:04 behind Dad', 'Dad: Ladder lead this week!']} />);
   const box = screen.getByTestId('race-results-ladder');
-  expect(box.textContent).toContain('Milo: 2nd this week');
+  expect(box.textContent).toContain('User_3: 2nd this week');
   expect(box.textContent).toContain('Ladder lead');
   rerender(<RaceResults standings={[]} riders={{}} ladderNotes={[]} />);
   expect(screen.queryByTestId('race-results-ladder')).toBeNull();

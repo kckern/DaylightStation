@@ -12,7 +12,7 @@ describe('GovernanceEngine cycle locked recovery', () => {
     nowValue = 40000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     active = {
-      id: 'test_0', type: 'cycle', rider: 'felix', cycleState: 'locked', lockReason: 'maintain',
+      id: 'test_0', type: 'cycle', rider: 'user_2', cycleState: 'locked', lockReason: 'maintain',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 }],
       selection: { init: { minRpm: 30, timeAllowedSeconds: 60 } },
       phaseProgressMs: 12000, rampElapsedMs: 0, initElapsedMs: 0, initTotalMs: 60000,

@@ -16,7 +16,7 @@ A thermal receipt renderer for fitness sessions — a fun, full-featured post-wo
 - Title: "FITNESS REPORT"
 - Date + time: `Sun, 9 Feb 2026, 9:16 PM`
 - Duration: `48 min 35 sec`
-- Participant roster line: `Milo  Alan  Felix  KC  Soren`
+- Participant roster line: `User_3  User_4  User_2  KC  User_5`
 - Bordered, centered, same style as gratitude card
 
 ### 2. Treasure Box

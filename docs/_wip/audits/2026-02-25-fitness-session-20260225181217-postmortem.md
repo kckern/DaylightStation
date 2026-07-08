@@ -3,7 +3,7 @@
 **Date:** 2026-02-25
 **Session:** `fs_20260225181217` (18:12–18:42 PST, 1765 seconds)
 **Source:** `media/logs/fitness/2026-02-26T02-12-16.jsonl` (4047 lines) + `history/fitness/2026-02-25/20260225181217.yml`
-**Participants:** Milo (28688), Alan (28676), Felix (28812), KC Kern (40475)
+**Participants:** User_3 (90001), User_4 (28676), User_2 (90003), User_1 (40475)
 **Content:** Mario Kart 8 (plex:606442), then Mario Kart 8 Deluxe (plex:649319)
 
 ---
@@ -85,7 +85,7 @@ Phantom loading overlay flashes during active exercise. Misleading — users see
 
 ---
 
-## Anomaly 2: Failed Hot Challenge — Alan Never Reached Hot Zone
+## Anomaly 2: Failed Hot Challenge — User_4 Never Reached Hot Zone
 
 **Voice memo:** *"one challenge that ended without all satisfied"*
 
@@ -94,25 +94,25 @@ Phantom loading overlay flashes during active exercise. Misleading — users see
 Challenge `default_challenge_0_1772073479837` at 02:31:19:
 - Zone: **Hot**, required: **4 participants**, time allowed: 90s
 - Result: **failed**
-- Met: milo, felix, kckern
-- Missing: **alan**
+- Met: user_3, user_2, user_1
+- Missing: **user_4**
 
-Alan's HR at challenge time (~tick 230–248): 124–138 BPM. Alan's hot threshold is 170 BPM. He was 32+ BPM below the hot zone and never close.
+User_4's HR at challenge time (~tick 230–248): 124–138 BPM. User_4's hot threshold is 170 BPM. He was 32+ BPM below the hot zone and never close.
 
 ### Root Cause
 
-Alan's zone profile: `hot: 170`. During the challenge window, Alan peaked at ~140 BPM (warm zone), never approaching hot. The challenge required ALL 4 participants at hot, which was impossible given Alan's HR trajectory.
+User_4's zone profile: `hot: 170`. During the challenge window, User_4 peaked at ~140 BPM (warm zone), never approaching hot. The challenge required ALL 4 participants at hot, which was impossible given User_4's HR trajectory.
 
-### Cross-Reference: Alan's Session-Wide Zone Distribution
+### Cross-Reference: User_4's Session-Wide Zone Distribution
 
-From `alan:zone` series:
+From `user_4:zone` series:
 - 25 ticks in **cool** (early session — device startup noise)
 - 75 ticks in **active** (longest sustained block)
 - ~170 ticks in **warm**
 - Only 2 ticks in **hot** (brief, around device join)
 - 0 ticks in **fire**
 
-Alan spent <1% of session time in hot zone. The challenge system selected hot/4-required while Alan was structurally unable to reach it.
+User_4 spent <1% of session time in hot zone. The challenge system selected hot/4-required while User_4 was structurally unable to reach it.
 
 ### Recommendation
 
@@ -155,7 +155,7 @@ The root cause is `batchedForceUpdate()` being called on every HR sample. Possib
 
 ### Evidence
 
-~200 `no_series_data` warnings for alan and felix in a 1.5-second window (02:12:29–02:12:30), firing every ~16ms per user. This is the chart component re-rendering at 60fps and logging a warning on every render for users who just joined but have no data yet.
+~200 `no_series_data` warnings for user_4 and user_2 in a 1.5-second window (02:12:29–02:12:30), firing every ~16ms per user. This is the chart component re-rendering at 60fps and logging a warning on every render for users who just joined but have no data yet.
 
 ### Root Cause
 
@@ -190,12 +190,12 @@ All for the same set of users with identical output (same zones, same thresholds
 ### Evidence
 
 230 `exit_margin_suppressed` events logged + aggregated data showing **1,495 skipped** in one 60-second window. Breakdown from aggregated data:
-- kckern: 442 suppressions (HR ~116, warm→active boundary, threshold 120, exit at 115)
-- alan: 808 suppressions
-- milo: 107
-- felix: 138
+- user_1: 442 suppressions (HR ~116, warm→active boundary, threshold 120, exit at 115)
+- user_4: 808 suppressions
+- user_3: 107
+- user_2: 138
 
-kckern hovered near the warm/active boundary for extended periods, triggering continuous hysteresis.
+user_1 hovered near the warm/active boundary for extended periods, triggering continuous hysteresis.
 
 ### Status
 
@@ -203,21 +203,21 @@ kckern hovered near the warm/active boundary for extended periods, triggering co
 
 ---
 
-## Anomaly 7: Alan's Device Startup HR Spike (161 BPM → 90 BPM)
+## Anomaly 7: User_4's Device Startup HR Spike (161 BPM → 90 BPM)
 
 ### Evidence
 
-Alan's HR series begins: `[[null,4],[161,3],[90,2],100,104,107,...]`
+User_4's HR series begins: `[[null,4],[161,3],[90,2],100,104,107,...]`
 
 The first 3 real readings are **161 BPM** (hot zone!), then immediately drops to 90 BPM (cool zone), then gradually climbs from 100 to normal working range.
 
-Alan's zone series confirms: `[[null,4],["w",3],["c",25],...]` — 3 ticks of warm (from the 161 spike), then 25 ticks of cool.
+User_4's zone series confirms: `[[null,4],["w",3],["c",25],...]` — 3 ticks of warm (from the 161 spike), then 25 ticks of cool.
 
 ### Impact
 
-- The 161 spike would have briefly registered Alan as "hot zone" on the dashboard
-- When it dropped to 90, Alan fell to cool zone for 25 ticks (125 seconds)
-- This is the **"user went into cool without the warning starting"** from the voice memo — the governance engine didn't trigger a warning because Alan's zone dropped *before* the governance had fully activated for the session
+- The 161 spike would have briefly registered User_4 as "hot zone" on the dashboard
+- When it dropped to 90, User_4 fell to cool zone for 25 ticks (125 seconds)
+- This is the **"user went into cool without the warning starting"** from the voice memo — the governance engine didn't trigger a warning because User_4's zone dropped *before* the governance had fully activated for the session
 
 ### Likely Cause
 
@@ -235,7 +235,7 @@ Consider a "startup discard" window where the first N readings from a newly conn
 
 | Time | Transition | Participants | Notes |
 |------|-----------|-------------|-------|
-| 02:12:21 | null→pending | 1 | Initial — only Milo connected |
+| 02:12:21 | null→pending | 1 | Initial — only User_3 connected |
 | 02:14:47 | pending→unlocked | 4 | All 4 participants met active zone |
 | 02:14:55 | unlocked→null→unlocked | 4/0/4 | **Double transition in 21ms** — media change |
 | 02:15:33 | unlocked→null→unlocked | 4/0/4 | Same pattern — second seek? |
@@ -261,8 +261,8 @@ Each phase change triggers UI updates (lock overlay, LED changes, playback pause
 
 | Time | Event | Roster Size |
 |------|-------|-------------|
-| 02:40:18 | locked→unlocked | 1 (only kckern) |
-| 02:40:29 | kckern zone → active | 1 |
+| 02:40:18 | locked→unlocked | 1 (only user_1) |
+| 02:40:29 | user_1 zone → active | 1 |
 | 02:41:21 | unlocked→pending | 0 |
 | 02:42:45 | tick_timer.stopped | 0 |
 
@@ -306,9 +306,9 @@ Sample:
   "rosterCount": 2,
   "chartPresentCount": 0,
   "chartTotalCount": 0,
-  "rosterIds": ["kckern", "global"],
+  "rosterIds": ["user_1", "global"],
   "chartPresentIds": [],
-  "missingFromChart": ["kckern", "global"]
+  "missingFromChart": ["user_1", "global"]
 }
 ```
 
@@ -342,10 +342,10 @@ The roster includes a `global` synthetic entry for combined scores, but the char
 6 `[FitnessChart] Segment shows gap but roster says active` events at 02:10:35–02:10:42, which is **~2 minutes before** the session log started at 02:12:16.
 
 ```
-02:10:35 kckern - endsWithGap: true, isActive: true, lastSegment: {isGap: true, status: 'idle'}
-02:10:41 alan   - same
-02:10:41 milo   - same
-02:10:41 felix  - same
+02:10:35 user_1 - endsWithGap: true, isActive: true, lastSegment: {isGap: true, status: 'idle'}
+02:10:41 user_4   - same
+02:10:41 user_3   - same
+02:10:41 user_2  - same
 ```
 
 ### Likely Cause
@@ -380,12 +380,12 @@ Low — purely cosmetic. The `mediaId` is consistent (606442).
 | # | Anomaly | Severity | Voice Memo | Status |
 |---|---------|----------|------------|--------|
 | 1 | Phantom stall detection — false overlays on smooth playback (66 false stalls) | **High** | "player pause loading overlay" | New — root cause: render thrashing (#3) fools stall detector |
-| 2 | Failed Hot challenge (alan unreachable) | **Medium** | "challenge ended without all satisfied" | New |
+| 2 | Failed Hot challenge (user_4 unreachable) | **Medium** | "challenge ended without all satisfied" | New |
 | 3 | Render thrashing (1,400+/30s sustained) | **High** | — | Recurring (tick fix helped, root persists) |
 | 4 | Chart no_series_data log spam (597) | **Low** | — | New |
 | 5 | Zone profile build redundancy (~3,600) | **Low** | — | Recurring, unfixed |
 | 6 | Exit margin suppression volume (~1,700) | **Low** | — | Recurring, partially addressed |
-| 7 | Alan device startup HR spike (161→90) | **Medium** | "user went into cool without warning" | New |
+| 7 | User_4 device startup HR spike (161→90) | **Medium** | "user went into cool without warning" | New |
 | 8 | Governance double-transitions (21ms null gap) | **Low** | — | New |
 | 9 | Empty roster lingers 84s (60s timeout + drift) | **Low** | — | Expected behavior |
 | 10 | Voice memo event spam (33 in 34s) | **Low** | — | New |

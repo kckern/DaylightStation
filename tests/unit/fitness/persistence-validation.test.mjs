@@ -40,7 +40,7 @@ describe('PersistenceManager — validation', () => {
       startTime: Date.now() - 120000,
       endTime: Date.now(),
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: {
@@ -62,7 +62,7 @@ describe('PersistenceManager — validation', () => {
       startTime: Date.now() - 120000,
       endTime: Date.now(),
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: {
@@ -82,7 +82,7 @@ describe('PersistenceManager — validation', () => {
     const series = {
       'alice:hr': [80, 85, 90, 88, 92, 95],           // real data — keep
       'bike:7153:rotations': [0, 0, 0, null, null],    // all zero/null — drop
-      'bike:28812:rotations': [0, null, 0, null, 0],   // all zero/null — drop
+      'bike:90003:rotations': [0, null, 0, null, 0],   // all zero/null — drop
       'bike:49904:rotations': [0, 0, 5, 10, 15, 20],   // has real data — keep
     };
     const { encodedSeries } = pm.encodeSeries(series);
@@ -90,7 +90,7 @@ describe('PersistenceManager — validation', () => {
     expect(encodedSeries).toHaveProperty('alice:hr');
     expect(encodedSeries).toHaveProperty('bike:49904:rotations');
     expect(encodedSeries).not.toHaveProperty('bike:7153:rotations');
-    expect(encodedSeries).not.toHaveProperty('bike:28812:rotations');
+    expect(encodedSeries).not.toHaveProperty('bike:90003:rotations');
   });
 
   it('should accept sessions with real HR data', () => {
@@ -99,7 +99,7 @@ describe('PersistenceManager — validation', () => {
       startTime: Date.now() - 120000,
       endTime: Date.now(),
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: {
@@ -122,7 +122,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 120000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -179,7 +179,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 120000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -215,7 +215,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 600000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -258,7 +258,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 600000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -290,7 +290,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 600000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -331,7 +331,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 600000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -368,7 +368,7 @@ describe('PersistenceManager — validation', () => {
         startTime: now - 600000,
         endTime: now,
         roster: [{ id: 'alice', name: 'Alice' }],
-        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -461,7 +461,7 @@ describe('PersistenceManager — validation', () => {
         startTime: Date.now() - 600000,
         endTime: Date.now(),
         roster: [],
-        deviceAssignments: [{ deviceId: '28688', occupantId: 'alice' }],
+        deviceAssignments: [{ deviceId: '90001', occupantId: 'alice' }],
         timeline: {
           timebase: { tickCount: 6 },
           series: {
@@ -550,40 +550,40 @@ describe('PersistenceManager — validation', () => {
     it('should include participants from series data missing from roster', () => {
       const pm = new PersistenceManager();
       const roster = [
-        { profileId: 'kckern', name: 'KC Kern', isPrimary: true, hrDeviceId: '40475' }
+        { profileId: 'user_1', name: 'User_1', isPrimary: true, hrDeviceId: '40475' }
       ];
       const seriesData = {
-        'user:kckern:heart_rate': [100, 110, 120],
-        'user:felix:heart_rate': [120, 130, 140],
-        'user:milo:heart_rate': [130, 140, 150],
-        'user:alan:heart_rate': [110, 120, 130],
-        'user:soren:heart_rate': [90, 95, 100],
+        'user:user_1:heart_rate': [100, 110, 120],
+        'user:user_2:heart_rate': [120, 130, 140],
+        'user:user_3:heart_rate': [130, 140, 150],
+        'user:user_4:heart_rate': [110, 120, 130],
+        'user:user_5:heart_rate': [90, 95, 100],
         'bike:40475:rotations': [0, 0, 0],  // device series — should be ignored
       };
       const deviceAssignments = [
-        { deviceId: '40475', occupantId: 'kckern' },
-        { deviceId: '28688', occupantId: 'felix' },
-        { deviceId: '28812', occupantId: 'milo' },
+        { deviceId: '40475', occupantId: 'user_1' },
+        { deviceId: '90001', occupantId: 'user_2' },
+        { deviceId: '90003', occupantId: 'user_3' },
       ];
 
       pm._augmentRosterFromSeries(roster, seriesData, deviceAssignments);
 
-      // Should have 5 entries: kckern (original) + felix, milo, alan, soren (from series)
+      // Should have 5 entries: user_1 (original) + user_2, user_3, user_4, user_5 (from series)
       expect(roster).toHaveLength(5);
       const ids = roster.map(e => e.profileId);
-      expect(ids).toContain('kckern');
-      expect(ids).toContain('felix');
-      expect(ids).toContain('milo');
-      expect(ids).toContain('alan');
-      expect(ids).toContain('soren');
+      expect(ids).toContain('user_1');
+      expect(ids).toContain('user_2');
+      expect(ids).toContain('user_3');
+      expect(ids).toContain('user_4');
+      expect(ids).toContain('user_5');
 
-      // felix should have hrDeviceId from deviceAssignments
-      const felix = roster.find(e => e.profileId === 'felix');
-      expect(felix.hrDeviceId).toBe('28688');
+      // user_2 should have hrDeviceId from deviceAssignments
+      const user_2 = roster.find(e => e.profileId === 'user_2');
+      expect(user_2.hrDeviceId).toBe('90001');
 
-      // alan should NOT have hrDeviceId (no assignment)
-      const alan = roster.find(e => e.profileId === 'alan');
-      expect(alan.hrDeviceId).toBeUndefined();
+      // user_4 should NOT have hrDeviceId (no assignment)
+      const user_4 = roster.find(e => e.profileId === 'user_4');
+      expect(user_4.hrDeviceId).toBeUndefined();
     });
 
     it('should not duplicate participants already in roster', () => {

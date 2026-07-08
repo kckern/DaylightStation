@@ -205,11 +205,11 @@ describe('Cycle SM — never-started failure timeout', () => {
     );
     expect(failedEntry).toBeTruthy();
     expect(failedEntry.failReason).toBe('never_started');
-    expect(failedEntry.rider).toBe('felix');
+    expect(failedEntry.rider).toBe('user_2');
     expect(failedEntry.phasesCompleted).toBe(0);
 
     // The original never-started challenge must be cleared (engine moved on),
-    // not stuck in init-lock limbo. (felix is on cooldown after the fail, so no
+    // not stuck in init-lock limbo. (user_2 is on cooldown after the fail, so no
     // replacement cycle can re-fire with him as the only eligible rider.)
     expect(engine.challengeState.activeChallenge?.id).not.toBe(originalId);
   });

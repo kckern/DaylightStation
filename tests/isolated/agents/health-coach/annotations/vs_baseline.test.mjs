@@ -17,7 +17,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const baseline = {
       run: { median_duration_min: 35, median_hr_avg: 148, median_hr_max: 172, median_distance_mi: 4.5 },
@@ -43,7 +43,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const baseline = { strength: { median_duration_min: 30 } };
     const r = await svc.list({ period: { rolling: 'last_1d' } }, { baseline });
@@ -62,7 +62,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } }, { baseline: { run: null } });
     expect(r.events[0].vs_baseline).toBeUndefined();
@@ -79,7 +79,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } });
     expect(r.events[0].vs_baseline).toBeUndefined();
@@ -96,7 +96,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } }, {
       baseline: { run: { median_duration_min: 35 }, strength: { median_duration_min: 30 } },
@@ -113,7 +113,7 @@ describe('WeightEventAdapter — vs_baseline annotations', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_7d' } }, { baseline: { trim_mean: 175.0 } });
     const vs = r.events[0].vs_baseline;
@@ -126,7 +126,7 @@ describe('WeightEventAdapter — vs_baseline annotations', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } }, { baseline: { trim_mean: null } });
     expect(r.events[0].vs_baseline).toBeUndefined();
@@ -146,8 +146,8 @@ describe('EventQueryService — baseline pass-through', () => {
       })),
     };
     const svc = new EventQueryService({ adapters: { workout: fakeAdapter }, baselineService });
-    await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'kckern' });
-    expect(baselineService.getBaselines).toHaveBeenCalledWith({ userId: 'kckern' });
+    await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'user_1' });
+    expect(baselineService.getBaselines).toHaveBeenCalledWith({ userId: 'user_1' });
     expect(fakeAdapter.list).toHaveBeenCalledWith(
       expect.objectContaining({ period: 'last_7d' }),
       expect.objectContaining({ baseline: { run: { median_duration_min: 35 } } }),
@@ -160,7 +160,7 @@ describe('EventQueryService — baseline pass-through', () => {
     };
     const baselineService = { getBaselines: vi.fn(async () => { throw new Error('boom'); }) };
     const svc = new EventQueryService({ adapters: { workout: fakeAdapter }, baselineService });
-    const r = await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'kckern' });
+    const r = await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'user_1' });
     expect(r.meta.n).toBe(0);
     expect(fakeAdapter.list).toHaveBeenCalledWith(
       expect.any(Object),
@@ -173,7 +173,7 @@ describe('EventQueryService — baseline pass-through', () => {
       list: vi.fn(async () => ({ events: [], meta: { kind: 'workout', n: 0 } })),
     };
     const svc = new EventQueryService({ adapters: { workout: fakeAdapter } });
-    await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'kckern' });
+    await svc.queryEvents({ kind: 'workout', period: 'last_7d', userId: 'user_1' });
     expect(fakeAdapter.list).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({ baseline: null }),

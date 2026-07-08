@@ -617,7 +617,7 @@ In `CycleChallengeOverlay.test.jsx`, **replace** the test `it('groups lower cont
 
   it('does not render the rider name text', () => {
     render(<CycleChallengeOverlay challenge={baseChallenge} />);
-    expect(screen.queryByText('KC Kern')).not.toBeInTheDocument();
+    expect(screen.queryByText('User_1')).not.toBeInTheDocument();
   });
 
   it('renders the heart-rate gate as a compact dot on the avatar', () => {
@@ -967,7 +967,7 @@ Append to `CycleChallengeOverlay.test.jsx` (add `fireEvent` to the testing-libra
 
 ```js
   it('shows initials when the avatar image fails, and recovers on rider change', () => {
-    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'KC Kern' } };
+    const ch = { ...baseChallenge, rider: { id: 'user_1', name: 'User_1' } };
     const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
     // Initially the image renders and initials are absent.
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
@@ -979,7 +979,7 @@ Append to `CycleChallengeOverlay.test.jsx` (add `fireEvent` to the testing-libra
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeFalsy();
 
     // New rider → fresh URL → effect resets imgFailed → image is attempted again.
-    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'alan', name: 'Alan' } }} />);
+    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'user_4', name: 'User_4' } }} />);
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
     expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
   });

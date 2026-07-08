@@ -379,7 +379,7 @@ git commit -m "feat(governance): log HR, threshold, and delta in warning_started
 Enrich participantsBelowThreshold entries with each user's current HR
 (from roster), their personal zone threshold (from ZoneProfileStore
 zoneConfig), and the computed delta. Produces log entries like:
-{name: 'alan', hr: 124, threshold: 125, delta: -1, zone: 'cool', requiredZone: 'active'}
+{name: 'user_4', hr: 124, threshold: 125, delta: -1, zone: 'cool', requiredZone: 'active'}
 
 This makes governance warning diagnosis immediate from logs alone —
 no manual YAML inspection required."
@@ -575,7 +575,7 @@ npx eslint frontend/src/hooks/fitness/GovernanceEngine.js
 **After this plan:** Warning events will produce logs like:
 ```json
 "participantsBelowThreshold": [
-  {"name": "alan", "hr": 124, "threshold": 125, "delta": -1, "zone": "cool", "requiredZone": "active"}
+  {"name": "user_4", "hr": 124, "threshold": 125, "delta": -1, "zone": "cool", "requiredZone": "active"}
 ]
 ```
 From this alone, any future governance issue is immediately diagnosable.

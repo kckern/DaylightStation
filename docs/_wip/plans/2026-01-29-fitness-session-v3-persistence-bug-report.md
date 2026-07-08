@@ -150,7 +150,7 @@ Build v3 payload:                    saveSession(sessionData):
   },                                 │
   participants: {...},               │
   timeline: {                        │  Session.fromJSON(sessionData):
-    series: { "kckern:hr": [...] }   │  │
+    series: { "user_1:hr": [...] }   │  │
   }                                  │  │  constructor({
   // NO root sessionId/startTime!    │  │    startTime,    // ← undefined!
 }                                    │  │    roster,       // ← []

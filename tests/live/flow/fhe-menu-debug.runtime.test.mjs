@@ -44,8 +44,8 @@ test('FHE menu - Gratitude item via keyboard', async ({ page }) => {
   await page.waitForTimeout(2000);
 
   // Navigate to Gratitude (index 6) - it's in the second row
-  // Row 1: Opening Hymn(0), Spotlight(1), Felix(2), Milo(3), Alan(4)
-  // Row 2: Soren(5), Gratitude(6), Clip(7), Closing Hymn(8)
+  // Row 1: Opening Hymn(0), Spotlight(1), User_2(2), User_3(3), User_4(4)
+  // Row 2: User_5(5), Gratitude(6), Clip(7), Closing Hymn(8)
   // Press down to go to row 2, then right once to get to Gratitude
   await page.keyboard.press('ArrowDown');
   await page.waitForTimeout(300);

@@ -71,11 +71,11 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   it('returns specific reason when all eligible riders are on cooldown', () => {
     engine.session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix'] }]
+        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
       }
     };
-    // Put 'felix' on cooldown far in the future
-    engine._cycleCooldowns = { felix: Date.now() + 999_000 };
+    // Put 'user_2' on cooldown far in the future
+    engine._cycleCooldowns = { user_2: Date.now() + 999_000 };
     const result = engine.triggerChallenge({ type: 'cycle', selectionId: 'cycle_sprint' });
     expect(result.success).toBe(false);
     expect(result.reason).toBe('all_riders_on_cooldown');
@@ -85,7 +85,7 @@ describe('GovernanceEngine.triggerChallenge — cycle rejection reasons', () => 
   it('succeeds when a rider is available', () => {
     engine.session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix'] }]
+        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
       }
     };
     engine._cycleCooldowns = {};

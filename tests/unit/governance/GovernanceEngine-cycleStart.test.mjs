@@ -19,7 +19,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['felix', 'milo'] }
+          { id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }
         ]
       }
     };
@@ -47,7 +47,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(active).toBeTruthy();
     expect(active.type).toBe('cycle');
     expect(active.cycleState).toBe('init');
-    expect(active.rider).toMatch(/felix|milo/);
+    expect(active.rider).toMatch(/user_2|user_3/);
     expect(active.ridersUsed).toEqual([active.rider]);
     expect(active.currentPhaseIndex).toBe(0);
     expect(active.generatedPhases).toHaveLength(3);
@@ -70,15 +70,15 @@ describe('GovernanceEngine cycle challenge start', () => {
   });
 
   it('filters out riders on cooldown', () => {
-    engine._cycleCooldowns = { felix: nowValue + 5000, milo: nowValue + 5000 };
+    engine._cycleCooldowns = { user_2: nowValue + 5000, user_3: nowValue + 5000 };
     expect(engine._startCycleChallenge(sampleSelection(), {})).toBeNull();
   });
 
   it('rider with expired cooldown is eligible', () => {
-    engine._cycleCooldowns = { felix: nowValue - 1, milo: nowValue - 1 };
+    engine._cycleCooldowns = { user_2: nowValue - 1, user_3: nowValue - 1 };
     const active = engine._startCycleChallenge(sampleSelection(), {});
     expect(active).toBeTruthy();
-    expect(active.rider).toMatch(/felix|milo/);
+    expect(active.rider).toMatch(/user_2|user_3/);
   });
 
   it('populates id with timestamp suffix', () => {

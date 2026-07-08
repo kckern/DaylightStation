@@ -20,12 +20,12 @@ describe('device startup HR discard', () => {
   it('should track counts per device independently', () => {
     const counts = new Map();
     expect(shouldDiscardHr('28676', counts)).toBe(true);
-    expect(shouldDiscardHr('28688', counts)).toBe(true);
+    expect(shouldDiscardHr('90001', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(true);
-    expect(shouldDiscardHr('28688', counts)).toBe(true);
+    expect(shouldDiscardHr('90001', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(false); // 28676 past threshold
-    expect(shouldDiscardHr('28688', counts)).toBe(true);  // 28688 still discarding
-    expect(shouldDiscardHr('28688', counts)).toBe(false);  // 28688 past threshold
+    expect(shouldDiscardHr('90001', counts)).toBe(true);  // 90001 still discarding
+    expect(shouldDiscardHr('90001', counts)).toBe(false);  // 90001 past threshold
   });
 });

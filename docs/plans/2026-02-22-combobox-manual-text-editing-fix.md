@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Allow users to manually edit content IDs in the combobox input (e.g. change `app:family-selector/soren` to `app:family-selector/dad`) without the `freshOpenRef` mechanism steamrolling their edits.
+**Goal:** Allow users to manually edit content IDs in the combobox input (e.g. change `app:family-selector/user_5` to `app:family-selector/dad`) without the `freshOpenRef` mechanism steamrolling their edits.
 
 **Architecture:** Remove the `freshOpenRef` Backspace override entirely. The browser's native selection behavior already handles the "type to replace selected text" UX. The original auto-selection (lines 1178-1189) is good — it selects the suffix so typing replaces it. The problem is the Backspace intercept that nukes the entire input instead of just deleting the selected text normally.
 
@@ -93,7 +93,7 @@ git commit -m "fix: remove freshOpenRef that prevented manual text editing in co
 
 The freshOpenRef mechanism intercepted Backspace on fresh open and
 cleared the entire input, making it impossible to manually edit
-content IDs (e.g. changing family-selector/soren to /dad).
+content IDs (e.g. changing family-selector/user_5 to /dad).
 
 Browser native selection behavior already handles this correctly —
 the auto-selection of the suffix after the colon means typing

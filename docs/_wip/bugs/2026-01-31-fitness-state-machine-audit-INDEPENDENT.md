@@ -26,19 +26,19 @@ This independent audit **CONFIRMS** the majority of findings in the original aud
 
 ### BUG-001: Lock Screen Shows Wrong Users
 
-**Original Claim**: Lock screen briefly shows all users before correcting to show only the actual blocker (kckern).
+**Original Claim**: Lock screen briefly shows all users before correcting to show only the actual blocker (user_1).
 
 **Verification Method**: Searched for `missingUsers` and `warning_started` events.
 
 **Evidence Found**:
 ```
 Line 29241: governance.warning_started
-  "missingUsers":["kckern"]
-  "metUsers":["felix","milo","alan"]
+  "missingUsers":["user_1"]
+  "metUsers":["user_2","user_3","user_4"]
 ```
 
 **Verdict**: **PARTIALLY VERIFIED**
-- The backend governance correctly identifies ONLY kckern as the blocker
+- The backend governance correctly identifies ONLY user_1 as the blocker
 - The claim of a UI rendering race condition is plausible but cannot be verified from logs alone
 - Would require visual observation or explicit UI state logging to confirm
 - The code reference to `lockRows` useMemo race condition is architecturally sound
@@ -166,17 +166,17 @@ grep -c 'fitness-app-mount' → 17 ✓
 
 ### BUG-005: Display Label SSOT Failure
 
-**Original Claim**: Sidebar shows "KC Kern" while governance shows "Dad".
+**Original Claim**: Sidebar shows "User_1" while governance shows "Dad".
 
 **Evidence Found**:
 ```json
 // user_created event
 {"event":"usermanager.user_created",
- "data":{"configName":"KC Kern","userName":"KC Kern","userId":"kckern"}}
+ "data":{"configName":"User_1","userName":"User_1","userId":"user_1"}}
 
 // auto_assign event
 {"event":"fitness.auto_assign",
- "data":{"deviceId":"40475","userName":"KC Kern","userId":"kckern"}}
+ "data":{"deviceId":"40475","userName":"User_1","userId":"user_1"}}
 ```
 
 **"Dad" Label Search**:
@@ -186,7 +186,7 @@ grep -c '"Dad"' → 0 occurrences in the entire log file
 
 **Verdict**: **CONFIRMED**
 - The display label "Dad" is never logged anywhere in the session
-- User consistently created as "KC Kern"
+- User consistently created as "User_1"
 - The household config's `displayLabel: "Dad"` is not being consulted
 - The code analysis showing `displayLabel` fallback chain is correct
 
@@ -233,7 +233,7 @@ grep -c 'tick_timer' → 137 ✓
 
 ### Pending Phase Duration Analysis
 
-**Original Claim**: 60-70 second pending phase was EXPECTED behavior (kckern in cool zone).
+**Original Claim**: 60-70 second pending phase was EXPECTED behavior (user_1 in cool zone).
 
 **Verification**:
 ```
@@ -242,10 +242,10 @@ grep -c 'tick_timer' → 137 ✓
 Duration: 70.483 seconds ✓
 ```
 
-**kckern Zone Data During Pending**:
+**user_1 Zone Data During Pending**:
 ```json
 {"event":"treasurebox.zone_resolved",
- "data":{"accKey":"kckern","hr":85,"zone":{"id":"cool","name":"Cool"}}}
+ "data":{"accKey":"user_1","hr":85,"zone":{"id":"cool","name":"Cool"}}}
 ```
 
 **Verdict**: **CONFIRMED** - Audit correctly identifies this as expected behavior, not a bug.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-03
 **Source:** `media/logs/slideshow/*.jsonl` (7 sessions, 39 image slides total)
-**Queue:** `mar4-videos-photos` (Alan birthday mixed-media slideshow)
+**Queue:** `mar4-videos-photos` (User_4 birthday mixed-media slideshow)
 **Environment:** Chrome 145 / macOS, localhost dev server
 
 ---

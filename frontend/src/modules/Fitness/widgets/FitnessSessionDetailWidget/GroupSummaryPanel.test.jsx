@@ -3,7 +3,7 @@ import { render, fireEvent } from '@testing-library/react';
 import GroupSummaryPanel from './GroupSummaryPanel.jsx';
 
 describe('GroupSummaryPanel', () => {
-  const riders = [{ id: 'milo', name: 'Milo' }, { id: 'alan', name: 'Alan' }, { id: 'felix', name: 'Felix' }];
+  const riders = [{ id: 'user_3', name: 'User_3' }, { id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
 
   it('renders a rider chip (avatar + name) per participant', () => {
     const { getByText, container } = render(<GroupSummaryPanel riders={riders} segmentCount={6} sessionId="group:1" />);

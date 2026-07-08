@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-25
 **Source:** Session log analysis of `media/logs/fitness/2026-02-25T13-33-09.jsonl`
-**Session:** ~30 min workout (13:33–14:04), 1 user (kckern), 3,723 log events
+**Session:** ~30 min workout (13:33–14:04), 1 user (user_1), 3,723 log events
 
 ---
 
@@ -16,7 +16,7 @@ Three interrelated anomalies were identified in the zone/color state pipeline. T
 
 ### Observation
 
-155 `zoneprofilestore.build_profile` events in 30 minutes, consistently 4–5 per second, all for the same user (`kckern`) with identical output (`zones=5`, `thresholds=None`).
+155 `zoneprofilestore.build_profile` events in 30 minutes, consistently 4–5 per second, all for the same user (`user_1`) with identical output (`zones=5`, `thresholds=None`).
 
 ### Root Cause
 

@@ -23,7 +23,7 @@ These changes were deferred to avoid breaking the frontend during cutover.
   "media_key": "FHE",
   "label": "FHE",
   "items": [{
-    "label": "Felix",
+    "label": "User_2",
     "uid": "75cdcd12-...",
     "folder": "FHE",
     "folder_color": "#9FA5C2",
@@ -49,7 +49,7 @@ These changes were deferred to avoid breaking the frontend during cutover.
   "title": "FHE",
   "items": [{
     "id": "plex:457381",
-    "title": "Felix",
+    "title": "User_2",
     "thumbnail": "/media/img/lists/...",
     "source": "plex",
     "sourceId": "457381",
@@ -99,7 +99,7 @@ Response mirrors legacy `/media/plex/info/{id}` structure.
 ```json
 {
   "id": "plex:457381",
-  "title": "Felix",
+  "title": "User_2",
   "type": "episode",
   "source": "plex",
   "media": {

@@ -62,7 +62,7 @@ describe('og:image enrichment', () => {
     // No existing cached data
     mockStore.loadSource.mockResolvedValue(null);
 
-    await service.harvestAll('kckern');
+    await service.harvestAll('user_1');
 
     // Only the imageless item should trigger og:image fetch
     expect(mockWebContent.extractReadableContent).toHaveBeenCalledTimes(1);
@@ -91,7 +91,7 @@ describe('og:image enrichment', () => {
       items: [{ id: 'a1', title: 'Old item', link: 'https://cnn.com/1', image: null }],
     });
 
-    await service.harvestAll('kckern');
+    await service.harvestAll('user_1');
 
     // Only the new item should be fetched
     expect(mockWebContent.extractReadableContent).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe('og:image enrichment', () => {
     mockStore.loadSource.mockResolvedValue(null);
     mockWebContent.extractReadableContent.mockRejectedValue(new Error('Upstream returned 404'));
 
-    await service.harvestAll('kckern');
+    await service.harvestAll('user_1');
 
     const savedData = mockStore.saveSource.mock.calls[0][1];
     expect(savedData.items[0].image).toBeUndefined();
@@ -130,7 +130,7 @@ describe('og:image enrichment', () => {
       title: 'Page', content: '', wordCount: 0, ogImage: null, ogDescription: null,
     });
 
-    await service.harvestAll('kckern');
+    await service.harvestAll('user_1');
 
     const savedData = mockStore.saveSource.mock.calls[0][1];
     expect(savedData.items[0].image).toBeUndefined();
@@ -145,7 +145,7 @@ describe('og:image enrichment', () => {
       configService: mockConfigService,
     });
 
-    await service.harvestAll('kckern');
+    await service.harvestAll('user_1');
 
     expect(mockStore.saveSource).toHaveBeenCalled();
     // No crash, no enrichment attempted

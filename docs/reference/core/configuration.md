@@ -91,7 +91,7 @@ data/
     ├── kckern/
     │   ├── profile.yml
     │   └── auth/
-    └── felix/
+    └── user_2/
 ```
 
 ---
@@ -278,17 +278,17 @@ Identity and users:
 version: "1.0"
 household_id: default
 name: "Default Household"
-head: kckern
+head: user_1
 
 users:
-  - kckern
-  - elizabeth
-  - felix
-  - milo
+  - user_1
+  - user_9
+  - user_2
+  - user_3
 
 apps:
   fitness:
-    primary_users: [kckern, felix, milo]
+    primary_users: [user_1, user_2, user_3]
 ```
 
 ### integrations.yml
@@ -349,9 +349,9 @@ Location: `data/users/{username}/`
 
 ```yaml
 version: "1.0"
-username: felix
+username: user_2
 household_id: default
-display_name: "Felix"
+display_name: "User_2"
 birthyear: 2016
 type: family_member
 group: primary
@@ -429,7 +429,7 @@ configService.getSecret('OPENAI_API_KEY');
 configService.getHouseholdAuth('plex', 'default');
 
 // User secret
-configService.getUserAuth('strava', 'kckern');
+configService.getUserAuth('strava', 'user_1');
 ```
 
 ---

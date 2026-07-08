@@ -1910,11 +1910,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   useEffect(() => {
     riderToastRef.current = (data) => {
       pushFitnessToast(buildRiderToast(data, {
-        // rider_select carries a user slug (e.g. "milo"), not a device id — resolve it
+        // rider_select carries a user slug (e.g. "user_3"), not a device id — resolve it
         // against configuredUsers (the userCollections.all SSOT the roster uses), NOT the
         // device-centric getDisplayName, which would fall through to the raw id.
         // preferGroupLabels mirrors the main resolver: nickname ("Dad") only when 2+ HR
-        // participants are present, else the given name ("KC Kern").
+        // participants are present, else the given name ("User_1").
         resolveUserName: (uid) => lookupUserName(configuredUsers, uid, { preferGroupLabels }),
         resolveEquipmentName: (eid) =>
           (Array.isArray(equipmentConfig) ? equipmentConfig : []).find((e) => e?.id === eid)?.name || eid,

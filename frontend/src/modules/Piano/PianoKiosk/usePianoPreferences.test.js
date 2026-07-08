@@ -13,14 +13,14 @@ vi.mock('../../../lib/api.mjs', () => ({
   }),
 }));
 
-let mockUser = 'kckern';
+let mockUser = 'user_1';
 vi.mock('./PianoUserContext.jsx', () => ({
   usePianoUser: () => ({ currentUser: mockUser }),
 }));
 
 import { usePianoPreferences } from './usePianoPreferences.js';
 
-beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kckern'; });
+beforeEach(() => { calls.length = 0; store = {}; mockUser = 'user_1'; });
 
 describe('usePianoPreferences', () => {
   it('loads the per-user blob on mount and exposes getPref with a fallback', async () => {
@@ -29,7 +29,7 @@ describe('usePianoPreferences', () => {
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.getPref('topPaneLayout', 'staff')).toBe('triptych');
     expect(result.current.getPref('missing', 'fallback')).toBe('fallback');
-    expect(calls[0].path).toBe('api/v1/piano/users/kckern/preferences');
+    expect(calls[0].path).toBe('api/v1/piano/users/user_1/preferences');
     expect(calls[0].method).toBe('GET');
   });
 
@@ -39,7 +39,7 @@ describe('usePianoPreferences', () => {
     await act(async () => { await result.current.setPref('topPaneLayout', 'triptych'); });
     expect(result.current.getPref('topPaneLayout', 'staff')).toBe('triptych');
     const put = calls.find((c) => c.method === 'PUT');
-    expect(put.path).toBe('api/v1/piano/users/kckern/preferences');
+    expect(put.path).toBe('api/v1/piano/users/user_1/preferences');
     expect(put.data).toEqual({ topPaneLayout: 'triptych' });
   });
 

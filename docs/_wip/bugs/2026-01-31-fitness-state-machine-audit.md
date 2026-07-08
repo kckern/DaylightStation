@@ -30,30 +30,30 @@ Analysis of a 10-minute production session reveals **critical state machine inst
 ### Description
 When governance enters `locked` phase, the lock screen overlay briefly displays ALL users (or incorrect users) before correcting to show only the actual blocking user(s). This is an SSOT (Single Source of Truth) failure where the UI renders with stale/incomplete data before governance state fully propagates.
 
-**Clarification**: The 60-70 second pending phase observed in logs was **correct behavior** - user "kckern" was in the cool zone (HR 81-92) which blocked unlock per governance rules. The actual bug is that the lock screen momentarily showed OTHER users (alan, felix, milo) who were NOT blocking, before correcting to show only kckern.
+**Clarification**: The 60-70 second pending phase observed in logs was **correct behavior** - user "user_1" was in the cool zone (HR 81-92) which blocked unlock per governance rules. The actual bug is that the lock screen momentarily showed OTHER users (user_4, user_2, user_3) who were NOT blocking, before correcting to show only kckern.
 
 ### Log Evidence
 
-**Governance Correctly Identifies Only kckern as Blocker:**
+**Governance Correctly Identifies Only user_1 as Blocker:**
 ```bash
 grep 'lock_triggered\|warning_started' logs/prod-logs-20260131-1820-1830.txt | grep 'missingUsers'
-# Shows: "missingUsers":["kckern"]  ← Only kckern listed, correct
+# Shows: "missingUsers":["user_1"]  ← Only user_1 listed, correct
 ```
 
 **Timeline for Media 606440 (Mario Kart Wii):**
 ```
 02:22:10.389Z governance: null → pending (media: 606440)
 02:23:20.872Z governance: pending → unlocked (media: 606440)
-           └── Gap: 70.5 seconds - EXPECTED (kckern in cool zone)
+           └── Gap: 70.5 seconds - EXPECTED (user_1 in cool zone)
 ```
 
-**HR Data Shows kckern Was the Blocker:**
+**HR Data Shows user_1 Was the Blocker:**
 ```bash
 # During pending phase:
-# alan:  HR 143-147, zone "active" ✓ (not blocking)
-# felix: HR 129-138, zone "active" ✓ (not blocking)
-# milo:  HR 141-153, zone "warm" ✓ (not blocking)
-# kckern: HR 81-92, zone "cool" ✗ (BLOCKING - correct)
+# user_4:  HR 143-147, zone "active" ✓ (not blocking)
+# user_2: HR 129-138, zone "active" ✓ (not blocking)
+# user_3:  HR 141-153, zone "warm" ✓ (not blocking)
+# user_1: HR 81-92, zone "cool" ✗ (BLOCKING - correct)
 ```
 
 ### User Observation
@@ -289,26 +289,26 @@ grep 'fitness-app-mount' logs/prod-logs-20260131-1820-1830.txt | grep -o '"ts":"
 ### Severity: 🟡 Medium
 
 ### Description
-The sidebar displays "KC Kern" while the governance overlay displays "Dad". The roster contains `displayLabel: "Dad"` but the sidebar ignores it.
+The sidebar displays "User_1" while the governance overlay displays "Dad". The roster contains `displayLabel: "Dad"` but the sidebar ignores it.
 
 ### Log Evidence
 
-**User Created with "KC Kern" (not "Dad"):**
+**User Created with "User_1" (not "Dad"):**
 ```json
 {"ts":"2026-02-01T02:21:01.576Z","event":"usermanager.user_created","data":{
-  "configName":"KC Kern",
-  "userId":"kckern",
-  "userName":"KC Kern",
-  "resolvedUserId":"kckern"
+  "configName":"User_1",
+  "userId":"user_1",
+  "userName":"User_1",
+  "resolvedUserId":"user_1"
 }}
 ```
 
-**Auto-Assignment Uses "KC Kern":**
+**Auto-Assignment Uses "User_1":**
 ```json
 {"ts":"2026-02-01T02:21:45.764Z","event":"fitness.auto_assign","data":{
   "deviceId":"40475",
-  "userName":"KC Kern",
-  "userId":"kckern"
+  "userName":"User_1",
+  "userId":"user_1"
 }}
 ```
 
@@ -320,7 +320,7 @@ const deviceName = isHeartRate ?
   (guestAssignment?.occupantName || 
    guestAssignment?.metadata?.name || 
    displayLabel ||              // ← displayLabel is 3rd priority
-   ownerName ||                 // ← ownerName (cached "KC Kern") takes precedence when displayLabel is null
+   ownerName ||                 // ← ownerName (cached "User_1") takes precedence when displayLabel is null
    participantEntry?.name || 
    deviceIdStr) 
   : (device.name || String(device.deviceId));
@@ -334,9 +334,9 @@ const displayLabel = userVitalsEntry?.displayLabel || participantEntry?.displayL
 ### Root Cause Analysis
 
 1. `displayLabel` is resolved from `userVitalsEntry?.displayLabel` or `participantEntry?.displayLabel`
-2. `participantEntry` stores `profileId` (e.g., "kckern"), not `displayLabel` ("Dad")
+2. `participantEntry` stores `profileId` (e.g., "user_1"), not `displayLabel` ("Dad")
 3. When `displayLabel` resolves to `null`, fallback chain uses `ownerName`
-4. `ownerName` comes from `hrDisplayNameMap[deviceIdStr]` which caches "KC Kern" from device config
+4. `ownerName` comes from `hrDisplayNameMap[deviceIdStr]` which caches "User_1" from device config
 5. The household config's `displayLabel: "Dad"` is never consulted
 
 ### Proposed Fix

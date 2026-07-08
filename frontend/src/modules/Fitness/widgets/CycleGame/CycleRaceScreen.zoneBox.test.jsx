@@ -21,7 +21,7 @@ import CycleRaceScreen from './CycleRaceScreen.jsx';
 
 const solo = {
   winCondition: 'time', timeCapS: 120, elapsedS: 1, goalM: undefined,
-  riders: { kc: { userId: 'kc', displayName: 'KC Kern', cumulativeDistanceM: 0, distanceSeries: [0] } },
+  riders: { kc: { userId: 'kc', displayName: 'User_1', cumulativeDistanceM: 0, distanceSeries: [0] } },
   riderLive: { kc: { rpm: 0 } },
   cadenceBands: []
 };

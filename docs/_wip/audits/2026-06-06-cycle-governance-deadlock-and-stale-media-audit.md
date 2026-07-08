@@ -26,12 +26,12 @@ never resumed. The lock persisted until the session ended.
 ### Log timeline (`2026-06-06T18-06-23.jsonl`)
 | Time (UTC) | Event |
 |------------|-------|
-| 18:18:35 | **Rider swap** `milo → alan` (`governance.cycle.swap_completed`, `force:true`). Kept `currentPhaseIndex:2` (hardest phase, hiRpm **72**); reset to `init→ramp`. |
-| 18:18:59 | Alan's ramp times out at **45 RPM** (needed 72) → `governance.cycle.locked` (`lockReason:'ramp'`); `playback.paused`, `cycle-lock-shown`. |
+| 18:18:35 | **Rider swap** `user_3 → user_4` (`governance.cycle.swap_completed`, `force:true`). Kept `currentPhaseIndex:2` (hardest phase, hiRpm **72**); reset to `init→ramp`. |
+| 18:18:59 | User_4's ramp times out at **45 RPM** (needed 72) → `governance.cycle.locked` (`lockReason:'ramp'`); `playback.paused`, `cycle-lock-shown`. |
 | 18:19:01 | Governance phase flips `unlocked → warning`; **same ms** `governance.cycle.paused_by_base_req` fires. |
 | 18:19:01 → 18:19:29 | Cycle stays `locked`. **No `governance.cycle.recovered`.** Session ends locked. |
 
-The first lock that session (milo, health-lock at 18:17:42) *did* recover 5s later — because at
+The first lock that session (user_3, health-lock at 18:17:42) *did* recover 5s later — because at
 that moment governance phase was still `unlocked`.
 
 ### Root cause
@@ -57,7 +57,7 @@ the cadence recovery path.
 ### Contributing factor
 `swapCycleRider` (**`GovernanceEngine.js:3938-4013`**) changes `active.rider` and resets to `init`
 but **inherits the current `currentPhaseIndex`** (here phase 2, the hardest, hiRpm 72) instead of
-restarting the new rider at an easier phase. That is *why* alan locked out at all — he was dropped
+restarting the new rider at an easier phase. That is *why* user_4 locked out at all — he was dropped
 straight into the hardest phase with a 72-RPM ramp target.
 
 ### Recommended fix (direction — not yet applied)

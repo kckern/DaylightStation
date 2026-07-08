@@ -10,10 +10,10 @@ function buildSession() {
     _deviceRouter: { getEquipmentCatalog: () => [] },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
-    // Pulse-driven evaluate() reads this — felix is below the 'warm' base-req.
+    // Pulse-driven evaluate() reads this — user_2 is below the 'warm' base-req.
     getActiveParticipantState: () => ({
-      participants: ['felix'],
-      zoneMap: { felix: 'active' },
+      participants: ['user_2'],
+      zoneMap: { user_2: 'active' },
       totalCount: 1
     })
   };
@@ -32,8 +32,8 @@ const ZONE_MAPS = {
   zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } },
   totalCount: 1
 };
-const EVAL_MET = { activeParticipants: ['felix'], userZoneMap: { felix: 'warm' }, ...ZONE_MAPS };
-const EVAL_UNMET = { activeParticipants: ['felix'], userZoneMap: { felix: 'active' }, ...ZONE_MAPS };
+const EVAL_MET = { activeParticipants: ['user_2'], userZoneMap: { user_2: 'warm' }, ...ZONE_MAPS };
+const EVAL_UNMET = { activeParticipants: ['user_2'], userZoneMap: { user_2: 'active' }, ...ZONE_MAPS };
 
 function makeEngine() {
   let clock = 100000;

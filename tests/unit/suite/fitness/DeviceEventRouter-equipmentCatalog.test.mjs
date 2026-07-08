@@ -15,7 +15,7 @@ describe('DeviceEventRouter equipment catalog', () => {
 
   it('returns the entries previously set via setEquipmentCatalog', () => {
     const entries = [
-      { id: 'cycle_ace', cadence: 49904, eligible_users: ['felix'] },
+      { id: 'cycle_ace', cadence: 49904, eligible_users: ['user_2'] },
       { id: 'tricycle', cadence: 7153, eligible_users: ['niels'] }
     ];
     router.setEquipmentCatalog(entries);

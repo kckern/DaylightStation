@@ -32,7 +32,7 @@ describe('GovernanceEngine cycle audio cues', () => {
     return {
       id: 'test_0',
       type: 'cycle',
-      rider: 'felix',
+      rider: 'user_2',
       equipment: 'cycle_ace',
       cycleState: 'init',
       status: 'pending',
@@ -55,7 +55,7 @@ describe('GovernanceEngine cycle audio cues', () => {
       boostContributors: new Set(),
       startedAt: 10000,
       lockReason: null,
-      ridersUsed: ['felix'],
+      ridersUsed: ['user_2'],
       ...overrides
     };
   }

@@ -77,7 +77,7 @@ const SELECTORS = [
     id: 'niceday_rider_selector',
     mqtt_topic: 'zigbee2mqtt-usb/Garage Cycling Selector',
     equipment: 'niceday',
-    buttons: { '1_single': 'felix', '2_single': 'milo', '3_single': 'kckern', '4_single': 'alan' },
+    buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'user_1', '4_single': 'user_4' },
   },
 ];
 
@@ -113,7 +113,7 @@ describe('MQTTSelectorAdapter', () => {
       expect(sel).toEqual({
         selectorId: 'niceday_rider_selector',
         equipmentId: 'niceday',
-        userId: 'milo',
+        userId: 'user_3',
         action: '2_single',
       });
     });
@@ -551,10 +551,10 @@ selectors:
     mqtt_topic: "zigbee2mqtt-usb/Garage Cycling Selector"
     equipment: niceday
     buttons:
-      "1_single": felix
-      "2_single": milo
-      "3_single": kckern
-      "4_single": alan
+      "1_single": user_2
+      "2_single": user_3
+      "3_single": user_1
+      "4_single": user_4
 ```
 
 Write the complete file back via heredoc (do not use `sed -i`). Because top-level keys are normalized into `response.fitness` by `FitnessApp.jsx`, no frontend change is needed for the API to expose it; the backend reads `fitnessConfig.selectors` directly via `getHouseholdAppConfig`.
@@ -591,17 +591,17 @@ describe('DeviceEventRouter — rider_select', () => {
     const handler = vi.fn(() => null);
     router.register('rider_select', handler);
 
-    const payload = { topic: 'rider_select', equipmentId: 'niceday', userId: 'felix', action: '1_single' };
+    const payload = { topic: 'rider_select', equipmentId: 'niceday', userId: 'user_2', action: '1_single' };
     const result = router.route(payload);
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0][0]).toMatchObject({ equipmentId: 'niceday', userId: 'felix' });
+    expect(handler.mock.calls[0][0]).toMatchObject({ equipmentId: 'niceday', userId: 'user_2' });
     expect(result.handled).toBe(true);
   });
 
   it('does not handle a rider_select payload when no handler is registered', () => {
     const router = new DeviceEventRouter();
-    const result = router.route({ topic: 'rider_select', equipmentId: 'niceday', userId: 'felix' });
+    const result = router.route({ topic: 'rider_select', equipmentId: 'niceday', userId: 'user_2' });
     expect(result.handled).toBe(false);
   });
 });
@@ -658,21 +658,21 @@ describe('FitnessSession — equipmentRider', () => {
 
   it('records a claim and reads it back', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    expect(session.getEquipmentRider('niceday')).toBe('felix');
+    session.setEquipmentRider('niceday', 'user_2');
+    expect(session.getEquipmentRider('niceday')).toBe('user_2');
   });
 
   it('reassigns the claim to the last user set', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    session.setEquipmentRider('niceday', 'milo');
-    expect(session.getEquipmentRider('niceday')).toBe('milo');
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('niceday', 'user_3');
+    expect(session.getEquipmentRider('niceday')).toBe('user_3');
   });
 
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
-    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });
-    expect(session.getEquipmentRider('niceday')).toBe('kckern');
+    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'user_1', action: '3_single' });
+    expect(session.getEquipmentRider('niceday')).toBe('user_1');
   });
 });
 ```
@@ -799,7 +799,7 @@ Append to `frontend/src/hooks/fitness/CycleStateMachine.test.js` (the fixtures `
 
 ```javascript
 describe('Cycle SM — standing rider claim', () => {
-  // buildSession()'s catalog uses equipment id 'cycle_ace' with eligible ['felix'].
+  // buildSession()'s catalog uses equipment id 'cycle_ace' with eligible ['user_2'].
   // We exercise claim consumption through _startCycleChallenge + _getEligibleUsers.
 
   function makeEngine(seed = 42, equipmentRiderMap = {}) {
@@ -814,24 +814,24 @@ describe('Cycle SM — standing rider claim', () => {
   }
 
   it('uses the standing claim as the rider when one is set', () => {
-    const engine = makeEngine(42, { cycle_ace: 'felix' });
+    const engine = makeEngine(42, { cycle_ace: 'user_2' });
     const active = engine._startCycleChallenge(
       { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [2, 2], ramp_seconds: [5, 5], lo_rpm_ratio: 0.5 },
       {}
     );
     expect(active.ok).not.toBe(false);
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
   });
 
   it('grants eligibility to a claimed rider not in eligible_users', () => {
-    // 'kckern' is NOT in cycle_ace.eligible_users (['felix']) in buildSession().
-    const engine = makeEngine(42, { cycle_ace: 'kckern' });
-    expect(engine._getEligibleUsers('cycle_ace')).toContain('kckern');
+    // 'user_1' is NOT in cycle_ace.eligible_users (['user_2']) in buildSession().
+    const engine = makeEngine(42, { cycle_ace: 'user_1' });
+    expect(engine._getEligibleUsers('cycle_ace')).toContain('user_1');
     const active = engine._startCycleChallenge(
       { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [2, 2], ramp_seconds: [5, 5], lo_rpm_ratio: 0.5 },
       {}
     );
-    expect(active.rider).toBe('kckern');
+    expect(active.rider).toBe('user_1');
   });
 
   it('falls back to random-from-eligible when no claim is set', () => {
@@ -840,16 +840,16 @@ describe('Cycle SM — standing rider claim', () => {
       { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [2, 2], ramp_seconds: [5, 5], lo_rpm_ratio: 0.5 },
       {}
     );
-    expect(active.rider).toBe('felix'); // only eligible user
+    expect(active.rider).toBe('user_2'); // only eligible user
   });
 
   it('forceRiderId takes precedence over a standing claim', () => {
-    const engine = makeEngine(42, { cycle_ace: 'milo' }); // claim says milo...
+    const engine = makeEngine(42, { cycle_ace: 'user_3' }); // claim says user_3...
     const active = engine._startCycleChallenge(
       { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [2, 2], ramp_seconds: [5, 5], lo_rpm_ratio: 0.5 },
-      { forceRiderId: 'felix' } // ...but force wins
+      { forceRiderId: 'user_2' } // ...but force wins
     );
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
   });
 });
 ```
@@ -857,7 +857,7 @@ describe('Cycle SM — standing rider claim', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs frontend/src/hooks/fitness/CycleStateMachine.test.js -t "standing rider claim"`
-Expected: FAIL — claim is ignored (random/force only), and `_getEligibleUsers` does not include `kckern`.
+Expected: FAIL — claim is ignored (random/force only), and `_getEligibleUsers` does not include `user_1`.
 
 - [ ] **Step 3: Accept `equipmentRiderMap` in `evaluate` and store it**
 
@@ -942,30 +942,30 @@ describe('Cycle SM — live rider swap on claim change', () => {
     const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
     engine.configure(POLICY);
     engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
-    // Start with felix riding (manual trigger forces felix, state = init).
-    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
-    expect(engine.challengeState.activeChallenge.rider).toBe('felix');
+    // Start with user_2 riding (manual trigger forces user_2, state = init).
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_2');
 
-    // A new claim arrives for milo on the same equipment, then a tick runs.
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'milo' };
+    // A new claim arrives for user_3 on the same equipment, then a tick runs.
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
     nowValue += 200;
     engine.evaluate({
-      activeParticipants: ['felix', 'milo'],
-      userZoneMap: { felix: 'warm', milo: 'warm' },
+      activeParticipants: ['user_2', 'user_3'],
+      userZoneMap: { user_2: 'warm', user_3: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 2,
       equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
-      equipmentRiderMap: { cycle_ace: 'milo' }
+      equipmentRiderMap: { cycle_ace: 'user_3' }
     });
 
-    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
   });
 });
 ```
 
 Run it to confirm it fails: `cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs frontend/src/hooks/fitness/CycleStateMachine.test.js -t "live rider swap"`
-Expected: FAIL — rider stays `felix`.
+Expected: FAIL — rider stays `user_2`.
 
 Now add the reconcile. In `evaluate`, locate where the active cycle challenge is ticked each cycle (the block that processes `this.challengeState.activeChallenge` when `active.type === 'cycle'` — search for `tickManualCycle` / `_evaluateCycleChallenge` call site inside `evaluate`). Immediately BEFORE that per-tick cycle processing, add a reconcile that swaps to a changed claim:
 

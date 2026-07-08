@@ -300,8 +300,8 @@ describe('reference units', () => {
   });
 
   it('excludes reference episodes from the co-progress count', async () => {
-    // milo watched 4 lessons + 5 reference; felix watched none. buffer 5.
-    // Counting reference would make milo 9 ahead (lock); excluding it leaves 4 (no lock).
+    // user_3 watched 4 lessons + 5 reference; user_2 watched none. buffer 5.
+    // Counting reference would make user_3 9 ahead (lock); excluding it leaves 4 (no lock).
     const lessons = Array.from({ length: 6 }, (_, i) => ({
       plex: String(400 + i), label: `Lesson ${i + 1}`, itemIndex: i + 1, parentId: '20',
     }));

@@ -13,14 +13,14 @@ describe('FitnessToast', () => {
   });
 
   it('renders the title and subtitle', () => {
-    render(<FitnessToast toast={{ id: 1, title: 'Felix', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
-    expect(screen.getByText('Felix')).toBeTruthy();
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', subtitle: 'is riding the NiceDay', durationMs: 4000 }} onDone={() => {}} />);
+    expect(screen.getByText('User_2')).toBeTruthy();
     expect(screen.getByText('is riding the NiceDay')).toBeTruthy();
   });
 
   it('calls onDone with the toast id after durationMs + exit', () => {
     const onDone = vi.fn();
-    render(<FitnessToast toast={{ id: 1, title: 'Felix', durationMs: 4000 }} onDone={onDone} />);
+    render(<FitnessToast toast={{ id: 1, title: 'User_2', durationMs: 4000 }} onDone={onDone} />);
     expect(onDone).not.toHaveBeenCalled();
     act(() => { vi.advanceTimersByTime(4000 + TOAST_EXIT_MS); });
     expect(onDone).toHaveBeenCalledTimes(1);
@@ -60,18 +60,18 @@ describe('FitnessToast', () => {
           title: 'Challenge complete!',
           durationMs: 4000,
           contributors: [
-            { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' },
-            { id: 'soren', name: 'Soren', avatarUrl: '/api/v1/static/img/users/soren' },
+            { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+            { id: 'user_5', name: 'User_5', avatarUrl: '/api/v1/static/img/users/user_5' },
           ],
         }}
         onDone={() => {}}
       />
     );
-    expect(screen.getByText('Felix')).toBeTruthy();
-    expect(screen.getByText('Soren')).toBeTruthy();
+    expect(screen.getByText('User_2')).toBeTruthy();
+    expect(screen.getByText('User_5')).toBeTruthy();
     const avatars = document.querySelectorAll('.fitness-toast__contributor-avatar');
     expect(avatars.length).toBe(2);
-    expect(avatars[0].getAttribute('src')).toBe('/api/v1/static/img/users/felix');
+    expect(avatars[0].getAttribute('src')).toBe('/api/v1/static/img/users/user_2');
   });
 
   it('renders a zone pill with the zone label and color when toast.zone is set (issue 3)', () => {

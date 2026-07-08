@@ -67,16 +67,16 @@ describe('listSaveUsers', () => {
   it('finds users with a .srm and users with a state dir, sorted + deduped', () => {
     const dir = tmpEmu();
     // battery: {system}/saves/{user}/{gameId}.srm
-    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'soren'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'soren', 'pokemon-red.srm'), 'x');
-    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'milo'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'milo', 'other-game.srm'), 'x'); // different game
+    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_5'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_5', 'pokemon-red.srm'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_3'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_3', 'other-game.srm'), 'x'); // different game
     // state: {system}/states/{user}/{gameId}/{slot}.state
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'alan', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'alan', 'pokemon-red', 'auto.state'), 'x');
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'soren', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'soren', 'pokemon-red', 'auto.state'), 'x'); // dup of soren
-    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual(['alan', 'soren']);
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red', 'auto.state'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red', 'auto.state'), 'x'); // dup of user_5
+    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual(['user_4', 'user_5']);
   });
 
   it('rejects unsafe segments', () => {
@@ -162,7 +162,7 @@ git commit -m "feat(emulator): listSaveUsers — enumerate users with a save for
 Add to `emulator.test.mjs`. First extend `makeApp`'s `deps` with a `listSaveUsers` stub (add this line inside the `deps` object, next to `resolveStatePath`):
 
 ```js
-    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['soren', 'alan'] : [])),
+    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['user_5', 'user_4'] : [])),
 ```
 
 Then add the describe block below. `resolveGameRules` reads the **normalized** `game.saveMode` field, so the save-enabled case supplies it via a `loadConfig` override — do NOT edit the shared `makeCfg()` (its `pokemon-red` game has no save mode on purpose; the existing "default none" library test depends on that). `request` from `supertest` is already imported at the top of the file — do not re-import.
@@ -175,7 +175,7 @@ describe('GET /saves/:system/:gameId', () => {
     const { app } = makeApp({ loadConfig: batteryCfg });
     const res = await request(app).get('/api/v1/emulator/saves/gb/pokemon-red');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ users: ['soren', 'alan'] });
+    expect(res.body).toEqual({ users: ['user_5', 'user_4'] });
   });
 
   it('returns [] for a none-save game without scanning', async () => {
@@ -415,11 +415,11 @@ describe('new launch model', () => {
   });
 
   it('loadLaunch resumes + persists for the user', () => {
-    expect(loadLaunch('soren')).toEqual({ action: 'resume', persist: true, userId: 'soren' });
+    expect(loadLaunch('user_5')).toEqual({ action: 'resume', persist: true, userId: 'user_5' });
   });
 
   it('claimLaunch keeps the fresh game + persists for the user', () => {
-    expect(claimLaunch('milo')).toEqual({ action: 'fresh', persist: true, userId: 'milo' });
+    expect(claimLaunch('user_3')).toEqual({ action: 'fresh', persist: true, userId: 'user_3' });
   });
 });
 ```
@@ -493,20 +493,20 @@ describe('battery-both resume', () => {
     // snapshot present → kind:state
     let fetchImpl = vi.fn(async (url) =>
       url.includes('/state/') ? res({ status: 200, buffer: new ArrayBuffer(4) }) : res({ status: 404 }));
-    let r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    let r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(r.kind).toBe('state');
 
     // snapshot absent, .srm present → kind:battery
     fetchImpl = vi.fn(async (url) =>
       url.includes('/state/') ? res({ status: 404 }) : res({ status: 200, buffer: new ArrayBuffer(4) }));
-    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(r.kind).toBe('battery');
 
     // neither → absent
     fetchImpl = vi.fn(async () => res({ status: 404 }));
-    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('absent');
   });
 
@@ -514,7 +514,7 @@ describe('battery-both resume', () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
     const r = await clientWith(fetchImpl).persistResume({
-      system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery',
+      system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery',
       captured: { state: new Uint8Array([1]), battery: new Uint8Array([2]) },
     });
     expect(r.status).toBe('ok');
@@ -526,7 +526,7 @@ describe('battery-both resume', () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
     await clientWith(fetchImpl).persistResume({
-      system: 'gb', gameId: 'g', user: 'soren', saveMode: 'state', captured: { state: new Uint8Array([1]) },
+      system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'state', captured: { state: new Uint8Array([1]) },
     });
     expect(calls.every(([u]) => u.includes('/state/'))).toBe(true);
   });
@@ -534,7 +534,7 @@ describe('battery-both resume', () => {
   it('clearResume(battery) deletes BOTH', async () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
-    const r = await clientWith(fetchImpl).clearResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    const r = await clientWith(fetchImpl).clearResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(calls.filter(([, m]) => m === 'DELETE').length).toBe(2);
   });
@@ -737,8 +737,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { PlayerSelect } from './PlayerSelect.jsx';
 
 const savers = [
-  { userId: 'soren', name: 'Soren', avatarSrc: '/s.png' },
-  { userId: 'milo', name: 'Milo', avatarSrc: '/m.png' },
+  { userId: 'user_5', name: 'User_5', avatarSrc: '/s.png' },
+  { userId: 'user_3', name: 'User_3', avatarSrc: '/m.png' },
 ];
 
 describe('PlayerSelect', () => {
@@ -753,8 +753,8 @@ describe('PlayerSelect', () => {
   it('lists savers and fires onLoad / onClaim / onDismiss', () => {
     const onLoad = vi.fn(); const onClaim = vi.fn(); const onDismiss = vi.fn();
     render(<PlayerSelect visible savers={savers} onLoad={onLoad} onClaim={onClaim} onDismiss={onDismiss} />);
-    fireEvent.pointerDown(screen.getByLabelText('Continue as Soren'));
-    expect(onLoad).toHaveBeenCalledWith('soren');
+    fireEvent.pointerDown(screen.getByLabelText('Continue as User_5'));
+    expect(onLoad).toHaveBeenCalledWith('user_5');
     fireEvent.pointerDown(screen.getByText('Save my game'));
     expect(onClaim).toHaveBeenCalled();
     fireEvent.pointerDown(screen.getByLabelText('Dismiss'));
@@ -762,8 +762,8 @@ describe('PlayerSelect', () => {
   });
 
   it('shows a message and an empty-saver hint', () => {
-    render(<PlayerSelect visible savers={[]} message="That's not Soren." onLoad={() => {}} onClaim={() => {}} onDismiss={() => {}} />);
-    expect(screen.getByText("That's not Soren.")).toBeTruthy();
+    render(<PlayerSelect visible savers={[]} message="That's not User_5." onLoad={() => {}} onClaim={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText("That's not User_5.")).toBeTruthy();
     expect(screen.getByText('No saved games yet')).toBeTruthy();
   });
 });
@@ -920,7 +920,7 @@ describe('autosave', () => {
     const { factories, engine } = makeFactories();
     const saveResume = vi.fn(() => Promise.resolve({ status: 'ok' }));
     const persistence = {
-      saveMode: 'battery', persist: true, userId: 'soren',
+      saveMode: 'battery', persist: true, userId: 'user_5',
       loadResume: () => Promise.resolve({ status: 'absent' }),
       saveResume,
       clearResume: () => Promise.resolve({ status: 'ok' }),
@@ -931,7 +931,7 @@ describe('autosave', () => {
           game={baseGame}
           engineConfig={{ core: 'gb', controls: {} }}
           governanceGate={makeGate()}
-          identity={{ getActivePlayerId: () => 'soren' }}
+          identity={{ getActivePlayerId: () => 'user_5' }}
           persistence={persistence}
           autosaveSeconds={15}
           factories={factories}
@@ -1094,7 +1094,7 @@ describe('EmulatorGameWidget save flow', () => {
     kiosk.value = true;
     api.mockImplementation((p) => {
       if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
-      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['soren'] });
+      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['user_5'] });
       return Promise.resolve({});
     });
     identity.registerAdmin.mockResolvedValue({ matched: true, userId: 'dad', authz: { admin: true } });
@@ -1105,7 +1105,7 @@ describe('EmulatorGameWidget save flow', () => {
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0'); // fresh + anonymous
     await screen.findByTestId('player-select');
-    expect(screen.getByTestId('saver-soren')).toBeTruthy();
+    expect(screen.getByTestId('saver-user_5')).toBeTruthy();
   });
 
   it('second launch in the same session skips the admin gate', async () => {
@@ -1128,18 +1128,18 @@ describe('EmulatorGameWidget save flow', () => {
     kiosk.value = true;
     api.mockImplementation((p) => p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('battery'))
-      : Promise.resolve({ users: ['soren'] }));
+      : Promise.resolve({ users: ['user_5'] }));
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
-    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'soren' });
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
     await screen.findByTestId('player-select');
-    fireEvent.click(screen.getByTestId('saver-soren'));
+    fireEvent.click(screen.getByTestId('saver-user_5'));
     await waitFor(() => {
       const el = screen.getByTestId('console');
       expect(el.getAttribute('data-persist')).toBe('1');
-      expect(el.getAttribute('data-user')).toBe('soren');
+      expect(el.getAttribute('data-user')).toBe('user_5');
     });
   });
 });

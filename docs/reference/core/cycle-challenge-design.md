@@ -115,7 +115,7 @@ equipment:
     name: CycleAce
     type: stationary_bike
     cadence: 49904
-    eligible_users: [kckern, felix, milo]   # required for cycle challenges
+    eligible_users: [user_1, user_2, user_3]   # required for cycle challenges
 ```
 
 ### Defaults

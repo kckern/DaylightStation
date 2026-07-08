@@ -63,8 +63,8 @@ describe('Cycle SM — locked cycle recovers from cadence despite unmet global b
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 90,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'cool' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'cool' },
       baseReqSatisfiedForRider: false,
       baseReqSatisfiedGlobal: false
     });
@@ -86,8 +86,8 @@ describe('Cycle SM — locked cycle recovers from cadence despite unmet global b
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 90,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'cool' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'cool' },
       baseReqSatisfiedForRider: false,
       baseReqSatisfiedGlobal: false
     });
@@ -185,8 +185,8 @@ function buildSession() {
     getParticipantProfile: () => null,
     zoneProfileStore: null,
     getActiveParticipantState: () => ({
-      participants: ['felix'],
-      zoneMap: { felix: 'active' },
+      participants: ['user_2'],
+      zoneMap: { user_2: 'active' },
       totalCount: 1
     })
   };
@@ -213,8 +213,8 @@ function makeEngine() {
 }
 
 const EVAL_ARGS = {
-  activeParticipants: ['felix'],
-  userZoneMap: { felix: 'active' },
+  activeParticipants: ['user_2'],
+  userZoneMap: { user_2: 'active' },
   zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
   zoneInfoMap: { active: { id: 'active', name: 'Active' } },
   totalCount: 1

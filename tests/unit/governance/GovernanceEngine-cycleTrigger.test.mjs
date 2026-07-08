@@ -14,9 +14,9 @@ describe('GovernanceEngine.triggerChallenge with type=cycle', () => {
   beforeEach(() => {
     nowValue = 10000;
     const session = {
-      _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix', 'milo'] }] },
+      _deviceRouter: { getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }] },
       getParticipantProfile: () => null, zoneProfileStore: null,
-      getActiveParticipantState: () => ({ participants: ['felix'], zoneMap: { felix: 'warm' }, totalCount: 1 })
+      getActiveParticipantState: () => ({ participants: ['user_2'], zoneMap: { user_2: 'warm' }, totalCount: 1 })
     };
     engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(1) });
     engine.configure({
@@ -47,20 +47,20 @@ describe('GovernanceEngine.triggerChallenge with type=cycle', () => {
     expect(result.success).toBe(true);
     expect(result.challengeId).toBeDefined();
     expect(engine.challengeState.activeChallenge?.type).toBe('cycle');
-    expect(['felix', 'milo']).toContain(engine.challengeState.activeChallenge.rider);
+    expect(['user_2', 'user_3']).toContain(engine.challengeState.activeChallenge.rider);
   });
 
   it('triggerChallenge with riderId forces that rider', () => {
-    const result = engine.triggerChallenge({ type: 'cycle', selectionId, riderId: 'milo' });
+    const result = engine.triggerChallenge({ type: 'cycle', selectionId, riderId: 'user_3' });
     expect(result.success).toBe(true);
-    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
   });
 
   it('triggerChallenge with riderId bypasses cooldown', () => {
-    engine._cycleCooldowns = { milo: nowValue + 100000 };
-    const result = engine.triggerChallenge({ type: 'cycle', selectionId, riderId: 'milo' });
+    engine._cycleCooldowns = { user_3: nowValue + 100000 };
+    const result = engine.triggerChallenge({ type: 'cycle', selectionId, riderId: 'user_3' });
     expect(result.success).toBe(true);
-    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
   });
 
   it('rejects unknown selectionId', () => {

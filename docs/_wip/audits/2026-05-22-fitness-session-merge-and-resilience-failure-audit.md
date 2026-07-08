@@ -179,7 +179,7 @@ Subsequent symptoms (5+ fullscreen-toggle clicks in 20 s on the DASH-VIDEO eleme
 
 The tick loop did **not advance once** in ~30 s windows across the entire 22-minute span. Ingest fired at 10–30 Hz; **zero ticks**. The session-too-short re-validation loop fired 891 times. `fitness.render_thrashing` warned 36 times (FitnessChart re-rendering 13–66 times per 5 s, `sustainedMs > 30 s`). The frontend was already saturated *before* AV1 decode strain pushed it over.
 
-WS instability was the chronic backdrop: every ~60 s the kckern Firefox client and the Shield TV menu both fire `[WebSocketService] Connection stale (no data in 45s), forcing reconnect`, and the backend logs the matching `eventbus.client_disconnected` / `client_stale`. This is the same pattern that has been in the logs for at least 90 minutes prior to the stall — it didn't cause the failure, but it contributed to the user's perception that nothing was responsive.
+WS instability was the chronic backdrop: every ~60 s the user_1 Firefox client and the Shield TV menu both fire `[WebSocketService] Connection stale (no data in 45s), forcing reconnect`, and the backend logs the matching `eventbus.client_disconnected` / `client_stale`. This is the same pattern that has been in the logs for at least 90 minutes prior to the stall — it didn't cause the failure, but it contributed to the user's perception that nothing was responsive.
 
 ---
 

@@ -358,35 +358,35 @@ The roster is built by iterating **active devices**, while the ledger persists *
 #### Divergence Scenario
 
 ```
-T=0: Device 7138 broadcasts → User "Alan" created → Ledger: {7138: Alan}
-     Roster: [Alan] ✓
+T=0: Device 7138 broadcasts → User "User_4" created → Ledger: {7138: User_4}
+     Roster: [User_4] ✓
      
 T=60s: Device 7138 goes inactive (timeout)
-       Ledger: {7138: Alan} (still present)
+       Ledger: {7138: User_4} (still present)
        Roster: [] (device removed from iteration)
        
-T=65s: Chart tries to render Alan
+T=65s: Chart tries to render User_4
        - Present roster: empty
-       - Historical: ["Alan"]
+       - Historical: ["User_4"]
        - useRaceChartWithHistory: loads from participantCache
        - Series data: exists in timeline ✓
-       - Result: Alan shows as "absent" (gray badge) ✓
+       - Result: User_4 shows as "absent" (gray badge) ✓
        
 T=120s: Device 7138 broadcasts again
         - DeviceManager recreates device
-        - UserManager.resolveUserForDevice(7138) → User "Alan"
-        - Ledger still has {7138: Alan} ✓
-        - Roster: [Alan] ✓
+        - UserManager.resolveUserForDevice(7138) → User "User_4"
+        - Ledger still has {7138: User_4} ✓
+        - Roster: [User_4] ✓
 ```
 
 #### Where Sync Breaks
 
 | Scenario | Ledger State | Roster State | Chart Behavior |
 |----------|--------------|--------------|----------------|
-| Normal operation | `{7138: Alan}` | `[Alan]` | ✅ Shows avatar |
-| Device timeout | `{7138: Alan}` | `[]` | ✅ Shows dropout badge |
-| Guest reassigned | `{7138: Bob}` | `[Bob]` | ⚠️ Alan's data orphaned |
-| Device cleared | `{}` | `[]` | ❌ No way to recover Alan |
+| Normal operation | `{7138: User_4}` | `[User_4]` | ✅ Shows avatar |
+| Device timeout | `{7138: User_4}` | `[]` | ✅ Shows dropout badge |
+| Guest reassigned | `{7138: Bob}` | `[Bob]` | ⚠️ User_4's data orphaned |
+| Device cleared | `{}` | `[]` | ❌ No way to recover User_4 |
 
 #### Current Mitigation Status
 

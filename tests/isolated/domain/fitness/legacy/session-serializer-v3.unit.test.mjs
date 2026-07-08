@@ -84,7 +84,7 @@ describe('SessionSerializerV3', () => {
         endTime: 1767732533431,
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: {
+          user_1: {
             display_name: 'Keith',
             is_primary: true,
             is_guest: false,
@@ -95,24 +95,24 @@ describe('SessionSerializerV3', () => {
         timeline: {
           timebase: { intervalMs: 5000 },
           series: {
-            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
-            'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
-            'user:kckern:coins_total': [0, 1, 2, 3, 5],
-            'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
+            'user:user_1:heart_rate': [71, 75, 80, 90, 100],
+            'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
+            'user:user_1:coins_total': [0, 1, 2, 3, 5],
+            'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
           }
         }
       };
 
       const result = SessionSerializerV3.serialize(input);
 
-      expect(result.participants.kckern).toBeDefined();
-      expect(result.participants.kckern.display_name).toBe('Keith');
-      expect(result.participants.kckern.coins_earned).toBe(5);
-      expect(result.participants.kckern.hr_stats.min).toBe(71);
-      expect(result.participants.kckern.hr_stats.max).toBe(100);
-      expect(result.participants.kckern.zone_time_seconds.cool).toBe(10);
-      expect(result.participants.kckern.zone_time_seconds.active).toBe(15);
-      expect(result.participants.kckern.total_beats).toBeCloseTo(34.7, 1);
+      expect(result.participants.user_1).toBeDefined();
+      expect(result.participants.user_1.display_name).toBe('Keith');
+      expect(result.participants.user_1.coins_earned).toBe(5);
+      expect(result.participants.user_1.hr_stats.min).toBe(71);
+      expect(result.participants.user_1.hr_stats.max).toBe(100);
+      expect(result.participants.user_1.zone_time_seconds.cool).toBe(10);
+      expect(result.participants.user_1.zone_time_seconds.active).toBe(15);
+      expect(result.participants.user_1.total_beats).toBeCloseTo(34.7, 1);
     });
   });
 
@@ -126,10 +126,10 @@ describe('SessionSerializerV3', () => {
         timeline: {
           timebase: { intervalMs: 5000, tickCount: 5 },
           series: {
-            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
-            'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
-            'user:kckern:coins_total': [0, 1, 2, 3, 5],
-            'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
+            'user:user_1:heart_rate': [71, 75, 80, 90, 100],
+            'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
+            'user:user_1:coins_total': [0, 1, 2, 3, 5],
+            'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
             'device:49904:rpm': [null, null, 60, 65, 70],
             'device:49904:rotations': [null, null, 5, 10.5, 16.3],
             'global:coins_total': [0, 1, 2, 3, 5]
@@ -144,8 +144,8 @@ describe('SessionSerializerV3', () => {
       expect(result.timeline.encoding).toBe('rle');
 
       // Participants nested
-      expect(result.timeline.participants.kckern.hr).toBeDefined();
-      expect(result.timeline.participants.kckern.zone).toBeDefined();
+      expect(result.timeline.participants.user_1.hr).toBeDefined();
+      expect(result.timeline.participants.user_1.zone).toBeDefined();
 
       // Equipment nested
       expect(result.timeline.equipment['49904'].rpm).toBeDefined();
@@ -163,7 +163,7 @@ describe('SessionSerializerV3', () => {
         timeline: {
           timebase: { intervalMs: 5000, tickCount: 5 },
           series: {
-            'user:kckern:heart_rate': [71, 75, 80, 90, 100],
+            'user:user_1:heart_rate': [71, 75, 80, 90, 100],
             'device:12345:power': [null, null, null, null, null],
             'device:12345:rotations': [0, 0, 0, 0, 0]
           }
@@ -172,7 +172,7 @@ describe('SessionSerializerV3', () => {
 
       const result = SessionSerializerV3.serialize(input);
 
-      expect(result.timeline.participants.kckern.hr).toBeDefined();
+      expect(result.timeline.participants.user_1.hr).toBeDefined();
       expect(result.timeline.equipment).toBeUndefined(); // All nulls/zeros dropped
     });
   });

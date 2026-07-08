@@ -561,7 +561,7 @@ describe('computeZoomTarget', () => {
   describe('focusPerson targeting', () => {
     it('zooms toward the named person face center', () => {
       const people = [{
-        name: 'Felix',
+        name: 'User_2',
         id: 'p1',
         faces: [{
           x1: 400, y1: 200, x2: 600, y2: 400,
@@ -569,7 +569,7 @@ describe('computeZoomTarget', () => {
         }],
       }];
 
-      const result = computeZoomTarget({ people, focusPerson: 'Felix', zoom });
+      const result = computeZoomTarget({ people, focusPerson: 'User_2', zoom });
 
       // Face center is at (500/1000, 300/800) = (0.5, 0.375)
       // targetX = 0.5, targetY = 0.375
@@ -582,12 +582,12 @@ describe('computeZoomTarget', () => {
 
     it('is case-insensitive for person name matching', () => {
       const people = [{
-        name: 'Felix',
+        name: 'User_2',
         id: 'p1',
         faces: [{ x1: 0, y1: 0, x2: 200, y2: 200, imageWidth: 1000, imageHeight: 1000 }],
       }];
 
-      const result = computeZoomTarget({ people, focusPerson: 'felix', zoom });
+      const result = computeZoomTarget({ people, focusPerson: 'user_2', zoom });
       // Should match — face center is (0.1, 0.1), not the random fallback
       // endOffX = (0.5 - 0.1) * maxTranslate = positive (zoom left toward face)
       expect(parseFloat(result.endX)).toBeGreaterThan(0);
@@ -618,13 +618,13 @@ describe('computeZoomTarget', () => {
 
     it('picks the largest face when focusPerson does not match anyone', () => {
       const people = [{
-        name: 'Felix',
+        name: 'User_2',
         id: 'p1',
         faces: [{ x1: 0, y1: 0, x2: 200, y2: 200, imageWidth: 1000, imageHeight: 1000 }],
       }];
 
       const result = computeZoomTarget({ people, focusPerson: 'NonExistent', zoom });
-      // Should fall through to largest face (Felix), not random
+      // Should fall through to largest face (User_2), not random
       expect(parseFloat(result.endX)).toBeGreaterThan(0);
     });
   });
@@ -644,8 +644,8 @@ describe('computeZoomTarget', () => {
     });
 
     it('handles people with empty faces arrays', () => {
-      const people = [{ name: 'Felix', id: 'p1', faces: [] }];
-      const result = computeZoomTarget({ people, focusPerson: 'Felix', zoom });
+      const people = [{ name: 'User_2', id: 'p1', faces: [] }];
+      const result = computeZoomTarget({ people, focusPerson: 'User_2', zoom });
       // No faces → random fallback
       expect(result.startX).toMatch(/-?\d+\.\d+%/);
     });
@@ -682,17 +682,17 @@ Add to `tests/isolated/modules/Player/computeZoomTarget.test.mjs`:
 describe('JIT face data integration', () => {
   it('recomputes zoom target when face data arrives after mount', () => {
     // First render: no faces → random target
-    const result1 = computeZoomTarget({ people: [], focusPerson: 'Felix', zoom: 1.2 });
+    const result1 = computeZoomTarget({ people: [], focusPerson: 'User_2', zoom: 1.2 });
     // Simulated: /info/ API returns face data
     const enrichedPeople = [{
-      name: 'Felix',
+      name: 'User_2',
       id: 'p1',
       faces: [{ x1: 200, y1: 100, x2: 400, y2: 300, imageWidth: 1000, imageHeight: 800 }],
     }];
     // Second computation: face found → targeted zoom
-    const result2 = computeZoomTarget({ people: enrichedPeople, focusPerson: 'Felix', zoom: 1.2 });
+    const result2 = computeZoomTarget({ people: enrichedPeople, focusPerson: 'User_2', zoom: 1.2 });
 
-    // result2 should zoom toward Felix's face, not random
+    // result2 should zoom toward User_2's face, not random
     // Face center: (300/1000, 200/800) = (0.3, 0.25)
     // This should produce different end coordinates than the random fallback
     expect(parseFloat(result2.endX)).toBeGreaterThan(0); // zoom toward left-of-center face
@@ -851,7 +851,7 @@ Expected:
   "hasAudio": true,
   "audioContentId": "music:anniversary",
   "firstItemType": "image",
-  "sampleSlideshow": { "duration": 5, "effect": "kenburns", "zoom": 1.2, "transition": "crossfade", "focusPerson": "Alan" }
+  "sampleSlideshow": { "duration": 5, "effect": "kenburns", "zoom": 1.2, "transition": "crossfade", "focusPerson": "User_4" }
 }
 ```
 

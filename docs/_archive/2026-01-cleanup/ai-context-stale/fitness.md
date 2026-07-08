@@ -9,7 +9,7 @@ Heart rate-based fitness tracking with gamification. Users wear heart rate monit
 | Term | Definition |
 |------|------------|
 | **Session** | A workout period with participants, devices, and timeline |
-| **Profile** | Persistent user identity (e.g., "kckern") |
+| **Profile** | Persistent user identity (e.g., "user_1") |
 | **Entity** | A participation instance in a session - allows same profile to rejoin |
 | **Zone** | Heart rate intensity level (cool, active, warm, hot, fire) |
 | **TreasureBox** | Coin accumulation system - higher zones earn more coins |
@@ -78,10 +78,10 @@ roster.forEach(entry => {
 
 | Identifier | Format | Example | Use For |
 |------------|--------|---------|---------|
-| userId | lowercase string | "kckern", "milo" | Dictionary keys, lookups |
+| userId | lowercase string | "user_1", "user_3" | Dictionary keys, lookups |
 | entityId | entity-{ts}-{hash} | "entity-1735689600000-abc" | Session participation instance |
 | deviceId | string | "42" | Physical device reference |
-| name | any case string | "KC Kern" | Display ONLY |
+| name | any case string | "User_1" | Display ONLY |
 
 ## Common Tasks
 

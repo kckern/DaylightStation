@@ -88,7 +88,7 @@ Existing user profiles gain a `roles` field:
 
 ```yaml
 # data/users/kckern/profile.yml
-username: kckern
+username: user_1
 household_id: default
 roles: [sysadmin]
 ```
@@ -129,7 +129,7 @@ Request
 
 ```json
 {
-  "sub": "kckern",
+  "sub": "user_1",
   "hid": "default",
   "roles": ["sysadmin"],
   "iat": 1739318400,

@@ -314,7 +314,7 @@ Append inside the existing top-level `describe` in `CycleChallengeOverlay.test.j
   it('renders the segmented health bar (not the old smooth meter)', () => {
     const challenge = {
       type: 'cycle', cycleState: 'maintain', status: 'pending',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       currentPhaseIndex: 1, totalPhases: 4,
       currentPhase: { hiRpm: 70, loRpm: 52 },
       currentRpm: 68, phaseProgressPct: 0.4, cycleHealthPct: 0.5
@@ -530,7 +530,7 @@ Append to `CycleChallengeOverlay.test.jsx`:
   it('flashes the in-progress phase block (active = currentPhaseIndex)', () => {
     const challenge = {
       type: 'cycle', cycleState: 'maintain', status: 'pending',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       currentPhaseIndex: 2, totalPhases: 4,
       currentPhase: { hiRpm: 70, loRpm: 52 },
       currentRpm: 68, phaseProgressPct: 0.3, cycleHealthPct: 1
@@ -624,13 +624,13 @@ describe('GovernanceEngine boost contributions', () => {
     const engine = new GovernanceEngine(null);
     const active = { selection: { boost: { zoneMultipliers: { hot: 0.5, fire: 1.0 }, maxTotalMultiplier: 3.0 } } };
     const ctx = {
-      activeParticipants: ['felix', 'mom', 'milo'],
-      userZoneMap: { felix: 'fire', mom: 'warm', milo: 'hot' }
+      activeParticipants: ['user_2', 'mom', 'user_3'],
+      userZoneMap: { user_2: 'fire', mom: 'warm', user_3: 'hot' }
     };
     const { multiplier, contributors, contributions } = engine._computeBoostMultiplier(active, ctx);
     expect(multiplier).toBeCloseTo(2.5); // 1.0 + 1.0(fire) + 0.5(hot)
-    expect(contributors).toEqual(['felix', 'milo']);
-    expect(contributions).toEqual({ felix: 1.0, milo: 0.5 });
+    expect(contributors).toEqual(['user_2', 'user_3']);
+    expect(contributions).toEqual({ user_2: 1.0, user_3: 0.5 });
   });
 });
 ```
@@ -709,14 +709,14 @@ import CircularUserAvatar from './CircularUserAvatar.jsx';
 
 describe('CircularUserAvatar boostBadge', () => {
   it('renders a boost badge when boostBadge is provided', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" boostBadge="×1.5" />);
+    const { container } = render(<CircularUserAvatar name="User_2" boostBadge="×1.5" />);
     const badge = container.querySelector('.vital-boost-badge');
     expect(badge).not.toBeNull();
     expect(badge.textContent).toBe('×1.5');
   });
 
   it('renders no badge when boostBadge is absent', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" />);
+    const { container } = render(<CircularUserAvatar name="User_2" />);
     expect(container.querySelector('.vital-boost-badge')).toBeNull();
   });
 });
@@ -812,8 +812,8 @@ Expected: confirm `hrItems` carry `name` (the user slug). `boostContributions` i
 
 ```jsx
 // add to frontend/src/modules/Fitness/player/overlays/FullscreenVitalsOverlay.test.jsx
-// Mock useFitnessContext to return one HR device for 'felix' plus an active cycle
-// challenge whose boostContributions includes felix: 0.5. Assert a ×1.5 badge.
+// Mock useFitnessContext to return one HR device for 'user_2' plus an active cycle
+// challenge whose boostContributions includes user_2: 0.5. Assert a ×1.5 badge.
 // (Follow the existing mock pattern already used in this test file for context.)
 import React from 'react';
 import { render } from '@testing-library/react';
@@ -822,15 +822,15 @@ jest.mock('@/context/FitnessContext.jsx', () => ({
   useFitnessContext: () => ({
     heartRateDevices: [{ deviceId: 'd1', heartRate: 150, connectionState: 'connected' }],
     rpmDevices: [],
-    getUserByDevice: () => ({ name: 'felix' }),
-    allUsers: [{ name: 'felix' }],
-    userCurrentZones: { felix: { id: 'fire', color: '#ef4444' } },
+    getUserByDevice: () => ({ name: 'user_2' }),
+    allUsers: [{ name: 'user_2' }],
+    userCurrentZones: { user_2: { id: 'fire', color: '#ef4444' } },
     zones: [{ id: 'fire', color: '#ef4444', min: 170 }],
     usersConfigRaw: {},
     equipment: [],
     deviceConfiguration: {},
     governanceState: {
-      challenge: { type: 'cycle', boostContributions: { felix: 0.5 } }
+      challenge: { type: 'cycle', boostContributions: { user_2: 0.5 } }
     }
   })
 }));
@@ -1130,14 +1130,14 @@ describe('cycle success stays published for a hold window', () => {
     // Minimal active cycle challenge already at success.
     engine.challengeState.activeChallenge = {
       id: 'c1', type: 'cycle', status: 'success', cycleState: 'maintain',
-      rider: 'felix', ridersUsed: ['felix'], totalPhases: 2, currentPhaseIndex: 2,
+      rider: 'user_2', ridersUsed: ['user_2'], totalPhases: 2, currentPhaseIndex: 2,
       generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 5, maintainSeconds: 10 }],
       completedAt: now, historyRecorded: false, boostContributors: new Set(),
       totalBoostedMs: 0, totalLockEventsCount: 0, startedAt: now - 5000,
       selection: { userCooldownSeconds: 600, boost: { zoneMultipliers: {}, maxTotalMultiplier: 3 } }
     };
     const policy = { challenges: [{ intervalRangeSeconds: [30, 60] }] };
-    const ctx = { activeParticipants: ['felix'], userZoneMap: { felix: 'active' } };
+    const ctx = { activeParticipants: ['user_2'], userZoneMap: { user_2: 'active' } };
 
     // First post-success tick: history recorded, challenge STILL published in success.
     engine._evaluateCycleSuccessForTest?.(); // see note
@@ -1234,22 +1234,22 @@ describe('buildChallengeToast — cycle success', () => {
   it('uses a phase-count subtitle and the rider as contributor', () => {
     const toast = buildChallengeToast('end', {
       type: 'cycle',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       totalPhases: 4
-    }, { resolveUserName: (id) => (id === 'felix' ? 'Felix' : id) });
+    }, { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : id) });
     expect(toast.variant).toBe('success');
     expect(toast.title).toBe('Challenge complete!');
-    expect(toast.subtitle).toBe('Felix completed 4 phases');
+    expect(toast.subtitle).toBe('User_2 completed 4 phases');
     expect(toast.contributors).toEqual([
-      { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' }
+      { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' }
     ]);
   });
 
   it('singular phase wording', () => {
     const toast = buildChallengeToast('end', {
-      type: 'cycle', rider: { id: 'felix', name: 'Felix' }, totalPhases: 1
+      type: 'cycle', rider: { id: 'user_2', name: 'User_2' }, totalPhases: 1
     });
-    expect(toast.subtitle).toBe('Felix completed 1 phase');
+    expect(toast.subtitle).toBe('User_2 completed 1 phase');
   });
 });
 ```

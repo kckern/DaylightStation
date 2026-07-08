@@ -167,7 +167,7 @@ function makeController() {
   const session = {
     _deviceRouter: {
       getEquipmentCatalog: () => [
-        { id: 'cycle_ace', name: 'Ace', cadence: 'cad1', eligible_users: ['felix', 'milo'] },
+        { id: 'cycle_ace', name: 'Ace', cadence: 'cad1', eligible_users: ['user_2', 'user_3'] },
         { id: 'cycle_bee', name: 'Bee', cadence: 'cad2', eligible_users: ['kc'] }
       ]
     },
@@ -310,10 +310,10 @@ describe('FitnessSimulationController — autoAssignRiders', () => {
     const { ctrl, session } = makeController();
     const out = ctrl.autoAssignRiders(2);
     expect(out).toEqual([
-      { equipmentId: 'cycle_ace', userId: 'felix' },
+      { equipmentId: 'cycle_ace', userId: 'user_2' },
       { equipmentId: 'cycle_bee', userId: 'kc' }
     ]);
-    expect(session.setEquipmentRider).toHaveBeenCalledWith('cycle_ace', 'felix');
+    expect(session.setEquipmentRider).toHaveBeenCalledWith('cycle_ace', 'user_2');
     expect(session.setEquipmentRider).toHaveBeenCalledWith('cycle_bee', 'kc');
   });
 

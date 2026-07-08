@@ -578,7 +578,7 @@ race:
   course_id: null           # featured-course id for ladder rides; null for lobby races
 participants:
   <userId>:
-    display_name: "Milo"
+    display_name: "User_3"
     equipment: "cycle_ace"
     final_distance_m: 3000
     final_time_s: 142          # null if DNF / time race
@@ -658,10 +658,10 @@ current week); an out-of-range or malformed value is a `400`. Response:
   "course": { "id": "sprint-1500m", "label": "Sprint 1500", "win_condition": "distance", "goal_m": 1500 },
   "week": { "start": "2026-06-29", "end": "2026-07-06" },
   "standings": [
-    { "userId": "kckern", "bestValue": 148.2, "raceId": "20260630091200", "attempts": 3 },
-    { "userId": "milo",   "bestValue": 161.4, "raceId": "20260629174501", "attempts": 1 }
+    { "userId": "user_1", "bestValue": 148.2, "raceId": "20260630091200", "attempts": 3 },
+    { "userId": "user_3",   "bestValue": 161.4, "raceId": "20260629174501", "attempts": 1 }
   ],
-  "allTimeRecord": { "userId": "kckern", "bestValue": 141.0, "raceId": "20260512080000", "date": "2026-05-12" }
+  "allTimeRecord": { "userId": "user_1", "bestValue": 141.0, "raceId": "20260512080000", "date": "2026-05-12" }
 }
 ```
 
@@ -674,7 +674,7 @@ qualifying race in its entire history.
 (missing either is a `400`). Response:
 
 ```json
-{ "userId": "milo", "courseId": "sprint-1500m",
+{ "userId": "user_3", "courseId": "sprint-1500m",
   "best": { "bestValue": 161.4, "raceId": "20260630174501", "date": "2026-06-30" } }
 ```
 

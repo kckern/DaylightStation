@@ -10,9 +10,9 @@ const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
   participants: Object.fromEntries(riders.map(r => [r, { displayName: r }])), media, totalCoins: coins,
 });
 const FIX = [
-  sess('s1', H(14,54), 5.5, ['milo'], null, 60),
-  sess('s3', H(16,22), 37.5, ['alan','milo'], null, 1139),
-  sess('s7', H(19,10), 46.4, ['kckern','milo'], { primary: { contentId: 'plex:1', title: 'Vid' } }, 2745),
+  sess('s1', H(14,54), 5.5, ['user_3'], null, 60),
+  sess('s3', H(16,22), 37.5, ['user_4','user_3'], null, 1139),
+  sess('s7', H(19,10), 46.4, ['user_1','user_3'], { primary: { contentId: 'plex:1', title: 'Vid' } }, 2745),
 ];
 const silentLogger = { error() {}, warn() {}, info() {}, debug() {} };
 

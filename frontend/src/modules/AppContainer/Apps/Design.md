@@ -212,10 +212,10 @@ User: Sunny weather, good coffee, and family time
 │                                            │
 │ Who is adding these?                       │
 │ ┌────────┐ ┌────────┐ ┌────────┐         │
-│ │  Dad   │ │  Mom   │ │ Felix  │         │
+│ │  Dad   │ │  Mom   │ │ User_2  │         │
 │ └────────┘ └────────┘ └────────┘         │
 │ ┌────────┐ ┌────────┐                     │
-│ │  Milo  │ │  Alan  │                     │
+│ │  User_3  │ │  User_4  │                     │
 │ └────────┘ └────────┘                     │
 │ ┌────────────────────────────────┐        │
 │ │            Cancel              │        │
@@ -259,10 +259,10 @@ Gratitude users will be derived directly from `household.yml`:
 # data/household/household.yml
 users:
   - {username}    # Display name from user profile
-  - felix
-  - milo
-  - alan
-  - soren
+  - user_2
+  - user_3
+  - user_4
+  - user_5
 ```
 
 The `gratitude.mjs` backend will be updated to:

@@ -62,7 +62,7 @@ export function searchApps(query) {
 }
 
 /**
- * Parse an app input string like "app:family-selector/felix" into parts.
+ * Parse an app input string like "app:family-selector/user_2" into parts.
  * @param {string} input - Raw input value from menu item
  * @returns {object|null} { appId, paramValue, label, fullId } or null if not an app input
  */
@@ -509,7 +509,7 @@ const APP_REGISTRY_LABEL = 'App';
 4. Select it — should set input to `app:webcam`
 5. Type "family" — should see "Family Selector" in results
 6. Select it — should show param picker dropdown with household members
-7. Select a member — should set input to `app:family-selector/felix`
+7. Select a member — should set input to `app:family-selector/user_2`
 
 **Step 6: Commit**
 
@@ -579,7 +579,7 @@ If not running: `cd /Users/kckern/Documents/GitHub/DaylightStation && npm run de
 
 Open the admin UI and navigate to a menu that has `app:` items. Verify:
 - [x] App items show label + teal "APP" badge (not yellow warning)
-- [x] Parameterized apps show `Label / param` format (e.g. "Family Selector / felix")
+- [x] Parameterized apps show `Label / param` format (e.g. "Family Selector / user_2")
 
 **Step 3: Test app search and selection**
 

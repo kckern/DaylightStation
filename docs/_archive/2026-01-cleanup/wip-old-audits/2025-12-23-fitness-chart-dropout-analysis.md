@@ -187,16 +187,16 @@ session.emit('participant:rejoin', { userId, tick, newValue });
 ```javascript
 // Timeline series per user
 timeline.series = {
-  'user:milo:heart_rate': [72, 75, 78, null, null, 82, ...],  // Rarely has nulls
-  'user:milo:heart_beats': [0, 2, 5, 8, 8, 8, 12, ...],       // Cumulative
-  'user:milo:coins_total': [0, 2, 5, 8, 8, 8, 12, ...],       // From TreasureBox
-  'user:milo:zone_id': ['green', 'green', 'blue', ...],
+  'user:user_3:heart_rate': [72, 75, 78, null, null, 82, ...],  // Rarely has nulls
+  'user:user_3:heart_beats': [0, 2, 5, 8, 8, 8, 12, ...],       // Cumulative
+  'user:user_3:coins_total': [0, 2, 5, 8, 8, 8, 12, ...],       // From TreasureBox
+  'user:user_3:zone_id': ['green', 'green', 'blue', ...],
 };
 
 // Participant cache in chart
 participantCache = {
-  'milo': {
-    id: 'milo',
+  'user_3': {
+    id: 'user_3',
     status: 'active' | 'removed',
     dropoutMarkers: [{ tick: 45, value: 23, timestamp: ... }],
     lastSeenTick: 102,
@@ -212,7 +212,7 @@ participantCache = {
 ```javascript
 // What's MISSING - explicit dropout events stored in timeline
 timeline.series = {
-  'user:milo:dropout_events': [
+  'user:user_3:dropout_events': [
     null, null, ..., 
     { type: 'dropout', value: 23 },  // At tick where dropout occurred
     null, null, ...,
@@ -222,8 +222,8 @@ timeline.series = {
 
 // OR a separate event log
 session.dropoutEvents = [
-  { userId: 'milo', type: 'dropout', tick: 45, value: 23 },
-  { userId: 'milo', type: 'rejoin', tick: 78 },
+  { userId: 'user_3', type: 'dropout', tick: 45, value: 23 },
+  { userId: 'user_3', type: 'rejoin', tick: 78 },
 ];
 ```
 

@@ -35,7 +35,7 @@ it('omits exclude when not present', () => {
 });
 
 it('passes through slideshow config when present', () => {
-  const slideshow = { duration: 5, effect: 'kenburns', zoom: 1.2, transition: 'crossfade', focusPerson: 'Felix' };
+  const slideshow = { duration: 5, effect: 'kenburns', zoom: 1.2, transition: 'crossfade', focusPerson: 'User_2' };
   const svc = new SavedQueryService({
     readQuery: () => ({ type: 'immich', slideshow }),
   });
@@ -252,7 +252,7 @@ describe('ImmichAdapter face enrichment', () => {
 
   it('transforms people with face bounding boxes', () => {
     const input = [{
-      name: 'Felix',
+      name: 'User_2',
       id: 'person-uuid-1',
       faces: [{
         boundingBoxX1: 100, boundingBoxY1: 50,
@@ -263,7 +263,7 @@ describe('ImmichAdapter face enrichment', () => {
 
     const result = transformPeople(input);
     expect(result).toEqual([{
-      name: 'Felix',
+      name: 'User_2',
       id: 'person-uuid-1',
       faces: [{
         x1: 100, y1: 50, x2: 300, y2: 250,
@@ -284,10 +284,10 @@ describe('ImmichAdapter face enrichment', () => {
   });
 
   it('preserves backward compatibility — name field still accessible', () => {
-    const input = [{ name: 'Felix', id: 'p1', faces: [] }];
+    const input = [{ name: 'User_2', id: 'p1', faces: [] }];
     const result = transformPeople(input);
-    expect(result[0].name).toBe('Felix');
-    expect(result.map(p => p.name)).toEqual(['Felix']);
+    expect(result[0].name).toBe('User_2');
+    expect(result.map(p => p.name)).toEqual(['User_2']);
   });
 });
 ```
@@ -323,7 +323,7 @@ New:
 
 Search for code that consumes `metadata.people` and assumes it's an array of strings. Common patterns:
 - `.map(p => p.name)` — still works (name is still a field)
-- `.includes('Felix')` — BREAKS if it was checking string array. Search with: `grep -r "people.*includes\|people.*indexOf" frontend/ backend/`
+- `.includes('User_2')` — BREAKS if it was checking string array. Search with: `grep -r "people.*includes\|people.*indexOf" frontend/ backend/`
 
 Fix any consumers that assumed `people` was `string[]` — they now need `.map(p => p.name)` first.
 
@@ -1098,7 +1098,7 @@ slideshow:
   effect: kenburns
   zoom: 1.2
   transition: crossfade
-  focusPerson: Felix
+  focusPerson: User_2
 audio:
   contentId: music:anniversary
   behavior: pause

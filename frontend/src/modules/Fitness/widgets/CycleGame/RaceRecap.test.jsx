@@ -10,9 +10,9 @@ const candidate = {
   intervalSeconds: 1,
   day: '2026-06-03',
   timeOfDay: '12:00 pm',
-  winnerName: 'Milo',
+  winnerName: 'User_3',
   participants: [
-    { id: 'milo', displayName: 'Milo', avatarSrc: '/api/v1/static/img/users/milo',
+    { id: 'user_3', displayName: 'User_3', avatarSrc: '/api/v1/static/img/users/user_3',
       distanceSeries: JSON.stringify([20, 60, 100]), hrSeries: JSON.stringify([150, 158, 165]),
       finalDistanceM: 100, finalTimeS: 3, placement: 1 }
   ]
@@ -102,7 +102,7 @@ describe('RaceRecap', () => {
     act(() => { vi.advanceTimersByTime(12000); }); // run replay to the end (t = maxLen-1 = 2)
     const speeds = getAllByTestId('cycle-speedometer-speed').map((el) => el.textContent);
     const rpms = getAllByTestId('cycle-speedometer-rpm').map((el) => el.textContent);
-    // Milo (3 samples) still shows live values at t=2; Dad (2 samples) is parked.
+    // User_3 (3 samples) still shows live values at t=2; Dad (2 samples) is parked.
     expect(speeds[1]).toContain('0 km/h');
     expect(rpms[1]).toContain('0 rpm');
     expect(rpms[0]).toContain('95');

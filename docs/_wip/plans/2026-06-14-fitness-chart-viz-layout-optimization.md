@@ -10,7 +10,7 @@
 
 **Source audit:** `docs/_wip/audits/2026-06-14-fitness-chart-session-detail-design-sins-audit.md`
 
-**Specimen session for all visual checks:** `20260612180809` — 5 riders, 42.3 min, 510 ticks, 13 challenges, 1 video, 1 voice memo. Final coins: **KC 431, Milo 382, Felix 382 (TIE), Alan 99, Soren 42**. The Milo/Felix tie is the canary for Phase 2.
+**Specimen session for all visual checks:** `20260612180809` — 5 riders, 42.3 min, 510 ticks, 13 challenges, 1 video, 1 voice memo. Final coins: **KC 431, User_3 382, User_2 382 (TIE), User_4 99, User_5 42**. The User_3/User_2 tie is the canary for Phase 2.
 
 ---
 
@@ -224,7 +224,7 @@ git commit -m "feat(fitness): soften gutter annotation lines to single hairlines
 
 ## Phase 2 — Top-margin headroom + tie fanning (Sins 1, 4, 7)
 
-**Outcome:** Avatars + value labels stop clipping at the top edge; the Milo/Felix 382 tie renders as a clean side-by-side fan with one shared "382", not an overlapping blob with a duplicated clipped label.
+**Outcome:** Avatars + value labels stop clipping at the top edge; the User_3/User_2 382 tie renders as a clean side-by-side fan with one shared "382", not an overlapping blob with a duplicated clipped label.
 
 ### Task 2.1: Give the chart top headroom
 
@@ -264,22 +264,22 @@ const A = (id, x, y, value) => ({ id, x, y, value, type: 'avatar' });
 
 describe('resolveTieFan', () => {
   it('leaves a non-tied set untouched (offsets 0, labels shown)', () => {
-    const out = resolveTieFan([A('kc', 300, 50, 431), A('soren', 100, 200, 42)], { spacing: 64 });
-    expect(out.map(a => a.id)).toEqual(['kc', 'soren']);
+    const out = resolveTieFan([A('kc', 300, 50, 431), A('user_5', 100, 200, 42)], { spacing: 64 });
+    expect(out.map(a => a.id)).toEqual(['kc', 'user_5']);
     expect(out.every(a => (a.offsetX || 0) === 0 && a.labelHidden !== true)).toBe(true);
   });
 
   it('fans two tied avatars horizontally around their shared endpoint, centered', () => {
-    const out = resolveTieFan([A('milo', 300, 50, 382), A('felix', 300, 50, 382)], { spacing: 64 });
-    const milo = out.find(a => a.id === 'milo');
-    const felix = out.find(a => a.id === 'felix');
+    const out = resolveTieFan([A('user_3', 300, 50, 382), A('user_2', 300, 50, 382)], { spacing: 64 });
+    const user_3 = out.find(a => a.id === 'user_3');
+    const user_2 = out.find(a => a.id === 'user_2');
     // centered fan: offsets -32 and +32
-    expect([milo.offsetX, felix.offsetX].sort((a, b) => a - b)).toEqual([-32, 32]);
-    expect(milo.offsetY).toBe(0);
+    expect([user_3.offsetX, user_2.offsetX].sort((a, b) => a - b)).toEqual([-32, 32]);
+    expect(user_3.offsetY).toBe(0);
   });
 
   it('shows the value label on exactly one tied member (the last)', () => {
-    const out = resolveTieFan([A('milo', 300, 50, 382), A('felix', 300, 50, 382)], { spacing: 64 });
+    const out = resolveTieFan([A('user_3', 300, 50, 382), A('user_2', 300, 50, 382)], { spacing: 64 });
     const hidden = out.filter(a => a.labelHidden === true);
     const shown = out.filter(a => a.labelHidden !== true);
     expect(hidden.length).toBe(1);
@@ -413,7 +413,7 @@ import { resolveTieFan } from './layout/utils/tieFan.js';
                 )}
 ```
 
-**Step 4: Visual verify** (`LABEL=phase2c`): "Confirm Milo and Felix (both 382) now render side-by-side, fully visible, with a SINGLE '382' label between/beside them — not overlapping, not duplicated, not clipped. KC's '431' and the others remain correct."
+**Step 4: Visual verify** (`LABEL=phase2c`): "Confirm User_3 and User_2 (both 382) now render side-by-side, fully visible, with a SINGLE '382' label between/beside them — not overlapping, not duplicated, not clipped. KC's '431' and the others remain correct."
 
 **Step 5: Commit**
 
@@ -443,10 +443,10 @@ import { ZoneColors } from '@/modules/Fitness/domain';
 
 describe('assignIdentityColors', () => {
   it('returns a stable color per id regardless of input order', () => {
-    const a = assignIdentityColors(['milo', 'felix', 'kckern']);
-    const b = assignIdentityColors(['kckern', 'milo', 'felix']);
-    expect(a.get('milo')).toBe(b.get('milo'));
-    expect(a.get('kckern')).toBe(b.get('kckern'));
+    const a = assignIdentityColors(['user_3', 'user_2', 'user_1']);
+    const b = assignIdentityColors(['user_1', 'user_3', 'user_2']);
+    expect(a.get('user_3')).toBe(b.get('user_3'));
+    expect(a.get('user_1')).toBe(b.get('user_1'));
   });
 
   it('gives distinct colors to up to palette-length ids', () => {
@@ -931,7 +931,7 @@ git commit -m "feat(fitness): expose per-lane HR stats from buildHrAreaPath (aud
   }
 ```
 
-**Step 4: Visual verify** (`LABEL=phase5`): "Confirm the bottom HR lanes now have: a 'HEART RATE' caption, a peak-bpm number on each lane, and a small end-dot on lanes for riders who stopped early (Soren, Alan). Confirm the ragged lane ends now read as intentional stops, not broken data."
+**Step 4: Visual verify** (`LABEL=phase5`): "Confirm the bottom HR lanes now have: a 'HEART RATE' caption, a peak-bpm number on each lane, and a small end-dot on lanes for riders who stopped early (User_5, User_4). Confirm the ragged lane ends now read as intentional stops, not broken data."
 
 **Step 5: Commit**
 
@@ -952,7 +952,7 @@ Expected: PASS. If any pre-existing chart test asserts on `CHART_MARGIN.top`, th
 
 **Step 2:** Final full-frame screenshot + holistic vision review:
 Run: `BASE_URL=http://localhost:3111 LABEL=final node tests/_scratch/shoot-session-chart.mjs`
-Vision agent: "Compare `/tmp/session-chart-before.png` and `/tmp/session-chart-final.png`. Verify all of: (1) no full-height annotation lines slicing the chart/lanes; (2) no clipped top labels; (3) Milo/Felix tie fanned with one label; (4) traceable identity-haloed lines; (5) chrome off the plot + COINS axis label + round ticks; (6) labeled HR lanes with end-dots. Report ANY new regression."
+Vision agent: "Compare `/tmp/session-chart-before.png` and `/tmp/session-chart-final.png`. Verify all of: (1) no full-height annotation lines slicing the chart/lanes; (2) no clipped top labels; (3) User_3/User_2 tie fanned with one label; (4) traceable identity-haloed lines; (5) chrome off the plot + COINS axis label + round ticks; (6) labeled HR lanes with end-dots. Report ANY new regression."
 
 ### Task 6.2: Cleanup
 

@@ -78,14 +78,14 @@ describe('GovernanceEngine - Ghost Participant Oscillation Regression', () => {
     // Build a mock session with roster and ZoneProfileStore
     mockSession = {
       roster: [
-        { id: 'felix', profileId: 'felix', name: 'Felix', isActive: true },
-        { id: 'alan', profileId: 'alan', name: 'Alan', isActive: true }
+        { id: 'user_2', profileId: 'user_2', name: 'User_2', isActive: true },
+        { id: 'user_4', profileId: 'user_4', name: 'User_4', isActive: true }
       ],
       zoneProfileStore: {
         getProfile: (userId) => {
           const profiles = {
-            felix: { currentZoneId: 'active' },
-            alan: { currentZoneId: 'warm' }
+            user_2: { currentZoneId: 'active' },
+            user_4: { currentZoneId: 'warm' }
           };
           return profiles[userId] || null;
         }
@@ -117,8 +117,8 @@ describe('GovernanceEngine - Ghost Participant Oscillation Regression', () => {
   it('evaluate() without explicit zone data should NOT drop participants to 0', () => {
     // First call with full data — should unlock
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'warm' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' }, hot: { id: 'hot', name: 'Hot' }, fire: { id: 'fire', name: 'Fire' } },
       totalCount: 2
@@ -144,8 +144,8 @@ describe('GovernanceEngine - Ghost Participant Oscillation Regression', () => {
 
     // Establish unlocked state
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'warm' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' }, hot: { id: 'hot', name: 'Hot' }, fire: { id: 'fire', name: 'Fire' } },
       totalCount: 2
@@ -169,8 +169,8 @@ describe('GovernanceEngine - Ghost Participant Oscillation Regression', () => {
 
     // Should have found participants
     expect(engine._latestInputs.activeParticipants.length).toBe(2);
-    expect(engine._latestInputs.userZoneMap).toHaveProperty('felix');
-    expect(engine._latestInputs.userZoneMap).toHaveProperty('alan');
+    expect(engine._latestInputs.userZoneMap).toHaveProperty('user_2');
+    expect(engine._latestInputs.userZoneMap).toHaveProperty('user_4');
   });
 });
 ```
@@ -538,12 +538,12 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
   }
 
   it('should transition pending -> unlocked with zero oscillation', () => {
-    engine = createEngine({ felix: 'active', alan: 'warm' });
+    engine = createEngine({ user_2: 'active', user_4: 'warm' });
 
     // First evaluation with explicit data (simulates updateSnapshot path)
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'warm' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'warm' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -556,12 +556,12 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
   });
 
   it('should maintain unlocked through mixed evaluate paths', () => {
-    engine = createEngine({ felix: 'active', alan: 'warm' });
+    engine = createEngine({ user_2: 'active', user_4: 'warm' });
 
     // Path B (with data) -> unlocked
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'warm' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'warm' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -575,8 +575,8 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
 
     // Path B again
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'warm' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'warm' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -593,10 +593,10 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
 
   it('unlocked -> warning transition should happen exactly once when HR drops', () => {
     // Start with everyone in active zone
-    engine = createEngine({ felix: 'active', alan: 'active' });
+    engine = createEngine({ user_2: 'active', user_4: 'active' });
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'active' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'active' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -604,11 +604,11 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
     expect(engine.phase).toBe('unlocked');
     phaseLog.length = 0;
 
-    // Now alan drops to cool zone
-    engine.session = buildMockSession({ felix: 'active', alan: 'cool' });
+    // Now user_4 drops to cool zone
+    engine.session = buildMockSession({ user_2: 'active', user_4: 'cool' });
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'cool' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'cool' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -621,10 +621,10 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
 
   it('warning -> unlocked recovery should be immediate (no hysteresis delay)', () => {
     // Start unlocked
-    engine = createEngine({ felix: 'active', alan: 'active' });
+    engine = createEngine({ user_2: 'active', user_4: 'active' });
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'active' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'active' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
@@ -632,21 +632,21 @@ describe('GovernanceEngine - Phase Stability Integration', () => {
     expect(engine.phase).toBe('unlocked');
 
     // Drop to warning
-    engine.session = buildMockSession({ felix: 'active', alan: 'cool' });
+    engine.session = buildMockSession({ user_2: 'active', user_4: 'cool' });
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'cool' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'cool' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2
     });
     expect(engine.phase).toBe('warning');
 
-    // Recover immediately (alan back to active)
-    engine.session = buildMockSession({ felix: 'active', alan: 'active' });
+    // Recover immediately (user_4 back to active)
+    engine.session = buildMockSession({ user_2: 'active', user_4: 'active' });
     engine.evaluate({
-      activeParticipants: ['felix', 'alan'],
-      userZoneMap: { felix: 'active', alan: 'active' },
+      activeParticipants: ['user_2', 'user_4'],
+      userZoneMap: { user_2: 'active', user_4: 'active' },
       zoneRankMap: ZONE_RANK_MAP,
       zoneInfoMap: ZONE_INFO_MAP,
       totalCount: 2

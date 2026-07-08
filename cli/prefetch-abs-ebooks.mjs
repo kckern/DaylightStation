@@ -61,7 +61,7 @@ const adapter = new ABSEbookFeedAdapter({
 });
 
 // Load user queries (abs-ebooks type)
-const username = 'kckern';
+const username = 'user_1';
 const userQueriesPath = path.join(dataDir, 'users', username, 'config', 'queries');
 let absQueries = [];
 

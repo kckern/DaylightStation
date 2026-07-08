@@ -102,10 +102,10 @@ Ab Roller:  rpm=40, max=100 → progress=0.40
 
 ```javascript
 // Example: Two users both in "warm" zone (120-140 HR)
-Felix: HR=135, zone=warm → zoneProgress = (135-120)/(140-120) = 0.75
-Milo:  HR=125, zone=warm → zoneProgress = (125-120)/(140-120) = 0.25
+User_2: HR=135, zone=warm → zoneProgress = (135-120)/(140-120) = 0.75
+User_3:  HR=125, zone=warm → zoneProgress = (125-120)/(140-120) = 0.25
 
-// Within warm zone: Felix (75%) before Milo (25%)
+// Within warm zone: User_2 (75%) before User_3 (25%)
 ```
 
 **Overall sidebar order**:

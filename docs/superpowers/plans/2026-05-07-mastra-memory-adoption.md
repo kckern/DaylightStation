@@ -17,7 +17,7 @@ Five subsystems composed into one `Memory` instance attached to each Mastra `Age
 5. **Semantic recall — feature-flagged off by default.** RAG over embedded past messages using pgvector (or LibSQL vector ext if it works). Per-turn embedding cost (~100-400ms) is real; enable only when deep-history queries become a visible need.
 
 **Thread strategy:**
-- `resource` = `userId` (e.g. `'kckern'`). Stable forever; shared across all agents and threads.
+- `resource` = `userId` (e.g. `'user_1'`). Stable forever; shared across all agents and threads.
 - `thread` = stable per-chat-surface UUID generated client-side, persisted in `localStorage` keyed by `${agentId}:${userId}`. The frontend ships `threadId` in the request body alongside `messages`. New thread = "Start new conversation" button (future UI, not in this plan).
 
 **Migration story:**
@@ -36,7 +36,7 @@ The plan is **not** done until this 3-turn cross-session smoke produces a cohere
 ```
 # Step 1: Open chat (no prior thread). Agent generates threadId T1.
 POST /run-stream { input: "I'm focusing on Z2 endurance work this month",
-                   context: { userId: 'kckern', threadId: 'T1' },
+                   context: { userId: 'user_1', threadId: 'T1' },
                    messages: [...] }
 A1: "Got it — I'll keep that in mind for analysis."
 
@@ -44,7 +44,7 @@ A1: "Got it — I'll keep that in mind for analysis."
 # Client supplies threadId from localStorage; sends FRESH (empty)
 # messages array — server reconstructs history from Mastra Memory.
 POST /run-stream { input: "what was I focusing on this month?",
-                   context: { userId: 'kckern', threadId: 'T1' },
+                   context: { userId: 'user_1', threadId: 'T1' },
                    messages: [] }
 A2: "You said you're focusing on Z2 endurance work this month."
 
@@ -52,7 +52,7 @@ A2: "You said you're focusing on Z2 endurance work this month."
 # but same userId. Working memory should have captured the focus area
 # via shared resource scope.
 POST /run-stream agent=lifeplan-guide, { input: "what does kc want to focus on?",
-                   context: { userId: 'kckern', threadId: 'T2' },
+                   context: { userId: 'user_1', threadId: 'T2' },
                    messages: [] }
 A3: "Z2 endurance work this month, per recent conversation."
 ```
@@ -598,7 +598,7 @@ describe('createAgentRuntime("health-coach").run — threadId', () => {
       return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
     });
     const runtime = createAgentRuntime('health-coach');
-    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'user_1' });
     expect(captured.threadId).toMatch(/^t-/);
   });
 
@@ -609,8 +609,8 @@ describe('createAgentRuntime("health-coach").run — threadId', () => {
       return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
     });
     const runtime = createAgentRuntime('health-coach');
-    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'kckern' });
-    await runtime.run({ messages: [{ role: 'user', content: 'b' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'user_1' });
+    await runtime.run({ messages: [{ role: 'user', content: 'b' }], userId: 'user_1' });
     expect(captured[0].threadId).toBe(captured[1].threadId);
   });
 
@@ -622,8 +622,8 @@ describe('createAgentRuntime("health-coach").run — threadId', () => {
     });
     const a = createAgentRuntime('health-coach');
     const b = createAgentRuntime('lifeplan-guide');
-    await a.run({ messages: [{ role: 'user', content: 'x' }], userId: 'kckern' });
-    await b.run({ messages: [{ role: 'user', content: 'y' }], userId: 'kckern' });
+    await a.run({ messages: [{ role: 'user', content: 'x' }], userId: 'user_1' });
+    await b.run({ messages: [{ role: 'user', content: 'y' }], userId: 'user_1' });
     expect(captured[0].threadId).not.toBe(captured[1].threadId);
   });
 });
@@ -943,7 +943,7 @@ THREAD_LP = f"t-smoke-{uuid.uuid4().hex[:8]}"
 def run(agent, input_text, threadId, messages=None):
     body = {
         "input": input_text,
-        "context": {"userId": "kckern"},
+        "context": {"userId": "user_1"},
         "threadId": threadId,
     }
     if messages is not None:

@@ -50,9 +50,9 @@ import { describe, it, expect } from 'vitest';
 import { GUEST_PROFILE, resolveProfile } from './pianoUser.js';
 
 describe('resolveProfile', () => {
-  const users = [{ id: 'kc', name: 'KC' }, { id: 'milo', name: 'Milo' }];
+  const users = [{ id: 'kc', name: 'KC' }, { id: 'user_3', name: 'User_3' }];
   it('returns the roster match for a known user', () => {
-    expect(resolveProfile(users, 'milo')).toEqual({ id: 'milo', name: 'Milo' });
+    expect(resolveProfile(users, 'user_3')).toEqual({ id: 'user_3', name: 'User_3' });
   });
   it('returns the synthetic Guest profile for "guest" (never from the roster)', () => {
     expect(resolveProfile(users, 'guest')).toEqual(GUEST_PROFILE);
@@ -285,7 +285,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import WhoIsPlayingPrompt from './WhoIsPlayingPrompt.jsx';
 
-const users = [{ id: 'kc', name: 'KC' }, { id: 'milo', name: 'Milo' }];
+const users = [{ id: 'kc', name: 'KC' }, { id: 'user_3', name: 'User_3' }];
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
@@ -293,14 +293,14 @@ describe('WhoIsPlayingPrompt', () => {
   it('renders only roster faces — never a Guest card', () => {
     render(<WhoIsPlayingPrompt open users={users} onPick={() => {}} onDismiss={() => {}} />);
     expect(screen.getByText('KC')).toBeTruthy();
-    expect(screen.getByText('Milo')).toBeTruthy();
+    expect(screen.getByText('User_3')).toBeTruthy();
     expect(screen.queryByText('Guest')).toBeNull();
   });
   it('tapping a face calls onPick with that id', () => {
     const onPick = vi.fn();
     render(<WhoIsPlayingPrompt open users={users} onPick={onPick} onDismiss={() => {}} />);
-    fireEvent.click(screen.getByText('Milo'));
-    expect(onPick).toHaveBeenCalledWith('milo');
+    fireEvent.click(screen.getByText('User_3'));
+    expect(onPick).toHaveBeenCalledWith('user_3');
   });
   it('the ✕ / backdrop dismiss calls onDismiss (→ caller sets Guest)', () => {
     const onDismiss = vi.fn();
@@ -653,7 +653,7 @@ import { createPianoRouter } from './piano.mjs';
 const configService = {
   getDefaultHouseholdId: () => 'default',
   getHouseholdPath: (rel) => `/data/household/${rel}`,
-  getUserProfile: (id) => (['kc', 'milo'].includes(id) ? { id } : null),
+  getUserProfile: (id) => (['kc', 'user_3'].includes(id) ? { id } : null),
   getUserDir: (id) => `/data/users/${id}`,
   getHouseholdAppConfig: () => ({}),
 };

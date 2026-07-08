@@ -89,7 +89,7 @@ console.log(`  zoneMinutes: ${JSON.stringify(timelineData.zoneMinutes)}`);
 
 console.log('\n=== Step 3: Build session YAML ===');
 const tz = 'America/Los_Angeles';
-const username = 'kckern';
+const username = 'user_1';
 const startLocal = moment(activity.start_date).tz(tz);
 const sessionId = startLocal.format('YYYYMMDDHHmmss');
 const date = startLocal.format('YYYY-MM-DD');
@@ -117,7 +117,7 @@ const sessionData = {
   timezone: tz,
   participants: {
     [username]: {
-      display_name: 'KC Kern',
+      display_name: 'User_1',
       is_primary: true,
       strava: {
         activityId: activity.id,

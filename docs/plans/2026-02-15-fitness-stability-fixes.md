@@ -648,13 +648,13 @@ describe('Session buffer debounce after end', () => {
 
     // Pre-fill buffer with valid HR samples
     session._preSessionBuffer = [
-      { deviceId: '28688', heartRate: 120, type: 'heart_rate', timestamp: Date.now() },
-      { deviceId: '28688', heartRate: 121, type: 'heart_rate', timestamp: Date.now() },
-      { deviceId: '28688', heartRate: 122, type: 'heart_rate', timestamp: Date.now() },
+      { deviceId: '90001', heartRate: 120, type: 'heart_rate', timestamp: Date.now() },
+      { deviceId: '90001', heartRate: 121, type: 'heart_rate', timestamp: Date.now() },
+      { deviceId: '90001', heartRate: 122, type: 'heart_rate', timestamp: Date.now() },
     ];
 
     // Should NOT start — within debounce window
-    const validSample = { deviceId: '28688', heartRate: 123, type: 'heart_rate', data: { ComputedHeartRate: 123 } };
+    const validSample = { deviceId: '90001', heartRate: 123, type: 'heart_rate', data: { ComputedHeartRate: 123 } };
     const started = session._maybeStartSessionFromBuffer(validSample, Date.now());
     expect(started).toBe(false);
   });
@@ -671,11 +671,11 @@ describe('Session buffer debounce after end', () => {
 
     // Pre-fill buffer
     session._preSessionBuffer = [
-      { deviceId: '28688', heartRate: 120, type: 'heart_rate', timestamp: Date.now() },
-      { deviceId: '28688', heartRate: 121, type: 'heart_rate', timestamp: Date.now() },
+      { deviceId: '90001', heartRate: 120, type: 'heart_rate', timestamp: Date.now() },
+      { deviceId: '90001', heartRate: 121, type: 'heart_rate', timestamp: Date.now() },
     ];
 
-    const validSample = { deviceId: '28688', heartRate: 122, type: 'heart_rate', data: { ComputedHeartRate: 122 } };
+    const validSample = { deviceId: '90001', heartRate: 122, type: 'heart_rate', data: { ComputedHeartRate: 122 } };
     const started = session._maybeStartSessionFromBuffer(validSample, Date.now());
     expect(started).toBe(true);
     expect(session.ensureStarted).toHaveBeenCalled();
@@ -881,7 +881,7 @@ describe('PersistenceManager — validation', () => {
       startTime: Date.now() - 120000,
       endTime: Date.now(),
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: {
@@ -903,7 +903,7 @@ describe('PersistenceManager — validation', () => {
       startTime: Date.now() - 120000,
       endTime: Date.now(),
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: {

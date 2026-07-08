@@ -63,15 +63,15 @@ describe('UnlockPrompt', () => {
         open
         state="unauthorized"
         lockLabel="Fingerprint manager"
-        unlockedUser={{ userId: 'soren', name: 'Soren', avatarSrc: '/static/img/users/soren' }}
+        unlockedUser={{ userId: 'user_5', name: 'User_5', avatarSrc: '/static/img/users/user_5' }}
         onCancel={() => {}}
       />
     );
     expect(screen.getByText('Not allowed')).toBeTruthy();
-    expect(screen.getByText('Soren')).toBeTruthy();
+    expect(screen.getByText('User_5')).toBeTruthy();
     // Recognized → shows their avatar (not the unknown-finger gif), blocked-styled.
     expect(container.querySelector('.unlock-prompt__avatar--blocked')).toBeTruthy();
-    expect(container.querySelector('.unlock-prompt__avatar-img').getAttribute('src')).toBe('/static/img/users/soren');
+    expect(container.querySelector('.unlock-prompt__avatar-img').getAttribute('src')).toBe('/static/img/users/user_5');
   });
 
   it('shows the granted state with the recognized user (avatar + name)', () => {
@@ -80,12 +80,12 @@ describe('UnlockPrompt', () => {
         open
         state="granted"
         lockLabel="Dance Party"
-        unlockedUser={{ userId: 'kckern', name: 'KC Kern', avatarSrc: '/static/img/users/kckern' }}
+        unlockedUser={{ userId: 'user_1', name: 'User_1', avatarSrc: '/static/img/users/kckern' }}
         onCancel={() => {}}
       />
     );
     expect(screen.getByText('Access Granted')).toBeTruthy();
-    expect(screen.getByText('KC Kern')).toBeTruthy();
+    expect(screen.getByText('User_1')).toBeTruthy();
     const avatar = container.querySelector('.unlock-prompt__avatar-img');
     expect(avatar).toBeTruthy();
     expect(avatar.getAttribute('src')).toBe('/static/img/users/kckern');

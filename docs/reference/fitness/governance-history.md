@@ -80,7 +80,7 @@ Key early commits:
 **Root cause chain:**
 1. `updateSnapshot()` hung in `ensureSeriesCapacity()` -- an unbounded `while` loop computed millions of array entries when `startAbsMs` was epoch 0
 2. `activeParticipants` used entityIds but `userZoneMap` was keyed by display names
-3. `normalizeName()` lowercased "Alan" to "alan" but `userZoneMap` had key "Alan"
+3. `normalizeName()` lowercased "User_4" to "user_4" but `userZoneMap` had key "User_4"
 
 **Fix:** Both `activeParticipants` and `userZoneMap` switched to use userId (`entry.id || entry.profileId`) consistently. Added bounds checking to `ensureSeriesCapacity()`.
 
@@ -292,13 +292,13 @@ roster.forEach((entry) => {
 
 **Problem 2: Missing diagnostic fields**
 
-Warning events logged `zone: "active"` and `missingUsers: ["alan"]` but not Alan's personal threshold (125), current HR (124), or delta (-1).
+Warning events logged `zone: "active"` and `missingUsers: ["user_4"]` but not User_4's personal threshold (125), current HR (124), or delta (-1).
 
 **Fix (`170cac93`):** Enriched `_getParticipantsBelowThreshold()` to look up `hr`, `threshold`, and `delta` from session roster and ZoneProfileStore.
 
 **Problem 3: Zone boundary warning spam (19 warnings in 33 min)**
 
-Alan's HR oscillated 119-127 around his 125 BPM threshold. Each 1-2 BPM dip triggered a warning.
+User_4's HR oscillated 119-127 around his 125 BPM threshold. Each 1-2 BPM dip triggered a warning.
 
 **Fix (`96fb78bf`):** Added `_warningCooldownUntil` timestamp. After warning/locked -> unlocked transition, suppress re-entry to warning for `warning_cooldown_seconds` (default 30). Extended to locked -> unlocked path on Feb 18 (`9320da21`).
 
@@ -308,13 +308,13 @@ BLE devices send `heartRate: 0` on disconnect. `UserManager.#updateHeartRateData
 
 **Fix (`4b007ee7`):** When `heartRate <= 0`, skip zone snapshot update entirely. User keeps last known zone. Ghost participant filter handles truly disconnected users.
 
-**Lesson established:** **Broken logging led to broken diagnosis.** The `participantsBelowThreshold: []` field was designed to answer "who dropped and why" but always returned empty, forcing manual log correlation. If the warning event had logged `hr: 124, threshold: 125`, the fix would have been "lower Alan's threshold" (a 1-line YAML change). Instead, 5 code changes were made before the root cause was identified as threshold calibration.
+**Lesson established:** **Broken logging led to broken diagnosis.** The `participantsBelowThreshold: []` field was designed to answer "who dropped and why" but always returned empty, forcing manual log correlation. If the warning event had logged `hr: 124, threshold: 125`, the fix would have been "lower User_4's threshold" (a 1-line YAML change). Instead, 5 code changes were made before the root cause was identified as threshold calibration.
 
 ---
 
 ### Era 11: Zone Boundary Exit Margin (Feb 18)
 
-**The problem:** 19 governance warnings in 33 minutes from Alan's HR oscillating 121-127 BPM around the 125 BPM `active` zone threshold. Era 10's `warning_cooldown_seconds` suppressed re-entry to warning phase after recovery, but didn't prevent the zone itself from toggling. ZoneProfileStore had time-based hysteresis (5s cooldown, 3s stability) but no amplitude-based dead zone -- once HR stabilized below the boundary for 3s, the zone committed and triggered a governance warning.
+**The problem:** 19 governance warnings in 33 minutes from User_4's HR oscillating 121-127 BPM around the 125 BPM `active` zone threshold. Era 10's `warning_cooldown_seconds` suppressed re-entry to warning phase after recovery, but didn't prevent the zone itself from toggling. ZoneProfileStore had time-based hysteresis (5s cooldown, 3s stability) but no amplitude-based dead zone -- once HR stabilized below the boundary for 3s, the zone committed and triggered a governance warning.
 
 **Root cause:** The zone boundary was a sharp edge. HR at 124 (1 BPM below threshold) was treated identically to HR at 80 (45 BPM below). Natural HR fluctuation of +/-3 BPM around any threshold guaranteed oscillation.
 
@@ -331,7 +331,7 @@ if (heartRate >= exitThreshold) {
 }
 ```
 
-**Example:** Alan committed to `active` (min: 100). Exit threshold = 95. HR at 97 stays in `active`. HR at 94 downgrades to `cool`. His personal threshold of 125 for `warm` zone would have exit threshold 120, so oscillation between 121-127 stays in `warm`.
+**Example:** User_4 committed to `active` (min: 100). Exit threshold = 95. HR at 97 stays in `active`. HR at 94 downgrades to `cool`. His personal threshold of 125 for `warm` zone would have exit threshold 120, so oscillation between 121-127 stays in `warm`.
 
 **Key design decisions:**
 - Only applies to downgrades. Upgrades are instant (crossing into a higher zone should feel responsive).

@@ -43,7 +43,7 @@ NODE_OPTIONS='--experimental-vm-modules' npx jest tests/unit/governance/Governan
 
 ## Task 1: Warning Cooldown in GovernanceEngine
 
-**Problem:** 19 `warning_started` events in 33 minutes. Alan's HR oscillates 119-127 around his 125 threshold. Each 1-2 BPM dip triggers warning; each recovery dismisses it. Average cycle: 7-30s.
+**Problem:** 19 `warning_started` events in 33 minutes. User_4's HR oscillates 119-127 around his 125 threshold. Each 1-2 BPM dip triggers warning; each recovery dismisses it. Average cycle: 7-30s.
 
 **Root Cause:** When `allSatisfied` goes `true`, the engine immediately sets `unlocked` and clears the deadline. When `allSatisfied` flips back to `false` 5-10 seconds later, a brand-new warning starts. There's no cooldown between consecutive warning cycles.
 

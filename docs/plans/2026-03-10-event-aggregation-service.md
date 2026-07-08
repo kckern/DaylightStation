@@ -233,15 +233,15 @@ describe('EventAggregationService', () => {
 
     it('uses configService.getHeadOfHousehold() for username', () => {
       const ds = makeDataService();
-      const cs = makeConfigService('kckern');
+      const cs = makeConfigService('user_1');
       const service = new EventAggregationService({ dataService: ds, configService: cs });
 
       service.getUpcomingEvents();
 
       expect(cs.getHeadOfHousehold).toHaveBeenCalled();
-      expect(ds.user.read).toHaveBeenCalledWith('current/calendar', 'kckern');
-      expect(ds.user.read).toHaveBeenCalledWith('current/todoist', 'kckern');
-      expect(ds.user.read).toHaveBeenCalledWith('current/clickup', 'kckern');
+      expect(ds.user.read).toHaveBeenCalledWith('current/calendar', 'user_1');
+      expect(ds.user.read).toHaveBeenCalledWith('current/todoist', 'user_1');
+      expect(ds.user.read).toHaveBeenCalledWith('current/clickup', 'user_1');
     });
 
     it('handles missing/null data gracefully', () => {

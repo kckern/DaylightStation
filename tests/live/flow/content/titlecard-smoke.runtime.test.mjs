@@ -12,7 +12,7 @@ test('title card renders on TV queue page', async ({ page }) => {
 
   // Verify title text
   const title = page.locator('.titlecard-tpl__title');
-  await expect(title.first()).toHaveText('Happy Birthday Alan');
+  await expect(title.first()).toHaveText('Happy Birthday User_4');
 
   // Verify subtitle
   const subtitle = page.locator('.titlecard-tpl__subtitle');

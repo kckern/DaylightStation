@@ -10,12 +10,12 @@ const props = {
   cadenceBands: BANDS,
   lapLengthM: 100,
   riders: {
-    milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
-    felix: { userId: 'felix', displayName: 'Felix', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] }
+    user_3: { userId: 'user_3', displayName: 'User_3', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
+    user_2: { userId: 'user_2', displayName: 'User_2', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] }
   },
   riderLive: {
-    milo: { rpm: 92, heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 2 },
-    felix: { rpm: 78, heartRate: 140, zoneId: 'warm', zoneColor: '#f1c40f', multiplier: 1.5 }
+    user_3: { rpm: 92, heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 2 },
+    user_2: { rpm: 78, heartRate: 140, zoneId: 'warm', zoneColor: '#f1c40f', multiplier: 1.5 }
   }
 };
 
@@ -23,13 +23,13 @@ const props = {
 const base4RiderProps = {
   ...props,
   riders: {
-    milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
-    felix: { userId: 'felix', displayName: 'Felix', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] },
+    user_3: { userId: 'user_3', displayName: 'User_3', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
+    user_2: { userId: 'user_2', displayName: 'User_2', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] },
     ann: { userId: 'ann', displayName: 'Ann', cumulativeDistanceM: 1200, distanceSeries: [400, 800, 1200] },
     bo: { userId: 'bo', displayName: 'Bo', cumulativeDistanceM: 600, distanceSeries: [200, 400, 600] }
   },
   riderLive: {
-    milo: { rpm: 92 }, felix: { rpm: 78 }, ann: { rpm: 85 }, bo: { rpm: 70 }
+    user_3: { rpm: 92 }, user_2: { rpm: 78 }, ann: { rpm: 85 }, bo: { rpm: 70 }
   }
 };
 
@@ -89,8 +89,8 @@ describe('CycleRaceScreen', () => {
   });
   it('renders an officiating-event marker per event on the chart', () => {
     const events = [
-      { id: 1, type: 'dnf', riderId: 'felix', seriesIndex: 2, distanceM: 900 },
-      { id: 2, type: 'penalty', riderId: 'milo', seriesIndex: 0, distanceM: 0 }
+      { id: 1, type: 'dnf', riderId: 'user_2', seriesIndex: 2, distanceM: 900 },
+      { id: 2, type: 'penalty', riderId: 'user_3', seriesIndex: 0, distanceM: 0 }
     ];
     const { getAllByTestId, getByTestId } = render(<CycleRaceScreen {...props} events={events} />);
     expect(getByTestId('race-event-markers')).toBeTruthy();
@@ -107,15 +107,15 @@ describe('CycleRaceScreen', () => {
     const penalized = {
       ...props,
       riderLive: {
-        milo: { ...props.riderLive.milo },
-        felix: { ...props.riderLive.felix, penalized: true }
+        user_3: { ...props.riderLive.user_3 },
+        user_2: { ...props.riderLive.user_2, penalized: true }
       }
     };
     const { getByTestId, queryByTestId, rerender } = render(<CycleRaceScreen {...penalized} />);
     const banner = getByTestId('cycle-race-penalty-banner');
     expect(banner.textContent.toUpperCase()).toContain('FALSE START');
-    expect(banner.textContent).toContain('Felix');
-    expect(banner.textContent).not.toContain('Milo');
+    expect(banner.textContent).toContain('User_2');
+    expect(banner.textContent).not.toContain('User_3');
     // clears once nobody is penalized
     rerender(<CycleRaceScreen {...props} />);
     expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();

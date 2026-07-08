@@ -92,7 +92,7 @@ Existing user profiles gain a `roles` field:
 
 ```yaml
 # data/users/kckern/profile.yml
-username: kckern
+username: user_1
 household_id: default
 roles: [sysadmin]
 ```
@@ -197,7 +197,7 @@ In the Admin app (Household → Members), after creating a member:
 ```yaml
 invite_token: "a1b2c3d4e5f6..."
 invited_at: 2026-02-12T10:30:00Z
-invited_by: kckern
+invited_by: user_1
 password_hash: null
 ```
 
@@ -294,7 +294,7 @@ Request
 
 ```json
 {
-  "sub": "kckern",
+  "sub": "user_1",
   "hid": "default",
   "roles": ["sysadmin"],
   "iat": 1739318400,
@@ -336,14 +336,14 @@ All auth endpoints are public (no permissionGate).
 **Setup:**
 ```
 POST /api/v1/auth/setup
-{ "username": "kckern", "password": "...", "householdName": "The Kern Family" }
+{ "username": "user_1", "password": "...", "householdName": "The Kern Family" }
 → { "token": "eyJ..." }
 ```
 
 **Login:**
 ```
 POST /api/v1/auth/token
-{ "username": "kckern", "password": "..." }
+{ "username": "user_1", "password": "..." }
 → { "token": "eyJ..." }
 ```
 
@@ -351,14 +351,14 @@ POST /api/v1/auth/token
 ```
 POST /api/v1/auth/invite
 Authorization: Bearer eyJ...
-{ "username": "elizabeth" }
+{ "username": "user_9" }
 → { "inviteUrl": "/invite/a1b2c3d4e5f6..." }
 ```
 
 **Accept Invite:**
 ```
 POST /api/v1/auth/invite/a1b2c3d4e5f6.../accept
-{ "displayName": "Elizabeth", "password": "..." }
+{ "displayName": "User_9", "password": "..." }
 → { "token": "eyJ..." }
 ```
 

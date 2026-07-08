@@ -17,7 +17,7 @@ describe('ScrollConfigLoader', () => {
 
   describe('load()', () => {
     test('returns defaults when no config/feed exists', () => {
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.batch_size).toBe(15);
       expect(config.wire_decay_half_life).toBe(4);
       expect(config.spacing).toEqual({
@@ -26,7 +26,7 @@ describe('ScrollConfigLoader', () => {
       });
       expect(config.tiers.wire.sources).toEqual({});
       expect(config.tiers.library.sources).toEqual({});
-      expect(mockDataService.user.read).toHaveBeenCalledWith('config/feed', 'kckern');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('config/feed', 'user_1');
     });
 
     test('merges user overrides with defaults', () => {
@@ -41,7 +41,7 @@ describe('ScrollConfigLoader', () => {
           },
         },
       });
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.batch_size).toBe(20);
       expect(config.spacing.max_consecutive).toBe(3);
       expect(config.spacing.max_consecutive_subsource).toBe(2); // default preserved
@@ -54,7 +54,7 @@ describe('ScrollConfigLoader', () => {
           spacing: { max_consecutive_subsource: 5 },
         },
       });
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.spacing.max_consecutive).toBe(1);            // default preserved
       expect(config.spacing.max_consecutive_subsource).toBe(5);  // overridden
     });

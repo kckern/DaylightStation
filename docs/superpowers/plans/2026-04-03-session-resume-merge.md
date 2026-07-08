@@ -920,11 +920,11 @@ This requires a running dev server and the fitness UI. Manual test:
 # Create two test sessions
 curl -s -X POST http://localhost:3112/api/v1/fitness/save_session \
   -H "Content-Type: application/json" \
-  -d '{"sessionData":{"sessionId":"test_merge_src","version":3,"session":{"id":"test_merge_src","date":"2026-04-03"},"startTime":"2026-04-03 10:00:00","endTime":"2026-04-03 10:15:00","timeline":{"series":{},"events":[],"interval_seconds":5,"tick_count":180},"participants":{"kckern":{"display_name":"KC"}},"treasureBox":{"totalCoins":100}}}'
+  -d '{"sessionData":{"sessionId":"test_merge_src","version":3,"session":{"id":"test_merge_src","date":"2026-04-03"},"startTime":"2026-04-03 10:00:00","endTime":"2026-04-03 10:15:00","timeline":{"series":{},"events":[],"interval_seconds":5,"tick_count":180},"participants":{"user_1":{"display_name":"KC"}},"treasureBox":{"totalCoins":100}}}'
 
 curl -s -X POST http://localhost:3112/api/v1/fitness/save_session \
   -H "Content-Type: application/json" \
-  -d '{"sessionData":{"sessionId":"test_merge_tgt","version":3,"session":{"id":"test_merge_tgt","date":"2026-04-03"},"startTime":"2026-04-03 10:30:00","endTime":"2026-04-03 10:50:00","timeline":{"series":{},"events":[],"interval_seconds":5,"tick_count":240},"participants":{"kckern":{"display_name":"KC"}},"treasureBox":{"totalCoins":200}}}'
+  -d '{"sessionData":{"sessionId":"test_merge_tgt","version":3,"session":{"id":"test_merge_tgt","date":"2026-04-03"},"startTime":"2026-04-03 10:30:00","endTime":"2026-04-03 10:50:00","timeline":{"series":{},"events":[],"interval_seconds":5,"tick_count":240},"participants":{"user_1":{"display_name":"KC"}},"treasureBox":{"totalCoins":200}}}'
 
 # Merge
 curl -s -X POST http://localhost:3112/api/v1/fitness/sessions/merge \

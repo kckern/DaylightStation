@@ -77,18 +77,18 @@ _processIntervals() {
 Because TreasureBox timer can award coins BETWEEN session ticks:
 
 ```
-Session Tick 10: Milo has 25 coins, HR=180
+Session Tick 10: User_3 has 25 coins, HR=180
 ↓
-TreasureBox fires (tick 10.5): Milo still has highestZone, awards +3 coins
+TreasureBox fires (tick 10.5): User_3 still has highestZone, awards +3 coins
 ↓
-Session Tick 11: Milo's device stopped broadcasting (dropout detected)
-  → But Milo already has 28 coins in TreasureBox
+Session Tick 11: User_3's device stopped broadcasting (dropout detected)
+  → But User_3 already has 28 coins in TreasureBox
   → Session records null for HR
   → We DON'T record coins during dropout (correct)
 ↓
 TreasureBox fires (tick 11.5): We clear highestZone, no award
 ↓
-Session Tick 15: Milo rejoins
+Session Tick 15: User_3 rejoins
   → TreasureBox says 28 coins
   → Last recorded was 25
   → JUMP! (Chart shows vertical line)
@@ -287,8 +287,8 @@ resolveZone(userName, timeline) {
 **Main Timeline (FitnessTimeline.js):**
 ```javascript
 this.series = {
-  'user:milo:heart_rate': [72, 75, null, null, 78, ...],
-  'user:milo:heart_beats': [10, 22, 22, 22, 35, ...],
+  'user:user_3:heart_rate': [72, 75, null, null, 78, ...],
+  'user:user_3:heart_beats': [10, 22, 22, 22, 35, ...],
   'global:coins_total': [0, 5, 8, 8, 12, ...],
   // ...
 };
@@ -297,13 +297,13 @@ this.series = {
 **TreasureBox Timeline (TreasureBox.js):**
 ```javascript
 this._userTimelines = new Map();  // userName -> number[] (cumulative coins per tick)
-// "Milo" -> [0, 3, 6, 9, 12, ...]
+// "User_3" -> [0, 3, 6, 9, 12, ...]
 ```
 
 ### Why This Causes Problems
 
 1. **Different tick alignment** - TreasureBox timeline may not align with main timeline
-2. **Different key format** - TreasureBox uses `"Milo"`, timeline uses `"milo"`
+2. **Different key format** - TreasureBox uses `"User_3"`, timeline uses `"user_3"`
 3. **Different update timing** - TreasureBox updates on its own timer
 
 When the session records `coins_total` to the main timeline:

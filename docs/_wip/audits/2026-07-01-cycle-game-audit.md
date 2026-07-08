@@ -98,7 +98,7 @@ Additionally the chart's tip glide runs `setTickFrac` in a rAF loop → **a cont
 7. Ghost invisible pre-race / screen empty at GO (C6).
 8. Wide mode (4+ riders) loses all lap/split info — fold the oval's Last/Now lap strip into the chart header or standings rail.
 9. Palette failures: rider-1 cyan ≈ chrome cyan (`lineColors.js:12` vs `_cgTokens.scss:18`); maroon lane ~3.4:1 contrast; FlatUI cadence-band colors inside synthwave gauges (`speedometerGeometry.js:17-23`); legacy indigo `#7aa2ff` accent surviving in 4 files; three unrelated reds and greens.
-10. Accretion signals: emoji as HUD iconography (platform-dependent rendering, placeholder feel next to the existing SVG icon set), dead roster CSS, single-initial chart tags ("Mom" and "Milo" are the same letter), `race-layout__top3` naming a layout that no longer exists.
+10. Accretion signals: emoji as HUD iconography (platform-dependent rendering, placeholder feel next to the existing SVG icon set), dead roster CSS, single-initial chart tags ("Mom" and "User_3" are the same letter), `race-layout__top3` naming a layout that no longer exists.
 11. `RaceRecap` scrubber is a native drag slider — violates the household's explicit "no drag sliders on touch" rule. Replace with discrete skip buttons.
 
 ### Backend / data (full report: agent 3)

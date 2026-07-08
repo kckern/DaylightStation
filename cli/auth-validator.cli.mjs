@@ -10,7 +10,7 @@
  * Usage:
  *   node cli/auth-validator.cli.mjs
  *   node cli/auth-validator.cli.mjs --tier household --hid default
- *   node cli/auth-validator.cli.mjs --tier user --username kckern
+ *   node cli/auth-validator.cli.mjs --tier user --username user_1
  *   node cli/auth-validator.cli.mjs --dry-run
  *   node cli/auth-validator.cli.mjs --json
  */
@@ -25,7 +25,7 @@ const args = process.argv.slice(2);
 const flags = {
     tier: null,
     hid: 'default',
-    username: 'kckern',
+    username: 'user_1',
     dryRun: args.includes('--dry-run'),
     json: args.includes('--json'),
     help: args.includes('--help') || args.includes('-h')
@@ -48,7 +48,7 @@ Usage:
 Options:
   --tier <tier>       Test specific tier: system, household, or user
   --hid <id>          Household ID (default: default)
-  --username <name>   Username (default: kckern)
+  --username <name>   Username (default: user_1)
   --dry-run           Check files only, no API calls
   --json              Output results as JSON
   --help, -h          Show this help message
@@ -56,7 +56,7 @@ Options:
 Examples:
   node cli/auth-validator.cli.mjs                          # Run all validations
   node cli/auth-validator.cli.mjs --tier household         # Household tier only
-  node cli/auth-validator.cli.mjs --tier user --username elizabeth
+  node cli/auth-validator.cli.mjs --tier user --username user_9
 `);
     process.exit(0);
 }

@@ -4,7 +4,7 @@ import { courseStartOverride, pickRival, ladderDelta, daysLeft } from './ladder.
 const ROWS = [
   { userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 2 },
   { userId: 'mom', bestValue: 165, raceId: 'r2', attempts: 1 },
-  { userId: 'milo', bestValue: 190, raceId: 'r3', attempts: 3 }
+  { userId: 'user_3', bestValue: 190, raceId: 'r3', attempts: 3 }
 ];
 
 describe('courseStartOverride', () => {
@@ -18,20 +18,20 @@ describe('courseStartOverride', () => {
 
 describe('pickRival', () => {
   it('rung above for a ranked rider; self-pb for the leader; tail for unranked; none when empty', () => {
-    expect(pickRival({ standings: ROWS, riderId: 'milo' })).toEqual({ kind: 'above', raceId: 'r2', rivalUserId: 'mom' });
+    expect(pickRival({ standings: ROWS, riderId: 'user_3' })).toEqual({ kind: 'above', raceId: 'r2', rivalUserId: 'mom' });
     expect(pickRival({ standings: ROWS, riderId: 'dad' })).toEqual({ kind: 'self-pb', raceId: null, rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'milo' });
+    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'user_3' });
     expect(pickRival({ standings: [], riderId: 'dad' })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
   });
 
   it('with no rider assigned (riderId: null), arms the bottom rung (tail) — accepted: startRace no-ops with a no_riders warn when no bike is claimed, so an armed-but-unused ghost is harmless', () => {
-    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'milo' });
+    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'user_3' });
   });
 });
 
 describe('ladderDelta', () => {
   it('reports rank, movement, and gap to the rung above', () => {
-    const before = [ROWS[0], ROWS[2], ROWS[1]]; // milo was 2nd
+    const before = [ROWS[0], ROWS[2], ROWS[1]]; // user_3 was 2nd
     const d = ladderDelta({ before, after: ROWS, userId: 'mom' });
     expect(d).toEqual({ rank: 2, prevRank: 3, movedUp: true, isLead: false, aboveUserId: 'dad', gapToAbove: 15 });
     expect(ladderDelta({ before, after: ROWS, userId: 'dad' }).isLead).toBe(true);

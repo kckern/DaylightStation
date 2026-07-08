@@ -98,7 +98,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter, mockHealthAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockAdapter.fetchItems).toHaveBeenCalled();
     expect(mockHealthAdapter.fetchItems).not.toHaveBeenCalled();
   });
@@ -119,7 +119,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockAdapter.fetchItems).toHaveBeenCalled();
   });
 
@@ -130,7 +130,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     });
 
     const service = createService([]);
-    await service.getNextBatch('kckern', { focus: 'reddit:science' });
+    await service.getNextBatch('user_1', { focus: 'reddit:science' });
     expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
       expect.any(Array),
       expect.any(Object),
@@ -152,7 +152,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ spacing: { max_consecutive: 1 } }),
@@ -178,7 +178,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    const result = await service.getNextBatch('kckern');
+    const result = await service.getNextBatch('user_1');
     expect(result.items.length).toBeLessThanOrEqual(5);
   });
 
@@ -200,7 +200,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    const result = await service.getNextBatch('kckern', { limit: 8 });
+    const result = await service.getNextBatch('user_1', { limit: 8 });
     expect(result.items.length).toBeLessThanOrEqual(8);
   });
 
@@ -234,7 +234,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [redditAdapter, headlinesAdapter, weatherAdapter],
     );
 
-    const result = await service.getNextBatch('kckern', { focus: 'reddit' });
+    const result = await service.getNextBatch('user_1', { focus: 'reddit' });
     // TierAssemblyService receives the items with focus='reddit'
     expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
       expect.any(Array),
@@ -261,7 +261,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [redditAdapter],
     );
 
-    const result = await service.getNextBatch('kckern', { focus: 'reddit:science' });
+    const result = await service.getNextBatch('user_1', { focus: 'reddit:science' });
     // TierAssemblyService receives focus='reddit:science'
     expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
       expect.any(Array),

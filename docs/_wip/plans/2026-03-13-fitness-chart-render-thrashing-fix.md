@@ -225,7 +225,7 @@ No code change needed — the existing logic at line 447 (`isActiveFromRoster ? 
 **Step 3: Verify**
 
 Check logs:
-- `[FitnessChart] Status corrected: kckern (removed → idle)` should **never appear**
+- `[FitnessChart] Status corrected: user_1 (removed → idle)` should **never appear**
 - If any status correction logs appear, they indicate a real bug (not the oscillation)
 
 **Step 4: Commit**

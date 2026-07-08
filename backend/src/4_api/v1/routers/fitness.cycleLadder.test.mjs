@@ -50,12 +50,12 @@ describe('GET /cycle-races/ladder', () => {
 
 describe('GET /cycle-races/personal-bests', () => {
   it('returns the PB and 400s on missing params', async () => {
-    const pb = { userId: 'milo', courseId: 'sprint-1500m', best: null };
+    const pb = { userId: 'user_3', courseId: 'sprint-1500m', best: null };
     const app = buildApp({ pb });
-    const ok = await request(app).get('/api/fitness/cycle-races/personal-bests?userId=milo&courseId=sprint-1500m');
+    const ok = await request(app).get('/api/fitness/cycle-races/personal-bests?userId=user_3&courseId=sprint-1500m');
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual(pb);
-    expect((await request(app).get('/api/fitness/cycle-races/personal-bests?userId=milo')).status).toBe(400);
+    expect((await request(app).get('/api/fitness/cycle-races/personal-bests?userId=user_3')).status).toBe(400);
     expect((await request(app).get('/api/fitness/cycle-races/personal-bests?courseId=x')).status).toBe(400);
   });
 });

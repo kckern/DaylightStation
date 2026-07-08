@@ -60,7 +60,7 @@ describe('LogFoodFromImage', () => {
   describe('photo-first status', () => {
     it('sends photo with analyzing caption as the status message', async () => {
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:bot_chat',
         imageData: { url: 'https://example.com/food.jpg' },
         responseContext: mockMessaging,
@@ -76,7 +76,7 @@ describe('LogFoodFromImage', () => {
 
     it('updates photo caption in-place on success instead of delete+resend', async () => {
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:bot_chat',
         imageData: { url: 'https://example.com/food.jpg' },
         responseContext: mockMessaging,
@@ -102,7 +102,7 @@ describe('LogFoodFromImage', () => {
       mockAI.chatWithImage = jest.fn().mockResolvedValue('No food visible in this image.');
 
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:bot_chat',
         imageData: { url: 'https://example.com/food.jpg' },
         responseContext: mockMessaging,

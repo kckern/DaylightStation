@@ -5,7 +5,7 @@
 
 ## Problem
 
-Menu items that reference apps (e.g. `app:family-selector/felix`, `app:webcam`, `app:gratitude`) show as "Unknown - Unresolved" in the admin UI. The system knows how to resolve Plex, Immich, hymn, and media content, but has no concept of apps as selectable content. Additionally, AppContainer uses a hardcoded if/else chain to route apps to components.
+Menu items that reference apps (e.g. `app:family-selector/user_2`, `app:webcam`, `app:gratitude`) show as "Unknown - Unresolved" in the admin UI. The system knows how to resolve Plex, Immich, hymn, and media content, but has no concept of apps as selectable content. Additionally, AppContainer uses a hardcoded if/else chain to route apps to components.
 
 ## Decision
 
@@ -44,7 +44,7 @@ Each entry's `param` field can be:
 
 - `getApp(id)` — Lookup by ID, returns registry entry or null
 - `searchApps(query)` — Fuzzy-match against label/id, returns matching entries
-- `resolveAppDisplay(inputString)` — Parses `app:family-selector/felix` into `{ appId, param, label, paramLabel }`
+- `resolveAppDisplay(inputString)` — Parses `app:family-selector/user_2` into `{ appId, param, label, paramLabel }`
 - `resolveParamOptions(param)` — Returns `[{ value, label }]` for dropdowns, or `null` for free text
 
 ### Param Options Resolver
@@ -80,7 +80,7 @@ New dynamic option types are added as entries in `OPTION_RESOLVERS`. Only `house
 
 When the user selects an app from the dropdown:
 - **No param** → Set input to `app:webcam`, done
-- **Has param with options** → Secondary dropdown appears with resolved options. Selecting one sets input to `app:family-selector/felix`
+- **Has param with options** → Secondary dropdown appears with resolved options. Selecting one sets input to `app:family-selector/user_2`
 - **Has param, no options (free text)** → Text input appears. On blur/enter, sets input to `app:art/nativity`
 
 ### AppContainer Refactor

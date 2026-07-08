@@ -77,27 +77,27 @@ function makeOrch(configService = null) {
 
 describe('AgentOrchestrator userId resolution', () => {
   it('resolves userId="default" → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
     await orch.run('fake', 'hi', { userId: 'default' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('kckern');
+    expect(call.context.userId).toBe('user_1');
   });
 
   it('resolves missing userId → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
     await orch.run('fake', 'hi', {}); // no userId
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('kckern');
+    expect(call.context.userId).toBe('user_1');
   });
 
   it('passes through real userId untouched', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
-    await orch.run('fake', 'hi', { userId: 'soren' });
+    await orch.run('fake', 'hi', { userId: 'user_5' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('soren');
+    expect(call.context.userId).toBe('user_5');
     expect(cfg.getHeadOfHousehold).not.toHaveBeenCalled();
   });
 
@@ -118,7 +118,7 @@ describe('AgentOrchestrator userId resolution', () => {
   });
 
   it('logs the resolved userId in orchestrator.run', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const logEvents = [];
     const agentRuntime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
     const orch = new AgentOrchestrator({
@@ -133,7 +133,7 @@ describe('AgentOrchestrator userId resolution', () => {
     await orch.run('fake', 'hi', { userId: 'default' });
     const runEvent = logEvents.find(e => e.event === 'orchestrator.run');
     expect(runEvent).toBeDefined();
-    expect(runEvent.data.userId).toBe('kckern');
+    expect(runEvent.data.userId).toBe('user_1');
   });
 });
 ```
@@ -244,7 +244,7 @@ feat(agents): orchestrator resolves userId 'default' → head-of-household
 
 Plan / Task 1. New configService dep + resolveUserId() helper applied at
 run/runInBackground/runAssignment. The frontend's 'default' sentinel and
-missing userIds resolve to configService.getHeadOfHousehold() (kckern in
+missing userIds resolve to configService.getHeadOfHousehold() (user_1 in
 prod). Real userIds pass through. Graceful fallback when configService
 is null (legacy callers, tests).
 
@@ -272,10 +272,10 @@ describe('BaseAgent active-user injection', () => {
   it('adds "## Active User" section when context.userId is set', async () => {
     const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
     const agent = new FakeAgent({ ...baseDeps, agentRuntime: runtime });
-    await agent.run('hi', { context: { userId: 'kckern' } });
+    await agent.run('hi', { context: { userId: 'user_1' } });
     const passed = runtime.execute.mock.calls.at(-1)[0];
     expect(passed.systemPrompt).toMatch(/## Active User/);
-    expect(passed.systemPrompt).toMatch(/\*\*kckern\*\*/);
+    expect(passed.systemPrompt).toMatch(/\*\*user_1\*\*/);
   });
 
   it('omits the Active User section when context.userId is null', async () => {
@@ -968,7 +968,7 @@ The named regression. The exact failure mode that started this all should now be
 // After the fix:
 // - userId 'default' resolves to the configured head-of-household
 // - The tool wrapper auto-injects the resolved userId into args
-// - Tools never see 'user123' or 'default' — they see 'kckern'
+// - Tools never see 'user123' or 'default' — they see 'user_1'
 
 import { describe, it, expect, vi } from 'vitest';
 import { AgentOrchestrator } from '../../../../backend/src/3_applications/agents/AgentOrchestrator.mjs';
@@ -1000,7 +1000,7 @@ class StubAgent extends BaseAgent {
 }
 
 describe('regression: "what is my weight trend?" routes correctly', () => {
-  it('userId=default → resolved kckern → tool sees userId=kckern', async () => {
+  it('userId=default → resolved user_1 → tool sees userId=user_1', async () => {
     let toolReceivedArgs = null;
 
     // Fake runtime: simulate the model calling the tool, capture what the
@@ -1010,16 +1010,16 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
     // agentRuntime that pretends to be Mastra and exercises the tool.
     const agentRuntime = {
       execute: async ({ tools, context, systemPrompt }) => {
-        // Verify systemPrompt has Active User: kckern
+        // Verify systemPrompt has Active User: user_1
         expect(systemPrompt).toMatch(/## Active User/);
-        expect(systemPrompt).toMatch(/\*\*kckern\*\*/);
+        expect(systemPrompt).toMatch(/\*\*user_1\*\*/);
         // Verify mode passed via context
         expect(context.mode).toBe('chat');
         // The tools the agent registered are wrapped — but the wrapping
         // happens INSIDE MastraAdapter, not in BaseAgent. For this stub
         // runtime, tools[].execute is the raw inner execute. We're only
         // asserting that BaseAgent forwards the resolved userId correctly.
-        expect(context.userId).toBe('kckern');
+        expect(context.userId).toBe('user_1');
         // Simulate a tool call:
         const tool = tools[0];
         // BaseAgent doesn't wrap; the adapter does. So in this test we
@@ -1029,7 +1029,7 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
       },
     };
 
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const orchestrator = new AgentOrchestrator({ agentRuntime, configService: cfg });
     orchestrator.register(StubAgent, {
       agentRuntime,
@@ -1043,8 +1043,8 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
     expect(cfg.getHeadOfHousehold).toHaveBeenCalled();
   });
 
-  it('userId missing → resolved to kckern same as default', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+  it('userId missing → resolved to user_1 same as default', async () => {
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     let captured;
     const agentRuntime = {
       execute: async ({ context }) => {
@@ -1058,11 +1058,11 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
       workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
     });
     await orch.run('stub', "what's my weight trend?", {}); // no userId at all
-    expect(captured.userId).toBe('kckern');
+    expect(captured.userId).toBe('user_1');
   });
 
-  it('userId=soren → passes through unchanged', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+  it('userId=user_5 → passes through unchanged', async () => {
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     let captured;
     const agentRuntime = {
       execute: async ({ context }) => {
@@ -1075,8 +1075,8 @@ describe('regression: "what is my weight trend?" routes correctly', () => {
       agentRuntime,
       workingMemory: { load: vi.fn(async () => null), save: vi.fn() },
     });
-    await orch.run('stub', "what's my weight trend?", { userId: 'soren' });
-    expect(captured.userId).toBe('soren');
+    await orch.run('stub', "what's my weight trend?", { userId: 'user_5' });
+    expect(captured.userId).toBe('user_5');
     expect(cfg.getHeadOfHousehold).not.toHaveBeenCalled();
   });
 });
@@ -1098,13 +1098,13 @@ git commit -m "$(cat <<'EOF'
 test(health-coach): regression for "what is my weight trend?" path
 
 Plan / Task 5. Three assertions:
-  - userId='default' resolves to head-of-household (kckern)
-  - missing userId resolves to kckern same as default
-  - real userId (e.g., soren) passes through unchanged
+  - userId='default' resolves to head-of-household (user_1)
+  - missing userId resolves to user_1 same as default
+  - real userId (e.g., user_5) passes through unchanged
 
 Catches the original failure mode: agent.run() with the chat-frontend
-'default' sentinel landed real userId 'kckern' in context, so tools see
-the right user; the system prompt has '## Active User: kckern'; mode is
+'default' sentinel landed real userId 'user_1' in context, so tools see
+the right user; the system prompt has '## Active User: user_1'; mode is
 'chat' so the cheatsheet steers tool selection.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -1152,10 +1152,10 @@ sudo docker exec daylight-station sh -c \
 ```
 
 Expected in the transcript:
-- `userId: "kckern"` (not `"default"`, not `"user123"`)
-- `systemPrompt` contains `## Active User\nThe user you are assisting is: **kckern**`
+- `userId: "user_1"` (not `"default"`, not `"user123"`)
+- `systemPrompt` contains `## Active User\nThe user you are assisting is: **user_1**`
 - `systemPrompt` contains `## Tool Cheatsheet`
-- `toolCalls[0].args.userId === "kckern"`
+- `toolCalls[0].args.userId === "user_1"`
 - `toolCalls[0].name` is one of the analytical tools (`metric_trajectory`, `aggregate_metric`, etc.) — NOT `get_weight_trend`
 - `output.text` is prose, not JSON
 

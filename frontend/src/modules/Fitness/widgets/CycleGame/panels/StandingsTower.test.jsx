@@ -56,17 +56,17 @@ describe('buildStandingsGroups — classification', () => {
 });
 
 describe('StandingsTower — 4-rider fixture (ghost + finished + overtime + active)', () => {
-  const riderIds = ['dad', 'milo', 'ghost:r1:felix', 'ot1'];
+  const riderIds = ['dad', 'user_3', 'ghost:r1:user_2', 'ot1'];
   const riders = {
     dad: { userId: 'dad', displayName: 'Dad', cumulativeDistanceM: 500, finishTimeS: 120, lapSplits: [30, 72], isGhost: false },
-    milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 488, finishTimeS: null, isGhost: false },
-    'ghost:r1:felix': { userId: 'ghost:r1:felix', displayName: 'Felix', cumulativeDistanceM: 476, finishTimeS: null, isGhost: true },
+    user_3: { userId: 'user_3', displayName: 'User_3', cumulativeDistanceM: 488, finishTimeS: null, isGhost: false },
+    'ghost:r1:user_2': { userId: 'ghost:r1:user_2', displayName: 'User_2', cumulativeDistanceM: 476, finishTimeS: null, isGhost: true },
     ot1: { userId: 'ot1', displayName: 'Ann', cumulativeDistanceM: 300, finishTimeS: null, isGhost: false }
   };
   const riderLive = {
     dad: { placement: 1, finished: true, avatarSrc: '/img/dad' },
-    milo: { placement: 2, finished: false, speedKmh: 36, avatarSrc: '/img/milo' },
-    'ghost:r1:felix': { placement: 3, finished: false, speedKmh: 30, avatarSrc: '/img/felix' },
+    user_3: { placement: 2, finished: false, speedKmh: 36, avatarSrc: '/img/user_3' },
+    'ghost:r1:user_2': { placement: 3, finished: false, speedKmh: 30, avatarSrc: '/img/user_2' },
     ot1: { placement: 4, finished: false, overtime: true, avatarSrc: '/img/ann' }
   };
 
@@ -76,7 +76,7 @@ describe('StandingsTower — 4-rider fixture (ghost + finished + overtime + acti
         winCondition="distance" lapLengthM={100} elapsedS={84} lapLabel="Lap 3" />
     );
     const rows = screen.getAllByTestId('tower-row');
-    expect(rows.map((r) => r.dataset.rider)).toEqual(['dad', 'milo', 'ghost:r1:felix', 'ot1']);
+    expect(rows.map((r) => r.dataset.rider)).toEqual(['dad', 'user_3', 'ghost:r1:user_2', 'ot1']);
 
     const ranks = rows.map((r) => r.querySelector('[data-testid="tower-rank"]').textContent);
     expect(ranks).toEqual(['1st', '2nd', '3rd', '4th']);
@@ -88,7 +88,7 @@ describe('StandingsTower — 4-rider fixture (ghost + finished + overtime + acti
     // Leader of the still-racing pack shows their own total, not a gap.
     expect(rows[1].querySelector('[data-testid="tower-metric"]').textContent).toContain('488 m');
 
-    // Ghost, 12 m behind milo → gap-to-next-above in metres (audit UX §4.1 example).
+    // Ghost, 12 m behind user_3 → gap-to-next-above in metres (audit UX §4.1 example).
     expect(rows[2].querySelector('[data-testid="tower-metric"]').textContent).toContain('−12 m');
     expect(rows[2].querySelector('.cg-tower__avatar').className).toContain('cg-ghost');
 
@@ -103,7 +103,7 @@ describe('StandingsTower — 4-rider fixture (ghost + finished + overtime + acti
     const rows = screen.getAllByTestId('tower-row');
     const laneOf = (row) => row.querySelector('.cg-tower__lane').style.background;
     expect(laneOf(rows.find((r) => r.dataset.rider === 'dad'))).toBe(LINE_COLORS[0]);
-    expect(laneOf(rows.find((r) => r.dataset.rider === 'milo'))).toBe(LINE_COLORS[1]);
+    expect(laneOf(rows.find((r) => r.dataset.rider === 'user_3'))).toBe(LINE_COLORS[1]);
   });
 
   it('folds the oval\'s Last/Now lap strip into a compact header row', () => {

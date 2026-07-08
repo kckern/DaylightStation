@@ -9,20 +9,20 @@ describe('FitnessSession — equipmentRider', () => {
 
   it('records a claim and reads it back', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    expect(session.getEquipmentRider('niceday')).toBe('felix');
+    session.setEquipmentRider('niceday', 'user_2');
+    expect(session.getEquipmentRider('niceday')).toBe('user_2');
   });
 
   it('reassigns the claim to the last user set', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    session.setEquipmentRider('niceday', 'milo');
-    expect(session.getEquipmentRider('niceday')).toBe('milo');
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('niceday', 'user_3');
+    expect(session.getEquipmentRider('niceday')).toBe('user_3');
   });
 
   it('unclaims the bike when set with a falsy userId', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
+    session.setEquipmentRider('niceday', 'user_2');
     session.setEquipmentRider('niceday', null);
     expect(session.getEquipmentRider('niceday')).toBeNull();
     // must not have stored the string "null"
@@ -32,25 +32,25 @@ describe('FitnessSession — equipmentRider', () => {
 
   it('moves a rider off any other equipment (a user can only be on one bike)', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    session.setEquipmentRider('cycle_ace', 'felix'); // same user → moves
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('cycle_ace', 'user_2'); // same user → moves
     expect(session.getEquipmentRider('niceday')).toBeNull();
-    expect(session.getEquipmentRider('cycle_ace')).toBe('felix');
+    expect(session.getEquipmentRider('cycle_ace')).toBe('user_2');
   });
 
   it('does not disturb other riders when moving a user', () => {
     const session = new FitnessSession();
-    session.setEquipmentRider('niceday', 'felix');
-    session.setEquipmentRider('cycle_ace', 'milo');
-    session.setEquipmentRider('tricycle', 'felix'); // felix moves off niceday only
+    session.setEquipmentRider('niceday', 'user_2');
+    session.setEquipmentRider('cycle_ace', 'user_3');
+    session.setEquipmentRider('tricycle', 'user_2'); // user_2 moves off niceday only
     expect(session.getEquipmentRider('niceday')).toBeNull();
-    expect(session.getEquipmentRider('cycle_ace')).toBe('milo');
-    expect(session.getEquipmentRider('tricycle')).toBe('felix');
+    expect(session.getEquipmentRider('cycle_ace')).toBe('user_3');
+    expect(session.getEquipmentRider('tricycle')).toBe('user_2');
   });
 
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
-    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });
-    expect(session.getEquipmentRider('niceday')).toBe('kckern');
+    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'user_1', action: '3_single' });
+    expect(session.getEquipmentRider('niceday')).toBe('user_1');
   });
 });

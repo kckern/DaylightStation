@@ -85,9 +85,9 @@ const candidate = {
   intervalSeconds: 1,
   day: '2026-06-03',
   timeOfDay: '12:00 pm',
-  winnerName: 'Milo',
+  winnerName: 'User_3',
   participants: [
-    { id: 'milo', displayName: 'Milo', avatarSrc: '/api/v1/static/img/users/milo',
+    { id: 'user_3', displayName: 'User_3', avatarSrc: '/api/v1/static/img/users/user_3',
       distanceSeries: JSON.stringify([20, 60, 100]), hrSeries: JSON.stringify([150, 158, 165]),
       finalDistanceM: 100, finalTimeS: 3, placement: 1 }
   ]
@@ -325,7 +325,7 @@ it('records rail entries are clickable and fire onSelectRecord with the raceId',
   const onSelectRecord = vi.fn();
   const records = [{
     raceId: '20260603120000',
-    avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
+    avatars: [{ id: 'user_3', src: '/api/v1/static/img/users/user_3', name: 'User_3' }],
     goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
   }];
   const { getByTestId } = render(

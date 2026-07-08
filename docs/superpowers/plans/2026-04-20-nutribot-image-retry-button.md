@@ -136,7 +136,7 @@ describe('RetryImageDetection', () => {
 
   it('reads state, clears it, deletes old photo, and delegates to LogFoodFromImage', async () => {
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: deps.responseContext,
     });
@@ -148,7 +148,7 @@ describe('RetryImageDetection', () => {
     const [input] = deps.logFoodFromImage.execute.mock.calls[0];
     expect(input.imageData).toEqual({ fileId: 'tg-file-abc' });
     expect(input.conversationId).toBe('telegram:conv-1');
-    expect(input.userId).toBe('kckern');
+    expect(input.userId).toBe('user_1');
     expect(input.messageId).toBeNull();
     expect(input.responseContext).toBe(deps.responseContext);
 
@@ -160,7 +160,7 @@ describe('RetryImageDetection', () => {
     useCase = new RetryImageDetection(deps);
 
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: deps.responseContext,
     });
@@ -181,7 +181,7 @@ describe('RetryImageDetection', () => {
     useCase = new RetryImageDetection(deps);
 
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: deps.responseContext,
     });
@@ -198,7 +198,7 @@ describe('RetryImageDetection', () => {
     useCase = new RetryImageDetection(deps);
 
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: deps.responseContext,
     });
@@ -212,7 +212,7 @@ describe('RetryImageDetection', () => {
     useCase = new RetryImageDetection(deps);
 
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: deps.responseContext,
     });
@@ -230,7 +230,7 @@ describe('RetryImageDetection', () => {
     useCase = new RetryImageDetection(deps);
 
     const result = await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:conv-1',
       responseContext: null,
     });
@@ -551,7 +551,7 @@ describe('LogFoodFromImage — retry button on failure', () => {
   it('writes retry state and attaches retry button when AI call fails', async () => {
     await expect(
       useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:conv-1',
         imageData: { fileId: 'tg-file-abc' },
         messageId: 'user-msg-1',
@@ -591,7 +591,7 @@ describe('LogFoodFromImage — retry button on failure', () => {
 
     await expect(
       useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:conv-1',
         imageData: { fileId: 'tg-file-abc' },
         messageId: 'user-msg-1',
@@ -617,7 +617,7 @@ describe('LogFoodFromImage — retry button on failure', () => {
 
     await expect(
       useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:conv-1',
         imageData: { fileId: 'tg-file-abc' },
         messageId: 'user-msg-1',

@@ -79,7 +79,7 @@ equipment:
     id: cycle_ace
     type: stationary_bike
     cadence: 49904
-    eligible_users: [kckern, felix, milo]
+    eligible_users: [user_1, user_2, user_3]
 ```
 The data is loaded into `fitnessConfiguration.fitness.equipment` (verified via `FitnessApp.jsx:899`) — it just never reaches the device router.
 
@@ -219,7 +219,7 @@ Following the actual code paths, here is what a user trying to test the cycling 
 9. Popout shows `alert('Trigger failed: failed_to_start')`. (P1-2)
 10. **User concludes feature is broken and gives up.**
 
-If P0-1 and P0-2 were fixed (catalog populated and gettable), the trigger would succeed and the engine would emit a snapshot with `cycleState: 'init'`, `riderId: 'kckern'`, etc.
+If P0-1 and P0-2 were fixed (catalog populated and gettable), the trigger would succeed and the engine would emit a snapshot with `cycleState: 'init'`, `riderId: 'user_1'`, etc.
 
 11. The popout would then call `readCycleChallengeInfo()` → reads `window.__fitnessGovernance.cycleState` → **undefined** (P0-3) → returns `null`. The cycle info box would not render.
 12. Even if the user manually reloaded the popout to see the state on first render, RPM and phase progress would appear frozen because `sim-state-change` (P0-4) does not fire on engine ticks. The user would still see the simulator as "broken."

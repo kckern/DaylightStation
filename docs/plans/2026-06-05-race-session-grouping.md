@@ -52,21 +52,21 @@ const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
 });
 
 const today = [
-  sess('s1', H(14,54), 5.5, ['milo'], null, 60),
-  sess('s2', H(16,12), 10,  ['milo','alan'], null, 8),
-  sess('s3', H(16,22), 37.5,['alan','milo'], null, 1139),
-  sess('s4', H(16,59), 12.4,['milo','alan'], null, 466),
-  sess('s5', H(17,19), 9.9, ['felix'], null, 151),
-  sess('s6', H(18,35), 8,   ['alan','milo'], null, 194),
-  sess('s7', H(19,10), 46.4,['kckern','milo','alan','felix','soren'],
+  sess('s1', H(14,54), 5.5, ['user_3'], null, 60),
+  sess('s2', H(16,12), 10,  ['user_3','user_4'], null, 8),
+  sess('s3', H(16,22), 37.5,['user_4','user_3'], null, 1139),
+  sess('s4', H(16,59), 12.4,['user_3','user_4'], null, 466),
+  sess('s5', H(17,19), 9.9, ['user_2'], null, 151),
+  sess('s6', H(18,35), 8,   ['user_4','user_3'], null, 194),
+  sess('s7', H(19,10), 46.4,['user_1','user_3','user_4','user_2','user_5'],
        { primary: { contentId: 'plex:674286', title: 'Looney Tunes Racing' } }, 2745),
 ];
 
 describe('groupSessions', () => {
   it('merges the no-video afternoon runs and leaves the video session standalone', () => {
     const groups = groupSessions(today);
-    // s5 (felix only) is disjoint from running union {milo,alan} -> its own group
-    // s6 (alan,milo) overlaps the s1..s4 union again -> NEW group (s5 broke the chain)
+    // s5 (user_2 only) is disjoint from running union {user_3,user_4} -> its own group
+    // s6 (user_4,user_3) overlaps the s1..s4 union again -> NEW group (s5 broke the chain)
     // s7 has video -> standalone
     const ids = groups.map(g => g.segments.map(x => x.sessionId));
     expect(ids).toEqual([['s1','s2','s3','s4'], ['s5'], ['s6'], ['s7']]);
@@ -77,7 +77,7 @@ describe('groupSessions', () => {
     expect(g1.id).toBe('group:s1');
     expect(g1.isGroup).toBe(true);
     expect(g1.totalCoins).toBe(60 + 8 + 1139 + 466);
-    expect(Object.keys(g1.participants).sort()).toEqual(['alan','milo']);
+    expect(Object.keys(g1.participants).sort()).toEqual(['user_4','user_3']);
     expect(g1.media).toBeNull();
     expect(g1.segments[0].gapBeforeMs).toBe(0);
     expect(g1.segments[1].gapBeforeMs).toBeGreaterThan(0);
@@ -85,18 +85,18 @@ describe('groupSessions', () => {
 
   it('breaks the chain when the gap exceeds the ceiling', () => {
     const far = [...today.slice(0,1),
-      sess('late', today[0].startTime + GROUP_MAX_GAP_MS + 60000, 5, ['milo'])];
+      sess('late', today[0].startTime + GROUP_MAX_GAP_MS + 60000, 5, ['user_3'])];
     expect(groupSessions(far).length).toBe(2);
   });
 
   it('breaks across calendar days', () => {
-    const nextDay = sess('d2', Date.parse('2026-06-06T08:00:00-07:00'), 5, ['milo']);
+    const nextDay = sess('d2', Date.parse('2026-06-06T08:00:00-07:00'), 5, ['user_3']);
     expect(groupSessions([today[0], { ...nextDay, date: '2026-06-06' }]).length).toBe(2);
   });
 });
 ```
 
-> Note the **roster-chain subtlety the test pins down:** the running union is reset when a group breaks. After `s5` (felix) breaks the `s1..s4` block, `s6` is compared against the *fresh* union (just `s5`'s `{felix}`) — disjoint — so `s6` starts its own group. This is intended: a disjoint session is both a member-of-its-own-group and a hard separator.
+> Note the **roster-chain subtlety the test pins down:** the running union is reset when a group breaks. After `s5` (user_2) breaks the `s1..s4` block, `s6` is compared against the *fresh* union (just `s5`'s `{user_2}`) — disjoint — so `s6` starts its own group. This is intended: a disjoint session is both a member-of-its-own-group and a hard separator.
 
 **Step 2: Run it — expect FAIL** (module not found).
 
@@ -210,8 +210,8 @@ const race = (id, utcIso, riders) => ({
 
 const svc = {
   listByDate: async () => [
-    race('r-morning', '2026-06-05T15:48:00Z', [['kckern', 0], ['felix', 0]]), // 08:48 PDT
-    race('r-after',   '2026-06-05T23:22:37Z', [['milo', 215], ['alan', 222]]),// 16:22 PDT
+    race('r-morning', '2026-06-05T15:48:00Z', [['user_1', 0], ['user_2', 0]]), // 08:48 PDT
+    race('r-after',   '2026-06-05T23:22:37Z', [['user_3', 215], ['user_4', 222]]),// 16:22 PDT
   ],
 };
 
@@ -223,8 +223,8 @@ describe('CycleGameProvider', () => {
     const items = await p.loadOverlapping(start, end, '2026-06-05', 'household');
     expect(items.map(i => i.meta.raceId)).toEqual(['r-after']); // morning excluded
     expect(items[0].startMs).toBe(Date.parse('2026-06-05T23:22:37Z'));
-    expect(items[0].meta.winnerId).toBe('milo');               // placement 1
-    expect(items[0].participants.sort()).toEqual(['alan', 'milo']);
+    expect(items[0].meta.winnerId).toBe('user_3');               // placement 1
+    expect(items[0].participants.sort()).toEqual(['user_4', 'user_3']);
   });
 });
 ```

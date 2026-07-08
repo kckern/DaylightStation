@@ -19,7 +19,7 @@
 - **Cooldown gate:** `frontend/src/hooks/fitness/FitnessSession.js:1244-1255` — `_maybeStartSessionFromBuffer` refuses to auto-start for `FITNESS_TIMEOUTS.sessionEndCooldown` (600000 ms) after `_lastSessionEndTimestamp`, which `endSession()` sets unconditionally at line 2270. `endSession()` already computes `_finalized = (reason === 'manual' || reason === 'user_initiated')` at line 2226.
 - **Split point:** Mario Kart `media_start` event `timestamp: 1782009019590` (`contentId: plex:675678`, "Mario Kart Arcade GP 2"). Everything at `timestamp >= 1782009019590` belongs to part 2. Confirmation: the only voice memo ("The Yoshi Cup and the Mario Cup.") is at `1782010890040` → part 2.
 - **Session timebase:** `session.start = '2026-06-20 19:13:41.386'` America/Los_Angeles (PDT = UTC-7 in June), `intervalMs = treasureBox.coinTimeUnitMs = 5000`, `tick_count = 610`. Expected split tick ≈ **233** (part 1 = ticks 0..232, part 2 = ticks 233..609). Expected part-2 new id ≈ `20260620193305`/`20260620193306`.
-- **Series keys (verified):** per-user `<slug>:hr`, `<slug>:zone`, `<slug>:beats`, `<slug>:coins` for slugs `kckern,milo,felix,alan,soren`; `bike:<id>:rpm`, `bike:<id>:rotations`; `device:<id>:heart-rate`; `vib:<name>:active|impacts|intensity`; `global:coins`.
+- **Series keys (verified):** per-user `<slug>:hr`, `<slug>:zone`, `<slug>:beats`, `<slug>:coins` for slugs `user_1,user_3,user_2,user_4,user_5`; `bike:<id>:rpm`, `bike:<id>:rotations`; `device:<id>:heart-rate`; `vib:<name>:active|impacts|intensity`; `global:coins`.
   - **Cumulative (re-zero in part 2):** key suffix in `{beats, coins, rotations, impacts}` (plus `global:coins`).
   - **Instantaneous (slice only):** `hr, zone, rpm, heart-rate, active, intensity`.
 - **Zone→coin-color map:** `cool→blue, active→green, warm→yellow, hot→orange, fire→red` (verified: original buckets `blue:0, green:1060, yellow:1578, orange:435, red:30`, total 3103; cool earns 0 → blue 0).
@@ -367,15 +367,15 @@ import {
 } from './sessionSplit.mjs';
 
 test('isCumulativeKey: cumulative suffixes only', () => {
-  assert.equal(isCumulativeKey('milo:beats'), true);
-  assert.equal(isCumulativeKey('milo:coins'), true);
+  assert.equal(isCumulativeKey('user_3:beats'), true);
+  assert.equal(isCumulativeKey('user_3:coins'), true);
   assert.equal(isCumulativeKey('bike:7138:rotations'), true);
   assert.equal(isCumulativeKey('vib:step-platform:impacts'), true);
   assert.equal(isCumulativeKey('global:coins'), true);
-  assert.equal(isCumulativeKey('milo:hr'), false);
-  assert.equal(isCumulativeKey('milo:zone'), false);
+  assert.equal(isCumulativeKey('user_3:hr'), false);
+  assert.equal(isCumulativeKey('user_3:zone'), false);
   assert.equal(isCumulativeKey('bike:7138:rpm'), false);
-  assert.equal(isCumulativeKey('device:28688:heart-rate'), false);
+  assert.equal(isCumulativeKey('device:90001:heart-rate'), false);
 });
 
 test('zoneToColor: standard mapping', () => {
@@ -393,17 +393,17 @@ test('computeSplitTick rounds (splitTs - startAbs)/intervalMs', () => {
 
 test('splitDecodedSeries: instantaneous sliced, cumulative re-zeroed in part2', () => {
   const decoded = {
-    'milo:hr':    [100, 110, 120, 130, 140],   // instantaneous
-    'milo:coins': [10, 20, 30, 40, 50],         // cumulative
+    'user_3:hr':    [100, 110, 120, 130, 140],   // instantaneous
+    'user_3:coins': [10, 20, 30, 40, 50],         // cumulative
   };
   const { part1, part2 } = splitDecodedSeries(decoded, 2); // split at tick 2
 
-  assert.deepEqual(part1['milo:hr'], [100, 110]);
-  assert.deepEqual(part2['milo:hr'], [120, 130, 140]);
+  assert.deepEqual(part1['user_3:hr'], [100, 110]);
+  assert.deepEqual(part2['user_3:hr'], [120, 130, 140]);
 
-  assert.deepEqual(part1['milo:coins'], [10, 20]);
+  assert.deepEqual(part1['user_3:coins'], [10, 20]);
   // baseline = part1 last = 20 → part2 re-zeroed
-  assert.deepEqual(part2['milo:coins'], [10, 20, 30]);
+  assert.deepEqual(part2['user_3:coins'], [10, 20, 30]);
 });
 
 test('splitDecodedSeries: cumulative re-zero carries nulls forward for baseline', () => {

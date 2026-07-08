@@ -2,7 +2,7 @@
 
 **Date:** 2026-01-27
 **Status:** Implemented
-**Author:** Claude + kckern
+**Author:** Claude + user_1
 
 ## Implementation Summary
 
@@ -96,7 +96,7 @@ devices:
     os_control:
       provider: ssh
       host: 10.0.0.10
-      user: kckern
+      user: user_1
       port: 22
       private_key: ~/.ssh/id_rsa
       commands:

@@ -215,7 +215,7 @@ import { describe, it, expect } from 'vitest';
 import { buildRaceConfigFromCourse, formatClock } from './cycleGameLobby.js';
 
 describe('buildRaceConfigFromCourse', () => {
-  const riders = [{ userId: 'milo', wheelCircumferenceM: 2.1 }];
+  const riders = [{ userId: 'user_3', wheelCircumferenceM: 2.1 }];
   it('maps a distance course', () => {
     const cfg = buildRaceConfigFromCourse(
       { id: 'alps_3k', win_condition: 'distance', goal_m: 3000, background_plex_id: 'plex:1' },
@@ -328,12 +328,12 @@ const props = {
   elapsedS: 75,
   cadenceBands: BANDS,
   riders: {
-    milo: { userId: 'milo', displayName: 'Milo', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
-    felix: { userId: 'felix', displayName: 'Felix', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] }
+    user_3: { userId: 'user_3', displayName: 'User_3', cumulativeDistanceM: 1500, distanceSeries: [500, 1000, 1500] },
+    user_2: { userId: 'user_2', displayName: 'User_2', cumulativeDistanceM: 900, distanceSeries: [300, 600, 900] }
   },
   riderLive: {
-    milo: { rpm: 92, heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 2 },
-    felix: { rpm: 78, heartRate: 140, zoneId: 'warm', zoneColor: '#f1c40f', multiplier: 1.5 }
+    user_3: { rpm: 92, heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 2 },
+    user_2: { rpm: 78, heartRate: 140, zoneId: 'warm', zoneColor: '#f1c40f', multiplier: 1.5 }
   }
 };
 
@@ -504,8 +504,8 @@ const courses = [
   { id: 'coastal_5min', name: 'Coastal · 5 min', win_condition: 'time', time_cap_s: 300 }
 ];
 const riders = [
-  { userId: 'milo', displayName: 'Milo', equipmentId: 'cycle_ace', live: true },
-  { userId: 'felix', displayName: 'Felix', equipmentId: 'tricycle', live: false }
+  { userId: 'user_3', displayName: 'User_3', equipmentId: 'cycle_ace', live: true },
+  { userId: 'user_2', displayName: 'User_2', equipmentId: 'tricycle', live: false }
 ];
 
 describe('CycleGameHome', () => {
@@ -513,7 +513,7 @@ describe('CycleGameHome', () => {
     const { getByText } = render(<CycleGameHome courses={courses} riders={riders} records={[]} />);
     expect(getByText('Alps · 3 km')).toBeTruthy();
     expect(getByText('Coastal · 5 min')).toBeTruthy();
-    expect(getByText('Milo')).toBeTruthy();
+    expect(getByText('User_3')).toBeTruthy();
   });
   it('fires onSelectCourse when a course is chosen', () => {
     const onSelectCourse = vi.fn();
@@ -522,9 +522,9 @@ describe('CycleGameHome', () => {
     expect(onSelectCourse).toHaveBeenCalledWith(courses[0]);
   });
   it('renders the records panel rows', () => {
-    const records = [{ courseId: 'alps_3k', userId: 'milo', label: 'Milo — 4:12' }];
+    const records = [{ courseId: 'alps_3k', userId: 'user_3', label: 'User_3 — 4:12' }];
     const { getByText } = render(<CycleGameHome courses={courses} riders={riders} records={records} />);
-    expect(getByText('Milo — 4:12')).toBeTruthy();
+    expect(getByText('User_3 — 4:12')).toBeTruthy();
   });
 });
 ```

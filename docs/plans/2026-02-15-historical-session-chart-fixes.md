@@ -41,7 +41,7 @@ describe('buildBeatsSeries — coins quality gate (O3)', () => {
       heart_rate: hr,
     });
 
-    const roster = { id: 'alan', profileId: 'alan', name: 'Alan' };
+    const roster = { id: 'user_4', profileId: 'user_4', name: 'User_4' };
     const result = buildBeatsSeries(roster, getSeries, { intervalMs: 5000 });
 
     // Should use heart_beats (0..190), NOT coins (which would be all-zero after fill)
@@ -62,7 +62,7 @@ describe('buildBeatsSeries — coins quality gate (O3)', () => {
       heart_rate: hr,
     });
 
-    const roster = { id: 'alan', profileId: 'alan', name: 'Alan' };
+    const roster = { id: 'user_4', profileId: 'user_4', name: 'User_4' };
     const result = buildBeatsSeries(roster, getSeries, { intervalMs: 5000 });
 
     // Should use coins_total (last = 95)
@@ -148,7 +148,7 @@ describe('buildBeatsSeries — forward-fill cumulative metrics (O4)', () => {
       heart_rate: hr,
     });
 
-    const roster = { id: 'alan', profileId: 'alan', name: 'Alan' };
+    const roster = { id: 'user_4', profileId: 'user_4', name: 'User_4' };
     const result = buildBeatsSeries(roster, getSeries, { intervalMs: 5000 });
 
     // Interior nulls should be forward-filled, not preserved

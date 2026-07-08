@@ -183,8 +183,8 @@ registered in `frontend/src/modules/Fitness/index.js` under key
 ```
 ┌─ Fingerprints ────────────────────────────────┐
 │  kc (admin)            👍 right-index   [+ Add]│
-│  elizabeth (admin)     — no prints —    [+ Add]│
-│  felix                 👍 right-index          │
+│  user_9 (admin)     — no prints —    [+ Add]│
+│  user_2                 👍 right-index          │
 │                        👍 left-thumb    [+ Add]│
 └────────────────────────────────────────────────┘
 ```

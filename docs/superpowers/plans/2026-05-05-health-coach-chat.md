@@ -2115,10 +2115,10 @@ cd /opt/Code/DaylightStation && npm run dev
 - [ ] **Step 2: Test the suggestion APIs directly**
 
 ```bash
-curl -s "http://localhost:3111/api/v1/health/mentions/periods?user=kckern" | head -c 500
-curl -s "http://localhost:3111/api/v1/health/mentions/recent-days?user=kckern&days=7" | head -c 500
+curl -s "http://localhost:3111/api/v1/health/mentions/periods?user=user_1" | head -c 500
+curl -s "http://localhost:3111/api/v1/health/mentions/recent-days?user=user_1&days=7" | head -c 500
 curl -s "http://localhost:3111/api/v1/health/mentions/metrics" | head -c 500
-curl -s "http://localhost:3111/api/v1/health/mentions/all?user=kckern&prefix=weight" | head -c 500
+curl -s "http://localhost:3111/api/v1/health/mentions/all?user=user_1&prefix=weight" | head -c 500
 ```
 
 Expected: each returns `{"suggestions":[...]}` with non-empty arrays.
@@ -2131,7 +2131,7 @@ curl -s -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -d '{
     "input": "How is my weight trending in @last_30d?",
     "context": {
-      "userId": "kckern",
+      "userId": "user_1",
       "attachments": [{ "type": "period", "value": { "rolling": "last_30d" }, "label": "Last 30 days" }]
     }
   }' | head -c 1000

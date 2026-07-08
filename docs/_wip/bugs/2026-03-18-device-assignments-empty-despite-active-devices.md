@@ -17,10 +17,10 @@ A 12.5-minute family bike ride session lost its video metadata (Mario Kart 8 Del
 
 | Data | Status |
 |------|--------|
-| HR timeseries (kckern) | Preserved (Strava backfill) |
+| HR timeseries (user_1) | Preserved (Strava backfill) |
 | Video (`plex:649319` — Mario Kart 8 Deluxe) | **Restored manually** from frontend logs |
 | Voice memo (`memo_1773803070677_jn2sqzp9q`) | **Audio lost** (never uploaded); transcript restored from user recall |
-| Other participants' HR data (felix, milo, alan) | **Lost** (Strava only synced kckern's activity) |
+| Other participants' HR data (user_2, user_3, user_4) | **Lost** (Strava only synced user_1's activity) |
 
 ---
 
@@ -115,13 +115,13 @@ Matching the ANT+ device config:
 # data/household/config/fitness.yml
 devices:
   heart_rate:
-    40475: kckern    # watch
-    28812: felix     # red
-    28688: milo      # yellow
-    28676: alan      # green
+    40475: user_1    # watch
+    90003: user_2     # red
+    90001: user_3      # yellow
+    28676: user_4      # green
 ```
 
-So `resolveUserForDevice("40475")` → returns kckern user. This satisfies the auto-assignment condition `user && userId`. **The only remaining blocker is `if (ledger)` being false.**
+So `resolveUserForDevice("40475")` → returns user_1 user. This satisfies the auto-assignment condition `user && userId`. **The only remaining blocker is `if (ledger)` being false.**
 
 #### Why Was the Ledger Null?
 

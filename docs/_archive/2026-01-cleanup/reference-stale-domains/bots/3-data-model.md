@@ -494,7 +494,7 @@ export const redditExtractor = {
 ```yaml
 - subject: Here is your login code!
   from: Foursquare <noreply@foursquare.com>
-  to: kc@kckern.com
+  to: user_1@example.com
   snippet: Please use this code...
 ```
 **Status:** SKIP - Need harvester update to include date field

@@ -99,8 +99,8 @@ describe('FeedFilterResolver', () => {
     });
 
     test('resolves alias with subsource', () => {
-      expect(resolver.resolve('photos:felix')).toEqual({
-        type: 'source', sourceType: 'immich', subsources: ['felix'],
+      expect(resolver.resolve('photos:user_2')).toEqual({
+        type: 'source', sourceType: 'immich', subsources: ['user_2'],
       });
     });
 

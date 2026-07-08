@@ -17,7 +17,7 @@ import { createPianoRouter } from './piano.mjs';
 const configService = {
   getDefaultHouseholdId: () => 'default',
   getHouseholdPath: (rel) => `/data/household/${rel}`,
-  getUserProfile: (id) => (['kc', 'milo'].includes(id) ? { id } : null),
+  getUserProfile: (id) => (['kc', 'user_3'].includes(id) ? { id } : null),
   getUserDir: (id) => `/data/users/${id}`,
   getHouseholdAppConfig: () => ({}),
   getMediaDir: () => '/data/media',

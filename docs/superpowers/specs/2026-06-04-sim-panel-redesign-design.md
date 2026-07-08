@@ -54,7 +54,7 @@ drive `window.opener.__fitnessSimController` and re-render on the `sim-state-cha
 │  ‹ Riders ›   Bikes    Advanced             │  ← tab strip
 │ ──────────────────────────────────────────  │
 │  KC    132 ▰▰▰▱▱  [cool|act|warm|hot|fire] ▶ ✕│
-│  Felix 118 ▰▰▱▱▱  [cool|act|warm|hot|fire] ▶ ✕│
+│  User_2 118 ▰▰▱▱▱  [cool|act|warm|hot|fire] ▶ ✕│
 └────────────────────────────────────────────┘
 ```
 

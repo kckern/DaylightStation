@@ -36,9 +36,9 @@ import WebSocket from 'ws';
 // Device mappings - uses real household device IDs for dev server testing
 // These map to the actual devices in data/household/config/fitness.yml
 export const TEST_DEVICES = {
-  alice: { deviceId: 40475, userId: 'kckern', name: 'KC' },        // Real device
-  bob: { deviceId: 28812, userId: 'felix', name: 'Felix' },        // Real device
-  charlie: { deviceId: 28688, userId: 'milo', name: 'Milo' }       // Real device
+  alice: { deviceId: 40475, userId: 'user_1', name: 'KC' },        // Real device
+  bob: { deviceId: 90003, userId: 'user_2', name: 'User_2' },        // Real device
+  charlie: { deviceId: 90001, userId: 'user_3', name: 'User_3' }       // Real device
 };
 
 // Real cadence device IDs from production config (data/household/config/fitness.yml)

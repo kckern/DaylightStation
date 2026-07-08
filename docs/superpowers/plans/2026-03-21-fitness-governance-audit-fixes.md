@@ -72,7 +72,7 @@ const GLOBAL_ZONES = [
   { id: 'fire', name: 'Fire', min: 160, color: 'red', coins: 5 },
 ];
 
-// Soren's personal zones (active threshold much higher)
+// User_5's personal zones (active threshold much higher)
 const SOREN_ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
   { id: 'active', name: 'Active', min: 125, color: 'green', coins: 1 },
@@ -111,43 +111,43 @@ describe('TreasureBox per-user zone resolution', () => {
   it('uses global zones when no ZoneProfileStore is set', () => {
     const tb = createTreasureBox();
     // HR 113 is above global active (100) -> should resolve to active
-    const zone = tb.resolveZone('soren', 113);
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('uses per-user zones from ZoneProfileStore when available', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    // HR 113 is below Soren's active (125) -> should resolve to cool
-    const zone = tb.resolveZone('soren', 113);
+    // HR 113 is below User_5's active (125) -> should resolve to cool
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
     expect(zone.coins).toBe(0);
   });
 
   it('falls back to global zones for users without custom profiles', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    // alan has no custom zones -> should use global thresholds
-    const zone = tb.resolveZone('alan', 113);
+    // user_4 has no custom zones -> should use global thresholds
+    const zone = tb.resolveZone('user_4', 113);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('respects per-user active threshold exactly at boundary', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    // HR 125 is exactly at Soren's active threshold
-    const zone = tb.resolveZone('soren', 125);
+    // HR 125 is exactly at User_5's active threshold
+    const zone = tb.resolveZone('user_5', 125);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('resolves higher zones correctly with per-user thresholds', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    // HR 155 is warm for Soren (>= 150) but would be hot (>= 140) by global
-    const zone = tb.resolveZone('soren', 155);
+    // HR 155 is warm for User_5 (>= 150) but would be hot (>= 140) by global
+    const zone = tb.resolveZone('user_5', 155);
     expect(zone.id).toBe('warm');
     expect(zone.coins).toBe(2);
   });
@@ -155,8 +155,8 @@ describe('TreasureBox per-user zone resolution', () => {
   it('still uses usersConfigOverrides if populated (backward compat)', () => {
     const tb = createTreasureBox();
     // Manually populate overrides (legacy path)
-    tb.usersConfigOverrides.set('soren', { active: 125, warm: 150, hot: 170, fire: 190 });
-    const zone = tb.resolveZone('soren', 113);
+    tb.usersConfigOverrides.set('user_5', { active: 125, warm: 150, hot: 170, fire: 190 });
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
     expect(zone.coins).toBe(0);
   });
@@ -232,7 +232,7 @@ TreasureBox.resolveZone() now checks ZoneProfileStore for per-user zone
 configs when usersConfigOverrides has no entry. Previously, per-user zone
 overrides were never loaded because configure() was never called with the
 users parameter, causing all users to be evaluated against global zone
-thresholds. This meant users like Soren (active >= 125) earned coins as
+thresholds. This meant users like User_5 (active >= 125) earned coins as
 if active at HR 100+ (global threshold) while displaying as 'cool'."
 ```
 
@@ -363,7 +363,7 @@ coins.buckets={}."
 
 ### Task 3: Add fire zone to fitness config
 
-The `fitness.yml` zone config defines only cool/active/warm/hot. But `DEFAULT_ZONE_CONFIG` in `types.js`, `StravaSessionBuilder.mjs`, the UI components, and user profiles all reference a fire zone. Users like Milo (max HR 177) hit fire-level heart rates but get classified as "hot" since the zone doesn't exist.
+The `fitness.yml` zone config defines only cool/active/warm/hot. But `DEFAULT_ZONE_CONFIG` in `types.js`, `StravaSessionBuilder.mjs`, the UI components, and user profiles all reference a fire zone. Users like User_3 (max HR 177) hit fire-level heart rates but get classified as "hot" since the zone doesn't exist.
 
 **Files:**
 - Modify: `data/household/config/fitness.yml` (inside Docker container)

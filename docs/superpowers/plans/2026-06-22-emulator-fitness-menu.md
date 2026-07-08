@@ -382,7 +382,7 @@ import * as EmulatorGame from './widgets/EmulatorGame/index.jsx';
 ```yaml
 locks:
   emulator:
-    - kckern
+    - user_1
 ```
   Write the WHOLE file back via heredoc inside `sh -c` (preserve everything else). Confirm it parses:
   `sudo docker exec daylight-station sh -c 'node -e "require(\"js-yaml\").load(require(\"fs\").readFileSync(\"data/household/config/fitness.yml\",\"utf8\")); console.log(\"ok\")"'`
@@ -405,7 +405,7 @@ locks:
 sudo docker logs --since 75s daylight-station 2>&1 | grep -oE '"videoState":"[^"]*"|"sessionActive":[a-z]+|"rosterSize":[0-9]+' | sort | uniq -c
 sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight
 ```
-- [ ] **Step 4 — manual verify** in the Fitness app: open the **Fitness Apps** menu → **Game Boy** shows a **lock badge**; tapping prompts a fingerprint (kckern); after unlock it launches the EmulatorConsole; with no one in the `warm` zone the overlay shows paused/depleted ("Out of credit — earn more!"), and pedaling into the zone resumes play. **Garage display** is the fitness screen — after deploy, hard-reload it (CLAUDE.local.md fitness-display reload).
+- [ ] **Step 4 — manual verify** in the Fitness app: open the **Fitness Apps** menu → **Game Boy** shows a **lock badge**; tapping prompts a fingerprint (user_1); after unlock it launches the EmulatorConsole; with no one in the `warm` zone the overlay shows paused/depleted ("Out of credit — earn more!"), and pedaling into the zone resumes play. **Garage display** is the fitness screen — after deploy, hard-reload it (CLAUDE.local.md fitness-display reload).
 
 ---
 

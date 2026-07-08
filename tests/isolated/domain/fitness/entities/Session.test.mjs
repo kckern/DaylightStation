@@ -280,14 +280,14 @@ describe('Session', () => {
           { at: '2026-02-06 10:30:00', type: 'voice_memo', data: { transcript: 'Feeling good' } }
         ],
         participants: {
-          alan: { display_name: 'Alan', is_primary: true, hr_device: '28676' }
+          user_4: { display_name: 'User_4', is_primary: true, hr_device: '28676' }
         },
         entities: [
-          { entityId: 'e1', profileId: 'alan', status: 'active', coins: 100 }
+          { entityId: 'e1', profileId: 'user_4', status: 'active', coins: 100 }
         ],
         treasureBox: { totalCoins: 313, buckets: { green: 209, yellow: 104 } },
         session: { id: '20260206182302', date: '2026-02-06', start: '2026-02-06 10:23:02' },
-        roster: [{ name: 'Alan', isPrimary: true }]
+        roster: [{ name: 'User_4', isPrimary: true }]
       });
 
       const json = v3Session.toJSON();
@@ -298,7 +298,7 @@ describe('Session', () => {
       expect(restored.events).toHaveLength(2);
       expect(restored.events[0].type).toBe('media_start');
       expect(restored.events[1].type).toBe('voice_memo');
-      expect(restored.participants.alan.display_name).toBe('Alan');
+      expect(restored.participants.user_4.display_name).toBe('User_4');
       expect(restored.entities).toHaveLength(1);
       expect(restored.entities[0].coins).toBe(100);
       expect(restored.treasureBox.totalCoins).toBe(313);
@@ -308,7 +308,7 @@ describe('Session', () => {
       // they are derived from session block and participants by the infrastructure layer.
       // The entity round-trip preserves the session block and participants as canonical sources.
       expect(restored.session.start).toBe('2026-02-06 10:23:02');
-      expect(restored.participants.alan.display_name).toBe('Alan');
+      expect(restored.participants.user_4.display_name).toBe('User_4');
     });
 
     test('toJSON omits empty v3 fields', () => {
