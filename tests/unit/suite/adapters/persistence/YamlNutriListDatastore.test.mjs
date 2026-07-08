@@ -9,19 +9,21 @@ import os from 'os';
 describe('YamlNutriListDatastore', () => {
   let datastore;
   let tempDir;
-  let mockUserDataService;
+  let mockDataService;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nutrilist-test-'));
 
-    mockUserDataService = {
-      getUserPath: jest.fn().mockImplementation((userId, subpath) => {
-        return path.join(tempDir, 'users', userId, subpath);
-      }),
+    mockDataService = {
+      user: {
+        resolveDir: jest.fn().mockImplementation((subpath, userId) => {
+          return path.join(tempDir, 'users', userId, subpath);
+        }),
+      },
     };
 
     datastore = new YamlNutriListDatastore({
-      userDataService: mockUserDataService,
+      dataService: mockDataService,
       logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
   });
@@ -31,7 +33,7 @@ describe('YamlNutriListDatastore', () => {
   });
 
   describe('constructor', () => {
-    it('throws if userDataService is not provided', () => {
+    it('throws if dataService is not provided', () => {
       expect(() => new YamlNutriListDatastore({}))
         .toThrow(InfrastructureError);
     });
@@ -48,9 +50,9 @@ describe('YamlNutriListDatastore', () => {
 
       await datastore.saveMany(items);
 
-      expect(mockUserDataService.getUserPath).toHaveBeenCalledWith(
-        'testuser',
-        'lifelog/nutrition/nutrilist'
+      expect(mockDataService.user.resolveDir).toHaveBeenCalledWith(
+        'lifelog/nutrition/nutrilist',
+        'testuser'
       );
     });
 
@@ -65,9 +67,9 @@ describe('YamlNutriListDatastore', () => {
 
       await datastore.saveMany(items);
 
-      expect(mockUserDataService.getUserPath).toHaveBeenCalledWith(
-        'correctuser',
-        expect.any(String)
+      expect(mockDataService.user.resolveDir).toHaveBeenCalledWith(
+        expect.any(String),
+        'correctuser'
       );
     });
   });

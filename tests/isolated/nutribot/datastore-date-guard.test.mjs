@@ -10,13 +10,15 @@ describe('YamlNutriListDatastore date guard', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nutrilist-test-'));
-    const userDataService = {
-      getUserPath: jest.fn().mockImplementation((userId, subpath) => {
-        return path.join(tmpDir, 'users', userId, subpath);
-      }),
+    const dataService = {
+      user: {
+        resolveDir: jest.fn().mockImplementation((subpath, userId) => {
+          return path.join(tmpDir, 'users', userId, subpath);
+        }),
+      },
     };
     store = new YamlNutriListDatastore({
-      userDataService,
+      dataService,
       logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
   });

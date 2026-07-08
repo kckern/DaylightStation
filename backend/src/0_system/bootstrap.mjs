@@ -2460,7 +2460,7 @@ export function createGratitudeApiRouter(config) {
 /**
  * Create messaging domain services
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for YAML I/O
+ * @param {Object} config.dataService - DataService for YAML I/O
  * @param {Object} [config.telegram] - Telegram configuration
  * @param {string} [config.telegram.token] - Telegram bot token
  * @param {Object} [config.gmail] - Gmail configuration
@@ -2473,7 +2473,7 @@ export function createGratitudeApiRouter(config) {
  */
 export function createMessagingServices(config) {
   const {
-    userDataService,
+    dataService,
     telegram,
     gmail,
     transcriptionService,
@@ -2483,7 +2483,7 @@ export function createMessagingServices(config) {
 
   // Conversation store (YAML persistence)
   const conversationStore = new YamlConversationDatastore({
-    userDataService,
+    dataService,
     logger
   });
 
@@ -2572,7 +2572,7 @@ export function createJournalistServices(config) {
 
   // Message queue repository (YAML persistence)
   const messageQueueRepository = new YamlMessageQueueRepository({
-    dataService: userDataService,
+    dataService,
     userResolver,
     logger
   });
@@ -2607,7 +2607,7 @@ export function createJournalistServices(config) {
         // Save relative to user's lifelog directory
         // relativePath is "journalist/last_gpt.yml", we need "lifelog/journalist/last_gpt.yml"
         const dataPath = `lifelog/${relativePath}`;
-        userDataService.writeUserData?.(deps.username, dataPath, data);
+        dataService.user.write(dataPath, data, deps.username);
       }
     }),
     logger
@@ -2783,7 +2783,7 @@ export function createHomebotApiRouter(config) {
  * Create nutribot application services
  * @param {Object} config
  * @param {Object} config.configService - ConfigService instance for path resolution
- * @param {Object} config.userDataService - UserDataService instance
+ * @param {Object} config.dataService - DataService instance
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
  * @param {Object} [config.upcGateway] - UPC lookup gateway
@@ -2798,7 +2798,7 @@ export function createHomebotApiRouter(config) {
 export async function createNutribotServices(config) {
   const {
     configService,
-    userDataService,
+    dataService,
     telegramAdapter,
     aiGateway,
     upcGateway,
@@ -2832,7 +2832,7 @@ export async function createNutribotServices(config) {
 
   // Nutrient list store (YAML persistence)
   const nutriListStore = new YamlNutriListDatastore({
-    userDataService,
+    dataService,
     logger
   });
 
@@ -2958,7 +2958,7 @@ export function createNutribotApiRouter(config) {
 /**
  * Create health domain services
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for YAML I/O
+ * @param {Object} config.dataService - DataService for YAML I/O
  * @param {Object} [config.userResolver] - UserResolver for ID to username mapping
  * @param {Object} [config.configService] - ConfigService for user/household lookup
  * @param {Object} [config.logger] - Logger instance
@@ -2967,7 +2967,6 @@ export function createNutribotApiRouter(config) {
 export function createHealthServices(config) {
   const {
     dataService,
-    userDataService,
     userResolver,
     configService,
     logger = console
@@ -2982,11 +2981,11 @@ export function createHealthServices(config) {
     logger
   });
 
-  // NutriList store for nutrilist endpoints and adjustment data (optional, requires userDataService)
+  // NutriList store for nutrilist endpoints and adjustment data (optional, requires dataService)
   let nutriListStore = null;
-  if (userDataService) {
+  if (dataService) {
     nutriListStore = new YamlNutriListDatastore({
-      userDataService,
+      dataService,
       logger
     });
   }
@@ -3959,7 +3958,6 @@ export function createHarvesterServices(config) {
     io,
     httpClient,
     configService,
-    userDataService,
     dataService,
     todoistApi,
     stravaClient: stravaClientParam,
