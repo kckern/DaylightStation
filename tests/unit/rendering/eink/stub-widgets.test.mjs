@@ -49,7 +49,7 @@ describe('eink canned widgets', () => {
     // No data sources — stubs fall back to sample content.
     const png = await render(
       { width: 800, height: 600, layout, data: {} },
-      { fontDir: FONT_DIR, dataOverride: {} },
+      { fontDir: FONT_DIR, data: {} },
     );
 
     expect(Buffer.isBuffer(png)).toBe(true);
@@ -61,7 +61,7 @@ describe('eink canned widgets', () => {
     const layout = { children: [{ widget: 'does-not-exist' }] };
     const png = await render(
       { width: 400, height: 200, layout, data: {} },
-      { fontDir: FONT_DIR, dataOverride: {} },
+      { fontDir: FONT_DIR, data: {} },
     );
     expect(png.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
   });
@@ -74,7 +74,7 @@ describe('eink canned widgets', () => {
     const layout = { children: [{ widget: 'date', grow: 1 }] };
     const png = await render(
       { width: 400, height: 200, layout, data: {} },
-      { fontDir: FONT_DIR, dataOverride: {} },
+      { fontDir: FONT_DIR, data: {} },
     );
     expect(png.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
     expect(png[24]).toBe(8);          // bit depth 8
@@ -85,7 +85,7 @@ describe('eink canned widgets', () => {
     const layout = { children: [{ widget: 'date', grow: 1 }] };
     const png = await render(
       { width: 400, height: 200, layout, data: {} },
-      { fontDir: FONT_DIR, dataOverride: {}, grayscale: false },
+      { fontDir: FONT_DIR, data: {}, grayscale: false },
     );
     expect(png.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
     expect(png[24]).toBe(8);          // bit depth 8

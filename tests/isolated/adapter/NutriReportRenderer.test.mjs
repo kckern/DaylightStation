@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { NutriReportRenderer } from '../../../backend/src/1_adapters/nutribot/rendering/NutriReportRenderer.mjs';
+import { NutriReportRenderer } from '../../../backend/src/1_rendering/nutribot/NutriReportRenderer.mjs';
 import path from 'path';
 
 describe('NutriReportRenderer - Food Item Display Bug', () => {

@@ -100,11 +100,15 @@ export class HealthArchiveManifest {
   /**
    * Whole days since the last successful sync.
    * Returns Infinity if the manifest has never been synced.
+   * @param {number} now - Current time as epoch ms (caller-supplied).
    * @returns {number}
    */
-  stalenessDays() {
+  stalenessDays(now) {
+    if (typeof now !== 'number' || !Number.isFinite(now)) {
+      throw new Error('HealthArchiveManifest.stalenessDays(now): now (epoch ms) is required');
+    }
     if (!this.lastSync) return Infinity;
-    return Math.floor((Date.now() - new Date(this.lastSync).getTime()) / 86400000);
+    return Math.floor((now - new Date(this.lastSync).getTime()) / 86400000);
   }
 }
 

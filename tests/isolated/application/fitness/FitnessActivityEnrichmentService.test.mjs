@@ -66,7 +66,7 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
     dirExists.mockReturnValue(true);
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     service = new FitnessActivityEnrichmentService({
-      stravaClient: {},
+      activityGateway: {},
       jobStore: { findById: () => null, update: () => {}, create: () => {}, findActionable: () => [] },
       authStore: {},
       configService: {
@@ -74,6 +74,8 @@ describe('FitnessActivityEnrichmentService._findMatchingSession sport guard', ()
         getHeadOfHousehold: () => 'test-user',
         getAppConfig: () => ({}),
       },
+      selectionConfig: {},
+      resolveDisplayName: (userId) => userId,
       fitnessHistoryDir: '/tmp/fake-history',
       logger,
     });
@@ -240,7 +242,7 @@ describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
     };
     stravaClientMock = { hasAccessToken: () => true, getActivity: vi.fn() };
     service = new FitnessActivityEnrichmentService({
-      stravaClient: stravaClientMock,
+      activityGateway: stravaClientMock,
       jobStore,
       authStore: {},
       configService: {
@@ -248,6 +250,8 @@ describe('FitnessActivityEnrichmentService — terminal-failure aging', () => {
         getHeadOfHousehold: () => 'test-user',
         getAppConfig: () => ({}),
       },
+      selectionConfig: {},
+      resolveDisplayName: (userId) => userId,
       fitnessHistoryDir: '/tmp/fake-history',
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });

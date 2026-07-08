@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { IAudioAssetResolver } from '../../2_domains/livestream/IAudioAssetResolver.mjs';
+import { IAudioAssetResolver } from '../../3_applications/livestream/ports/IAudioAssetResolver.mjs';
 
 /**
  * TTSAssetResolver — resolves audio specs to playable file paths.

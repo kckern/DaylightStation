@@ -48,12 +48,6 @@ export const gratitudeCardTheme = {
     text: '#000000',
     border: '#000000',
   },
-
-  // Selection settings
-  selection: {
-    gratitudeCount: 2,
-    hopesCount: 2,
-  },
 };
 
 export default gratitudeCardTheme;

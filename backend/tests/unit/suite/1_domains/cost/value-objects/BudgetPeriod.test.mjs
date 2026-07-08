@@ -105,13 +105,18 @@ describe('BudgetPeriod', () => {
       });
     });
 
-    it('should use current date if no reference provided', () => {
+    it('uses the caller-supplied reference date', () => {
       const period = new BudgetPeriod('daily');
-      const start = period.getCurrentPeriodStart();
       const now = new Date();
+      const start = period.getCurrentPeriodStart(now);
       expect(start.getUTCFullYear()).toBe(now.getUTCFullYear());
       expect(start.getUTCMonth()).toBe(now.getUTCMonth());
       expect(start.getUTCDate()).toBe(now.getUTCDate());
+    });
+
+    it('throws when reference date is missing', () => {
+      const period = new BudgetPeriod('daily');
+      expect(() => period.getCurrentPeriodStart()).toThrow(/referenceDate is required/);
     });
   });
 

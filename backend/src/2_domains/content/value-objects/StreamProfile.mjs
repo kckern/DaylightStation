@@ -4,7 +4,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { STREAM_FORMATS, STREAM_STRATEGIES } from './StreamFormat.mjs';
+import { isStreamFormat, isStreamStrategy } from './StreamFormat.mjs';
 
 /**
  * A site profile loaded from data/system/config/streaming/<name>.yml.
@@ -16,10 +16,10 @@ export class StreamProfile {
     if (!name) {
       throw new ValidationError('StreamProfile requires name', { field: 'name' });
     }
-    if (!STREAM_STRATEGIES.has(strategy)) {
+    if (!isStreamStrategy(strategy)) {
       throw new ValidationError(`Invalid strategy: ${strategy}`, { field: 'strategy' });
     }
-    if (!STREAM_FORMATS.has(format)) {
+    if (!isStreamFormat(format)) {
       throw new ValidationError(`Invalid format: ${format}`, { field: 'format' });
     }
     this.name = name;

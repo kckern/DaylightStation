@@ -115,9 +115,10 @@ export class CostBudgetService {
    * @returns {Promise<BudgetStatus>} Status object with spending details
    */
   async #evaluateBudget(budget) {
-    // Get period boundaries from budget
-    const periodStart = budget.period.getCurrentPeriodStart();
-    const periodEnd = budget.period.getCurrentPeriodEnd();
+    // Get period boundaries from budget (clock supplied by the application layer)
+    const now = new Date();
+    const periodStart = budget.period.getCurrentPeriodStart(now);
+    const periodEnd = budget.period.getCurrentPeriodEnd(now);
 
     // Build filter for cost query
     const filter = {

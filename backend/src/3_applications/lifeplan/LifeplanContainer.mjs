@@ -3,10 +3,15 @@ import { BeliefEvaluator } from '#domains/lifeplan/services/BeliefEvaluator.mjs'
 import { BeliefCascadeProcessor } from '#domains/lifeplan/services/BeliefCascadeProcessor.mjs';
 import { DependencyResolver } from '#domains/lifeplan/services/DependencyResolver.mjs';
 import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
-import { YamlLifePlanStore } from '#adapters/persistence/yaml/YamlLifePlanStore.mjs';
-import { YamlLifeplanMetricsStore } from '#adapters/persistence/yaml/YamlLifeplanMetricsStore.mjs';
-import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremonyRecordStore.mjs';
 
+/**
+ * DI container for the lifeplan domain.
+ *
+ * Persistence stores are constructed at the composition root
+ * (5_composition/modules/lifeplan.mjs) and injected as instances (Decision D1:
+ * containers never import concrete adapter classes). Pure domain services
+ * are lazily constructed here.
+ */
 export class LifeplanContainer {
   #goalStateService;
   #beliefEvaluator;
@@ -16,10 +21,17 @@ export class LifeplanContainer {
   #lifePlanStore;
   #metricsStore;
   #ceremonyRecordStore;
-  #options;
 
+  /**
+   * @param {Object} options
+   * @param {Object} options.lifePlanStore - ILifePlanStore instance
+   * @param {Object} options.metricsStore - Metrics store instance
+   * @param {Object} options.ceremonyRecordStore - Ceremony record store instance
+   */
   constructor(options = {}) {
-    this.#options = options;
+    this.#lifePlanStore = options.lifePlanStore || null;
+    this.#metricsStore = options.metricsStore || null;
+    this.#ceremonyRecordStore = options.ceremonyRecordStore || null;
   }
 
   getGoalStateService() {
@@ -59,27 +71,21 @@ export class LifeplanContainer {
 
   getLifePlanStore() {
     if (!this.#lifePlanStore) {
-      this.#lifePlanStore = new YamlLifePlanStore({
-        basePath: this.#options.dataPath,
-      });
+      throw new Error('lifePlanStore not configured');
     }
     return this.#lifePlanStore;
   }
 
   getMetricsStore() {
     if (!this.#metricsStore) {
-      this.#metricsStore = new YamlLifeplanMetricsStore({
-        basePath: this.#options.dataPath,
-      });
+      throw new Error('metricsStore not configured');
     }
     return this.#metricsStore;
   }
 
   getCeremonyRecordStore() {
     if (!this.#ceremonyRecordStore) {
-      this.#ceremonyRecordStore = new YamlCeremonyRecordStore({
-        basePath: this.#options.dataPath,
-      });
+      throw new Error('ceremonyRecordStore not configured');
     }
     return this.#ceremonyRecordStore;
   }

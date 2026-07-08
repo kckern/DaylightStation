@@ -64,7 +64,7 @@ External integrations for the lifeplan domain.
 |------|---------|
 | CeremonyScheduler | Checks due ceremonies and sends notifications |
 
-### 0_system/bootstrap/
+### 5_composition/modules/
 
 | File | Purpose |
 |------|---------|

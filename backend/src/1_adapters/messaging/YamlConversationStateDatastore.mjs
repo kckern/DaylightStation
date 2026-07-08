@@ -33,27 +33,27 @@ import { IConversationStateDatastore } from '#apps/common/ports/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlConversationStateDatastore extends IConversationStateDatastore {
-  #userDataService;
+  #dataService;
   #botName;
   #userResolver;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService for per-user storage
+   * @param {Object} config.dataService - DataService for per-user storage
    * @param {string} config.botName - Bot name for path (nutribot, journalist, homebot)
    * @param {Object} config.userResolver - UserResolver for platform ID -> username
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     super();
-    if (!config?.userDataService || !config?.botName || !config?.userResolver) {
-      throw new InfrastructureError('YamlConversationStateDatastore requires userDataService, botName, userResolver', {
+    if (!config?.dataService || !config?.botName || !config?.userResolver) {
+      throw new InfrastructureError('YamlConversationStateDatastore requires dataService, botName, userResolver', {
         code: 'MISSING_DEPENDENCY',
-        missing: [!config?.userDataService && 'userDataService', !config?.botName && 'botName', !config?.userResolver && 'userResolver'].filter(Boolean)
+        missing: [!config?.dataService && 'dataService', !config?.botName && 'botName', !config?.userResolver && 'userResolver'].filter(Boolean)
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#botName = config.botName;
     this.#userResolver = config.userResolver;
     this.#logger = config.logger || console;
@@ -103,11 +103,11 @@ export class YamlConversationStateDatastore extends IConversationStateDatastore 
     if (!username) {
       // Fallback to sanitized ID for unknown users
       const safeId = this.#sanitizeId(conversationId);
-      return path.join(this.#userDataService.getUserDir(username || '_unknown'), 'conversations', this.#botName, `${safeId}.yml`);
+      return this.#dataService.user.resolveDir(`conversations/${this.#botName}/${safeId}.yml`, username || '_unknown');
     }
     
     const safeId = this.#sanitizeId(conversationId);
-    return path.join(this.#userDataService.getUserDir(username), 'conversations', this.#botName, `${safeId}.yml`);
+    return this.#dataService.user.resolveDir(`conversations/${this.#botName}/${safeId}.yml`, username);
   }
 
   /**

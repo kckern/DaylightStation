@@ -163,7 +163,7 @@ export async function getContentQuery() {
       throw new Error('Plex auth token missing (data/household/auth/plex.yml).');
     }
 
-    const { createContentRegistry } = await import('#system/bootstrap.mjs');
+    const { createContentRegistry } = await import('#composition/bootstrap.mjs');
     const { ContentQueryService } = await import('#apps/content/ContentQueryService.mjs');
 
     const result = createContentRegistry(
@@ -351,7 +351,7 @@ export { readBuxferCredsDirect as _readBuxferCredsDirect };
  * subcommands. Uses the same domain service the in-process HealthCoachAgent
  * uses — one set of analytics, two transports.
  *
- * Wiring (mirrors backend/src/0_system/bootstrap.mjs around line 2587):
+ * Wiring (mirrors backend/src/5_composition/bootstrap.mjs around line 2587):
  *   healthStore     ← YamlHealthDatastore({ dataService, configService })
  *   healthService   ← AggregateHealthUseCase({ healthStore })   (exposes getHealthForRange)
  *   periodResolver  ← new PeriodResolver()
@@ -368,8 +368,8 @@ export async function getHealthAnalytics() {
     const { dataService }            = await import('#system/config/index.mjs');
     const { YamlHealthDatastore }    = await import('#adapters/persistence/yaml/YamlHealthDatastore.mjs');
     const { AggregateHealthUseCase } = await import('#apps/health/AggregateHealthUseCase.mjs');
-    const { HealthAnalyticsService } = await import('#domains/health/services/HealthAnalyticsService.mjs');
-    const { PeriodResolver }         = await import('#domains/health/services/PeriodResolver.mjs');
+    const { HealthAnalyticsService } = await import('#apps/health/analytics/HealthAnalyticsService.mjs');
+    const { PeriodResolver }         = await import('#apps/health/analytics/PeriodResolver.mjs');
     const { PersonalContextLoader }  = await import('#apps/health/PersonalContextLoader.mjs');
     const { YamlWorkingMemoryAdapter } = await import('#adapters/agents/YamlWorkingMemoryAdapter.mjs');
     const { readFile }               = await import('node:fs/promises');

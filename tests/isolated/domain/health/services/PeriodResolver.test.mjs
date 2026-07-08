@@ -1,6 +1,6 @@
 // tests/isolated/domain/health/services/PeriodResolver.test.mjs
 import { describe, it, expect } from 'vitest';
-import { PeriodResolver } from '../../../../../backend/src/2_domains/health/services/PeriodResolver.mjs';
+import { PeriodResolver } from '../../../../../backend/src/3_applications/health/analytics/PeriodResolver.mjs';
 
 // Anchor "today" so date math is deterministic.
 const NOW = new Date('2026-05-05T12:00:00Z');
@@ -212,7 +212,7 @@ describe('PeriodResolver — named periods (Plan 4)', () => {
 
   it('throws when slug not found in any source', async () => {
     const r = makeResolver({ playbook: { named_periods: {} } });
-    await expect(r.resolve({ named: 'unknown-slug' }, { userId: 'kc' })).rejects.toThrow(/named period not found/);
+    await expect(r.resolve({ named: 'unknown-slug' }, { userId: 'kc' })).rejects.toThrow(/NamedPeriod not found/);
   });
 
   it('throws when no playbook/workingMemory deps wired', async () => {

@@ -1,6 +1,14 @@
 // tests/isolated/application/feed/HeadlineService.test.mjs
 import { vi } from 'vitest';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
+import { SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
+import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
+
+// Injected as values by the composition root in prod; tests do the same.
+const blockedImageConfig = {
+  blockedImageUrls: SOURCE_BLOCKED_IMAGE_URLS,
+  blockedImagePatterns: GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS,
+};
 
 describe('HeadlineService', () => {
   let service;
@@ -51,6 +59,7 @@ describe('HeadlineService', () => {
       headlineStore: mockStore,
       harvester: mockHarvester,
       dataService: mockDataService,
+      config: blockedImageConfig,
     });
   });
 
@@ -149,6 +158,7 @@ describe('HeadlineService', () => {
         harvester: mockHarvester,
         dataService: ds,
         webContentGateway: mockWebContentGateway,
+        config: blockedImageConfig,
       });
     }
 
@@ -324,6 +334,7 @@ describe('HeadlineService', () => {
         headlineStore: mockStore,
         harvester: mockHarvester,
         dataService: ds,
+        config: blockedImageConfig,
       });
       const now = new Date().toISOString();
 

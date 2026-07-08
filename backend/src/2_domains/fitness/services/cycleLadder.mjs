@@ -5,6 +5,7 @@
  * YYYYMMDDHHmmss raceId) — week membership is plain string comparison,
  * so no timezone conversion can disagree with the storage layout.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const ymd = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -14,8 +15,11 @@ const dateFromRaceId = (raceId) => {
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 };
 
-/** Local Monday 00:00 → next Monday (exclusive end), as date strings. */
-export function currentWeekWindow(now = new Date()) {
+/** Local Monday 00:00 → next Monday (exclusive end), as date strings. `now` is caller-supplied. */
+export function currentWeekWindow(now) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new ValidationError('now (Date) is required', { code: 'MISSING_CLOCK', field: 'now' });
+  }
   const dow = (now.getDay() + 6) % 7; // 0 = Monday
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
   const next = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);

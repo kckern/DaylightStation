@@ -1,58 +1,44 @@
 /**
- * NewsReporterContainer (3_applications — composition root).
+ * NewsReporterContainer (3_applications).
  *
- * Wires the concrete adapters, renderer, registries, consolidator, history, and
- * service into a ready-to-use `{ service, jobDatastore, executor }` bundle that
- * app.mjs mounts. As a composition root, this is the one place in 3_app allowed
- * to import concrete 1_adapters / 1_rendering classes directly.
+ * Wires the application-layer pieces (consolidator, sink registry, service,
+ * executor) into a ready-to-use `{ service, jobDatastore, executor }` bundle.
+ * Concrete adapters and the renderer are constructed at the composition root
+ * (bootstrap `createNewsReporterServices`) and injected here as instances
+ * (Decision D1: containers never import concrete adapter or renderer
+ * classes).
  *
  * @module 3_applications/newsreporter/NewsReporterContainer
  */
 
-import { ReportReceiptRenderer } from '#rendering/newsreporter/ReportReceiptRenderer.mjs';
-import { MastraAdapter } from '#adapters/agents/MastraAdapter.mjs';
-import { createSourceRegistry } from '#adapters/newsreporter/sources/sourceRegistry.mjs';
-import { NewsReporterJobDatastore } from '#adapters/newsreporter/NewsReporterJobDatastore.mjs';
-import { YamlReportRunDatastore } from '#adapters/persistence/yaml/YamlReportRunDatastore.mjs';
 import { Consolidator } from '#apps/newsreporter/Consolidator.mjs';
 import { createSinkRegistry } from '#apps/newsreporter/sinks/sinkRegistry.mjs';
 import { NewsReporterService } from '#apps/newsreporter/NewsReporterService.mjs';
 import { NewsReporterJobExecutor } from '#apps/newsreporter/NewsReporterJobExecutor.mjs';
 
-const DEFAULT_MODEL = 'openai/gpt-4o';
-
 export class NewsReporterContainer {
   /**
    * @param {{
    *   configService: object,
-   *   agentRuntimeDeps?: { model?: string, mediaDir?: string|null },
+   *   runtimeFor: (model?: string) => object,
+   *   defaultModel: string,
+   *   renderer: object,
+   *   sourceRegistry: { resolve: Function },
+   *   jobDatastore: object,
+   *   history: object,
    *   printerRegistry: { resolve: Function },
-   *   dataService: object,
-   *   httpClient: object,
    *   logger?: object,
    * }} deps
-   * @returns {{ service: NewsReporterService, jobDatastore: NewsReporterJobDatastore, executor: NewsReporterJobExecutor }}
+   *   - runtimeFor: memoized per-model agent-runtime factory (built at the
+   *     composition root; honors each reporter's consolidate.model).
+   *   - defaultModel: framework default LLM, resolved from config at bootstrap.
+   *   - renderer / sourceRegistry / jobDatastore / history: adapter and
+   *     renderer instances constructed at the composition root.
+   * @returns {{ service: NewsReporterService, jobDatastore: object, executor: NewsReporterJobExecutor }}
    */
-  static build({ configService, agentRuntimeDeps = {}, printerRegistry, dataService, httpClient, logger = console }) {
-    const defaultModel = agentRuntimeDeps.model || DEFAULT_MODEL;
-    const mediaDir = agentRuntimeDeps.mediaDir ?? null;
-
-    // Memoized per-model agent runtime factory. Honors each reporter's
-    // consolidate.model without re-creating a MastraAdapter on every call.
-    const runtimeCache = new Map();
-    const runtimeFor = (model) => {
-      const key = model || defaultModel;
-      if (!runtimeCache.has(key)) {
-        runtimeCache.set(key, new MastraAdapter({ model: key, logger, mediaDir }));
-      }
-      return runtimeCache.get(key);
-    };
-
-    const renderer = new ReportReceiptRenderer();
+  static build({ configService, runtimeFor, defaultModel, renderer, sourceRegistry, jobDatastore, history, printerRegistry, logger = console }) {
     const consolidator = new Consolidator({ runtimeFor, logger, defaultModel });
-    const sourceRegistry = createSourceRegistry({ httpClient, logger });
     const sinkRegistry = createSinkRegistry({ renderer, printerRegistry, logger });
-    const history = new YamlReportRunDatastore({ dataService, logger });
 
     const service = new NewsReporterService({
       configService,
@@ -62,8 +48,6 @@ export class NewsReporterContainer {
       history,
       logger,
     });
-
-    const jobDatastore = new NewsReporterJobDatastore({ configService, logger });
 
     const executor = new NewsReporterJobExecutor({
       newsReporterService: service,

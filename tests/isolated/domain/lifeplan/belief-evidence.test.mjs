@@ -147,7 +147,7 @@ describe('Belief Entity', () => {
         id: 'b1', if: 'X', then: 'Y', state: 'hypothesized',
         evidence_history: [{ type: 'confirmation', date: sixtyOneDaysAgo }],
       });
-      expect(belief.isDormant()).toBe(true);
+      expect(belief.isDormant(Date.now())).toBe(true);
     });
 
     it('is not dormant when evidence is recent', () => {
@@ -156,12 +156,12 @@ describe('Belief Entity', () => {
         id: 'b1', if: 'X', then: 'Y', state: 'hypothesized',
         evidence_history: [{ type: 'confirmation', date: yesterday }],
       });
-      expect(belief.isDormant()).toBe(false);
+      expect(belief.isDormant(Date.now())).toBe(false);
     });
 
     it('is dormant when no evidence exists', () => {
       const belief = new Belief({ id: 'b1', if: 'X', then: 'Y', state: 'hypothesized' });
-      expect(belief.isDormant()).toBe(true);
+      expect(belief.isDormant(Date.now())).toBe(true);
     });
   });
 

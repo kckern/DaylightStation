@@ -1,0 +1,90 @@
+/**
+ * Canvas Renderer
+ * @module 1_rendering/canvas/CanvasRenderer
+ *
+ * System-level renderer for canvas instance management.
+ * Handles font registration and canvas creation.
+ */
+
+import { createCanvas, registerFont, loadImage } from 'canvas';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * Canvas renderer for creating and managing canvas instances
+ */
+export class CanvasRenderer {
+  #fontDir;
+  #registeredFonts = new Set();
+  #logger;
+
+  /**
+   * @param {Object} options
+   * @param {string} options.fontDir - Path to fonts directory
+   * @param {Object} [options.logger] - Logger instance
+   */
+  constructor({ fontDir, logger = console }) {
+    if (!fontDir) {
+      throw new Error('CanvasRenderer requires fontDir');
+    }
+    this.#fontDir = fontDir;
+    this.#logger = logger;
+  }
+
+  /**
+   * Register a font for canvas rendering
+   * @param {string} fontPath - Relative path from fontDir (e.g., 'roboto-condensed/RobotoCondensed-Regular.ttf')
+   * @param {string} family - Font family name
+   * @returns {boolean} Whether registration succeeded
+   */
+  registerFont(fontPath, family, options = {}) {
+    const fullPath = path.join(this.#fontDir, fontPath);
+    const { weight = '', style = '' } = options;
+    const key = `${fullPath}:${family}:${weight}:${style}`;
+
+    if (this.#registeredFonts.has(key)) {
+      return true;
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      this.#logger.warn?.('canvas.font.notFound', { path: fullPath });
+      return false;
+    }
+
+    try {
+      registerFont(fullPath, { family, ...options });
+      this.#registeredFonts.add(key);
+      this.#logger.debug?.('canvas.font.registered', { family, weight, style, path: fullPath });
+      return true;
+    } catch (error) {
+      this.#logger.warn?.('canvas.font.failed', { family, error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * Create a new canvas instance
+   * @param {number} width - Canvas width in pixels
+   * @param {number} height - Canvas height in pixels
+   * @returns {Canvas} Node-canvas instance
+   */
+  create(width, height) {
+    return createCanvas(width, height);
+  }
+
+  /**
+   * Create a canvas and return with 2D context
+   * @param {number} width - Canvas width in pixels
+   * @param {number} height - Canvas height in pixels
+   * @returns {{ canvas: Canvas, ctx: CanvasRenderingContext2D }}
+   */
+  createWithContext(width, height) {
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    return { canvas, ctx };
+  }
+}
+
+export { loadImage };
+
+export default CanvasRenderer;

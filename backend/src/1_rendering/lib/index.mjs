@@ -4,5 +4,5 @@
  */
 
 export { wrapText } from './TextRenderer.mjs';
-export { drawDivider, drawBorder, flipCanvas, formatDuration } from './LayoutHelpers.mjs';
+export { drawDivider, drawBorder, roundRect, drawCover, flipCanvas, formatDuration } from './LayoutHelpers.mjs';
 export { initCanvas } from './CanvasFactory.mjs';

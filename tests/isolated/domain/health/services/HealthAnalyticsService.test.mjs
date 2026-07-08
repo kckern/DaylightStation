@@ -1,7 +1,7 @@
 // tests/isolated/domain/health/services/HealthAnalyticsService.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { HealthAnalyticsService } from '../../../../../backend/src/2_domains/health/services/HealthAnalyticsService.mjs';
-import { PeriodResolver } from '../../../../../backend/src/2_domains/health/services/PeriodResolver.mjs';
+import { HealthAnalyticsService } from '../../../../../backend/src/3_applications/health/analytics/HealthAnalyticsService.mjs';
+import { PeriodResolver } from '../../../../../backend/src/3_applications/health/analytics/PeriodResolver.mjs';
 
 const NOW = new Date('2026-05-05T12:00:00Z');
 const fixedNow = () => NOW;

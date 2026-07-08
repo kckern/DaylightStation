@@ -58,7 +58,7 @@ The router, enrichment service interface, and webhook routes remain unchanged.
 | Layer | Component | File | Purpose |
 |-------|-----------|------|---------|
 | API | Fitness router | `4_api/v1/routers/fitness.mjs` | `GET/POST /provider/webhook` — vendor-agnostic dispatch |
-| Bootstrap | `createFitnessApiRouter` | `0_system/bootstrap.mjs` | Passes `providerWebhookAdapters` + `enrichmentService` through to router |
+| Bootstrap | `createFitnessApiRouter` | `5_composition/bootstrap.mjs` | Passes `providerWebhookAdapters` + `enrichmentService` through to router |
 | Bootstrap | `app.mjs` | `app.mjs` | Constructs all provider dependencies, calls `recoverPendingJobs()` on startup |
 
 #### Strava Implementation

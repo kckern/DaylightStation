@@ -27,34 +27,34 @@ const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
 export class YamlNutriListDatastore extends INutriListDatastore {
-  #userDataService;
+  #dataService;
   #logger;
 
   /**
    * @param {Object} options
-   * @param {Object} options.userDataService - UserDataService instance
+   * @param {Object} options.dataService - DataService instance (uses .user.resolveDir)
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(options) {
     super();
-    if (!options?.userDataService) {
-      throw new InfrastructureError('YamlNutriListDatastore requires userDataService', {
+    if (!options?.dataService) {
+      throw new InfrastructureError('YamlNutriListDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = options.userDataService;
+    this.#dataService = options.dataService;
     this.#logger = options.logger || console;
   }
 
   // ==================== Path Helpers ====================
 
   #getPath(userId) {
-    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutrilist');
+    return this.#dataService.user.resolveDir('lifelog/nutrition/nutrilist', userId);
   }
 
   #getArchiveDir(userId) {
-    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/archives/nutrilist');
+    return this.#dataService.user.resolveDir('lifelog/nutrition/archives/nutrilist', userId);
   }
 
   #getArchivePath(userId, yearMonth) {
@@ -62,7 +62,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   #getNutridayPath(userId) {
-    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutriday');
+    return this.#dataService.user.resolveDir('lifelog/nutrition/nutriday', userId);
   }
 
   // ==================== File I/O ====================
