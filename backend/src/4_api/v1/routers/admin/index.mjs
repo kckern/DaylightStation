@@ -1,4 +1,5 @@
 import express from 'express';
+import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
 import { createAdminContentRouter } from './content.mjs';
 import { createAdminConfigRouter } from './config.mjs';
 import { createAdminImagesRouter } from './images.mjs';
@@ -59,10 +60,16 @@ export function createAdminRouter(config) {
   });
   router.use('/scheduler', schedulerRouter);
 
-  // Mount household router
-  const householdRouter = createAdminHouseholdRouter({
+  // Mount household router (persistence + rules live in HouseholdAdminService)
+  const householdLogger = logger.child?.({ submodule: 'household' }) || logger;
+  const householdAdminService = new HouseholdAdminService({
     configService,
-    logger: logger.child?.({ submodule: 'household' }) || logger
+    logger: householdLogger
+  });
+  const householdRouter = createAdminHouseholdRouter({
+    householdAdminService,
+    configService,
+    logger: householdLogger
   });
   router.use('/household', householdRouter);
 
