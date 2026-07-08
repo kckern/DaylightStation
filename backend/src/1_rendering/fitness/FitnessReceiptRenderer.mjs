@@ -21,7 +21,8 @@ import {
   zoneIntensity,
 } from '#domains/fitness/services/SessionStatsService.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { drawDivider, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawDivider, drawBorder, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
+import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { fitnessReceiptTheme as theme } from './fitnessReceiptTheme.mjs';
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -74,16 +75,15 @@ export function createFitnessReceiptRenderer(config) {
     const data = await getSessionData(sessionId);
     if (!data) return null;
 
-    const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
-
-    // Register font
-    const fontFamily = theme.fonts.family;
-    const fontPath = fontDir
-      ? `${fontDir}/${theme.fonts.fontPath}`
-      : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
-    try {
-      registerFont(fontPath, { family: fontFamily });
-    } catch { /* fall back to system fonts */ }
+    // Register the receipt font and grab a 1x1 scratch context for text
+    // measurement during the height pre-calculation below.
+    const { ctx: sctx, createNodeCanvas } = await initCanvas({
+      width: 1,
+      height: 1,
+      fontDir,
+      fontFile: theme.fonts.fontPath,
+      fontFamily: theme.fonts.family,
+    });
 
     // ─── Parse session data ───────────────────────────────
     const sessionInfo = data.session || {};
@@ -199,10 +199,6 @@ export function createFitnessReceiptRenderer(config) {
     const margin = theme.layout.margin;
     const sectionGap = theme.layout.sectionGap;
 
-    // Use a scratch canvas for text measurement
-    const scratch = createNodeCanvas(1, 1);
-    const sctx = scratch.getContext('2d');
-
     let totalHeight = 0;
 
     // Header section — same named advances the draw pass consumes below
@@ -265,14 +261,11 @@ export function createFitnessReceiptRenderer(config) {
     ctx.fillRect(0, 0, width, height);
 
     // Border
-    ctx.strokeStyle = theme.colors.border;
-    ctx.lineWidth = theme.layout.borderWidth;
-    ctx.strokeRect(
-      theme.layout.borderOffset,
-      theme.layout.borderOffset,
-      width - theme.layout.borderOffset * 2,
-      height - theme.layout.borderOffset * 2
-    );
+    drawBorder(ctx, width, height, {
+      offset: theme.layout.borderOffset,
+      lineWidth: theme.layout.borderWidth,
+      color: theme.colors.border,
+    });
 
     let y = hdr.topPad;
 

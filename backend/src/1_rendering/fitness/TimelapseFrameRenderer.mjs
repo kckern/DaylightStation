@@ -2,6 +2,7 @@ import canvasPkg from 'canvas';
 import { fileURLToPath } from 'node:url';
 import { ZONE_COLORS } from '#domains/fitness/entities/Zone.mjs';
 import { timelapseFrameTheme } from './timelapseFrameTheme.mjs';
+import { drawCover } from '#rendering/lib/LayoutHelpers.mjs';
 
 const { createCanvas, loadImage, registerFont } = canvasPkg;
 
@@ -496,13 +497,6 @@ function drawChart(ctx, chart, x, y, w, h) {
     ctx.fillText(formatCoins(e.value), labelX, e.y);
   }
   ctx.textBaseline = 'middle';
-}
-
-function drawCover(ctx, img, dx, dy, dw, dh) {
-  const scale = Math.max(dw / img.width, dh / img.height);
-  const sw = dw / scale, sh = dh / scale;
-  const sx = (img.width - sw) / 2, sy = (img.height - sh) / 2;
-  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
 }
 
 function drawCircleImage(ctx, img, x, y, d, ringColor) {
