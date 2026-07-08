@@ -271,13 +271,26 @@ describe('BarcodePayload', () => {
     });
   });
 
-  describe('toJSON', () => {
-    it('serializes all fields', () => {
+  // Serialization (toJSON) was removed — BarcodePayload is inbound-only and
+  // never persisted (audit D-3). Consumers read it via getters; this asserts
+  // every field parses correctly through that (now sole) accessor path.
+  describe('field getters', () => {
+    it('exposes all parsed fields', () => {
       const payload = BarcodePayload.parse(
         { barcode: 'office:queue:plex:12345', timestamp: '2026-03-30T01:00:00Z', device: 'scanner-1' },
         KNOWN_ACTIONS
       );
-      expect(payload.toJSON()).toEqual({
+      expect({
+        type: payload.type,
+        contentId: payload.contentId,
+        action: payload.action,
+        command: payload.command,
+        commandArg: payload.commandArg,
+        options: payload.options,
+        targetScreen: payload.targetScreen,
+        device: payload.device,
+        timestamp: payload.timestamp,
+      }).toEqual({
         type: 'content',
         contentId: 'plex:12345',
         action: 'queue',

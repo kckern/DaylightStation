@@ -151,18 +151,8 @@ export class BarcodePayload {
     }
     return null;
   }
-
-  toJSON() {
-    return {
-      type: this.#type,
-      contentId: this.#contentId,
-      action: this.#action,
-      command: this.#command,
-      commandArg: this.#commandArg,
-      options: this.#options,
-      targetScreen: this.#targetScreen,
-      device: this.#device,
-      timestamp: this.#timestamp,
-    };
-  }
+  // No toJSON(): BarcodePayload is an inbound-only VO (parsed from an MQTT
+  // message via .parse(), never persisted or serialized back). Consumers read
+  // it through the getters above. Removed in the serialization-ownership
+  // migration (audit D-3) — it was domain serialization with no boundary.
 }
