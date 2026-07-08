@@ -21,14 +21,35 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
     this.#logger = config.logger || console;
   }
 
+  // Storage -> Domain. The datastore owns hydration (adapter-layer-guidelines
+  // Hydration Pattern); the entity no longer carries fromJSON.
+  #hydrate(raw) {
+    return new FoodCatalogEntry(raw);
+  }
+
+  // Domain -> Storage. The ONLY place the on-disk catalog shape is defined.
+  #dehydrate(entry) {
+    return {
+      id: entry.id,
+      name: entry.name,
+      normalizedName: entry.normalizedName,
+      nutrients: { ...entry.nutrients },
+      source: entry.source,
+      barcodeUpc: entry.barcodeUpc,
+      useCount: entry.useCount,
+      lastUsed: entry.lastUsed,
+      createdAt: entry.createdAt,
+    };
+  }
+
   async #loadCatalog(userId) {
     const raw = this.#dataService.user.read?.(YamlFoodCatalogDatastore.CATALOG_PATH, userId);
     if (!Array.isArray(raw)) return [];
-    return raw.map(item => FoodCatalogEntry.fromJSON(item));
+    return raw.map(item => this.#hydrate(item));
   }
 
   async #saveCatalog(entries, userId) {
-    const data = entries.map(e => e.toJSON());
+    const data = entries.map(e => this.#dehydrate(e));
     this.#dataService.user.write?.(YamlFoodCatalogDatastore.CATALOG_PATH, data, userId);
   }
 
