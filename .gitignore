@@ -103,3 +103,6 @@ tests/_scratch/
 
 # runtime logs (may contain PII) — never track
 dev.log*
+
+# PII-scrub tooling (contains the real->alias map; local only, never commit)
+.pii-scrub/
