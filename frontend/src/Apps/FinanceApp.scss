@@ -198,6 +198,13 @@ tr.income .amount-col{
     margin: 0 1ex;
     cursor: pointer;
 }
+.status-badge-row > .status-badge {
+    border-radius: 5px;
+    font-size: 0.8rem;
+    padding: 0 1ex;
+    margin: 0 1ex;
+    cursor: pointer;
+}
 .status-badge .amount{
     background-color: #888;
     color: white;
@@ -446,9 +453,12 @@ button.reload{
 }
 
 // Keyboard focus affordance for promoted interactive elements (audit 5.4)
-[role='button']:focus-visible,
-.transactions-table tr:focus-visible,
-.transactions-table th:focus-visible {
+// Scoped to finance roots — this file is loaded globally and must not leak
+// the outline to every role=button in the SPA (final review Fix 4).
+.budget-viewer [role='button']:focus-visible,
+.txn-drawer [role='button']:focus-visible,
+.txn-drawer .transactions-table tr:focus-visible,
+.txn-drawer .transactions-table th:focus-visible {
   outline: 2px solid #4c8ffc;
   outline-offset: -1px;
 }

@@ -15,7 +15,7 @@ export default function DrawerHost({ descriptor, budget, mortgage }) {
 
   switch (descriptor.type) {
     case 'monthly-cell': {
-      const transactions = loadCellTransactions(budget, descriptor.month, descriptor.cellKey)
+      const transactions = (budget ? loadCellTransactions(budget, descriptor.month, descriptor.cellKey) : [])
         .slice()
         .sort((a, b) => b.amount - a.amount);
       return (
@@ -27,14 +27,14 @@ export default function DrawerHost({ descriptor, budget, mortgage }) {
       );
     }
     case 'shortterm-bucket': {
-      const transactions = budget.shortTermBuckets?.[descriptor.bucket]?.transactions || [];
+      const transactions = budget?.shortTermBuckets?.[descriptor.bucket]?.transactions || [];
       return <TransactionsDrawer transactions={transactions} />;
     }
     case 'shortterm-status':
       return <TransactionsDrawer transactions={gatherShortTermTransactions(budget, descriptor.statusKey)} />;
     case 'daytoday-month': {
-      const transactions = budget.dayToDayBudget?.[descriptor.month]?.transactions || [];
-      return <TransactionsDrawer transactions={transactions} highlightDate={descriptor.highlightDate} />;
+      const transactions = budget?.dayToDayBudget?.[descriptor.month]?.transactions || [];
+      return <TransactionsDrawer transactions={transactions} />;
     }
     case 'spending-tag': {
       const transactions = collectSpendingTransactions(budget)
@@ -42,7 +42,7 @@ export default function DrawerHost({ descriptor, budget, mortgage }) {
       return <TransactionsDrawer transactions={transactions} />;
     }
     case 'transfers': {
-      const transactions = [...(budget.transferTransactions?.transactions || [])]
+      const transactions = [...(budget?.transferTransactions?.transactions || [])]
         .sort((a, b) => new Date(b.date) - new Date(a.date));
       return <TransactionsDrawer transactions={transactions} />;
     }
