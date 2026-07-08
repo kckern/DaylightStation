@@ -54,17 +54,6 @@ import { buildFingerprintIdentityIndex, buildAuthz } from '#apps/fitness/identit
 // (/abort, /release) keeps the tight default TTL.
 const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
 
-// Module-level session lock (shared across all router instances)
-const sessionLockService = new SessionLockService();
-
-// Module-level state for simulation process
-const simulationState = {
-  process: null,
-  pid: null,
-  startedAt: null,
-  config: null
-};
-
 /**
  * Create fitness API router
  *
@@ -1038,88 +1027,22 @@ export function createFitnessRouter(config) {
    * Body: { duration?: number, users?: number, rpm?: number }
    */
   router.post('/simulate', (req, res) => {
-    // Check if already running
-    if (simulationState.process && !simulationState.process.killed) {
-      return res.json({
-        started: false,
-        alreadyRunning: true,
-        pid: simulationState.pid,
-        startedAt: simulationState.startedAt,
-        config: simulationState.config
-      });
-    }
-
     const { duration = 120, users = 0, rpm = 0 } = req.body || {};
-
-    const args = [`--duration=${duration}`];
-    if (users > 0) args.push(String(users));
-    if (rpm > 0) args.push(String(users > 0 ? users : 0), String(rpm));
-
-    const scriptPath = path.join(process.cwd(), '_extensions/fitness/simulation.mjs');
-
-    logger.info?.('fitness.simulate.start', { duration, users, rpm, scriptPath });
-
-    const proc = spawn('node', [scriptPath, ...args], {
-      detached: true,
-      stdio: 'ignore'
-    });
-    proc.unref();
-
-    simulationState.process = proc;
-    simulationState.pid = proc.pid;
-    simulationState.startedAt = Date.now();
-    simulationState.config = { duration, users, rpm };
-
-    // Auto-clear state when process exits
-    proc.on('exit', () => {
-      simulationState.process = null;
-      simulationState.pid = null;
-      simulationState.startedAt = null;
-      simulationState.config = null;
-      logger.info?.('fitness.simulate.exited');
-    });
-
-    return res.json({
-      started: true,
-      pid: proc.pid,
-      config: { duration, users, rpm }
-    });
+    return res.json(simulationService.start({ duration, users, rpm }));
   });
 
   /**
    * DELETE /api/fitness/simulate - Stop running simulation
    */
   router.delete('/simulate', (req, res) => {
-    if (!simulationState.pid) {
-      return res.json({ stopped: false, error: 'no simulation running' });
-    }
-
-    process.kill(simulationState.pid, 'SIGTERM');
-
-    const stoppedPid = simulationState.pid;
-    simulationState.process = null;
-    simulationState.pid = null;
-    simulationState.startedAt = null;
-    simulationState.config = null;
-
-    logger.info?.('fitness.simulate.stopped', { pid: stoppedPid });
-
-    return res.json({ stopped: true, pid: stoppedPid });
+    return res.json(simulationService.stop());
   });
 
   /**
    * GET /api/fitness/simulate/status - Get current simulation status
    */
   router.get('/simulate/status', (req, res) => {
-    const running = !!(simulationState.process && !simulationState.process.killed);
-
-    return res.json({
-      running,
-      pid: running ? simulationState.pid : null,
-      startedAt: running ? simulationState.startedAt : null,
-      config: running ? simulationState.config : null,
-      runningSince: running ? Date.now() - simulationState.startedAt : null
-    });
+    return res.json(simulationService.status());
   });
 
   // ── Provider Webhook (vendor-agnostic) ──────────────────────────
