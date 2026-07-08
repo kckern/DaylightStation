@@ -17,6 +17,8 @@ import { createAudioMixer } from './audio/AudioMixer.js';
 import { createEmulatorSession } from './core/EmulatorSession.js';
 import { createHtmlAudioClip } from './audio/htmlAudioClip.js';
 import { ControllerStatus } from './input/ControllerStatus.jsx';
+import { InputActivityLED } from './input/InputActivityLED.jsx';
+import { isActive, readPadActivity, activitySignature } from './input/inputActivity.js';
 import { TouchVolumeButtons, logVolumeFromLevel } from '@/modules/Fitness/player/panels/TouchVolumeButtons.jsx';
 import { createHotspotController } from './core/hotspotController.js';
 import { resolveOverlayValue, formatOverlayValue } from './core/resolveOverlayValue.js';
@@ -132,6 +134,10 @@ export function EmulatorConsole({
   pairing,
   onPairController,
   getGamepads,
+  // Show the dual gamepad-activity LED on the chrome (browser-seen vs
+  // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
+  // subtle and host-agnostic; a host can disable it.
+  showInputActivity = true,
   fetchImpl = () => globalThis.fetch,
 }) {
   const fns = useMemo(() => ({ ...DEFAULT_FACTORIES, ...(factories || {}) }), [factories]);
@@ -323,34 +329,91 @@ export function EmulatorConsole({
     }
   }, [screenBox]);
 
-  // Diagnostic: log live gamepad input (pressed button indices + active axes)
-  // exactly as the browser reports it — the source of truth for EmulatorJS
-  // mappings (e.g. D-pad on buttons 12-15 vs axes). Logs only on state change.
+  // ── Dual gamepad-activity indicator ──────────────────────────────────────
+  // Two independent channels, both fed into the chrome LED + the logs:
+  //   browser  — what navigator.getGamepads() reports each frame (the pad state
+  //              the emulator SHOULD consume; source of truth for EJS mappings).
+  //   emulator — the simulateInput calls the running core ACTUALLY received,
+  //              tapped via engine.tapInput in the boot effect below.
+  // Browser lit while emulator stays dark ⇒ input reaches the page but not the
+  // game — the exact "Start does nothing" failure a broken EJS re-init causes.
+  const browserPingRef = useRef(0);
+  const emulatorPingRef = useRef(0);
+  const browserCountRef = useRef(0);
+  const emulatorCountRef = useRef(0);
+  const consumedLogAtRef = useRef(0);
+  const inputTapUntapRef = useRef(null);
+  const [inputLed, setInputLed] = useState({ browser: false, emulator: false });
+
+  // Record a core-consumed input (called from the engine.tapInput cb). Cheap:
+  // bumps a timestamp/counter; logging is throttled so held/mashed buttons don't
+  // flood. Stable identity so the boot effect can capture it once.
+  const noteConsumed = useCallback((player, index, value) => {
+    const now = Date.now();
+    emulatorPingRef.current = now;
+    emulatorCountRef.current += 1;
+    if (now - consumedLogAtRef.current >= 80) {
+      consumedLogAtRef.current = now;
+      logger.info('emulator.input.consumed', { player, index, value });
+    }
+  }, [logger]);
+
+  // Browser channel poll + LED state. Logs `emulator.gamepad.input` on change
+  // (unchanged event/shape), and drives both dots' lit/unlit state each frame.
   useEffect(() => {
+    if (!showInputActivity) return undefined;
+    const readPads = typeof getGamepads === 'function'
+      ? getGamepads
+      : () => ((typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : []);
     let raf;
     let lastSig = '';
+    let led = { browser: false, emulator: false };
     const read = () => {
-      const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : [];
-      for (const gp of pads) {
-        if (!gp) continue;
-        const buttons = [];
-        (gp.buttons || []).forEach((btn, i) => { if (btn && btn.pressed) buttons.push(i); });
-        const axes = (gp.axes || [])
-          .map((a, i) => (Math.abs(a) > 0.5 ? `${i}:${a > 0 ? '+' : '-'}` : null))
-          .filter(Boolean);
-        if (buttons.length || axes.length) {
-          const sig = `${gp.index}|${buttons.join(',')}|${axes.join(',')}`;
-          if (sig !== lastSig) {
-            lastSig = sig;
-            logger.info('emulator.gamepad.input', { slot: gp.index, id: gp.id, mapping: gp.mapping, buttons, axes });
-          }
+      const now = Date.now();
+      const active = readPadActivity(readPads());
+      if (active.length) {
+        browserPingRef.current = now;
+        const sig = activitySignature(active);
+        if (sig !== lastSig) {
+          lastSig = sig;
+          browserCountRef.current += 1;
+          active.forEach((a) => logger.info('emulator.gamepad.input', a));
         }
+      }
+      const next = {
+        browser: isActive(browserPingRef.current, now),
+        emulator: isActive(emulatorPingRef.current, now),
+      };
+      if (next.browser !== led.browser || next.emulator !== led.emulator) {
+        led = next;
+        setInputLed(next);
       }
       raf = requestAnimationFrame(read);
     };
     raf = requestAnimationFrame(read);
     return () => cancelAnimationFrame(raf);
-  }, [logger]);
+  }, [showInputActivity, getGamepads, logger]);
+
+  // Periodic input-activity rollup for later review: one greppable line every 5s
+  // (only when something happened). `gap:true` = the browser saw input the core
+  // never received — the failure signature, trivially searchable in the logs.
+  useEffect(() => {
+    if (!showInputActivity) return undefined;
+    const id = setInterval(() => {
+      const browserPings = browserCountRef.current;
+      const emulatorConsumes = emulatorCountRef.current;
+      browserCountRef.current = 0;
+      emulatorCountRef.current = 0;
+      if (browserPings || emulatorConsumes) {
+        logger.info('emulator.input.summary', {
+          browserPings,
+          emulatorConsumes,
+          gap: browserPings > 0 && emulatorConsumes === 0,
+        });
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [showInputActivity, logger]);
 
   // Apply a touch-volume level (0..100, log curve) to the emulator's game bus.
   // Also resumes the audio engine, since browsers gate autoplay until a gesture.
@@ -500,6 +563,18 @@ export function EmulatorConsole({
         const audioCtxState = runtimeRef.current?.engine?.getAudioContextState?.() ?? 'unavailable';
         logger.info('emulator.console.started', { game: game?.id, wramBase: res?.wramBase, audioContext: audioCtxState });
 
+        // Tap the core's input funnel so the chrome LED + logs reflect what the
+        // emulation ACTUALLY received (the "emulator" channel), not just what the
+        // browser reported. No-op if the build doesn't expose simulateInput.
+        if (showInputActivity) {
+          try {
+            const untap = engine.tapInput?.(noteConsumed);
+            if (typeof untap === 'function') inputTapUntapRef.current = untap;
+          } catch (err) {
+            logger.warn('emulator.input.tap-failed', { error: err && err.message });
+          }
+        }
+
         // Success = OBSERVED, not resolved: confirm the game actually rendered a
         // frame. A booted-but-blank screen (e.g. a stale single-instance reuse)
         // trips the error/retry state instead of silently showing nothing.
@@ -566,6 +641,10 @@ export function EmulatorConsole({
       logger.info('emulator.console.unmount', { game: game?.id, playDurationMs });
       if (interval) clearInterval(interval);
       if (typeof unsub === 'function') unsub();
+      if (typeof inputTapUntapRef.current === 'function') {
+        inputTapUntapRef.current();
+        inputTapUntapRef.current = null;
+      }
       if (animTimerRef.current) {
         clearTimeout(animTimerRef.current);
         animTimerRef.current = null;
@@ -682,6 +761,9 @@ export function EmulatorConsole({
       </div>
       <OverlayLayer overlays={overlays} resolve={resolveOverlay} />
       <HotspotLayer hotspots={hotspots} onActivate={(h) => controllerRef.current?.activate(h)} />
+      {showInputActivity && (
+        <InputActivityLED browserActive={inputLed.browser} emulatorActive={inputLed.emulator} />
+      )}
       {showOverlay && (
         <div className={`emulator-governance-overlay overlay-${status.state}`}>
           <span>{overlayText(status)}</span>

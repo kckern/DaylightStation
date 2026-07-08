@@ -3,7 +3,7 @@ import Time from '../../modules/Time/Time.jsx';
 import Weather from '../../modules/Weather/Weather.jsx';
 import WeatherForecast from '../../modules/Weather/WeatherForecast.jsx';
 import Upcoming from '../../modules/Upcoming/Upcoming.jsx';
-import { FinanceChart } from '../../modules/Finance/Finance.jsx';
+import { FinanceChart } from '../../modules/Finances/widgets/FinanceChart.jsx';
 import Weight from '../../modules/Health/Weight.jsx';
 import EntropyPanel from '../../modules/Entropy/EntropyPanel.jsx';
 import { PianoVisualizer } from '../../modules/Piano/index.js';

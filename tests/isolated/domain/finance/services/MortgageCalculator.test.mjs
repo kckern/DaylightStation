@@ -186,7 +186,13 @@ describe('MortgageCalculator', () => {
       const config = {
         mortgageStartValue: 300000,
         accountId: 'mortgage-1',
-        startDate: '2020-01-01',
+        // Aligned with the transaction window (was 2020-01-01): a startDate
+        // years before any recorded payment makes reconstructAmortization
+        // walk dozens of unpaid $0 months, tanking the derived Historical
+        // Pace average below the interest-coverage floor (audit 1.6 fallout
+        // — that plan now legitimately throws PLAN_DOES_NOT_AMORTIZE instead
+        // of silently truncating).
+        startDate: '2026-01-01',
         interestRate: 0.065,
         minimumPayment: 2000,
         paymentPlans: [{ id: 'default', title: 'Current Plan' }]
@@ -433,7 +439,7 @@ describe('MortgageCalculator', () => {
 
       expect(result.balance).toBe(172374.64);
       // No bridge rows
-      expect(result.amortization.every(r => r.source !== 'buxfer')).toBe(true);
+      expect(result.amortization.every(r => r.source !== 'ledger')).toBe(true);
     });
 
     test('extends amortization with bridge rows for post-statement Buxfer activity', () => {
@@ -467,7 +473,7 @@ describe('MortgageCalculator', () => {
       // Returned balance should match Buxfer cached, not stale statement
       expect(result.balance).toBeCloseTo(155381.92, 1);
 
-      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
+      const bridgeRows = result.amortization.filter(r => r.source === 'ledger');
 
       // Bridge labels use the lender's billing-cycle convention (cutoff
       // day inferred from statementDate=2026-03-06 → day 6). Cycle for a
@@ -569,7 +575,7 @@ describe('MortgageCalculator', () => {
 
       expect(result.balance).toBeCloseTo(78500, 1);
 
-      const bridgeRow = result.amortization.find(r => r.source === 'buxfer');
+      const bridgeRow = result.amortization.find(r => r.source === 'ledger');
       expect(bridgeRow).toBeDefined();
       expect(bridgeRow.month).toBe('2026-03');
       expect(bridgeRow.reconciliationAdj).toBeCloseTo(-400, 0);
@@ -601,8 +607,11 @@ describe('MortgageCalculator', () => {
         asOfDate: new Date('2026-05-15')
       });
 
-      const bridgeRows = result.amortization.filter(r => r.source === 'buxfer');
-      expect(bridgeRows.map(r => r.month)).toEqual(['2026-06']);
+      const bridgeRows = result.amortization.filter(r => r.source === 'ledger');
+      // 2026-05 is a completed cycle with no payments — it now accrues
+      // interest as its own row instead of vanishing (audit 1.6).
+      expect(bridgeRows.map(r => r.month)).toEqual(['2026-05', '2026-06']);
+      expect(bridgeRows[0].totalPaid).toBe(0);
 
       const firstProjMonth = result.paymentPlans[0].months[0].month;
       expect(firstProjMonth).toBe('2026-07');
@@ -750,18 +759,14 @@ describe('MortgageCalculator', () => {
       expect(result[0].months.length).toBeLessThan(5);
     });
 
-    test('prevents infinite loop with cap', () => {
-      // Very low payment that would take forever
-      const result = calculator.calculatePaymentPlans({
+    test('throws instead of silently truncating a plan that can never amortize', () => {
+      expect(() => calculator.calculatePaymentPlans({
         balance: -1000000,
-        interestRate: 0.20, // Very high rate
-        minimumPayment: 100, // Very low payment (less than monthly interest)
+        interestRate: 0.20, // monthly interest far exceeds the payment
+        minimumPayment: 100,
         paymentPlans: [{ id: 'test' }],
         startDate: new Date('2026-01-01')
-      });
-
-      // Should cap at 1000 iterations
-      expect(result[0].months.length).toBeLessThanOrEqual(1000);
+      })).toThrow(/did not amortize/);
     });
 
     test('handles rate change fee', () => {
