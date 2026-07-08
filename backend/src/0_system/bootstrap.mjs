@@ -19,6 +19,7 @@ import { HttpClient } from './services/HttpClient.mjs';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
@@ -44,6 +45,7 @@ import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { YamlMediaQueueDatastore } from '#adapters/persistence/yaml/YamlMediaQueueDatastore.mjs';
+import { YamlSavedQueryDatastore } from '#adapters/persistence/yaml/YamlSavedQueryDatastore.mjs';
 import { MediaQueueService } from '#apps/media/MediaQueueService.mjs';
 
 // Content adapter manifests (for category/provider metadata)
@@ -88,6 +90,7 @@ import { SessionGroupingService } from '#apps/fitness/services/SessionGroupingSe
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { DanceLightingController } from '#adapters/fitness/DanceLightingController.mjs';
 import { GarageFanAdapter } from '#adapters/fitness/GarageFanAdapter.mjs';
+import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
@@ -314,7 +317,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, listSubdirectories, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, listSubdirectories, ensureDir, writeBinary } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -578,54 +581,16 @@ export function createContentRegistry(config, deps = {}) {
     // Build list of user query directories from data path
     // listDataPath is the root data dir (contains household/ and users/)
     const usersBase = path.join(listDataPath, 'users');
-    const usernames = listSubdirectories(usersBase);
-    const userQueryDirs = usernames
-      .map(username => path.join(usersBase, username, 'config', 'queries'));
+    const userQueryDirs = listSubdirectories(usersBase)
+      .map(username => ({ username, dir: path.join(usersBase, username, 'config', 'queries') }));
 
+    const savedQueryDatastore = new YamlSavedQueryDatastore({ queriesDir, userQueryDirs });
     savedQueryService = new SavedQueryService({
-      readQuery: (name) => {
-        // Try household dir first
-        const householdResult = loadYamlSafe(path.join(queriesDir, name));
-        if (householdResult) return householdResult;
-        // Fallback to user query dirs
-        for (const dir of userQueryDirs) {
-          const userResult = loadYamlSafe(path.join(dir, name));
-          if (userResult) return userResult;
-        }
-        return null;
-      },
-      listQueries: () => {
-        const names = new Set(listYamlFiles(queriesDir));
-        for (const dir of userQueryDirs) {
-          for (const name of listYamlFiles(dir)) {
-            names.add(name);
-          }
-        }
-        return [...names];
-      },
-      listQueriesDetailed: () => {
-        const seen = new Set();
-        const results = [];
-        // Household queries first
-        for (const name of listYamlFiles(queriesDir)) {
-          if (!seen.has(name)) {
-            seen.add(name);
-            results.push({ name, origin: 'household' });
-          }
-        }
-        // User queries (with username)
-        for (let i = 0; i < userQueryDirs.length; i++) {
-          for (const name of listYamlFiles(userQueryDirs[i])) {
-            if (!seen.has(name)) {
-              seen.add(name);
-              results.push({ name, origin: 'user', username: usernames[i] });
-            }
-          }
-        }
-        return results;
-      },
-      writeQuery: (name, data) => saveYaml(path.join(queriesDir, name), data),
-      deleteQuery: (name) => deleteYaml(path.join(queriesDir, name)),
+      readQuery: savedQueryDatastore.readQuery.bind(savedQueryDatastore),
+      listQueries: savedQueryDatastore.listQueries.bind(savedQueryDatastore),
+      listQueriesDetailed: savedQueryDatastore.listQueriesDetailed.bind(savedQueryDatastore),
+      writeQuery: savedQueryDatastore.writeQuery.bind(savedQueryDatastore),
+      deleteQuery: savedQueryDatastore.deleteQuery.bind(savedQueryDatastore),
     });
     const fileAdapter = registry.get('files');
     registry.register(
@@ -1133,59 +1098,35 @@ export function createFitnessApiRouter(config) {
 
   // Session time-lapse recap generator (background render at session end).
   const timelapseConfig = fitnessConfigService.getNormalizedConfig()?.timelapse;
-  const posterProvider = async (contentId) => {
-    try {
-      if (!fitnessContentAdapter?.getThumbnails) return null;
-      const localId = String(contentId).replace(/^[a-z]+:/i, '');
-      const thumbs = await fitnessContentAdapter.getThumbnails(localId); // [thumb, parentThumb, grandparentThumb]
-      const chosen = thumbs?.[2] || thumbs?.[0]; // prefer the show (grandparent) poster
-      if (!chosen) return null;
-      const rawPath = chosen.replace(fitnessContentAdapter.proxyPath || '', '');
-      const sep = rawPath.includes('?') ? '&' : '?';
-      const url = `${fitnessContentAdapter.host}${rawPath}${sep}X-Plex-Token=${fitnessContentAdapter.token}`;
-      const resp = await fetch(url);
-      if (!resp.ok) return null;
-      return Buffer.from(await resp.arrayBuffer());
-    } catch (err) {
-      logger.warn?.('fitness.timelapse.poster_provider_failed', { contentId, error: err.message });
-      return null;
-    }
-  };
-  const avatarProvider = async (slugs) => {
-    const out = {};
-    const usersDir = path.join(configService.getPath('img') || path.join(configService.getMediaDir(), 'img'), 'users');
-    const exts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
-    for (const slug of slugs || []) {
-      for (const ext of exts) {
-        const p = path.join(usersDir, `${slug}.${ext}`);
-        if (nodeFs.existsSync(p)) { out[slug] = nodeFs.readFileSync(p); break; }
-      }
-    }
-    return out;
-  };
-  // Equipment (bike) icons by name — media/img/equipment/{name}.{ext} — used to
-  // label each cadence/RPM readout with its device in the recap footer.
-  const equipmentProvider = async (names) => {
-    const out = {};
-    const dir = path.join(configService.getPath('img') || path.join(configService.getMediaDir(), 'img'), 'equipment');
-    const exts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
-    for (const name of names || []) {
-      for (const ext of exts) {
-        const p = path.join(dir, `${name}.${ext}`);
-        if (nodeFs.existsSync(p)) { out[name] = nodeFs.readFileSync(p); break; }
-      }
-    }
-    return out;
-  };
+  // Poster artwork bytes for the recap title card (adapter extracted from
+  // the former inline closure — see PlexPosterProvider for behavior notes).
+  const plexPosterProvider = new PlexPosterProvider({
+    host: fitnessContentAdapter?.host,
+    token: fitnessContentAdapter?.token,
+    proxyPath: fitnessContentAdapter?.proxyPath,
+    getThumbnails: typeof fitnessContentAdapter?.getThumbnails === 'function'
+      ? fitnessContentAdapter.getThumbnails.bind(fitnessContentAdapter)
+      : null,
+    httpClient: new HttpClient({ logger }),
+    logger,
+  });
+  // User avatars (media/img/users) + equipment (bike) icons by name
+  // (media/img/equipment/{name}.{ext}) — the latter label each cadence/RPM
+  // readout with its device in the recap footer.
+  const fitnessImgDir = configService.getPath('img') || path.join(configService.getMediaDir(), 'img');
+  const fitnessAssetResolver = new FitnessAssetResolver({
+    avatarsDir: path.join(fitnessImgDir, 'users'),
+    equipmentDir: path.join(fitnessImgDir, 'equipment'),
+  });
   const generateSessionTimelapse = new GenerateSessionTimelapse({
     sessionDatastore: fitnessServices.sessionStore,
     snapshotStore: new YamlRecapSnapshotStore({ sessionDatastore: fitnessServices.sessionStore, fileIO: nodeFs, logger }),
     frameMapper: new TimelapseFrameMapper(),
     frameRenderer: createTimelapseFrameRenderer(timelapseConfig || {}),
     videoEncoder: new FfmpegVideoAdapter({ logger }),
-    posterProvider,
-    avatarProvider,
-    equipmentProvider,
+    posterProvider: plexPosterProvider.getPoster.bind(plexPosterProvider),
+    avatarProvider: fitnessAssetResolver.getAvatars.bind(fitnessAssetResolver),
+    equipmentProvider: fitnessAssetResolver.getEquipmentImages.bind(fitnessAssetResolver),
     resolveName: userService?.resolveDisplayName ? userService.resolveDisplayName.bind(userService) : null,
     // When a group is exercising, prefer each user's short group label (e.g. "Dad").
     resolveGroupLabel: userService?.resolveGroupLabel ? userService.resolveGroupLabel.bind(userService) : null,
@@ -2242,11 +2183,14 @@ export function createTranscodePrewarmService(config) {
 
   const queueService = new QueueService({ mediaProgressMemory });
 
+  // Thin status-only shim over the system HttpClient: prewarm pings care only
+  // about the HTTP status; network/timeout failures map to status 0.
+  const prewarmHttpClient = new HttpClient({ logger, timeout: 10_000 });
   const httpClient = {
     async get(url) {
       try {
         const fullUrl = `${appBaseUrl}${url}`;
-        const resp = await fetch(fullUrl, { signal: AbortSignal.timeout(10_000) });
+        const resp = await prewarmHttpClient.requestRaw('GET', fullUrl, { responseType: 'text' });
         return { status: resp.status };
       } catch (err) {
         logger.debug?.('prewarm.httpClient.error', { url, error: err.message });
@@ -3563,11 +3507,19 @@ export async function createAgentsServices(config) {
     const coachingUserId = configService?.getHeadOfHousehold?.() || 'default';
 
     if (coachingConversationId) {
-      scheduler.registerTask('coaching:morning-brief', '0 10 * * *', async () => {
+      // Cron cadence is configurable via household config/coaching.yml
+      // (`morning_brief.schedule` / `weekly_digest.schedule`), mirroring the
+      // journalist morning-debrief pattern; the historical expressions remain
+      // the defaults when unconfigured.
+      const coachingCfg = configService?.getHouseholdAppConfig?.(null, 'coaching') || {};
+      const morningBriefSchedule = coachingCfg?.morning_brief?.schedule || '0 10 * * *';
+      const weeklyDigestSchedule = coachingCfg?.weekly_digest?.schedule || '0 19 * * 0';
+
+      scheduler.registerTask('coaching:morning-brief', morningBriefSchedule, async () => {
         await coachingOrchestrator.sendMorningBrief({ userId: coachingUserId, conversationId: coachingConversationId });
       });
 
-      scheduler.registerTask('coaching:weekly-digest', '0 19 * * 0', async () => {
+      scheduler.registerTask('coaching:weekly-digest', weeklyDigestSchedule, async () => {
         await coachingOrchestrator.sendWeeklyDigest({ userId: coachingUserId, conversationId: coachingConversationId });
       });
     }
