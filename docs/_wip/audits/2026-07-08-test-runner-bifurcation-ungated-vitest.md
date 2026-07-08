@@ -2,7 +2,36 @@
 
 **Date:** 2026-07-08
 **Found by:** the P1 adversarial review of the DDD remediation (see `docs/_wip/plans/2026-07-06-ddd-compliance-remediation-plan.md`)
-**Status:** open — highest-priority follow-up from the remediation; already hid one real regression
+**Status:** RESOLVED for vitest (Option 2 implemented 2026-07-08) — see Resolution below. One residual gap (72 jest files outside `suite/`) remains open.
+
+## Resolution (2026-07-08) — Option 2 shipped as `npm run test:unit:vitest`
+
+`scripts/gate-vitest.mjs` + `scripts/audit-baseline.vitest.txt` gate the vitest
+population that no harness ran before. Wired as `test:unit:vitest`.
+
+Triage corrected two wrong assumptions in the original estimate below:
+
+1. **The population is 594 vitest files, not ~100** (`*.test.{js,jsx,mjs}` under
+   `tests/unit`+`tests/isolated` importing `from 'vitest'`, minus `suite/`,
+   `backend/`, worktrees). 6162 tests, **13 files pre-existing-failing** — those
+   13 are the baseline; a file failing that is NOT in the baseline is a
+   regression (gate exits 1). Ratchet + `--update` mirror `audit:layers`.
+2. **The tree is FOUR frameworks, not two.** Besides jest-in-`suite/` and
+   vitest, there is a `node:test` tree under `backend/tests/` (run via
+   `node --test`) and — the residual gap — **72 jest files (`import
+   '@jest/globals'`) living OUTSIDE `suite/`** (mostly `tests/unit/governance/`
+   + `tests/unit/fitness/`). Those are run by NEITHER jest (harness only
+   collects `suite/`) NOR vitest (they use jest globals). They are still dark.
+   **Next:** move them into `tests/unit/suite/` or add a jest glob that collects
+   `tests/unit/{governance,fitness}/**` — then baseline that too.
+
+Also cleaned up en route: 4 dead vitest tests (deleted modules) removed, 8
+concierge tests repointed to the moved `agents/concierge/` subtree (commits
+on `main`, 2026-07-08).
+
+---
+
+## Original analysis (estimate — superseded by Resolution above)
 
 ## The problem
 
