@@ -77,6 +77,7 @@ import {
   createDeviceLivenessService,
   broadcastEvent,
   createHarvesterServices,
+  createNewsReporterServices,
   createAgentsServices,
   createConciergeServices,
   createCostServices,
@@ -167,7 +168,6 @@ import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 
 // NewsReporter domain — scheduled, LLM-generated reports
-import { NewsReporterContainer } from '#apps/newsreporter/NewsReporterContainer.mjs';
 import { createNewsReporterRouter } from './4_api/v1/routers/newsreporter.mjs';
 
 // Canvas domain
@@ -2563,9 +2563,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // NewsReporter — surfaces configured reporters as scheduler jobs and runs them.
-  const newsReporter = NewsReporterContainer.build({
+  // Adapters/renderer are constructed in bootstrap (createNewsReporterServices);
+  // the container receives instances (Decision D1).
+  const newsReporter = createNewsReporterServices({
     configService,
-    agentRuntimeDeps: { mediaDir: mediaBasePath || null },
+    mediaDir: mediaBasePath || null,
     printerRegistry: hardwareAdapters.printerRegistry,
     dataService,
     httpClient: axios,

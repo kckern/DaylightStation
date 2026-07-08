@@ -2,7 +2,7 @@
   "system-no-upward": 0,
   "domains-no-adapters": 0,
   "domains-no-node-io": 0,
-  "apps-no-adapters": 27,
+  "apps-no-adapters": 16,
   "apps-no-config-internals": 9,
   "apps-no-fs": 19,
   "apps-no-fileio": 8,
