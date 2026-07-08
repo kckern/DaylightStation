@@ -39,10 +39,8 @@ import {
   createMediaProgressMemory,
   createApiRouters,
   createFitnessServices,
-  createFitnessApiRouter,
   createFeedServices,
   createFinanceServices,
-  createFinanceApiRouter,
   createEntropyServices,
   createEntropyApiRouter,
   createHealthServices,
@@ -81,11 +79,13 @@ import {
   createAgentsServices,
   createConciergeServices,
   createCostServices,
-  createCostApiRouter,
   createMediaServices
 } from '#composition/bootstrap.mjs';
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
+import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
+import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
 import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
