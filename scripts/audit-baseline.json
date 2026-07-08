@@ -7,7 +7,7 @@
   "apps-no-fs": 19,
   "apps-no-fileio": 8,
   "adapters-no-config-singleton": 0,
-  "adapters-no-rendering": 1,
+  "adapters-no-rendering": 0,
   "adapters-no-cross-adapter": 5,
   "rendering-no-adapters-apps": 0,
   "api-no-adapters": 10,

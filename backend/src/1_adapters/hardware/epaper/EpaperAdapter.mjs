@@ -11,8 +11,6 @@
  * @module adapters/hardware/epaper
  */
 
-import { render as einkRender } from '#rendering/eink/index.mjs';
-
 const DISPLAY_WIDTH = 1600;
 const DISPLAY_HEIGHT = 1200;
 
@@ -43,16 +41,27 @@ export class EpaperAdapter {
   #fontDir;
   #screenConfig;
   #dataProvider;
+  #renderFn;
   #logger;
   #lastRender = null;
   #lastRenderTime = null;
 
   /**
    * @param {EpaperConfig} config
-   * @param {Object} [deps]
+   * @param {Object} deps
+   * @param {Function} deps.renderFn - Eink render function
+   *   `(screenConfig, { data, fontDir }) => Promise<Buffer>`. The composition
+   *   root passes `render` from `#rendering/eink/index.mjs` — adapters must not
+   *   import the rendering layer themselves. (This adapter is not yet wired in
+   *   app.mjs/bootstrap; whoever wires it alongside createEpaperRouter supplies
+   *   the function there.)
    * @param {Object} [deps.logger]
    */
   constructor(config, deps = {}) {
+    if (typeof deps.renderFn !== 'function') {
+      throw new TypeError('EpaperAdapter requires deps.renderFn (the eink render function) — inject it at the composition root');
+    }
+    this.#renderFn = deps.renderFn;
     this.#logger = deps.logger || console;
     this.#fontDir = config.fontDir;
     this.#screenConfig = config.screenConfig || null;
@@ -88,7 +97,7 @@ export class EpaperAdapter {
       throw new TypeError('EpaperAdapter.render needs data (argument or configured dataProvider) — the eink renderer no longer fetches');
     }
 
-    const buffer = await einkRender(screenConfig, {
+    const buffer = await this.#renderFn(screenConfig, {
       data: resolved,
       fontDir: this.#fontDir,
     });
