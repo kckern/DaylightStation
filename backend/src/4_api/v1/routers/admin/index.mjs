@@ -1,5 +1,6 @@
 import express from 'express';
 import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
+import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
 import { createAdminContentRouter } from './content.mjs';
 import { createAdminConfigRouter } from './config.mjs';
 import { createAdminImagesRouter } from './images.mjs';
@@ -46,10 +47,16 @@ export function createAdminRouter(config) {
   });
   router.use('/content', contentRouter);
 
-  // Mount config router
-  const configRouter = createAdminConfigRouter({
+  // Mount config router (security policy + I/O live in YamlConfigFileService)
+  const configLogger = logger.child?.({ submodule: 'config' }) || logger;
+  const yamlConfigFileService = new YamlConfigFileService({
     configService,
-    logger: logger.child?.({ submodule: 'config' }) || logger
+    logger: configLogger
+  });
+  const configRouter = createAdminConfigRouter({
+    yamlConfigFileService,
+    configService,
+    logger: configLogger
   });
   router.use('/config', configRouter);
 
