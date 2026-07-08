@@ -68,4 +68,19 @@ describe('audit-layer-imports', () => {
       "export const userDataService = new UserDataService();");
     expect(v.some(r => r.rule === 'no-userdataservice')).toBe(false);
   });
+  it('scanContent flags a toJSON() method definition in a 2_domains entity', () => {
+    const v = scanContent('backend/src/2_domains/x/entities/Foo.mjs',
+      "  toJSON() {");
+    expect(v.some(r => r.rule === 'domains-tojson')).toBe(true);
+  });
+  it('scanContent does not flag a .toJSON() call site in 2_domains', () => {
+    const v = scanContent('backend/src/2_domains/x/services/Svc.mjs',
+      "    return items.map(i => i.toJSON());");
+    expect(v.some(r => r.rule === 'domains-tojson')).toBe(false);
+  });
+  it('scanContent does not flag a toJSON() definition outside 2_domains', () => {
+    const v = scanContent('backend/src/3_applications/x/Dto.mjs',
+      "  toJSON() {");
+    expect(v.some(r => r.rule === 'domains-tojson')).toBe(false);
+  });
 });
