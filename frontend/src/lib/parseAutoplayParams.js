@@ -18,13 +18,24 @@ export const AUTOPLAY_ACTIONS = Object.freeze([
   'play', 'queue', 'playlist', 'random',
   'display', 'read', 'open',
   'app', 'launch', 'list',
+  'play-next', 'play-now',
 ]);
 
 const CONFIG_KEYS = [
   'volume', 'shader', 'playbackRate', 'shuffle', 'continuous',
   'repeat', 'loop', 'overlay', 'advance', 'interval', 'mode', 'frame',
-  'prewarmToken', 'prewarmContentId'
+  'prewarmToken', 'prewarmContentId',
+  'endBehavior', 'endDeviceId', 'endLocation',
 ];
+
+// Params that ride along in wake-and-load / trigger URLs but are NEVER
+// content: envelope routing keys and NFC tag bookkeeping. The alias
+// fallback must not turn these into a play action (2026-07-07 bug:
+// ?scanned_at=... became contentId 'scanned_at:...' → 404 → stuck Loading).
+const PASSTHROUGH_KEYS = new Set([
+  'op', 'endBehavior', 'endDeviceId', 'endLocation',
+  'scanned_at', 'note', 'dispatchId', 'token',
+]);
 
 const BOOLEAN_CONFIG_KEYS = new Set(['shuffle', 'continuous', 'repeat', 'loop']);
 
@@ -55,6 +66,11 @@ const ACTION_MAPPINGS = {
     return { play: { contentId: toContentId(value), ...config } };
   },
   random: (value, config) => ({ play: { contentId: toContentId(value), random: true, ...config } }),
+  // Queue-op form used by WakeAndLoadService's FKB-URL fallback for NFC
+  // triggers (?play-next=plex:123&op=play-next). Emitted as media:queue-op —
+  // ScreenActionHandler routes it to the active Player or mounts a fresh one.
+  'play-next': (value, config) => ({ queueOp: { op: 'play-next', contentId: toContentId(value), ...config } }),
+  'play-now': (value, config) => ({ queueOp: { op: 'play-now', contentId: toContentId(value), ...config } }),
   display: (value, config) => ({ display: { id: value, ...config } }),
   read: (value, config) => ({ read: { id: value, ...config } }),
   open: (value) => ({ open: { app: value } }),
@@ -122,11 +138,30 @@ export function parseAutoplayParams(searchString, supportedActions) {
 
   // Alias fallback: unknown key -> play key:value
   for (const [key, value] of Object.entries(queryEntries)) {
-    if (!CONFIG_KEYS.includes(key) && !key.includes('.')) {
-      return { play: { contentId: `${key}:${value}`, ...config } };
-    }
+    if (CONFIG_KEYS.includes(key) || PASSTHROUGH_KEYS.has(key) || key.includes('.')) continue;
+    return { play: { contentId: `${key}:${value}`, ...config } };
   }
 
+  return null;
+}
+
+/**
+ * Map a parseAutoplayParams result to an ActionBus (event, payload) pair.
+ * Single source of truth for the ScreenAutoplay dispatch chain — priority
+ * order mirrors the original inline if/else in ScreenRenderer.jsx.
+ * Returns null when there is nothing to emit.
+ */
+export function autoplayToAction(autoplay) {
+  if (!autoplay) return null;
+  if (autoplay.compose) return { event: 'media:queue', payload: { compose: true, sources: autoplay.compose.sources, ...autoplay.compose } };
+  if (autoplay.queue) return { event: 'media:queue', payload: { contentId: autoplay.queue.contentId, ...autoplay.queue } };
+  if (autoplay.play) return { event: 'media:play', payload: { contentId: autoplay.play.contentId, ...autoplay.play } };
+  if (autoplay.queueOp) return { event: 'media:queue-op', payload: autoplay.queueOp };
+  if (autoplay.display) return { event: 'display:content', payload: autoplay.display };
+  if (autoplay.read) return { event: 'display:content', payload: { ...autoplay.read, mode: 'reader' } };
+  if (autoplay.launch) return { event: 'media:play', payload: { contentId: autoplay.launch.contentId, ...autoplay.launch } };
+  if (autoplay.open) return { event: 'menu:open', payload: { menuId: autoplay.open.app } };
+  if (autoplay.list) return { event: 'menu:open', payload: { menuId: autoplay.list.contentId } };
   return null;
 }
 

@@ -22,7 +22,7 @@ import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.js
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
-import { parseAutoplayParams, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
+import { parseAutoplayParams, autoplayToAction, AUTOPLAY_ACTIONS } from '../lib/parseAutoplayParams.js';
 import { getApp } from '../lib/appRegistry.js';
 import { bindBackButton, enableGlobalKeyCapture } from '../lib/fkb.js';
 import getLogger from '../lib/logging/Logger.js';
@@ -104,25 +104,12 @@ function ScreenAutoplay({ routes }) {
     logger.info('screen-autoplay.parsed', { keys: Object.keys(autoplay) });
 
     // Emit appropriate action after a brief delay to let the screen framework mount
-    setTimeout(() => {
-      if (autoplay.compose) {
-        bus.emit('media:queue', { compose: true, sources: autoplay.compose.sources, ...autoplay.compose });
-      } else if (autoplay.queue) {
-        bus.emit('media:queue', { contentId: autoplay.queue.contentId, ...autoplay.queue });
-      } else if (autoplay.play) {
-        bus.emit('media:play', { contentId: autoplay.play.contentId, ...autoplay.play });
-      } else if (autoplay.display) {
-        bus.emit('display:content', autoplay.display);
-      } else if (autoplay.read) {
-        bus.emit('display:content', { ...autoplay.read, mode: 'reader' });
-      } else if (autoplay.launch) {
-        bus.emit('media:play', { contentId: autoplay.launch.contentId, ...autoplay.launch });
-      } else if (autoplay.open) {
-        bus.emit('menu:open', { menuId: autoplay.open.app });
-      } else if (autoplay.list) {
-        bus.emit('menu:open', { menuId: autoplay.list.contentId });
-      }
-    }, 500);
+    const action = autoplayToAction(autoplay);
+    if (action) {
+      setTimeout(() => {
+        bus.emit(action.event, action.payload);
+      }, 500);
+    }
 
     // Clean URL to prevent re-trigger
     window.history.replaceState({}, '', pathname);
