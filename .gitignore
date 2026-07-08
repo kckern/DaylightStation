@@ -51,6 +51,8 @@ config.app-local.yml
 !scripts/audit-baseline.unit.txt
 !scripts/audit-layer-imports.mjs
 !scripts/audit-baseline.json
+!scripts/gate-vitest.mjs
+!scripts/audit-baseline.vitest.txt
 *.log
 .github/copilot-instructions.md
 # Skill local configs
