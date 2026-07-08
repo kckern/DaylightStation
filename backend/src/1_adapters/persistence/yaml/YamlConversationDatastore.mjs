@@ -21,23 +21,23 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listHouseholdDirs, parseHouseholdId } from '#system/utils/householdDirs.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {
-  #userDataService;
+  #dataService;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService instance for YAML I/O
+   * @param {Object} config.dataService - DataService instance for path resolution
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     super();
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlConversationDatastore requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlConversationDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#logger = config.logger || console;
   }
 
@@ -50,7 +50,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
    * @private
    */
   #getConversationsDir(householdId) {
-    return this.#userDataService.getHouseholdSharedPath(householdId, 'messaging/conversations');
+    return this.#dataService.household.resolveDir('shared/messaging/conversations', householdId);
   }
 
   /**
@@ -143,7 +143,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
     if (data) return data;
 
     // Try to find in any household directory
-    const dataRoot = this.#userDataService.getDataRoot?.();
+    const dataRoot = this.#dataService.getDataRoot?.();
     if (dataRoot) {
       const householdFolders = listHouseholdDirs(dataRoot);
       for (const folderName of householdFolders) {
@@ -231,7 +231,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
    */
   async #getAllConversations() {
     const conversations = [];
-    const dataRoot = this.#userDataService.getDataRoot?.();
+    const dataRoot = this.#dataService.getDataRoot?.();
 
     if (!dataRoot) {
       return conversations;

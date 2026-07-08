@@ -3,13 +3,14 @@
  * @module 1_rendering/eink/EinkRenderer
  *
  * Server-side equivalent of ScreenRenderer.jsx.
- * Takes a screen config (layout tree + data sources + theme), resolves data,
- * computes layout, and draws widgets onto a canvas.
+ * Takes a screen config (layout tree + theme) and ALREADY-RESOLVED data,
+ * computes layout, and draws widgets onto a canvas. Data acquisition lives in
+ * the application layer (3_applications/eink/DataResolver.mjs) — this module
+ * never fetches.
  */
 
-import { CanvasRenderer } from '#system/canvas/index.mjs';
+import { CanvasRenderer } from '../canvas/index.mjs';
 import { resolveLayout } from './PanelRenderer.mjs';
-import { resolveData } from './providers/DataResolver.mjs';
 import * as registry from './widgets/registry.mjs';
 import { registerBuiltins } from './widgets/builtins.mjs';
 import { FONT_FACES } from './widgets/lib/fonts.mjs';
@@ -17,41 +18,15 @@ import { draw as drawPlaceholder } from './widgets/PlaceholderWidget.mjs';
 import { canvasToGray8 } from './widgets/lib/greyscale.mjs';
 import { encodeGray8Png } from './widgets/lib/grayscalePng.mjs';
 import { encodeRgb8Png } from './widgets/lib/rgbPng.mjs';
-
-// The target (Seeed reTerminal E1003) is a MONOCHROME, 16-level grayscale panel —
-// there is no color. The palette is therefore a grayscale ramp whose values snap
-// near the 16 hardware levels (0x00..0xFF in ~0x11 steps) so each fill renders as
-// a clean tone, never a dithered color stipple. The color-named keys
-// (red/blue/green/yellow) are kept as TONAL ALIASES — dark-to-light grays — so the
-// widgets that reference them need no rewrite. Rendering note: IT8951 fast/partial
-// (A2) refresh is effectively 1-bit, so keep grays in STATIC chrome; any gray in a
-// frequently-changing region forces a full (flashing) refresh.
-const DEFAULT_THEME = {
-  bg: '#FFFFFF',          // white — e-ink reads crispest at the tonal extremes
-  fg: '#000000',          // black
-  muted: '#777777',       // mid gray — secondary text
-  headerBg: '#000000',
-  headerFg: '#FFFFFF',
-  // grayscale ramp (dark -> light) for tonal hierarchy
-  ink: '#000000',
-  g1: '#333333',
-  g2: '#555555',
-  g3: '#888888',
-  g4: '#BBBBBB',
-  g5: '#DDDDDD',
-  // tonal aliases — this mono panel has no color; severe/important -> darker tones
-  red: '#222222',
-  blue: '#444444',
-  green: '#666666',
-  yellow: '#999999',
-};
+import { DEFAULT_THEME } from './einkTheme.mjs';
 
 /**
- * @param {Object} screenConfig - { layout, data, theme, width, height }
- * @param {Object} [options]
- * @param {string} [options.baseUrl] - Backend base URL for data fetching
+ * @param {Object} screenConfig - { layout, theme, width, height }
+ * @param {Object} options
+ * @param {Object} options.data - REQUIRED. Already-resolved data keyed by source
+ *   name (see 3_applications/eink/DataResolver.mjs). The renderer draws what it
+ *   receives; it never fetches. Pass `{}` for data-free layouts.
  * @param {string} [options.fontDir] - Font directory path
- * @param {Object} [options.dataOverride] - Skip fetching, use this data directly
  * @param {boolean} [options.grayscale=true] - emit a compact 8-bit grayscale PNG
  *   (mono panels, e.g. E1003 Gray16). Pass false for full-colour panels (e.g.
  *   E1004 Spectra-6) to emit an RGB PNG the panel firmware colour-dithers itself.
@@ -59,11 +34,19 @@ const DEFAULT_THEME = {
  */
 export async function render(screenConfig, options = {}) {
   const {
-    baseUrl,          // injected from household config by the caller; no host literal here
+    data,
     fontDir = '/usr/share/fonts',
-    dataOverride,
     grayscale = true,
   } = options;
+
+  if (!data || typeof data !== 'object') {
+    const err = new TypeError(
+      'EinkRenderer.render requires options.data (already-resolved data map) — '
+      + 'resolve it in the application layer via 3_applications/eink/DataResolver.mjs'
+    );
+    err.code = 'EINK_RENDER_DATA_REQUIRED';
+    throw err;
+  }
 
   const width = screenConfig.width || 1600;
   const height = screenConfig.height || 1200;
@@ -71,10 +54,6 @@ export async function render(screenConfig, options = {}) {
 
   // Ensure built-in widgets are registered
   registerBuiltins();
-
-  // Resolve data — the render path preloads images (loadImages) so widgets like
-  // PhotoWidget have ready pixels; the /config snapshot deliberately does not.
-  const data = dataOverride || await resolveData(screenConfig.data, baseUrl, { loadImages: true });
 
   // Create canvas and register the base font (Roboto Condensed) so widgets can
   // address it by name. Missing faces degrade gracefully (synthetic bold).

@@ -13,7 +13,7 @@ import path from 'node:path';
 import {
   HealthArchiveScope,
   DEFAULT_WORKOUT_SOURCES,
-} from '#domains/health/services/HealthArchiveScope.mjs';
+} from '#apps/health/archive/HealthArchiveScope.mjs';
 
 const USER = 'test-user';
 const OTHER = 'other-user';

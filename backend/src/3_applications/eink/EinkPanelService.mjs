@@ -16,7 +16,8 @@
  */
 
 import crypto from 'node:crypto';
-import { render as einkRender, resolveData, RENDERER_VERSION } from '#rendering/eink/index.mjs';
+import { render as einkRender, RENDERER_VERSION } from '#rendering/eink/index.mjs';
+import { resolveData } from './DataResolver.mjs';
 import { computeNextWakeSeconds } from './wakeSchedule.mjs';
 import { dataService as defaultDataService } from '#system/config/index.mjs';
 
@@ -182,7 +183,14 @@ export class EinkPanelService {
     const screen = this.#loadScreen(panelId);
     const { index, view, screenConfig, grayscale } = this.#currentView(screen, panelId);
 
-    const png = await einkRender(screenConfig, { baseUrl: this.#baseUrl, fontDir: this.#fontDir, grayscale });
+    // Resolve data FIRST (application concern), then hand the renderer its
+    // inputs. The render path preloads images (loadImages) so widgets like
+    // PhotoWidget have ready pixels; the /config snapshot deliberately does not.
+    const data = await resolveData(screenConfig.data, this.#baseUrl, {
+      loadImages: true,
+      logger: this.#logger,
+    });
+    const png = await einkRender(screenConfig, { data, fontDir: this.#fontDir, grayscale });
     this.#logger.info?.('eink.panel.rendered', {
       panelId, view: view.id, index, bytes: png.length, grayscale,
       size: `${screenConfig.width}x${screenConfig.height}`,
@@ -222,8 +230,9 @@ export class EinkPanelService {
     const buttons = screen.buttons || {};
     const { index, view, screenConfig, grayscale } = this.#currentView(screen, panelId);
 
-    // Resolve the same data the renderer would — but stop there (no canvas).
-    const data = await resolveData(screenConfig.data, this.#baseUrl);
+    // Resolve the same data the render path would — but stop there (no canvas,
+    // and no image preload: the battery-saving hash check never downloads a photo).
+    const data = await resolveData(screenConfig.data, this.#baseUrl, { logger: this.#logger });
 
     // Fingerprint of every pixel-affecting input. Stable key ordering so a feed
     // reordering its JSON keys does not spuriously bust the hash. RENDERER_VERSION

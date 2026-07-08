@@ -10,10 +10,7 @@
  */
 
 import { font } from './lib/fonts.mjs';
-
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
+import { DAYS, MONTHS } from './lib/calendar.mjs';
 
 export function draw(ctx, box, data, theme) {
   const { x, y, w, h } = box;

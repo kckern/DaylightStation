@@ -76,10 +76,15 @@ export class BudgetPeriod {
   /**
    * Get the start of the current period containing the reference date
    *
-   * @param {Date} [referenceDate=new Date()] - Reference date
+   * @param {Date} referenceDate - Reference date (required; supplied by caller)
    * @returns {Date} Start of period (UTC midnight)
    */
-  getCurrentPeriodStart(referenceDate = new Date()) {
+  getCurrentPeriodStart(referenceDate) {
+    if (!(referenceDate instanceof Date) || Number.isNaN(referenceDate.getTime())) {
+      throw new ValidationError('referenceDate is required', {
+        code: 'MISSING_REFERENCE_DATE', field: 'referenceDate'
+      });
+    }
     const date = new Date(referenceDate);
 
     switch (this.#type) {
@@ -130,10 +135,15 @@ export class BudgetPeriod {
   /**
    * Get the end of the current period containing the reference date
    *
-   * @param {Date} [referenceDate=new Date()] - Reference date
+   * @param {Date} referenceDate - Reference date (required; supplied by caller)
    * @returns {Date} End of period (23:59:59 UTC)
    */
-  getCurrentPeriodEnd(referenceDate = new Date()) {
+  getCurrentPeriodEnd(referenceDate) {
+    if (!(referenceDate instanceof Date) || Number.isNaN(referenceDate.getTime())) {
+      throw new ValidationError('referenceDate is required', {
+        code: 'MISSING_REFERENCE_DATE', field: 'referenceDate'
+      });
+    }
     const date = new Date(referenceDate);
 
     switch (this.#type) {

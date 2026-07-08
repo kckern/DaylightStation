@@ -122,3 +122,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-06 | refactor/ddd-compliance-p0 | 3983105a82a45021dabd39b4cb0fafb4157f95ea | DDD remediation Phase P0 (merged to main via 8acdf4106) |
 | 2026-07-07 | refactor/ddd-compliance-p1 | c5f7cfdd3a1568121333310b134dbfd73ff8075d | DDD remediation Phase P1 (merged to main via 5cd6df9e3) |
 | 2026-07-07 | worktree-piano-playback-decoupling | bfd547e88 | Piano playback/render decoupling (timestamped MIDI, note store, OSMD defer) + jank investigation |
+| 2026-07-08 | refactor/ddd-compliance-p2 | 54ffedb117896de04d644bca7534122ffa3e1491 | DDD remediation Phase P2 (merged to main) |

@@ -23,6 +23,10 @@ import { createAdminArtRouter } from './art.mjs';
  *   /media/*     - Media operations (freshvideo metadata)
  *   /ws/*        - EventBus/WebSocket management
  *
+ * All five admin app-services are constructed at the composition root (app.mjs,
+ * which may import #apps freely) and injected here. This router and its
+ * sub-routers never import #apps — they only forward the injected services.
+ *
  * @param {Object} config
  * @param {Object} config.userDataService - UserDataService for household paths
  * @param {Object} config.configService - ConfigService for default household
@@ -30,11 +34,29 @@ import { createAdminArtRouter } from './art.mjs';
  * @param {Function} [config.loadFile] - Function to load config files
  * @param {Object} [config.mediaDownloadService] - MediaDownloadService instance (optional)
  * @param {Object} [config.eventBus] - WebSocketEventBus instance (optional)
+ * @param {Object} config.householdAdminService - Injected HouseholdAdminService
+ * @param {Object} config.yamlConfigFileService - Injected YamlConfigFileService
+ * @param {Object} config.appsConfigService - Injected AppsConfigService
+ * @param {Object} config.schedulerAdminService - Injected SchedulerAdminService
+ * @param {Object} config.integrationsQueryService - Injected IntegrationsQueryService
  * @param {Object} [config.logger=console] - Logger instance
  * @returns {express.Router}
  */
 export function createAdminRouter(config) {
-  const { userDataService, configService, mediaPath, loadFile, mediaDownloadService, eventBus, logger = console } = config;
+  const {
+    userDataService,
+    configService,
+    mediaPath,
+    loadFile,
+    mediaDownloadService,
+    eventBus,
+    householdAdminService,
+    yamlConfigFileService,
+    appsConfigService,
+    schedulerAdminService,
+    integrationsQueryService,
+    logger = console
+  } = config;
   const router = express.Router();
 
   // Mount content router
@@ -45,37 +67,39 @@ export function createAdminRouter(config) {
   });
   router.use('/content', contentRouter);
 
-  // Mount config router
+  // Mount config router (security policy + I/O live in the injected YamlConfigFileService)
   const configRouter = createAdminConfigRouter({
+    yamlConfigFileService,
     configService,
     logger: logger.child?.({ submodule: 'config' }) || logger
   });
   router.use('/config', configRouter);
 
-  // Mount scheduler router
+  // Mount scheduler router (jobs.yml I/O + manual-run live in the injected SchedulerAdminService)
   const schedulerRouter = createAdminSchedulerRouter({
-    configService,
+    schedulerAdminService,
     logger: logger.child?.({ submodule: 'scheduler' }) || logger
   });
   router.use('/scheduler', schedulerRouter);
 
-  // Mount household router
+  // Mount household router (persistence + rules live in the injected HouseholdAdminService)
   const householdRouter = createAdminHouseholdRouter({
+    householdAdminService,
     configService,
     logger: logger.child?.({ submodule: 'household' }) || logger
   });
   router.use('/household', householdRouter);
 
-  // Mount integrations router
+  // Mount integrations router (merge + rules live in the injected IntegrationsQueryService)
   const integrationsRouter = createAdminIntegrationsRouter({
-    configService,
+    integrationsQueryService,
     logger: logger.child?.({ submodule: 'integrations' }) || logger
   });
   router.use('/integrations', integrationsRouter);
 
-  // Mount apps config router
+  // Mount apps config router (per-app YAML I/O lives in the injected AppsConfigService)
   const appsRouter = createAdminAppsRouter({
-    configService,
+    appsConfigService,
     logger: logger.child?.({ submodule: 'apps' }) || logger
   });
   router.use('/apps', appsRouter);

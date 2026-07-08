@@ -238,7 +238,7 @@ getSelectUPCPortion()    // Portion button → scale → accept log
 getGenerateDailyReport() // Compile daily nutrition summary
 ```
 
-**Bootstrap:** `backend/src/0_system/bootstrap.mjs` (line ~2206) creates `NutribotContainer` with:
+**Bootstrap:** `backend/src/5_composition/bootstrap.mjs` (line ~2206) creates `NutribotContainer` with:
 - `upcGateway` — Open Food Facts + Nutritionix
 - `foodLogStore` — YAML persistence for NutriLog lifecycle
 - `nutriListStore` — YAML persistence for daily aggregation
@@ -263,7 +263,7 @@ getGenerateDailyReport() // Compile daily nutrition summary
 | `backend/src/3_applications/nutribot/NutribotContainer.mjs` | Application | DI container for all use cases |
 | `backend/src/4_api/v1/handlers/nutribot/directInput.mjs` | API | `POST /api/v1/nutribot/upc` handler |
 | `backend/src/4_api/v1/routers/nutribot.mjs` | API | Express router wiring |
-| `backend/src/0_system/bootstrap.mjs` | System | Service creation and wiring |
+| `backend/src/5_composition/bootstrap.mjs` | System | Service creation and wiring |
 | `backend/src/1_adapters/persistence/yaml/YamlFoodLogDatastore.mjs` | Adapter | NutriLog YAML persistence |
 | `backend/src/1_adapters/persistence/yaml/YamlNutriListDatastore.mjs` | Adapter | Daily nutrilist YAML persistence |
 

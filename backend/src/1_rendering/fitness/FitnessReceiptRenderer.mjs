@@ -11,9 +11,18 @@
 
 import moment from 'moment-timezone';
 import { decodeSingleSeries } from '#domains/fitness/services/TimelineService.mjs';
-import { computeParticipantStats, zoneIntensity, ZONE_ORDER } from '#domains/fitness/services/SessionStatsService.mjs';
+import {
+  computeParticipantStats,
+  computeHrHistogram,
+  coinsPerMinute,
+  normalizeSessionEvents,
+  dedupeChallengeEvents,
+  discoverParticipants,
+  zoneIntensity,
+} from '#domains/fitness/services/SessionStatsService.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { drawDivider, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawDivider, drawBorder, flipCanvas, formatDuration } from '#rendering/lib/LayoutHelpers.mjs';
+import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { fitnessReceiptTheme as theme } from './fitnessReceiptTheme.mjs';
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -66,23 +75,21 @@ export function createFitnessReceiptRenderer(config) {
     const data = await getSessionData(sessionId);
     if (!data) return null;
 
-    const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
-
-    // Register font
-    const fontFamily = theme.fonts.family;
-    const fontPath = fontDir
-      ? `${fontDir}/${theme.fonts.fontPath}`
-      : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
-    try {
-      registerFont(fontPath, { family: fontFamily });
-    } catch { /* fall back to system fonts */ }
+    // Register the receipt font and grab a 1x1 scratch context for text
+    // measurement during the height pre-calculation below.
+    const { ctx: sctx, createNodeCanvas } = await initCanvas({
+      width: 1,
+      height: 1,
+      fontDir,
+      fontFile: theme.fonts.fontPath,
+      fontFamily: theme.fonts.family,
+    });
 
     // ─── Parse session data ───────────────────────────────
     const sessionInfo = data.session || {};
     const participants = data.participants || {};
     const timeline = data.timeline || {};
     const treasureBox = data.treasureBox || data.totals || null;
-    const rawEvents = data.events || [];
     const tz = data.timezone || sessionInfo.timezone || 'UTC';
 
     const intervalSeconds = timeline.interval_seconds || 5;
@@ -93,18 +100,9 @@ export function createFitnessReceiptRenderer(config) {
     const series = timeline.series || {};
     const timelineParticipants = timeline.participants || {};
 
-    // Discover participant slugs from series keys (slug:zone pattern)
-    // Cross-reference with participants block for display names
-    const seriesSlugs = new Set();
-    for (const key of Object.keys(series)) {
-      const match = key.match(/^([^:]+):zone$/);
-      if (match) seriesSlugs.add(match[1]);
-    }
-    // Also include slugs from participants block
-    for (const slug of Object.keys(participants)) {
-      seriesSlugs.add(slug);
-    }
-    const participantSlugs = [...seriesSlugs].filter(s => s !== 'global' && !s.startsWith('device:') && !s.startsWith('bike:'));
+    // Discover participant slugs (series slug:zone keys ∪ participants block,
+    // minus global/device:/bike:) — timeline-schema knowledge, domain-owned.
+    const participantSlugs = discoverParticipants(series, participants);
 
     // ─── Decode RLE series per participant ─────────────────
     const decoded = {};
@@ -158,46 +156,24 @@ export function createFitnessReceiptRenderer(config) {
     const sessionStart = sessionInfo.start
       ? moment.tz(sessionInfo.start, tz)
       : null;
-    const allEvents = [];
-    if (Array.isArray(rawEvents)) {
-      for (const ev of rawEvents) {
-        // Flatten: merge ev.data into top-level for uniform access
-        allEvents.push({ ...ev.data, at: ev.at, timestamp: ev.timestamp, _type: ev.type });
-      }
-    } else if (rawEvents && typeof rawEvents === 'object') {
-      for (const [type, evList] of Object.entries(rawEvents)) {
-        if (!Array.isArray(evList)) continue;
-        for (const ev of evList) {
-          allEvents.push({ ...ev.data, ...ev, _type: type });
-        }
-      }
-    }
-
-    // Normalize event type names for symbol lookup
-    // Real types: media_start, challenge_start, challenge_end, voice_memo, overlay.*
-    // Skip challenge_start — only challenge_end has the final result
-    const EVENT_TYPE_MAP = {
-      media_start: 'media',
-      challenge_end: 'challenge',
-      voice_memo: 'voice_memo',
-    };
+    // Flattening across both stored schema shapes + event-type normalization
+    // is session-schema knowledge (domain); the renderer only maps the
+    // normalized events onto chart rows and symbols.
+    const normalizedEvents = normalizeSessionEvents(data);
 
     // Map events to chart row positions
     const ticksPerRow = tickCount > 0 && chartRows > 0 ? tickCount / chartRows : 1;
     const chartEvents = [];
-    for (const ev of allEvents) {
+    for (const { type, event: ev } of normalizedEvents) {
       const evTime = ev.at || ev.timestamp;
       if (!evTime || !sessionStart) continue;
-      const rawType = ev._type || 'unknown';
-      const normalType = EVENT_TYPE_MAP[rawType];
-      if (!normalType) continue; // skip overlay.* and other internal events
       const evMoment = moment.tz(evTime, tz);
       const offsetSec = evMoment.diff(sessionStart, 'seconds');
       const tickIndex = Math.max(0, Math.floor(offsetSec / intervalSeconds));
       const rowIndex = Math.min(chartRows - 1, Math.max(0, Math.floor(tickIndex / ticksPerRow)));
-      const symbol = theme.chart.eventSymbols[normalType] || '\u25CF';
-      const label = ev.title || ev.name || ev.challenge_name || normalType;
-      chartEvents.push({ rowIndex, type: normalType, symbol, label, event: ev });
+      const symbol = theme.chart.eventSymbols[type] || '\u25CF';
+      const label = ev.title || ev.name || ev.challenge_name || type;
+      chartEvents.push({ rowIndex, type, symbol, label, event: ev });
     }
     chartEvents.sort((a, b) => a.rowIndex - b.rowIndex);
 
@@ -212,14 +188,9 @@ export function createFitnessReceiptRenderer(config) {
       .sort((a, b) => b.totalCoins - a.totalCoins);
 
     // ─── Event details by type (use chart events which are already normalized) ──
-    // Deduplicate challenges: keep only the LAST event per challengeId (final outcome)
-    const challengeEndEvents = chartEvents.filter(e => e.type === 'challenge' && e.event._type === 'challenge_end');
-    const challengeById = new Map();
-    for (const chEv of challengeEndEvents) {
-      const cid = chEv.event.challengeId;
-      challengeById.set(cid, chEv); // last one wins (events are time-sorted)
-    }
-    const challenges = [...challengeById.values()];
+    // Challenge dedup (LAST challenge_end per challengeId wins) is domain
+    // logic; chartEvents are time-sorted, which defines "last".
+    const challenges = dedupeChallengeEvents(chartEvents);
     const media = chartEvents.filter(e => e.type === 'media');
     const voiceMemos = chartEvents.filter(e => e.type === 'voice_memo');
 
@@ -228,31 +199,29 @@ export function createFitnessReceiptRenderer(config) {
     const margin = theme.layout.margin;
     const sectionGap = theme.layout.sectionGap;
 
-    // Use a scratch canvas for text measurement
-    const scratch = createNodeCanvas(1, 1);
-    const sctx = scratch.getContext('2d');
-
     let totalHeight = 0;
 
-    // Header section
-    const headerHeight = 10 + 55 + 30 + 30 + 30 + 10; // top pad + title + date + duration + names + gap
+    // Header section — same named advances the draw pass consumes below
+    const hdr = theme.header;
+    const headerHeight = hdr.topPad + hdr.titleAdvance + hdr.dateAdvance
+      + hdr.durationAdvance + hdr.namesAdvance + hdr.gap;
     totalHeight += headerHeight;
 
     // Treasure box
     let tbHeight = 0;
     if (hasTreasureBox) {
-      tbHeight = sectionGap + 70 + theme.treasureBox.barHeight + 30 + 10; // header + coin + bar + labels + gap
+      tbHeight = sectionGap + theme.treasureBox.coinAdvance + theme.treasureBox.barHeight + 30 + 10; // header + coin + bar + labels + gap
       totalHeight += tbHeight;
     }
 
     // Flame chart
     const chartContentHeight = chartRows * theme.chart.rowHeight;
-    const chartHeaderHeight = 25;
+    const chartHeaderHeight = theme.chart.headerHeight;
     const chartSectionHeight = sectionGap + 40 + chartHeaderHeight + chartContentHeight + 10;
     totalHeight += chartSectionHeight;
 
     // Leaderboard
-    const lbHeaderHeight = 40;
+    const lbHeaderHeight = theme.leaderboard.headerHeight;
     const lbContentHeight = leaderboard.length * theme.leaderboard.rowHeight;
     const lbSectionHeight = sectionGap + lbHeaderHeight + lbContentHeight + 10;
     totalHeight += lbSectionHeight;
@@ -292,16 +261,13 @@ export function createFitnessReceiptRenderer(config) {
     ctx.fillRect(0, 0, width, height);
 
     // Border
-    ctx.strokeStyle = theme.colors.border;
-    ctx.lineWidth = theme.layout.borderWidth;
-    ctx.strokeRect(
-      theme.layout.borderOffset,
-      theme.layout.borderOffset,
-      width - theme.layout.borderOffset * 2,
-      height - theme.layout.borderOffset * 2
-    );
+    drawBorder(ctx, width, height, {
+      offset: theme.layout.borderOffset,
+      lineWidth: theme.layout.borderWidth,
+      color: theme.colors.border,
+    });
 
-    let y = 10;
+    let y = hdr.topPad;
 
     // ─── Section A: Header ────────────────────────────────
     ctx.fillStyle = theme.colors.text;
@@ -309,7 +275,7 @@ export function createFitnessReceiptRenderer(config) {
     const titleText = 'FITNESS REPORT';
     const titleW = ctx.measureText(titleText).width;
     ctx.fillText(titleText, (width - titleW) / 2, y);
-    y += 55;
+    y += hdr.titleAdvance;
 
     // Date + time
     ctx.font = theme.fonts.subtitle;
@@ -318,7 +284,7 @@ export function createFitnessReceiptRenderer(config) {
       : sessionInfo.date || '--';
     const dateW = ctx.measureText(dateStr).width;
     ctx.fillText(dateStr, (width - dateW) / 2, y);
-    y += 30;
+    y += hdr.dateAdvance;
 
     // Duration
     const durationSec = sessionInfo.duration_seconds || null;
@@ -327,14 +293,14 @@ export function createFitnessReceiptRenderer(config) {
     const durText = `Duration: ${durStr}`;
     const durW = ctx.measureText(durText).width;
     ctx.fillText(durText, (width - durW) / 2, y);
-    y += 30;
+    y += hdr.durationAdvance;
 
     // Participant names
     const nameStr = participantSlugs.map(s => stats[s].displayName).join('   ');
     ctx.font = theme.fonts.body;
     const nameW = ctx.measureText(nameStr).width;
     ctx.fillText(nameStr, (width - nameW) / 2, y);
-    y += 30;
+    y += hdr.namesAdvance;
 
     // Divider
     drawDivider(ctx, y, width);
@@ -348,7 +314,7 @@ export function createFitnessReceiptRenderer(config) {
       const coinStr = `${tbCoins}`;
       const coinW = ctx.measureText(coinStr).width;
       ctx.fillText(coinStr, (width - coinW) / 2, y);
-      y += 70;
+      y += theme.treasureBox.coinAdvance;
 
       // Coin label
       ctx.font = theme.fonts.label;
@@ -521,8 +487,8 @@ export function createFitnessReceiptRenderer(config) {
     ctx.fillText('LEADERBOARD', margin, y);
     y += lbHeaderHeight;
 
-    const zoneDensity = { cool: 6, active: 4, warm: 3, hot: 2, fire: 0 };
-    const zoneLabelsMap = { cool: 'Cool', active: 'Active', warm: 'Warm', hot: 'Hot', fire: 'Fire' };
+    const zoneDensity = theme.leaderboard.zoneDensity;
+    const zoneLabelsMap = theme.leaderboard.zoneLabels;
     const numBuckets = theme.leaderboard.histogramBuckets;
     const histH = theme.leaderboard.histogramHeight;
     const histLeft = margin + 10;
@@ -575,7 +541,7 @@ export function createFitnessReceiptRenderer(config) {
         ctx.fillText('\u2661', heartX, ly);
       }
       const activeMin = p.activeSeconds > 0 ? p.activeSeconds / 60 : 0;
-      const cpm = activeMin > 0 ? (p.totalCoins / activeMin).toFixed(1) : '0.0';
+      const cpm = coinsPerMinute(p.totalCoins, activeMin);
       const cpmStr = `\u26C0${cpm}/min`;
       ctx.fillText(cpmStr, rightColRight - ctx.measureText(cpmStr).width, ly);
       ly += lineH;
@@ -589,52 +555,13 @@ export function createFitnessReceiptRenderer(config) {
       }
       ly += lineH + 4;
 
-      // HR Histogram (10 vertical bars grouped by HR zone)
-      if (p.hrValues.length > 0) {
-        const minHr = Math.min(...p.hrValues);
-        const maxHr = Math.max(...p.hrValues);
-        const hrRange = maxHr - minHr || 1;
-        const bucketSize = hrRange / numBuckets;
-
-        // Count HR values per bucket
-        const buckets = new Array(numBuckets).fill(0);
-        for (const hr of p.hrValues) {
-          const idx = Math.min(numBuckets - 1, Math.floor((hr - minHr) / bucketSize));
-          buckets[idx]++;
-        }
-        const maxCount = Math.max(...buckets, 1);
-
-        // Determine which zone each bucket belongs to using actual data votes
-        // (boundary-matching fails because zones overlap — HR 163 can be "cool" during cooldown)
-        const d = decoded[p.slug] || { zones: [], hr: [] };
-        const bucketZones = [];
-        for (let b = 0; b < numBuckets; b++) {
-          const bucketMin = minHr + b * bucketSize;
-          const bucketMax = minHr + (b + 1) * bucketSize;
-          // Count how many ticks at this HR range were classified into each zone
-          const votes = {};
-          for (let i = 0; i < d.hr.length && i < d.zones.length; i++) {
-            const hr = d.hr[i];
-            const z = d.zones[i];
-            if (hr != null && hr > 0 && z != null) {
-              const inBucket = b < numBuckets - 1
-                ? (hr >= bucketMin && hr < bucketMax)
-                : (hr >= bucketMin && hr <= bucketMax);
-              if (inBucket) votes[z] = (votes[z] || 0) + 1;
-            }
-          }
-          // Pick zone with most votes; on tie prefer higher intensity
-          let bestZone = 'cool';
-          let bestCount = 0;
-          for (const zone of ZONE_ORDER) {
-            const count = votes[zone] || 0;
-            if (count > bestCount || (count === bestCount && count > 0 && zoneIntensity(zone) > zoneIntensity(bestZone))) {
-              bestZone = zone;
-              bestCount = count;
-            }
-          }
-          bucketZones.push(bestZone);
-        }
+      // HR Histogram (10 vertical bars grouped by HR zone). The buckets and
+      // per-bucket zone majority vote are domain stats (computeHrHistogram);
+      // this section only draws them.
+      const d = decoded[p.slug] || { zones: [], hr: [] };
+      const hist = computeHrHistogram(d.hr, d.zones, { buckets: numBuckets });
+      if (hist) {
+        const { minHr, bucketSize, counts: buckets, maxCount, bucketZones } = hist;
 
         const barGap = 4;
         const barWidth = (histWidth - (numBuckets - 1) * barGap) / numBuckets;
@@ -670,7 +597,7 @@ export function createFitnessReceiptRenderer(config) {
 
         // Per-bucket HR labels centered below each bar
         ly = histBottom + 3;
-        ctx.font = '11px "Roboto Condensed"';
+        ctx.font = theme.fonts.histLabel;
         ctx.fillStyle = theme.colors.gray;
         for (let b = 0; b < numBuckets; b++) {
           const bx = histLeft + b * (barWidth + barGap);

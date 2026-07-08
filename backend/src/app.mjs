@@ -37,26 +37,15 @@ import {
   // Content domain
   createContentRegistry,
   createMediaProgressMemory,
-  createApiRouters,
   createFitnessServices,
-  createFitnessApiRouter,
   createFeedServices,
   createFinanceServices,
-  createFinanceApiRouter,
   createEntropyServices,
-  createEntropyApiRouter,
   createHealthServices,
-  createHealthApiRouter,
-  createHealthDashboardApiRouter,
   createGratitudeServices,
-  createGratitudeApiRouter,
   createHomeAutomationAdapters,
-  createHomeAutomationApiRouter,
-  createHomeDashboardApiRouter,
   createPlaybackHubServices,
   createDeviceServices,
-  createDeviceApiRouter,
-  createTriggerApiRouter,
   createWakeAndLoadService,
   createDispatchIdempotencyService,
   createTranscodePrewarmService,
@@ -64,30 +53,40 @@ import {
   createProxyService,
   createMessagingServices,
   createJournalistServices,
-  createJournalistApiRouter,
   createHomebotServices,
-  createHomebotApiRouter,
   createNutribotServices,
-  createNutribotApiRouter,
   createLifelogServices,
-  createLifelogApiRouter,
-  createStaticApiRouter,
-  createCalendarApiRouter,
   createEventBus,
   createDeviceLivenessService,
   broadcastEvent,
   createHarvesterServices,
+  createNewsReporterServices,
   createAgentsServices,
   createConciergeServices,
   createCostServices,
-  createCostApiRouter,
   createMediaServices
-} from './0_system/bootstrap.mjs';
+} from '#composition/bootstrap.mjs';
 
-import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
-import { createScreenPresenceService } from './0_system/bootstrap/screenPresence.mjs';
-import { createPianoScreenPowerSync } from './0_system/bootstrap/pianoScreenPowerSync.mjs';
-import { createPianoMidiWake } from './0_system/bootstrap/pianoMidiWake.mjs';
+import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { createApiRouters } from '#composition/modules/contentApi.mjs';
+import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
+import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
+import { createCostApiRouter } from '#composition/modules/costApi.mjs';
+import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
+import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
+import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
+import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
+import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
+import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
+import { createHealthApiRouter, createHealthDashboardApiRouter } from '#composition/modules/healthApi.mjs';
+import { createEntropyApiRouter } from '#composition/modules/entropyApi.mjs';
+import { createLifelogApiRouter } from '#composition/modules/lifelogApi.mjs';
+import { createStaticApiRouter } from '#composition/modules/staticApi.mjs';
+import { createCalendarApiRouter } from '#composition/modules/calendarApi.mjs';
+import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
+import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
+import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -120,6 +119,13 @@ import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHan
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
+// Admin app-services (constructed HERE at the composition root and injected into
+// the admin router; keeps 4_api/**/admin/* free of #apps imports).
+import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
+import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
+import { AppsConfigService } from '#apps/admin/AppsConfigService.mjs';
+import { SchedulerAdminService } from '#apps/admin/SchedulerAdminService.mjs';
+import { IntegrationsQueryService } from '#apps/admin/IntegrationsQueryService.mjs';
 import { createMediaRouter } from './4_api/v1/routers/media.mjs';
 import { createLivestreamRouter } from './4_api/v1/routers/livestream.mjs';
 import { createCameraRouter } from './4_api/v1/routers/camera.mjs';
@@ -160,7 +166,6 @@ import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 
 // NewsReporter domain — scheduled, LLM-generated reports
-import { NewsReporterContainer } from '#apps/newsreporter/NewsReporterContainer.mjs';
 import { createNewsReporterRouter } from './4_api/v1/routers/newsreporter.mjs';
 
 // Canvas domain
@@ -210,6 +215,8 @@ import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_sy
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
+import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
+import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
@@ -369,7 +376,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const dataBasePath = configService.getDataDir();
   const mediaBasePath = configService.getMediaDir();
   const householdId = configService.getDefaultHouseholdId() || 'default';
-  const householdDir = userDataService.getHouseholdDir(householdId);
+  const householdDir = dataService.household.resolveDir('', householdId);
 
   // DevProxy for forwarding webhooks to local dev machine
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
@@ -630,7 +637,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Health domain
   const healthServices = createHealthServices({
     dataService,
-    userDataService,
     configService,
     logger: rootLogger
   });
@@ -667,9 +673,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'cost' })
   });
 
-  // Entropy domain - use UserDataService for user-specific data (replaces legacy io.mjs)
-  const userLoadFile = (username, service) => userDataService.getLifelogData(username, service);
-  const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
+  // Entropy domain - use DataService for user-specific data (replaces legacy io.mjs)
+  const userLoadFile = (username, service) => dataService.user.read(`lifelog/${service}`, username);
+  const userLoadCurrent = (username, service) => dataService.user.read(`current/${service}`, username);
   const ArchiveService = (await import('./3_applications/content/services/ArchiveService.mjs')).default;
   const entropyServices = createEntropyServices({
     io: { userLoadFile, userLoadCurrent },
@@ -848,13 +854,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-api' }),
   });
 
-  // Livestream engine
+  // Livestream engine — concrete adapters composed here, injected as factories
   const { ChannelManager } = await import('./3_applications/livestream/ChannelManager.mjs');
+  const { FFmpegStreamAdapter } = await import('./1_adapters/livestream/FFmpegStreamAdapter.mjs');
+  const { SourceFeeder } = await import('./1_adapters/livestream/SourceFeeder.mjs');
   const programsBasePath = `${configService.getDataDir()}/household/apps/livestream/programs`;
   const channelManager = new ChannelManager({
     mediaBasePath,
     programsBasePath,
     broadcastEvent: (topic, payload) => eventBus.broadcast(topic, payload),
+    createStreamAdapter: (opts) => new FFmpegStreamAdapter(opts),
+    createSourceFeeder: (opts) => new SourceFeeder(opts),
     logger: rootLogger.child({ module: 'livestream' }),
   });
 
@@ -1184,9 +1194,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Harvester application services
   // Create shared IO functions for lifelog persistence
-  const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
-  // Current store needs direct writeUserData (no 'lifelog/' prefix)
-  const userSaveFileDirect = (username, path, data) => userDataService.writeUserData(username, path, data);
+  const userSaveFile = (username, service, data) => dataService.user.write(`lifelog/${service}`, data, username);
+  // Current store needs a direct user write (no 'lifelog/' prefix)
+  const userSaveFileDirect = (username, path, data) => dataService.user.write(path, data, username);
 
   // Image saving for Infinity harvester (mirrors legacy io.saveImage behavior)
   // Images are saved to media/img/{folder}/{uid}.jpg with 24-hour caching
@@ -1195,8 +1205,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Household-level file saving for Infinity harvester state
   const householdSaveFile = (relativePath, data) => {
-    // Save to household[-{hid}]/state/{path}
-    return userDataService.saveHouseholdData(householdId, relativePath, data);
+    // Save to household[-{hid}]/{path}
+    return dataService.household.write(relativePath, data, householdId);
   };
 
   const harvesterIo = {
@@ -1205,15 +1215,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveFileDirect,
     saveImage,
     householdSaveFile,
-    userLoadAuth: (username, service) => userDataService.getAuthToken(username, service),
-    userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
+    userLoadAuth: (username, service) => dataService.user.read(`auth/${service}`, username),
+    userSaveAuth: (username, service, data) => dataService.user.write(`auth/${service}`, data, username),
   };
 
   const harvesterServices = createHarvesterServices({
     io: harvesterIo,
     httpClient: axios,
     configService,
-    userDataService,
     dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
     aiGateway: sharedAiGateway, // Shared OpenAI adapter
@@ -1598,13 +1607,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let createGratitudeCardCanvas = null;
   try {
     const { createGratitudeCardRenderer } = await import('#rendering/gratitude/GratitudeCardRenderer.mjs');
+    const { selectItemsForPrint } = await import('#domains/gratitude/services/PrintSelectionService.mjs');
     const householdId = configService.getDefaultHouseholdId();
+    // Print-selection POLICY (how many of each category go on a card) is an
+    // application decision — the renderer just draws what it is handed.
+    const GRATITUDE_PRINT_COUNTS = { gratitude: 2, hopes: 2 };
     const renderer = createGratitudeCardRenderer({
       getSelectionsForPrint: async () => {
-        return gratitudeServices.gratitudeService.getSelectionsForPrint(
+        const selections = await gratitudeServices.gratitudeService.getSelectionsForPrint(
           householdId,
           (userId) => userService.resolveGroupLabel(userId)
         );
+        if (!selections) return null;
+        const nowMs = Date.now();
+        const pick = (items, count) => (items?.length > 0
+          ? selectItemsForPrint(items, count, nowMs).map(s => ({
+            id: s.id,
+            text: s.item.text,
+            displayName: s.displayName
+          }))
+          : []);
+        return {
+          gratitude: pick(selections.gratitude, GRATITUDE_PRINT_COUNTS.gratitude),
+          hopes: pick(selections.hopes, GRATITUDE_PRINT_COUNTS.hopes),
+        };
       },
       fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
     });
@@ -1656,7 +1682,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
-    const { NutriReportRenderer } = await import('#adapters/nutribot/rendering/NutriReportRenderer.mjs');
+    const { NutriReportRenderer } = await import('#rendering/nutribot/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
       logger: rootLogger.child({ module: 'nutribot-renderer' }),
       fontDir: configService.getPath('font'),
@@ -1700,12 +1726,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Piano kiosk API — per-user studio, preferences, lesson progress, and
-  // course video progress. fitnessPlayableService provides Plex enrichment
-  // for the /courses/:id/playable endpoint.
-  v1Routers.piano = createPianoRouter({
+  // course video progress. Composition root: build the persistence adapter +
+  // PianoContainer (persistence + the two course algorithms), inject the
+  // container into the thin router. fitnessPlayableService provides Plex
+  // enrichment for the /courses/:id/playable + /courses/progress endpoints.
+  const pianoStudioDatastore = new YamlPianoStudioDatastore({
     configService,
+    userService,
+    logger: rootLogger.child({ module: 'piano-datastore' })
+  });
+  const pianoContainer = new PianoContainer({
+    studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
+    configService,
+    logger: rootLogger.child({ module: 'piano-api' })
+  });
+  v1Routers.piano = createPianoRouter({
+    pianoContainer,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
@@ -1722,13 +1760,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const { StravaWebhookAdapter } = await import('./1_adapters/strava/StravaWebhookAdapter.mjs');
       const { StravaWebhookJobStore } = await import('./1_adapters/strava/StravaWebhookJobStore.mjs');
       const { FitnessActivityEnrichmentService } = await import('./3_applications/fitness/FitnessActivityEnrichmentService.mjs');
-      const { StravaReconciliationService } = await import('./3_applications/fitness/StravaReconciliationService.mjs');
+      const { ActivityReconciliationService } = await import('./3_applications/fitness/ActivityReconciliationService.mjs');
+      const { buildSelectionConfig } = await import('#domains/fitness/services/selectPrimaryMedia.mjs');
 
       const stravaClient = new StravaClientAdapter({
         httpClient: axios,
         configService,
         logger: rootLogger.child({ module: 'strava-client' }),
       });
+
+      // Resolve fitness config at the composition root and inject pre-resolved
+      // values into the use cases (they stay provider-/config-agnostic).
+      const stravaPlexConfig = configService.getAppConfig('fitness')?.plex || {};
+      const stravaSelectionConfig = buildSelectionConfig(stravaPlexConfig);
+      const stravaLookbackDays = stravaPlexConfig.reconciliation_lookback_days ?? 10;
+      const stravaTimezone = configService.getTimezone?.() || 'America/Los_Angeles';
 
       const stravaVerifyToken = configService.getSystemAuth?.('strava', 'verify_token') || '';
       const stravaWebhookAdapter = new StravaWebhookAdapter({
@@ -1741,20 +1787,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         logger: rootLogger.child({ module: 'strava-jobs' }),
       });
 
-      stravaReconciliationService = new StravaReconciliationService({
-        stravaClient,
-        configService,
+      stravaReconciliationService = new ActivityReconciliationService({
+        activityGateway: stravaClient,
+        lookbackDays: stravaLookbackDays,
+        selectionConfig: stravaSelectionConfig,
+        timezone: stravaTimezone,
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
         logger: rootLogger.child({ module: 'strava-reconciliation' }),
       });
 
       stravaEnrichmentService = new FitnessActivityEnrichmentService({
-        stravaClient,
+        activityGateway: stravaClient,
         jobStore,
         authStore: {
           loadUserAuth: (provider, username) => configService.getUserAuth?.(provider, username),
         },
         configService,
+        selectionConfig: stravaSelectionConfig,
+        resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
         fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
         reconciliationService: stravaReconciliationService,
         logger: rootLogger.child({ module: 'strava-enrichment' }),
@@ -2068,8 +2118,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.trigger = triggerRouter;
 
   // Camera feeds
-  const { createCameraServices } = await import('#apps/camera/index.mjs');
+  const { createCameraServices } = await import('#composition/bootstrap.mjs');
   const { cameraService } = createCameraServices({
+    configService,
     householdId,
     haGateway: homeAutomationAdapters.haGateway,
     logger: rootLogger.child({ module: 'camera' }),
@@ -2139,7 +2190,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const nutribotAiGateway = sharedAiGateway;
 
   const messagingServices = createMessagingServices({
-    userDataService,
+    dataService,
     telegram: {
       token: configService.getSystemAuth('telegram', 'nutribot') || ''  // Default adapter uses nutribot token
     },
@@ -2166,7 +2217,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   // Per-user storage: users/{username}/conversations/nutribot/
   const nutribotStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'nutribot',
     userResolver,
     logger: rootLogger.child({ module: 'nutribot-state' })
@@ -2177,7 +2228,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const nutribotServices = await createNutribotServices({
     configService,
-    userDataService,
+    dataService,
     telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
     upcGateway,
@@ -2220,7 +2271,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for journalist
   // Per-user storage: users/{username}/conversations/journalist/
   const journalistStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'journalist',
     userResolver,
     logger: rootLogger.child({ module: 'journalist-state' })
@@ -2261,7 +2312,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create conversation state store for homebot
   // Per-user storage: users/{username}/conversations/homebot/
   const homebotStateStore = new YamlConversationStateDatastore({
-    userDataService,
+    dataService,
     botName: 'homebot',
     userResolver,
     logger: rootLogger.child({ module: 'homebot-state' })
@@ -2515,9 +2566,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // NewsReporter — surfaces configured reporters as scheduler jobs and runs them.
-  const newsReporter = NewsReporterContainer.build({
+  // Adapters/renderer are constructed in bootstrap (createNewsReporterServices);
+  // the container receives instances (Decision D1).
+  const newsReporter = createNewsReporterServices({
     configService,
-    agentRuntimeDeps: { mediaDir: mediaBasePath || null },
+    mediaDir: mediaBasePath || null,
     printerRegistry: hardwareAdapters.printerRegistry,
     dataService,
     httpClient: axios,
@@ -2611,6 +2664,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'auth-api' })
   });
 
+  // Admin app-services — constructed at the composition root and injected into the
+  // admin router so 4_api/**/admin/* never imports #apps. Persistence + rules live
+  // in these services; the sub-routers are thin HTTP shells.
+  const adminApiLogger = rootLogger.child({ module: 'admin-api' });
+  const householdAdminService = new HouseholdAdminService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
+  });
+  const yamlConfigFileService = new YamlConfigFileService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'config' }) || adminApiLogger
+  });
+  const appsConfigService = new AppsConfigService({
+    configService,
+    logger: adminApiLogger.child?.({ submodule: 'apps' }) || adminApiLogger
+  });
+  const schedulerAdminService = new SchedulerAdminService({
+    configService,
+    // Real manual-run path: the same orchestrator the scheduling loop uses.
+    schedulerOrchestrator,
+    logger: adminApiLogger.child?.({ submodule: 'scheduler' }) || adminApiLogger
+  });
+  const integrationsQueryService = new IntegrationsQueryService({
+    configService,
+    // Environment resolved at the composition root (was process.env in the router).
+    environment: process.env.DAYLIGHT_ENV || 'docker',
+    logger: adminApiLogger.child?.({ submodule: 'integrations' }) || adminApiLogger
+  });
+
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
     userDataService,
@@ -2619,7 +2701,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     mediaDownloadService,
     eventBus,
-    logger: rootLogger.child({ module: 'admin-api' })
+    householdAdminService,
+    yamlConfigFileService,
+    appsConfigService,
+    schedulerAdminService,
+    integrationsQueryService,
+    logger: adminApiLogger
   });
 
   // Test infrastructure router (dev/test only)

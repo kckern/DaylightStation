@@ -1,27 +1,43 @@
 import { PassThrough } from 'stream';
 import path from 'path';
 import { StreamChannel } from '../../2_domains/livestream/StreamChannel.mjs';
-import { SourceFeeder } from '../../2_domains/livestream/SourceFeeder.mjs';
-import { FFmpegStreamAdapter } from '../../1_adapters/livestream/FFmpegStreamAdapter.mjs';
 import { ProgramRunner } from '../../2_domains/livestream/ProgramRunner.mjs';
 
 /**
  * ChannelManager — application service for livestream channels.
  *
  * Orchestrates channel lifecycle: create/destroy, wire up
- * FFmpegStreamAdapter ↔ SourceFeeder ↔ StreamChannel, route commands.
+ * stream adapter ↔ source feeder ↔ StreamChannel, route commands.
+ * Concrete adapters (FFmpegStreamAdapter, SourceFeeder) are supplied as
+ * factory functions by the composition root.
  */
 export class ChannelManager {
   #channels = new Map();    // name → { channel, adapter, feeder, runner }
   #mediaBasePath;
   #programsBasePath;
   #broadcastEvent;
+  #createStreamAdapter;
+  #createSourceFeeder;
   #logger;
 
-  constructor({ mediaBasePath, programsBasePath, broadcastEvent, logger = console }) {
+  /**
+   * @param {Object} config
+   * @param {string} config.mediaBasePath
+   * @param {string} [config.programsBasePath]
+   * @param {Function} config.broadcastEvent
+   * @param {Function} config.createStreamAdapter - ({ format, bitrate, logger }) => stream adapter
+   * @param {Function} config.createSourceFeeder - ({ encoderStdin, onTrackEnd, onNeedTrack, logger }) => feeder
+   * @param {Object} [config.logger]
+   */
+  constructor({ mediaBasePath, programsBasePath, broadcastEvent, createStreamAdapter, createSourceFeeder, logger = console }) {
+    if (typeof createStreamAdapter !== 'function' || typeof createSourceFeeder !== 'function') {
+      throw new Error('ChannelManager: createStreamAdapter and createSourceFeeder factories are required — inject them from the composition root');
+    }
     this.#mediaBasePath = mediaBasePath;
     this.#programsBasePath = programsBasePath;
     this.#broadcastEvent = broadcastEvent;
+    this.#createStreamAdapter = createStreamAdapter;
+    this.#createSourceFeeder = createSourceFeeder;
     this.#logger = logger;
   }
 
@@ -29,12 +45,12 @@ export class ChannelManager {
     if (this.#channels.has(name)) throw new Error(`Channel "${name}" already exists`);
 
     const channel = new StreamChannel({ name, ...config });
-    const adapter = new FFmpegStreamAdapter({
+    const adapter = this.#createStreamAdapter({
       format: channel.format, bitrate: channel.bitrate, logger: this.#logger,
     });
     const encoderStdin = adapter.start();
 
-    const feeder = new SourceFeeder({
+    const feeder = this.#createSourceFeeder({
       encoderStdin,
       onTrackEnd: () => { channel.setCurrentTrack(null); this.#broadcast(name); },
       onNeedTrack: () => this.#feedNext(name),

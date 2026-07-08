@@ -68,7 +68,7 @@ describe('HealthArchiveManifest', () => {
       category: 'scans',
       lastSync: new Date(Date.now() - 3 * 86400000).toISOString(),
     });
-    expect(m.stalenessDays()).toBeGreaterThanOrEqual(2);
-    expect(m.stalenessDays()).toBeLessThanOrEqual(4);
+    expect(m.stalenessDays(Date.now())).toBeGreaterThanOrEqual(2);
+    expect(m.stalenessDays(Date.now())).toBeLessThanOrEqual(4);
   });
 });

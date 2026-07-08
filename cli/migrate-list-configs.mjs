@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { load, dump } from 'js-yaml';
-import { normalizeListItem } from '../backend/src/1_adapters/content/list/listConfigNormalizer.mjs';
+import { normalizeListItem } from '../backend/src/2_domains/content/utils/listConfigNormalizer.mjs';
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');

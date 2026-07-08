@@ -1,32 +1,33 @@
 import { NotificationService } from './NotificationService.mjs';
-import { AppNotificationAdapter } from '#adapters/notification/AppNotificationAdapter.mjs';
-import { TelegramNotificationAdapter } from '#adapters/notification/TelegramNotificationAdapter.mjs';
-import { EmailNotificationAdapter } from '#adapters/notification/EmailNotificationAdapter.mjs';
-import { PushNotificationAdapter } from '#adapters/notification/PushNotificationAdapter.mjs';
 import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 
 /**
  * DI container for the notification domain.
+ *
+ * Receives channel adapter INSTANCES via options (Decision D1: containers
+ * never import or construct concrete adapter classes — the composition
+ * root builds them and injects here).
  */
 export class NotificationContainer {
   #notificationService;
   #options;
 
+  /**
+   * @param {Object} options
+   * @param {Array<Object>} options.adapters - Channel notification adapter
+   *   instances (e.g. app/telegram/email/push), constructed at the
+   *   composition root.
+   * @param {Function} [options.preferenceLoader] - username -> NotificationPreference
+   * @param {Object} [options.logger]
+   */
   constructor(options = {}) {
     this.#options = options;
   }
 
   getNotificationService() {
     if (!this.#notificationService) {
-      const adapters = [
-        new AppNotificationAdapter({ eventBus: this.#options.eventBus }),
-        new TelegramNotificationAdapter({ telegramAdapter: this.#options.telegramAdapter }),
-        new EmailNotificationAdapter(),
-        new PushNotificationAdapter(),
-      ];
-
       this.#notificationService = new NotificationService({
-        adapters,
+        adapters: this.#options.adapters || [],
         preferenceLoader: this.#options.preferenceLoader
           || (() => new NotificationPreference({})),
         logger: this.#options.logger,

@@ -15,7 +15,7 @@ import {
   ensureDir,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
-import { normalizeListConfig, serializeListConfig } from '#adapters/content/list/listConfigNormalizer.mjs';
+import { normalizeListConfig, serializeListConfig } from '#domains/content/utils/listConfigNormalizer.mjs';
 import { IListStore } from '#apps/content/ports/IListStore.mjs';
 
 // Valid list types

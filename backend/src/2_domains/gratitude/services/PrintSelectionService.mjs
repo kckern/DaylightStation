@@ -14,13 +14,16 @@
  *
  * @param {Array} items - Items to select from, each with datetime and printCount properties
  * @param {number} count - Number of items to select
+ * @param {number} now - Current time as epoch ms (caller-supplied)
  * @returns {Array} Selected items
  */
-export function selectItemsForPrint(items, count) {
+export function selectItemsForPrint(items, count, now) {
   if (!items || items.length === 0) return [];
   if (items.length <= count) return [...items];
 
-  const now = Date.now();
+  if (typeof now !== 'number' || !Number.isFinite(now)) {
+    throw new Error('selectItemsForPrint(items, count, now): now (epoch ms) is required');
+  }
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   const bucketDefs = [

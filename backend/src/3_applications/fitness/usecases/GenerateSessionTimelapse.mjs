@@ -82,7 +82,7 @@ export class GenerateSessionTimelapse {
       cadenceDevices: cadenceDevices || null, cadenceColors: cadenceColors || null
     });
     if (!descriptors.length) {
-      session.markTimelapseSkipped('no-captures');
+      session.markTimelapseSkipped('no-captures', Date.now());
       await sessionDatastore.save(session, householdId);
       // The single most likely "why is there no recap?" cause — make it loud.
       logger.warn?.('fitness.timelapse.skipped', {
@@ -91,7 +91,7 @@ export class GenerateSessionTimelapse {
       return { status: 'skipped' };
     }
 
-    session.markTimelapseProcessing();
+    session.markTimelapseProcessing(Date.now());
     await sessionDatastore.save(session, householdId);
     logger.info?.('fitness.timelapse.started', {
       sessionId, speedup, fps, frames: descriptors.length,
@@ -163,7 +163,7 @@ export class GenerateSessionTimelapse {
       // untouched (it only removes the temp dir), so a re-run can retry instead of
       // destroying the only copy of the screenshots.
       if (!(Number(sizeBytes) > 0)) throw new Error('mp4-not-written');
-      session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written });
+      session.attachTimelapse({ videoPath: `media/${relPath}`, durationSeconds, fps, frameCount: written, now: Date.now() });
       await sessionDatastore.save(session, householdId);
 
       // Plex-library copy: a TV-convention hardlink (`Family Fitness - SxxExx - …`)
@@ -193,7 +193,7 @@ export class GenerateSessionTimelapse {
       return { status: 'ready', ...session.timelapse };
     } catch (err) {
       safeRm(fileIO, tmpDir);
-      session.markTimelapseFailed(err);
+      session.markTimelapseFailed(err, Date.now());
       await sessionDatastore.save(session, householdId);
       logger.error?.('fitness.timelapse.failed', {
         sessionId, stage, error: err.message, code: err.code || null, totalMs: Date.now() - startedAt

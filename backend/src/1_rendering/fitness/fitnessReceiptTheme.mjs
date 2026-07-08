@@ -36,6 +36,18 @@ export const fitnessReceiptTheme = {
     chartHeader: 'bold 16px "Roboto Condensed"',
     chartTime: '14px "Roboto Condensed"',
     eventLabel: '14px "Roboto Condensed"',
+    histLabel: '11px "Roboto Condensed"',
+  },
+
+  // Header section vertical advances. Shared by the height pre-calculation AND
+  // the draw pass so the two can't desync.
+  header: {
+    topPad: 10,
+    titleAdvance: 55,
+    dateAdvance: 30,
+    durationAdvance: 30,
+    namesAdvance: 30,
+    gap: 10,
   },
 
   colors: {
@@ -48,6 +60,7 @@ export const fitnessReceiptTheme = {
   chart: {
     zoneWidths: { cool: 2, active: 6, warm: 12, hot: 18, fire: 24 },
     zoneSymbolMap: { c: 'cool', a: 'active', w: 'warm', h: 'hot', fire: 'fire' },
+    headerHeight: 25,
     downsampleTarget: 300,
     columnGap: 8,
     rowHeight: 3,
@@ -61,12 +74,18 @@ export const fitnessReceiptTheme = {
   treasureBox: {
     barHeight: 24,
     barMargin: 40,
+    coinAdvance: 70,
   },
 
   leaderboard: {
+    headerHeight: 40,
     histogramHeight: 70,
     histogramBuckets: 10,
     rowHeight: 230,
+    // Thermal is 1-bit: zones render as scanline fill density (line every N px;
+    // 0 = solid). Higher intensity -> denser fill.
+    zoneDensity: { cool: 6, active: 4, warm: 3, hot: 2, fire: 0 },
+    zoneLabels: { cool: 'Cool', active: 'Active', warm: 'Warm', hot: 'Hot', fire: 'Fire' },
   },
 };
 

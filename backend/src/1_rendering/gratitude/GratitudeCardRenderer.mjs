@@ -8,16 +8,23 @@
  */
 
 import moment from 'moment-timezone';
-import { selectItemsForPrint } from '#domains/gratitude/services/PrintSelectionService.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
-import { flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
+import { drawBorder, flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
+import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
 
 /**
  * Create a gratitude card renderer with dependency injection.
  *
+ * The renderer draws what it receives: WHICH items go on the card (and how
+ * many) is decided by the caller (application layer) — the callback returns
+ * already-selected items, not a candidate pool.
+ *
  * @param {Object} config - Configuration object
- * @param {Function} config.getSelectionsForPrint - Async function that returns { gratitude: [], hopes: [] }
+ * @param {Function} config.getSelectionsForPrint - Async function returning the
+ *   ALREADY-SELECTED items to print:
+ *   { gratitude: [{ id, text, displayName }], hopes: [{ id, text, displayName }] }
+ *   (or null when there is nothing to print)
  * @param {string} [config.fontDir] - Font directory path (optional)
  * @returns {Object} Renderer with createCanvas method
  */
@@ -36,39 +43,22 @@ export function createGratitudeCardRenderer(config) {
     const margin = theme.layout.margin;
     const lineHeight = theme.layout.lineHeight;
     const itemMaxWidth = width - margin * 2 - 40;
-    const fontPath = fontDir
-      ? `${fontDir}/${theme.fonts.fontPath}`
-      : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
 
+    // Already selected by the caller — the renderer never decides what prints.
     const selections = await getSelectionsForPrint();
     if (!selections) return null;
 
-    const gratitudeItems = selections.gratitude || [];
-    const hopesItems = selections.hopes || [];
+    const selectedGratitude = selections.gratitude || [];
+    const selectedHopes = selections.hopes || [];
 
-    const selectedGratitude = gratitudeItems.length > 0
-      ? selectItemsForPrint(gratitudeItems, theme.selection.gratitudeCount).map(s => ({
-        id: s.id,
-        text: s.item.text,
-        displayName: s.displayName
-      }))
-      : [];
-
-    const selectedHopes = hopesItems.length > 0
-      ? selectItemsForPrint(hopesItems, theme.selection.hopesCount).map(s => ({
-        id: s.id,
-        text: s.item.text,
-        displayName: s.displayName
-      }))
-      : [];
-
-    const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
-
-    try {
-      registerFont(fontPath, { family: fontFamily });
-    } catch (fontError) {
-      // Font loading is optional - will fall back to system fonts
-    }
+    // Registers the card font (falls back to system fonts if unavailable).
+    const { createNodeCanvas } = await initCanvas({
+      width: 1,
+      height: 1,
+      fontDir,
+      fontFile: theme.fonts.fontPath,
+      fontFamily,
+    });
 
     // Calculate height needed for an item (wrapped text + optional attribution)
     function calculateItemHeight(item) {
@@ -113,14 +103,11 @@ export function createGratitudeCardRenderer(config) {
     ctx.fillRect(0, 0, width, height);
 
     // Black border
-    ctx.strokeStyle = theme.colors.border;
-    ctx.lineWidth = theme.layout.borderWidth;
-    ctx.strokeRect(
-      theme.layout.borderOffset,
-      theme.layout.borderOffset,
-      width - theme.layout.borderOffset * 2,
-      height - theme.layout.borderOffset * 2
-    );
+    drawBorder(ctx, width, height, {
+      offset: theme.layout.borderOffset,
+      lineWidth: theme.layout.borderWidth,
+      color: theme.colors.border,
+    });
 
     // Draw an item with text wrapping and contributor attribution
     function drawItem(item, startY, indent, maxWidth) {

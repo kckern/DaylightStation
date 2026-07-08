@@ -10,7 +10,7 @@ import {
   NotFoundError,
   ConflictError
 } from '#system/utils/errors/index.mjs';
-import { extractContentId, extractActionName } from '#adapters/content/list/listConfigNormalizer.mjs';
+import { extractContentId, extractActionName } from '#domains/content/utils/listConfigNormalizer.mjs';
 
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];

@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/placeholderImage.unit.test.mjs
-import { generatePlaceholderImage } from '#backend/src/0_system/utils/placeholderImage.mjs';
+import { generatePlaceholderImage } from '#backend/src/1_rendering/placeholder/placeholderImage.mjs';
 
 describe('placeholderImage', () => {
   describe('generatePlaceholderImage', () => {

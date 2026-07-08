@@ -23,6 +23,7 @@ import {
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
+import { selectPrimaryMedia } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -381,15 +382,14 @@ export class YamlSessionDatastore extends ISessionDatastore {
               parentId: ItemId.normalize(d.parentId, source),
             };
           };
-          // Pick longest-duration as primary
-          let primaryIdx = 0;
-          for (let i = 1; i < mediaEvents.length; i++) {
-            const durI = (mediaEvents[i].data?.end || 0) - (mediaEvents[i].data?.start || 0);
-            const durP = (mediaEvents[primaryIdx].data?.end || 0) - (mediaEvents[primaryIdx].data?.start || 0);
-            if (durI > durP) primaryIdx = i;
-          }
+          // Primary derivation is a domain policy (4-tier cascade); delegate to
+          // the fitness domain service rather than duplicating a "pick longest"
+          // loop here. Falls back to the first media event only when the domain
+          // returns null (every event is audio) to preserve the prior contract
+          // that a session with media events always surfaces a primary.
+          const primaryEvent = selectPrimaryMedia(mediaEvents) || mediaEvents[0];
           media = {
-            primary: formatFromEvent(mediaEvents[primaryIdx]),
+            primary: formatFromEvent(primaryEvent),
           };
         }
 

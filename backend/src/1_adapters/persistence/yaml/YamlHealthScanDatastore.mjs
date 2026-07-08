@@ -27,7 +27,7 @@ import fs from 'node:fs/promises';
 import yaml from 'js-yaml';
 
 import { HealthScan } from '#domains/health/entities/HealthScan.mjs';
-import { HealthArchiveScope } from '#domains/health/services/HealthArchiveScope.mjs';
+import { HealthArchiveScope } from '#apps/health/archive/HealthArchiveScope.mjs';
 import { IHealthScanDatastore } from '#apps/health/ports/IHealthScanDatastore.mjs';
 
 const SCAN_FILE_EXT = '.yml';

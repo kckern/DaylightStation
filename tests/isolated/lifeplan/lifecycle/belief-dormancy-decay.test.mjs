@@ -32,7 +32,7 @@ describe('Belief Dormancy Decay', () => {
     sim.runCycles(10, 7); // 10 weeks = 70 days
 
     // Belief should now be dormant
-    expect(sim.plan.beliefs[0].isDormant()).toBe(true);
+    expect(sim.plan.beliefs[0].isDormant(Date.now())).toBe(true);
   });
 
   it('adding evidence updates evidence history', () => {

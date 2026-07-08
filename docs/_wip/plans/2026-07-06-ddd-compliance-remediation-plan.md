@@ -877,11 +877,13 @@ The XL one. Order matters; each sub-task independently shippable.
 **Deliberately out of scope:** shrinking app.mjs's 1,950-line router section into modules is folded into sub-task E only where a factory already exists; a full app.mjs rewrite is follow-on work — record remaining size in the commit body.
 
 **Exit criteria:**
-- [ ] `test -d backend/src/0_system/bootstrap` → fails; `test -f backend/src/5_composition/bootstrap.mjs` → passes
-- [ ] audit `system-no-upward` → 0 (true zero — the exemption now covers only `5_composition/`); baseline updated
-- [ ] `grep -n "fetch(\|readFileSync" backend/src/5_composition/bootstrap.mjs` → 0 (business logic extracted)
-- [ ] `grep -rn "#adapters" backend/src/3_applications --include='*Container.mjs'` → 0
-- [ ] GATE-UNIT, GATE-IMPORT; dev-server smoke boot if available
+- [x] `test -d backend/src/0_system/bootstrap` → fails; `test -f backend/src/5_composition/bootstrap.mjs` → passes
+- [x] audit `system-no-upward` → 0 (true zero — the exemption now covers only `5_composition/`); baseline unchanged at 0
+- [x] `grep -n "fetch(\|readFileSync" backend/src/5_composition/bootstrap.mjs` → 0 (business logic extracted)
+- [x] `grep -rn "#adapters" backend/src/3_applications --include='*Container.mjs'` → 0
+- [x] GATE-UNIT (410/23), GATE-IMPORT, GATE-REFACTOR (95); dev-server smoke boot: 5 endpoints 200, 0 boot errors
+
+**Status: DONE 2026-07-08.** All 18 `create*ApiRouter*` factories (incl. the content `createApiRouters` aggregate) live in `5_composition/modules/`; bootstrap.mjs 4454 → 3509 lines. app.mjs full modularization remains follow-on.
 
 **Commits:** one per sub-task.
 

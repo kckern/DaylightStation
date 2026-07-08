@@ -1,7 +1,7 @@
 // tests/isolated/domain/health/services/MetricAggregator.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { MetricAggregator } from '../../../../../backend/src/2_domains/health/services/MetricAggregator.mjs';
-import { PeriodResolver } from '../../../../../backend/src/2_domains/health/services/PeriodResolver.mjs';
+import { MetricAggregator } from '../../../../../backend/src/3_applications/health/analytics/MetricAggregator.mjs';
+import { PeriodResolver } from '../../../../../backend/src/3_applications/health/analytics/PeriodResolver.mjs';
 
 const NOW = new Date('2026-05-05T12:00:00Z');
 const fixedNow = () => NOW;
