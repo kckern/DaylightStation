@@ -133,6 +133,18 @@ export class DataService {
       },
 
       /**
+       * Resolve a raw path within a user's data tree (no extension handling).
+       * @param {string} [relativePath] - Path relative to user directory ('' → user root)
+       * @param {string} [username] - Username (defaults to head of household)
+       * @returns {string} Full absolute path
+       */
+      resolveDir(relativePath = '', username = null) {
+        const user = username ?? self.#configService.getHeadOfHousehold();
+        const dataDir = self.#configService.getDataDir();
+        return path.join(dataDir, 'users', user, relativePath);
+      },
+
+      /**
        * Read user data file
        * @param {string} relativePath - Path relative to user directory (e.g., 'lifelog/nutrition')
        * @param {string} [username] - Username (defaults to head of household)
@@ -178,6 +190,17 @@ export class DataService {
       },
 
       /**
+       * Resolve a raw path within a household's data tree (no extension handling).
+       * @param {string} [relativePath] - Path relative to household directory ('' → household root)
+       * @param {string} [householdId] - Household ID (defaults to default household)
+       * @returns {string} Full absolute path
+       * @throws {ConfigurationError} If the household is not in config
+       */
+      resolveDir(relativePath = '', householdId = null) {
+        return self.#configService.getHouseholdPath(relativePath || null, householdId);
+      },
+
+      /**
        * Read household data file
        * @param {string} relativePath - Path relative to household directory (e.g., 'common/weather')
        * @param {string} [householdId] - Household ID (defaults to default household)
@@ -219,6 +242,16 @@ export class DataService {
         const dataDir = self.#configService.getDataDir();
         const fullPath = path.join(dataDir, 'system', relativePath);
         return ensureExtension(fullPath);
+      },
+
+      /**
+       * Resolve a raw path within the system data tree (no extension handling).
+       * @param {string} [relativePath] - Path relative to system directory ('' → system root)
+       * @returns {string} Full absolute path
+       */
+      resolveDir(relativePath = '') {
+        const dataDir = self.#configService.getDataDir();
+        return path.join(dataDir, 'system', relativePath);
       },
 
       /**

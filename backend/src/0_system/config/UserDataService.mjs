@@ -28,7 +28,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { configService } from './index.mjs';
+import { configService, dataService } from './index.mjs';
 import { toFolderName } from './configLoader.mjs';
 import { createLogger } from '../logging/logger.mjs';
 
@@ -97,6 +97,15 @@ const ensureDir = (dirPath) => {
   }
 };
 
+/**
+ * Flatten path segments (which may themselves contain '/') into a single
+ * relative path string. Empty segments are dropped.
+ * @param {string[]} segments
+ * @returns {string}
+ */
+const flattenSegments = (segments) =>
+  segments.flatMap(s => s.split('/').filter(Boolean)).join('/');
+
 class UserDataService {
   #dataDir = null;
   #initialized = false;
@@ -151,7 +160,7 @@ class UserDataService {
       return null;
     }
     this.#ensureInitialized();
-    return path.join(this.#dataDir, 'users', username);
+    return dataService.user.resolveDir('', username);
   }
 
   /**
@@ -164,8 +173,7 @@ class UserDataService {
     if (!userDir) return null;
 
     // Handle segments that may include nested paths
-    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
-    return path.join(userDir, ...flatSegments);
+    return dataService.user.resolveDir(flattenSegments(segments), username);
   }
 
   /**
@@ -205,7 +213,7 @@ class UserDataService {
     ];
 
     for (const subdir of subdirs) {
-      ensureDir(path.join(userDir, subdir));
+      ensureDir(this.getUserDataPath(username, subdir));
     }
 
     logger.info('user-data.directory-created', { username });
@@ -224,7 +232,7 @@ class UserDataService {
       if (name.startsWith('.') || name.startsWith('_') || name === 'example') {
         return false;
       }
-      const stat = fs.statSync(path.join(usersDir, name));
+      const stat = fs.statSync(this.getUserDir(name));
       return stat.isDirectory();
     });
   }
@@ -240,20 +248,7 @@ class UserDataService {
    * @returns {string|null}
    */
   getHouseholdDir(householdId) {
-    if (!householdId) {
-      logger.warn('user-data.missing-household-id');
-      return null;
-    }
-    try {
-      // Delegate to ConfigService for proper path resolution
-      return configService.getHouseholdPath(null, householdId);
-    } catch (err) {
-      // Fallback if household not found in config (shouldn't happen in normal operation)
-      logger.warn('user-data.household-not-in-config', { householdId, error: err.message });
-      this.#ensureInitialized();
-      if (!this.#dataDir) return null;
-      return path.join(this.#dataDir, toFolderName(householdId));
-    }
+    return this.getHouseholdDataPath(householdId);
   }
 
   /**
@@ -263,10 +258,7 @@ class UserDataService {
    * @returns {string|null}
    */
   getHouseholdSharedPath(householdId, ...segments) {
-    const householdDir = this.getHouseholdDir(householdId);
-    if (!householdDir) return null;
-    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
-    return path.join(householdDir, 'shared', ...flatSegments);
+    return this.getHouseholdDataPath(householdId, 'shared', ...segments);
   }
 
   /**
@@ -287,15 +279,15 @@ class UserDataService {
     // For config reads (e.g., readHouseholdAppData(hid, 'fitness', 'config')),
     // check if config/<appName>.yml exists in the new location first
     if (flatSegments.length <= 1 && (!flatSegments[0] || flatSegments[0] === 'config')) {
-      const configDirPath = path.join(householdDir, 'config', `${appName}.yml`);
+      const configDirPath = this.getHouseholdDataPath(householdId, 'config', `${appName}.yml`);
       if (fs.existsSync(configDirPath)) {
         // Return path without extension — caller adds .yml
-        return path.join(householdDir, 'config', appName);
+        return this.getHouseholdDataPath(householdId, 'config', appName);
       }
     }
 
     // Legacy fallback: apps/<appName>/<segments> (deprecated - directory removed)
-    return path.join(householdDir, 'apps', appName, ...flatSegments);
+    return this.getHouseholdDataPath(householdId, 'apps', appName, ...flatSegments);
   }
 
   /**
@@ -402,7 +394,7 @@ class UserDataService {
     ];
 
     for (const subdir of subdirs) {
-      ensureDir(path.join(householdDir, subdir));
+      ensureDir(this.getHouseholdDataPath(householdId, subdir));
     }
 
     logger.info('user-data.household-directory-created', { householdId });
@@ -417,10 +409,21 @@ class UserDataService {
    * @returns {string|null}
    */
   getHouseholdDataPath(householdId, ...segments) {
-    const householdDir = this.getHouseholdDir(householdId);
-    if (!householdDir) return null;
-    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
-    return path.join(householdDir, ...flatSegments);
+    if (!householdId) {
+      logger.warn('user-data.missing-household-id');
+      return null;
+    }
+    const rel = flattenSegments(segments);
+    try {
+      // Delegate to DataService (→ ConfigService) for proper path resolution
+      return dataService.household.resolveDir(rel, householdId);
+    } catch (err) {
+      // Fallback if household not found in config (shouldn't happen in normal operation)
+      logger.warn('user-data.household-not-in-config', { householdId, error: err.message });
+      this.#ensureInitialized();
+      if (!this.#dataDir) return null;
+      return path.join(this.#dataDir, toFolderName(householdId), rel);
+    }
   }
 
   /**
@@ -735,8 +738,7 @@ class UserDataService {
   getSystemPath(...segments) {
     this.#ensureInitialized();
     if (!this.#dataDir) return null;
-    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
-    return path.join(this.#dataDir, 'system', ...flatSegments);
+    return dataService.system.resolveDir(flattenSegments(segments));
   }
 
   /**
