@@ -1,8 +1,100 @@
 import moment from "moment";
-import React, { useEffect, useState } from "react";
-import { Drawer } from "../drawer";
+import React from "react";
 import { formatAsCurrency } from "../blocks";
+import { EmptyState } from "../EmptyState.jsx";
 import { Menu, Button, Group } from '@mantine/core';
+import { pressable } from "../lib/a11y.mjs";
+
+export const loadAnticipatedTransactions = (budget, month, key) => {
+  const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
+  const accountName = "Anticipated";
+  switch (key) {
+    case "month":
+      return [
+        ...loadAnticipatedTransactions(budget, month, "fixed"),
+        ...loadAnticipatedTransactions(budget, month, "day"),
+        ...loadAnticipatedTransactions(budget, month, "income")
+      ];
+    case "income":
+      return budget["monthlyBudget"][month].incomeTransactions.map((paycheck) => ({
+        date: paycheck.date,
+        accountName,
+        amount: paycheck.amount,
+        expenseAmount: paycheck.amount,
+        description: paycheck.description || "Paycheck",
+        tagNames: ["Income"],
+        label: 'Income',
+        bucket: 'income'
+      }));
+    case "fixed":
+      return Object.keys(budget["monthlyBudget"][month].monthlyCategories).map((cat) => ({
+        date,
+        accountName,
+        amount: budget["monthlyBudget"][month].monthlyCategories[cat].amount,
+        expenseAmount: budget["monthlyBudget"][month].monthlyCategories[cat].amount,
+        description: cat,
+        tagNames: [cat],
+        label: cat
+      }));
+    case "day":
+      return [{
+        date,
+        accountName,
+        amount: budget["dayToDayBudget"][month].budget,
+        expenseAmount: budget["dayToDayBudget"][month].budget,
+        description: "Day-to-Day Spending",
+        tagNames: ["Day-to-Day"],
+        label: "Day-to-Day Spending",
+        bucket: "day"
+      }];
+  }
+  return [];
+};
+
+export const loadCellTransactions = (budget, month, key) => {
+  if (!month) {
+    return Object.keys(budget["monthlyBudget"]).flatMap(m => loadCellTransactions(budget, m, key));
+  }
+
+  const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
+  if (isFuture) {
+    return loadAnticipatedTransactions(budget, month, key);
+  }
+  switch (key) {
+    case "month":
+      return [
+        ...loadCellTransactions(budget, month, "fixed"),
+        ...loadCellTransactions(budget, month, "day"),
+        ...loadCellTransactions(budget, month, "income")
+      ];
+    case "fixed":
+      return Object.keys(budget["monthlyBudget"][month].monthlyCategories).flatMap(cat => budget["monthlyBudget"][month].monthlyCategories[cat].transactions) || [];
+    case "day":
+      return budget["dayToDayBudget"][month].transactions || [];
+    case "income":
+      return budget["monthlyBudget"][month].incomeTransactions || [];
+    default:
+      return [];
+  }
+};
+
+const EMPTY_AGGREGATE = {
+  income: 0, nonBonusIncome: 0, spending: 0, surplus: 0,
+  monthlySpending: 0, monthlyDebits: 0, monthlyCredits: 0,
+  dayToDaySpending: 0, incomeTransactions: [], monthlyCategories: {}
+};
+
+export const getPeriodData = (budget, month) => {
+  if (!month) {
+    // Whole-period rollup is compiled backend-side (SSoT); the empty
+    // fallback covers a pre-recompile finances.yml (or a missing budget).
+    return { month: budget?.aggregate || EMPTY_AGGREGATE };
+  }
+  return {
+    month: budget?.monthlyBudget?.[month],
+    daytoday: budget?.dayToDayBudget?.[month]
+  };
+};
 
 export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
   const recentMonths = monthKeys.slice(-6); // Get the most recent 6 months
@@ -20,7 +112,7 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
             >{olderMonths.length} Previous Months</Button>
           </Menu.Target>
           <Menu.Dropdown>
-            {olderMonths.reverse().map((month) => {
+            {[...olderMonths].reverse().map((month) => {
               const monthLabel = moment(month, "YYYY-MM").format("MMM ‘YY");
               return (
                 <Menu.Item key={month} onClick={() => setActiveMonth(month)}>
@@ -67,177 +159,20 @@ export const MonthTabs = ({ monthKeys, activeMonth, setActiveMonth }) => {
 function BudgetTable({ setDrawerContent, budget }) {
   const activeBudget = budget;
 
-  const loadAnticipatedTransactions = (month, key) => {
-    const date = moment(month, "YYYY-MM").endOf('month').format("YYYY-MM-DD");
-    const accountName = "Anticipated";
-    switch (key) {
-      case "month":
-        return [...loadAnticipatedTransactions(month, "fixed"), ...loadAnticipatedTransactions(month, "day"), ...loadAnticipatedTransactions(month, "income")];
-      case "income":
-        return activeBudget["monthlyBudget"][month].incomeTransactions.map((paycheck) => ({
-          date: paycheck.date,
-          accountName,
-          amount: paycheck.amount,
-          expenseAmount: paycheck.amount,
-          description: paycheck.description || "Paycheck",
-          tagNames: ["Income"],
-          label: 'Income',
-          bucket: 'income'
-        }));
-      case "fixed":
-        return Object.keys(activeBudget["monthlyBudget"][month].monthlyCategories).map((cat) => ({
-          date,
-          accountName,
-          amount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
-          expenseAmount: activeBudget["monthlyBudget"][month].monthlyCategories[cat].amount,
-          description: cat,
-          tagNames: [cat],
-          label: cat
-        }));
-      case "day":
-        return [{
-          date,
-          accountName,
-          amount: activeBudget["dayToDayBudget"][month].budget,
-          expenseAmount: activeBudget["dayToDayBudget"][month].budget,
-          description: "Day-to-Day Spending",
-          tagNames: ["Day-to-Day"],
-          label: "Day-to-Day Spending",
-          bucket: "day"
-        }];
-    }
-    return [];
+  if (!activeBudget.monthlyBudget || Object.keys(activeBudget.monthlyBudget).length === 0) {
+    return <EmptyState message="No budget months in this period" />;
   }
-  const loadTransactions = (month, key) => {
-    if (!month) {
-      return Object.keys(activeBudget["monthlyBudget"]).flatMap(m => loadTransactions(m, key));
-    }
-
-    const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
-    if (isFuture) {
-      return loadAnticipatedTransactions(month, key);
-    }
-    switch (key) {
-      case "month":
-        return [...loadTransactions(month, "fixed"), ...loadTransactions(month, "day"), ...loadTransactions(month, "income")];
-      case "fixed":
-        return Object.keys(activeBudget["monthlyBudget"][month].monthlyCategories).flatMap(cat => activeBudget["monthlyBudget"][month].monthlyCategories[cat].transactions) || [];
-      case "day":
-        return activeBudget["dayToDayBudget"][month].transactions || [];
-      case "income":
-        return activeBudget["monthlyBudget"][month].incomeTransactions || [];
-      default:
-        return [];
-    }
-  }
-
-  function getPeriodData(month, key) {
-    const allMonths = Object.keys(activeBudget["monthlyBudget"]);
-  
-    if (!month) {
-      const aggregatedData = {
-        month: {
-          income: 0,
-          nonBonusIncome: 0,
-          spending: 0,
-          surplus: 0,
-          monthlySpending: 0,
-          monthlyDebits: 0,
-          monthlyCredits: 0,
-          dayToDaySpending: 0,
-          incomeTransactions: [],
-          monthlyCategories: {}
-        },
-        daytoday: {
-          spending: 0,
-          budget: 0,
-          balance: 0,
-          transactions: [],
-          dailyBalances: {},
-          spent: 0,
-          daysRemaining: 0,
-          dailySpend: 0,
-          dailyBudget: null,
-          dailyAdjustment: null,
-          adjustPercentage: null
-        }
-      };
-  
-      allMonths.forEach(m => {
-        const currentMonthData = activeBudget["monthlyBudget"][m] || {};
-        const currentDayToDayData = activeBudget["dayToDayBudget"][m] || {};
-  
-        aggregatedData.month.income            += currentMonthData.income            || 0;
-        aggregatedData.month.nonBonusIncome    += currentMonthData.nonBonusIncome    || 0;
-        aggregatedData.month.spending         += currentMonthData.spending          || 0;
-        aggregatedData.month.surplus          += currentMonthData.surplus           || 0;
-        aggregatedData.month.monthlySpending  += currentMonthData.monthlySpending   || 0;
-        aggregatedData.month.monthlyDebits    += currentMonthData.monthlyDebits     || 0;
-        aggregatedData.month.monthlyCredits   += currentMonthData.monthlyCredits    || 0;
-        aggregatedData.month.dayToDaySpending += currentMonthData.dayToDaySpending  || 0;
-  
-        const monthIncomeTransactions = currentMonthData.incomeTransactions || [];
-        aggregatedData.month.incomeTransactions.push(...monthIncomeTransactions);
-  
-        const currentCategories = currentMonthData.monthlyCategories || {};
-        Object.keys(currentCategories).forEach(cat => {
-          if (!aggregatedData.month.monthlyCategories[cat]) {
-            aggregatedData.month.monthlyCategories[cat] = {
-              amount: 0,
-              credits: 0,
-              debits: 0,
-              transactions: []
-            };
-          }
-          aggregatedData.month.monthlyCategories[cat].amount   += currentCategories[cat].amount   || 0;
-          aggregatedData.month.monthlyCategories[cat].credits  += currentCategories[cat].credits  || 0;
-          aggregatedData.month.monthlyCategories[cat].debits   += currentCategories[cat].debits   || 0;
-          aggregatedData.month.monthlyCategories[cat].transactions.push(...(currentCategories[cat].transactions || []));
-        });
-  
-        aggregatedData.daytoday.spending += currentDayToDayData.spending || 0;
-        aggregatedData.daytoday.budget   += currentDayToDayData.budget   || 0;
-        aggregatedData.daytoday.balance  += currentDayToDayData.balance  || 0;
-        aggregatedData.daytoday.spent    += currentDayToDayData.spent    || 0;
-  
-        const dayTransactions = currentDayToDayData.transactions || [];
-        aggregatedData.daytoday.transactions.push(...dayTransactions);
-  
-        const dailyBalances = currentDayToDayData.dailyBalances || {};
-        Object.keys(dailyBalances).forEach(day => {
-          if (!aggregatedData.daytoday.dailyBalances[day]) {
-            aggregatedData.daytoday.dailyBalances[day] = { ...dailyBalances[day] };
-          } else {
-            aggregatedData.daytoday.dailyBalances[day].credits          += dailyBalances[day].credits          || 0;
-            aggregatedData.daytoday.dailyBalances[day].debits           += dailyBalances[day].debits           || 0;
-            aggregatedData.daytoday.dailyBalances[day].transactionCount += dailyBalances[day].transactionCount || 0;
-            aggregatedData.daytoday.dailyBalances[day].endingBalance    += dailyBalances[day].endingBalance    || 0;
-          }
-        });
-      });
-  
-      return aggregatedData;
-    }
-  
-    const periodData = {
-      month: activeBudget["monthlyBudget"][month],
-      daytoday: activeBudget["dayToDayBudget"][month]
-    };
-    console.log("Period data", month, key, periodData);
-    return periodData;
-  }
-
 
   const handleCellClick = (month, key) => {
-
-
-    const transactions = loadTransactions(month, key).sort((a, b) => b.amount - a.amount);
-    const periodData = getPeriodData(month, key);
     const monthString = month ? moment(month, "YYYY-MM").format("MMM ‘YY") : "Entire Budget Period";
     const isFuture = moment(month, "YYYY-MM").isAfter(moment().startOf('month'));
     const header = key === "income" ? "Income" : key === "fixed" ? "Operating Expenses" : key === "day" ? "Day-to-Day Spending" : "Cash Flow";
-    const content = <Drawer transactions={transactions} cellKey={key} periodData={periodData} />;
-    setDrawerContent({ jsx: content, meta: { title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}` } });
+    setDrawerContent({
+      type: 'monthly-cell',
+      title: `${isFuture ? "Anticipated" : ""}  ${header} for ${monthString}`,
+      month,
+      cellKey: key
+    });
   }
 
 
@@ -255,13 +190,17 @@ function BudgetTable({ setDrawerContent, budget }) {
 
       const {income, monthlySpending, dayToDaySpending, surplus} = periodData;
       const surplusClassName = surplus >= 0 ? "surplus positive" : "surplus negative";
+      // Cells are role=button (keyboard-operable), which drops their implicit
+      // table-cell row/column context — a screen reader would otherwise
+      // announce a bare "$20,209". Give each an explicit self-describing name.
+      const full = monthMoment.format("MMMM YYYY");
       return (
         <tr key={month} className={rowClassName}>
-          <td onClick={() => handleCellClick(month, 'month')}>{monthMoment.format("MMM ‘YY")}</td>
-          <td onClick={() => handleCellClick(month, 'income')}>{formatAsCurrency(income)}</td>
-          <td onClick={() => handleCellClick(month, 'fixed')}>{formatAsCurrency(monthlySpending)}</td>
-          <td onClick={() => handleCellClick(month, 'day')}>{formatAsCurrency(dayToDaySpending)}</td>
-          <td onClick={()=>handleCellClick(month, 'month')} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'), { 'aria-label': `${full} cash flow` })}>{monthMoment.format("MMM ‘YY")}</td>
+          <td {...pressable(() => handleCellClick(month, 'income'), { 'aria-label': `${full} income: ${formatAsCurrency(income)}` })}>{formatAsCurrency(income)}</td>
+          <td {...pressable(() => handleCellClick(month, 'fixed'), { 'aria-label': `${full} monthly spending: ${formatAsCurrency(monthlySpending)}` })}>{formatAsCurrency(monthlySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'day'), { 'aria-label': `${full} day-to-day spending: ${formatAsCurrency(dayToDaySpending)}` })}>{formatAsCurrency(dayToDaySpending)}</td>
+          <td {...pressable(() => handleCellClick(month, 'month'), { 'aria-label': `${full} surplus: ${formatAsCurrency(surplus || 0)}` })} className={surplusClassName}>{formatAsCurrency(surplus || 0)}</td>
         </tr>
       );
     });
@@ -269,13 +208,16 @@ function BudgetTable({ setDrawerContent, budget }) {
     const surplusClassName = totalSurplus >= 0 ? "surplus positive" : "surplus negative";
     
 
+    const totalIncome = months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0);
+    const totalMonthly = months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0);
+    const totalDayToDay = months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0);
     const sumRow = (
       <tr key="sum" className="sum">
-      <td onClick={() => handleCellClick(null, 'month')}>Total</td>
-      <td onClick={() => handleCellClick(null, 'income')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.income || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'fixed')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.monthlySpending || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'day')}>{formatAsCurrency(months.reduce((acc, month) => acc + (monthlyBudget[month]?.dayToDaySpending || 0), 0))}</td>
-      <td onClick={() => handleCellClick(null, 'month')} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'), { 'aria-label': 'Whole budget period cash flow' })}>Total</td>
+      <td {...pressable(() => handleCellClick(null, 'income'), { 'aria-label': `Total income: ${formatAsCurrency(totalIncome)}` })}>{formatAsCurrency(totalIncome)}</td>
+      <td {...pressable(() => handleCellClick(null, 'fixed'), { 'aria-label': `Total monthly spending: ${formatAsCurrency(totalMonthly)}` })}>{formatAsCurrency(totalMonthly)}</td>
+      <td {...pressable(() => handleCellClick(null, 'day'), { 'aria-label': `Total day-to-day spending: ${formatAsCurrency(totalDayToDay)}` })}>{formatAsCurrency(totalDayToDay)}</td>
+      <td {...pressable(() => handleCellClick(null, 'month'), { 'aria-label': `Total surplus: ${formatAsCurrency(totalSurplus)}` })} className={surplusClassName}>{formatAsCurrency(totalSurplus)}</td>
       </tr>
     );
 

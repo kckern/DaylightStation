@@ -324,6 +324,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
             nowPlaying={launch.person}
             playStartedAt={launch.startedAt}
             resolveMediaUrl={(p) => DaylightMediaPath(p)}
+            showInputActivity={settings.inputActivityLed !== false}
             onExit={handleExitGame}
           />
           {anonymousSaveGame && (

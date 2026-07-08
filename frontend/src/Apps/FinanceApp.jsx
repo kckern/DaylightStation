@@ -1,163 +1,69 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Button, MantineProvider, Select, TextInput } from '@mantine/core';
+import { useState, useMemo } from 'react';
+import { Button, MantineProvider, Select, Drawer } from '@mantine/core';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import { BudgetHoldings,  BudgetSpending} from '../modules/Finances/blocks.jsx';
+import { BudgetHoldings, BudgetSpending } from '../modules/Finances/blocks.jsx';
 import { BudgetMortgage } from '../modules/Finances/blocks/mortgage.jsx';
 import { BudgetCashFlow } from '../modules/Finances/blocks/monthly.jsx';
 import { BudgetShortTerm } from '../modules/Finances/blocks/shortterm.jsx';
 import { BudgetDayToDay } from '../modules/Finances/blocks/daytoday.jsx';
-import { Drawer } from '@mantine/core';
-import 'react-modern-drawer/dist/index.css'
-import "./FinanceApp.scss"
+import { useFinanceData } from '../modules/Finances/hooks/useFinanceData.mjs';
+import { FinanceDataContext } from '../modules/Finances/FinanceDataContext.jsx';
+import { FinanceErrorBoundary } from '../modules/Finances/FinanceErrorBoundary.jsx';
+import DrawerHost from '../modules/Finances/DrawerHost.jsx';
+import 'react-modern-drawer/dist/index.css';
+import './FinanceApp.scss';
 import '@mantine/core/styles.css';
 import spinner from '../assets/icons/spinner.svg';
 import moment from 'moment';
 import { getChildLogger } from '../lib/logging/singleton.js';
 
-const isLocalhost = /localhost/.test(window.location.href);
-
-export const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
 const financeLogger = getChildLogger({ app: 'finance' });
-
-const fetchBudget = async () => {
-  const response = await fetch(`${baseUrl}/api/v1/finance/data`);
-  const data = await response.json();
-  return data;
-}
-
-const reloadBudget = async () => {
-  await fetch(`${baseUrl}/api/v1/finance/refresh`, { method: 'POST' });
-}
-
-const syncPayroll = async (token) => {
-  const url = `${baseUrl}/api/v1/finance/payroll/sync`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(token ? { token } : {})
-  });
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Payroll sync failed');
-  }
-  return response.json();
-}
-
 
 export default function App() {
   useDocumentTitle('Finances');
-  const [budgetData, setBudgetData] = useState(null);
-  const [mortgageData, setMortgageData] = useState(null);
-  useEffect(() => {
-    fetchBudget().then(({budgets,mortgage}) => { setBudgetData(budgets); setMortgageData(mortgage); });
-  }, []);
+  const finance = useFinanceData();
+  const { data, error, load, retry } = finance;
+
   return (
     <MantineProvider>
-      {budgetData ? (
-        <BudgetViewer budget={budgetData} mortgage={mortgageData} setBudgetData={setBudgetData} />
-      ) : (
-        <div style={{ padding: '1rem' }}>
-          <div
-            style={{
-              border: '1px solid #e0e0e0',
-              borderRadius: '8px',
-              backgroundColor: '#f8f9fa',
-              padding: '1rem',
-              textAlign: 'center',
-              color: '#495057',
-            }}
-          >
+      {error && (
+        <div className="finance-error-banner">
+          <strong>{error.source === 'refresh' ? 'Refresh failed — showing the last loaded data.' : 'Failed to load finance data.'}</strong>
+          <div className="finance-error-detail">{String(error.error?.message || error.error)}</div>
+          <Button onClick={retry} variant="outline" color="red">Retry</Button>
+        </div>
+      )}
+      {!error && !data && (
+        <div className="finance-loading">
+          <div className="finance-loading-card">
             <strong>Loading...</strong>
           </div>
         </div>
+      )}
+      {data && (
+        <FinanceErrorBoundary>
+          <BudgetViewer budget={data.budgets} mortgage={data.mortgage} finance={finance} />
+        </FinanceErrorBoundary>
       )}
     </MantineProvider>
   );
 }
 
-function ReloadButton({setBudgetData}) {
-
-  const [reloading, setReloading] = useState(false);
-  const handleClick = async () => {
-    setReloading(true);
-    await reloadBudget();
-    const newData = await fetchBudget()
-    setBudgetData(newData.budgets);
-    setReloading(false);
-  }
-  return <button
-    style={{float: 'right'}} className={reloading ? 'reload reloading' : 'reload'} onClick={handleClick}>{reloading  ? <img src={spinner} alt="loading" /> : '🔄'}</button>
-
-}
-
-function PayrollSyncContent({ onClose }) {
-  const [token, setToken] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    setError(null);
-    setResult(null);
-    try {
-      const response = await syncPayroll(token);
-      setResult(response);
-      financeLogger.info('finance.payroll.sync.success', { response });
-    } catch (err) {
-      setError(err.message);
-      financeLogger.error('finance.payroll.sync.error', { error: err.message });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
+function ReloadButton({ finance }) {
+  const { refresh, refreshing } = finance;
   return (
-    <div style={{ padding: '1rem' }}>
-      <p style={{ marginBottom: '1rem', color: '#666' }}>
-        Enter your payroll session token to sync paychecks. Leave empty to use stored credentials.
-      </p>
-      <TextInput
-        label="Session Token"
-        placeholder="Paste token here (optional)"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        disabled={syncing}
-        style={{ marginBottom: '1rem' }}
-      />
-      <Button
-        onClick={handleSync}
-        loading={syncing}
-        disabled={syncing}
-        fullWidth
-      >
-        {syncing ? 'Syncing...' : 'Sync Payroll'}
-      </Button>
-      {error && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fee', borderRadius: '4px', color: '#c00' }}>
-          {error}
-        </div>
-      )}
-      {result && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#efe', borderRadius: '4px', color: '#060' }}>
-          Payroll synced successfully!
-        </div>
-      )}
-    </div>
+    <button
+      className={refreshing ? 'reload reloading' : 'reload'}
+      onClick={refresh}
+      disabled={refreshing}
+      aria-label="Refresh finance data"
+    >
+      {refreshing ? <img src={spinner} alt="loading" /> : '🔄'}
+    </button>
   );
 }
 
-
-
-
-function Header({
-  availableBudgetKeys = [],
-  activeBudgetKey,
-  setActiveBudgetKey,
-  setBudgetData,
-  setDrawerContent,
-}) {
-  // Transform available budget keys into data for the Select component
+function Header({ availableBudgetKeys = [], activeBudgetKey, setActiveBudgetKey, finance, setDrawerContent }) {
   const budgetOptions = useMemo(() => (
     availableBudgetKeys.map((key) => ({
       value: key,
@@ -165,35 +71,25 @@ function Header({
     }))
   ), [availableBudgetKeys]);
 
-  // Default to the first key if activeBudgetKey is missing
-  const defaultValue = activeBudgetKey || budgetOptions?.[0]?.value || '';
-
-
   const handleChange = (value) => {
     financeLogger.info('finance.budget.change', { value });
-    const isSameAsactiveBudgetKey = value === activeBudgetKey;
-    if (isSameAsactiveBudgetKey) {
-      return;
-    }
-    if (availableBudgetKeys.includes(value) === false) {
+    if (value === activeBudgetKey) return;
+    if (!availableBudgetKeys.includes(value)) {
       financeLogger.error('finance.budget.invalidKey', { value, availableKeys: availableBudgetKeys });
       return;
     }
     setActiveBudgetKey(value);
-  }
+  };
 
   return (
     <header>
-      <h1 style={{ display: 'flex', alignItems: 'center', padding: '0 1rem' }}>
-        <div style={{ flex: 1 }} />
-
-        {/* Centered, subtle "title" dropdown */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+      <h1 className="finance-header-bar">
+        <div className="finance-header-spacer" />
+        <div className="finance-header-center">
           <Select
             data={budgetOptions}
-            value={defaultValue}
+            value={activeBudgetKey}
             onChange={handleChange}
-            // Make the font size larger since it acts as a page title
             styles={{
               input: {
                 fontSize: '1.5rem',
@@ -204,26 +100,19 @@ function Header({
                 color: 'white',
                 cursor: 'pointer',
               },
-              rightSection: {
-                pointerEvents: 'none',
-              },
+              rightSection: { pointerEvents: 'none' },
             }}
-            rightSection={<span style={{ fontSize: '1rem' }}>▼</span>}
-            // Remove placeholder since we auto-select the first value
+            rightSection={<span className="finance-header-caret">▼</span>}
             clearable={false}
           />
         </div>
-
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <ReloadButton setBudgetData={setBudgetData} />
+        <div className="finance-header-actions">
+          <ReloadButton finance={finance} />
           <button
             className="payroll-btn"
-            onClick={() => setDrawerContent({
-              meta: { title: 'Sync Payroll' },
-              jsx: <PayrollSyncContent onClose={() => setDrawerContent(null)} />
-            })}
+            onClick={() => setDrawerContent({ type: 'payroll', title: 'Sync Payroll' })}
             title="Sync Payroll"
-            style={{ fontSize: '1.5rem', cursor: 'pointer', background: 'none', border: 'none', marginLeft: '0.5rem' }}
+            aria-label="Sync payroll"
           >
             💰
           </button>
@@ -233,10 +122,8 @@ function Header({
   );
 }
 
-export function BudgetViewer({ budget, mortgage, setBudgetData }) {
-
+export function BudgetViewer({ budget, mortgage, finance }) {
   const [drawerContent, setDrawerContent] = useState(null);
-  const [budgetBlockDimensions, setBudgetBlockDimensions] = useState({ width: null, height: null });
 
   const [activeBudgetKey, setActiveBudgetKey] = useState(() => {
     const keys = Object.keys(budget);
@@ -249,44 +136,40 @@ export function BudgetViewer({ budget, mortgage, setBudgetData }) {
   });
   const activeBudget = budget[activeBudgetKey];
   const availableBudgetKeys = Object.keys(budget);
+  const financeContextValue = useMemo(() => ({ reload: finance.load }), [finance.load]);
+
   return (
-    <div className="budget-viewer">
-      <Header
-        availableBudgetKeys={availableBudgetKeys}
-        activeBudgetKey={activeBudgetKey}
-        setActiveBudgetKey={setActiveBudgetKey}
-        setBudgetData={setBudgetData}
-        setDrawerContent={setDrawerContent}
-      />
-      <Drawer
-        opened={!!drawerContent}
-        onClose={() => setDrawerContent(null)}
-        title={drawerContent?.meta?.title}
-        size="90vw"
-        position="right"
-        padding="md"
-        className="txn-drawer"
-      >
-        {drawerContent?.jsx || drawerContent}
-      </Drawer>
-      <div className="grid-container">
-        <BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} />
-        <BudgetShortTerm
+    <FinanceDataContext.Provider value={financeContextValue}>
+      <div className="budget-viewer">
+        <Header
+          availableBudgetKeys={availableBudgetKeys}
+          activeBudgetKey={activeBudgetKey}
+          setActiveBudgetKey={setActiveBudgetKey}
+          finance={finance}
           setDrawerContent={setDrawerContent}
-          budget={activeBudget}
-          budgetBlockDimensions={budgetBlockDimensions}
         />
-        <BudgetDayToDay
-          setDrawerContent={setDrawerContent}
-          budget={activeBudget}
-          budgetBlockDimensions={budgetBlockDimensions}
-        />
-        <BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} />
-        <BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} />
-        <BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} />
+        <Drawer
+          opened={!!drawerContent}
+          onClose={() => setDrawerContent(null)}
+          title={drawerContent?.title}
+          size="90vw"
+          position="right"
+          padding="md"
+          className="txn-drawer"
+        >
+          <FinanceErrorBoundary label="Drawer">
+            <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />
+          </FinanceErrorBoundary>
+        </Drawer>
+        <div className="grid-container">
+          <FinanceErrorBoundary label="Monthly Cash Flow"><BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Short Term Savings"><BudgetShortTerm setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Day-to-day Spending"><BudgetDayToDay setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Spending"><BudgetSpending setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Mortgage"><BudgetMortgage setDrawerContent={setDrawerContent} mortgage={mortgage} /></FinanceErrorBoundary>
+          <FinanceErrorBoundary label="Transfers"><BudgetHoldings setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>
+        </div>
       </div>
-    </div>
+    </FinanceDataContext.Provider>
   );
-
-
 }

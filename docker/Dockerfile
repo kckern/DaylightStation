@@ -59,4 +59,12 @@ RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
 
 ENV NODE_ENV=production
 EXPOSE 3111
+
+# Liveness probe: an alive-but-unresponsive process (event-loop stall, swap
+# thrash) stays "up" and is invisible to --restart unless-stopped, which only
+# fires on process EXIT. This healthcheck marks the container unhealthy so an
+# autoheal watcher can bounce it. curl is already installed (Layer 1).
+HEALTHCHECK --interval=30s --timeout=8s --start-period=90s --retries=3 \
+  CMD curl -fsS http://localhost:3111/ || exit 1
+
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]

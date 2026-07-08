@@ -1,9 +1,14 @@
 import moment from "moment";
 import { formatAsCurrency } from "../blocks";
-import { Tabs, Badge, Table, Select, TextInput, Tooltip } from "@mantine/core";
+import { PALETTE, formatCompactCurrency } from "../lib/format.mjs";
+import { calculateCost } from "../lib/costOfCapital.mjs";
+import { EmptyState } from "../EmptyState.jsx";
+import { pressable } from "../lib/a11y.mjs";
+import { Tabs, Badge, Select, TextInput, Tooltip } from "@mantine/core";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { useState, useMemo } from 'react';
+import { useToday } from '../hooks/useToday.mjs';
 
 
 
@@ -11,35 +16,33 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
   const { accountId } = mortgage;
 
   const openDrawer = (tab = 'amortization') => {
-    setDrawerContent({
-      meta: { title: 'Mortgage Details' },
-      jsx: <MortgageDrawer mortgage={mortgage} defaultTab={tab} />
-    });
+    setDrawerContent({ type: 'mortgage', title: 'Mortgage Details', tab });
   };
 
   const handleTitleClick = () => {
     window.open(`https://www.buxfer.com/account?id=${accountId}`, "_blank");
   };
 
+  const hasData = !!(mortgage?.amortization?.length || mortgage?.paymentPlans?.length);
+
   return (
-    <div className="budget-block" style={{ display: 'flex', flexDirection: 'column' }}>
-      <h2 onClick={handleTitleClick} style={{ cursor: 'pointer', flexShrink: 0 }}>Mortgage</h2>
+    <div className="budget-block mortgage-flex-col">
+      <h2 className="mortgage-title" {...pressable(handleTitleClick, { 'aria-label': 'Open mortgage account in Buxfer (new tab)' })}>Mortgage</h2>
       <div
-        onClick={() => openDrawer('amortization')}
-        style={{ cursor: 'pointer', flex: 1, minHeight: 0, overflow: 'hidden' }}
+        className="mortgage-chart-trigger"
+        {...pressable(() => openDrawer('amortization'), { 'aria-label': 'Open mortgage details' })}
       >
-        <MortgageChart mortgage={mortgage} />
+        {hasData ? <MortgageChart mortgage={mortgage} /> : <EmptyState message="No mortgage data" />}
       </div>
     </div>
   );
 }
 
   export default function MortgageChart({ mortgage, zoomable = false }) {
-    if (!mortgage?.amortization && !mortgage?.transactions) return null;
-
+    const today = useToday();
     const { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines } = useMemo(() => {
       const todayMs = moment().valueOf();
-      const amort = mortgage.amortization || [];
+      const amort = mortgage?.amortization || [];
 
       // 1. Build sawtooth pastData using each record's actual asOfDate (not
       // its calendar-month label, which is the lender's billing-cycle name and
@@ -72,11 +75,6 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         return [endMs, record.cumulativeInterest];
       });
 
-      // 2. Determine last amortization month to avoid overlap with future series.
-      const lastAmortMonth = mortgage.amortization?.length
-        ? mortgage.amortization[mortgage.amortization.length - 1].month
-        : null;
-
       // 3. Build a future series for each payment plan.
       // First point anchors at TODAY with the first projection month's
       // startBalance (= currentBalance), joining seamlessly to the past
@@ -86,7 +84,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       // Plotting endBalance=0 at calendar month-end would create a flat tail
       // (artificial bend). Instead, interpolate the payoff date within the
       // month based on (partial last payment / full prior payment).
-      const futureSeries = mortgage.paymentPlans.map((plan) => {
+      const futureSeries = (mortgage?.paymentPlans || []).map((plan) => {
         const data = [];
         if (plan.months.length > 0) {
           data.push([todayMs, plan.months[0].startBalance]);
@@ -115,9 +113,9 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       });
 
       // 4. Compute xAxis bounds spanning amortization + future projections.
-      const amortMonths = (mortgage.amortization || []).map(r => moment(r.month, "YYYY-MM"));
-      const planEndMonths = mortgage.paymentPlans
-        .map(({ info }) => moment(info.payoffDate, "MMMM YYYY"))
+      const amortMonths = amort.map(r => moment(r.month, "YYYY-MM"));
+      const planEndMonths = (mortgage?.paymentPlans || [])
+        .map(({ info }) => moment(info.payoffMonth || info.payoffDate, ["YYYY-MM", "MMMM YYYY"]))
         .filter(m => m.isValid());
       const allMonths = [...amortMonths, ...planEndMonths].sort((a, b) => a.diff(b));
       const months = allMonths.length ? [allMonths[0], allMonths[allMonths.length - 1]] : [];
@@ -163,7 +161,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             x: 8,
             y: -8,
             formatter() {
-              return `<b>$${(this.y / 1000).toFixed(1)}k</b>`;
+              return `<b>${formatAsCurrency(this.y, 'K')}</b>`;
             },
             style: {
               color: '#1f2937',
@@ -176,7 +174,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       }
 
       return { months, pastData, cumulativeInterestData, futureSeries, maxY, monthTicks, yearLines };
-    }, [mortgage]);
+    }, [mortgage, today]);
   
     // Early-exit if we have no months at all:
     if (!months.length) return null;
@@ -225,7 +223,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           zIndex: 3
         })),
         {
-          color: '#dc2626',
+          color: PALETTE.today,
           width: 2,
           value: moment().valueOf(),
           dashStyle: 'ShortDash',
@@ -236,7 +234,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             align: 'left',
             x: 4,
             y: 12,
-            style: { color: '#dc2626', fontWeight: 'bold', fontSize: '11px' }
+            style: { color: PALETTE.today, fontWeight: 'bold', fontSize: '11px' }
           }
         }
       ]
@@ -251,7 +249,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         minorTickInterval: 25000,
         labels: {
           formatter() {
-            return `$${(this.value / 1000).toFixed(0)}k`;
+            return formatCompactCurrency(this.value);
           },
           style: { color: '#999' }
         },
@@ -273,7 +271,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         name: "Balance",
         type: "area",
         data: pastData,
-        color: "#4c8ffc",
+        color: PALETTE.balance,
         fillOpacity: 0.3,
         zIndex: 1
       },
@@ -281,7 +279,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         name: "Cumulative Interest",
         type: "area",
         data: cumulativeInterestData,
-        color: "#ff9800",
+        color: PALETTE.interest,
         fillOpacity: 0.25,
         zIndex: 0
       },
@@ -317,7 +315,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
     return (
       <div style={wrapperStyle}>
-      <div className="mortgage-summary-grid" style={{ flexShrink: 0 }}>
+      <div className="mortgage-summary-grid">
         {/* Row 1: headline numbers — Balance / Paid / Principal / Interest / Equity-per-month */}
         <Tooltip label="Current outstanding principal balance, anchored to Buxfer's most recent cached balance (post-statement activity bridges from the latest statement)." multiline w={280} withArrow>
           <div><span>Balance</span><b>{formatAsCurrency(balance, "K")}</b></div>
@@ -329,7 +327,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           <div><span>Principal</span><b>{formatAsCurrency(totalPrincipalPaid, "K")}</b></div>
         </Tooltip>
         <Tooltip label="Total interest paid to the lender so far — the cost of borrowing, gone forever." multiline w={260} withArrow>
-          <div><span>Interest</span><b style={{ color: '#ff9800' }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
+          <div><span>Interest</span><b style={{ color: PALETTE.interest }}>{formatAsCurrency(totalInterestPaid, "K")}</b></div>
         </Tooltip>
         <Tooltip label="Average monthly principal paydown across the loan's lifetime so far — your equity-building rate per month." multiline w={280} withArrow>
           <div><span>Equity/mo</span><b>{formatAsCurrency(monthlyEquity, "K")}</b></div>
@@ -337,7 +335,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
         {/* Row 2: companion ratios/totals — Total Cost / Total % / Principal % / Int. Ratio / Rent-per-month */}
         <Tooltip label="Original principal + total interest projected over the life of the loan at the historical payment pace. Your eventual all-in cost if you keep paying as you have been." multiline w={300} withArrow>
-          <div><span>Total Cost</span><b style={{ color: '#888' }}>{formatAsCurrency(totalExpectedCost, "K")}</b></div>
+          <div><span>Total Cost</span><b className="text-muted">{formatAsCurrency(totalExpectedCost, "K")}</b></div>
         </Tooltip>
         <Tooltip label="Share of the projected lifetime cost (principal + interest) that's been paid so far. Compare with Principal % — gap between them is the interest you've front-loaded." multiline w={320} withArrow>
           <div><span>Total %</span><b>{totalPctOff.toFixed(1)}%</b></div>
@@ -363,7 +361,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     );
   }
 
-  function MortgageDrawer({ mortgage, defaultTab = 'amortization' }) {
+  export function MortgageDrawer({ mortgage, defaultTab = 'amortization' }) {
     const [selectedPlanId, setSelectedPlanId] = useState(
       mortgage.paymentPlans[0]?.info?.id || null
     );
@@ -396,7 +394,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
     return (
       <div>
-      <div style={{ width: '100%', marginBottom: '1rem' }}>
+      <div className="mortgage-chart-wrap">
         <MortgageChart mortgage={mortgage} zoomable />
       </div>
       <Tabs defaultValue={defaultTab}>
@@ -407,7 +405,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
         </Tabs.List>
 
         <Tabs.Panel value="amortization" pt="md">
-          <div style={{ marginBottom: '1rem' }}>
+          <div className="mortgage-plan-select">
             <Select
               label="Payment Plan"
               data={mortgage.paymentPlans.map(p => ({ value: p.info.id, label: p.info.title }))}
@@ -416,7 +414,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
               style={{ maxWidth: 300 }}
             />
           </div>
-          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+          <div className="mortgage-table-scroll">
             <AmortizationTable months={combinedMonths} />
           </div>
         </Tabs.Panel>
@@ -435,7 +433,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
 
   function AmortizationTable({ months }) {
     return (
-      <table style={{ width: '100%' }} className="mortgage-table">
+      <table className="mortgage-table">
         <thead>
           <tr>
             <th>Date</th>
@@ -458,7 +456,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             const rows = [];
             rows.push(
               <tr key={`${record.month}-main`} className={className}>
-                <td style={{ textAlign: 'right' }}>
+                <td className="cell-right">
                   <Badge color={record.isFuture ? 'blue' : 'gray'}>{monthLabel}</Badge>
                 </td>
                 <td>{formatAsCurrency(record.openingBalance)}</td>
@@ -495,7 +493,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const maxInterest = Math.max(...paymentPlans.map(p => p.info.totalInterest));
 
     return (
-      <table style={{ width: '100%' }} className="mortgage-table">
+      <table className="mortgage-table">
         <thead>
           <tr>
             <th>Plan</th>
@@ -514,7 +512,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
               <tr key={info.id}>
                 <td>
                   <b>{info.title}</b>
-                  {info.subtitle && <div style={{ fontSize: '0.8em', color: '#888' }}>{info.subtitle}</div>}
+                  {info.subtitle && <div className="plan-subtitle">{info.subtitle}</div>}
                 </td>
                 <td>{info.payoffDate}</td>
                 <td>{formatAsCurrency(info.totalPaid, "K")}</td>
@@ -535,40 +533,32 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
     const [amount, setAmount] = useState(1000);
     const commonAmounts = [1000, 5000, 10000, 25000, 50000];
 
-    const calculateCost = (extraAmount, plan) => {
-      const currentBalance = mortgage.balance;
-      const rate = mortgage.interestRate;
+    const costFor = (extraAmount, plan) => calculateCost({
+      balance: mortgage.balance,
+      interestRate: mortgage.interestRate,
+      extraAmount,
+      plan
+    });
 
-      const baseInterest = plan.info.totalInterest;
-      const baseMonths = plan.info.totalPayments;
+    // Recomputes only when the typed amount or the mortgage changes.
+    const planCosts = useMemo(
+      () => mortgage.paymentPlans.map((plan) => ({ plan, cost: costFor(amount, plan) })),
+      [amount, mortgage]
+    );
 
-      let balance = currentBalance + extraAmount;
-      let totalInterest = 0;
-      let months = 0;
-      const monthlyRate = rate / 12;
-
-      while (balance > 0.01 && months < 1000) {
-        const interest = balance * monthlyRate;
-        totalInterest += interest;
-        balance += interest;
-
-        let payment = plan.months[months]?.amountPaid || plan.months[plan.months.length - 1]?.amountPaid || 0;
-        if (payment > balance) payment = balance;
-        balance -= payment;
-        months++;
-      }
-
-      const additionalInterest = Math.round((totalInterest - baseInterest) * 100) / 100;
-      const trueCost = extraAmount + additionalInterest;
-      const multiplier = trueCost / extraAmount;
-      const delayMonths = months - baseMonths;
-
-      return { additionalInterest, trueCost, multiplier, delayMonths };
-    };
+    // The quick-reference table does NOT depend on the typed amount —
+    // previously it re-simulated 5 amounts × N plans on every keystroke.
+    const quickReference = useMemo(
+      () => commonAmounts.map((amt) => ({
+        amt,
+        costs: mortgage.paymentPlans.map((plan) => costFor(amt, plan))
+      })),
+      [mortgage]
+    );
 
     return (
       <div>
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div className="coc-amount-wrap">
           <TextInput
             label="Amount to evaluate"
             type="number"
@@ -579,42 +569,34 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           />
         </div>
 
-        {mortgage.paymentPlans.map(plan => {
-          const cost = calculateCost(amount, plan);
-          return (
-            <div key={plan.info.id} style={{
-              marginBottom: '1rem',
-              padding: '1rem',
-              border: '1px solid #333',
-              borderRadius: '8px'
-            }}>
-              <div style={{ fontSize: '1.2em', marginBottom: '0.5rem' }}>
-                <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
-                <b style={{ color: '#ff9800' }}>{formatAsCurrency(cost.trueCost)}</b>
-                <span style={{ color: '#888', marginLeft: '0.5rem' }}>({plan.info.title})</span>
-              </div>
-              <table style={{ width: '100%', maxWidth: 400 }}>
-                <tbody>
-                  <tr>
-                    <td style={{ color: '#888' }}>Additional interest:</td>
-                    <td style={{ color: '#c00' }}>{formatAsCurrency(cost.additionalInterest)}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ color: '#888' }}>Cost multiplier:</td>
-                    <td>{cost.multiplier.toFixed(3)}×</td>
-                  </tr>
-                  <tr>
-                    <td style={{ color: '#888' }}>Payoff delay:</td>
-                    <td>+{cost.delayMonths} month{cost.delayMonths !== 1 ? 's' : ''}</td>
-                  </tr>
-                </tbody>
-              </table>
+        {planCosts.map(({ plan, cost }) => (
+          <div key={plan.info.id} className="coc-card">
+            <div className="coc-headline">
+              <b>{formatAsCurrency(amount)}</b> spent today costs you{' '}
+              <b style={{ color: PALETTE.interest }}>{formatAsCurrency(cost.trueCost)}</b>
+              <span className="coc-plan-label">({plan.info.title})</span>
             </div>
-          );
-        })}
+            <table className="coc-table">
+              <tbody>
+                <tr>
+                  <td className="text-muted">Additional interest:</td>
+                  <td className="text-debit">{formatAsCurrency(cost.additionalInterest)}</td>
+                </tr>
+                <tr>
+                  <td className="text-muted">Cost multiplier:</td>
+                  <td>{cost.multiplier.toFixed(3)}×</td>
+                </tr>
+                <tr>
+                  <td className="text-muted">Payoff delay:</td>
+                  <td>+{cost.delayMonths} month{cost.delayMonths !== 1 ? 's' : ''}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ))}
 
-        <h3 style={{ marginTop: '2rem' }}>Quick Reference</h3>
-        <table style={{ width: '100%' }} className="mortgage-table">
+        <h3 className="coc-quickref-title">Quick Reference</h3>
+        <table className="mortgage-table">
           <thead>
             <tr>
               <th>Amount</th>
@@ -624,18 +606,15 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             </tr>
           </thead>
           <tbody className="mortgage-table-body">
-            {commonAmounts.map(amt => (
+            {quickReference.map(({ amt, costs }) => (
               <tr key={amt}>
                 <td>{formatAsCurrency(amt)}</td>
-                {mortgage.paymentPlans.map(plan => {
-                  const cost = calculateCost(amt, plan);
-                  return (
-                    <td key={plan.info.id}>
-                      +{formatAsCurrency(cost.additionalInterest)}{' '}
-                      <span style={{ color: '#888' }}>({cost.multiplier.toFixed(2)}×)</span>
-                    </td>
-                  );
-                })}
+                {costs.map((cost, i) => (
+                  <td key={mortgage.paymentPlans[i].info.id}>
+                    +{formatAsCurrency(cost.additionalInterest)}{' '}
+                    <span className="text-muted">({cost.multiplier.toFixed(2)}×)</span>
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

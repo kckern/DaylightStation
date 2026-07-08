@@ -305,3 +305,69 @@ describe('EmulatorEngine confirmFirstFrame (success = observed, not resolved)', 
     await expect(engine.confirmFirstFrame({ timeoutMs: 80 })).resolves.toBe(false);
   });
 });
+
+describe('EmulatorEngine tapInput', () => {
+  it('forwards simulateInput args + return through the tap, and notifies cb', async () => {
+    const instance = makeFakeInstance();
+    const orig = vi.fn((p, i, v) => `${p}:${i}:${v}`);
+    instance.gameManager.functions.simulateInput = orig;
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    const seen = [];
+    const untap = engine.tapInput((p, i, v) => seen.push([p, i, v]));
+
+    const result = instance.gameManager.functions.simulateInput(0, 8, 1);
+    expect(result).toBe('0:8:1');        // original return preserved
+    expect(orig).toHaveBeenCalledWith(0, 8, 1); // original still called
+    expect(seen).toEqual([[0, 8, 1]]);   // cb saw the input
+
+    untap();
+    expect(instance.gameManager.functions.simulateInput).toBe(orig); // restored
+  });
+
+  it('never stacks wrappers on re-tap (restores original first)', async () => {
+    const instance = makeFakeInstance();
+    const orig = vi.fn();
+    instance.gameManager.functions.simulateInput = orig;
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+
+    const a = [];
+    const b = [];
+    engine.tapInput(() => a.push(1));
+    const untapB = engine.tapInput(() => b.push(1)); // re-tap
+    instance.gameManager.functions.simulateInput(0, 0, 1);
+    expect(a).toEqual([]);   // first tap was replaced, not stacked
+    expect(b).toEqual([1]);
+    untapB();
+    expect(instance.gameManager.functions.simulateInput).toBe(orig);
+  });
+
+  it('a throwing cb never breaks the input path', async () => {
+    const instance = makeFakeInstance();
+    const orig = vi.fn(() => 'ok');
+    instance.gameManager.functions.simulateInput = orig;
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    engine.tapInput(() => { throw new Error('boom'); });
+    expect(() => instance.gameManager.functions.simulateInput(0, 1, 1)).not.toThrow();
+    expect(orig).toHaveBeenCalledWith(0, 1, 1);
+  });
+
+  it('returns a no-op untap when simulateInput is unavailable', async () => {
+    const instance = makeFakeInstance();
+    delete instance.gameManager.functions.simulateInput;
+    const engine = createEmulatorEngine({ load: async () => instance, win: makeFakeWin() });
+    await engine.boot({ mount: '#m', romUrl: 'r', pathtodata: 'd/' });
+    const untap = engine.tapInput(() => {});
+    expect(typeof untap).toBe('function');
+    expect(() => untap()).not.toThrow();
+  });
+
+  it('guards when not ready', () => {
+    const engine = createEmulatorEngine({ load: async () => makeFakeInstance(), win: makeFakeWin() });
+    const untap = engine.tapInput(() => {});
+    expect(typeof untap).toBe('function');
+  });
+});

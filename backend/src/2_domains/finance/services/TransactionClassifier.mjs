@@ -12,6 +12,8 @@
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
+const FALLBACK_LABEL = 'Uncategorized';
+
 /**
  * @typedef {Object} BucketConfig
  * @property {Object} income - Income configuration
@@ -64,7 +66,7 @@ export class TransactionClassifier {
 
     // Build monthly tag dictionary: tag -> label
     this.#monthlyTagDict = (config.monthly || []).reduce((acc, { tags, label }) => {
-      const categoryLabel = label || 'Shopping';
+      const categoryLabel = label || FALLBACK_LABEL;
       tags?.forEach(tag => {
         acc[tag] = categoryLabel;
         acc[categoryLabel] = categoryLabel; // Also map label to itself
@@ -75,7 +77,7 @@ export class TransactionClassifier {
     // Build transfer tag dictionary: tags that route transfers to monthly
     // Uses transferTags from monthly config items if specified, otherwise falls back to label
     this.#transferTagDict = (config.monthly || []).reduce((acc, { tags, label, transferTags }) => {
-      const categoryLabel = label || 'Shopping';
+      const categoryLabel = label || FALLBACK_LABEL;
       if (transferTags) {
         transferTags.forEach(tag => { acc[tag] = categoryLabel; });
       }
@@ -84,12 +86,57 @@ export class TransactionClassifier {
 
     // Build short-term tag dictionary: tag -> label
     this.#shortTermTagDict = (config.shortTerm || []).reduce((acc, { tags, label }) => {
+      const bucketLabel = label || FALLBACK_LABEL;
       (tags || []).forEach(tag => {
-        acc[tag] = label;
-        acc[label] = label; // Also map label to itself
+        acc[tag] = bucketLabel;
+        acc[bucketLabel] = bucketLabel; // Also map label to itself
       });
       return acc;
     }, {});
+
+    this.#assertNoCrossBucketCollisions();
+  }
+
+  /**
+   * Every tag must route to exactly one bucket. classify() checks buckets in a
+   * fixed order (transfer → income → day → monthly → shortTerm), so a tag that
+   * appears in two namespaces is resolved silently by that order — a config
+   * error, not a feature. Fail loud at construction.
+   *
+   * The monthly/shortTerm dicts also map each category LABEL to itself
+   * (label-as-tag matching), so labels share this namespace too. transferTags
+   * route to the MONTHLY bucket, so a transferTag that also names a monthly tag
+   * lands in the same bucket and is NOT a collision.
+   * @private
+   */
+  #assertNoCrossBucketCollisions() {
+    const bucketOf = new Map();        // tag -> first bucket seen
+    const conflicts = new Map();       // tag -> Set<bucket>
+    const assign = (tag, bucket) => {
+      const prior = bucketOf.get(tag);
+      if (prior === undefined) { bucketOf.set(tag, bucket); return; }
+      if (prior === bucket) return;
+      const buckets = conflicts.get(tag) || new Set([prior]);
+      buckets.add(bucket);
+      conflicts.set(tag, buckets);
+    };
+
+    this.#incomeTags.forEach(t => assign(t, 'income'));
+    this.#dayToDayTags.forEach(t => assign(t, 'day'));
+    Object.keys(this.#monthlyTagDict).forEach(t => assign(t, 'monthly'));
+    Object.keys(this.#transferTagDict).forEach(t => assign(t, 'monthly'));
+    Object.keys(this.#shortTermTagDict).forEach(t => assign(t, 'shortTerm'));
+
+    if (conflicts.size > 0) {
+      const detail = [...conflicts.entries()]
+        .map(([tag, buckets]) => `${tag} (${[...buckets].sort().join('/')})`)
+        .sort()
+        .join(', ');
+      throw new ValidationError(
+        `Classifier config collision — tags route to multiple buckets: ${detail}`,
+        { code: 'CLASSIFIER_TAG_COLLISION', collisions: [...conflicts.keys()].sort() }
+      );
+    }
   }
 
   /**
@@ -124,16 +171,16 @@ export class TransactionClassifier {
       return { label: 'Day-to-Day', bucket: 'day' };
     }
 
-    // Check for monthly expenses
-    const monthlyTags = Object.keys(this.#monthlyTagDict);
-    if (this.#arraysOverlap(monthlyTags, txnTags)) {
-      return { label: this.#monthlyTagDict[mainTag] || 'Monthly', bucket: 'monthly' };
+    // Check for monthly expenses — label from the matching tag, wherever it sits
+    const monthlyTag = txnTags.find(tag => this.#monthlyTagDict[tag] !== undefined);
+    if (monthlyTag) {
+      return { label: this.#monthlyTagDict[monthlyTag], bucket: 'monthly' };
     }
 
     // Check for short-term buckets
-    const shortTermTags = Object.keys(this.#shortTermTagDict);
-    if (this.#arraysOverlap(shortTermTags, txnTags)) {
-      return { label: this.#shortTermTagDict[mainTag] || 'Short-term', bucket: 'shortTerm' };
+    const shortTermTag = txnTags.find(tag => this.#shortTermTagDict[tag] !== undefined);
+    if (shortTermTag) {
+      return { label: this.#shortTermTagDict[shortTermTag], bucket: 'shortTerm' };
     }
 
     // Default to unbudgeted (goes to short-term bucket)
@@ -161,28 +208,6 @@ export class TransactionClassifier {
     }
 
     return buckets;
-  }
-
-  /**
-   * Group transactions by their labels within a bucket
-   * @param {Transaction[]} transactions - Already classified transactions
-   * @param {'monthly'|'shortTerm'} bucketType - Bucket type to group
-   * @returns {Object<string, Transaction[]>} Transactions grouped by label
-   */
-  groupByLabel(transactions, bucketType) {
-    const grouped = {};
-
-    for (const txn of transactions) {
-      const { label, bucket } = this.classify(txn);
-      if (bucket !== bucketType) continue;
-
-      if (!grouped[label]) {
-        grouped[label] = [];
-      }
-      grouped[label].push({ ...txn, label, bucket });
-    }
-
-    return grouped;
   }
 
   /**

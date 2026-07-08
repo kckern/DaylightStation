@@ -202,6 +202,30 @@ async function main() {
         : `Development: backend on ${port}, Vite expected on ${appPort}`
     });
   });
+
+  // ==========================================================================
+  // Self-memory watchdog
+  // ==========================================================================
+  // The backend had no visibility into its own RSS, so a slow leak climbed to
+  // ~19.5 GB over ~4.75h on 2026-07-04 and took the host into swap-death before
+  // anyone noticed. Log the memory breakdown every 5 min so a climb is visible
+  // in the logs (and greppable) long before it becomes an outage. The split of
+  // heapUsed (JS objects) vs external/arrayBuffers (off-heap Buffers) also tells
+  // us WHICH kind of leak we're chasing. `warn` above ~2 GB RSS so it stands out.
+  const MB = 1024 * 1024;
+  const memInterval = setInterval(() => {
+    const m = process.memoryUsage();
+    const data = {
+      rssMB: Math.round(m.rss / MB),
+      heapUsedMB: Math.round(m.heapUsed / MB),
+      heapTotalMB: Math.round(m.heapTotal / MB),
+      externalMB: Math.round(m.external / MB),
+      arrayBuffersMB: Math.round((m.arrayBuffers || 0) / MB),
+    };
+    const level = data.rssMB > 2048 ? 'warn' : 'info';
+    logger[level]('server.memory', data);
+  }, 5 * 60 * 1000);
+  memInterval.unref?.();
 }
 
 main().catch(err => {

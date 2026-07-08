@@ -8,7 +8,9 @@ import LiveKeyboard from './LiveKeyboard.jsx';
 
 // Order maps to the 4-column grid, row by row (top row, then bottom row):
 //   Courses  Lessons  Sheet Music  Studio      ← far-left = Courses, far-right = Studio
-//   Playalong  Music   Games       Producer    ← far-left = Playalong, far-right = Producer
+//   Playalong  Music   Games                   ← far-left = Playalong
+// Producer is intentionally NOT a tile — it stays reachable only via the
+// `producer/*` route (see PianoApp.jsx), not the touch UI.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'lessons', label: 'Lessons', blurb: 'Technique drills', icon: 'lessons' },
@@ -17,7 +19,6 @@ export const PIANO_MODES = [
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
-  { id: 'producer', label: 'Producer', blurb: 'Beats, loops & jam', icon: 'producer' },
 ];
 
 /**

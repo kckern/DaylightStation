@@ -1,21 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import { MonthTabs } from "./monthly";
-import { Drawer } from "../drawer";
 import moment from 'moment';
-
-const formatAsCurrency = (value) => {
-  if (!value && value !== 0) return '$Ø';
-  return `$${Math.round(value).toLocaleString()}`;
-};
+import { formatAsCurrency, PALETTE } from '../lib/format.mjs';
+import { useToday } from '../hooks/useToday.mjs';
+import { EmptyState } from '../EmptyState.jsx';
 
 export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override) {
   override = override || {};
   if (!monthData || !monthData.dailyBalances) return {};
   setDrawerContent = setDrawerContent || (() => {});
   const dailyBalances = monthData.dailyBalances;
-  const transactions = monthData.transactions || [];
   const dayKeys = Object.keys(dailyBalances).filter(key => !key.endsWith('-start')).sort();
   if (!dayKeys.length) return {};
 
@@ -23,10 +19,11 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const firstDayKey = dayKeys[0];
   const lastDayKey = dayKeys[dayKeys.length - 1];
   const inferredMonth = monthData.month || moment(firstDayKey).format('YYYY-MM');
-  const currentMonth = moment().format('YYYY-MM');
+  const now = override.now ? moment(override.now) : moment();
+  const currentMonth = now.format('YYYY-MM');
   const daysInMonth = moment(inferredMonth).daysInMonth();
   const isCurrentMonth = inferredMonth === currentMonth;
-  const today = moment().date() - 1; // Convert to 0-based for array indexing
+  const today = now.date() - 1; // Convert to 0-based for array indexing
 
   // Build the actual data series
   const actualData = dayKeys.map((dateKey, idx) => {
@@ -36,9 +33,9 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     const highlightToday = isCurrentMonth && idx === today;
     const overspent = day.overspent;
     return {
-      y: day.displayBalance ?? Math.abs(day.endingBalance),
+      y: day.endingBalance,
       actualBalance: day.endingBalance,
-      color: overspent ? '#c1121f' : (highlightToday || isFirstDay) ? '#0077b6' : (isWeekend ? '#777' : undefined)
+      color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined)
     };
   });
 
@@ -71,11 +68,12 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
   const lastIndex = projectedDataWithNulls.length - 1;
 
-  const endingProjectedBalance = projectedData.length
-    ? projectedData[projectedData.length - 1]
+  // Color reflects where the pace ACTUALLY lands, not the 0-clamped plot value —
+  // Math.max(0, …) on plotted points made the "over budget" red unreachable.
+  const endingProjectedUnclamped = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
+    ? actualData[today].y - (daysInMonth - today) * averageDailyBurn
     : 0;
-
-  const projectionColor = endingProjectedBalance < 0 ? '#780000' : '#2a9d8f';
+  const projectionColor = endingProjectedUnclamped < 0 ? PALETTE.projectionOver : PALETTE.projectionOk;
 
   projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
     y: val,
@@ -162,8 +160,9 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       }] : []
     },
     yAxis: {
-      min: 0,
-      max: initialBudget,
+      min: Math.min(0, ...dayKeys.map(k => dailyBalances[k].endingBalance ?? 0)),
+      max: Math.max(initialBudget, ...actualData.map(d => d.y || 0)),
+      plotLines: [{ value: 0, color: '#666', width: 1, zIndex: 3 }],
       title: { text: '' },
       labels: {
         formatter: function () {
@@ -202,15 +201,9 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
           click: function (e) {
             const header = `Day-to-day transactions for ${moment(inferredMonth).format('MMMM YYYY')}`;
             setDrawerContent({
-              jsx: (
-                <Drawer
-                  setDrawerContent={setDrawerContent}
-                  header={header}
-                  transactions={transactions}
-                  highlightDate={e.point.category}
-                />
-              ),
-              meta: { title: header }
+              type: 'daytoday-month',
+              title: header,
+              month: inferredMonth
             });
           }
         } : {}
@@ -230,9 +223,10 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   };
 }
 
-export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions }) => {
+export const BudgetDayToDay = ({ setDrawerContent, budget }) => {
 
-  const months = Object.keys(budget.dayToDayBudget);
+  const dayToDayBudget = budget.dayToDayBudget || {};
+  const months = Object.keys(dayToDayBudget);
   const currentMonth = moment().format("YYYY-MM");
   const [activeMonth, setActiveMonth] = useState(currentMonth);
   const nonFutureMonths = months.filter((m) => m <= currentMonth);
@@ -244,17 +238,21 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
     />
   );
   useEffect(() => {
-    const activeMonthIsInCurrentBudget = budget.dayToDayBudget[activeMonth] !== undefined;
+    if (dayToDayBudget[activeMonth] !== undefined) return;
+    const available = Object.keys(dayToDayBudget).filter((m) => m <= currentMonth).sort();
+    setActiveMonth(available[available.length - 1] ?? Object.keys(dayToDayBudget)[0]);
+  }, [activeMonth, dayToDayBudget, currentMonth]);
 
-    if (!activeMonthIsInCurrentBudget) {
-      const firstMonth = nonFutureMonths.reverse()[0];
-      setActiveMonth(firstMonth);
-    }
-  }, [activeMonth, budget.dayToDayBudget, nonFutureMonths]);
+  const monthData = dayToDayBudget[activeMonth] || {};
+  const today = useToday();
+  const options = useMemo(
+    () => buildDayToDayBudgetOptions(monthData, setDrawerContent, { now: today }),
+    [monthData, setDrawerContent, today]
+  );
 
-  const monthData = budget.dayToDayBudget[activeMonth] || {};
-  const options = buildDayToDayBudgetOptions(monthData, setDrawerContent);
-
+  if (Object.keys(budget.dayToDayBudget || {}).length === 0) {
+    return (<div className="budget-block"><h2>Day-to-day Spending</h2><EmptyState /></div>);
+  }
 
   return (
     <div className="budget-block">
@@ -262,17 +260,9 @@ export const BudgetDayToDay = ({ setDrawerContent, budget, budgetBlockDimensions
       <div className="budget-block-content">
         {monthHeader}
         <HighchartsReact
-        key={activeMonth}
           className="budget-burn-down-chart"
           highcharts={Highcharts}
-          options={{
-            ...options,
-            chart: {
-              ...options.chart,
-              width: budgetBlockDimensions.width,
-              height: budgetBlockDimensions.height
-            }
-          }}
+          options={options}
         />
       </div>
     </div>
