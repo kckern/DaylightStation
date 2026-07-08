@@ -22,6 +22,8 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { GratitudeItem } from '#domains/gratitude/entities/GratitudeItem.mjs';
+import { Selection } from '#domains/gratitude/entities/Selection.mjs';
 
 export class YamlGratitudeDatastore extends IGratitudeDatastore {
   #dataService;
@@ -68,6 +70,62 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
     this.#dataService.household.write(`common/gratitude/${key}.yml`, data, householdId);
   }
 
+  // ===========================================================================
+  // Hydration / Dehydration (the datastore owns the storage format)
+  // ===========================================================================
+
+  /**
+   * Storage -> Domain
+   * @private
+   * @param {Object} raw
+   * @returns {GratitudeItem}
+   */
+  #hydrateItem(raw) {
+    return new GratitudeItem({ id: raw.id, text: raw.text });
+  }
+
+  /**
+   * Domain -> Storage (works for entities and pre-shaped plain objects)
+   * @private
+   * @param {GratitudeItem|Object} item
+   * @returns {Object}
+   */
+  #dehydrateItem(item) {
+    return { id: item.id, text: item.text };
+  }
+
+  /**
+   * Storage -> Domain
+   * @private
+   * @param {Object} raw
+   * @returns {Selection}
+   */
+  #hydrateSelection(raw) {
+    return new Selection({
+      id: raw.id,
+      userId: raw.userId,
+      item: { id: raw.item?.id, text: raw.item?.text },
+      datetime: raw.datetime,
+      printed: raw.printed
+    });
+  }
+
+  /**
+   * Domain -> Storage (the ONLY place the on-disk selection shape is defined)
+   * @private
+   * @param {Selection} selection
+   * @returns {Object}
+   */
+  #dehydrateSelection(selection) {
+    return {
+      id: selection.id,
+      userId: selection.userId,
+      item: this.#dehydrateItem(selection.item),
+      datetime: selection.datetime,
+      printed: selection.printed
+    };
+  }
+
   /**
    * Get snapshot directory path
    * @private
@@ -96,33 +154,33 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * Get options for a category
    * @param {string} householdId
    * @param {string} category - 'gratitude' or 'hopes'
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<GratitudeItem[]>}
    */
   async getOptions(householdId, category) {
-    return this.#readArray(householdId, `options.${category}`);
+    return this.#readArray(householdId, `options.${category}`).map(r => this.#hydrateItem(r));
   }
 
   /**
-   * Set options for a category
+   * Set items for a full storage key (e.g. 'options.gratitude', 'discarded.hopes')
    * @param {string} householdId
-   * @param {string} category
-   * @param {Object[]} items
+   * @param {string} key - Full storage key including the category suffix
+   * @param {GratitudeItem[]} items
    * @returns {Promise<void>}
    */
-  async setOptions(householdId, category, items) {
-    this.#writeArray(householdId, category, items);
+  async setOptions(householdId, key, items) {
+    this.#writeArray(householdId, key, (items || []).map(i => this.#dehydrateItem(i)));
   }
 
   /**
    * Add an option
    * @param {string} householdId
    * @param {string} category
-   * @param {Object} item
+   * @param {GratitudeItem} item
    * @returns {Promise<void>}
    */
   async addOption(householdId, category, item) {
     const options = this.#readArray(householdId, `options.${category}`);
-    options.unshift(item);
+    options.unshift(this.#dehydrateItem(item));
     this.#writeArray(householdId, `options.${category}`, options);
   }
 
@@ -151,22 +209,22 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * Get selections for a category
    * @param {string} householdId
    * @param {string} category
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<Selection[]>}
    */
   async getSelections(householdId, category) {
-    return this.#readArray(householdId, `selections.${category}`);
+    return this.#readArray(householdId, `selections.${category}`).map(r => this.#hydrateSelection(r));
   }
 
   /**
    * Add a selection
    * @param {string} householdId
    * @param {string} category
-   * @param {Object} selection
+   * @param {Selection} selection
    * @returns {Promise<void>}
    */
   async addSelection(householdId, category, selection) {
     const selections = this.#readArray(householdId, `selections.${category}`);
-    selections.unshift(selection);
+    selections.unshift(this.#dehydrateSelection(selection));
     this.#writeArray(householdId, `selections.${category}`, selections);
   }
 
@@ -175,7 +233,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * @param {string} householdId
    * @param {string} category
    * @param {string} selectionId
-   * @returns {Promise<Object|null>}
+   * @returns {Promise<Selection|null>}
    */
   async removeSelection(householdId, category, selectionId) {
     const selections = this.#readArray(householdId, `selections.${category}`);
@@ -184,7 +242,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
 
     const [removed] = selections.splice(index, 1);
     this.#writeArray(householdId, `selections.${category}`, selections);
-    return removed;
+    return this.#hydrateSelection(removed);
   }
 
   /**
@@ -222,24 +280,24 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * Get discarded items for a category
    * @param {string} householdId
    * @param {string} category
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<GratitudeItem[]>}
    */
   async getDiscarded(householdId, category) {
-    return this.#readArray(householdId, `discarded.${category}`);
+    return this.#readArray(householdId, `discarded.${category}`).map(r => this.#hydrateItem(r));
   }
 
   /**
    * Add to discarded
    * @param {string} householdId
    * @param {string} category
-   * @param {Object} item
+   * @param {GratitudeItem} item
    * @returns {Promise<void>}
    */
   async addDiscarded(householdId, category, item) {
     const discarded = this.#readArray(householdId, `discarded.${category}`);
     // Avoid duplicates
     if (!discarded.some(d => d.id === item.id)) {
-      discarded.unshift(item);
+      discarded.unshift(this.#dehydrateItem(item));
       this.#writeArray(householdId, `discarded.${category}`, discarded);
     }
   }
