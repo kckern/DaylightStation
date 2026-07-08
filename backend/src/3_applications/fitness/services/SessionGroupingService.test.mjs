@@ -10,7 +10,7 @@ const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
 const sessions = [
   sess('s1', H(14,54), 5.5, ['user_3'], null, 60),
   sess('s3', H(16,22), 37.5, ['user_4','user_3'], null, 1139),
-  sess('s7', H(19,10), 46.4, ['kckern','user_3'],
+  sess('s7', H(19,10), 46.4, ['user_1','user_3'],
        { primary: { contentId: 'plex:674286', title: 'Looney Tunes Racing' } }, 2745),
 ];
 

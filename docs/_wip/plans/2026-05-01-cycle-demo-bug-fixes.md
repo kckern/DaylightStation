@@ -56,8 +56,8 @@ describe('GovernanceEngine._evaluateCycleChallenge — terminal-status guard', (
   let active;
   const ctx = {
     equipmentRpm: 100,
-    activeParticipants: ['kckern'],
-    userZoneMap: { kckern: 'hot' },
+    activeParticipants: ['user_1'],
+    userZoneMap: { user_1: 'hot' },
     baseReqSatisfiedForRider: true,
     baseReqSatisfiedGlobal: true
   };
@@ -72,7 +72,7 @@ describe('GovernanceEngine._evaluateCycleChallenge — terminal-status guard', (
       generatedPhases: [{ hiRpm: 50, loRpm: 38, rampSeconds: 10, maintainSeconds: 20 }],
       phaseProgressMs: 50000, // far past the 20s threshold
       totalPhases: 1,
-      rider: 'kckern',
+      rider: 'user_1',
       manualTrigger: true,
       selection: { init: { minRpm: 30 } },
       _lastCycleTs: Date.now() - 1000
@@ -196,8 +196,8 @@ describe('Cycle phaseProgressPct unit consistency', () => {
     engine = new GovernanceEngine({ roster: [], snapshot: { zoneConfig: [] } });
     engine.media = null; // force the no-media early-return that triggers tickManualCycle
     engine._latestInputs = {
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'hot' },
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'hot' },
       equipmentCadenceMap: { cycle_ace: { rpm: 90, connected: true } }
     };
     engine.challengeState = {
@@ -206,7 +206,7 @@ describe('Cycle phaseProgressPct unit consistency', () => {
         type: 'cycle',
         cycleState: 'maintain',
         equipment: 'cycle_ace',
-        rider: 'kckern',
+        rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,
         totalPhases: 2,
@@ -314,8 +314,8 @@ Open `tests/unit/suite/fitness/GovernanceEngine-simStateChangeEvent.test.mjs` an
     engine.onCycleStateChange = cb;
     engine.media = null; // hits no-media early-return → tickManualCycle path
     engine._latestInputs = {
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'hot' },
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'hot' },
       equipmentCadenceMap: { cycle_ace: { rpm: 35, connected: true } }
     };
     engine.challengeState = {
@@ -324,7 +324,7 @@ Open `tests/unit/suite/fitness/GovernanceEngine-simStateChangeEvent.test.mjs` an
         type: 'cycle',
         cycleState: 'init',
         equipment: 'cycle_ace',
-        rider: 'kckern',
+        rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,
         totalPhases: 1,

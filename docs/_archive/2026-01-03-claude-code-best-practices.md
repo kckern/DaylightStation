@@ -191,7 +191,7 @@ class FitnessSession {
 ```javascript
 // GOOD: Explicit identifier types
 interface GovernanceInput {
-  activeParticipants: string[];  // Array of userIds (e.g., "kckern", "user_3")
+  activeParticipants: string[];  // Array of userIds (e.g., "user_1", "user_3")
   userZoneMap: Record<string, string>;  // Map userId -> zoneId
 }
 
@@ -256,7 +256,7 @@ roster.forEach(entry => {
 
 | Type | Format | Example | Use Case |
 |------|--------|---------|----------|
-| **userId** | String (lowercase) | `"kckern"`, `"user_3"` | Persistent user identity |
+| **userId** | String (lowercase) | `"user_1"`, `"user_3"` | Persistent user identity |
 | **entityId** | `entity-{timestamp}-{hash}` | `"entity-1735689600000-abc"` | Session participation instance |
 | **deviceId** | String | `"42"`, `"device-abc123"` | Physical device ID |
 | **name** | String (any case) | `"User_4"`, `"User_1"` | **Display ONLY, NOT for keys** |
@@ -710,7 +710,7 @@ export const testSessions = {
 
 ```json
 {"timestamp":"2026-01-03T04:30:15.123Z","event":"governance.evaluate.called","level":"warn","context":{"app":"frontend"},"data":{"activeParticipantsCount":5,"hasMedia":true}}
-{"timestamp":"2026-01-03T04:30:15.234Z","event":"treasurebox.tick","level":"info","context":{"app":"backend"},"data":{"tick":42,"participants":["kckern","user_3"]}}
+{"timestamp":"2026-01-03T04:30:15.234Z","event":"treasurebox.tick","level":"info","context":{"app":"backend"},"data":{"tick":42,"participants":["user_1","user_3"]}}
 ```
 
 #### Reading Logs with Claude
@@ -749,7 +749,7 @@ tail -200 dev.log | grep -E "participant\.(added|removed|zone|active)"
 cat dev.log | jq 'select(.data.sessionId == "abc123")'
 
 # Trace participant through system
-cat dev.log | jq 'select(.data.userId == "kckern" or .data.trackingId == "kckern")'
+cat dev.log | jq 'select(.data.userId == "user_1" or .data.trackingId == "user_1")'
 ```
 
 **Pattern 2: Identify Performance Issues**
@@ -855,8 +855,8 @@ ssh user@prod-server 'cat /var/log/daylightstation/app.log | jq -r "select(.leve
  * Evaluate governance requirements for current session state
  *
  * @param {Object} inputs - Governance evaluation inputs
- * @param {string[]} inputs.activeParticipants - Array of userIds (e.g., ["kckern", "user_3"])
- * @param {Record<string, string>} inputs.userZoneMap - Map userId -> zoneId (e.g., {"kckern": "fire"})
+ * @param {string[]} inputs.activeParticipants - Array of userIds (e.g., ["user_1", "user_3"])
+ * @param {Record<string, string>} inputs.userZoneMap - Map userId -> zoneId (e.g., {"user_1": "fire"})
  * @param {Record<string, number>} inputs.zoneRankMap - Map zoneId -> rank (0-4, higher is more intense)
  * @param {Record<string, Object>} inputs.zoneInfoMap - Map zoneId -> zone metadata
  * @param {number} inputs.totalCount - Total participant count
@@ -871,8 +871,8 @@ ssh user@prod-server 'cat /var/log/daylightstation/app.log | jq -r "select(.leve
  *
  * @example
  * const result = engine.evaluate({
- *   activeParticipants: ['kckern', 'user_3'],
- *   userZoneMap: { 'kckern': 'fire', 'user_3': 'hot' },
+ *   activeParticipants: ['user_1', 'user_3'],
+ *   userZoneMap: { 'user_1': 'fire', 'user_3': 'hot' },
  *   zoneRankMap: { 'cool': 0, 'active': 1, 'warm': 2, 'hot': 3, 'fire': 4 }
  * });
  * // { satisfied: true, actualCount: 2, missingUsers: [] }
@@ -1545,7 +1545,7 @@ integrations:
 governance:
   grace_period_seconds: 30
   superusers:
-    - kckern
+    - user_1
   policies:
     default:
       base_requirement:

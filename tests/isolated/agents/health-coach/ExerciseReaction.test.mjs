@@ -12,7 +12,7 @@ describe('ExerciseReaction', () => {
     const er = new ExerciseReaction();
     const result = await er.execute({
       context: { activity: { calories: 100, type: 'Walk' } },
-      agentRuntime: {}, workingMemory: {}, tools: [], systemPrompt: '', agentId: 'test', userId: 'kckern',
+      agentRuntime: {}, workingMemory: {}, tools: [], systemPrompt: '', agentId: 'test', userId: 'user_1',
     });
     expect(result.should_send).toBe(false);
   });
@@ -21,7 +21,7 @@ describe('ExerciseReaction', () => {
     const er = new ExerciseReaction();
     const result = await er.execute({
       context: {},
-      agentRuntime: {}, workingMemory: {}, tools: [], systemPrompt: '', agentId: 'test', userId: 'kckern',
+      agentRuntime: {}, workingMemory: {}, tools: [], systemPrompt: '', agentId: 'test', userId: 'user_1',
     });
     expect(result.should_send).toBe(false);
   });
@@ -33,7 +33,7 @@ describe('ExerciseReaction', () => {
       { name: 'get_user_goals', execute: async () => ({ goals: { calories: 2000 } }) },
     ];
     const gathered = await er.gather({
-      tools: mockTools, userId: 'kckern', memory: { serialize: () => '' }, logger: console,
+      tools: mockTools, userId: 'user_1', memory: { serialize: () => '' }, logger: console,
       context: { activity: { type: 'Run', calories: 500, duration: 45 } },
     });
     expect(gathered.activity.type).toBe('Run');
@@ -55,7 +55,7 @@ describe('ExerciseReaction', () => {
   it('act sets exercise_today in memory', async () => {
     const er = new ExerciseReaction();
     const memory = { set: vi.fn() };
-    await er.act({ should_send: true, text: 'test' }, { memory, userId: 'kckern', logger: console });
+    await er.act({ should_send: true, text: 'test' }, { memory, userId: 'user_1', logger: console });
     expect(memory.set.mock.calls.length).toBe(1);
     expect(memory.set.mock.calls[0][0]).toBe('exercise_today');
   });

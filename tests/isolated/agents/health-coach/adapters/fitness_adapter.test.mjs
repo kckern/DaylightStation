@@ -20,7 +20,7 @@ describe('FitnessEventAdapter', () => {
         listSessionsInRange: vi.fn(async () => [session]),
         getSession: vi.fn(async () => fullSession),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } });
@@ -48,7 +48,7 @@ describe('FitnessEventAdapter', () => {
     ];
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern', now: FROZEN_NOW,
+      householdId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' }, filter: { type: 'TrailRun' } });
     expect(r.events).toHaveLength(3);
@@ -63,7 +63,7 @@ describe('FitnessEventAdapter', () => {
     ];
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern', now: FROZEN_NOW,
+      householdId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' }, filter: { kind: 'strength' } });
     expect(r.events).toHaveLength(3);
@@ -81,7 +81,7 @@ describe('FitnessEventAdapter', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern', now: FROZEN_NOW,
+      householdId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.detail('20260507060000');
     expect(r.id).toBe('20260507060000');
@@ -96,7 +96,7 @@ describe('FitnessEventAdapter', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => null),
       },
-      householdId: 'kckern', now: FROZEN_NOW,
+      householdId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.detail('20260507060000');
     expect(r.error).toMatch(/not found/);
@@ -110,7 +110,7 @@ describe('FitnessEventAdapter', () => {
     ];
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern', now: FROZEN_NOW,
+      householdId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_7d' } });
     expect(r.n).toBe(3);
@@ -126,7 +126,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
       sessionId: '20260507060000', startTime: '2026-05-07T06:00:00Z', durationMs: 60_000,
       strava: { activityId: 1, type: 'Run' },
       metadata: {},
-      timeline: { series: { 'kckern:hr': [120] }, events: [] },
+      timeline: { series: { 'user_1:hr': [120] }, events: [] },
       summary: {
         voiceMemos: [
           { timestamp: 1746599400000, transcript: 'feeling strong, picking up pace' },
@@ -139,7 +139,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.voice_memos).toHaveLength(2);
@@ -163,7 +163,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.snapshot_refs).toHaveLength(2);
@@ -185,7 +185,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.treasure_stats).toEqual({
@@ -213,7 +213,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.strava_summary).toEqual({
@@ -237,7 +237,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
       timeline: { series: {}, events: [] },
       summary: {
         participants: {
-          kckern: {
+          user_1: {
             coins: 160, hr_avg: 136, hr_max: 158, hr_min: 73,
             zone_minutes: { cool: 0.25, active: 0.25, warm: 2.42, hot: 2.75 },
           },
@@ -249,7 +249,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.participant_summary).toEqual({
@@ -271,7 +271,7 @@ describe('FitnessEventAdapter.detail — rich surfaces', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.voice_memos).toEqual([]);

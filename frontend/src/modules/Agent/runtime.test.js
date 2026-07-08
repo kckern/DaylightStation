@@ -181,7 +181,7 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       { role: 'assistant', content: 'reply' },
       { role: 'user', content: 'last' },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(captured.messages).toHaveLength(3);
     expect(captured.messages[0]).toEqual({ role: 'user', content: 'first' });
     expect(captured.messages[2]).toEqual({ role: 'user', content: 'last' });
@@ -199,7 +199,7 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       role: i % 2 ? 'assistant' : 'user',
       content: `m${i}`,
     }));
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(captured.messages).toHaveLength(20);
     expect(captured.messages[0].content).toBe('m10');
     expect(captured.messages[19].content).toBe('m29');
@@ -216,7 +216,7 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       { role: 'user', content: [{ type: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ type: 'text', text: 'hello' }, { type: 'text', text: '!' }] },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(captured.messages).toEqual([
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: 'hello!' },
@@ -235,7 +235,7 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       { role: 'assistant', content: [{ type: 'image', url: '/foo.png' }] },  // no text part
       { role: 'user', content: 'b' },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(captured.messages).toEqual([
       { role: 'user', content: 'a' },
       { role: 'user', content: 'b' },
@@ -254,7 +254,7 @@ describe('createAgentRuntime("health-coach").run — messages forwarding', () =>
       { role: 'frog', content: 'b' },
       { role: 'assistant', content: 'c' },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(captured.messages).toEqual([
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'c' },
@@ -289,7 +289,7 @@ describe('createAgentRuntime — threadId', () => {
       return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
     });
     const runtime = createAgentRuntime('health-coach');
-    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'user_1' });
     expect(typeof captured.threadId).toBe('string');
     expect(captured.threadId).toMatch(/^t-/);
   });
@@ -301,8 +301,8 @@ describe('createAgentRuntime — threadId', () => {
       return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
     });
     const runtime = createAgentRuntime('health-coach');
-    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'kckern' });
-    await runtime.run({ messages: [{ role: 'user', content: 'b' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'user_1' });
+    await runtime.run({ messages: [{ role: 'user', content: 'b' }], userId: 'user_1' });
     expect(captured[0].threadId).toBe(captured[1].threadId);
   });
 
@@ -314,8 +314,8 @@ describe('createAgentRuntime — threadId', () => {
     });
     const a = createAgentRuntime('health-coach');
     const b = createAgentRuntime('lifeplan-guide');
-    await a.run({ messages: [{ role: 'user', content: 'x' }], userId: 'kckern' });
-    await b.run({ messages: [{ role: 'user', content: 'y' }], userId: 'kckern' });
+    await a.run({ messages: [{ role: 'user', content: 'x' }], userId: 'user_1' });
+    await b.run({ messages: [{ role: 'user', content: 'y' }], userId: 'user_1' });
     expect(captured[0].threadId).not.toBe(captured[1].threadId);
   });
 
@@ -351,7 +351,7 @@ describe('createAgentRuntime — threadId', () => {
       return { ok: true, status: 200, json: async () => ({ output: 'ok', toolCalls: [] }) };
     });
     const runtime = createAgentRuntime('health-coach');
-    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'hi' }], userId: 'user_1' });
     expect(captured.threadId).toBeNull();
   });
 
@@ -373,9 +373,9 @@ describe('createAgentRuntime — threadId', () => {
     });
     const runtime = createAgentRuntime('health-coach');
     // Ship one run() to seed the localStorage threadId
-    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'kckern' });
+    await runtime.run({ messages: [{ role: 'user', content: 'a' }], userId: 'user_1' });
     // Now stream
-    const iter = runtime.runStream({ messages: [{ role: 'user', content: 'b' }], userId: 'kckern' });
+    const iter = runtime.runStream({ messages: [{ role: 'user', content: 'b' }], userId: 'user_1' });
     for await (const _ of iter) break;
     expect(captured[0].threadId).toBeDefined();
     expect(captured[1].threadId).toBe(captured[0].threadId);

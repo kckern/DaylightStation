@@ -7,7 +7,7 @@ import { cssColorForStrap } from '#domains/fitness/strapColors.mjs';
  * FrameDescriptors for a time-lapse render. No I/O — all inputs via parameters.
  *
  * Series-key conventions (verified against real session YAML):
- *   - per-participant HR:   `{participantId}:hr`   (e.g. `kckern:hr`)
+ *   - per-participant HR:   `{participantId}:hr`   (e.g. `user_1:hr`)
  *   - per-participant zone: `{participantId}:zone`
  *   - bike cadence:         `bike:{deviceId}:rpm`  (e.g. `bike:7138:rpm`)
  */
@@ -52,7 +52,7 @@ export class TimelapseFrameMapper {
     const idColors = assignIdentityColors(roster.map(p => p.id));
     const chartBase = buildChart(decoded, roster, resolveColor);
     const cadenceBases = buildCadenceBases(decoded, cadenceDevices, cadenceColors);
-    // 2+ riders → prefer each user's short GROUP LABEL (e.g. "Dad" for kckern),
+    // 2+ riders → prefer each user's short GROUP LABEL (e.g. "Dad" for user_1),
     // mirroring the live UI's shouldPreferGroupLabels. Solo session keeps full names.
     const preferGroup = roster.length >= 2;
     const tz = typeof session?.timezone === 'string' ? session.timezone : null;

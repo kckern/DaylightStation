@@ -6,7 +6,7 @@ const TEST_SECRET = 'a'.repeat(128);
 describe('JWT utilities', () => {
   it('signs a token with user payload', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );
@@ -16,7 +16,7 @@ describe('JWT utilities', () => {
 
   it('verifies a valid token and returns payload', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );
@@ -24,7 +24,7 @@ describe('JWT utilities', () => {
       issuer: 'daylight-station',
       algorithms: ['HS256']
     });
-    expect(payload.sub).toBe('kckern');
+    expect(payload.sub).toBe('user_1');
     expect(payload.hid).toBe('default');
     expect(payload.roles).toEqual(['sysadmin']);
   });
@@ -39,7 +39,7 @@ describe('JWT utilities', () => {
 
   it('returns null for wrong secret', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );

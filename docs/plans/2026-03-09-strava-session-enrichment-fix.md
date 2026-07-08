@@ -400,7 +400,7 @@ const created = await this._createStravaOnlySession(currentActivity, this.#strav
 ```js
 async _createStravaOnlySession(activity, stravaClient = null) {
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
     const startLocal = moment(activity.start_date).tz(tz);
     const sessionId = startLocal.format('YYYYMMDDHHmmss');
     const date = startLocal.format('YYYY-MM-DD');

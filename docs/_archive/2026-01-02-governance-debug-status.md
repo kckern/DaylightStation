@@ -3,7 +3,7 @@
 ## Current Situation
 
 Looking at `dev.log`, I can see:
-1. **TreasureBox is working correctly** - processing ticks with participants: `["user_4","user_3","user_2","user_5","kckern"]`
+1. **TreasureBox is working correctly** - processing ticks with participants: `["user_4","user_3","user_2","user_5","user_1"]`
 2. **Zones are being resolved** - users have HR data and are in zones (warm, hot, fire)
 3. **NO GovernanceEngine logs** - This means either:
    - Frontend hasn't reloaded with new code yet
@@ -24,8 +24,8 @@ Looking at `dev.log`, I can see:
 {
   "tick": 10,
   "perUserSize": 5,
-  "activeParticipants": ["user_4","user_3","user_2","user_5","kckern"],
-  "perUserKeys": ["user_4","user_3","user_2","user_5","kckern"]
+  "activeParticipants": ["user_4","user_3","user_2","user_5","user_1"],
+  "perUserKeys": ["user_4","user_3","user_2","user_5","user_1"]
 }
 ```
 
@@ -117,13 +117,13 @@ Once new code loads, you should see:
 // 1. FitnessSession prepares inputs:
 {
   "event": "governance.evaluate.inputs",
-  "activeParticipants": ["user_4", "user_3", "user_2", "user_5", "kckern"],
+  "activeParticipants": ["user_4", "user_3", "user_2", "user_5", "user_1"],
   "userZoneMap": {
     "user_4": "hot",
     "user_3": "fire",
     "user_2": "hot",
     "user_5": "hot",
-    "kckern": "warm"
+    "user_1": "warm"
   }
 }
 

@@ -85,7 +85,7 @@ selectors:
     buttons:                 # button action -> userId (per the physical stickers)
       "1_single": user_2
       "2_single": user_3
-      "3_single": kckern
+      "3_single": user_1
       "4_single": user_4
 ```
 

@@ -18,7 +18,7 @@ A file path handling bug in the Nutribot persistence layer caused nutrition data
 ### Symptoms
 - Daily nutrition reports showed 0 calories and 0 items despite food being logged
 - The Telegram bot user (`telegram:b6898194425_c575596036`) had no readable nutrition history
-- Primary user (`kckern`) was partially affected but had legacy data that masked the issue
+- Primary user (`user_1`) was partially affected but had legacy data that masked the issue
 
 ### Root Cause
 
@@ -60,7 +60,7 @@ The bug occurred because `#writeFile` was calling `saveYamlToPath` (which writes
 | User | Files Affected | Data Status |
 |------|---------------|-------------|
 | `telegram:b6898194425_c575596036` | `nutrilist`, `nutriday` | ✅ Recovered |
-| `kckern` | Empty folders created | ✅ Cleaned up |
+| `user_1` | Empty folders created | ✅ Cleaned up |
 
 ### Scope
 - **New users**: All data written since bug introduction was unreadable

@@ -47,7 +47,7 @@ The device name resolution in `FitnessUsers.jsx` has a priority chain:
 6. deviceId (fallback)
 ```
 
-**Problem:** `guestAssignment?.occupantName` was checked for ALL device assignments, not just actual guests. A "member" assignment (like kckern's primary device) still has:
+**Problem:** `guestAssignment?.occupantName` was checked for ALL device assignments, not just actual guests. A "member" assignment (like user_1's primary device) still has:
 
 ```json
 {
@@ -235,9 +235,9 @@ The system creates device assignments even for primary users (members), not just
 
 | Phase | Description | Assertion |
 |-------|-------------|-----------|
-| 1 | Single device | kckern shows "User_1" (display_name) |
-| 2 | Second device joins | kckern switches to "Dad" (group_label) |
-| 3 | Device drops out | kckern restores to "User_1" |
+| 1 | Single device | user_1 shows "User_1" (display_name) |
+| 2 | Second device joins | user_1 switches to "Dad" (group_label) |
+| 3 | Device drops out | user_1 restores to "User_1" |
 
 ### Related Tests
 
@@ -270,9 +270,9 @@ The system creates device assignments even for primary users (members), not just
 npx playwright test tests/live/flow/fitness/group-label-fallback.runtime.test.mjs
 
 # Expected output:
-#   Phase 1 (single device): kckern showed "User_1" ✓
-#   Phase 2 (multi device):  kckern showed "Dad", user_2 showed "User_2" ✓
-#   Phase 3 (device drop):   kckern restored to "User_1" ✓
+#   Phase 1 (single device): user_1 showed "User_1" ✓
+#   Phase 2 (multi device):  user_1 showed "Dad", user_2 showed "User_2" ✓
+#   Phase 3 (device drop):   user_1 restored to "User_1" ✓
 #   ✓ Test passed
 ```
 
@@ -284,17 +284,17 @@ npx playwright test tests/live/flow/fitness/group-label-fallback.runtime.test.mj
 [PHASE 1] Single device
   [hrDisplayNameMap] Recomputing with 1 HR devices: [40475]
   [RENDER 40475] deviceName= User_1 source= ownerName (hrDisplayNameMap)
-  ✓ kckern shows: "User_1"
+  ✓ user_1 shows: "User_1"
 
 [PHASE 2] Second device joins
   [hrDisplayNameMap] Recomputing with 2 HR devices: [40475, 90003]
   [hrDisplayNameMap] heartRateOwners size: 5 labelLookup: {"40475":"Dad"}
   [hrDisplayNameMap] Applied overrides: [{"deviceId":"40475","from":"User_1","to":"Dad"}]
   [RENDER 40475] deviceName= Dad source= ownerName (hrDisplayNameMap) ownerName= Dad
-  ✓ kckern shows: "Dad"
+  ✓ user_1 shows: "Dad"
 
 [PHASE 3] Device drops
   [hrDisplayNameMap] Recomputing with 1 HR devices: [40475]
   [RENDER 40475] deviceName= User_1 source= ownerName (hrDisplayNameMap)
-  ✓ kckern shows: "User_1"
+  ✓ user_1 shows: "User_1"
 ```

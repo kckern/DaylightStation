@@ -866,7 +866,7 @@ messages:
   - id: '1947a...'
     time: '08:30'
     subject: 'Re: Project update'
-    from: 'user_1@example.com'
+    from: 'user_1@gmail.com'
     to: 'colleague@company.com'
     category: sent
   - id: '1947f...'
@@ -878,7 +878,7 @@ messages:
   - id: '1946c...'
     time: '16:45'
     subject: 'Meeting confirmation'
-    from: 'user_1@example.com'
+    from: 'user_1@gmail.com'
     to: 'boss@company.com'
     category: sent
 ```

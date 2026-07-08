@@ -407,13 +407,13 @@ import { resolveHistoricalParticipant } from '#frontend/modules/Fitness/widgets/
 describe('resolveHistoricalParticipant', () => {
   it('returns displayMap entry when it has a non-slug displayName', () => {
     const displayMap = new Map([
-      ['kckern', { displayName: 'User_1', avatarSrc: '/avatars/kc.png', id: 'kckern' }]
+      ['user_1', { displayName: 'User_1', avatarSrc: '/avatars/kc.png', id: 'user_1' }]
     ]);
     const sessionMeta = new Map();
-    const out = resolveHistoricalParticipant('kckern', { displayMap, sessionMeta });
+    const out = resolveHistoricalParticipant('user_1', { displayMap, sessionMeta });
     expect(out.name).toBe('User_1');
     expect(out.avatarUrl).toBe('/avatars/kc.png');
-    expect(out.profileId).toBe('kckern');
+    expect(out.profileId).toBe('user_1');
   });
 
   it('falls back to sessionMeta when displayMap misses', () => {
@@ -611,12 +611,12 @@ Run:
 sudo docker exec daylight-station sh -c 'cat data/household/history/fitness/2026-04-20/20260420193931.yml' | head -25
 ```
 
-Expected: `participants:` block shows `display_name:` for all four entries (`kckern`, `user_4`, `user_2`, `user_3`).
+Expected: `participants:` block shows `display_name:` for all four entries (`user_1`, `user_4`, `user_2`, `user_3`).
 
 - [ ] **Step 2: Load a historical session in the UI and verify legend behavior**
 
 Open the DaylightStation UI, navigate to the Fitness history view, open the session above. Verify:
-1. The legend shows `User_1`, `User_4`, `User_2`, `User_3` with avatars — NOT raw slugs like `kckern` with no avatar.
+1. The legend shows `User_1`, `User_4`, `User_2`, `User_3` with avatars — NOT raw slugs like `user_1` with no avatar.
 2. Within an HR zone, sort tracks progress, not raw HR (live data only — historical view falls back to heartRate DESC / id ASC since `progress` is null).
 
 - [ ] **Step 3: Final test sweep**

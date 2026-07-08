@@ -124,7 +124,7 @@ Add to the `saveSession v3 payload normalization` describe block:
         end: '2026-01-29 07:00:00'
       },
       participants: {
-        'kckern': {
+        'user_1': {
           display_name: 'Kirk',
           is_primary: true,
           hr_device: 'device_40475'
@@ -184,8 +184,8 @@ Add to the `saveSession v3 payload normalization` describe block:
         tick_count: 3,
         encoding: 'rle',
         series: {
-          'kckern:hr': '[[120,2],125]',
-          'kckern:zone': '[["a",3]]'
+          'user_1:hr': '[[120,2],125]',
+          'user_1:zone': '[["a",3]]'
         }
       }
     }, 'test-hid');
@@ -429,7 +429,7 @@ describe('saveSession v3 full round-trip', () => {
         duration_seconds: 1598
       },
       participants: {
-        'kckern': {
+        'user_1': {
           display_name: 'Kirk',
           is_primary: true,
           hr_device: 'device_40475'
@@ -440,8 +440,8 @@ describe('saveSession v3 full round-trip', () => {
         tick_count: 320,
         encoding: 'rle',
         series: {
-          'kckern:hr': '[[120,100],[125,100],[130,120]]',
-          'kckern:zone': '[["a",200],["w",120]]'
+          'user_1:hr': '[[120,100],[125,100],[130,120]]',
+          'user_1:zone': '[["a",200],["w",120]]'
         }
       },
       events: [
@@ -465,8 +465,8 @@ describe('saveSession v3 full round-trip', () => {
     expect(session.roster[0].hrDeviceId).toBe('device_40475');
 
     // Verify timeline series were preserved (and encoded for storage)
-    expect(Object.keys(session.timeline.series)).toContain('kckern:hr');
-    expect(typeof session.timeline.series['kckern:hr']).toBe('string');
+    expect(Object.keys(session.timeline.series)).toContain('user_1:hr');
+    expect(typeof session.timeline.series['user_1:hr']).toBe('string');
   });
 });
 ```

@@ -18,12 +18,12 @@ import {
 
 describe('resolveUserDisplayName (device-agnostic)', () => {
   it('prefers the group label when requested (User_1 → Dad)', () => {
-    const user = { id: 'kckern', name: 'User_1', group_label: 'Dad' };
+    const user = { id: 'user_1', name: 'User_1', group_label: 'Dad' };
     expect(resolveUserDisplayName(user, { preferGroupLabels: true }).displayName).toBe('Dad');
   });
 
   it('uses the full name when group labels are not preferred', () => {
-    const user = { id: 'kckern', name: 'User_1', group_label: 'Dad' };
+    const user = { id: 'user_1', name: 'User_1', group_label: 'Dad' };
     expect(resolveUserDisplayName(user, { preferGroupLabels: false }).displayName).toBe('User_1');
   });
 
@@ -443,14 +443,14 @@ describe('regression tests', () => {
         createDevice({ deviceId: '90003', heartRate: 130 }),
       ],
       deviceOwnership: new Map([
-        ['40475', createOwnership({ name: 'User_1', groupLabel: 'Dad', profileId: 'kckern' })],
+        ['40475', createOwnership({ name: 'User_1', groupLabel: 'Dad', profileId: 'user_1' })],
         ['90003', createOwnership({ name: 'User_2', groupLabel: null, profileId: 'user_2' })],
       ]),
       deviceAssignments: new Map([
         ['40475', createAssignment({
           occupantType: 'member', // NOT a guest!
           occupantName: 'User_1',
-          occupantId: 'kckern',
+          occupantId: 'user_1',
         })],
       ]),
     });
@@ -458,7 +458,7 @@ describe('regression tests', () => {
     // With 2 devices, preferGroupLabels should be true
     expect(ctx.preferGroupLabels).toBe(true);
 
-    // kckern should show "Dad", not "User_1"
+    // user_1 should show "Dad", not "User_1"
     const result = resolveDisplayName('40475', ctx);
     expect(result.displayName).toBe('Dad');
     expect(result.source).toBe('groupLabel');

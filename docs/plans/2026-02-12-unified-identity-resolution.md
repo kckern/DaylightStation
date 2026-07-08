@@ -31,9 +31,9 @@ describe('ResolvedIdentity', () => {
   const conversationId = new ConversationId('telegram', 'b123_c456');
 
   it('creates with username and conversationId', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
-    expect(identity.username).toBe('kckern');
+    expect(identity.username).toBe('user_1');
     expect(identity.conversationId).toBe(conversationId);
   });
 
@@ -45,18 +45,18 @@ describe('ResolvedIdentity', () => {
   });
 
   it('requires conversationId', () => {
-    expect(() => new ResolvedIdentity({ username: 'kckern' }))
+    expect(() => new ResolvedIdentity({ username: 'user_1' }))
       .toThrow('conversationId is required');
   });
 
   it('is immutable', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
     expect(Object.isFrozen(identity)).toBe(true);
   });
 
   it('converts conversationId to string', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
     expect(identity.conversationIdString).toBe('telegram:b123_c456');
   });
@@ -161,11 +161,11 @@ import { UserIdentityService } from '#domains/messaging/services/UserIdentitySer
 
 const mappings = {
   telegram: {
-    '575596036': 'kckern',
+    '575596036': 'user_1',
     '123456789': 'kirk',
   },
   discord: {
-    '987654321': 'kckern',
+    '987654321': 'user_1',
   },
 };
 
@@ -173,13 +173,13 @@ describe('UserIdentityService', () => {
   describe('resolveUsername', () => {
     it('resolves telegram user to system username', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('telegram', '575596036')).toBe('kckern');
+      expect(service.resolveUsername('telegram', '575596036')).toBe('user_1');
       expect(service.resolveUsername('telegram', '123456789')).toBe('kirk');
     });
 
     it('resolves discord user to system username', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('discord', '987654321')).toBe('kckern');
+      expect(service.resolveUsername('discord', '987654321')).toBe('user_1');
     });
 
     it('returns null for unknown platform user', () => {
@@ -200,14 +200,14 @@ describe('UserIdentityService', () => {
 
     it('coerces numeric platformId to string', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('telegram', 575596036)).toBe('kckern');
+      expect(service.resolveUsername('telegram', 575596036)).toBe('user_1');
     });
   });
 
   describe('resolvePlatformId', () => {
     it('resolves system username to telegram user ID', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolvePlatformId('telegram', 'kckern')).toBe('575596036');
+      expect(service.resolvePlatformId('telegram', 'user_1')).toBe('575596036');
     });
 
     it('returns null for unknown username', () => {
@@ -217,7 +217,7 @@ describe('UserIdentityService', () => {
 
     it('returns null for null inputs', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolvePlatformId(null, 'kckern')).toBeNull();
+      expect(service.resolvePlatformId(null, 'user_1')).toBeNull();
       expect(service.resolvePlatformId('telegram', null)).toBeNull();
     });
   });
@@ -261,8 +261,8 @@ export class UserIdentityService {
    * @param {Object} identityMappings - Map of platform → { platformId: username }
    * @example
    * new UserIdentityService({
-   *   telegram: { '575596036': 'kckern' },
-   *   discord: { '987654321': 'kckern' },
+   *   telegram: { '575596036': 'user_1' },
+   *   discord: { '987654321': 'user_1' },
    * })
    */
   constructor(identityMappings = {}) {
@@ -350,7 +350,7 @@ import { UserIdentityService } from '#domains/messaging/services/UserIdentitySer
 
 const mappings = {
   telegram: {
-    '575596036': 'kckern',
+    '575596036': 'user_1',
     '123456789': 'kirk',
   },
 };
@@ -369,7 +369,7 @@ describe('TelegramIdentityAdapter', () => {
 
       const result = adapter.resolve('nutribot', { platformUserId: '575596036' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
 
@@ -387,9 +387,9 @@ describe('TelegramIdentityAdapter', () => {
     it('produces valid ResolvedIdentity from system username', () => {
       const adapter = new TelegramIdentityAdapter({ userIdentityService: identityService, botConfigs });
 
-      const result = adapter.resolve('nutribot', { username: 'kckern' });
+      const result = adapter.resolve('nutribot', { username: 'user_1' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
 
@@ -407,7 +407,7 @@ describe('TelegramIdentityAdapter', () => {
 
       const result = adapter.resolve('nutribot', { conversationId: 'telegram:b6898194425_c575596036' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
   });
@@ -733,7 +733,7 @@ Check `backend/src/4_api/v1/routers/nutribot.mjs` for where `directUPCHandler`, 
 
 With the dev server running, test the direct UPC endpoint:
 ```bash
-curl -s "http://localhost:3112/api/v1/nutribot/upc?upc=0102638000060&member=kckern" | jq '.ok'
+curl -s "http://localhost:3112/api/v1/nutribot/upc?upc=0102638000060&member=user_1" | jq '.ok'
 ```
 Expected: `true` (or at minimum, no `telegram:undefined_*` in logs)
 

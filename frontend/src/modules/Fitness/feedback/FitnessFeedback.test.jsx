@@ -57,7 +57,7 @@ describe('FitnessFeedback overlay', () => {
 
   it('submits feedback with app=fitness and surface=home context on save', async () => {
     mockRecorderState.isRecording = true;
-    render(<FitnessFeedback onClose={() => {}} view="menu" userId="kckern" />);
+    render(<FitnessFeedback onClose={() => {}} view="menu" userId="user_1" />);
     fireEvent.pointerDown(screen.getByTestId('fitness-feedback-record'));
     const save = await screen.findByTestId('fitness-feedback-save');
     fireEvent.pointerDown(save);
@@ -66,7 +66,7 @@ describe('FitnessFeedback overlay', () => {
     expect(arg.app).toBe('fitness');
     expect(arg.durationMs).toBe(4200);
     expect(arg.blob).toBeInstanceOf(Blob);
-    expect(arg.context).toMatchObject({ surface: 'home', view: 'menu', userId: 'kckern' });
+    expect(arg.context).toMatchObject({ surface: 'home', view: 'menu', userId: 'user_1' });
   });
 
   it('shows a thank-you state after a successful save', async () => {

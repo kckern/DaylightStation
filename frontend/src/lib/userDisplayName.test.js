@@ -5,7 +5,7 @@ import {
   shouldPreferGroupLabels,
 } from './userDisplayName.js';
 
-const dad = { id: 'kckern', name: 'User_1', group_label: 'Dad' };
+const dad = { id: 'user_1', name: 'User_1', group_label: 'Dad' };
 const mom = { id: 'user_9', name: 'User_9', group_label: 'Mom' };
 const kid = { id: 'user_2', name: 'User_2' };
 

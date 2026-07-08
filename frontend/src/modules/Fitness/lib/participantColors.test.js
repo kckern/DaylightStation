@@ -4,10 +4,10 @@ import { ZoneColors } from '@/modules/Fitness/domain';
 
 describe('assignIdentityColors', () => {
   it('returns a stable color per id regardless of input order', () => {
-    const a = assignIdentityColors(['user_3', 'user_2', 'kckern']);
-    const b = assignIdentityColors(['kckern', 'user_3', 'user_2']);
+    const a = assignIdentityColors(['user_3', 'user_2', 'user_1']);
+    const b = assignIdentityColors(['user_1', 'user_3', 'user_2']);
     expect(a.get('user_3')).toBe(b.get('user_3'));
-    expect(a.get('kckern')).toBe(b.get('kckern'));
+    expect(a.get('user_1')).toBe(b.get('user_1'));
   });
   it('gives distinct colors to up to palette-length ids', () => {
     const ids = ['a', 'b', 'c', 'd', 'e'];

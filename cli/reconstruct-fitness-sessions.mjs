@@ -56,7 +56,7 @@ const numericArg = args.find(a => /^\d+$/.test(a));
 // Default: back to Jan 2024
 const defaultDays = Math.ceil(moment().diff(moment('2024-01-01'), 'days'));
 const daysBack = parseInt(numericArg || String(defaultDays), 10);
-const username = 'kckern';
+const username = 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 
 console.log(`Reconstruct fitness sessions for ${username}, ${daysBack} days back`);

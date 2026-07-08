@@ -42,7 +42,7 @@ describe('Feed Router', () => {
       harvestAll: vi.fn().mockResolvedValue({ harvested: 2, errors: 0, totalItems: 15 }),
     };
     mockConfigService = {
-      getHeadOfHousehold: vi.fn().mockReturnValue('kckern'),
+      getHeadOfHousehold: vi.fn().mockReturnValue('user_1'),
     };
 
     const router = createFeedRouter({
@@ -62,7 +62,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/reader/categories');
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
-      expect(mockFreshRSSAdapter.getCategories).toHaveBeenCalledWith('kckern');
+      expect(mockFreshRSSAdapter.getCategories).toHaveBeenCalledWith('user_1');
     });
   });
 
@@ -80,7 +80,7 @@ describe('Feed Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.items).toHaveLength(1);
       expect(res.body.continuation).toBeNull();
-      expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith('feed/1', 'kckern', expect.any(Object));
+      expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith('feed/1', 'user_1', expect.any(Object));
     });
 
     test('returns 400 without feed param', async () => {
@@ -95,7 +95,7 @@ describe('Feed Router', () => {
         .post('/api/v1/feed/reader/items/mark')
         .send({ itemIds: ['item1'], action: 'read' });
       expect(res.status).toBe(200);
-      expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(['item1'], 'kckern');
+      expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(['item1'], 'user_1');
     });
   });
 
@@ -105,7 +105,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/headlines');
       expect(res.status).toBe(200);
       expect(res.body.sources).toHaveProperty('cnn');
-      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('kckern', 'main');
+      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('user_1', 'main');
     });
   });
 
@@ -128,7 +128,7 @@ describe('Feed Router', () => {
       const res = await request(app).post('/api/v1/feed/headlines/harvest');
       expect(res.status).toBe(200);
       expect(res.body.harvested).toBe(2);
-      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('kckern', undefined);
+      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('user_1', undefined);
     });
   });
 
@@ -155,7 +155,7 @@ describe('Feed Router', () => {
     test('passes focus param to feedAssemblyService', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll?focus=reddit:science');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ focus: 'reddit:science' }),
       );
     });
@@ -163,7 +163,7 @@ describe('Feed Router', () => {
     test('limit defaults to undefined when not provided', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ limit: undefined }),
       );
     });
@@ -171,7 +171,7 @@ describe('Feed Router', () => {
     test('passes explicit limit as number', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll?limit=20');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ limit: 20 }),
       );
     });
@@ -179,7 +179,7 @@ describe('Feed Router', () => {
     test('passes filter param to feedAssemblyService', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll?filter=reddit:worldnews,usnews');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ filter: 'reddit:worldnews,usnews' }),
       );
     });
@@ -187,7 +187,7 @@ describe('Feed Router', () => {
     test('filter param defaults to null when not provided', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ filter: null }),
       );
     });

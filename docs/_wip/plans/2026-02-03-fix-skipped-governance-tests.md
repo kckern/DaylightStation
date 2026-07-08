@@ -19,7 +19,7 @@ Users have age-adjusted zone configurations:
 
 | User | Active Min | Warm Min | Hot Min |
 |------|------------|----------|---------|
-| kckern (adult) | 100 | 120 | 140 |
+| user_1 (adult) | 100 | 120 | 140 |
 | user_2 (child) | 120 | 140 | 160 |
 | user_3 (child) | 120 | 140 | 165 |
 | user_4 (young child) | 125 | 150 | 170 |
@@ -29,7 +29,7 @@ The simulator uses global zone midpoints:
 - `warm` → HR=130
 
 At HR=130:
-- kckern: 130 >= 120 → warm (correct)
+- user_1: 130 >= 120 → warm (correct)
 - user_2: 130 < 140 → active (not warm!)
 - user_4: 130 < 150 → active (not warm!)
 

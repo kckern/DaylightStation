@@ -53,7 +53,7 @@ This ensures the lock screen appears in its empty "waiting" state, then HR data 
 Only 1 of 5 users' zones appeared to update when recovering from challenge failure:
 
 ```
-UserZones: [kckern:hot, user_2:warm, user_3:warm, user_4:warm, user_5:warm]
+UserZones: [user_1:hot, user_2:warm, user_3:warm, user_4:warm, user_5:warm]
 ```
 
 ### Root Cause
@@ -61,7 +61,7 @@ UserZones: [kckern:hot, user_2:warm, user_3:warm, user_4:warm, user_5:warm]
 **Per-user zone thresholds**, not WebSocket propagation issues.
 
 Each user has age-adjusted zone thresholds:
-- **Adults (kckern)**: hot threshold = 170 BPM
+- **Adults (user_1)**: hot threshold = 170 BPM
 - **Children (user_2, user_3)**: hot threshold = 180 BPM
 
 The simulator's `setZone('hot')` sends ~175 BPM, which puts adults in 'hot' but children only in 'warm'.

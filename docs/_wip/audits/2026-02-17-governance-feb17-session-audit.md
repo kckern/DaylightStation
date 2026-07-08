@@ -21,7 +21,7 @@ Follow-up verification of governance fixes against the Feb 17 session, which had
 | User_3 | 120 | 140 | Active participant |
 | User_2 | 120 | 140 | Active participant |
 | User_5 | 125 | 150 | Intermittent (exempt user) |
-| kckern | 120 (default) | — | Background, not governed |
+| user_1 | 120 (default) | — | Background, not governed |
 
 ---
 

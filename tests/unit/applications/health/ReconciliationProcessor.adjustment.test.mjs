@@ -40,7 +40,7 @@ describe('ReconciliationProcessor — adjustments', () => {
   });
 
   it('writes adjusted nutriday after reconciliation', async () => {
-    await processor.process('kckern', { windowDays: 2, today: '2026-03-19' });
+    await processor.process('user_1', { windowDays: 2, today: '2026-03-19' });
     expect(mockHealthStore.saveAdjustedNutritionData).toHaveBeenCalledOnce();
     const savedData = mockHealthStore.saveAdjustedNutritionData.mock.calls[0][1];
     expect(savedData['2026-03-17']).toBeDefined();
@@ -50,7 +50,7 @@ describe('ReconciliationProcessor — adjustments', () => {
 
   it('skips adjustment when nutritionItemsReader is not provided', async () => {
     const noReaderProcessor = new ReconciliationProcessor({ healthStore: mockHealthStore });
-    await noReaderProcessor.process('kckern', { windowDays: 2, today: '2026-03-19' });
+    await noReaderProcessor.process('user_1', { windowDays: 2, today: '2026-03-19' });
     expect(mockHealthStore.saveAdjustedNutritionData).not.toHaveBeenCalled();
   });
 });

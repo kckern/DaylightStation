@@ -22,7 +22,7 @@ describe('Withings Token Exchange', () => {
     const dataPath = getDataPath();
     if (!dataPath) return null;
 
-    const authPath = path.join(dataPath, 'users', 'kckern', 'auth', 'withings.yml');
+    const authPath = path.join(dataPath, 'users', 'user_1', 'auth', 'withings.yml');
     if (!fs.existsSync(authPath)) return null;
     
     const authData = yaml.load(fs.readFileSync(authPath, 'utf8'));

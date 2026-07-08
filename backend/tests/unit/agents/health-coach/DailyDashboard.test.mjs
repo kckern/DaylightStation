@@ -50,7 +50,7 @@ describe('DailyDashboard', () => {
       const assignment = new DailyDashboard();
       const result = await assignment.gather({
         tools: mockTools,
-        userId: 'kckern',
+        userId: 'user_1',
         memory: new WorkingMemoryState(),
         logger: { info: () => {} },
       });
@@ -67,7 +67,7 @@ describe('DailyDashboard', () => {
       const assignment = new DailyDashboard();
       const result = await assignment.gather({
         tools: [], // no tools
-        userId: 'kckern',
+        userId: 'user_1',
         memory: new WorkingMemoryState(),
         logger: { info: () => {}, warn: () => {} },
       });
@@ -152,7 +152,7 @@ describe('DailyDashboard', () => {
         tools: mockTools,
         systemPrompt: 'test',
         agentId: 'health-coach',
-        userId: 'kckern',
+        userId: 'user_1',
         context: {},
         logger: { info: () => {}, warn: () => {} },
       });

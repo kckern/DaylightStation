@@ -69,7 +69,7 @@ messaging:
 ### User platform IDs (`data/users/{username}/profile.yml`)
 
 ```yaml
-id: kckern
+id: user_1
 name: Kevin
 email: kevin@example.com
 
@@ -308,7 +308,7 @@ buildPlatformIndex() {
 // Resolve on webhook
 resolveFromPlatform(platform, platformId) {
   return this.#platformIndex.get(`${platform}:${platformId}`);
-  // Returns: { username: 'kckern', householdId: 'default' } or null
+  // Returns: { username: 'user_1', householdId: 'default' } or null
 }
 ```
 

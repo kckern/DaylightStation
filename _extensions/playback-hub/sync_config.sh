@@ -13,7 +13,7 @@
 #     malformed config that would break headsets for kids.
 set -euo pipefail
 
-SRC="kckern@10.0.0.10:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/config/playback-hub.yml"
+SRC="user_1@10.0.0.10:/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/config/playback-hub.yml"
 DEST="/home/kckern/playback-hub/devices.yml"
 STAGING="${DEST}.staging"
 

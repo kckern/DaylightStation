@@ -77,7 +77,7 @@ const SELECTORS = [
     id: 'niceday_rider_selector',
     mqtt_topic: 'zigbee2mqtt-usb/Garage Cycling Selector',
     equipment: 'niceday',
-    buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'kckern', '4_single': 'user_4' },
+    buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'user_1', '4_single': 'user_4' },
   },
 ];
 
@@ -553,7 +553,7 @@ selectors:
     buttons:
       "1_single": user_2
       "2_single": user_3
-      "3_single": kckern
+      "3_single": user_1
       "4_single": user_4
 ```
 
@@ -671,8 +671,8 @@ describe('FitnessSession — equipmentRider', () => {
 
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
-    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });
-    expect(session.getEquipmentRider('niceday')).toBe('kckern');
+    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'user_1', action: '3_single' });
+    expect(session.getEquipmentRider('niceday')).toBe('user_1');
   });
 });
 ```
@@ -824,14 +824,14 @@ describe('Cycle SM — standing rider claim', () => {
   });
 
   it('grants eligibility to a claimed rider not in eligible_users', () => {
-    // 'kckern' is NOT in cycle_ace.eligible_users (['user_2']) in buildSession().
-    const engine = makeEngine(42, { cycle_ace: 'kckern' });
-    expect(engine._getEligibleUsers('cycle_ace')).toContain('kckern');
+    // 'user_1' is NOT in cycle_ace.eligible_users (['user_2']) in buildSession().
+    const engine = makeEngine(42, { cycle_ace: 'user_1' });
+    expect(engine._getEligibleUsers('cycle_ace')).toContain('user_1');
     const active = engine._startCycleChallenge(
       { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hi_rpm_range: [60, 60], segment_count: [1, 1], segment_duration_seconds: [2, 2], ramp_seconds: [5, 5], lo_rpm_ratio: 0.5 },
       {}
     );
-    expect(active.rider).toBe('kckern');
+    expect(active.rider).toBe('user_1');
   });
 
   it('falls back to random-from-eligible when no claim is set', () => {
@@ -857,7 +857,7 @@ describe('Cycle SM — standing rider claim', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cd "$WT" && "$VITEST" run --config /opt/Code/DaylightStation/vitest.config.mjs frontend/src/hooks/fitness/CycleStateMachine.test.js -t "standing rider claim"`
-Expected: FAIL — claim is ignored (random/force only), and `_getEligibleUsers` does not include `kckern`.
+Expected: FAIL — claim is ignored (random/force only), and `_getEligibleUsers` does not include `user_1`.
 
 - [ ] **Step 3: Accept `equipmentRiderMap` in `evaluate` and store it**
 

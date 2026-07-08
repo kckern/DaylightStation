@@ -52,7 +52,7 @@ The introduction of entityId-based tracking in the fitness system caused a **com
 The codebase had **three different identifier schemes** used interchangeably:
 
 1. **Names** (`"User_4"`, `"User_2"`) - Human-readable, case-sensitive
-2. **UserIds** (`"kckern"`, `"user_2"`) - Stable, lowercase
+2. **UserIds** (`"user_1"`, `"user_2"`) - Stable, lowercase
 3. **EntityIds** (`"entity-1735689600000-abc"`) - Session-specific, for guest tracking
 
 **No single source of truth** defined which identifier type should be used where.
@@ -145,7 +145,7 @@ this.zoneProfileStore?.syncFromUsers(allUsers);
 
 **Current state:** Different subsystems use different identifiers
 - FitnessSession: names, userIds, entityIds (inconsistent)
-- TreasureBox: userIds (`"kckern"`, `"user_3"`)
+- TreasureBox: userIds (`"user_1"`, `"user_3"`)
 - GovernanceEngine: expected names, got IDs
 - ParticipantRoster: has all three (name, id, entityId)
 
@@ -154,7 +154,7 @@ this.zoneProfileStore?.syncFromUsers(allUsers);
 **Recommendation:**
 ```typescript
 // Define explicit type
-type ParticipantId = string;  // userId (e.g., "kckern")
+type ParticipantId = string;  // userId (e.g., "user_1")
 
 // Document in code
 interface GovernanceInput {
@@ -197,7 +197,7 @@ userZoneMap["User_4"] = "fire";  // Case-sensitive, fragile
 
 **Recommendation:** **Always use stable IDs (userId)**
 ```javascript
-userZoneMap["kckern"] = "fire";  // Stable, lowercase, unique
+userZoneMap["user_1"] = "fire";  // Stable, lowercase, unique
 ```
 
 ### 4. **Lack of Data Flow Documentation** ⚠️ MEDIUM
@@ -346,7 +346,7 @@ Replace with userId-based keys
  * Participant Identifier
  * @typedef {string} ParticipantId
  * @description Stable user identifier (userId, lowercase). NOT display name.
- * @example "kckern", "user_2", "user_3"
+ * @example "user_1", "user_2", "user_3"
  */
 
 /**
@@ -440,8 +440,8 @@ effectiveRoster.forEach(entry => {
 });
 
 this.governanceEngine.evaluate({
-    activeParticipants,  // ["kckern", "user_2", "user_3", ...]
-    userZoneMap,         // {"kckern": "fire", "user_2": "warm", ...}
+    activeParticipants,  // ["user_1", "user_2", "user_3", ...]
+    userZoneMap,         // {"user_1": "fire", "user_2": "warm", ...}
     zoneRankMap,
     zoneInfoMap,
     totalCount: activeParticipants.length

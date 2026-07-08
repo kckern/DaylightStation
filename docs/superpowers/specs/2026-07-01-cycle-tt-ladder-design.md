@@ -76,10 +76,10 @@ Both served by `CycleRaceService` (new methods) through `backend/src/4_api/v1/ro
   "course": { "id": "sprint-1500m", "label": "Sprint 1500", "win_condition": "distance", "goal_m": 1500 },
   "week": { "start": "2026-06-29", "end": "2026-07-06" },
   "standings": [
-    { "userId": "kckern", "bestValue": 148.2, "raceId": "2026...", "attempts": 3 },
+    { "userId": "user_1", "bestValue": 148.2, "raceId": "2026...", "attempts": 3 },
     { "userId": "user_3",   "bestValue": 161.4, "raceId": "2026...", "attempts": 1 }
   ],
-  "allTimeRecord": { "userId": "kckern", "bestValue": 141.0, "raceId": "2026...", "date": "2026-05-12" }
+  "allTimeRecord": { "userId": "user_1", "bestValue": 141.0, "raceId": "2026...", "date": "2026-05-12" }
 }
 ```
 

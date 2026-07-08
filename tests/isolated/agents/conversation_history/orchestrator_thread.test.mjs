@@ -29,7 +29,7 @@ describe('BaseAgent — messages threading', () => {
       { role: 'assistant', content: 'reply' },
       { role: 'user', content: 'second' },
     ];
-    await agent.run('second', { context: { userId: 'kckern', messages } });
+    await agent.run('second', { context: { userId: 'user_1', messages } });
     expect(executeMock).toHaveBeenCalledOnce();
     const call = executeMock.mock.calls[0][0];
     expect(call.messages).toEqual(messages);
@@ -41,7 +41,7 @@ describe('BaseAgent — messages threading', () => {
   it('passes empty array when context.messages is missing', async () => {
     const executeMock = vi.fn(async () => ({ output: 'ok', toolCalls: [], turnId: 't' }));
     const agent = makeStub({ executeMock });
-    await agent.run('hi', { context: { userId: 'kckern' } });
+    await agent.run('hi', { context: { userId: 'user_1' } });
     const call = executeMock.mock.calls[0][0];
     expect(call.messages).toEqual([]);
   });
@@ -60,7 +60,7 @@ describe('BaseAgent — messages threading', () => {
   it('rejects non-array context.messages by passing empty array', async () => {
     const executeMock = vi.fn(async () => ({ output: 'ok', toolCalls: [], turnId: 't' }));
     const agent = makeStub({ executeMock });
-    await agent.run('hi', { context: { userId: 'kckern', messages: 'oops' } });
+    await agent.run('hi', { context: { userId: 'user_1', messages: 'oops' } });
     const call = executeMock.mock.calls[0][0];
     expect(call.messages).toEqual([]);
   });

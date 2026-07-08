@@ -113,7 +113,7 @@ describe('YamlNutriListDatastore', () => {
 
     it('allows valid userId without special characters', async () => {
       const items = [{
-        userId: 'kckern',
+        userId: 'user_1',
         label: 'Test Food',
         calories: 200,
         date: '2026-01-31',

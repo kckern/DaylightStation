@@ -86,7 +86,7 @@ exceptions:
     file: "backend/src/1_domains/fitness/entities/Session.mjs"
     rule: "tojson-in-entity"
     reason: "Needed for API serialization, acceptable tradeoff"
-    approved_by: "kckern"
+    approved_by: "user_1"
     approved_date: 2026-01-29
 
 # Auto-populated: violations that were in 'known' but no longer detected

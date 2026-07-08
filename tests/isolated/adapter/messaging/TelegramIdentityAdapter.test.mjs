@@ -4,7 +4,7 @@ import { UserIdentityService } from '#domains/messaging/services/UserIdentitySer
 
 const mappings = {
   telegram: {
-    '575596036': 'kckern',
+    '575596036': 'user_1',
     '123456789': 'kirk',
   },
 };
@@ -23,7 +23,7 @@ describe('TelegramIdentityAdapter', () => {
 
       const result = adapter.resolve('nutribot', { platformUserId: '575596036' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
 
@@ -41,9 +41,9 @@ describe('TelegramIdentityAdapter', () => {
     it('produces valid ResolvedIdentity from system username', () => {
       const adapter = new TelegramIdentityAdapter({ userIdentityService: identityService, botConfigs });
 
-      const result = adapter.resolve('nutribot', { username: 'kckern' });
+      const result = adapter.resolve('nutribot', { username: 'user_1' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
 
@@ -61,7 +61,7 @@ describe('TelegramIdentityAdapter', () => {
 
       const result = adapter.resolve('nutribot', { conversationId: 'telegram:b6898194425_c575596036' });
 
-      expect(result.username).toBe('kckern');
+      expect(result.username).toBe('user_1');
       expect(result.conversationIdString).toBe('telegram:b6898194425_c575596036');
     });
   });

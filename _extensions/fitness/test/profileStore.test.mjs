@@ -30,14 +30,14 @@ test('addFingerprintEntry carries the simulated flag when present', () => {
 
 test('collectGalleryUuids gathers enrolled uuids for authorized users only', () => {
   const profilesByUser = {
-    kckern: { identities: { fingerprints: [{ id: 'u1', finger: 'right-index' }, { id: 'u2', finger: 'left-index' }] } },
+    user_1: { identities: { fingerprints: [{ id: 'u1', finger: 'right-index' }, { id: 'u2', finger: 'left-index' }] } },
     guest: { identities: { fingerprints: [{ id: 'g1', finger: 'right-index' }] } },
     nofp: { identities: {} },
   };
-  const gallery = collectGalleryUuids(profilesByUser, ['kckern', 'nofp']);
+  const gallery = collectGalleryUuids(profilesByUser, ['user_1', 'nofp']);
   assert.deepEqual(gallery, [
-    { uuid: 'u1', username: 'kckern' },
-    { uuid: 'u2', username: 'kckern' },
+    { uuid: 'u1', username: 'user_1' },
+    { uuid: 'u2', username: 'user_1' },
   ]);
 });
 

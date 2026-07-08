@@ -193,9 +193,9 @@ Summary YAML records `challenges: total: 28, succeeded: 25, failed: 3`. The disc
 ### Notable observations
 - **Six `zone_downgraded` to warm**, each citing *"hot not achievable, downgraded to warm."* Suggests the zone-feasibility predicate is consistently too aggressive — the system tried to issue a hot-zone challenge six times when participants weren't even close. Of those, only one became `skipped_infeasible` ("Only 0/3 within 20 BPM of hot"). The other five became warm-zone challenges. Question: was the user surprised when an apparently-cool group got a "warm" challenge that they then had to satisfy?
 - **Three challenges failed and triggered locks**:
-  - `02:43:43` — hot/required=1, actual=0, missingUsers=[user_3, kckern, user_4, user_2] (User_2 was already in `warm`; the other three were `active`).
-  - `02:48:41` — warm/required=4, actual=2, missingUsers=[kckern, user_4].
-  - `03:12:53` — warm/required=3, actual=1, missingUsers=[user_3, kckern].
+  - `02:43:43` — hot/required=1, actual=0, missingUsers=[user_3, user_1, user_4, user_2] (User_2 was already in `warm`; the other three were `active`).
+  - `02:48:41` — warm/required=4, actual=2, missingUsers=[user_1, user_4].
+  - `03:12:53` — warm/required=3, actual=1, missingUsers=[user_3, user_1].
 - **Two `requirements_not_met` locks** at the very end (`03:16:08`, `03:19:28`) — `challengeActive: false`. These are cycle-end lockouts after the warning window elapsed without enough participants in the required zone. User_1 and User_3 had dropped to `cool` (likely winding down — Wave Race ended around then).
 - **Three `cycle.paused_by_base_req`** events — base-requirements pause is firing. Need confirmation this matches user expectation (pause should be invisible; if it surfaces as a UI freeze, that's a separate UX issue).
 - **One `challenge.skipped_infeasible`** at `03:11:07` — `"Only 0/3 within 20 BPM of hot"`. Good — the skip rule is firing when it should. Question: why only once, when zone_downgraded fired six times?

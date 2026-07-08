@@ -8,12 +8,12 @@ import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMa
 // participant resolve to "Unknown" and collapsed all HR onto the first series.
 test('synthesizes roster entries that carry id (slug) and display_name', () => {
   const roster = synthesizeRosterFromParticipants({
-    kckern: { display_name: 'User_1', hr_device: '40475', is_primary: true },
+    user_1: { display_name: 'User_1', hr_device: '40475', is_primary: true },
     user_2: { display_name: 'User_2', hr_device: '90003' }
   });
-  assert.deepEqual(roster.map(r => r.id), ['kckern', 'user_2']);
+  assert.deepEqual(roster.map(r => r.id), ['user_1', 'user_2']);
   assert.equal(roster[0].display_name, 'User_1');
-  assert.equal(roster[0].avatarRef, 'kckern');
+  assert.equal(roster[0].avatarRef, 'user_1');
   assert.equal(roster[1].display_name, 'User_2');
 });
 
@@ -25,7 +25,7 @@ test('falls back to slug when a participant has no display_name', () => {
 
 test('synthesized roster drives correct per-participant names AND distinct HR (no "Unknown", no collapse)', () => {
   const roster = synthesizeRosterFromParticipants({
-    kckern: { display_name: 'User_1', hr_device: '40475' },
+    user_1: { display_name: 'User_1', hr_device: '40475' },
     user_2: { display_name: 'User_2', hr_device: '90003' }
   });
   const session = {
@@ -33,7 +33,7 @@ test('synthesized roster drives correct per-participant names AND distinct HR (n
     timeline: {
       interval_seconds: 5,
       series: {
-        'kckern:hr': JSON.stringify([[150, 12]]),
+        'user_1:hr': JSON.stringify([[150, 12]]),
         'user_2:hr': JSON.stringify([[120, 12]])
       }
     },

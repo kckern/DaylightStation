@@ -21,9 +21,9 @@ const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
 describe('resolveEligibleUsernames (enrollment eligibility policy)', () => {
   it('lists admins first, then primary, deduped when a user is in both', () => {
-    const cfg = { users: { admin: ['kckern', 'user_9'], primary: ['kckern', 'user_2'] } };
-    // admins first (kckern, user_9), then remaining primary (user_2); kckern once.
-    expect(resolveEligibleUsernames(cfg)).toEqual(['kckern', 'user_9', 'user_2']);
+    const cfg = { users: { admin: ['user_1', 'user_9'], primary: ['user_1', 'user_2'] } };
+    // admins first (user_1, user_9), then remaining primary (user_2); user_1 once.
+    expect(resolveEligibleUsernames(cfg)).toEqual(['user_1', 'user_9', 'user_2']);
   });
 
   it('includes an admin who is not primary', () => {
@@ -80,7 +80,7 @@ describe('ManageAccess.gate (self/admin authorization gate)', () => {
     const ma = buildManageAccess({
       profiles: { 'test-user': { identities: { fingerprints: [fp('own-1')] } } },
       unlockService: { requestUnlock },
-      identityRelay: { adminVerifiedWithin: () => ({ userId: 'kckern' }) },
+      identityRelay: { adminVerifiedWithin: () => ({ userId: 'user_1' }) },
     });
     const gate = await ma.gate('default', 'test-user');
     expect(gate).toEqual({ ok: true });

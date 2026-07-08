@@ -71,26 +71,26 @@ describe('FreshRSSSourceAdapter', () => {
 
   describe('markRead', () => {
     test('strips freshrss: prefix and delegates to low-level adapter', async () => {
-      await adapter.markRead(['freshrss:item-1', 'freshrss:item-2'], 'kckern');
+      await adapter.markRead(['freshrss:item-1', 'freshrss:item-2'], 'user_1');
 
       expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(
         ['item-1', 'item-2'],
-        'kckern'
+        'user_1'
       );
     });
 
     test('handles IDs without prefix gracefully', async () => {
-      await adapter.markRead(['item-1'], 'kckern');
+      await adapter.markRead(['item-1'], 'user_1');
 
       expect(mockFreshRSSAdapter.markRead).toHaveBeenCalledWith(
         ['item-1'],
-        'kckern'
+        'user_1'
       );
     });
 
     test('no-ops when freshRSSAdapter is null', async () => {
       const nullAdapter = new FreshRSSSourceAdapter({ freshRSSAdapter: null });
-      await expect(nullAdapter.markRead(['freshrss:item-1'], 'kckern')).resolves.toBeUndefined();
+      await expect(nullAdapter.markRead(['freshrss:item-1'], 'user_1')).resolves.toBeUndefined();
     });
   });
 });
@@ -186,7 +186,7 @@ Add to `tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs`:
         .mockResolvedValueOnce({ items: allItems, continuation: 'cont-1' }); // pass 2: all
 
       const query = { tier: 'wire', limit: 20 };
-      const result = await adapter.fetchPage(query, 'kckern', {});
+      const result = await adapter.fetchPage(query, 'user_1', {});
 
       // First two items should be unread
       expect(result.items[0].title).toBe('Unread 1');
@@ -205,7 +205,7 @@ Add to `tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs`:
       mockFreshRSSAdapter.getItems.mockResolvedValueOnce({ items: unreadItems, continuation: 'more' });
 
       const query = { tier: 'wire', limit: 20 };
-      const result = await adapter.fetchPage(query, 'kckern', {});
+      const result = await adapter.fetchPage(query, 'user_1', {});
 
       // Only one getItems call (unread pass), no second call needed
       expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledTimes(1);
@@ -215,7 +215,7 @@ Add to `tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs`:
 
     test('returns empty when adapter is null', async () => {
       const nullAdapter = new FreshRSSSourceAdapter({ freshRSSAdapter: null });
-      const result = await nullAdapter.fetchPage({ tier: 'wire' }, 'kckern', {});
+      const result = await nullAdapter.fetchPage({ tier: 'wire' }, 'user_1', {});
       expect(result.items).toHaveLength(0);
     });
 
@@ -225,18 +225,18 @@ Add to `tests/isolated/adapter/feed/FreshRSSSourceAdapter.test.mjs`:
         continuation: null,
       });
 
-      const result = await adapter.fetchPage({ tier: 'wire' }, 'kckern', {});
+      const result = await adapter.fetchPage({ tier: 'wire' }, 'user_1', {});
       expect(result.items[0].id).toBe('freshrss:abc123');
     });
 
     test('respects cursor for pagination (passes to unread fetch)', async () => {
       mockFreshRSSAdapter.getItems.mockResolvedValueOnce({ items: [], continuation: null });
 
-      await adapter.fetchPage({ tier: 'wire' }, 'kckern', { cursor: 'page-2-cursor' });
+      await adapter.fetchPage({ tier: 'wire' }, 'user_1', { cursor: 'page-2-cursor' });
 
       expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith(
         'user/-/state/com.google/reading-list',
-        'kckern',
+        'user_1',
         expect.objectContaining({ continuation: 'page-2-cursor' }),
       );
     });
@@ -468,7 +468,7 @@ Add to `tests/isolated/api/feed/feed.router.test.mjs`, inside a new describe blo
       expect(res.status).toBe(200);
       expect(mockSourceAdapters[0].markRead).toHaveBeenCalledWith(
         ['freshrss:item-1', 'freshrss:item-2'],
-        'kckern'
+        'user_1'
       );
     });
 
@@ -487,7 +487,7 @@ Add to `tests/isolated/api/feed/feed.router.test.mjs`, inside a new describe blo
         .send({ itemIds: ['freshrss:item-1', 'reddit:xyz'] });
 
       expect(res.status).toBe(200);
-      expect(mockSourceAdapters[0].markRead).toHaveBeenCalledWith(['freshrss:item-1'], 'kckern');
+      expect(mockSourceAdapters[0].markRead).toHaveBeenCalledWith(['freshrss:item-1'], 'user_1');
       expect(mockDismissedItemsStore.add).toHaveBeenCalledWith(['reddit:xyz']);
     });
   });

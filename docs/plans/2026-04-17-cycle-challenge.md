@@ -802,13 +802,13 @@ describe('GovernanceEngine eligible users lookup', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['kckern', 'user_2'] },
+          { id: 'cycle_ace', eligible_users: ['user_1', 'user_2'] },
           { id: 'tricycle', eligible_users: ['user_3'] }
         ]
       }
     };
     const engine = new GovernanceEngine(session);
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['kckern', 'user_2']);
+    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1', 'user_2']);
     expect(engine._getEligibleUsers('tricycle')).toEqual(['user_3']);
     expect(engine._getEligibleUsers('unknown')).toEqual([]);
   });
@@ -2334,7 +2334,7 @@ equipment:
     name: CycleAce
     type: stationary_bike
     cadence: 49904
-    eligible_users: [kckern, user_2, user_3]   # adjust as desired
+    eligible_users: [user_1, user_2, user_3]   # adjust as desired
     rpm: {...}
 ```
 

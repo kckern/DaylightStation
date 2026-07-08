@@ -2,16 +2,16 @@
  * Participant Identifier
  * @typedef {string} ParticipantId
  * @description Stable participant identifier.
- * - Format: userId ("kckern", "user_3")
+ * - Format: userId ("user_1", "user_3")
  * - NOT a display name ("User_4", "User_1")
- * @example "kckern"
+ * @example "user_1"
  */
 
 /**
  * Timeline Series Key Format
  * @typedef {string} TimelineSeriesKey
  * @description All participant timeline series MUST use 3 segments: <scope>:<participantId>:<metric>
- * @example "user:kckern:coins_total"
+ * @example "user:user_1:coins_total"
  */
 
 /**

@@ -18,7 +18,7 @@ test('resolver maps an HR device id (string or number) to its assigned colour', 
   const resolve = makeDeviceColorResolver({ 90003: 'red', 90001: 'yellow', 40475: 'watch' });
   assert.equal(resolve('90003'), '#ff6b6b');   // user_2, looked up by string
   assert.equal(resolve(90003), '#ff6b6b');      // and by number
-  assert.equal(resolve('40475'), '#e9ecef');   // kckern watch
+  assert.equal(resolve('40475'), '#e9ecef');   // user_1 watch
 });
 
 test('resolver falls back to a stable per-device hash when unconfigured', () => {
