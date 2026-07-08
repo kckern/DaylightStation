@@ -12,7 +12,7 @@ import {
   createDeviceLivenessService,
   getDeviceLivenessService,
   stopDeviceLivenessService,
-} from '#system/bootstrap/deviceLiveness.mjs';
+} from '#composition/modules/deviceLiveness.mjs';
 
 function makeFakeBus() {
   let liveness = null;

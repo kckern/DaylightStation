@@ -179,7 +179,7 @@ No changes needed to `TriggerDispatchService`, `actionHandlers`, the WebSocket b
 - **Domain (resolvers):** `backend/src/2_domains/trigger/services/{NfcResolver,StateResolver,ResolverRegistry}.mjs`
 - **Application (dispatcher + actions):** `backend/src/3_applications/trigger/{TriggerDispatchService,actionHandlers}.mjs`
 - **API router:** `backend/src/4_api/v1/routers/trigger.mjs`
-- **Bootstrap wiring:** `createTriggerApiRouter` in `backend/src/0_system/bootstrap.mjs`
+- **Bootstrap wiring:** `createTriggerApiRouter` in `backend/src/5_composition/bootstrap.mjs`
 - **Tests:** `tests/isolated/{adapter,domain,application}/trigger/`
 
 ## See also

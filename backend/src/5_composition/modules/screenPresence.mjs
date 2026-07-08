@@ -2,7 +2,7 @@
  * ScreenPresenceService factory — builds the presence→entity map from the device
  * config and wires the service into the event bus. Mirrors bootstrap/deviceLiveness.
  *
- * @module 0_system/bootstrap/screenPresence
+ * @module 5_composition/modules/screenPresence
  */
 
 import { ScreenPresenceService } from '#apps/devices/services/ScreenPresenceService.mjs';

@@ -7,7 +7,7 @@
  * screen, so nothing changes on-device until `screen_power_sync.enabled: true` is
  * set in `config/piano.yml` (design slice 4: on-device verification).
  *
- * @module 0_system/bootstrap/pianoScreenPowerSync
+ * @module 5_composition/modules/pianoScreenPowerSync
  */
 
 import { PianoScreenAuthorityService } from '#apps/devices/services/PianoScreenAuthorityService.mjs';

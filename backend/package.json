@@ -25,6 +25,7 @@
     "#rendering/*": "./src/1_rendering/*",
     "#apps/*": "./src/3_applications/*",
     "#api/*": "./src/4_api/*",
+    "#composition/*": "./src/5_composition/*",
     "#shared/*": "./shared/*",
     "#shared-contracts/*": "./shared-contracts/*"
   },

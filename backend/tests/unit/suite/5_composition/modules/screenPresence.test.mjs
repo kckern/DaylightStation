@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createScreenPresenceService, _resetForTests } from '#system/bootstrap/screenPresence.mjs';
+import { createScreenPresenceService, _resetForTests } from '#composition/modules/screenPresence.mjs';
 
 function makeBus() {
   return { onClientMessage: vi.fn(), onClientDisconnection: vi.fn() };

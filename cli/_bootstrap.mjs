@@ -163,7 +163,7 @@ export async function getContentQuery() {
       throw new Error('Plex auth token missing (data/household/auth/plex.yml).');
     }
 
-    const { createContentRegistry } = await import('#system/bootstrap.mjs');
+    const { createContentRegistry } = await import('#composition/bootstrap.mjs');
     const { ContentQueryService } = await import('#apps/content/ContentQueryService.mjs');
 
     const result = createContentRegistry(
@@ -351,7 +351,7 @@ export { readBuxferCredsDirect as _readBuxferCredsDirect };
  * subcommands. Uses the same domain service the in-process HealthCoachAgent
  * uses — one set of analytics, two transports.
  *
- * Wiring (mirrors backend/src/0_system/bootstrap.mjs around line 2587):
+ * Wiring (mirrors backend/src/5_composition/bootstrap.mjs around line 2587):
  *   healthStore     ← YamlHealthDatastore({ dataService, configService })
  *   healthService   ← AggregateHealthUseCase({ healthStore })   (exposes getHealthForRange)
  *   periodResolver  ← new PeriodResolver()

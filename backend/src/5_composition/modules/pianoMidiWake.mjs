@@ -6,7 +6,7 @@
  * Mirrors bootstrap/pianoScreenPowerSync. DISABLED BY DEFAULT — nothing connects
  * until `midi_wake.enabled: true` in `config/piano.yml`.
  *
- * @module 0_system/bootstrap/pianoMidiWake
+ * @module 5_composition/modules/pianoMidiWake
  */
 
 import { PianoMidiWakeService } from '#apps/devices/services/PianoMidiWakeService.mjs';

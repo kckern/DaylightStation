@@ -5,7 +5,7 @@
  * Extracted from bootstrap.mjs so unit tests can exercise the wiring logic
  * without pulling in the entire backend composition root.
  *
- * @module 0_system/bootstrap/deviceLiveness
+ * @module 5_composition/modules/deviceLiveness
  */
 
 import { DeviceLivenessService } from '#apps/devices/services/DeviceLivenessService.mjs';

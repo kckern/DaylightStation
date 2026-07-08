@@ -18,7 +18,8 @@ backend/
 │   ├── 2_domains/      # Business logic (pure, no I/O)
 │   ├── 3_applications/ # Use cases, orchestration
 │   ├── 4_api/          # HTTP routes, handlers
-│   └── app.mjs         # App factory / composition root (run via backend/index.js)
+│   ├── 5_composition/  # Composition root: bootstrap.mjs + per-feature wiring modules
+│   └── app.mjs         # App factory (run via backend/index.js)
 └── _legacy/            # Legacy code (being phased out)
 ```
 
@@ -41,7 +42,9 @@ Cross-cutting concerns shared across all layers.
 | `proxy/` | External service proxy | ProxyService.mjs |
 | `utils/` | Shared utilities | Various helpers |
 
-**Key Pattern:** `bootstrap.mjs` contains factory functions for creating all domain services with proper dependency injection.
+### 5_composition/
+
+The composition root — the one sanctioned cross-layer zone. `bootstrap.mjs` contains factory functions for creating all domain services with proper dependency injection; `modules/` holds per-feature wiring modules (e.g. `lifeplan.mjs`, `deviceLiveness.mjs`, `screenPresence.mjs`) and per-domain API-router wiring. Import via the `#composition/*` alias.
 
 ### 1_adapters/
 
@@ -157,12 +160,13 @@ HTTP layer - Express routers and handlers.
 ## Dependency Rules
 
 ```
+5_composition  → can import from → everything (composition root — the one sanctioned cross-layer zone)
 4_api          → can import from → 3, 2, 1_adapters, 1_rendering, 0
 3_applications → can import from → 2, 1_adapters, 1_rendering, 0
 1_adapters     → can import from → 3 (ports only), 2, 0
 1_rendering    → can import from → 2, 0
 2_domains      → can import from → 0 (minimal)
-0_system       → standalone (no upward imports; the composition root is the sole exception and is being relocated — see remediation plan P2.7)
+0_system       → standalone — no upward imports (sole exemption: pure shared-kernel utils at #domains/core/utils)
 ```
 
 **Key Principles:**

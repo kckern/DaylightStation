@@ -83,12 +83,12 @@ import {
   createCostServices,
   createCostApiRouter,
   createMediaServices
-} from './0_system/bootstrap.mjs';
+} from '#composition/bootstrap.mjs';
 
-import { bootstrapLifeplan } from './0_system/bootstrap/lifeplan.mjs';
-import { createScreenPresenceService } from './0_system/bootstrap/screenPresence.mjs';
-import { createPianoScreenPowerSync } from './0_system/bootstrap/pianoScreenPowerSync.mjs';
-import { createPianoMidiWake } from './0_system/bootstrap/pianoMidiWake.mjs';
+import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
+import { createPianoScreenPowerSync } from '#composition/modules/pianoScreenPowerSync.mjs';
+import { createPianoMidiWake } from '#composition/modules/pianoMidiWake.mjs';
 
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
@@ -2120,7 +2120,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.trigger = triggerRouter;
 
   // Camera feeds
-  const { createCameraServices } = await import('./0_system/bootstrap.mjs');
+  const { createCameraServices } = await import('#composition/bootstrap.mjs');
   const { cameraService } = createCameraServices({
     configService,
     householdId,
