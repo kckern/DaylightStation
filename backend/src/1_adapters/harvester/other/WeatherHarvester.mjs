@@ -18,7 +18,6 @@ import { fetchWeatherApi } from 'openmeteo';
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -27,7 +26,9 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  */
 export class WeatherHarvester extends IHarvester {
   #sharedStore;
-  #configService;
+  #lat;
+  #lng;
+  #weatherTimezone;
   #circuitBreaker;
   #timezone;
   #logger;
@@ -35,14 +36,18 @@ export class WeatherHarvester extends IHarvester {
   /**
    * @param {Object} config
    * @param {Object} config.sharedStore - Store for shared household data
-   * @param {Object} config.configService - ConfigService for location config
+   * @param {number|string} [config.lat] - Latitude for the weather location
+   * @param {number|string} [config.lng] - Longitude for the weather location
+   * @param {string} [config.weatherTimezone] - Timezone override from weather config
    * @param {string} [config.timezone] - Timezone for date formatting
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
     sharedStore,
-    configService,
-    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+    lat,
+    lng,
+    weatherTimezone,
+    timezone = 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -55,7 +60,9 @@ export class WeatherHarvester extends IHarvester {
     }
 
     this.#sharedStore = sharedStore;
-    this.#configService = configService;
+    this.#lat = lat;
+    this.#lng = lng;
+    this.#weatherTimezone = weatherTimezone;
     this.#timezone = timezone;
     this.#logger = logger;
 
@@ -104,15 +111,10 @@ export class WeatherHarvester extends IHarvester {
     try {
       this.#logger.info?.('weather.harvest.start', { username, forecastDays });
 
-      // Get location from config (use injected configService, fallback to global)
-      const cfg = this.#configService || configService;
-      // Try system.weather first, then adapters.weather, then secrets
-      const weatherConfig = cfg?.isReady?.()
-        ? (cfg.get?.('weather') || cfg.getAdapterConfig?.('weather'))
-        : null;
-      const lat = weatherConfig?.lat || cfg.getSecret?.('WEATHER_LAT');
-      const lng = weatherConfig?.lng || cfg.getSecret?.('WEATHER_LNG');
-      const tz = weatherConfig?.timezone || this.#timezone;
+      // Location + timezone are resolved by the composition root and injected.
+      const lat = this.#lat;
+      const lng = this.#lng;
+      const tz = this.#weatherTimezone || this.#timezone;
 
       if (!lat || !lng) {
         throw new InfrastructureError('Weather location not configured (WEATHER_LAT/WEATHER_LNG)', {

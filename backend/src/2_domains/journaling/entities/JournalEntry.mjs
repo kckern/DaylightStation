@@ -2,7 +2,7 @@
  * JournalEntry Entity - Represents a journal entry
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 export class JournalEntry {
   constructor({

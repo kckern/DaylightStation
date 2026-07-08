@@ -3,7 +3,7 @@
 // Domain interfaces for composed presentations - multi-track media playback
 // combining visual content (images, video, apps) with audio tracks.
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 // ============================================================================
 // TYPE DEFINITIONS

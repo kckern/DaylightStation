@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 const midiState = { activeNotes: new Map() };
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => midiState,
+  usePianoMidiNotes: () => midiState,
 }));
 
 import { useEngagementGate } from './useEngagementGate.js';

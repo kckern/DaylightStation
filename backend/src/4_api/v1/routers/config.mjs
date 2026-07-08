@@ -22,12 +22,12 @@ const PLAYER_ON_DECK_DEFAULTS = Object.freeze({
  * Create Config API router
  *
  * @param {Object} config
- * @param {string} config.dataPath - Base data directory path (e.g., /data or /path/to/data)
+ * @param {string} config.householdDir - Resolved household base dir (ConfigService.getHouseholdPath(''))
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createConfigRouter(config) {
-  const { dataPath, logger = console } = config;
+  const { householdDir, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -51,7 +51,7 @@ export function createConfigRouter(config) {
    * }
    */
   router.get('/content-prefixes', asyncHandler(async (req, res) => {
-    const configPath = path.join(dataPath, 'household', 'config', 'content-prefixes');
+    const configPath = path.join(householdDir, 'config', 'content-prefixes');
 
     logger.debug?.('config.content-prefixes.request', { configPath });
 
@@ -87,7 +87,7 @@ export function createConfigRouter(config) {
    * }
    */
   router.get('/player', asyncHandler(async (req, res) => {
-    const configPath = path.join(dataPath, 'household', 'config', 'player');
+    const configPath = path.join(householdDir, 'config', 'player');
 
     logger.debug?.('config.player.request', { configPath });
 

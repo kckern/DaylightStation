@@ -17,6 +17,7 @@
  */
 
 import { ConfigService } from './ConfigService.mjs';
+import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { loadConfig, loadSystemConfig } from './configLoader.mjs';
 import { validateConfig, ConfigValidationError } from './configValidator.mjs';
 import { DataService } from './DataService.mjs';
@@ -43,7 +44,11 @@ function createSecretsProvider(dataDir, systemConfig) {
     case 'vault':
       return new VaultSecretsProvider(systemConfig.secrets?.vault);
     default:
-      throw new Error(`Unknown secrets provider: ${providerType}`);
+      throw new ConfigurationError(`Unknown secrets provider: ${providerType}`, {
+        code: 'UNKNOWN_SECRETS_PROVIDER',
+        key: 'secrets.provider',
+        value: providerType,
+      });
   }
 }
 
@@ -92,7 +97,9 @@ function setEnvPaths(svc) {
  */
 export async function initConfigService(dataDir) {
   if (instance) {
-    throw new Error('ConfigService already initialized');
+    throw new ConfigurationError('ConfigService already initialized', {
+      code: 'ALREADY_INITIALIZED',
+    });
   }
   instance = await createConfigService(dataDir);
   setEnvPaths(instance);
@@ -107,8 +114,9 @@ export async function initConfigService(dataDir) {
  */
 export function getConfigService() {
   if (!instance) {
-    throw new Error(
-      'ConfigService not initialized. Call initConfigService(dataDir) at startup.'
+    throw new ConfigurationError(
+      'ConfigService not initialized. Call initConfigService(dataDir) at startup.',
+      { code: 'NOT_INITIALIZED' }
     );
   }
   return instance;

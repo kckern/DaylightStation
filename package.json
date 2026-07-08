@@ -56,6 +56,7 @@
     "#rendering/*": "./backend/src/1_rendering/*",
     "#apps/*": "./backend/src/3_applications/*",
     "#api/*": "./backend/src/4_api/*",
+    "#shared/*": "./shared/*",
     "#backend/*": "./backend/*",
     "#frontend/*": "./frontend/src/*",
     "#fixtures/*": "./tests/_fixtures/*",
@@ -82,6 +83,8 @@
     "dscli": "./cli/dscli.mjs"
   },
   "scripts": {
+    "audit:layers": "node scripts/audit-layer-imports.mjs",
+    "test:refactor": "vitest run tests/unit/tooling/auditLayerImports.test.mjs tests/unit/system/vendorError.test.mjs tests/unit/system/systemErrors.test.mjs tests/unit/system/errorHandlerString.test.mjs tests/unit/system/deepMerge.test.mjs tests/unit/domains/fitness/zoneSSOT.test.mjs tests/unit/config/timezoneDefault.test.mjs",
     "dev": "npm run start:dev",
     "dev:clean": "node scripts/port-manager.mjs clean-all && npm run dev",
     "dev:kill": "node scripts/port-manager.mjs kill 3112",

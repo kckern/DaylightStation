@@ -211,6 +211,8 @@ export class OpenAIAdapter {
 
 Adapters implement port interfaces from `3_applications/*/ports/`:
 
+> **Missing port interface (Decision D7, 2026-07-06):** enforced for gateway/datastore adapters where the port exists — the flagship adapter MUST `extends` its port. Zero-importer port files are deleted, not kept as aspiration. Internal helpers/parsers are exempt. See the [decision register](./layers-of-abstraction/decision-register.md).
+
 ```javascript
 import { IMessagingGateway } from '#applications/common/ports/IMessagingGateway.mjs';
 

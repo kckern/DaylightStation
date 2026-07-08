@@ -90,15 +90,23 @@ describe('ZoneService', () => {
   });
 
   describe('getDefaultThresholds', () => {
+    // Reconciled to the domain SSOT (Zone.createDefaultZones) per audit X-5. The
+    // old ZoneService-only set (hot 0.8 / fire 0.9, cool = active boundary)
+    // disagreed with the Zone entity; the threshold map is now the entity's zone
+    // lower bounds: cool 0, active 0.5, warm 0.6, hot 0.7, fire 0.85 of maxHr.
     test('creates thresholds from max HR', () => {
       const thresholds = service.getDefaultThresholds(200);
-      expect(thresholds.cool).toBe(100);  // 200 * 0.5
-      expect(thresholds.fire).toBe(180);  // 200 * 0.9
+      expect(thresholds.cool).toBe(0);    // cool starts at rest
+      expect(thresholds.active).toBe(100); // 200 * 0.5
+      expect(thresholds.warm).toBe(120);   // 200 * 0.6
+      expect(thresholds.hot).toBe(140);    // 200 * 0.7
+      expect(thresholds.fire).toBe(170);   // 200 * 0.85
     });
 
     test('uses 185 as default max HR', () => {
       const thresholds = service.getDefaultThresholds();
-      expect(thresholds.cool).toBe(93);  // 185 * 0.5 rounded
+      expect(thresholds.cool).toBe(0);
+      expect(thresholds.active).toBe(93);  // 185 * 0.5 rounded
     });
   });
 

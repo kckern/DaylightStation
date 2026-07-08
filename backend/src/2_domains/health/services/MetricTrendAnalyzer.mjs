@@ -1,5 +1,7 @@
 // backend/src/2_domains/health/services/MetricTrendAnalyzer.mjs
 
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 /**
  * Trend and detection primitives. Builds on MetricAggregator —
  * trajectory uses ordinary-least-squares linear regression over a daily
@@ -12,8 +14,8 @@
  */
 export class MetricTrendAnalyzer {
   constructor(deps) {
-    if (!deps?.aggregator)     throw new Error('MetricTrendAnalyzer requires aggregator');
-    if (!deps?.periodResolver) throw new Error('MetricTrendAnalyzer requires periodResolver');
+    if (!deps?.aggregator)     throw new ValidationError('MetricTrendAnalyzer requires aggregator', { code: 'MISSING_AGGREGATOR', field: 'aggregator' });
+    if (!deps?.periodResolver) throw new ValidationError('MetricTrendAnalyzer requires periodResolver', { code: 'MISSING_PERIOD_RESOLVER', field: 'periodResolver' });
     this.aggregator = deps.aggregator;
     this.periodResolver = deps.periodResolver;
   }
@@ -269,7 +271,7 @@ function buildSustainedMatcher(condition) {
     const t = condition.field_below;
     return (v) => v < t;
   }
-  throw new Error(`MetricTrendAnalyzer: unknown condition shape ${JSON.stringify(condition)}`);
+  throw new ValidationError(`MetricTrendAnalyzer: unknown condition shape ${JSON.stringify(condition)}`, { code: 'UNKNOWN_CONDITION_SHAPE', field: 'condition', value: condition });
 }
 
 function makeRun(points, fromIdx, toIdx, values) {

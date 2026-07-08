@@ -2003,23 +2003,29 @@
 }
 
 .piano-score-cursor {
-  position: absolute; // width set inline (scales with zoom)
+  position: absolute; left: 0; top: 0; // positioned via transform (compositor path); width set inline (scales with zoom)
   background: color-mix(in srgb, var(--cursor-color, #2ec46f) 26%, transparent);
   border-left: 3px solid var(--cursor-color, #2ec46f);
   border-radius: 3px; pointer-events: none; z-index: 5;
-  transition: left 140ms ease, top 140ms ease;
+  will-change: transform;
+  transition: transform 140ms ease;
   &.is-jump { transition: none; } // system break — teleport, don't sweep diagonally
   &.is-wrong {
     background: rgba(255, 82, 82, 0.3); border-color: #ff5252;
     animation: scoreCursorWrong 280ms ease;
   }
 }
-@keyframes scoreCursorWrong { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+// Shake uses the individual `translate` property (NOT `transform`) so it composes
+// on top of the positioning `transform: translate3d(...)` set inline — animating
+// `transform` here would override the inline position and jump the cursor to origin.
+@keyframes scoreCursorWrong { 0%,100% { translate: 0 0; } 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
 
-// Task 11: note light-up chips (positioned over noteheads by NoteHighlightLayer;
-// left/top/width/height set inline). Accent comes from --nh-color. Non-interactive.
+// Task 11: note light-up chips (positioned over noteheads by NoteHighlightLayer
+// via transform (compositor path); width/height set inline). Accent comes from
+// --nh-color. Non-interactive.
 .piano-score-note {
-  position: absolute; z-index: 6; pointer-events: none;
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none;
+  contain: layout paint;
   box-sizing: border-box; border-radius: 3px;
   // NO ring/circle around the notehead — a translucent colour highlight (a
   // "highlighter swash" behind the note) marks the note to read. Circles were

@@ -40,7 +40,7 @@ import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
-import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
@@ -284,19 +284,14 @@ export function createFitnessRouter(config) {
   /**
    * GET /api/fitness/sessions/dates - List all dates that have sessions
    */
-  router.get('/sessions/dates', async (req, res) => {
+  router.get('/sessions/dates', asyncHandler(async (req, res) => {
     const { household } = req.query;
-    try {
-      const dates = await sessionService.listDates(household);
-      return res.json({
-        dates,
-        household: sessionService.resolveHouseholdId(household)
-      });
-    } catch (err) {
-      logger.error?.('fitness.sessions.dates.error', { error: err?.message });
-      return res.status(500).json({ error: 'Failed to list session dates' });
-    }
-  });
+    const dates = await sessionService.listDates(household);
+    return res.json({
+      dates,
+      household: sessionService.resolveHouseholdId(household)
+    });
+  }));
 
   /**
    * GET /api/fitness/sessions - List sessions for a specific date or date range
@@ -305,116 +300,103 @@ export function createFitnessRouter(config) {
    * - since: YYYY-MM-DD (list sessions from this date to today, sorted desc)
    * - limit: number (max sessions to return when using since, default: 20)
    */
-  router.get('/sessions', async (req, res) => {
+  router.get('/sessions', asyncHandler(async (req, res) => {
     const { date, since, limit, household } = req.query;
     const doGroup = sessionGroupingService && req.query.group !== 'none';
 
     // Mode 1: Single date query (backwards compat)
     if (date && !since) {
-      try {
-        let sessions = await sessionService.listSessionsByDate(date, household);
-        if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
-        return res.json({
-          sessions,
-          date,
-          household: sessionService.resolveHouseholdId(household)
-        });
-      } catch (err) {
-        logger.error?.('fitness.sessions.list.error', { date, error: err?.message });
-        return res.status(500).json({ error: 'Failed to list sessions' });
-      }
+      let sessions = await sessionService.listSessionsByDate(date, household);
+      if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
+      return res.json({
+        sessions,
+        date,
+        household: sessionService.resolveHouseholdId(household)
+      });
     }
-    
+
     // Mode 2: Date range query (since -> today)
     if (since) {
-      try {
-        const t0 = Date.now();
-        const endDate = new Date().toISOString().split('T')[0]; // Today
-        // Parse relative date notation (e.g. "30d" = 30 days ago)
-        let startDate = since;
-        const relMatch = since.match(/^(\d+)d$/);
-        if (relMatch) {
-          const d = new Date();
-          d.setDate(d.getDate() - parseInt(relMatch[1], 10));
-          startDate = d.toISOString().split('T')[0];
-        }
-        let sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
-        const tAfterList = Date.now();
-        if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
-        const tAfterGroup = Date.now();
-        sessions.sort((a, b) => b.startTime - a.startTime); // grouping returns ascending; list is desc
-        const maxLimit = parseInt(limit) || 20;
-        const limited = sessions.slice(0, maxLimit);
-
-        logger.info?.('fitness.sessions.range.timing', {
-          since,
-          startDate,
-          endDate,
-          total: sessions.length,
-          returned: limited.length,
-          grouped: Boolean(doGroup),
-          listMs: tAfterList - t0,
-          groupMs: tAfterGroup - tAfterList,
-          totalMs: Date.now() - t0
-        });
-
-        return res.json({
-          sessions: limited,
-          since,
-          endDate,
-          total: sessions.length,
-          returned: limited.length,
-          household: sessionService.resolveHouseholdId(household)
-        });
-      } catch (err) {
-        logger.error?.('fitness.sessions.range.error', { since, error: err?.message });
-        return res.status(500).json({ error: 'Failed to list sessions in range' });
+      const t0 = Date.now();
+      const endDate = new Date().toISOString().split('T')[0]; // Today
+      // Parse relative date notation (e.g. "30d" = 30 days ago)
+      let startDate = since;
+      const relMatch = since.match(/^(\d+)d$/);
+      if (relMatch) {
+        const d = new Date();
+        d.setDate(d.getDate() - parseInt(relMatch[1], 10));
+        startDate = d.toISOString().split('T')[0];
       }
+      let sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
+      const tAfterList = Date.now();
+      if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
+      const tAfterGroup = Date.now();
+      sessions.sort((a, b) => b.startTime - a.startTime); // grouping returns ascending; list is desc
+      const maxLimit = parseInt(limit) || 20;
+      const limited = sessions.slice(0, maxLimit);
+
+      logger.info?.('fitness.sessions.range.timing', {
+        since,
+        startDate,
+        endDate,
+        total: sessions.length,
+        returned: limited.length,
+        grouped: Boolean(doGroup),
+        listMs: tAfterList - t0,
+        groupMs: tAfterGroup - tAfterList,
+        totalMs: Date.now() - t0
+      });
+
+      return res.json({
+        sessions: limited,
+        since,
+        endDate,
+        total: sessions.length,
+        returned: limited.length,
+        household: sessionService.resolveHouseholdId(household)
+      });
     }
-    
+
     // Neither date nor since provided
     return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
-  });
+  }));
 
   /**
    * GET /api/fitness/sessions/:sessionId - Get session detail
    */
-  router.get('/sessions/:sessionId', async (req, res) => {
+  router.get('/sessions/:sessionId', asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const { household } = req.query;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    try {
-      if (sessionId.startsWith('group:') && sessionGroupingService) {
-        const group = await sessionGroupingService.getGroupDetail(sessionId, household);
-        if (!group) return res.status(404).json({ error: 'Session not found' });
-        return res.json({ session: group });
-      }
-      const session = await sessionService.getSession(sessionId, household, {
-        decodeTimeline: true
-      });
-      if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      const json = session.toJSON();
-      // Enrich a standalone session with overlapping game activities (e.g. cycle
-      // races) so the detail header/timeline match the session list, which runs the
-      // same enrichment. Best-effort: a failure here must not break session detail.
-      if (sessionGroupingService) {
-        try {
-          const activities = await sessionGroupingService.enrichSession(sessionId, household);
-          if (Array.isArray(activities) && activities.length) json.activities = activities;
-        } catch (err) {
-          logger.warn?.('fitness.sessions.detail.enrich.error', { sessionId, error: err?.message });
-        }
-      }
-      return res.json({ session: json });
-    } catch (err) {
-      logger.error?.('fitness.sessions.detail.error', { sessionId, error: err?.message });
-      return res.status(500).json({ error: 'Failed to load session' });
+    if (sessionId.startsWith('group:') && sessionGroupingService) {
+      const group = await sessionGroupingService.getGroupDetail(sessionId, household);
+      if (!group) return res.status(404).json({ error: 'Session not found' });
+      return res.json({ session: group });
     }
-  });
+    const session = await sessionService.getSession(sessionId, household, {
+      decodeTimeline: true
+    });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const json = session.toJSON();
+    // Enrich a standalone session with overlapping game activities (e.g. cycle
+    // races) so the detail header/timeline match the session list, which runs the
+    // same enrichment. Best-effort: a failure here must not break session detail.
+    // KEEP this catch — degraded-response product fallback (return the session
+    // without activities rather than failing the whole detail request).
+    if (sessionGroupingService) {
+      try {
+        const activities = await sessionGroupingService.enrichSession(sessionId, household);
+        if (Array.isArray(activities) && activities.length) json.activities = activities;
+      } catch (err) {
+        logger.warn?.('fitness.sessions.detail.enrich.error', { sessionId, error: err?.message });
+      }
+    }
+    return res.json({ session: json });
+  }));
 
   // -------------------- Cycle Game races --------------------
   router.post('/cycle-races', async (req, res) => {
@@ -434,7 +416,7 @@ export function createFitnessRouter(config) {
 
   // NOTE: /ladder and /personal-bests MUST precede /cycle-races/:raceId or
   // Express matches them as raceIds.
-  router.get('/cycle-races/ladder', async (req, res) => {
+  router.get('/cycle-races/ladder', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
@@ -443,102 +425,78 @@ export function createFitnessRouter(config) {
       if (!ladder) return res.status(404).json({ error: 'no featured courses configured' });
       return res.json(ladder);
     } catch (err) {
+      // Expected-error mapping product fallback: a malformed ?week is a client
+      // error, not a 500. Everything else propagates to the error middleware.
       if (err?.code === 'BAD_WEEK') return res.status(400).json({ error: 'invalid week (expected YYYY-Www)' });
-      logger.error?.('fitness.cycle_races.ladder.error', { error: err?.message });
-      return res.status(500).json({ error: 'ladder failed' });
+      throw err;
     }
-  });
+  }));
 
-  router.get('/cycle-races/personal-bests', async (req, res) => {
+  router.get('/cycle-races/personal-bests', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
     const { userId, courseId } = req.query;
     if (!userId || !courseId) return res.status(400).json({ error: 'userId and courseId required' });
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
-    try {
-      return res.json(await cycleRaceService.getPersonalBest({ cycleGameConfig, userId, courseId, householdId }));
-    } catch (err) {
-      logger.error?.('fitness.cycle_races.pb.error', { error: err?.message });
-      return res.status(500).json({ error: 'personal-best failed' });
-    }
-  });
+    return res.json(await cycleRaceService.getPersonalBest({ cycleGameConfig, userId, courseId, householdId }));
+  }));
 
-  router.get('/cycle-races/:raceId', async (req, res) => {
+  router.get('/cycle-races/:raceId', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
-    try {
-      const race = await cycleRaceService.get(req.params.raceId, req.query.household);
-      if (!race) return res.status(404).json({ error: 'not found' });
-      return res.json({ race });
-    } catch (err) {
-      logger.error?.('fitness.cycle_races.get.error', { error: err?.message });
-      return res.status(500).json({ error: 'lookup failed' });
-    }
-  });
+    const race = await cycleRaceService.get(req.params.raceId, req.query.household);
+    if (!race) return res.status(404).json({ error: 'not found' });
+    return res.json({ race });
+  }));
 
-  router.get('/cycle-races', async (req, res) => {
+  router.get('/cycle-races', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
     const { date, courseId, winCondition, goalM, timeCapS, household } = req.query;
-    try {
-      if (date) return res.json({ races: await cycleRaceService.listByDate(date, household) });
-      if (courseId || winCondition) {
-        return res.json({ races: await cycleRaceService.findGhostCandidates({
-          courseId: courseId || null,
-          winCondition: winCondition || null,
-          goalM: goalM != null ? Number(goalM) : null,
-          timeCapS: timeCapS != null ? Number(timeCapS) : null,
-          householdId: household
-        }) });
-      }
-      return res.json({ dates: await cycleRaceService.listDates(household) });
-    } catch (err) {
-      logger.error?.('fitness.cycle_races.list.error', { error: err?.message });
-      return res.status(500).json({ error: 'list failed' });
+    if (date) return res.json({ races: await cycleRaceService.listByDate(date, household) });
+    if (courseId || winCondition) {
+      return res.json({ races: await cycleRaceService.findGhostCandidates({
+        courseId: courseId || null,
+        winCondition: winCondition || null,
+        goalM: goalM != null ? Number(goalM) : null,
+        timeCapS: timeCapS != null ? Number(timeCapS) : null,
+        householdId: household
+      }) });
     }
-  });
+    return res.json({ dates: await cycleRaceService.listDates(household) });
+  }));
 
   /**
    * DELETE /api/fitness/sessions/:sessionId - Delete a session and its media
    */
-  router.delete('/sessions/:sessionId', async (req, res) => {
+  router.delete('/sessions/:sessionId', asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
     const { household } = req.query;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    try {
-      const session = await sessionService.getSession(sessionId, household);
-      if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      await sessionService.deleteSession(sessionId, household);
-      logger.info?.('fitness.sessions.deleted', { sessionId });
-      return res.json({ deleted: true, sessionId });
-    } catch (err) {
-      logger.error?.('fitness.sessions.delete.error', { sessionId, error: err?.message });
-      return res.status(500).json({ error: 'Failed to delete session' });
+    const session = await sessionService.getSession(sessionId, household);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
     }
-  });
+    await sessionService.deleteSession(sessionId, household);
+    logger.info?.('fitness.sessions.deleted', { sessionId });
+    return res.json({ deleted: true, sessionId });
+  }));
 
   // ─── Suggestions Grid ────────────────────────────────────
-  router.get('/suggestions', async (req, res) => {
+  router.get('/suggestions', asyncHandler(async (req, res) => {
     const { gridSize, household } = req.query;
-    try {
-      const t0 = Date.now();
-      const result = await fitnessSuggestionService.getSuggestions({
-        gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
-        householdId: household,
-      });
-      logger.info?.('fitness.suggestions.timing', {
-        gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
-        returned: Array.isArray(result?.suggestions) ? result.suggestions.length : null,
-        totalMs: Date.now() - t0
-      });
-      return res.json(result);
-    } catch (err) {
-      logger.error?.('fitness.suggestions.error', { error: err?.message });
-      return res.status(500).json({ error: 'Failed to generate suggestions' });
-    }
-  });
+    const t0 = Date.now();
+    const result = await fitnessSuggestionService.getSuggestions({
+      gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
+      householdId: household,
+    });
+    logger.info?.('fitness.suggestions.timing', {
+      gridSize: gridSize ? parseInt(gridSize, 10) : undefined,
+      returned: Array.isArray(result?.suggestions) ? result.suggestions.length : null,
+      totalMs: Date.now() - t0
+    });
+    return res.json(result);
+  }));
 
   /**
    * POST /api/fitness/sessions/:sessionId/end - Explicitly end a session.
@@ -553,30 +511,25 @@ export function createFitnessRouter(config) {
     const { sessionId } = req.params;
     const { household } = req.body || {};
     const endTime = Number.isFinite(req.body?.endTime) ? req.body.endTime : Date.now();
-    try {
-      const session = await sessionService.endSession(sessionId, household, endTime);
-      logger.info?.('fitness.sessions.finalized', {
-        sessionId,
-        endTime,
-        durationMs: session.durationMs
-      });
-      // Fire-and-forget the time-lapse recap render (background; never blocks the end response).
-      if (generateSessionTimelapse) {
-        Promise.resolve(generateSessionTimelapse.execute({ sessionId: session.sessionId?.toString() || sessionId, householdId: household }))
-          .then((r) => logger.info?.('fitness.timelapse.trigger_done', { sessionId, status: r?.status }))
-          .catch((err) => logger.error?.('fitness.timelapse.trigger_failed', { sessionId, error: err?.message }));
-      }
-      return res.json({
-        finalized: true,
-        sessionId: session.sessionId?.toString(),
-        endTime: session.endTime,
-        durationMs: session.durationMs
-      });
-    } catch (err) {
-      const code = err?.name === 'EntityNotFoundError' ? 404 : 500;
-      logger.error?.('fitness.sessions.end.error', { sessionId, error: err?.message });
-      return res.status(code).json({ error: err?.message || 'Failed to end session' });
+    // EntityNotFoundError → 404 is mapped by name in the error middleware.
+    const session = await sessionService.endSession(sessionId, household, endTime);
+    logger.info?.('fitness.sessions.finalized', {
+      sessionId,
+      endTime,
+      durationMs: session.durationMs
+    });
+    // Fire-and-forget the time-lapse recap render (background; never blocks the end response).
+    if (generateSessionTimelapse) {
+      Promise.resolve(generateSessionTimelapse.execute({ sessionId: session.sessionId?.toString() || sessionId, householdId: household }))
+        .then((r) => logger.info?.('fitness.timelapse.trigger_done', { sessionId, status: r?.status }))
+        .catch((err) => logger.error?.('fitness.timelapse.trigger_failed', { sessionId, error: err?.message }));
     }
+    return res.json({
+      finalized: true,
+      sessionId: session.sessionId?.toString(),
+      endTime: session.endTime,
+      durationMs: session.durationMs
+    });
   }));
 
   /**
@@ -606,13 +559,8 @@ export function createFitnessRouter(config) {
     if (!contentId) {
       return res.status(400).json({ error: 'contentId query param required' });
     }
-    try {
-      const result = await sessionService.findResumable(contentId, household);
-      return res.json(result);
-    } catch (err) {
-      logger.error?.('fitness.resumable.error', { contentId, error: err?.message });
-      return res.status(500).json({ error: 'Failed to check resumable session' });
-    }
+    const result = await sessionService.findResumable(contentId, household);
+    return res.json(result);
   }));
 
   /**
@@ -624,33 +572,26 @@ export function createFitnessRouter(config) {
     if (!sourceSessionId || !targetSessionId) {
       return res.status(400).json({ error: 'sourceSessionId and targetSessionId are required' });
     }
-    try {
-      const merged = await sessionService.mergeSessions(sourceSessionId, targetSessionId, household);
-      logger.info?.('fitness.sessions.merged', {
-        sourceSessionId,
-        targetSessionId,
-        mergedId: merged.sessionId?.toString()
-      });
-      return res.json({
-        merged: true,
-        sessionId: merged.sessionId?.toString(),
-        startTime: merged.startTime,
-        endTime: merged.endTime,
-        durationMs: merged.durationMs
-      });
-    } catch (err) {
-      logger.error?.('fitness.sessions.merge.error', {
-        sourceSessionId, targetSessionId, error: err?.message
-      });
-      const status = err.name === 'EntityNotFoundError' ? 404 : 500;
-      return res.status(status).json({ error: err.message || 'Failed to merge sessions' });
-    }
+    // EntityNotFoundError → 404 is mapped by name in the error middleware.
+    const merged = await sessionService.mergeSessions(sourceSessionId, targetSessionId, household);
+    logger.info?.('fitness.sessions.merged', {
+      sourceSessionId,
+      targetSessionId,
+      mergedId: merged.sessionId?.toString()
+    });
+    return res.json({
+      merged: true,
+      sessionId: merged.sessionId?.toString(),
+      startTime: merged.startTime,
+      endTime: merged.endTime,
+      durationMs: merged.durationMs
+    });
   }));
 
   /**
    * GET /api/fitness/receipt/:sessionId - Get fitness receipt as PNG
    */
-  router.get('/receipt/:sessionId', async (req, res) => {
+  router.get('/receipt/:sessionId', asyncHandler(async (req, res) => {
     if (!createReceiptCanvas) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
@@ -659,67 +600,59 @@ export function createFitnessRouter(config) {
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    try {
-      const result = await createReceiptCanvas(sessionId, upsidedown);
-      if (!result) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      const buffer = result.canvas.toBuffer('image/png');
-      res.set('Content-Type', 'image/png');
-      res.set('Content-Length', buffer.length);
-      return res.send(buffer);
-    } catch (err) {
-      logger.error?.('fitness.receipt.error', { sessionId, error: err?.message });
-      return res.status(500).json({ error: 'Failed to generate receipt' });
+    const result = await createReceiptCanvas(sessionId, upsidedown);
+    if (!result) {
+      return res.status(404).json({ error: 'Session not found' });
     }
-  });
+    const buffer = result.canvas.toBuffer('image/png');
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Length', buffer.length);
+    return res.send(buffer);
+  }));
 
   /**
    * GET /api/fitness/receipt/:sessionId/print - Generate and print fitness receipt
    * Query params:
    *   - upsidedown: 'true'/'false' (default: true for print)
    */
-  router.get('/receipt/:sessionId/print{/:location}', async (req, res) => {
+  router.get('/receipt/:sessionId/print{/:location}', asyncHandler(async (req, res) => {
     if (!createReceiptCanvas) {
       return res.status(501).json({ error: 'Receipt renderer not configured' });
     }
     let printerAdapter;
     try {
+      // Expected-error mapping product fallback: an unknown printer location is a
+      // 404, not a 500. Other failures below propagate to the error middleware.
       printerAdapter = printerRegistry.resolve(req.params.location);
     } catch (err) {
       return res.status(404).json({ error: err.message });
     }
     const { sessionId } = req.params;
     const upsidedown = req.query.upsidedown !== 'false'; // default true for print
-    try {
-      const result = await createReceiptCanvas(sessionId, upsidedown);
-      if (!result) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      const buffer = result.canvas.toBuffer('image/png');
-      const tempPath = `/tmp/fitness_receipt_${sessionId}_${Date.now()}.png`;
-      writeBinary(tempPath, buffer);
-
-      const printJob = printerAdapter.createImagePrint(tempPath, {
-        width: result.width,
-        height: result.height,
-        align: 'left',
-        threshold: 128
-      });
-      const success = await printerAdapter.print(printJob);
-
-      try { deleteFile(tempPath); } catch {}
-
-      return res.json({
-        success,
-        message: success ? 'Fitness receipt printed' : 'Print failed',
-        sessionId
-      });
-    } catch (err) {
-      logger.error?.('fitness.receipt.print.error', { sessionId, error: err?.message });
-      return res.status(500).json({ error: 'Failed to print receipt' });
+    const result = await createReceiptCanvas(sessionId, upsidedown);
+    if (!result) {
+      return res.status(404).json({ error: 'Session not found' });
     }
-  });
+    const buffer = result.canvas.toBuffer('image/png');
+    const tempPath = `/tmp/fitness_receipt_${sessionId}_${Date.now()}.png`;
+    writeBinary(tempPath, buffer);
+
+    const printJob = printerAdapter.createImagePrint(tempPath, {
+      width: result.width,
+      height: result.height,
+      align: 'left',
+      threshold: 128
+    });
+    const success = await printerAdapter.print(printJob);
+
+    try { deleteFile(tempPath); } catch {}
+
+    return res.json({
+      success,
+      message: success ? 'Fitness receipt printed' : 'Print failed',
+      sessionId
+    });
+  }));
 
   // ── Session Lock (leader protocol) ──────────────────────────
 
@@ -800,13 +733,13 @@ export function createFitnessRouter(config) {
   /**
    * POST /api/fitness/save_screenshot - Save session screenshot
    */
-  router.post('/save_screenshot', async (req, res) => {
-    try {
-      const { sessionId, imageBase64, mimeType, index, timestamp, household, role } = req.body || {};
-      if (!sessionId || !imageBase64) {
-        return res.status(400).json({ ok: false, error: 'sessionId and imageBase64 are required' });
-      }
+  router.post('/save_screenshot', asyncHandler(async (req, res) => {
+    const { sessionId, imageBase64, mimeType, index, timestamp, household, role } = req.body || {};
+    if (!sessionId || !imageBase64) {
+      return res.status(400).json({ ok: false, error: 'sessionId and imageBase64 are required' });
+    }
 
+    try {
       const result = await screenshotService.saveScreenshot({
         sessionId,
         imageBase64,
@@ -819,29 +752,29 @@ export function createFitnessRouter(config) {
 
       return res.json({ ok: true, ...result });
     } catch (error) {
+      // Expected-error mapping product fallback: a validation failure is a 400.
+      // Everything else propagates to the error middleware.
       if (error instanceof ScreenshotValidationError) {
         return res.status(400).json({ ok: false, error: error.message });
       }
-      logger.error?.('fitness.screenshot.error', { error: error.message });
-      return res.status(500).json({ ok: false, error: 'Failed to save screenshot' });
+      throw error;
     }
-  });
+  }));
 
   /**
    * POST /api/fitness/voice_memo - Transcribe voice memo
    */
-  router.post('/voice_memo', async (req, res) => {
+  router.post('/voice_memo', asyncHandler(async (req, res) => {
     if (!transcriptionService) {
-      return res.status(500).json({ ok: false, error: 'Transcription service not configured' });
+      return res.status(503).json({ ok: false, error: 'Transcription service not configured' });
     }
 
-    try {
-      const { audioBase64, mimeType, sessionId, startedAt, endedAt, context: sessionContext = {} } = req.body || {};
-      if (!audioBase64 || typeof audioBase64 !== 'string') {
-        return res.status(400).json({ ok: false, error: 'audioBase64 required' });
-      }
+    const { audioBase64, mimeType, sessionId, startedAt, endedAt, context: sessionContext = {} } = req.body || {};
+    if (!audioBase64 || typeof audioBase64 !== 'string') {
+      return res.status(400).json({ ok: false, error: 'audioBase64 required' });
+    }
 
-      const householdId = sessionContext.householdId || configService.getDefaultHouseholdId();
+    const householdId = sessionContext.householdId || configService.getDefaultHouseholdId();
 
       // Get household member names for transcription hints (via FitnessConfigService)
       const householdMembers = fitnessConfigService?.getHouseholdMemberNames(householdId) || [];
@@ -899,6 +832,10 @@ export function createFitnessRouter(config) {
             }
           }
         } catch (persistErr) {
+          // Degraded-response product fallback: transcription succeeded but the
+          // retroactive persist failed — return the transcribed `memo` payload
+          // (500) so the UI can surface/retry without losing the transcription,
+          // rather than letting a generic middleware 500 drop it.
           logger.warn?.('fitness.voice_memo.retroactive_persist_failed', {
             sessionId,
             error: persistErr?.message,
@@ -922,11 +859,7 @@ export function createFitnessRouter(config) {
       }
 
       return res.json({ ok: true, memo });
-    } catch (e) {
-      logger.error?.('fitness.voice_memo.error', { error: e.message });
-      return res.status(500).json({ ok: false, error: e.message || 'voice memo failure' });
-    }
-  });
+  }));
 
   /**
    * POST /api/fitness/debug/voice-memo — Developer-only raw audio memo dump.
@@ -936,44 +869,39 @@ export function createFitnessRouter(config) {
    * the workout voice-memo system: NO transcription, NO sessionId linkage,
    * NO Strava enrichment, NO session context capture.
    */
-  router.post('/debug/voice-memo', async (req, res) => {
-    try {
-      const { audioBase64 } = req.body || {};
-      if (!audioBase64 || typeof audioBase64 !== 'string') {
-        return res.status(400).json({ ok: false, error: 'audioBase64 required' });
-      }
-
-      const base64Data = audioBase64.replace(/^data:[^;]+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
-      if (!buffer.length) {
-        return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
-      }
-
-      const savedAt = Date.now();
-      const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
-      const filename = `${iso}.webm`;
-
-      const dataDir = configService.getDataDir();
-      const debugDir = path.join(dataDir, '_debug', 'voice_memos');
-      const filePath = path.join(debugDir, filename);
-
-      // writeBinary handles mkdirSync({ recursive: true }) internally.
-      writeBinary(filePath, buffer);
-
-      logger.debug?.('fitness.debug_voice_memo.saved', { filename, size: buffer.length });
-
-      return res.json({
-        ok: true,
-        path: filePath,
-        filename,
-        size: buffer.length,
-        savedAt,
-      });
-    } catch (e) {
-      logger.error?.('fitness.debug_voice_memo.error', { error: e.message });
-      return res.status(500).json({ ok: false, error: e.message || 'debug voice memo failure' });
+  router.post('/debug/voice-memo', asyncHandler(async (req, res) => {
+    const { audioBase64 } = req.body || {};
+    if (!audioBase64 || typeof audioBase64 !== 'string') {
+      return res.status(400).json({ ok: false, error: 'audioBase64 required' });
     }
-  });
+
+    const base64Data = audioBase64.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    if (!buffer.length) {
+      return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
+    }
+
+    const savedAt = Date.now();
+    const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
+    const filename = `${iso}.webm`;
+
+    const dataDir = configService.getDataDir();
+    const debugDir = path.join(dataDir, '_debug', 'voice_memos');
+    const filePath = path.join(debugDir, filename);
+
+    // writeBinary handles mkdirSync({ recursive: true }) internally.
+    writeBinary(filePath, buffer);
+
+    logger.debug?.('fitness.debug_voice_memo.saved', { filename, size: buffer.length });
+
+    return res.json({
+      ok: true,
+      path: filePath,
+      filename,
+      size: buffer.length,
+      savedAt,
+    });
+  }));
 
   // =============================================================================
   // Zone LED Endpoints (require Home Assistant configuration)
@@ -982,28 +910,22 @@ export function createFitnessRouter(config) {
   /**
    * POST /api/fitness/zone_led - Sync ambient LED with zone state
    */
-  router.post('/zone_led', async (req, res) => {
+  router.post('/zone_led', asyncHandler(async (req, res) => {
     if (!zoneLedController) {
       return res.status(503).json({ ok: false, error: 'Zone LED controller not configured (Home Assistant required)' });
     }
-    try {
-      const { zones = [], sessionEnded = false, householdId } = req.body;
-      const result = await zoneLedController.syncZone({ zones, sessionEnded, householdId });
+    const { zones = [], sessionEnded = false, householdId } = req.body;
+    const result = await zoneLedController.syncZone({ zones, sessionEnded, householdId });
 
-      if (result.ok) {
-        return res.json(result);
-      } else {
-        return res.status(500).json(result);
-      }
-    } catch (error) {
-      logger.error?.('fitness.zone_led.error', { error: error.message });
-      return res.status(500).json({
-        ok: false,
-        error: error.message,
-        failureCount: zoneLedController?.failureCount
-      });
+    // Degraded-response product fallback: the controller reports a HANDLED sync
+    // failure as { ok:false, ... } with diagnostics (failureCount) the LED state
+    // machine consumes — surface that as 500 rather than throwing. Unexpected
+    // exceptions still propagate to the error middleware.
+    if (result.ok) {
+      return res.json(result);
     }
-  });
+    return res.status(500).json(result);
+  }));
 
   /**
    * GET /api/fitness/zone_led/status - Get LED controller status
@@ -1046,19 +968,14 @@ export function createFitnessRouter(config) {
    * Dance Party lighting — POST /dance/{start,accent,stop}
    * Gracefully no-ops when no controller is wired (HA disabled / not configured).
    */
-  const danceAction = (action) => async (req, res) => {
-    try {
-      if (!danceLightingController || typeof danceLightingController[action] !== 'function') {
-        return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
-      }
-      const householdId = req.query.householdId || req.body?.householdId;
-      const result = await danceLightingController[action](householdId);
-      return res.json(result);
-    } catch (error) {
-      logger.error?.('fitness.dance.error', { action, error: error.message });
-      return res.status(500).json({ ok: false, error: error.message });
+  const danceAction = (action) => asyncHandler(async (req, res) => {
+    if (!danceLightingController || typeof danceLightingController[action] !== 'function') {
+      return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
     }
-  };
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await danceLightingController[action](householdId);
+    return res.json(result);
+  });
   router.post('/dance/start', danceAction('start'));
   router.post('/dance/accent', danceAction('accent'));
   router.post('/dance/stop', danceAction('stop'));
@@ -1067,19 +984,14 @@ export function createFitnessRouter(config) {
    * POST /dance/bpm {bpm} — mirror the live music BPM into the configured HA
    * input_number (controller clamps + rate-caps; see DanceLightingController.setBpm).
    */
-  router.post('/dance/bpm', async (req, res) => {
-    try {
-      if (!danceLightingController || typeof danceLightingController.setBpm !== 'function') {
-        return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
-      }
-      const householdId = req.query.householdId || req.body?.householdId;
-      const result = await danceLightingController.setBpm(householdId, req.body?.bpm);
-      return res.json(result);
-    } catch (error) {
-      logger.error?.('fitness.dance.error', { action: 'bpm', error: error.message });
-      return res.status(500).json({ ok: false, error: error.message });
+  router.post('/dance/bpm', asyncHandler(async (req, res) => {
+    if (!danceLightingController || typeof danceLightingController.setBpm !== 'function') {
+      return res.json({ ok: true, skipped: true, reason: 'dance_lighting_unavailable' });
     }
-  });
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await danceLightingController.setBpm(householdId, req.body?.bpm);
+    return res.json(result);
+  }));
 
   // =============================================================================
   // Equipment Fan Endpoints (require Home Assistant configuration)
@@ -1088,19 +1000,14 @@ export function createFitnessRouter(config) {
   /**
    * POST /api/fitness/equipment_fan - Evaluate fan trigger conditions and fire
    */
-  router.post('/equipment_fan', async (req, res) => {
+  router.post('/equipment_fan', asyncHandler(async (req, res) => {
     if (!equipmentFanController) {
       return res.status(503).json({ ok: false, error: 'Equipment fan controller not configured (Home Assistant required)' });
     }
-    try {
-      const { rpm = {}, zones = [], sessionEnded = false, householdId } = req.body;
-      const result = await equipmentFanController.evaluate({ rpm, zones, sessionEnded, householdId });
-      return res.json(result);
-    } catch (error) {
-      logger.error?.('fitness.equipment_fan.error', { error: error.message });
-      return res.status(500).json({ ok: false, error: error.message });
-    }
-  });
+    const { rpm = {}, zones = [], sessionEnded = false, householdId } = req.body;
+    const result = await equipmentFanController.evaluate({ rpm, zones, sessionEnded, householdId });
+    return res.json(result);
+  }));
 
   /**
    * GET /api/fitness/equipment_fan/status
@@ -1152,36 +1059,31 @@ export function createFitnessRouter(config) {
 
     logger.info?.('fitness.simulate.start', { duration, users, rpm, scriptPath });
 
-    try {
-      const proc = spawn('node', [scriptPath, ...args], {
-        detached: true,
-        stdio: 'ignore'
-      });
-      proc.unref();
+    const proc = spawn('node', [scriptPath, ...args], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    proc.unref();
 
-      simulationState.process = proc;
-      simulationState.pid = proc.pid;
-      simulationState.startedAt = Date.now();
-      simulationState.config = { duration, users, rpm };
+    simulationState.process = proc;
+    simulationState.pid = proc.pid;
+    simulationState.startedAt = Date.now();
+    simulationState.config = { duration, users, rpm };
 
-      // Auto-clear state when process exits
-      proc.on('exit', () => {
-        simulationState.process = null;
-        simulationState.pid = null;
-        simulationState.startedAt = null;
-        simulationState.config = null;
-        logger.info?.('fitness.simulate.exited');
-      });
+    // Auto-clear state when process exits
+    proc.on('exit', () => {
+      simulationState.process = null;
+      simulationState.pid = null;
+      simulationState.startedAt = null;
+      simulationState.config = null;
+      logger.info?.('fitness.simulate.exited');
+    });
 
-      return res.json({
-        started: true,
-        pid: proc.pid,
-        config: { duration, users, rpm }
-      });
-    } catch (err) {
-      logger.error?.('fitness.simulate.spawn-failed', { error: err.message });
-      return res.status(500).json({ error: 'Failed to start simulation', message: err.message });
-    }
+    return res.json({
+      started: true,
+      pid: proc.pid,
+      config: { duration, users, rpm }
+    });
   });
 
   /**
@@ -1192,22 +1094,17 @@ export function createFitnessRouter(config) {
       return res.json({ stopped: false, error: 'no simulation running' });
     }
 
-    try {
-      process.kill(simulationState.pid, 'SIGTERM');
+    process.kill(simulationState.pid, 'SIGTERM');
 
-      const stoppedPid = simulationState.pid;
-      simulationState.process = null;
-      simulationState.pid = null;
-      simulationState.startedAt = null;
-      simulationState.config = null;
+    const stoppedPid = simulationState.pid;
+    simulationState.process = null;
+    simulationState.pid = null;
+    simulationState.startedAt = null;
+    simulationState.config = null;
 
-      logger.info?.('fitness.simulate.stopped', { pid: stoppedPid });
+    logger.info?.('fitness.simulate.stopped', { pid: stoppedPid });
 
-      return res.json({ stopped: true, pid: stoppedPid });
-    } catch (err) {
-      logger.error?.('fitness.simulate.stop-failed', { error: err.message });
-      return res.status(500).json({ error: 'Failed to stop simulation', message: err.message });
-    }
+    return res.json({ stopped: true, pid: stoppedPid });
   });
 
   /**
@@ -1510,6 +1407,9 @@ export function createFitnessRouter(config) {
       try {
         verdict = await unlockService.requestUnlock('emergency:release', gallery);
       } catch (err) {
+        // Degraded-response product fallback: a reader failure must return the
+        // explicit released:false contract (lockdown persists) with a stable code,
+        // not a generic 500 — the LOCKED screen depends on the released flag.
         logger?.error?.('emergency.release_scan_error', { message: err?.message ?? null });
         return res.status(500).json({ error: 'release-scan-failed', released: false });
       }
@@ -1667,6 +1567,9 @@ export function createFitnessRouter(config) {
 
     let result;
     try {
+      // Kept: stable domain-error contract — the frontend EnrollModal parses the
+      // 'enroll-failed' code (overheat/busy hinting), so both the exception path and
+      // the !success path below return it rather than a generic middleware 500.
       result = await manageService.requestEnroll({ finger, username, clientToken });
     } catch (err) {
       logger.error?.('fitness.fingerprint.enroll.error', { username, error: err?.message });
@@ -1720,6 +1623,9 @@ export function createFitnessRouter(config) {
 
     let result;
     try {
+      // Kept: stable domain-error contract mirroring enroll — 'delete-failed' is the
+      // code the fingerprint-manager UI expects, so both the exception path and the
+      // !success path below return it rather than a generic middleware 500.
       result = await manageService.requestDelete({ uuid });
     } catch (err) {
       logger.error?.('fitness.fingerprint.delete.error', { username, error: err?.message });
@@ -1731,6 +1637,11 @@ export function createFitnessRouter(config) {
     logger.info?.('fitness.fingerprint.delete.saved', { username, finger });
     return res.json({ success: true });
   }));
+
+  // Shared error middleware: expected errors (mapped by err.name/err.status) →
+  // { error:'<message>', code } ; unexpected 500s → { error:'Internal server error',
+  // code:'INTERNAL' } with the real error logged, not leaked to the client.
+  router.use(errorHandlerMiddleware({ shape: 'string' }));
 
   return router;
 }

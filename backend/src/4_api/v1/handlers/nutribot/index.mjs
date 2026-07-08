@@ -3,7 +3,7 @@
  * @module nutribot/handlers
  *
  * Note: Webhook handling uses createTelegramWebhookHandler from
- * legacy adapters (see server.mjs)
+ * legacy adapters (wired up in app.mjs)
  */
 
 export { nutribotReportHandler } from './report.mjs';

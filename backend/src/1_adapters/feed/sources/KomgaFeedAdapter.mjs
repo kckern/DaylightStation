@@ -12,6 +12,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 export class KomgaFeedAdapter extends IFeedSourceAdapter {
   #client;
@@ -19,6 +20,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   #webUrl;
   #dataService;
   #logger;
+  #httpClient;
 
   /**
    * @param {Object} deps
@@ -27,8 +29,9 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @param {string} [deps.webUrl] - Komga web UI base URL for reader links
    * @param {Object} deps.dataService - DataService for TOC cache persistence
    * @param {Object} [deps.logger]
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} [deps.httpClient]
    */
-  constructor({ client, apiKey, webUrl = null, dataService, logger = console }) {
+  constructor({ client, apiKey, webUrl = null, dataService, logger = console, httpClient } = {}) {
     super();
     if (!client) throw new Error('KomgaFeedAdapter requires client');
     if (!apiKey) throw new Error('KomgaFeedAdapter requires apiKey');
@@ -38,6 +41,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
     this.#dataService = dataService;
     this.#logger = logger;
+    this.#httpClient = httpClient || new HttpClient({ logger });
   }
 
   get sourceType() { return 'komga'; }
@@ -313,16 +317,13 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @returns {Promise<Array<{title: string, page: number}>>}
    */
   async #extractBookmarks(bookId) {
-    // Download the PDF file
+    // Download the PDF file (downloadBuffer throws HttpError on non-2xx,
+    // which #getToc catches and logs).
     const fileUrl = `${this.#client.host}/api/v1/books/${bookId}/file`;
-    const fileRes = await fetch(fileUrl, {
+    const buffer = await this.#httpClient.downloadBuffer(fileUrl, {
       headers: { 'X-API-Key': this.#apiKey },
-      signal: AbortSignal.timeout(60000),
+      timeout: 60000,
     });
-    if (!fileRes.ok) {
-      throw new Error(`Failed to download book file: ${fileRes.status}`);
-    }
-    const buffer = await fileRes.arrayBuffer();
 
     // Load with pdfjs-dist (legacy Node build, no worker)
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');

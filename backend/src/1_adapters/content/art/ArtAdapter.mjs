@@ -13,14 +13,14 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
-import { deriveMatte, rgbToHsv } from '../../../2_domains/art/deriveMatte.mjs';
-import { eligibleByRecency } from '../../../2_domains/art/recencyWindow.mjs';
+import { deriveMatte, rgbToHsv } from '#domains/art/deriveMatte.mjs';
+import { eligibleByRecency } from '#domains/art/recencyWindow.mjs';
 import { createArtRecencyStore } from './artRecencyStore.mjs';
 
 const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const meanRGB = (a, b) => [0, 1, 2].map((i) => Math.round((a[i] + b[i]) / 2));
 
-export function createArtAdapter({ imgBasePath, dataPath = null, logger = console, collections = {}, artSource, immichSource = null, recencyFraction = 0.55, recencyStore } = {}) {
+export function createArtAdapter({ imgBasePath, householdDir = null, logger = console, collections = {}, artSource, immichSource = null, recencyFraction = 0.55, recencyStore } = {}) {
   // Lazily build the default art source from imgBasePath when one isn't injected
   // (tests inject a fake; production injects the real source — see app.mjs).
   let _artSource = artSource || null;
@@ -34,9 +34,10 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
   let _recencyStore = recencyStore;   // undefined ⇒ build lazily; null ⇒ disabled
   const resolveRecencyStore = () => {
     if (_recencyStore !== undefined) return _recencyStore;
-    _recencyStore = dataPath
+    // householdDir = resolved household base (ConfigService.getHouseholdPath(''))
+    _recencyStore = householdDir
       ? createArtRecencyStore({
-          filePath: path.join(dataPath, 'household', 'history', 'media_memory', 'art.yml'),
+          filePath: path.join(householdDir, 'history', 'media_memory', 'art.yml'),
           logger,
         })
       : null;
@@ -207,9 +208,9 @@ export function createArtAdapter({ imgBasePath, dataPath = null, logger = consol
   // missing file is non-fatal (thumbnails just fall back to the raw key).
   async function loadPresets() {
     if (_presets) return _presets;
-    if (!dataPath) { _presets = {}; return _presets; }
+    if (!householdDir) { _presets = {}; return _presets; }
     try {
-      const raw = await fs.readFile(path.join(dataPath, 'household', 'config', 'artmode.yml'), 'utf-8');
+      const raw = await fs.readFile(path.join(householdDir, 'config', 'artmode.yml'), 'utf-8');
       _presets = (yaml.load(raw) || {}).presets || {};
     } catch (err) {
       if (err.code !== 'ENOENT') logger.warn?.('art.presets.read_failed', { error: err.message });

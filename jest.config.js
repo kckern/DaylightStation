@@ -41,6 +41,7 @@ module.exports = {
     '/tests/integration/external/', // External API tests require credentials - run explicitly
     '/tests/_archive/',          // Archived tests
     '<rootDir>/\\.worktrees/',   // Only ignore the main repo's .worktrees/, not tests within a worktree
+    '<rootDir>/\\.claude/worktrees/', // Ignore Claude Code native worktrees (sibling checkouts would double-collect tests)
   ],
   // Coverage configuration
   collectCoverageFrom: [

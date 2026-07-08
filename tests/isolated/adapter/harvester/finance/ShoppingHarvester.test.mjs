@@ -107,7 +107,8 @@ describe('ShoppingHarvester', () => {
       gmailClientFactory: mockGmailClientFactory,
       aiGateway: mockAiGateway,
       lifelogStore: mockLifelogStore,
-      configService: mockConfigService,
+      getUserHouseholdId: (u) => mockConfigService.getUserHouseholdId(u),
+      getHouseholdConfig: (h) => mockConfigService.getHouseholdConfig(h),
       timezone: 'America/Chicago',
       logger: mockLogger,
     });
@@ -144,7 +145,8 @@ describe('ShoppingHarvester', () => {
         gmailClientFactory: mockGmailClientFactory,
         aiGateway: mockAiGateway,
         lifelogStore: mockLifelogStore,
-        configService: mockConfigService,
+        getUserHouseholdId: (u) => mockConfigService.getUserHouseholdId(u),
+      getHouseholdConfig: (h) => mockConfigService.getHouseholdConfig(h),
         timezone: 'America/Chicago',
         logger: mockLogger,
       });

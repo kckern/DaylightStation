@@ -19,11 +19,10 @@ import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
  * @param {Object} config - Configuration object
  * @param {Function} config.getSelectionsForPrint - Async function that returns { gratitude: [], hopes: [] }
  * @param {string} [config.fontDir] - Font directory path (optional)
- * @param {Object} [config.canvasService] - Canvas service for rendering (optional, for future use)
  * @returns {Object} Renderer with createCanvas method
  */
 export function createGratitudeCardRenderer(config) {
-  const { getSelectionsForPrint, fontDir, canvasService } = config;
+  const { getSelectionsForPrint, fontDir } = config;
 
   /**
    * Render a gratitude card canvas.
@@ -42,17 +41,21 @@ export function createGratitudeCardRenderer(config) {
       : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
 
     const selections = await getSelectionsForPrint();
+    if (!selections) return null;
 
-    const selectedGratitude = selections.gratitude.length > 0
-      ? selectItemsForPrint(selections.gratitude, theme.selection.gratitudeCount).map(s => ({
+    const gratitudeItems = selections.gratitude || [];
+    const hopesItems = selections.hopes || [];
+
+    const selectedGratitude = gratitudeItems.length > 0
+      ? selectItemsForPrint(gratitudeItems, theme.selection.gratitudeCount).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName
       }))
       : [];
 
-    const selectedHopes = selections.hopes.length > 0
-      ? selectItemsForPrint(selections.hopes, theme.selection.hopesCount).map(s => ({
+    const selectedHopes = hopesItems.length > 0
+      ? selectItemsForPrint(hopesItems, theme.selection.hopesCount).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName

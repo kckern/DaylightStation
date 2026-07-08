@@ -1,5 +1,5 @@
 /**
- * TTSAdapter - Text-to-Speech using OpenAI API
+ * OpenAITTSAdapter - Text-to-Speech using OpenAI API
  *
  * Provides speech synthesis using OpenAI's TTS API.
  * Features:
@@ -11,7 +11,6 @@
  */
 
 import { Readable } from 'stream';
-import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
@@ -25,7 +24,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * @typedef {'alloy'|'echo'|'fable'|'onyx'|'nova'|'shimmer'} Voice
  */
 
-export class TTSAdapter {
+export class OpenAITTSAdapter {
   #apiKey;
   #model;
   #defaultVoice;
@@ -41,7 +40,7 @@ export class TTSAdapter {
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
-      throw new InfrastructureError('TTSAdapter requires httpClient', {
+      throw new InfrastructureError('OpenAITTSAdapter requires httpClient', {
         code: 'MISSING_DEPENDENCY',
         dependency: 'httpClient'
       });
@@ -188,20 +187,4 @@ export class TTSAdapter {
   }
 }
 
-/**
- * Create a TTSAdapter from environment config
- * @param {Object} deps
- * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
- * @param {Object} [deps.logger] - Logger instance
- * @returns {TTSAdapter}
- */
-export function createTTSAdapter(deps = {}) {
-  const adapterConfig = configService.getAdapterConfig('tts') || {};
-  const apiKey = configService.getSecret('OPENAI_API_KEY');
-  const model = adapterConfig.model || 'tts-1';
-  const defaultVoice = adapterConfig.defaultVoice || 'alloy';
-
-  return new TTSAdapter({ apiKey, model, defaultVoice }, deps);
-}
-
-export default TTSAdapter;
+export default OpenAITTSAdapter;

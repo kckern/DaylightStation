@@ -16,7 +16,6 @@ import { qrcodeTheme } from './qrcodeTheme.mjs';
 /**
  * Create a QR code renderer.
  * @param {Object} [config]
- * @param {string} [config.mediaPath] - Path to media directory
  * @returns {{ renderSvg: (data: string, options?: Object) => string }}
  */
 export function createQRCodeRenderer(config = {}) {

@@ -9,19 +9,19 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { resolvePreset } from '../../../1_adapters/content/art/presetResolver.mjs';
-import { loadArtmodeConfig, loadArtCollections } from '../../../1_adapters/content/art/artmodeConfig.mjs';
+import { resolvePreset } from '#adapters/content/art/presetResolver.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 /**
  * Create Screens API router
  *
  * @param {Object} config
- * @param {string} config.dataPath - Path to data directory
+ * @param {string} config.householdDir - Resolved household base dir (ConfigService.getHouseholdPath(''))
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createScreensRouter(config = {}) {
-  const { dataPath = process.env.DAYLIGHT_DATA_PATH || '/data', logger = console } = config;
+  const { householdDir, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -31,7 +31,7 @@ export function createScreensRouter(config = {}) {
   router.get(
     '/',
     asyncHandler(async (req, res) => {
-      const screensDir = path.join(dataPath, 'household', 'screens');
+      const screensDir = path.join(householdDir, 'screens');
 
       try {
         const files = await fs.readdir(screensDir);
@@ -71,7 +71,7 @@ export function createScreensRouter(config = {}) {
         });
       }
 
-      const screenPath = path.join(dataPath, 'household', 'screens', `${screenId}.yml`);
+      const screenPath = path.join(householdDir, 'screens', `${screenId}.yml`);
 
       try {
         const content = await fs.readFile(screenPath, 'utf-8');
@@ -90,8 +90,8 @@ export function createScreensRouter(config = {}) {
         // `defaults` + the named-frame catalog merge beneath the preset; a bare
         // collection name (no preset) resolves via collection-fallback.
         if (config.screensaver?.preset) {
-          const { presets, defaults, frames } = await loadArtmodeConfig(dataPath, logger);
-          const collections = await loadArtCollections(dataPath, logger);
+          const { presets, defaults, frames } = await loadArtmodeConfig(householdDir, logger);
+          const collections = await loadArtCollections(householdDir, logger);
           const presetKey = config.screensaver.preset;
           const known = Object.prototype.hasOwnProperty.call(presets, presetKey)
             || Object.prototype.hasOwnProperty.call(collections, presetKey);

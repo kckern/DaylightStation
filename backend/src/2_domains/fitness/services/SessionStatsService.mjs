@@ -6,7 +6,7 @@
  * @module 2_domains/fitness/services/SessionStatsService
  */
 
-const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
+import { ZONE_ORDER } from '../entities/Zone.mjs';
 
 function zoneIntensity(zone) {
   const idx = ZONE_ORDER.indexOf(zone);

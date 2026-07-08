@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { ISecretsProvider } from '../ISecretsProvider.mjs';
+import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../../config/configLoader.mjs';
 
 /**
  * YAML-based secrets provider.
@@ -99,31 +100,6 @@ export class YamlSecretsProvider extends ISecretsProvider {
       .map(f => path.join(dir, f));
   }
 
-  #listHouseholdDirs() {
-    if (!fs.existsSync(this.#dataDir)) return [];
-
-    return fs.readdirSync(this.#dataDir)
-      .filter(name => {
-        if (name.startsWith('.') || name.startsWith('_')) return false;
-        if (name !== 'household' && !name.startsWith('household-')) return false;
-        try {
-          return fs.statSync(path.join(this.#dataDir, name)).isDirectory();
-        } catch (err) {
-          return false;  // Skip entries that can't be stat'd
-        }
-      });
-  }
-
-  #parseHouseholdId(folderName) {
-    if (folderName === 'household') return 'default';
-    return folderName.replace(/^household-/, '');
-  }
-
-  #toFolderName(householdId) {
-    if (householdId === 'default') return 'household';
-    return `household-${householdId}`;
-  }
-
   #loadSystemAuth() {
     const auth = {};
     for (const relativePath of this.#listYamlFiles('system/auth')) {
@@ -159,8 +135,8 @@ export class YamlSecretsProvider extends ISecretsProvider {
 
   #loadHouseholdAuth() {
     const auth = {};
-    for (const dir of this.#listHouseholdDirs()) {
-      const householdId = this.#parseHouseholdId(dir);
+    for (const dir of listHouseholdDirs(this.#dataDir)) {
+      const householdId = parseHouseholdId(dir);
       const authFiles = this.#listYamlFiles(`${dir}/auth`);
       if (authFiles.length === 0) continue;
 
@@ -216,7 +192,7 @@ export class YamlSecretsProvider extends ISecretsProvider {
   setHouseholdAuth(householdId, service, value) {
     this.#householdAuth[householdId] ??= {};
     this.#householdAuth[householdId][service] = value;
-    const folderName = this.#toFolderName(householdId);
+    const folderName = toFolderName(householdId);
     this.#writeYaml(`${folderName}/auth/${service}.yml`, value);
   }
 }

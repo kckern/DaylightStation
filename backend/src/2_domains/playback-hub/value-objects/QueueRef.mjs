@@ -10,7 +10,7 @@
  * always the { source, id } object — strings exist for UI convenience only.
  */
 
-import { ValidationError } from '../../core/errors/ValidationError.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const DEFAULT_SOURCE = 'plex';
 

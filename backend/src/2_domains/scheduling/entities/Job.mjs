@@ -1,4 +1,4 @@
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /**
  * Job Entity - Represents a scheduled task definition

@@ -107,9 +107,6 @@ import { createAgentMetaRouter } from './4_api/v1/agents/createAgentMetaRouter.m
 // Feed harvester adapter for scheduler integration
 import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
 
-// Routing toggle system
-import { loadRoutingConfig } from './0_system/routing/index.mjs';
-
 // UPC Gateway for barcode lookups
 import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 
@@ -284,19 +281,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     app: 'api',
     context: { env: process.env.NODE_ENV }
   });
-
-  // ==========================================================================
-  // Routing Toggle System
-  // ==========================================================================
-
-  let routingConfig;
-  try {
-    routingConfig = loadRoutingConfig('./backend/config/routing.yml');
-    rootLogger.info('routing.toggle.loaded', { default: routingConfig.default });
-  } catch (error) {
-    rootLogger.warn('routing.toggle.fallback', { error: error.message });
-    routingConfig = { default: 'legacy', routing: {} };
-  }
 
   // ==========================================================================
   // Auth System
@@ -565,7 +549,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
-  const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
+  const contentPrefixesPath = configService.getHouseholdPath('config/content-prefixes');
   const contentPrefixes = loadYamlStatic(contentPrefixesPath) || {};
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
@@ -981,8 +965,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     };
 
     // Feed source adapters (extracted from FeedAssemblyService)
+    // Shared system HttpClient for all raw-HTTP feed adapters (P1.9).
+    const feedHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'feed-http' }) });
     const redditAdapter = new RedditFeedAdapter({
       dataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'reddit-feed' }),
     });
     const weatherAdapter = new WeatherFeedAdapter({
@@ -1030,14 +1017,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const pipedHost = configService.resolveServiceUrl('piped');
     const youtubeContentAdapter = pipedHost ? new YouTubeAdapter({
       host: pipedHost,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'youtube-adapter' }),
     }) : null;
     const youtubeAdapter = googleAuth?.api_key ? new YouTubeFeedAdapter({
       apiKey: googleAuth.api_key,
       youtubeAdapter: youtubeContentAdapter,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'youtube-feed' }),
     }) : null;
     const googleNewsAdapter = new GoogleNewsFeedAdapter({
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'googlenews-feed' }),
     });
     const komgaAuth = configService.getHouseholdAuth('komga');
@@ -1050,6 +1040,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       apiKey: komgaAuth.token,
       webUrl: configService.resolveServiceWebUrl('komga'),
       dataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'komga-feed' }),
     }) : null;
 
@@ -1061,6 +1052,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const goodreadsFeedAdapter = new GoodreadsFeedAdapter({
       userDataService,
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'goodreads-feed' }),
     });
 
@@ -1070,6 +1062,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       token: audiobookshelfConfig.token,
       mediaDir: mediaBasePath,
       webUrl: configService.resolveServiceWebUrl('audiobookshelf'),
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
     }) : null;
 
@@ -1094,6 +1087,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     const webContentAdapter = new WebContentAdapter({
+      httpClient: feedHttpClient,
       logger: rootLogger.child({ module: 'web-content' }),
     });
     const feedContentService = new FeedContentService({
@@ -1293,7 +1287,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   const artAdapter = createArtAdapter({
     imgBasePath,
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     collections: artConfig.collections || {},
     immichSource: artImmichSource,
     logger: rootLogger.child({ module: 'art-adapter' })
@@ -1311,7 +1305,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
   v1Routers.art = createArtRouter({
     artAdapter,
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'art-api' })
   });
 
@@ -1329,7 +1323,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Reads data/household/shared/content-filter/.
   v1Routers['content-filter'] = createContentFilterRouter({
-    dataDir: configService.getDataDir(),
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'content-filter-api' }),
   });
 
@@ -1385,7 +1379,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Config router - serves configuration to frontend
   v1Routers.config = createConfigRouter({
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'config-api' })
   });
 
@@ -2566,7 +2560,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const ambientDataDir = configService.getDataDir();
   const ambientScheduler = new AmbientSchedulerService({
     loadSchedule: async () => normalizeWindows(
-      (await loadArtmodeConfig(ambientDataDir, rootLogger)).schedule,
+      (await loadArtmodeConfig(configService.getHouseholdPath(''), rootLogger)).schedule,
       { defaultDevice: 'livingroom-tv' },
     ),
     tracker: screenContentTracker,
@@ -2603,7 +2597,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Screens router for screen configurations
   v1Routers.screens = createScreensRouter({
-    dataPath: dataBasePath,
+    householdDir: configService.getHouseholdPath(''),
     logger: rootLogger.child({ module: 'screens-api' })
   });
 
@@ -2630,18 +2624,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Test infrastructure router (dev/test only)
   const { createTestRouter } = await import('./4_api/v1/routers/test.mjs');
-  const {
-    enablePlexShutoff,
-    disablePlexShutoff,
-    getPlexShutoffStatus
-  } = await import('#adapters/proxy/PlexProxyAdapter.mjs');
+  // Shutoff-valve test controls target the live registered Plex proxy instance
+  // (per-instance state, no module-level singleton). Null when Plex isn't configured.
+  const plexProxyAdapter = contentProxyService.getAdapter('plex');
+  const plexShutoffControls = plexProxyAdapter
+    ? {
+        enable: (opts) => plexProxyAdapter.enableShutoff(opts),
+        disable: () => plexProxyAdapter.disableShutoff(),
+        getStatus: () => plexProxyAdapter.getShutoffStatus()
+      }
+    : null;
 
   v1Routers.test = createTestRouter({
-    plexShutoffControls: {
-      enable: enablePlexShutoff,
-      disable: disablePlexShutoff,
-      getStatus: getPlexShutoffStatus
-    },
+    plexShutoffControls,
     logger: rootLogger.child({ module: 'test-api' })
   });
 
@@ -2722,7 +2717,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     const weeklyReviewService = new WeeklyReviewService(
-      { dataPath: dataBasePath, mediaPath: mediaBasePath, householdId },
+      { dataPath: dataBasePath, householdDir: configService.getHouseholdPath('', householdId), mediaPath: mediaBasePath, householdId },
       {
         immichAdapter: weeklyReviewImmichAdapter,
         calendarData: weeklyReviewCalendarAdapter,

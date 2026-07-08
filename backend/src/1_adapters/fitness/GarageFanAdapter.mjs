@@ -7,8 +7,7 @@
  */
 import { HaActionGuard } from './HaActionGuard.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-
-const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
+import { ZONE_ORDER } from '#domains/fitness/entities/Zone.mjs';
 
 function zoneRank(zoneId) {
   if (!zoneId) return -1;

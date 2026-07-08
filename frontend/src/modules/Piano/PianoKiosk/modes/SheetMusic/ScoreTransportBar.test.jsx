@@ -177,4 +177,44 @@ describe('ScoreTransportBar', () => {
     fireEvent.mouseUp(slider); // commit on release
     expect(base.onScale).toHaveBeenCalledWith(1.3);
   });
+
+  it('memoization: advancing step re-renders only the position readout, not the expensive body', () => {
+    // onBodyRender fires once per real render of the memoized ScoreViewControls
+    // (the ~250-line part/chip/popover cluster). It is stable across rerenders, so
+    // React.memo can still bail when only `step` changes.
+    const onBodyRender = vi.fn();
+    const props = { ...base, step: 0, onBodyRender }; // every value kept referentially stable
+
+    const { rerender } = render(<ScoreTransportBar {...props} />);
+    expect(onBodyRender).toHaveBeenCalledTimes(1); // mounted → body rendered once
+    expect(screen.getByText('1 / 40')).toBeInTheDocument();
+
+    // Change ONLY step; all other props keep identity → the memo must bail.
+    rerender(<ScoreTransportBar {...props} step={5} />);
+    expect(screen.getByText('6 / 40')).toBeInTheDocument(); // readout DID update
+    expect(onBodyRender).toHaveBeenCalledTimes(1); // body did NOT re-render
+
+    // A step advance never re-renders the body…
+    rerender(<ScoreTransportBar {...props} step={9} />);
+    expect(screen.getByText('10 / 40')).toBeInTheDocument();
+    expect(onBodyRender).toHaveBeenCalledTimes(1);
+
+    // …but a genuine body-prop change (mode) does.
+    rerender(<ScoreTransportBar {...props} step={9} mode="polish" />);
+    expect(onBodyRender).toHaveBeenCalledTimes(2);
+  });
+
+  it('memoization: mode tabs + transport buttons are unaffected by a step advance', () => {
+    // Sanity: the shell still threads props correctly across a step change — the
+    // tabs, transport, and readout all remain present & correct.
+    const props = { ...base, mode: 'polish', step: 0 };
+    const { rerender } = render(<ScoreTransportBar {...props} />);
+    expect(screen.getByRole('tab', { name: /polish/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /pause|play/i })).toBeInTheDocument();
+
+    rerender(<ScoreTransportBar {...props} step={3} />);
+    expect(screen.getByText('4 / 40')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /polish/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: /pause|play/i })).toBeInTheDocument();
+  });
 });

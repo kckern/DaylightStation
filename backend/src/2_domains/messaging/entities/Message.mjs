@@ -2,7 +2,7 @@
  * Message Entity - Represents a single message in a conversation
  */
 
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
   MessageType,
   MESSAGE_TYPES,
