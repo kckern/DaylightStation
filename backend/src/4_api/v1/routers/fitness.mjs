@@ -36,17 +36,15 @@
  * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
  */
 import express from 'express';
-import path from 'path';
-import fs from 'fs';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
+import { ManageAccess } from '#apps/fitness/usecases/ManageAccess.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
-import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
-import { buildFingerprintIdentityIndex, buildAuthz } from '#apps/fitness/identityRelay.mjs';
+import { shouldSendExerciseReaction } from '#apps/fitness/webhookCoachingPolicy.mjs';
 
 // Commit (locking down) is the safe direction, so the admin-press pending may be
 // consumed within a generous window that covers the on-screen ceremony. Un-locking
@@ -116,10 +114,18 @@ export function createFitnessRouter(config) {
     generateSessionTimelapse = null,
     fingerprintProfileWriter = null,
     resolveManageService = getManageService,
+    // Direct-FS operations are moved behind injected providers (wired at the
+    // composition root) so this router keeps no filesystem access of its own.
+    menuMusicProvider = null,
+    voiceMemoDebugStore = null,
     logger = console
   } = config;
 
   const router = express.Router();
+
+  // Resolve the default household id ONCE — handlers read `req.query.household ||
+  // defaultHouseholdId` rather than each re-calling configService.
+  const defaultHouseholdId = configService?.getDefaultHouseholdId?.() ?? null;
 
   // QuerySessions use case: prefer the injected instance (composition root);
   // otherwise wire it here from the already-injected session services so the
@@ -127,11 +133,24 @@ export function createFitnessRouter(config) {
   const sessionsUseCase = querySessions
     || (sessionService ? new QuerySessions({ sessionService, sessionGroupingService, logger }) : null);
 
+  // ManageAccess use case: the fingerprint / manage-access AUTHORIZATION policy.
+  // Constructed from already-injected deps so security decisions live in the
+  // application layer, not in the request handlers below.
+  const manageAccess = new ManageAccess({
+    userService,
+    fitnessConfigService,
+    identityRelay,
+    resolveUnlockService,
+    resolveManageService,
+    fingerprintProfileWriter,
+    logger,
+  });
+
   /**
    * GET /api/fitness - Get fitness config (hydrated with user profiles)
    */
   router.get('/', asyncHandler(async (req, res) => {
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
     const fitnessData = fitnessConfigService?.loadRawConfig(householdId);
 
     if (!fitnessData) {
@@ -172,7 +191,7 @@ export function createFitnessRouter(config) {
       return res.status(503).json({ error: 'Content registry not configured' });
     }
 
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
 
     // Use FitnessConfigService for normalized config access (encapsulates Plex-specific structure)
     const normalizedConfig = fitnessConfigService?.getNormalizedConfig(householdId);
@@ -229,7 +248,7 @@ export function createFitnessRouter(config) {
     }
 
     const { id } = req.params;
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
 
     const result = await fitnessPlayableService.getPlayableEpisodes(id, householdId);
 
@@ -370,7 +389,7 @@ export function createFitnessRouter(config) {
   // Express matches them as raceIds.
   router.get('/cycle-races/ladder', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
     const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
     try {
       const ladder = await cycleRaceService.getLadder({ cycleGameConfig, week: req.query.week ?? null, householdId });
@@ -388,7 +407,7 @@ export function createFitnessRouter(config) {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
     const { userId, courseId } = req.query;
     if (!userId || !courseId) return res.status(400).json({ error: 'userId and courseId required' });
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
     const cycleGameConfig = fitnessConfigService?.loadRawConfig(householdId)?.cycle_game || {};
     return res.json(await cycleRaceService.getPersonalBest({ cycleGameConfig, userId, courseId, householdId }));
   }));
@@ -726,7 +745,7 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ ok: false, error: 'audioBase64 required' });
     }
 
-    const householdId = sessionContext.householdId || configService.getDefaultHouseholdId();
+    const householdId = sessionContext.householdId || defaultHouseholdId;
 
       // Get household member names for transcription hints (via FitnessConfigService)
       const householdMembers = fitnessConfigService?.getHouseholdMemberNames(householdId) || [];
@@ -822,6 +841,9 @@ export function createFitnessRouter(config) {
    * NO Strava enrichment, NO session context capture.
    */
   router.post('/debug/voice-memo', asyncHandler(async (req, res) => {
+    if (!voiceMemoDebugStore) {
+      return res.status(503).json({ ok: false, error: 'Debug voice-memo store not configured' });
+    }
     const { audioBase64 } = req.body || {};
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ ok: false, error: 'audioBase64 required' });
@@ -833,26 +855,12 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ ok: false, error: 'Failed to decode audio data' });
     }
 
-    const savedAt = Date.now();
-    const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
-    const filename = `${iso}.webm`;
+    // Filesystem write lives behind the injected store (composition root).
+    const saved = await voiceMemoDebugStore.save(buffer);
 
-    const dataDir = configService.getDataDir();
-    const debugDir = path.join(dataDir, '_debug', 'voice_memos');
-    const filePath = path.join(debugDir, filename);
+    logger.debug?.('fitness.debug_voice_memo.saved', { filename: saved.filename, size: saved.size });
 
-    // writeBinary handles mkdirSync({ recursive: true }) internally.
-    writeBinary(filePath, buffer);
-
-    logger.debug?.('fitness.debug_voice_memo.saved', { filename, size: buffer.length });
-
-    return res.json({
-      ok: true,
-      path: filePath,
-      filename,
-      size: buffer.length,
-      savedAt,
-    });
+    return res.json({ ok: true, ...saved });
   }));
 
   // =============================================================================
@@ -1077,8 +1085,9 @@ export function createFitnessRouter(config) {
           enrichmentService.handleEvent(event);
         }
 
-        // Trigger coaching exercise reaction (fire-and-forget)
-        if (adapter.shouldEnrich?.(event) && event.calories > 200) {
+        // Trigger coaching exercise reaction (fire-and-forget). The calorie
+        // threshold is a fitness domain rule (webhookCoachingPolicy).
+        if (shouldEnrich && shouldSendExerciseReaction(event)) {
           const userId = event.ownerId;
           const coachingOrchestrator = router.coachingOrchestrator;
           const coachingConversationId = configService?.getNutribotConversationId?.() || null;
@@ -1111,21 +1120,11 @@ export function createFitnessRouter(config) {
    * Frontend passes them through DaylightMediaPath() to get full URLs.
    */
   router.get('/menu-music', asyncHandler(async (req, res) => {
-    const mediaDir = configService.getMediaDir();
-    const musicDir = path.join(mediaDir, 'apps', 'fitness', 'ux', 'menus');
+    // Directory listing lives behind the injected provider (composition root);
+    // it returns media-relative track paths and swallows a missing dir as [].
+    const tracks = menuMusicProvider ? menuMusicProvider() : [];
 
-    let filenames = [];
-    try {
-      filenames = fs.readdirSync(musicDir)
-        .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
-        .sort();
-    } catch (_) {
-      // Directory missing or unreadable — return empty list gracefully
-    }
-
-    const tracks = filenames.map(f => `media/apps/fitness/ux/menus/${f}`);
-
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const householdId = req.query.household || defaultHouseholdId;
     const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
     const volume = fitnessConfig?.menu_music?.volume ?? 0.05;
 
@@ -1193,7 +1192,7 @@ export function createFitnessRouter(config) {
     // Finalize every active session and fire its recap — fire-and-forget so it
     // never delays the lockdown response (screens must flip to LOCKED promptly).
     if (sessionService) {
-      const householdId = req.query.household || configService.getDefaultHouseholdId();
+      const householdId = req.query.household || defaultHouseholdId;
       Promise.resolve()
         .then(async () => {
           const active = await sessionService.getActiveSessions(householdId);
@@ -1232,31 +1231,6 @@ export function createFitnessRouter(config) {
   }));
 
   /**
-   * Fingerprint candidate gallery for an emergency release: every admin's enrolled
-   * prints, deduped by uuid. Gated on buildAuthz().admin — the same authority that
-   * stamps an emergency `pending` detection — so exactly the people who can trigger
-   * the lockdown can release it, and re-arming the reader during LOCKED can never
-   * match a non-admin finger (the whole point of the lockdown).
-   */
-  function emergencyAdminGallery(req) {
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    const profiles = userService?.getAllProfiles?.() || {};
-    const entries = profiles instanceof Map ? [...profiles.entries()] : Object.entries(profiles);
-    const seen = new Set();
-    const gallery = [];
-    for (const [username, profile] of entries) {
-      if (!buildAuthz(username, fitnessConfig).admin) continue;
-      for (const fp of profile?.identities?.fingerprints || []) {
-        if (!fp?.id || seen.has(fp.id)) continue;
-        seen.add(fp.id);
-        gallery.push({ uuid: fp.id, username });
-      }
-    }
-    return gallery;
-  }
-
-  /**
    * POST /api/fitness/emergency/release — release an active lockdown with an
    * admin scan.
    *
@@ -1283,7 +1257,8 @@ export function createFitnessRouter(config) {
         logger?.warn?.('emergency.release_denied', { reason: 'unlock-service-unavailable' });
         return res.status(503).json({ error: 'unlock-service-unavailable', released: false });
       }
-      const gallery = emergencyAdminGallery(req);
+      const householdId = req.query.household || defaultHouseholdId;
+      const gallery = manageAccess.emergencyAdminGallery(householdId);
       if (gallery.length === 0) {
         logger?.warn?.('emergency.release_denied', { reason: 'no-admin-candidates' });
         return res.json({ released: false });
@@ -1311,52 +1286,10 @@ export function createFitnessRouter(config) {
     res.json({ released: true });
   }));
 
-  function fitnessUsersConfig(req) {
-    const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessConfig = fitnessConfigService?.loadRawConfig?.(householdId) || {};
-    return fitnessConfig?.users || {};
-  }
-
-  /** Config-declared admin usernames (`fitness.yml → users.admin`). */
-  function adminUsernames(req) {
-    return fitnessUsersConfig(req)?.admin || [];
-  }
-
-  /** Config-declared primary usernames (`fitness.yml → users.primary`). */
-  function primaryUsernames(req) {
-    return fitnessUsersConfig(req)?.primary || [];
-  }
-
-  /**
-   * The enrollment universe is admins + primary users, deduped with admins first.
-   * Both groups have a profile.yml and may hold fingerprints; an admin need not be
-   * primary (e.g. a spouse who manages but doesn't follow the program). Inline
-   * family/friends have no profile and are never eligible.
-   */
-  function eligibleUsernames(req) {
-    const seen = new Set();
-    const ordered = [];
-    for (const username of [...adminUsernames(req), ...primaryUsernames(req)]) {
-      if (!username || seen.has(username)) continue;
-      seen.add(username);
-      ordered.push(username);
-    }
-    return ordered;
-  }
-
-  /**
-   * Build the username->profile map (all eligible users) for the access decision,
-   * so an admin's prints are available to the self/admin gallery. Reuses the live
-   * cache.
-   */
-  function eligibleProfilesObject(req) {
-    const map = {};
-    for (const username of eligibleUsernames(req)) {
-      const profile = userService?.getProfile?.(username);
-      if (profile) map[username] = profile;
-    }
-    return map;
-  }
+  // ── Fingerprint / manage-access ─────────────────────────────
+  // All authorization DECISIONS (eligibility, the self/admin gate, enroll/delete
+  // domain rules) live in the ManageAccess use case. These handlers only parse
+  // the request and shape the response.
 
   /**
    * GET /api/fitness/fingerprints — list every ELIGIBLE user (admins first, then
@@ -1364,164 +1297,30 @@ export function createFitnessRouter(config) {
    * only). Never returns uuids; never lists inline family/friends.
    */
   router.get('/fingerprints', asyncHandler(async (req, res) => {
-    const adminSet = new Set(adminUsernames(req));
-    const out = [];
-    for (const username of eligibleUsernames(req)) {
-      const profile = userService?.getProfile?.(username);
-      if (!profile) continue;
-      const ids = profile.identities || {};
-      out.push({
-        username,
-        displayName: profile.display_name || username,
-        admin: adminSet.has(username) || ids.admin === true,
-        // Simulated entries (sim-unlock test fixtures) are not real templates and
-        // are never surfaced for management — they'd show as phantom duplicates.
-        fingerprints: (ids.fingerprints || [])
-          .filter((f) => !f.simulated)
-          .map((f) => ({ finger: f.finger, enrolled: f.enrolled })),
-      });
-    }
-    res.json(out);
+    const householdId = req.query.household || defaultHouseholdId;
+    res.json(manageAccess.listFingerprints(householdId));
   }));
 
   /**
-   * Run the self/admin identify gate for managing `username`. Returns
-   * { ok: true } when allowed (TOFU or matched scan), else { ok:false, status, body }.
-   */
-  async function gateManageAccess(req, username, logger) {
-    const profiles = eligibleProfilesObject(req);
-    const { requiresAuth, gallery } = resolveManageAccess(profiles, username);
-    if (!requiresAuth) {
-      logger.info?.('fitness.fingerprint.access.tofu', { username });
-      return { ok: true };
-    }
-    // The manager is admin-gated on entry; if an admin verified within the session
-    // window, that scan authorizes manage ops (enroll-verify / delete) — no second
-    // scan. This is what makes deleting a print from the UX work (and not depend on
-    // a flaky reader, since delete itself never touches it).
-    const adminSession = identityRelay?.adminVerifiedWithin?.();
-    if (adminSession) {
-      logger.info?.('fitness.fingerprint.access.admin-session', { username, by: adminSession.userId });
-      return { ok: true };
-    }
-    const unlockService = resolveUnlockService?.();
-    if (!unlockService) return { ok: false, status: 503, body: { error: 'unlock-service-unavailable' } };
-    logger.info?.('fitness.fingerprint.access.requires-auth', { username, candidates: gallery.length });
-    let verdict;
-    try {
-      verdict = await unlockService.requestUnlock(`manage:${username}`, gallery);
-    } catch (err) {
-      logger.error?.('fitness.fingerprint.access.error', { username, error: err?.message });
-      return { ok: false, status: 500, body: { error: 'auth-failed' } };
-    }
-    if (!verdict?.matched) {
-      logger.info?.('fitness.fingerprint.access.denied', { username });
-      return { ok: false, status: 403, body: { error: 'auth-denied' } };
-    }
-    logger.info?.('fitness.fingerprint.access.granted', { username, by: verdict.userId });
-    return { ok: true };
-  }
-
-  /**
    * POST /api/fitness/fingerprints/enroll { username, finger, clientToken }
-   * Eligibility (primary) is enforced first, then a duplicate-finger guard, then
-   * TOFU for an unenrolled user (otherwise a self/admin scan). On success the
-   * garage box returns a uuid which we persist to the user's profile.yml.
+   * Eligibility, duplicate-finger guard, self/admin gate, provider round-trip and
+   * profile.yml persistence are all enforced by ManageAccess.enroll.
    */
   router.post('/fingerprints/enroll', asyncHandler(async (req, res) => {
-    const { username, finger, clientToken } = req.body || {};
-    const profile = username ? userService?.getProfile?.(username) : null;
-    if (!profile) return res.status(400).json({ error: 'unknown-user' });
-    if (!eligibleUsernames(req).includes(username)) {
-      logger.info?.('fitness.fingerprint.enroll.not-eligible', { username });
-      return res.status(403).json({ error: 'not-eligible' });
-    }
-    if (!finger || typeof finger !== 'string') {
-      return res.status(400).json({ error: 'missing-finger' });
-    }
-    const taken = (profile.identities?.fingerprints || []).some((f) => f.finger === finger && !f.simulated);
-    if (taken) {
-      logger.info?.('fitness.fingerprint.enroll.finger-taken', { username, finger });
-      return res.status(409).json({ error: 'finger-taken' });
-    }
-
-    const gate = await gateManageAccess(req, username, logger);
-    if (!gate.ok) return res.status(gate.status).json(gate.body);
-
-    const manageService = resolveManageService?.();
-    if (!manageService) return res.status(503).json({ error: 'manage-service-unavailable' });
-
-    let result;
-    try {
-      // Kept: stable domain-error contract — the frontend EnrollModal parses the
-      // 'enroll-failed' code (overheat/busy hinting), so both the exception path and
-      // the !success path below return it rather than a generic middleware 500.
-      result = await manageService.requestEnroll({ finger, username, clientToken });
-    } catch (err) {
-      logger.error?.('fitness.fingerprint.enroll.error', { username, error: err?.message });
-      return res.status(500).json({ error: 'enroll-failed' });
-    }
-    // The finger already belongs to someone — refuse to file it under another
-    // identity. Name the existing owner so the UI can say who.
-    if (result?.error === 'duplicate') {
-      const owner = buildFingerprintIdentityIndex(userService?.getAllProfiles?.() || {})[result.matchedUuid]?.userId || null;
-      const registeredTo = (owner && userService?.getProfile?.(owner)?.display_name) || owner || 'another user';
-      logger.warn?.('fitness.fingerprint.enroll.duplicate', { username, finger, matchedUuid: result.matchedUuid, owner });
-      return res.status(409).json({ error: 'duplicate-finger', registeredTo });
-    }
-    if (!result?.success || !result.uuid) {
-      logger.warn?.('fitness.fingerprint.enroll.unsuccessful', { username, reason: result?.error });
-      return res.status(500).json({ error: 'enroll-failed', reason: result?.error });
-    }
-
-    const enrolled = new Date().toISOString().slice(0, 10);
-    await fingerprintProfileWriter?.addFingerprint(username, { id: result.uuid, finger, enrolled });
-    logger.info?.('fitness.fingerprint.enroll.saved', { username, finger });
-    return res.json({ success: true, finger });
+    const householdId = req.query.household || defaultHouseholdId;
+    const { status, body } = await manageAccess.enroll(householdId, req.body || {});
+    return res.status(status).json(body);
   }));
 
   /**
    * DELETE /api/fitness/fingerprints { username, finger }
-   * Keyed by finger name (uuids never reach the browser); the server resolves the
-   * finger to the uuid the user owns. Requires a self/admin scan, deletes the
-   * on-box template, then removes the profile.yml entry (only after the box
-   * confirms, to avoid a dangling entry).
+   * Finger→uuid resolution, self/admin gate, on-box delete and profile.yml removal
+   * are all enforced by ManageAccess.remove.
    */
   router.delete('/fingerprints', asyncHandler(async (req, res) => {
-    const { username, finger } = req.body || {};
-    const profile = username ? userService?.getProfile?.(username) : null;
-    if (!profile) return res.status(400).json({ error: 'unknown-user' });
-    if (!eligibleUsernames(req).includes(username)) {
-      return res.status(403).json({ error: 'not-eligible' });
-    }
-    // Simulated fixtures have no on-box template and never collide with a real
-    // finger of the same name, so they're excluded from delete matching.
-    const matches = (profile.identities?.fingerprints || []).filter((f) => f.finger === finger && !f.simulated);
-    if (!finger || matches.length === 0) return res.status(400).json({ error: 'unknown-fingerprint' });
-    if (matches.length > 1) return res.status(409).json({ error: 'ambiguous-finger' });
-    const uuid = matches[0].id;
-
-    const gate = await gateManageAccess(req, username, logger);
-    if (!gate.ok) return res.status(gate.status).json(gate.body);
-
-    const manageService = resolveManageService?.();
-    if (!manageService) return res.status(503).json({ error: 'manage-service-unavailable' });
-
-    let result;
-    try {
-      // Kept: stable domain-error contract mirroring enroll — 'delete-failed' is the
-      // code the fingerprint-manager UI expects, so both the exception path and the
-      // !success path below return it rather than a generic middleware 500.
-      result = await manageService.requestDelete({ uuid });
-    } catch (err) {
-      logger.error?.('fitness.fingerprint.delete.error', { username, error: err?.message });
-      return res.status(500).json({ error: 'delete-failed' });
-    }
-    if (!result?.success) return res.status(500).json({ error: 'delete-failed', reason: result?.error });
-
-    await fingerprintProfileWriter?.removeFingerprint(username, uuid);
-    logger.info?.('fitness.fingerprint.delete.saved', { username, finger });
-    return res.json({ success: true });
+    const householdId = req.query.household || defaultHouseholdId;
+    const { status, body } = await manageAccess.remove(householdId, req.body || {});
+    return res.status(status).json(body);
   }));
 
   // Shared error middleware: expected errors (mapped by err.name/err.status) →
