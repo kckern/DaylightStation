@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Fix inconsistency where sidebar user list shows "KC Kern" instead of "Dad" when multiple HR devices are connected.
+**Goal:** Fix inconsistency where sidebar user list shows "User_1" instead of "Dad" when multiple HR devices are connected.
 
 **Architecture:** Single-point fix in `getUserVitals` to respect the context's `preferGroupLabels` flag instead of hardcoding `false`. Secondary cleanup in `getHouseholdDisplayLabel` to look for the correct config field.
 
@@ -12,7 +12,7 @@
 
 ## Problem Summary
 
-The sidebar user list shows "KC Kern" (raw name) instead of "Dad" (group_label) when multiple HR devices are connected, even though the lock screen correctly shows "Dad".
+The sidebar user list shows "User_1" (raw name) instead of "Dad" (group_label) when multiple HR devices are connected, even though the lock screen correctly shows "Dad".
 
 ### Root Cause
 
@@ -31,14 +31,14 @@ This bypasses the context's `preferGroupLabels` logic (true when 2+ HR devices e
 ```
 FitnessUsers.jsx → getUserVitals() → getDisplayLabel({ preferGroupLabel: false })
                                                          ↓
-                                              Always returns "KC Kern"
+                                              Always returns "User_1"
 ```
 
 ### Expected Behavior
 
 | Scenario | Displayed Name |
 |----------|---------------|
-| 1 HR device connected | "KC Kern" (name) |
+| 1 HR device connected | "User_1" (name) |
 | 2+ HR devices connected | "Dad" (group_label) |
 
 ---
@@ -190,7 +190,7 @@ const displayLabel = typeof getDisplayLabel === 'function'
 
 **Step 1: Analyze usage**
 
-Device assignments show "KC Kern assigned to Device X". Using the full name may be intentional for clarity in assignment contexts.
+Device assignments show "User_1 assigned to Device X". Using the full name may be intentional for clarity in assignment contexts.
 
 **Step 2: Leave as-is or fix**
 
@@ -225,7 +225,7 @@ EOF
 
 ## Testing Checklist
 
-- [ ] Start fitness app with 1 HR device → Sidebar shows "KC Kern"
+- [ ] Start fitness app with 1 HR device → Sidebar shows "User_1"
 - [ ] Add second HR device (kid) → Sidebar shows "Dad" for configured user
 - [ ] Lock screen shows "Dad" when governance activates (no regression)
 - [ ] Device assignment modal shows correct label (verify expected behavior)
@@ -235,14 +235,14 @@ EOF
 ## Appendix: Data Flow Diagram
 
 ```
-Config: group_label: "Dad" for KC Kern
+Config: group_label: "Dad" for User_1
             ↓
-userGroupLabelMap.set("KC Kern", "Dad")
+userGroupLabelMap.set("User_1", "Dad")
             ↓
-getDisplayLabel("KC Kern", { preferGroupLabel: <from context> })
+getDisplayLabel("User_1", { preferGroupLabel: <from context> })
             ↓
 preferGroupLabels = (heartRateDevices.length > 1)
             ↓
 If 2+ devices: resolveDisplayLabel({ preferGroupLabel: true }) → "Dad"
-If 1 device:   resolveDisplayLabel({ preferGroupLabel: false }) → "KC Kern"
+If 1 device:   resolveDisplayLabel({ preferGroupLabel: false }) → "User_1"
 ```

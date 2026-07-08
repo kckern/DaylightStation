@@ -9,8 +9,8 @@ const race = (id, utcIso, riders) => ({
 
 const svc = {
   listByDate: async () => [
-    race('r-morning', '2026-06-05T15:48:00Z', [['kckern', 0], ['felix', 0]]), // 08:48 PDT
-    race('r-after',   '2026-06-05T23:22:37Z', [['milo', 215], ['alan', 222]]),// 16:22 PDT
+    race('r-morning', '2026-06-05T15:48:00Z', [['user_1', 0], ['user_2', 0]]), // 08:48 PDT
+    race('r-after',   '2026-06-05T23:22:37Z', [['user_3', 215], ['user_4', 222]]),// 16:22 PDT
   ],
 };
 
@@ -35,10 +35,10 @@ describe('CycleGameProvider', () => {
     expect(items.map(i => i.meta.raceId)).toEqual(['r-after']); // morning excluded
     expect(items[0].startMs).toBe(Date.parse('2026-06-05T23:22:37Z'));
     expect(items[0].endMs).toBe(Date.parse('2026-06-05T23:22:37Z') + 60000);
-    expect(items[0].meta.winnerId).toBe('milo');               // placement 1
-    expect(items[0].meta.distances).toEqual({ milo: 215, alan: 222 });
+    expect(items[0].meta.winnerId).toBe('user_3');               // placement 1
+    expect(items[0].meta.distances).toEqual({ user_3: 215, user_4: 222 });
     expect(items[0].meta.backgroundPlexId).toBe(674141);
-    expect(items[0].participants.sort()).toEqual(['alan', 'milo']);
+    expect(items[0].participants.sort()).toEqual(['user_3', 'user_4']);
   });
 
   it('allows a small slack at the window edges and sorts by startMs', async () => {
@@ -63,17 +63,17 @@ describe('CycleGameProvider', () => {
     const ghostRace = {
       race: { id: 'g1', date: '2026-06-05T23:29:22Z', time_cap_s: 120, background_plex_id: 674141 },
       participants: {
-        milo: { display_name: 'Milo', final_distance_m: 613, placement: 2 },
-        'ghost:abc:milo': { display_name: 'Ghost', final_distance_m: 1360, placement: 1 },
-        'ghost:abc:alan': { display_name: 'Ghost', final_distance_m: 1317, placement: 3 },
+        user_3: { display_name: 'User_3', final_distance_m: 613, placement: 2 },
+        'ghost:abc:user_3': { display_name: 'Ghost', final_distance_m: 1360, placement: 1 },
+        'ghost:abc:user_4': { display_name: 'Ghost', final_distance_m: 1317, placement: 3 },
       },
     };
     const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [ghostRace] } });
     const [item] = await p.loadOverlapping(
       Date.parse('2026-06-05T23:00:00Z'), Date.parse('2026-06-05T23:59:00Z'), '2026-06-05', 'h');
-    expect(item.participants).toEqual(['milo']);          // ghosts removed
-    expect(item.meta.winnerId).toBe('milo');              // not the ghost despite its placement 1
-    expect(item.meta.distances).toEqual({ milo: 613 });   // ghosts excluded from distances
+    expect(item.participants).toEqual(['user_3']);          // ghosts removed
+    expect(item.meta.winnerId).toBe('user_3');              // not the ghost despite its placement 1
+    expect(item.meta.distances).toEqual({ user_3: 613 });   // ghosts excluded from distances
   });
 
   it('uses ACTUAL finish time (not the time cap) for a distance-race band so races dont nest', async () => {
@@ -81,7 +81,7 @@ describe('CycleGameProvider', () => {
     // the next race (the "race within race" bug).
     const distRace = {
       race: { id: 'd1', date: '2026-06-05T23:44:18Z', time_cap_s: 180, win_condition: 'distance', interval_seconds: 1 },
-      participants: { milo: { display_name: 'Milo', final_distance_m: 1000, final_time_s: 13, placement: 1 } },
+      participants: { user_3: { display_name: 'User_3', final_distance_m: 1000, final_time_s: 13, placement: 1 } },
     };
     const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [distRace] } });
     const [item] = await p.loadOverlapping(0, Date.parse('2026-06-06T00:00:00Z'), '2026-06-05', 'h');
@@ -94,9 +94,9 @@ describe('CycleGameProvider', () => {
     const abandoned = {
       race: { id: 't1', date: '2026-06-05T23:44:18Z', time_cap_s: 180, win_condition: 'time', interval_seconds: 1 },
       participants: {
-        alan: { display_name: 'Alan', final_distance_m: 94, final_time_s: null, placement: 1,
+        user_4: { display_name: 'User_4', final_distance_m: 94, final_time_s: null, placement: 1,
                 distance_series: JSON.stringify([[0, 2], 4, 8, 12, 16, 20, 30, 40, 50, 60, 70, 80, 94]) }, // 14 ticks
-        felix: { display_name: 'Felix', final_distance_m: 0, distance_series: JSON.stringify([0]) },
+        user_2: { display_name: 'User_2', final_distance_m: 0, distance_series: JSON.stringify([0]) },
       },
     };
     const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [abandoned] } });
@@ -107,7 +107,7 @@ describe('CycleGameProvider', () => {
   it('falls back to the time cap only when there is no recorded data', async () => {
     const timeRace = {
       race: { id: 't2', date: '2026-06-05T23:55:57Z', time_cap_s: 120, win_condition: 'time', interval_seconds: 1 },
-      participants: { milo: { display_name: 'Milo', final_distance_m: 300, final_time_s: null, placement: 1 } },
+      participants: { user_3: { display_name: 'User_3', final_distance_m: 300, final_time_s: null, placement: 1 } },
     };
     const p = new CycleGameProvider({ cycleRaceService: { listByDate: async () => [timeRace] } });
     const [item] = await p.loadOverlapping(0, Date.parse('2026-06-06T00:00:00Z'), '2026-06-05', 'h');

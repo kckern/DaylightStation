@@ -182,7 +182,7 @@ games:
       earn_rate: 1.5
 
 users:                      # per-user overlay, merged last
-  soren:
+  user_5:
     governance: { required_zone: cool }   # gentler for the kid
 ```
 

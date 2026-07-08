@@ -28,7 +28,7 @@ The plan is **not** done until this 4-turn UI conversation produces coherent mul
 // Turn 4 of a 4-turn thread:
 {
   input: "what day was that?",
-  context: { userId: "kckern" },
+  context: { userId: "user_1" },
   messages: [
     { role: "user",      content: "what was my hardest recent run?" },
     { role: "assistant", content: "Your hardest run was on May 2, 2026 — 45 minutes (+18.4% vs typical 38 min)." },
@@ -112,7 +112,7 @@ describe('native wire format — parseRequest messages', () => {
   it('passes through a valid messages array', () => {
     const r = parseRequest(makeReq({
       input: 'last',
-      context: { userId: 'kckern' },
+      context: { userId: 'user_1' },
       messages: [
         { role: 'user', content: 'first' },
         { role: 'assistant', content: 'reply' },
@@ -326,7 +326,7 @@ describe('AgentOrchestrator — messages threading', () => {
       { role: 'user', content: 'second' },
     ];
     await orchestrator.run({
-      agentId: 'stub', input: 'second', context: { userId: 'kckern' }, messages,
+      agentId: 'stub', input: 'second', context: { userId: 'user_1' }, messages,
     });
     expect(fakeRuntime.execute).toHaveBeenCalledWith(
       expect.objectContaining({ messages, input: 'second' }),
@@ -636,7 +636,7 @@ describe('AgentRuntime — messages forwarding', () => {
       { role: 'assistant', content: 'reply' },
       { role: 'user', content: 'last' },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     expect(fetchSpy).toHaveBeenCalledOnce();
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.messages).toHaveLength(3);
@@ -649,7 +649,7 @@ describe('AgentRuntime — messages forwarding', () => {
     global.fetch = fetchSpy;
     const runtime = createAgentRuntime({ agentId: 'health-coach', baseUrl: 'http://x' });
     const messages = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `m${i}` }));
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.messages).toHaveLength(20);
     expect(body.messages[0].content).toBe('m10');
@@ -663,7 +663,7 @@ describe('AgentRuntime — messages forwarding', () => {
       { role: 'user', content: [{ type: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ type: 'text', text: 'hello' }, { type: 'text', text: '!' }] },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.messages).toEqual([
       { role: 'user', content: 'hi' },
@@ -680,7 +680,7 @@ describe('AgentRuntime — messages forwarding', () => {
       { role: 'assistant', content: [{ type: 'image', url: '/foo.png' }] },  // no text part
       { role: 'user', content: 'b' },
     ];
-    await runtime.run({ messages, userId: 'kckern' });
+    await runtime.run({ messages, userId: 'user_1' });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.messages).toEqual([
       { role: 'user', content: 'a' },
@@ -813,7 +813,7 @@ TURNS = [
 ]
 
 def run(input_text, messages):
-    body = {"input": input_text, "context": {"userId": "kckern"}}
+    body = {"input": input_text, "context": {"userId": "user_1"}}
     if messages:
         body["messages"] = messages
     r = subprocess.run(

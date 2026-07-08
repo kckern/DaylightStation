@@ -19,19 +19,19 @@ Users have age-adjusted zone configurations:
 
 | User | Active Min | Warm Min | Hot Min |
 |------|------------|----------|---------|
-| kckern (adult) | 100 | 120 | 140 |
-| felix (child) | 120 | 140 | 160 |
-| milo (child) | 120 | 140 | 165 |
-| alan (young child) | 125 | 150 | 170 |
-| soren (young child) | 125 | 150 | 170 |
+| user_1 (adult) | 100 | 120 | 140 |
+| user_2 (child) | 120 | 140 | 160 |
+| user_3 (child) | 120 | 140 | 165 |
+| user_4 (young child) | 125 | 150 | 170 |
+| user_5 (young child) | 125 | 150 | 170 |
 
 The simulator uses global zone midpoints:
 - `warm` → HR=130
 
 At HR=130:
-- kckern: 130 >= 120 → warm (correct)
-- felix: 130 < 140 → active (not warm!)
-- alan: 130 < 150 → active (not warm!)
+- user_1: 130 >= 120 → warm (correct)
+- user_2: 130 < 140 → active (not warm!)
+- user_4: 130 < 150 → active (not warm!)
 
 **Impact:** Tests expecting all users in "warm" zone fail because children are in "active".
 
@@ -115,9 +115,9 @@ Add a helper that calculates HR values that work for all users:
 // tests/_lib/fitnessTestHelpers.mjs
 export const UNIVERSAL_HR = {
   cool: 70,      // Below 85 (lowest active min)
-  active: 135,   // 125-139 (above alan/soren active, below felix warm)
-  warm: 155,     // 150-164 (above alan/soren warm, below milo hot)
-  hot: 175,      // 170-179 (above alan/soren hot, below felix fire)
+  active: 135,   // 125-139 (above user_4/user_5 active, below user_2 warm)
+  warm: 155,     // 150-164 (above user_4/user_5 warm, below user_3 hot)
+  hot: 175,      // 170-179 (above user_4/user_5 hot, below user_2 fire)
   fire: 195      // Above 190 (highest fire min)
 };
 ```

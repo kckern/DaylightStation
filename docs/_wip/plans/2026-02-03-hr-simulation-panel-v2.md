@@ -291,7 +291,7 @@ Single HTML file with embedded CSS and JS. No build step required.
 │ │ [auto] [session] [stop]        │ │
 │ └─────────────────────────────────┘ │
 │ ┌─────────────────────────────────┐ │
-│ │ Milo (12346)          -- bpm   │ │
+│ │ User_3 (12346)          -- bpm   │ │
 │ │ ○cool ○actv ○warm ○hot ○fire  │ │
 │ │ [auto] [session] [stop]        │ │
 │ └─────────────────────────────────┘ │

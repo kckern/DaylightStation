@@ -22,9 +22,9 @@ describe('relativeDay', () => {
 describe('buildRecordRow', () => {
   const base = {
     raceId: '20260603181200', day: '2026-06-03', timeOfDay: '6:12 pm',
-    winnerName: 'Milo',
-    participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/a', finalDistanceM: 1000, finalTimeS: 120 },
-                   { id: 'felix', displayName: 'Felix', avatarSrc: '/b', finalDistanceM: 800, finalTimeS: 130 }]
+    winnerName: 'User_3',
+    participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/a', finalDistanceM: 1000, finalTimeS: 120 },
+                   { id: 'user_2', displayName: 'User_2', avatarSrc: '/b', finalDistanceM: 800, finalTimeS: 130 }]
   };
   it('a distance race shows winner km/h as SPEED and the goal distance as RACE', () => {
     const r = buildRecordRow({ ...base, winCondition: 'distance', goalLabel: '1.00 km' }, '2026-06-03');
@@ -33,26 +33,26 @@ describe('buildRecordRow', () => {
     expect(r.raceKind).toBe('distance');
     expect(r.whenDay).toBe('Today');
     expect(r.whenTime).toBe('6:12p');
-    expect(r.winnerId).toBe('milo');
-    expect(r.winnerName).toBe('Milo');
+    expect(r.winnerId).toBe('user_3');
+    expect(r.winnerName).toBe('User_3');
     expect(r.winnerIsGhost).toBe(false);
-    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false }]);
+    expect(r.others).toEqual([{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b', isGhost: false }]);
   });
 
   it('flags ghost participants (winner + others) so callers can apply .cg-ghost', () => {
     const r = buildRecordRow({ ...base,
       participants: [
-        { id: 'ghost:20260601:milo', displayName: 'Milo 👻', avatarSrc: '/a', isGhost: true, finalDistanceM: 1000, finalTimeS: 120 },
-        { id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false, finalDistanceM: 800, finalTimeS: 130 }
+        { id: 'ghost:20260601:user_3', displayName: 'User_3 👻', avatarSrc: '/a', isGhost: true, finalDistanceM: 1000, finalTimeS: 120 },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/b', isGhost: false, finalDistanceM: 800, finalTimeS: 130 }
       ],
       winCondition: 'distance', goalLabel: '1.00 km' }, '2026-06-03');
     expect(r.winnerIsGhost).toBe(true);
-    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b', isGhost: false }]);
+    expect(r.others).toEqual([{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b', isGhost: false }]);
   });
   it('a time race uses the time cap for winner pace and flags RACE as time', () => {
     // Time races have no finish time → use the cap (60 s). 300 m / 60 s = 18.0 km/h.
     const r = buildRecordRow({ ...base, winCondition: 'time', timeCapS: 60, goalLabel: '1:00',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/a', finalDistanceM: 300, finalTimeS: null }] }, '2026-06-03');
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/a', finalDistanceM: 300, finalTimeS: null }] }, '2026-06-03');
     expect(r.speedLabel).toBe('18 km/h');
     expect(r.raceLabel).toBe('1:00');
     expect(r.raceKind).toBe('time');
@@ -61,6 +61,6 @@ describe('buildRecordRow', () => {
     const r = buildRecordRow({ ...base, participants: [base.participants[0]],
       winCondition: 'time', timeCapS: 60, goalLabel: '1:00' }, '2026-06-03');
     expect(r.others).toEqual([]);
-    expect(r.winnerId).toBe('milo');
+    expect(r.winnerId).toBe('user_3');
   });
 });

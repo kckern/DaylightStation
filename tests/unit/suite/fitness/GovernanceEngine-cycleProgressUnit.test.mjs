@@ -15,8 +15,8 @@ describe('Cycle phaseProgressPct unit consistency', () => {
     engine = new GovernanceEngine({ roster: [], snapshot: { zoneConfig: [] } });
     engine.media = null;
     engine._latestInputs = {
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'hot' },
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'hot' },
       equipmentCadenceMap: { cycle_ace: { rpm: 90, connected: true } }
     };
     engine.challengeState = {
@@ -25,7 +25,7 @@ describe('Cycle phaseProgressPct unit consistency', () => {
         type: 'cycle',
         cycleState: 'maintain',
         equipment: 'cycle_ace',
-        rider: 'kckern',
+        rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,
         totalPhases: 2,

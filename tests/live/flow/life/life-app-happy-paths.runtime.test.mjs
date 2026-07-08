@@ -150,7 +150,7 @@ test.describe('Life App — SPA & Navigation', () => {
 
 test.describe('Life App — API Reads', () => {
   test('GET /api/v1/life/plan', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/plan?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/plan?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -175,7 +175,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/now', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/now?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/now?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -187,7 +187,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/plan/goals', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/plan/goals?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/plan/goals?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -199,7 +199,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/plan/beliefs', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/plan/beliefs?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/plan/beliefs?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -211,7 +211,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/plan/cadence', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/plan/cadence?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/plan/cadence?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -223,7 +223,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/now/drift', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/now/drift?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/now/drift?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -235,7 +235,7 @@ test.describe('Life App — API Reads', () => {
   });
 
   test('GET /api/v1/life/schedule/json', async ({ request }) => {
-    const resp = await request.get(`${BASE}/api/v1/life/schedule/json?username=kckern`, {
+    const resp = await request.get(`${BASE}/api/v1/life/schedule/json?username=user_1`, {
       ignoreHTTPSErrors: true,
       timeout: 15000,
     });
@@ -251,7 +251,7 @@ test.describe('Life App — API Reads', () => {
 
 test.describe('Life App — API Writes', () => {
   test('PATCH /api/v1/life/plan/purpose', async ({ request }) => {
-    const resp = await request.patch(`${BASE}/api/v1/life/plan/purpose?username=kckern`, {
+    const resp = await request.patch(`${BASE}/api/v1/life/plan/purpose?username=user_1`, {
       ignoreHTTPSErrors: true,
       data: { statement: 'Playwright audit purpose test', grounded_in: [] },
       timeout: 15000,
@@ -265,7 +265,7 @@ test.describe('Life App — API Writes', () => {
   });
 
   test('POST /api/v1/life/plan/feedback', async ({ request }) => {
-    const resp = await request.post(`${BASE}/api/v1/life/plan/feedback?username=kckern`, {
+    const resp = await request.post(`${BASE}/api/v1/life/plan/feedback?username=user_1`, {
       ignoreHTTPSErrors: true,
       data: { type: 'observation', content: 'Playwright audit feedback' },
       timeout: 15000,
@@ -277,7 +277,7 @@ test.describe('Life App — API Writes', () => {
   });
 
   test('POST /api/v1/life/plan/goals/nonexistent/transition', async ({ request }) => {
-    const resp = await request.post(`${BASE}/api/v1/life/plan/goals/nonexistent/transition?username=kckern`, {
+    const resp = await request.post(`${BASE}/api/v1/life/plan/goals/nonexistent/transition?username=user_1`, {
       ignoreHTTPSErrors: true,
       data: { state: 'considered', reason: 'Playwright audit' },
       timeout: 15000,
@@ -289,7 +289,7 @@ test.describe('Life App — API Writes', () => {
   });
 
   test('POST /api/v1/life/plan/ceremony/unit_intention/complete', async ({ request }) => {
-    const resp = await request.post(`${BASE}/api/v1/life/plan/ceremony/unit_intention/complete?username=kckern`, {
+    const resp = await request.post(`${BASE}/api/v1/life/plan/ceremony/unit_intention/complete?username=user_1`, {
       ignoreHTTPSErrors: true,
       data: { responses: { intentions: 'Test', energy: 'medium' } },
       timeout: 15000,
@@ -301,7 +301,7 @@ test.describe('Life App — API Writes', () => {
   });
 
   test('POST /api/v1/life/plan/beliefs/nonexistent/evidence', async ({ request }) => {
-    const resp = await request.post(`${BASE}/api/v1/life/plan/beliefs/nonexistent/evidence?username=kckern`, {
+    const resp = await request.post(`${BASE}/api/v1/life/plan/beliefs/nonexistent/evidence?username=user_1`, {
       ignoreHTTPSErrors: true,
       data: { type: 'confirmation', note: 'Playwright audit evidence test' },
       timeout: 15000,

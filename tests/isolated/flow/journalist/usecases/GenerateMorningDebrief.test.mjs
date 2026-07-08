@@ -36,7 +36,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
       'HOOK: Was the Korean ever going to stick?\n\n🌅 Morning\n• 6:30a Bishopric meeting, 1h',
     );
 
-    const result = await build().execute({ username: 'kckern', date: '2026-05-31' });
+    const result = await build().execute({ username: 'user_1', date: '2026-05-31' });
 
     expect(result.success).toBe(true);
     expect(result.headline).toBe('Was the Korean ever going to stick?');
@@ -48,7 +48,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
     const raw = '🌅 Morning\n• 6:30a Bishopric meeting, 1h\n\nCommentary\nA full day.';
     mockAiGateway.chat.mockResolvedValue(raw);
 
-    const result = await build().execute({ username: 'kckern', date: '2026-05-31' });
+    const result = await build().execute({ username: 'user_1', date: '2026-05-31' });
 
     expect(result.headline).toBeNull();
     expect(result.summary).toBe(raw);
@@ -69,7 +69,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
         summary: '🌅 Morning\n• 6:30a Bishopric meeting, 1h',
         headline: 'Was the Korean ever going to stick?',
         summaries: [],
-      }).execute({ username: 'kckern', date: '2026-05-31' });
+      }).execute({ username: 'user_1', date: '2026-05-31' });
 
       expect(result.success).toBe(true);
       expect(result.headline).toBe('Was the Korean ever going to stick?');
@@ -81,7 +81,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
         date: '2026-05-31',
         summary: '🌅 Morning\n• 6:30a Bishopric meeting, 1h',
         summaries: [],
-      }).execute({ username: 'kckern', date: '2026-05-31' });
+      }).execute({ username: 'user_1', date: '2026-05-31' });
 
       expect(result.success).toBe(true);
       expect(result.headline).toBeNull();
@@ -101,7 +101,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
         .mockResolvedValueOnce('HOOK: Looks like the archive thread is in full swing\n\n🌅 Morning\n• x')
         .mockResolvedValueOnce('The archive thread is in full swing');
 
-      const result = await build().execute({ username: 'kckern', date: '2026-05-31' });
+      const result = await build().execute({ username: 'user_1', date: '2026-05-31' });
 
       expect(mockAiGateway.chat).toHaveBeenCalledTimes(2);
       expect(result.headline).toBe('The archive thread is in full swing');
@@ -113,7 +113,7 @@ describe('GenerateMorningDebrief — HOOK parsing', () => {
         .mockResolvedValueOnce('HOOK: Looks like a busy day\n\n🌅 Morning\n• x')
         .mockResolvedValueOnce('Seems like a busy day');
 
-      const result = await build().execute({ username: 'kckern', date: '2026-05-31' });
+      const result = await build().execute({ username: 'user_1', date: '2026-05-31' });
 
       expect(result.headline).toBeNull();
       expect(result.summary.startsWith('🌅 Morning')).toBe(true);

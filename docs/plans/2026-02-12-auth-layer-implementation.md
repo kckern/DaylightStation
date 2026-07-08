@@ -168,7 +168,7 @@ const TEST_SECRET = 'a'.repeat(128);
 describe('JWT utilities', () => {
   it('signs a token with user payload', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );
@@ -178,7 +178,7 @@ describe('JWT utilities', () => {
 
   it('verifies a valid token and returns payload', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );
@@ -186,7 +186,7 @@ describe('JWT utilities', () => {
       issuer: 'daylight-station',
       algorithms: ['HS256']
     });
-    expect(payload.sub).toBe('kckern');
+    expect(payload.sub).toBe('user_1');
     expect(payload.hid).toBe('default');
     expect(payload.roles).toEqual(['sysadmin']);
   });
@@ -201,7 +201,7 @@ describe('JWT utilities', () => {
 
   it('returns null for wrong secret', () => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['sysadmin'] },
+      { sub: 'user_1', hid: 'default', roles: ['sysadmin'] },
       TEST_SECRET,
       { issuer: 'daylight-station', expiresIn: '10y', algorithm: 'HS256' }
     );
@@ -524,14 +524,14 @@ function mockRes() { return {}; }
 describe('tokenResolver', () => {
   it('merges token roles into existing roles', (done) => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['parent'] },
+      { sub: 'user_1', hid: 'default', roles: ['parent'] },
       SECRET, { issuer: JWT_CONFIG.issuer, expiresIn: '10y', algorithm: JWT_CONFIG.algorithm }
     );
     const middleware = tokenResolver({ jwtSecret: SECRET, jwtConfig: JWT_CONFIG });
     const req = mockReq(`Bearer ${token}`, ['kiosk']);
     middleware(req, mockRes(), () => {
       expect(req.roles).toEqual(expect.arrayContaining(['kiosk', 'parent']));
-      expect(req.user).toEqual({ sub: 'kckern', hid: 'default', roles: ['parent'] });
+      expect(req.user).toEqual({ sub: 'user_1', hid: 'default', roles: ['parent'] });
       done();
     });
   });
@@ -558,7 +558,7 @@ describe('tokenResolver', () => {
 
   it('deduplicates merged roles', (done) => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['kiosk', 'parent'] },
+      { sub: 'user_1', hid: 'default', roles: ['kiosk', 'parent'] },
       SECRET, { issuer: JWT_CONFIG.issuer, expiresIn: '10y', algorithm: JWT_CONFIG.algorithm }
     );
     const middleware = tokenResolver({ jwtSecret: SECRET, jwtConfig: JWT_CONFIG });
@@ -713,7 +713,7 @@ describe('permissionGate middleware', () => {
   const gate = permissionGate({ roles, appRoutes });
 
   it('allows sysadmin to access any route', (done) => {
-    const req = mockReq('/admin/household', ['sysadmin'], { sub: 'kckern' });
+    const req = mockReq('/admin/household', ['sysadmin'], { sub: 'user_1' });
     gate(req, mockRes(), () => { done(); });
   });
 
@@ -732,7 +732,7 @@ describe('permissionGate middleware', () => {
   });
 
   it('blocks parent from admin routes with 403 (has user)', () => {
-    const req = mockReq('/admin/household', ['parent'], { sub: 'kckern' });
+    const req = mockReq('/admin/household', ['parent'], { sub: 'user_1' });
     const res = mockRes();
     const next = jest.fn();
     gate(req, res, next);
@@ -883,7 +883,7 @@ describe('AuthService', () => {
 
     it('returns false when a user has a password_hash', () => {
       mockConfigService.getAllUserProfiles.mockReturnValue(
-        new Map([['kckern', { username: 'kckern' }]])
+        new Map([['user_1', { username: 'user_1' }]])
       );
       mockDataService.user.read.mockReturnValue({ password_hash: '$2b$12$...' });
       expect(service.needsSetup()).toBe(false);
@@ -953,11 +953,11 @@ describe('AuthService', () => {
       const hash = await bcrypt.default.hash('correct-password', 4);
 
       mockDataService.user.read
-        .mockReturnValueOnce({ username: 'kckern', household_id: 'default', roles: ['sysadmin'] }) // profile
+        .mockReturnValueOnce({ username: 'user_1', household_id: 'default', roles: ['sysadmin'] }) // profile
         .mockReturnValueOnce({ password_hash: hash }); // login
 
-      const result = await service.login('kckern', 'correct-password');
-      expect(result).toHaveProperty('username', 'kckern');
+      const result = await service.login('user_1', 'correct-password');
+      expect(result).toHaveProperty('username', 'user_1');
       expect(result).toHaveProperty('roles', ['sysadmin']);
     });
 
@@ -966,10 +966,10 @@ describe('AuthService', () => {
       const hash = await bcrypt.default.hash('correct-password', 4);
 
       mockDataService.user.read
-        .mockReturnValueOnce({ username: 'kckern', household_id: 'default', roles: ['sysadmin'] })
+        .mockReturnValueOnce({ username: 'user_1', household_id: 'default', roles: ['sysadmin'] })
         .mockReturnValueOnce({ password_hash: hash });
 
-      const result = await service.login('kckern', 'wrong-password');
+      const result = await service.login('user_1', 'wrong-password');
       expect(result).toBeNull();
     });
 
@@ -982,23 +982,23 @@ describe('AuthService', () => {
 
   describe('generateInvite', () => {
     it('generates a token and writes login.yml', async () => {
-      mockDataService.user.read.mockReturnValue({ username: 'elizabeth' });
-      const result = await service.generateInvite('elizabeth', 'kckern');
+      mockDataService.user.read.mockReturnValue({ username: 'user_9' });
+      const result = await service.generateInvite('user_9', 'user_1');
       expect(result).toHaveProperty('token');
       expect(result.token).toHaveLength(64);
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'auth/login',
         expect.objectContaining({
           invite_token: result.token,
-          invited_by: 'kckern'
+          invited_by: 'user_1'
         }),
-        'elizabeth'
+        'user_9'
       );
     });
 
     it('throws if user profile does not exist', async () => {
       mockDataService.user.read.mockReturnValue(null);
-      await expect(service.generateInvite('nobody', 'kckern'))
+      await expect(service.generateInvite('nobody', 'user_1'))
         .rejects.toThrow();
     });
   });
@@ -1011,32 +1011,32 @@ describe('AuthService', () => {
 
       // We need to mock the token lookup — implementation will scan users
       mockConfigService.getAllUserProfiles.mockReturnValue(
-        new Map([['elizabeth', { username: 'elizabeth', household_id: 'default', roles: ['member'] }]])
+        new Map([['user_9', { username: 'user_9', household_id: 'default', roles: ['member'] }]])
       );
-      // When scanning, read login.yml for elizabeth
+      // When scanning, read login.yml for user_9
       mockDataService.user.read.mockImplementation((path, username) => {
-        if (path === 'auth/login' && username === 'elizabeth') {
-          return { invite_token: 'abc123', password_hash: null, invited_by: 'kckern' };
+        if (path === 'auth/login' && username === 'user_9') {
+          return { invite_token: 'abc123', password_hash: null, invited_by: 'user_1' };
         }
-        if (path === 'profile' && username === 'elizabeth') {
-          return { username: 'elizabeth', household_id: 'default', roles: ['member'], display_name: 'Liz' };
+        if (path === 'profile' && username === 'user_9') {
+          return { username: 'user_9', household_id: 'default', roles: ['member'], display_name: 'Liz' };
         }
         return null;
       });
 
       const result = await service.acceptInvite('abc123', {
         password: 'new-password',
-        displayName: 'Elizabeth'
+        displayName: 'User_9'
       });
 
-      expect(result).toHaveProperty('username', 'elizabeth');
+      expect(result).toHaveProperty('username', 'user_9');
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'auth/login',
         expect.objectContaining({
           password_hash: expect.stringMatching(/^\$2[aby]\$/),
           invite_token: null
         }),
-        'elizabeth'
+        'user_9'
       );
     });
   });

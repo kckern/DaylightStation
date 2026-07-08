@@ -8,8 +8,8 @@ import {
 
 describe('fitnessToastSlot', () => {
   it('normalizeToast assigns the id and preserves provided fields', () => {
-    const out = normalizeToast({ title: 'Felix', subtitle: 'is riding', durationMs: 2000, variant: 'success' }, 7);
-    expect(out).toEqual({ id: 7, title: 'Felix', subtitle: 'is riding', durationMs: 2000, variant: 'success' });
+    const out = normalizeToast({ title: 'User_2', subtitle: 'is riding', durationMs: 2000, variant: 'success' }, 7);
+    expect(out).toEqual({ id: 7, title: 'User_2', subtitle: 'is riding', durationMs: 2000, variant: 'success' });
   });
 
   it('normalizeToast applies default duration and variant when omitted', () => {

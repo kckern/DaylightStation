@@ -66,7 +66,7 @@ The `RemoteExecAdapter` constructor should receive `host`, `user`, `privateKey` 
 os_control:
   provider: ssh
   host: 172.17.0.1
-  user: kckern
+  user: user_1
   port: 22
   commands:
     audio_device: "pactl set-default-sink {device}"
@@ -119,7 +119,7 @@ The `devices.yml` has everything needed for SSH:
 | Field | Value |
 |-------|-------|
 | `host` | `172.17.0.1` (Docker host gateway) |
-| `user` | `kckern` |
+| `user` | `user_1` |
 | `port` | `22` |
 | `commands.audio_device` | `pactl set-default-sink {device}` |
 
@@ -149,7 +149,7 @@ The SSH private key is mounted read-only (`:ro` in docker-compose). The `entrypo
 Create a config file that `getAppConfig('remote_exec')` can find, containing:
 ```yaml
 host: 172.17.0.1
-user: kckern
+user: user_1
 port: 22
 private_key: /usr/src/app/host_private_key
 known_hosts_path: /usr/src/app/known_hosts

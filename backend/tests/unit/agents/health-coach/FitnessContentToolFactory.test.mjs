@@ -71,7 +71,7 @@ describe('FitnessContentToolFactory', () => {
     it('should return program state from datastore', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_program_state');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.program);
       assert.strictEqual(result.program.id, 'p90x');
@@ -82,7 +82,7 @@ describe('FitnessContentToolFactory', () => {
       mockDataService.user.read = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_program_state');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.strictEqual(result.program, null);
     });
@@ -100,7 +100,7 @@ describe('FitnessContentToolFactory', () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'update_program_state');
       const result = await tool.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         state: { program: { id: 'p90x', current_day: 24, status: 'active' } },
       });
 

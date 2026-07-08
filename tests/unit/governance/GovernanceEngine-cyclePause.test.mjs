@@ -10,7 +10,7 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     let nowValue = 50000;
     const engine = new GovernanceEngine(null, { now: () => nowValue });
     const active = {
-      id: 'test_0', type: 'cycle', cycleState: 'maintain', rider: 'felix',
+      id: 'test_0', type: 'cycle', cycleState: 'maintain', rider: 'user_2',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }],
       selection: { init: {}, boost: { zoneMultipliers: {}, maxTotalMultiplier: 3.0 } },
       phaseProgressMs: 5000, rampElapsedMs: 0, initElapsedMs: 0, initTotalMs: 60000,
@@ -21,14 +21,14 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     nowValue = 51000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: false,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(5000); // frozen
     // Tick with base_req restored
     nowValue = 52000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(6000); // resumed — only 1000ms dt since last-real-tick
   });
@@ -37,7 +37,7 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     let nowValue = 60000;
     const engine = new GovernanceEngine(null, { now: () => nowValue });
     const active = {
-      id: 'test_1', type: 'cycle', cycleState: 'init', rider: 'felix',
+      id: 'test_1', type: 'cycle', cycleState: 'init', rider: 'user_2',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }],
       selection: { init: { minRpm: 30, timeAllowedSeconds: 60 } },
       initElapsedMs: 10000, initTotalMs: 60000,
@@ -55,7 +55,7 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     let nowValue = 70000;
     const engine = new GovernanceEngine(null, { now: () => nowValue });
     const active = {
-      id: 'test_2', type: 'cycle', cycleState: 'ramp', rider: 'felix',
+      id: 'test_2', type: 'cycle', cycleState: 'ramp', rider: 'user_2',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 }],
       selection: { init: { minRpm: 30, timeAllowedSeconds: 60 } },
       rampElapsedMs: 3000, phaseProgressMs: 0, initElapsedMs: 0, initTotalMs: 60000,

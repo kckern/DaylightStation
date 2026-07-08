@@ -40,7 +40,7 @@ describe('GovernanceEngine reactive evaluation', () => {
 
   test('notifyZoneChange schedules debounced evaluation', () => {
     engine.configure({
-      governed_labels: ['kckern'],
+      governed_labels: ['user_1'],
       policies: {
         warmup: { zones: ['active', 'warm', 'hot', 'fire'], rule: 'all_above' }
       }
@@ -49,7 +49,7 @@ describe('GovernanceEngine reactive evaluation', () => {
     // Spy AFTER configure (which also calls evaluate)
     const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
-    engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
+    engine.notifyZoneChange('user_1', { fromZone: 'cool', toZone: 'active' });
 
     // Should not have evaluated yet (debounce)
     expect(evaluateSpy).not.toHaveBeenCalled();
@@ -62,7 +62,7 @@ describe('GovernanceEngine reactive evaluation', () => {
 
   test('debounces rapid zone changes within 100ms', () => {
     engine.configure({
-      governed_labels: ['kckern', 'felix'],
+      governed_labels: ['user_1', 'user_2'],
       policies: {}
     });
 
@@ -70,11 +70,11 @@ describe('GovernanceEngine reactive evaluation', () => {
     const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     // Rapid zone changes
-    engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
+    engine.notifyZoneChange('user_1', { fromZone: 'cool', toZone: 'active' });
     vi.advanceTimersByTime(30);
-    engine.notifyZoneChange('felix', { fromZone: 'warm', toZone: 'hot' });
+    engine.notifyZoneChange('user_2', { fromZone: 'warm', toZone: 'hot' });
     vi.advanceTimersByTime(30);
-    engine.notifyZoneChange('kckern', { fromZone: 'active', toZone: 'warm' });
+    engine.notifyZoneChange('user_1', { fromZone: 'active', toZone: 'warm' });
 
     // Still within debounce, no evaluate yet
     expect(evaluateSpy).not.toHaveBeenCalled();

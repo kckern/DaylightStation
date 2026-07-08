@@ -323,9 +323,9 @@ const adapter = new ImmichAdapter(config, { httpClient });
 // Get album contents
 const items = await adapter.getList('immich:album:xyz-789');
 
-// Search for photos of Felix
+// Search for photos of User_2
 const results = await adapter.search({
-  people: ['Felix'],
+  people: ['User_2'],
   dateFrom: '2025-12-01',
   mediaType: 'image'
 });

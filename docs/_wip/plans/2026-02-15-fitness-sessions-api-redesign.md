@@ -26,13 +26,13 @@ Add a `summary` block to each session YAML, computed by `PersistenceManager` bef
 ```yaml
 summary:
   participants:
-    alan:
+    user_4:
       coins: 1051
       hr_avg: 132
       hr_max: 178
       hr_min: 88
       zone_minutes: { cool: 2, active: 5, warm: 12, hot: 11 }
-    milo:
+    user_3:
       coins: 1051
       hr_avg: 125
       hr_max: 165
@@ -90,8 +90,8 @@ summary:
   "durationMs": 1775000,
   "timezone": "America/Los_Angeles",
   "participants": {
-    "alan": { "displayName": "Alan", "coins": 1051, "hrAvg": 132, "hrMax": 178 },
-    "milo": { "displayName": "Milo", "coins": 1051, "hrAvg": 125, "hrMax": 165 }
+    "user_4": { "displayName": "User_4", "coins": 1051, "hrAvg": 132, "hrMax": 178 },
+    "user_3": { "displayName": "User_3", "coins": 1051, "hrAvg": 125, "hrMax": 165 }
   },
   "media": {
     "primary": {

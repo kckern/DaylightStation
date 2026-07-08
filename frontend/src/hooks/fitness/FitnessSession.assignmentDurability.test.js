@@ -48,11 +48,11 @@ describe('FitnessSession — guest assignment durability', () => {
     session.userManager.assignGuest('10266', 'Grannie', { profileId: 'grannie', occupantType: 'guest' });
     session.captureAssignmentSnapshot();
     // Replace with a newer occupant; restore must not overwrite it.
-    session.userManager.assignGuest('10266', 'Milo', { profileId: 'milo', occupantType: 'guest' });
+    session.userManager.assignGuest('10266', 'User_3', { profileId: 'user_3', occupantType: 'guest' });
 
     session.restoreAssignmentSnapshot();
 
-    expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('Milo');
+    expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('User_3');
   });
 
   it('survives a session start between assign and restore (assigned-before-broadcast)', () => {

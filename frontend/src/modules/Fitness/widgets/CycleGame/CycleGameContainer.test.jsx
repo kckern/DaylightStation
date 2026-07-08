@@ -21,19 +21,19 @@ vi.mock('@/modules/Fitness/nav/usePersistentVolume.js', () => ({
 import CycleGameContainer from './CycleGameContainer.jsx';
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'kckern', tricycle: 'felix' };
+  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
-    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
-    felix: { name: 'Felix', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
+    user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
-      { id: 'kckern', name: 'KC' },
-      { id: 'felix', name: 'Felix' }
+      { id: 'user_1', name: 'KC' },
+      { id: 'user_2', name: 'User_2' }
     ],
     zones: [
       { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
@@ -97,7 +97,7 @@ describe('CycleGameContainer (smoke)', () => {
     expect(getByTestId('countdown-stoplight')).toBeTruthy();
     expect(logSpy.info).toHaveBeenCalledWith(
       'cycle_game.staged',
-      expect.objectContaining({ courseId: 'distance', winCondition: 'distance', riders: ['kckern', 'felix'] })
+      expect.objectContaining({ courseId: 'distance', winCondition: 'distance', riders: ['user_1', 'user_2'] })
     );
   });
 });

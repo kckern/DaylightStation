@@ -52,7 +52,7 @@ describe('SavedQueryService', () => {
     });
 
     it('passes through slideshow config when present', () => {
-      const slideshow = { duration: 5, effect: 'kenburns', zoom: 1.2, transition: 'crossfade', focusPerson: 'Felix' };
+      const slideshow = { duration: 5, effect: 'kenburns', zoom: 1.2, transition: 'crossfade', focusPerson: 'User_2' };
       const svc = new SavedQueryService({
         readQuery: () => ({ type: 'immich', slideshow }),
       });

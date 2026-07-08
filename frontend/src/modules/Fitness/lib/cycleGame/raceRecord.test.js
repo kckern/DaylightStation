@@ -5,12 +5,12 @@ import { SessionSerializerV3 } from '@/hooks/fitness/SessionSerializerV3.js';
 const state = {
   winCondition: 'distance',
   riders: {
-    milo: { userId: 'milo', displayName: 'Milo', equipmentId: 'cycle_ace', cumulativeDistanceM: 3000, distanceSeries: [1000, 2000, 3000], finishTimeS: 252 },
-    felix: { userId: 'felix', displayName: 'Felix', equipmentId: 'tricycle', cumulativeDistanceM: 2710, distanceSeries: [900, 1800, 2710], finishTimeS: null }
+    user_3: { userId: 'user_3', displayName: 'User_3', equipmentId: 'cycle_ace', cumulativeDistanceM: 3000, distanceSeries: [1000, 2000, 3000], finishTimeS: 252 },
+    user_2: { userId: 'user_2', displayName: 'User_2', equipmentId: 'tricycle', cumulativeDistanceM: 2710, distanceSeries: [900, 1800, 2710], finishTimeS: null }
   },
   standings: [
-    { userId: 'milo', placement: 1, finishTimeS: 252, distanceM: 3000 },
-    { userId: 'felix', placement: 2, finishTimeS: null, distanceM: 2710 }
+    { userId: 'user_3', placement: 1, finishTimeS: 252, distanceM: 3000 },
+    { userId: 'user_2', placement: 2, finishTimeS: null, distanceM: 2710 }
   ]
 };
 const meta = { raceId: '20260602143012', date: '2026-06-02', mode: 'simultaneous', winCondition: 'distance', goalM: 3000, intervalSeconds: 5, backgroundPlexId: 'plex:1' };
@@ -28,13 +28,13 @@ describe('buildRaceRecord', () => {
   });
   it('builds per-participant entries with RLE distance series + placement', () => {
     const rec = buildRaceRecord(state, meta);
-    expect(rec.participants.milo.final_distance_m).toBe(3000);
-    expect(rec.participants.milo.final_time_s).toBe(252);
-    expect(rec.participants.milo.placement).toBe(1);
-    expect(rec.participants.milo.equipment).toBe('cycle_ace');
-    expect(rec.participants.milo.distance_series).toBe('[1000,2000,3000]');
-    expect(rec.participants.felix.placement).toBe(2);
-    expect(rec.participants.felix.final_time_s).toBeNull();
+    expect(rec.participants.user_3.final_distance_m).toBe(3000);
+    expect(rec.participants.user_3.final_time_s).toBe(252);
+    expect(rec.participants.user_3.placement).toBe(1);
+    expect(rec.participants.user_3.equipment).toBe('cycle_ace');
+    expect(rec.participants.user_3.distance_series).toBe('[1000,2000,3000]');
+    expect(rec.participants.user_2.placement).toBe(2);
+    expect(rec.participants.user_2.final_time_s).toBeNull();
   });
   it('uses time_cap_s (not goal_m) for a time race', () => {
     const rec = buildRaceRecord({ ...state, winCondition: 'time' }, { ...meta, winCondition: 'time', timeCapS: 300, goalM: undefined });

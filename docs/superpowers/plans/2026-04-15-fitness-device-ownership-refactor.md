@@ -83,21 +83,21 @@ describe('DeviceOwnershipIndex', () => {
   describe('rebuild', () => {
     it('maps a single HR device to its owner', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       const owner = index.getOwner('20991');
       expect(owner).not.toBeNull();
-      expect(owner.id).toBe('alan');
-      expect(owner.name).toBe('Alan');
+      expect(owner.id).toBe('user_4');
+      expect(owner.name).toBe('User_4');
     });
 
     it('maps multiple HR devices to the same owner', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366', '28676']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366', '28676']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner('20991').id).toBe('alan');
-      expect(index.getOwner('10366').id).toBe('alan');
-      expect(index.getOwner('28676').id).toBe('alan');
+      expect(index.getOwner('20991').id).toBe('user_4');
+      expect(index.getOwner('10366').id).toBe('user_4');
+      expect(index.getOwner('28676').id).toBe('user_4');
     });
 
     it('maps cadence devices', () => {
@@ -109,35 +109,35 @@ describe('DeviceOwnershipIndex', () => {
 
     it('returns null for unknown device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       expect(index.getOwner('99999')).toBeNull();
     });
 
     it('coerces numeric device IDs to strings', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner(20991).id).toBe('alan');
+      expect(index.getOwner(20991).id).toBe('user_4');
     });
 
     it('replaces previous index on rebuild', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       index.rebuild([
-        { id: 'felix', name: 'Felix', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_2', name: 'User_2', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner('20991').id).toBe('felix');
+      expect(index.getOwner('20991').id).toBe('user_2');
     });
   });
 
   describe('getDeviceIdsForUser', () => {
     it('returns all device IDs for a user', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: '7183' }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: '7183' }
       ]);
-      const ids = index.getDeviceIdsForUser('alan');
+      const ids = index.getDeviceIdsForUser('user_4');
       expect(ids).toContain('20991');
       expect(ids).toContain('10366');
       expect(ids).toContain('7183');
@@ -152,25 +152,25 @@ describe('DeviceOwnershipIndex', () => {
   describe('ownsDevice', () => {
     it('returns true when user owns the device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '20991')).toBe(true);
-      expect(index.ownsDevice('alan', '10366')).toBe(true);
+      expect(index.ownsDevice('user_4', '20991')).toBe(true);
+      expect(index.ownsDevice('user_4', '10366')).toBe(true);
     });
 
     it('returns false when a different user owns the device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null },
-        { id: 'felix', name: 'Felix', hrDeviceIds: new Set(['28812']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null },
+        { id: 'user_2', name: 'User_2', hrDeviceIds: new Set(['90003']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '28812')).toBe(false);
+      expect(index.ownsDevice('user_4', '90003')).toBe(false);
     });
 
     it('returns false for unknown device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '99999')).toBe(false);
+      expect(index.ownsDevice('user_4', '99999')).toBe(false);
     });
   });
 });
@@ -307,8 +307,8 @@ const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
 
 describe('User multi-device ownership', () => {
   it('constructor accepts single hrDeviceId and stores in Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     expect(user.hrDeviceIds.has('20991')).toBe(true);
@@ -316,8 +316,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('ownsHrDevice checks the Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -327,8 +327,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('hrDeviceId setter adds to Set (does not replace)', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceId = '10366';
@@ -338,8 +338,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('hrDeviceId = null clears the Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -349,8 +349,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('updateFromDevice accepts any owned device', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -364,8 +364,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('updateFromDevice ignores unowned device', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 110 });
@@ -376,8 +376,8 @@ describe('User multi-device ownership', () => {
 
 describe('Multi-device HR arbitration (lowest wins)', () => {
   it('uses lowest HR when both devices report', () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -389,8 +389,8 @@ describe('Multi-device HR arbitration (lowest wins)', () => {
   });
 
   it('uses single device reading when only one reports', () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -401,8 +401,8 @@ describe('Multi-device HR arbitration (lowest wins)', () => {
   });
 
   it('ignores stale readings from disconnected device', async () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -430,11 +430,11 @@ describe('UserManager.registerUser with hr_device_ids', () => {
 
   it('registers all device IDs from hr_device_ids array', () => {
     manager.registerUser({
-      name: 'Alan',
-      id: 'alan',
+      name: 'User_4',
+      id: 'user_4',
       hr_device_ids: [20991, 10366, 28676]
     });
-    const user = manager.getUser('alan');
+    const user = manager.getUser('user_4');
     expect(user.hrDeviceIds.size).toBe(3);
     expect(user.ownsHrDevice('20991')).toBe(true);
     expect(user.ownsHrDevice('10366')).toBe(true);
@@ -443,24 +443,24 @@ describe('UserManager.registerUser with hr_device_ids', () => {
 
   it('falls back to single hr field when hr_device_ids absent', () => {
     manager.registerUser({
-      name: 'Felix',
-      id: 'felix',
-      hr: 28812
+      name: 'User_2',
+      id: 'user_2',
+      hr: 90003
     });
-    const user = manager.getUser('felix');
+    const user = manager.getUser('user_2');
     expect(user.hrDeviceIds.size).toBe(1);
-    expect(user.ownsHrDevice('28812')).toBe(true);
+    expect(user.ownsHrDevice('90003')).toBe(true);
   });
 
   it('exposes deviceOwnershipIndex after registration', () => {
-    manager.registerUser({ name: 'Alan', id: 'alan', hr_device_ids: [20991, 10366] });
-    manager.registerUser({ name: 'Felix', id: 'felix', hr: 28812 });
+    manager.registerUser({ name: 'User_4', id: 'user_4', hr_device_ids: [20991, 10366] });
+    manager.registerUser({ name: 'User_2', id: 'user_2', hr: 90003 });
 
     const index = manager.deviceOwnershipIndex;
     expect(index).toBeDefined();
-    expect(index.getOwner('20991').id).toBe('alan');
-    expect(index.getOwner('10366').id).toBe('alan');
-    expect(index.getOwner('28812').id).toBe('felix');
+    expect(index.getOwner('20991').id).toBe('user_4');
+    expect(index.getOwner('10366').id).toBe('user_4');
+    expect(index.getOwner('90003').id).toBe('user_2');
     expect(index.getOwner('99999')).toBeNull();
   });
 });
@@ -1051,7 +1051,7 @@ Start the dev server if not running. Navigate to the fitness module and start a 
 
 - [ ] **Step 2: Verify device assignment in FitnessUsers panel**
 
-Confirm each user's HR reading appears next to the correct name. If a user has multiple devices (e.g., Alan with `20991`, `10366`, `28676`), verify all devices resolve to the same user.
+Confirm each user's HR reading appears next to the correct name. If a user has multiple devices (e.g., User_4 with `20991`, `10366`, `28676`), verify all devices resolve to the same user.
 
 - [ ] **Step 3: Verify FullscreenVitalsOverlay**
 

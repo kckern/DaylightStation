@@ -15,13 +15,13 @@ Pulled live from `GET /api/v1/fitness/sessions/20260612180809`:
 |---|---|
 | Date / time | Fri 2026-06-12, 18:08 → 18:50 (**42.3 min**) |
 | Duration | 510 ticks × 5s |
-| Participants | 5 — kckern, milo, felix, soren, alan |
-| **Final coins** | **KC Kern 431**, **Milo 382**, **Felix 382 (TIE)**, Alan 99, Soren 42 |
+| Participants | 5 — user_1, user_3, user_2, user_5, user_4 |
+| **Final coins** | **User_1 431**, **User_3 382**, **User_2 382 (TIE)**, User_4 99, User_5 42 |
 | Total coins | 1336 |
 | Events | 15 → 1 media (Daytona USA 2001), 13 challenges (warm×9, hot×1, active×1, cycle×1), 1 voice memo |
 | Group session? | No (`isGroup` unset, 0 seams, 0 activities) |
 
-The single most important fact the design fails to communicate: **Milo and Felix tied at 382.** That tie is *the story of the race* and the chart actively hides it (see Sin #4). Hold that thought.
+The single most important fact the design fails to communicate: **User_3 and User_2 tied at 382.** That tie is *the story of the race* and the chart actively hides it (see Sin #4). Hold that thought.
 
 ---
 
@@ -40,7 +40,7 @@ Severity legend: 🔴 breaks comprehension · 🟠 actively ugly / misleading ·
 **Fix:** top margin must clear `AVATAR_RADIUS + backdrop + labelFontSize` (≈ 30+6+20). Set `top: 44`, or clamp avatar Y so the glyph + label box stays inside `[top+r, bottom-r]`.
 
 ### 🟠 Sin 2 — The LOG toggle and the focus legend are dumped *on top of the plot*, top-left.
-`FitnessChart.scss:51` `.race-chart__scale-toggle { position:absolute; top:1.5rem; left:2.5rem }` and `:78` `.race-chart__focus-filter { position:absolute; top:3.5rem; left:2.5rem }`. Both float over the plotting area at the exact spot where every participant's line *starts and climbs* (0:00–10:15). So the controls sit on top of the data, and the data climbs through the controls. In the specimen the "LOG" pill overlaps the 433 gridline and the Alan/Felix/KC/Milo/Soren legend sits squarely over the rising curves.
+`FitnessChart.scss:51` `.race-chart__scale-toggle { position:absolute; top:1.5rem; left:2.5rem }` and `:78` `.race-chart__focus-filter { position:absolute; top:3.5rem; left:2.5rem }`. Both float over the plotting area at the exact spot where every participant's line *starts and climbs* (0:00–10:15). So the controls sit on top of the data, and the data climbs through the controls. In the specimen the "LOG" pill overlaps the 433 gridline and the User_4/User_2/KC/User_3/User_5 legend sits squarely over the rising curves.
 **Fix:** these are chrome, not data. Give them a reserved rail (left margin gutter or a header strip), or move the legend out of the SVG entirely into the panel header. Absolute-positioning UI over a live plot is how you get a chart you can't read.
 
 ### 🟠 Sin 3 — Y-axis labels are nonsense numbers.
@@ -52,14 +52,14 @@ Severity legend: 🔴 breaks comprehension · 🟠 actively ugly / misleading ·
 ## Bucket B — Overlap & collision (the avatar pile-up)
 
 ### 🔴 Sin 4 — Tied participants stack into an unreadable blob, and the layout manager makes it worse.
-Milo and Felix both finished at **382**. Same X (end of race), same Y (same coins) → two 60px avatars on top of each other, one "382" label clipped behind the other, a stray connector stub linking them, and a *third* avatar (the 382-vs-431 cluster) jammed alongside. The `LayoutManager` (`layout/LayoutManager.js`, `maxDisplacement:100`) shoves them apart but the result reads as a car crash, not a podium. This is the climax of the race rendered as visual noise.
+User_3 and User_2 both finished at **382**. Same X (end of race), same Y (same coins) → two 60px avatars on top of each other, one "382" label clipped behind the other, a stray connector stub linking them, and a *third* avatar (the 382-vs-431 cluster) jammed alongside. The `LayoutManager` (`layout/LayoutManager.js`, `maxDisplacement:100`) shoves them apart but the result reads as a car crash, not a podium. This is the climax of the race rendered as visual noise.
 **Fix:** ties need an intentional treatment — a shared rung with both faces in a small horizontal cluster *and a "T1" / "=" affordance*, or a tiny vertical fan with a single shared value label. The current "displace and pray" loses the one fact that matters.
 
 ### 🟠 Sin 5 — Three avatar sizes, no hierarchy logic.
 Legend avatars 20px (`.race-chart__focus-filter-avatar`), dropout badges 20px diameter (`ABSENT_BADGE_RADIUS = 10`), leading-edge avatars 60px (`AVATAR_RADIUS = 30`). Three sizes that don't encode anything — they're just whatever each subsystem happened to pick. Size should mean something (leader bigger? recency?) or be consistent.
 
 ### 🟠 Sin 6 — Mid-plot avatars collide with axis labels.
-Alan (99) and Soren (42) sit mid-chart. Soren's avatar + its white "42" label land right on top of the **42** y-gridline label on the left axis — two different "42"s, one a coin value, one an axis tick, occupying the same neighborhood. Pure collision, pure confusion.
+User_4 (99) and User_5 (42) sit mid-chart. User_5's avatar + its white "42" label land right on top of the **42** y-gridline label on the left axis — two different "42"s, one a coin value, one an axis tick, occupying the same neighborhood. Pure collision, pure confusion.
 
 ### 🟡 Sin 7 — Value labels are duplicated and detached.
 The leader value renders both as an in-plot white number *and* beside the avatar; "431" floats far to the right, disconnected from its cluster by the `right:90` margin reserve. One value, one label, anchored to its avatar.
@@ -100,7 +100,7 @@ Consequence: in the 10:15–30:45 band all five participants' lines are the same
 **Fix:** pick one channel for identity (a per-participant hue, or avatar-anchored line tint) and a *different* channel for zone (the HR lanes already separate by row — let zone live there). Don't make one palette mean five things.
 
 ### 🟡 Sin 12 — Name casing is incoherent at the source and papered over in the UI.
-Data has `display_name` as "KC Kern" but "milo / felix / soren / alan" (lowercase). The legend Title-Cases them for display, so the UI looks fine but the data model is inconsistent and any non-capitalizing surface (logs, exports, the HR lanes which show raw avatars only) will leak the lowercase. Fix the data, not just the one view that hides it.
+Data has `display_name` as "User_1" but "user_3 / user_2 / user_5 / user_4" (lowercase). The legend Title-Cases them for display, so the UI looks fine but the data model is inconsistent and any non-capitalizing surface (logs, exports, the HR lanes which show raw avatars only) will leak the lowercase. Fix the data, not just the one view that hides it.
 
 ### 🟡 Sin 13 — The chart never says what it's measuring.
 No axis title, no unit. The Y axis is coins (0→433), the header says "🪙 1336" (the *sum*), and nothing connects "433 on this axis" to "1336 in the header." A first-time viewer cannot tell the vertical axis is coins, nor why the top number (433) ≠ the headline number (1336).
@@ -115,7 +115,7 @@ The bottom third is five per-rider HR area charts (FitnessTimeline). They have *
 **Fix:** at minimum label the lane group ("Heart rate"), give one shared Y reference (zone thresholds as faint gridlines are right there), and either repeat a compact time axis at the bottom or visually tie the lanes to the top axis.
 
 ### 🟠 Sin 15 — Lanes have ragged, unequal right edges that read as "broken," not "stopped early."
-Soren's and Alan's lanes end well short of 41:00 (Soren did only ~13 min active per `zone_minutes`). That's *true* — they left early — but rendered as a hard ragged cut with no end-marker it looks like truncated/corrupt data, not an intentional "rider departed." Same issue the dropout badges solve in the top chart; the bottom lanes get no such treatment.
+User_5's and User_4's lanes end well short of 41:00 (User_5 did only ~13 min active per `zone_minutes`). That's *true* — they left early — but rendered as a hard ragged cut with no end-marker it looks like truncated/corrupt data, not an intentional "rider departed." Same issue the dropout badges solve in the top chart; the bottom lanes get no such treatment.
 **Fix:** terminate short lanes with a dropout marker / faded tail consistent with the top chart's vocabulary.
 
 ### 🟡 Sin 16 — Two coordinate systems, one crude bridge.
@@ -136,7 +136,7 @@ A horizontal rule floats under the metadata with no clear grouping job, while th
 ## Priority fix order (if you fix nothing else)
 
 1. **Sin 8** (vertical-line forest) — biggest single readability win; stop drawing full-height triple-strength lines in three components.
-2. **Sin 1 + Sin 4** (top-margin clip + tie collision) — the hero moment (KC wins, Milo/Felix tie) is currently the ugliest pixel in the frame.
+2. **Sin 1 + Sin 4** (top-margin clip + tie collision) — the hero moment (KC wins, User_3/User_2 tie) is currently the ugliest pixel in the frame.
 3. **Sin 11** (color means five things) — give identity its own channel so the middle of the race is traceable.
 4. **Sin 2** (chrome over plot) — evict LOG toggle + legend from the data area.
 5. **Sin 14** (HR lanes have no axes) — label and scale the bottom third.
@@ -169,7 +169,7 @@ The top-5 priority sins (8, 1+4+7, 11, 2+3+13, 14+15) were fixed on branch
 `feat/fitness-chart-viz-cleanup` per
 [the implementation plan](../plans/2026-06-14-fitness-chart-viz-layout-optimization.md).
 Verified via before/after screenshots of session `20260612180809` (vision-reviewed):
-line-forest removed, tie (Milo/Felix 382) fanned, identity underglow added, chrome
+line-forest removed, tie (User_3/User_2 382) fanned, identity underglow added, chrome
 evicted + round ticks + COINS label, HR lanes labeled with peak bpm + early-stop dots.
 Sins 5/6/10/12/16/17/18 partially addressed where phases overlapped; remaining items
 left for a follow-up pass.

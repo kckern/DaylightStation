@@ -19,7 +19,7 @@ describe('DeviceManager — profile-authoritative classification', () => {
 
   it('classifies an HR strap as heart_rate and records a valid reading', () => {
     const dm = new DeviceManager();
-    const device = dm.updateDevice('28688', 'HR', { ComputedHeartRate: 125 });
+    const device = dm.updateDevice('90001', 'HR', { ComputedHeartRate: 125 });
     expect(device.type).toBe('heart_rate');
     expect(device.heartRate).toBe(125);
   });

@@ -114,14 +114,14 @@ test('folds the SOURCE\'s participants + strava in even when the source starts L
     mkSession('20260616184005', '2026-06-16 18:46:49', '2026-06-16 18:53:24'), // source, starts later
   ]);
   // Give the later source a unique participant + strava payload.
-  store._db.get('20260616184005').participants.alan = { display_name: 'Alan' };
+  store._db.get('20260616184005').participants.user_4 = { display_name: 'User_4' };
   store._db.get('20260616184005').strava = { name: 'Evening Ride', type: 'Ride' };
 
   const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });
   await svc.mergeSessions('20260616184005', '20260616182610', 'test'); // source starts later than target
 
   const saved = store._db.get('20260616182610');
-  assert.ok(saved.participants.alan, 'later source participant (alan) preserved');
+  assert.ok(saved.participants.user_4, 'later source participant (user_4) preserved');
   assert.equal(saved.strava?.name, 'Evening Ride', 'later source strava preserved');
   assert.equal(saved.session.start, '2026-06-16 18:26:10');
   assert.equal(saved.session.end, '2026-06-16 19:15:56');
@@ -151,10 +151,10 @@ test('fills source-only participant sub-fields when both sides share a participa
     mkSession('20260617134452', '2026-06-17 13:44:52', '2026-06-17 14:05:29'), // target: same participant, NO strava
   ]);
   store._db.get('20260617131853').participants = {
-    kckern: { display_name: 'KC Kern', hr_device: '40475', strava: { activityId: 18963555842, type: 'WeightTraining' } },
+    user_1: { display_name: 'User_1', hr_device: '40475', strava: { activityId: 18963555842, type: 'WeightTraining' } },
   };
   store._db.get('20260617134452').participants = {
-    kckern: { display_name: 'KC Kern', hr_device: '40475' }, // same id, no strava sub-block
+    user_1: { display_name: 'User_1', hr_device: '40475' }, // same id, no strava sub-block
   };
 
   const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });
@@ -162,7 +162,7 @@ test('fills source-only participant sub-fields when both sides share a participa
 
   const saved = store._db.get('20260617134452');
   assert.equal(saved.participants.kckern.strava?.activityId, 18963555842, 'source-only participant strava preserved');
-  assert.equal(saved.participants.kckern.display_name, 'KC Kern', 'target sub-field retained');
+  assert.equal(saved.participants.kckern.display_name, 'User_1', 'target sub-field retained');
 });
 
 test('joins voice memos from both sessions, chronologically, deduped by timestamp', async () => {

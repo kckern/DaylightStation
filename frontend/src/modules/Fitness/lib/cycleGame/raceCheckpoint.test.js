@@ -14,7 +14,7 @@ function makeStore(initial = {}) {
 }
 
 const raceMeta = { raceId: '20260701120000', winCondition: 'distance', goalM: 3000 };
-const engineState = { elapsedS: 42, riders: { kckern: { userId: 'kckern', cumulativeDistanceM: 500 } } };
+const engineState = { elapsedS: 42, riders: { user_1: { userId: 'user_1', cumulativeDistanceM: 500 } } };
 
 describe('raceCheckpoint', () => {
   let store;

@@ -15,8 +15,8 @@ function fakeSession() {
       series: {
         // RLE-encoded JSON strings (as persisted)
         'bike:7138:rpm': JSON.stringify([[80, 6], [90, 6]]), // 80 for ticks 0-5, 90 for 6-11
-        'kckern:hr': JSON.stringify([[140, 12]]),
-        'kckern:zone': JSON.stringify([['active', 12]])
+        'user_1:hr': JSON.stringify([[140, 12]]),
+        'user_1:zone': JSON.stringify([['active', 12]])
       },
       events: [
         { timestamp: 1000_000, type: 'media', data: { contentId: 'plex:674287', title: 'Daytona USA', grandparentTitle: 'Game Cycling' } }
@@ -27,7 +27,7 @@ function fakeSession() {
       { index: 1, timestamp: 1000_000 + 40_000, path: 'a/1.jpg', filename: '1.jpg', role: 'camera' },
       { index: 0, timestamp: 1000_000 + 48_000, path: 'p/0.jpg', filename: 'p0.jpg', role: 'player' }
     ] },
-    roster: [{ id: 'kckern', displayName: 'KC', color: '#f00' }]
+    roster: [{ id: 'user_1', displayName: 'KC', color: '#f00' }]
   };
 }
 
@@ -78,8 +78,8 @@ test('carries show title (grandparentTitle) and animates coins up to the total',
 test('honors a provided resolveName for participant display names', () => {
   const mapper = new TimelapseFrameMapper();
   const s = fakeSession();
-  s.roster = [{ id: 'kckern' }]; // no display_name -> falls back to resolver
-  const frames = mapper.buildFrames(s, { speedup: 10, outputFps: 10, resolveName: (slug) => slug === 'kckern' ? 'KC' : slug });
+  s.roster = [{ id: 'user_1' }]; // no display_name -> falls back to resolver
+  const frames = mapper.buildFrames(s, { speedup: 10, outputFps: 10, resolveName: (slug) => slug === 'user_1' ? 'KC' : slug });
   assert.equal(frames[0].participants[0].displayName, 'KC');
 });
 
@@ -101,24 +101,24 @@ test('builds per-bike cadence (equipment + assigned colour); excludes idle bikes
 
 test('prefers group labels when 2+ riders are present (KC -> Dad)', () => {
   const s = fakeSession();
-  s.roster = [{ id: 'kckern' }, { id: 'felix' }];
-  s.timeline.series['felix:hr'] = JSON.stringify([[120, 12]]);
+  s.roster = [{ id: 'user_1' }, { id: 'user_2' }];
+  s.timeline.series['user_2:hr'] = JSON.stringify([[120, 12]]);
   const frames = new TimelapseFrameMapper().buildFrames(s, {
     speedup: 10, outputFps: 10,
-    resolveName: (id) => (id === 'kckern' ? 'KC Kern' : id),
-    resolveGroupLabel: (id) => (id === 'kckern' ? 'Dad' : id)   // felix has no label -> returns id
+    resolveName: (id) => (id === 'user_1' ? 'User_1' : id),
+    resolveGroupLabel: (id) => (id === 'user_1' ? 'Dad' : id)   // user_2 has no label -> returns id
   });
-  assert.deepEqual(frames[0].participants.map(p => p.displayName), ['Dad', 'felix']);
+  assert.deepEqual(frames[0].participants.map(p => p.displayName), ['Dad', 'user_2']);
 });
 
 test('keeps the full name for a solo rider (no group)', () => {
   const s = fakeSession();
-  s.roster = [{ id: 'kckern' }];
+  s.roster = [{ id: 'user_1' }];
   const frames = new TimelapseFrameMapper().buildFrames(s, {
     speedup: 10, outputFps: 10,
-    resolveName: () => 'KC Kern', resolveGroupLabel: () => 'Dad'
+    resolveName: () => 'User_1', resolveGroupLabel: () => 'Dad'
   });
-  assert.equal(frames[0].participants[0].displayName, 'KC Kern');
+  assert.equal(frames[0].participants[0].displayName, 'User_1');
 });
 
 test('carries the session timezone onto each frame', () => {

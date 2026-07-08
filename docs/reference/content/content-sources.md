@@ -442,7 +442,7 @@ title: Family Photos 2025
 source: immich                    # target source (or omit for cross-source)
 filters:
   time: "2025-01-01..2025-12-31"
-  person: [Felix, Sarah]
+  person: [User_2, Sarah]
 sort: date
 take: 100
 
@@ -520,10 +520,10 @@ Immich's rich metadata makes queries especially useful:
 
 ```yaml
 # Photos of a specific person at a specific place
-title: Felix at the Beach
+title: User_2 at the Beach
 source: immich
 filters:
-  person: Felix
+  person: User_2
   location: Santa Cruz
 sort: date
 

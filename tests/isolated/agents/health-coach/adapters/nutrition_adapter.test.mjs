@@ -7,7 +7,7 @@ const FROZEN_NOW = () => new Date('2026-05-07T12:00:00Z');
 function makeLog({ id, createdAt, time = 'afternoon', date = '2026-05-07', calories = 480, protein = 32, items = [] }) {
   // Match NutriLog instance shape (getters)
   return {
-    id, userId: 'kckern',
+    id, userId: 'user_1',
     meal: { date, time },
     items,
     nutrition: { calories, protein, carbs: 50, fat: 18 },
@@ -26,7 +26,7 @@ describe('NutritionEventAdapter', () => {
     ];
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogsInRange: vi.fn(async () => logs) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } });
@@ -47,7 +47,7 @@ describe('NutritionEventAdapter', () => {
     ];
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogsInRange: vi.fn(async () => logs) },
-      userId: 'kckern', now: FROZEN_NOW,
+      userId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_1d' }, filter: { kind: 'morning' } });
     expect(r.events).toHaveLength(2);
@@ -69,7 +69,7 @@ describe('NutritionEventAdapter', () => {
     });
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogById: vi.fn(async () => log) },
-      userId: 'kckern', now: FROZEN_NOW,
+      userId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.detail('a');
     expect(r.id).toBe('a');
@@ -82,7 +82,7 @@ describe('NutritionEventAdapter', () => {
   it('detail returns error when log missing', async () => {
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogById: vi.fn(async () => null) },
-      userId: 'kckern', now: FROZEN_NOW,
+      userId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.detail('missing');
     expect(r.error).toMatch(/not found/);
@@ -96,7 +96,7 @@ describe('NutritionEventAdapter', () => {
     ];
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogsInRange: vi.fn(async () => logs) },
-      userId: 'kckern', now: FROZEN_NOW,
+      userId: 'user_1', now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_7d' } });
     expect(r.kind).toBe('meal');

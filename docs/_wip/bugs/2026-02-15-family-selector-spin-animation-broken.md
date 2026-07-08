@@ -81,4 +81,4 @@ Uses `setTimeout(fn, 8000)` to detect spin end. If timeout fires slightly before
 http://localhost:3111/tv/app/family-selector
 ```
 
-The FHE list Spotlight item (`app:family-selector/soren`) also loads this component via the TV app's menu navigation.
+The FHE list Spotlight item (`app:family-selector/user_5`) also loads this component via the TV app's menu navigation.

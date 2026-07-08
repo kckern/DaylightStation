@@ -425,7 +425,7 @@ git commit -m "feat(fitness): video cards left-anchored to the change line with 
 
 ### Task 10: Snap challenge end to the first visible zone tick
 
-**Why (verified against session 20260608191948):** governance fires on per-second HR packets, but the saved zone series snapshots every 5s — so the zone band can turn warm 0–1.6 ticks AFTER the challenge-end line (felix: end tick 132.75, band flips at 134; end 162.41, band at 164). Fix: for zone challenges, slide the end line/badge right to the first tick where a met user's recorded zone shows the target zone (or higher), capped at 3 ticks; if none exists within the cap (possible — a user can spike between ticks and never show the color), keep the true time.
+**Why (verified against session 20260608191948):** governance fires on per-second HR packets, but the saved zone series snapshots every 5s — so the zone band can turn warm 0–1.6 ticks AFTER the challenge-end line (user_2: end tick 132.75, band flips at 134; end 162.41, band at 164). Fix: for zone challenges, slide the end line/badge right to the first tick where a met user's recorded zone shows the target zone (or higher), capped at 3 ticks; if none exists within the cap (possible — a user can spike between ticks and never show the color), keep the true time.
 
 **Files:**
 - Modify: `frontend/src/modules/Fitness/widgets/FitnessSessionDetailWidget/timelineOverlay.js`
@@ -448,9 +448,9 @@ describe('snapChallengeEndsToZoneTicks', () => {
   });
   it('slides xEnd right to the first tick where a met user shows the zone', () => {
     // endTick 132.75-style case scaled down: end at tick 12.75, zone appears at tick 14
-    const m = mk(12.75, 'warm', ['felix']);
-    const zoneSeries = { felix: Array(20).fill('active') };
-    zoneSeries.felix[14] = 'warm';
+    const m = mk(12.75, 'warm', ['user_2']);
+    const zoneSeries = { user_2: Array(20).fill('active') };
+    zoneSeries.user_2[14] = 'warm';
     const [out] = snapChallengeEndsToZoneTicks([m], zoneSeries, opts);
     expect(out.xEnd).toBeCloseTo(14 * 5, 5);
     expect(out.width).toBeCloseTo(out.xEnd - out.x, 5);

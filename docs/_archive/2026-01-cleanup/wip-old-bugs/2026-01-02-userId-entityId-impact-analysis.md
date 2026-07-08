@@ -4,7 +4,7 @@
 
 After analyzing the codebase for areas impacted by the userId/entityId/slug confusion, I found that the system is in a **transitional state** between two identifier schemes:
 
-1. **Legacy (Pre-commit 3284b99a)**: Used `slugifyId(user.name)` (e.g., "alan", "bob") as keys
+1. **Legacy (Pre-commit 3284b99a)**: Used `slugifyId(user.name)` (e.g., "user_4", "bob") as keys
 2. **Phase 1 (Commit 3284b99a)**: Started migrating to `user.id` (e.g., "user-123-abc")
 3. **Phase 2 (Ongoing)**: Migrating to `entityId` (e.g., "entity-1735689600000-abc") for session entities
 
@@ -356,7 +356,7 @@ The core issue is that the codebase is in the middle of **TWO overlapping migrat
 
 | Type | Format | Example | Used For |
 |------|--------|---------|----------|
-| **Slug** | `slugifyId(name)` | `"alan"`, `"bob"` | Legacy keying, still used in some places |
+| **Slug** | `slugifyId(name)` | `"user_4"`, `"bob"` | Legacy keying, still used in some places |
 | **User ID** | `user.id` | `"user-123-abc"` | Persistent user identity across sessions |
 | **Entity ID** | `entity-{timestamp}-{hash}` | `"entity-1735689600000-abc"` | Session participation instance |
 | **Profile ID** | `ledger.metadata.profileId` | Same as User ID | Points to user profile for settings/zones |

@@ -91,34 +91,34 @@ describe('RelevanceScoringService', () => {
   describe('score with title matching', () => {
     it('adds 20 for exact title match', () => {
       const item = {
-        title: 'Milo',
+        title: 'User_3',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(170);
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(170);
     });
 
     it('adds 10 for title starts with search', () => {
       const item = {
-        title: 'Milo Smith',
+        title: 'User_3 Smith',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(160);
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(160);
     });
 
     it('adds 5 for title contains search', () => {
       const item = {
-        title: 'John Milo Smith',
+        title: 'John User_3 Smith',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(155);
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(155);
     });
 
     it('is case insensitive', () => {
       const item = {
-        title: 'MILO',
+        title: 'USER_3',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'milo')).toBe(170);
+      expect(RelevanceScoringService.score(item, 'user_3')).toBe(170);
     });
   });
 
@@ -159,16 +159,16 @@ describe('RelevanceScoringService', () => {
 
     it('considers search text for title matching', () => {
       const items = [
-        { title: 'Milo Track', metadata: { category: ContentCategory.TRACK } },
+        { title: 'User_3 Track', metadata: { category: ContentCategory.TRACK } },
         { title: 'John', metadata: { category: ContentCategory.IDENTITY } },
-        { title: 'Milo', metadata: { category: ContentCategory.IDENTITY } }
+        { title: 'User_3', metadata: { category: ContentCategory.IDENTITY } }
       ];
 
-      const sorted = RelevanceScoringService.sortByRelevance(items, 'Milo');
+      const sorted = RelevanceScoringService.sortByRelevance(items, 'User_3');
 
-      expect(sorted[0].title).toBe('Milo');
+      expect(sorted[0].title).toBe('User_3');
       expect(sorted[1].title).toBe('John');
-      expect(sorted[2].title).toBe('Milo Track');
+      expect(sorted[2].title).toBe('User_3 Track');
     });
 
     it('does not mutate original array', () => {

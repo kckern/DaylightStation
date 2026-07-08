@@ -256,12 +256,12 @@ export class FitnessTimeline {
   }
 
   /**
-   * Transfer USER series from one user to another (e.g., user:soren → user:jin).
+   * Transfer USER series from one user to another (e.g., user:user_5 → user:user_6).
    * Used during guest assignment to move history to the new identity.
    * The original user's series is cleared (nulled out) so they don't appear in the chart.
    * 
-   * @param {string} fromUserId - Source user ID (e.g., 'soren')
-   * @param {string} toUserId - Destination user ID (e.g., 'jin')
+   * @param {string} fromUserId - Source user ID (e.g., 'user_5')
+   * @param {string} toUserId - Destination user ID (e.g., 'user_6')
    * @returns {string[]} - List of transferred series keys
    */
   transferUserSeries(fromUserId, toUserId) {

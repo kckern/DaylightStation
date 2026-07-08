@@ -7,8 +7,8 @@
 
 A follow-on to the ArtMode rework. The Immich source (sub-project 1) supports single
 `album` / `person` / `search` selectors. This adds a **multi-person "at least N"**
-selector so a `kids` preset can show photos containing **≥2 of {Felix, Milo, Alan,
-Soren}**, then triggers it on the office TV.
+selector so a `kids` preset can show photos containing **≥2 of {User_2, User_3, User_4,
+User_5}**, then triggers it on the office TV.
 
 ## Why pairwise search + union
 
@@ -16,8 +16,8 @@ Immich's `/api/search/metadata` ANDs multiple `personIds` (an asset must contain
 listed people) and has no "≥N of a set" parameter. So "at least 2 of 4" is expressed at
 the **Immich query level** as the union of all 2-person AND-searches:
 
-- `C(4, 2) = 6` searches: `[Felix,Milo]`, `[Felix,Alan]`, `[Felix,Soren]`,
-  `[Milo,Alan]`, `[Milo,Soren]`, `[Alan,Soren]`.
+- `C(4, 2) = 6` searches: `[User_2,User_3]`, `[User_2,User_4]`, `[User_2,User_5]`,
+  `[User_3,User_4]`, `[User_3,User_5]`, `[User_4,User_5]`.
 - Each returns assets containing **both** of that pair (Immich does the matching).
 - Union by asset id = every asset containing **≥2** of the four.
 
@@ -64,7 +64,7 @@ helper and the union are pure and unit-tested; the search calls use the injected
 ```yaml
 kids:
   source: immich
-  people: [Felix, Milo, Alan, Soren]
+  people: [User_2, User_3, User_4, User_5]
   minPeople: 2
 ```
 

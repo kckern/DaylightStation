@@ -84,7 +84,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 }));
 // ...
 expect(mockLog.info).toHaveBeenCalledWith('governance.cycle.state_transition', expect.objectContaining({
-  from: 'init', to: 'ramp', rider: 'felix'
+  from: 'init', to: 'ramp', rider: 'user_2'
 }));
 ```
 
@@ -802,14 +802,14 @@ describe('GovernanceEngine eligible users lookup', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['kckern', 'felix'] },
-          { id: 'tricycle', eligible_users: ['milo'] }
+          { id: 'cycle_ace', eligible_users: ['user_1', 'user_2'] },
+          { id: 'tricycle', eligible_users: ['user_3'] }
         ]
       }
     };
     const engine = new GovernanceEngine(session);
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['kckern', 'felix']);
-    expect(engine._getEligibleUsers('tricycle')).toEqual(['milo']);
+    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1', 'user_2']);
+    expect(engine._getEligibleUsers('tricycle')).toEqual(['user_3']);
     expect(engine._getEligibleUsers('unknown')).toEqual([]);
   });
 });
@@ -880,7 +880,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['felix', 'milo'] }
+          { id: 'cycle_ace', eligible_users: ['user_2', 'user_3'] }
         ]
       }
     };
@@ -907,7 +907,7 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(active).toBeTruthy();
     expect(active.type).toBe('cycle');
     expect(active.cycleState).toBe('init');
-    expect(active.rider).toMatch(/felix|milo/);
+    expect(active.rider).toMatch(/user_2|user_3/);
     expect(active.ridersUsed).toEqual([active.rider]);
     expect(active.currentPhaseIndex).toBe(0);
     expect(active.generatedPhases).toHaveLength(3);
@@ -939,7 +939,7 @@ describe('GovernanceEngine cycle challenge start', () => {
   });
 
   it('filters out riders on cooldown', () => {
-    engine._cycleCooldowns = { felix: nowValue + 5000, milo: nowValue + 5000 };
+    engine._cycleCooldowns = { user_2: nowValue + 5000, user_3: nowValue + 5000 };
     const selection = {
       id: 'test_cycle',
       type: 'cycle',
@@ -1062,7 +1062,7 @@ describe('GovernanceEngine cycle init state', () => {
     nowValue = 10000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     activeChallenge = {
-      type: 'cycle', rider: 'felix', cycleState: 'init',
+      type: 'cycle', rider: 'user_2', cycleState: 'init',
       initStartedAt: 10000, initElapsedMs: 0, initTotalMs: 60000,
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }
@@ -1188,7 +1188,7 @@ describe('GovernanceEngine cycle ramp state', () => {
     nowValue = 20000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     active = {
-      type: 'cycle', rider: 'felix', cycleState: 'ramp',
+      type: 'cycle', rider: 'user_2', cycleState: 'ramp',
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 }
       ],
@@ -1279,7 +1279,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 30000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     active = {
-      type: 'cycle', rider: 'felix', cycleState: 'maintain',
+      type: 'cycle', rider: 'user_2', cycleState: 'maintain',
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 },
         { hiRpm: 70, loRpm: 55, rampSeconds: 20, maintainSeconds: 45 }
@@ -1298,7 +1298,7 @@ describe('GovernanceEngine cycle maintain state', () => {
   it('accrues phaseProgressMs at 1x when rpm at hi and no boost', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: 65, baseReqSatisfiedForRider: true, userZoneMap: { felix: 'warm' }
+      equipmentRpm: 65, baseReqSatisfiedForRider: true, userZoneMap: { user_2: 'warm' }
     });
     expect(active.phaseProgressMs).toBe(1000);
     expect(active.cycleState).toBe('maintain');
@@ -1307,7 +1307,7 @@ describe('GovernanceEngine cycle maintain state', () => {
   it('pauses progress in dim band (between lo and hi)', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: 50, baseReqSatisfiedForRider: true, userZoneMap: { felix: 'warm' }
+      equipmentRpm: 50, baseReqSatisfiedForRider: true, userZoneMap: { user_2: 'warm' }
     });
     expect(active.phaseProgressMs).toBe(0);
     expect(active.cycleState).toBe('maintain');
@@ -1316,7 +1316,7 @@ describe('GovernanceEngine cycle maintain state', () => {
   it('transitions to locked when rpm below lo', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: 40, baseReqSatisfiedForRider: true, userZoneMap: { felix: 'active' }
+      equipmentRpm: 40, baseReqSatisfiedForRider: true, userZoneMap: { user_2: 'active' }
     });
     expect(active.cycleState).toBe('locked');
     expect(active.lockReason).toBe('maintain');
@@ -1327,7 +1327,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true,
-      userZoneMap: { felix: 'warm', mickey: 'hot' }, activeParticipants: ['felix', 'mickey']
+      userZoneMap: { user_2: 'warm', mickey: 'hot' }, activeParticipants: ['user_2', 'mickey']
     });
     expect(active.phaseProgressMs).toBe(1500);
     expect(active.totalBoostedMs).toBe(500);
@@ -1337,7 +1337,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true,
-      userZoneMap: { felix: 'fire' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'fire' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(2000);
   });
@@ -1346,8 +1346,8 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true,
-      userZoneMap: { felix: 'fire', a: 'fire', b: 'fire', c: 'fire' },
-      activeParticipants: ['felix', 'a', 'b', 'c']
+      userZoneMap: { user_2: 'fire', a: 'fire', b: 'fire', c: 'fire' },
+      activeParticipants: ['user_2', 'a', 'b', 'c']
     });
     expect(active.phaseProgressMs).toBe(3000); // capped at 3.0x
   });
@@ -1356,7 +1356,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     active.phaseProgressMs = 29500;
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: 65, baseReqSatisfiedForRider: true, userZoneMap: { felix: 'warm' }
+      equipmentRpm: 65, baseReqSatisfiedForRider: true, userZoneMap: { user_2: 'warm' }
     });
     expect(active.currentPhaseIndex).toBe(1);
     expect(active.cycleState).toBe('ramp');
@@ -1368,7 +1368,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     active.phaseProgressMs = 44500;
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
-      equipmentRpm: 75, baseReqSatisfiedForRider: true, userZoneMap: { felix: 'hot' }
+      equipmentRpm: 75, baseReqSatisfiedForRider: true, userZoneMap: { user_2: 'hot' }
     });
     expect(active.status).toBe('success');
   });
@@ -1466,7 +1466,7 @@ describe('GovernanceEngine cycle locked recovery', () => {
   beforeEach(() => {
     engine = new GovernanceEngine(null, { now: () => 40000 });
     active = {
-      type: 'cycle', rider: 'felix', cycleState: 'locked', lockReason: 'maintain',
+      type: 'cycle', rider: 'user_2', cycleState: 'locked', lockReason: 'maintain',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 }],
       selection: { init: { minRpm: 30, timeAllowedSeconds: 60 } },
       phaseProgressMs: 12000, rampElapsedMs: 0, initElapsedMs: 0, initTotalMs: 60000,
@@ -1562,7 +1562,7 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     let nowValue = 50000;
     const engine = new GovernanceEngine(null, { now: () => nowValue });
     const active = {
-      type: 'cycle', cycleState: 'maintain', rider: 'felix',
+      type: 'cycle', cycleState: 'maintain', rider: 'user_2',
       currentPhaseIndex: 0, generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }],
       selection: { init: {}, boost: { zoneMultipliers: {}, maxTotalMultiplier: 3.0 } },
       phaseProgressMs: 5000, rampElapsedMs: 0, initElapsedMs: 0, initTotalMs: 60000,
@@ -1573,14 +1573,14 @@ describe('GovernanceEngine cycle pause/resume on base_req', () => {
     nowValue = 51000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: false,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(5000); // frozen
     // Tick with base_req restored
     nowValue = 52000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(6000); // resumed
   });
@@ -1892,7 +1892,7 @@ git commit -am "feat(governance): emit cycle challenge state snapshot fields"
 ```javascript
 describe('GovernanceEngine.triggerChallenge for cycle', () => {
   // (1) triggerChallenge({ type: 'cycle', selectionId: 'X' }) → starts with random rider
-  // (2) triggerChallenge({ type: 'cycle', selectionId: 'X', riderId: 'felix' }) → forces rider, bypass cooldown
+  // (2) triggerChallenge({ type: 'cycle', selectionId: 'X', riderId: 'user_2' }) → forces rider, bypass cooldown
   // (3) triggerChallenge with unknown selectionId → rejected with reason
   // (4) triggerChallenge with non-eligible riderId → rejected
 });
@@ -2334,7 +2334,7 @@ equipment:
     name: CycleAce
     type: stationary_bike
     cadence: 49904
-    eligible_users: [kckern, felix, milo]   # adjust as desired
+    eligible_users: [user_1, user_2, user_3]   # adjust as desired
     rpm: {...}
 ```
 

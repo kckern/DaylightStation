@@ -145,7 +145,7 @@ Each step can introduce bugs. Each step has different expectations about input f
 
 Let's trace what happens with our current code:
 
-**User Milo:**
+**User User_3:**
 - Active ticks 0-10
 - Drops out tick 11-20
 - Rejoins tick 21+
@@ -306,14 +306,14 @@ Instead of rebuilding segments every render, persist them:
 // On dropout detection
 persistedSegments.push({
   type: 'gap',
-  userId: 'milo',
+  userId: 'user_3',
   startTick: 11,
   startValue: 45,
   endTick: null  // Filled when user rejoins
 });
 
 // On rejoin
-const openGap = persistedSegments.find(s => s.userId === 'milo' && s.endTick === null);
+const openGap = persistedSegments.find(s => s.userId === 'user_3' && s.endTick === null);
 openGap.endTick = 21;
 ```
 
@@ -322,7 +322,7 @@ openGap.endTick = 21;
 Instead of inferring gaps from `active[]`, define them explicitly:
 
 ```javascript
-const gaps = activityMonitor.getDropoutPeriods('milo');
+const gaps = activityMonitor.getDropoutPeriods('user_3');
 // Returns: [{start: 11, end: 21}, ...]
 
 // Then buildSegments uses this directly

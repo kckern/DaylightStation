@@ -288,8 +288,8 @@ async function drawParticipant(ctx, p, slotX, centerY, slotW, scrimH, avatarBuff
 function participantName(p) {
   let n = (p.displayName ?? '').trim();
   if (!n || n.toLowerCase() === 'unknown') n = (p.id != null && String(p.id).trim()) || 'Guest';
-  // Title-case bare lowercase slugs (felix → Felix) but leave mixed-case names
-  // alone (KC Kern stays KC Kern).
+  // Title-case bare lowercase slugs (user_2 → User_2) but leave mixed-case names
+  // alone (User_1 stays User_1).
   if (n === n.toLowerCase()) n = n.replace(/\b\w/g, c => c.toUpperCase());
   return n;
 }

@@ -5,25 +5,25 @@ import {
   shouldPreferGroupLabels,
 } from './userDisplayName.js';
 
-const dad = { id: 'kckern', name: 'KC Kern', group_label: 'Dad' };
-const mom = { id: 'elizabeth', name: 'Elizabeth', group_label: 'Mom' };
-const kid = { id: 'felix', name: 'Felix' };
+const dad = { id: 'user_1', name: 'User_1', group_label: 'Dad' };
+const mom = { id: 'user_9', name: 'User_9', group_label: 'Mom' };
+const kid = { id: 'user_2', name: 'User_2' };
 
 describe('resolveUserDisplayName — abstract family context', () => {
   it('uses the relational label when the family/kids context is present', () => {
     expect(resolveUserDisplayName(dad, { familyContext: true }).displayName).toBe('Dad');
   });
   it('uses the full name when there is no family context', () => {
-    expect(resolveUserDisplayName(dad, { familyContext: false }).displayName).toBe('KC Kern');
+    expect(resolveUserDisplayName(dad, { familyContext: false }).displayName).toBe('User_1');
   });
   it('a child (no relational label) always resolves to their name', () => {
-    expect(resolveUserDisplayName(kid, { familyContext: true }).displayName).toBe('Felix');
+    expect(resolveUserDisplayName(kid, { familyContext: true }).displayName).toBe('User_2');
   });
   it('stays backward-compatible with the legacy preferGroupLabels flag', () => {
     expect(resolveUserDisplayName(dad, { preferGroupLabels: true }).displayName).toBe('Dad');
   });
   it('defaults to the full name with no context', () => {
-    expect(resolveUserDisplayName(dad).displayName).toBe('KC Kern');
+    expect(resolveUserDisplayName(dad).displayName).toBe('User_1');
   });
 });
 

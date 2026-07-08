@@ -81,17 +81,17 @@ describe('resolveUserZone', () => {
   });
 
   it('still resolves the committed zone for a mapped user', () => {
-    const zone = resolveUserZone('Felix', { heartRate: 0 }, {
-      userCurrentZones: { Felix: { id: 'fire', color: '#ff0000' } },
+    const zone = resolveUserZone('User_2', { heartRate: 0 }, {
+      userCurrentZones: { User_2: { id: 'fire', color: '#ff0000' } },
       zones: ZONES, usersConfigRaw: {}
     });
     expect(zone).toEqual({ id: 'fire', color: '#ff0000' });
   });
 
   it('applies per-user threshold overrides when a user is mapped', () => {
-    const zone = resolveUserZone('Milo', { heartRate: 130 }, {
+    const zone = resolveUserZone('User_3', { heartRate: 130 }, {
       userCurrentZones: {}, zones: ZONES,
-      usersConfigRaw: { primary: [{ name: 'Milo', zones: { warm: 999 } }] }
+      usersConfigRaw: { primary: [{ name: 'User_3', zones: { warm: 999 } }] }
     });
     // warm override is 999 → 130 falls back to the next-lower canonical zone (active@100)
     expect(zone.id).toBe('active');
@@ -435,7 +435,7 @@ describe('CircularUserAvatar weakSignal', () => {
   });
 
   it('omits .weak-signal by default', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" heartRate={120} />);
+    const { container } = render(<CircularUserAvatar name="User_2" heartRate={120} />);
     expect(container.querySelector('.circular-user-avatar.weak-signal')).toBeNull();
   });
 });
@@ -606,11 +606,11 @@ describe('FitnessSession — guest assignment durability', () => {
     session.userManager.assignGuest('10266', 'Grannie', { profileId: 'grannie', occupantType: 'guest' });
     session.captureAssignmentSnapshot();
     // Replace with a newer occupant; restore must not overwrite it.
-    session.userManager.assignGuest('10266', 'Milo', { profileId: 'milo', occupantType: 'guest' });
+    session.userManager.assignGuest('10266', 'User_3', { profileId: 'user_3', occupantType: 'guest' });
 
     session.restoreAssignmentSnapshot();
 
-    expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('Milo');
+    expect(session.userManager.assignmentLedger.get('10266')?.occupantName).toBe('User_3');
   });
 });
 ```

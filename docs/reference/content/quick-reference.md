@@ -379,14 +379,14 @@ YAML-defined content structures in `data/household/config/lists/`.
   fixed_order: true
 
 - label: Spotlight
-  input: app:family-selector/alan   # app with param
+  input: app:family-selector/user_4   # app with param
   action: Open
 
-- label: Felix
+- label: User_2
   input: plex:457385                # Plex media by key
   action: Play
 
-- label: Soren
+- label: User_5
   input: canvas:religious/treeoflife.jpg
   action: Display
 
@@ -407,7 +407,7 @@ items:
     input: singalong:hymn/166
     fixed_order: true
   - label: Spotlight
-    input: app:family-selector/alan
+    input: app:family-selector/user_4
     action: Open
   - label: Gratitude and Hope
     input: 'app: gratitude'
@@ -597,7 +597,7 @@ The code does NOT know about:
 | Aliases | Alias config (system + household) | `hymn` → `hymn-library` |
 | Menu structure | YAML list configs | FHE Night menu items |
 | Watch state rules | Watchlist configs | unwatched-first, hold, waitUntil |
-| Query definitions | Query YAML files | "photos of Felix from 2025" |
+| Query definitions | Query YAML files | "photos of User_2 from 2025" |
 | Household overrides | Household config | Custom aliases, display prefs |
 
 Adding a new collection = add files + add config. Zero code changes.

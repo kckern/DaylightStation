@@ -4,7 +4,7 @@
 
 **Goal:** Allow `family-selector/<name>` to match by user id, group_label, or name — not just exact id.
 
-**Architecture:** The `selectWinner` function in `FamilySelector.jsx` currently does a strict `m.id === riggedWinner` match. Since members are built from the gratitude bootstrap API with `id` (e.g., `elizabeth`) and `name` (from `group_label`, e.g., `Mom`), a config value like `family-selector/mom` silently falls through to random selection. Fix by adding case-insensitive fallback matching against `name`. Also revert the config workaround so it uses the human-friendly `mom` value.
+**Architecture:** The `selectWinner` function in `FamilySelector.jsx` currently does a strict `m.id === riggedWinner` match. Since members are built from the gratitude bootstrap API with `id` (e.g., `user_9`) and `name` (from `group_label`, e.g., `Mom`), a config value like `family-selector/mom` silently falls through to random selection. Fix by adding case-insensitive fallback matching against `name`. Also revert the config workaround so it uses the human-friendly `mom` value.
 
 **Tech Stack:** React (JSX), Vitest or manual browser testing
 
@@ -41,7 +41,7 @@ const selectWinner = useCallback(() => {
 
 **Step 2: Verify in browser**
 
-Open the FHE menu, tap Spotlight. The wheel should always land on Mom (Elizabeth).
+Open the FHE menu, tap Spotlight. The wheel should always land on Mom (User_9).
 
 **Step 3: Commit**
 
@@ -57,7 +57,7 @@ git commit -m "fix(family-selector): match rigged winner by name or group_label,
 **Files:**
 - Modify: `/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/household/config/lists/menus/fhe.yml:9`
 
-**Step 1: Change `elizabeth` back to `mom`**
+**Step 1: Change `user_9` back to `mom`**
 
 ```yaml
     input: app:family-selector/mom

@@ -469,9 +469,9 @@ Located in `data/household/config/fitness.yml`:
 governance:
   grace_period_seconds: 30
   superusers:
-    - kckern
+    - user_1
   exemptions:
-    - soren  # Excluded from "all" requirements
+    - user_5  # Excluded from "all" requirements
   policies:
     default:
       base_requirement:

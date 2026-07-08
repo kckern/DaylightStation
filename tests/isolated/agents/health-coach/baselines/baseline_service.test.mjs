@@ -21,7 +21,7 @@ describe('PersonalBaselineService.getBaselines', () => {
     const dataService = { user: { read: vi.fn(async () => cached), write: vi.fn() } };
     const workoutAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const svc = makeSvc({ workoutAdapter, dataService });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(r).toBe(cached);
     expect(workoutAdapter.list).not.toHaveBeenCalled();
     expect(dataService.user.write).not.toHaveBeenCalled();
@@ -36,11 +36,11 @@ describe('PersonalBaselineService.getBaselines', () => {
     const mealAdapter    = { list: vi.fn(async () => ({ events: [] })) };
     const weighinAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const svc = makeSvc({ workoutAdapter, mealAdapter, weighinAdapter, dataService });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(workoutAdapter.list).toHaveBeenCalled();
     expect(mealAdapter.list).toHaveBeenCalled();
     expect(weighinAdapter.list).toHaveBeenCalled();
-    expect(dataService.user.write).toHaveBeenCalledWith('profile/baselines', expect.any(Object), 'kckern');
+    expect(dataService.user.write).toHaveBeenCalledWith('profile/baselines', expect.any(Object), 'user_1');
     expect(r.computed_at).toBe('2026-05-07T12:00:00.000Z');
   });
 
@@ -57,7 +57,7 @@ describe('PersonalBaselineService.getBaselines', () => {
     const mealAdapter    = { list: vi.fn(async () => ({ events: [] })) };
     const weighinAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const svc = makeSvc({ workoutAdapter, mealAdapter, weighinAdapter, dataService });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(r.fitness.n).toBe(1);
     expect(r.fitness.run.median_duration_min).toBe(30);
     expect(r.computed_at).toBe('2026-05-07T12:00:00.000Z');
@@ -72,7 +72,7 @@ describe('PersonalBaselineService.getBaselines', () => {
       dataService,
       now: FROZEN_NOW,
     });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(r.fitness.n).toBe(0);
     expect(r.nutrition.n).toBe(0);
     expect(r.weight.n).toBe(0);

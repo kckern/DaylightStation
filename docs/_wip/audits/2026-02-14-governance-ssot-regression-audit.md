@@ -31,14 +31,14 @@ At 03:36:48 UTC, the system transitioned directly from `unlocked` to `locked`, *
 
 ```
 L16955 03:34:24.707Z  challenge.started  zone:warm  selectionLabel:"all warm"  requiredCount:4  timeLimitSeconds:60
-L19260 03:36:48.736Z  challenge.failed   zone:warm  requiredCount:4  actualCount:3  missingUsers:["milo"]
+L19260 03:36:48.736Z  challenge.failed   zone:warm  requiredCount:4  actualCount:3  missingUsers:["user_3"]
 L19261 03:36:48.736Z  phase_change       from:unlocked  to:locked  firstRequirement:{zone:"active", satisfied:true}
 L19262 03:36:48.736Z  lock_triggered     reason:challenge_failed  participantStates:
-                      felix:warm(HR146) milo:active(HR124) kckern:warm(HR124) alan:warm(HR156) soren:active(HR126)
+                      user_2:warm(HR146) user_3:active(HR124) user_1:warm(HR124) user_4:warm(HR156) user_5:active(HR126)
                       challengeActive:true
 ```
 
-Milo was in "Active" zone (HR 124), satisfying the base governance rule but not the challenge's "Warm" requirement. The challenge's stricter threshold caused a hard lock even though governance base rules were fully met.
+User_3 was in "Active" zone (HR 124), satisfying the base governance rule but not the challenge's "Warm" requirement. The challenge's stricter threshold caused a hard lock even though governance base rules were fully met.
 
 ### Root Cause
 
@@ -79,14 +79,14 @@ At 03:34:33 UTC, a warning phase started while a challenge was still active (sta
 L16955 03:34:24.707Z  challenge.started    zone:warm  requiredCount:4  timeLimitSeconds:60
 L17054 03:34:33.687Z  phase_change         from:unlocked to:warning  deadline:1771126503687
                       firstRequirement:{zone:"active", satisfied:false}
-L17055 03:34:33.687Z  warning_started      participantsBelowThreshold:[{name:"kckern", zone:"active"}]
-                      requirements:[{zone:"active", requiredCount:4, actualCount:3, missingUsers:["kckern"]}]
+L17055 03:34:33.687Z  warning_started      participantsBelowThreshold:[{name:"user_1", zone:"active"}]
+                      requirements:[{zone:"active", requiredCount:4, actualCount:3, missingUsers:["user_1"]}]
 L18023 03:35:14.762Z  lock_triggered       reason:requirements_not_met  challengeActive:true
 ```
 
 ### Root Cause
 
-The governance evaluation loop runs both base requirement checks and challenge checks independently. When base requirements become unsatisfied (kckern dropped below Active), the warning timer starts. But the challenge system doesn't know the warning has started, so it continues running. The two systems race: the warning's 30-second grace period expired first, locking the screen even though the challenge still had time remaining.
+The governance evaluation loop runs both base requirement checks and challenge checks independently. When base requirements become unsatisfied (user_1 dropped below Active), the warning timer starts. But the challenge system doesn't know the warning has started, so it continues running. The two systems race: the warning's 30-second grace period expired first, locking the screen even though the challenge still had time remaining.
 
 ### Expected Behavior
 
@@ -115,12 +115,12 @@ Users who were in a satisfying zone (Active or above) appeared as "missing" / "o
 Multiple `warning_started` events list users in the target zone as "below threshold":
 
 ```
-L17055 03:34:33.687Z  warning_started  participantsBelowThreshold:[{name:"kckern", zone:"active", required:4}]
+L17055 03:34:33.687Z  warning_started  participantsBelowThreshold:[{name:"user_1", zone:"active", required:4}]
 ```
 
-kckern's zone is logged as "active" -- the same zone that is required. Yet they appear in `participantsBelowThreshold`.
+user_1's zone is logged as "active" -- the same zone that is required. Yet they appear in `participantsBelowThreshold`.
 
-More critically, at 03:36:48 when the challenge failed, the lock screen showed Milo as missing for the "Warm" challenge, but the base requirement ("Active") was `satisfied: true`. This suggests the `lockRows` displayed on screen are **merging challenge requirements with base requirements**, causing users who satisfy the base requirement but not the challenge to appear as offenders.
+More critically, at 03:36:48 when the challenge failed, the lock screen showed User_3 as missing for the "Warm" challenge, but the base requirement ("Active") was `satisfied: true`. This suggests the `lockRows` displayed on screen are **merging challenge requirements with base requirements**, causing users who satisfy the base requirement but not the challenge to appear as offenders.
 
 ### Root Cause
 
@@ -261,12 +261,12 @@ The logs do contain backend errors from the health API (`YamlHealthDatastore` --
 
 ### Observed Behavior
 
-At 03:42:23, a lock was triggered with a single participant "Eli" who had no prior zone change or join events in the log. Earlier at 03:41:53, a warning started with `participantCount: 0` but `requiredCount: 1`, listing "kckern" as missing despite no active participants.
+At 03:42:23, a lock was triggered with a single participant "Eli" who had no prior zone change or join events in the log. Earlier at 03:41:53, a warning started with `participantCount: 0` but `requiredCount: 1`, listing "user_1" as missing despite no active participants.
 
 ### Log Evidence
 
 ```
-L27298 03:41:53.741Z  warning_started  participantCount:0  requirements:[{requiredCount:1, missingUsers:["kckern"]}]
+L27298 03:41:53.741Z  warning_started  participantCount:0  requirements:[{requiredCount:1, missingUsers:["user_1"]}]
 L29085 03:42:23.741Z  lock_triggered   participantStates:[{id:"eli", name:"Eli", zone:"cool", hr:81}]
 ```
 

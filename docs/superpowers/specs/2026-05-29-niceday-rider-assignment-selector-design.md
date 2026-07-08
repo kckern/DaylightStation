@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-29
 **Status:** Approved (design); ready for implementation plan
-**Author:** KC Kern + Claude
+**Author:** User_1 + Claude
 
 ## Problem
 
@@ -83,10 +83,10 @@ selectors:
     mqtt_topic: "zigbee2mqtt-usb/Garage Cycling Selector"
     equipment: niceday
     buttons:                 # button action -> userId (per the physical stickers)
-      "1_single": felix
-      "2_single": milo
-      "3_single": kckern
-      "4_single": alan
+      "1_single": user_2
+      "2_single": user_3
+      "3_single": user_1
+      "4_single": user_4
 ```
 
 The exact button→user mapping is set by KC to match the stickers. The block is a list,

@@ -14,8 +14,8 @@
 
 | # | Bot | Issue | Severity |
 |---|-----|-------|----------|
-| 1 | Journalist | `HandleSlashCommand` and `InitiateJournalPrompt` hardcode `'kckern'` fallback | Medium |
-| 2 | Journalist | `JournalistContainer` hardcodes `'kckern'` in multiple places | Medium |
+| 1 | Journalist | `HandleSlashCommand` and `InitiateJournalPrompt` hardcode `'user_1'` fallback | Medium |
+| 2 | Journalist | `JournalistContainer` hardcodes `'user_1'` in multiple places | Medium |
 | 3 | Homebot | `ProcessGratitudeInput.set()` uses wrong argument order | Low |
 | 4 | Homebot | `ToggleCategory.set()` uses wrong argument order | Low |
 
@@ -30,7 +30,7 @@
 - Modify: `backend/src/2_adapters/journalist/JournalistInputRouter.mjs:214-217`
 
 **Context:**
-The journalist bot has `'kckern'` hardcoded as a fallback username in several places. This should use proper user resolution from the conversation ID via the config's `getUserIdFromConversation` function or a dedicated user resolver.
+The journalist bot has `'user_1'` hardcoded as a fallback username in several places. This should use proper user resolution from the conversation ID via the config's `getUserIdFromConversation` function or a dedicated user resolver.
 
 **Step 1: Update JournalistInputRouter to pass userId to HandleSlashCommand**
 
@@ -55,7 +55,7 @@ return useCase.execute({
 
 Current code at line 68:
 ```javascript
-username: userId || 'kckern', // TODO: proper user resolution
+username: userId || 'user_1', // TODO: proper user resolution
 ```
 
 Change to:
@@ -69,7 +69,7 @@ Note: The `userId` is now properly passed from the router. Using `'unknown'` as 
 
 Current code at line 75:
 ```javascript
-const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'kckern';
+const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'user_1';
 ```
 
 Change to:
@@ -81,7 +81,7 @@ const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'unknown
 
 Line 146 - change:
 ```javascript
-username: this.#config.username || 'kckern',
+username: this.#config.username || 'user_1',
 ```
 To:
 ```javascript
@@ -91,7 +91,7 @@ username: this.#config.username || 'unknown',
 Lines 178-179 - This is a data path that includes username. Change:
 ```javascript
 const dataPath = process.env.path?.data
-  ? `${process.env.path.data}/users/${this.#config.username || 'kckern'}/lifelog/journalist`
+  ? `${process.env.path.data}/users/${this.#config.username || 'user_1'}/lifelog/journalist`
   : '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata/users/kckern/lifelog/journalist';
 ```
 
@@ -117,7 +117,7 @@ git add backend/src/3_applications/journalist/usecases/HandleSlashCommand.mjs \
         backend/src/3_applications/journalist/usecases/InitiateJournalPrompt.mjs \
         backend/src/3_applications/journalist/JournalistContainer.mjs \
         backend/src/2_adapters/journalist/JournalistInputRouter.mjs
-git commit -m "fix(journalist): remove hardcoded 'kckern' fallbacks
+git commit -m "fix(journalist): remove hardcoded 'user_1' fallbacks
 
 - Pass userId from router to HandleSlashCommand
 - Change fallbacks to 'unknown' to surface missing user issues
@@ -235,7 +235,7 @@ Only **2 tasks** actually require changes:
 
 | Task | Description | Status |
 |------|-------------|--------|
-| 1 | Remove hardcoded `'kckern'` in Journalist | Needs fix |
+| 1 | Remove hardcoded `'user_1'` in Journalist | Needs fix |
 | 2 | ProcessGratitudeInput state store call | False positive - correct |
 | 3 | ToggleCategory state store argument order | Needs fix |
 | 4 | AssignItemToUser websocketBroadcast | False positive - by design |

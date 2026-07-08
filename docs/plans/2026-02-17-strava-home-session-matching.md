@@ -104,7 +104,7 @@ describe('home session matching', () => {
   });
 
   it('should match Strava activity to overlapping home session', async () => {
-    // Create a home session file: 2026-02-15 19:12-19:20 with participant kckern
+    // Create a home session file: 2026-02-15 19:12-19:20 with participant user_1
     const dateDir = path.join(tmpDir, '2026-02-15');
     fs.mkdirSync(dateDir, { recursive: true });
 
@@ -119,8 +119,8 @@ describe('home session matching', () => {
       },
       timezone: 'America/Los_Angeles',
       participants: {
-        kckern: {
-          display_name: 'KC Kern',
+        user_1: {
+          display_name: 'User_1',
           hr_device: '40475',
           is_primary: true,
         },
@@ -154,7 +154,7 @@ describe('home session matching', () => {
     });
 
     // Call the public wrapper for testing
-    const matches = await harvester.matchHomeSessions('kckern', [activity]);
+    const matches = await harvester.matchHomeSessions('user_1', [activity]);
 
     expect(matches).toHaveLength(1);
     expect(matches[0].activityId).toBe(17418186050);
@@ -176,7 +176,7 @@ describe('home session matching', () => {
       },
       timezone: 'America/Los_Angeles',
       participants: {
-        milo: { display_name: 'Milo', is_primary: true },
+        user_3: { display_name: 'User_3', is_primary: true },
       },
       treasureBox: { totalCoins: 10 },
       timeline: { events: [] },
@@ -201,7 +201,7 @@ describe('home session matching', () => {
       logger: mockLogger,
     });
 
-    const matches = await harvester.matchHomeSessions('kckern', [activity]);
+    const matches = await harvester.matchHomeSessions('user_1', [activity]);
     expect(matches).toHaveLength(0);
   });
 
@@ -220,7 +220,7 @@ describe('home session matching', () => {
       },
       timezone: 'America/Los_Angeles',
       participants: {
-        kckern: { display_name: 'KC Kern', is_primary: true },
+        user_1: { display_name: 'User_1', is_primary: true },
       },
       treasureBox: { totalCoins: 5 },
       timeline: { events: [] },
@@ -246,7 +246,7 @@ describe('home session matching', () => {
       logger: mockLogger,
     });
 
-    const matches = await harvester.matchHomeSessions('kckern', [activity]);
+    const matches = await harvester.matchHomeSessions('user_1', [activity]);
     expect(matches).toHaveLength(0);
   });
 });
@@ -424,7 +424,7 @@ it('should enrich Strava summary with home session data', async () => {
     },
     timezone: 'America/Los_Angeles',
     participants: {
-      kckern: { display_name: 'KC Kern', is_primary: true },
+      user_1: { display_name: 'User_1', is_primary: true },
     },
     treasureBox: { totalCoins: 15 },
     timeline: {
@@ -464,7 +464,7 @@ it('should enrich Strava summary with home session data', async () => {
     logger: mockLogger,
   });
 
-  await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+  await harvester.applyHomeSessionEnrichment('user_1', [activity]);
 
   // Check that summary was re-saved with enrichment
   const saveCalls = mockLifelogStore.save.mock.calls;
@@ -493,7 +493,7 @@ it('should enrich home session file with Strava data', async () => {
     },
     timezone: 'America/Los_Angeles',
     participants: {
-      kckern: { display_name: 'KC Kern', is_primary: true },
+      user_1: { display_name: 'User_1', is_primary: true },
     },
     treasureBox: { totalCoins: 15 },
     timeline: { events: [] },
@@ -526,7 +526,7 @@ it('should enrich home session file with Strava data', async () => {
     logger: mockLogger,
   });
 
-  await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+  await harvester.applyHomeSessionEnrichment('user_1', [activity]);
 
   // Read back the home session file
   const updated = loadYamlSafe(sessionPath);
@@ -756,7 +756,7 @@ it('should retry matching for recent summary entries missing homeSessionId', asy
     },
     timezone: 'America/Los_Angeles',
     participants: {
-      kckern: { display_name: 'KC Kern', is_primary: true },
+      user_1: { display_name: 'User_1', is_primary: true },
     },
     treasureBox: { totalCoins: 20 },
     timeline: { events: [] },
@@ -791,7 +791,7 @@ it('should retry matching for recent summary entries missing homeSessionId', asy
 
   // Call backlog matching with no new activities — it should still find the unmatched summary entry
   // We need to reconstruct a minimal activity from the summary for matching
-  await harvester.matchBacklog('kckern', 7);
+  await harvester.matchBacklog('user_1', 7);
 
   const saveCalls = mockLifelogStore.save.mock.calls;
   const summarySave = saveCalls.find(c => c[1] === 'strava');

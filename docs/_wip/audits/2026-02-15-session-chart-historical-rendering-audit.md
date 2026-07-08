@@ -27,7 +27,7 @@ Historical session charts have **significant rendering degradation** compared to
 │                                                                 │
 │ Key transforms:                                                 │
 │   • Zone IDs abbreviated: cool→c, active→a, warm→w, hot→h      │
-│   • Series keys compacted: user:alan:heart_rate → alan:hr       │
+│   • Series keys compacted: user:user_4:heart_rate → user_4:hr       │
 │   • Series RLE-encoded: [131, 124, 146, 146] → [131, 124, [146, 2]] │
 │   • Values rounded (HR→int, beats→1 decimal)                   │
 │   • All-null and all-zero series dropped                        │
@@ -39,15 +39,15 @@ Historical session charts have **significant rendering degradation** compared to
 │ YAML ──→ YamlSessionDatastore ──→ prepareTimelineForApi ──→ API │
 │                                                                 │
 │ API response:                                                   │
-│   session.timeline.series = { "alan:hr": [...], "alan:zone": [...] } │
-│   session.participants = { alan: { display_name, hr_device } }  │
+│   session.timeline.series = { "user_4:hr": [...], "user_4:zone": [...] } │
+│   session.participants = { user_4: { display_name, hr_device } }  │
 │   session.timeline.tick_count, interval_seconds                 │
 │                                                                 │
 │ Key transforms:                                                 │
 │   • RLE decoded back to arrays                                  │
 │   • Timestamps parsed to unix ms                                │
 │   • Zone abbreviations NOT expanded (still c/a/w/h)             │
-│   • Series keys remain compact (alan:hr, alan:zone, alan:coins) │
+│   • Series keys remain compact (user_4:hr, user_4:zone, user_4:coins) │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -79,7 +79,7 @@ Historical session charts have **significant rendering degradation** compared to
 
 The API returns timeline series in V2 flat format:
 ```
-timeline.series = { "alan:hr": [...], "alan:zone": [...], "kckern:coins": [...] }
+timeline.series = { "user_4:hr": [...], "user_4:zone": [...], "user_1:coins": [...] }
 ```
 
 The adapter only looked for `timeline.participants` (V1 nested format). Added grouping logic that parses `userId:metric` flat keys into per-user objects.
@@ -110,7 +110,7 @@ PersistenceManager abbreviates zone IDs on write (`cool→c`, `active→a`, `war
 **Status:** Fixed
 **File:** `frontend/src/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js:462-478`
 
-`buildSegments` only emitted gap segments when a user *rejoined* after dropout. If a user dropped out permanently (e.g., Alan at tick 46 of 409), the gap was opened but never closed, so no flat line was drawn from dropout point to end. Fixed by flushing open gaps at end of the loop.
+`buildSegments` only emitted gap segments when a user *rejoined* after dropout. If a user dropped out permanently (e.g., User_4 at tick 46 of 409), the gap was opened but never closed, so no flat line was drawn from dropout point to end. Fixed by flushing open gaps at end of the loop.
 
 ### FIXED: F5 — "Timeline warming up" shown for historical sessions
 

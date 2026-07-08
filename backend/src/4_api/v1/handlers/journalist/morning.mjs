@@ -21,7 +21,7 @@ export function journalistMorningDebriefHandler(container, options = {}) {
   const { configService, telegramIdentityAdapter, logger = console } = options;
 
   return async (req, res) => {
-    const username = req.query.user || configService?.getHeadOfHousehold?.() || 'kckern';
+    const username = req.query.user || configService?.getHeadOfHousehold?.() || 'user_1';
     const date = req.query.date || null;
 
     if (!username) {

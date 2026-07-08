@@ -72,30 +72,30 @@ describe('computeLadder', () => {
   const W = { weekStart: '2026-06-29', weekEnd: '2026-07-06' };
   it('best-per-rider within the week, ranked ascending time for distance courses', () => {
     const entries = [
-      entry('20260629080000', '2026-06-29', [p('dad', 150), p('milo', 190)]),
-      entry('20260701080000', '2026-07-01', [p('milo', 170)]),
+      entry('20260629080000', '2026-06-29', [p('dad', 150), p('user_3', 190)]),
+      entry('20260701080000', '2026-07-01', [p('user_3', 170)]),
       entry('20260620080000', '2026-06-20', [p('dad', 140)]) // outside week
     ];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
     expect(l.standings).toEqual([
       { userId: 'dad', bestValue: 150, raceId: '20260629080000', attempts: 1 },
-      { userId: 'milo', bestValue: 170, raceId: '20260701080000', attempts: 2 }
+      { userId: 'user_3', bestValue: 170, raceId: '20260701080000', attempts: 2 }
     ]);
     expect(l.allTimeRecord).toEqual({ userId: 'dad', bestValue: 140, raceId: '20260620080000', date: '2026-06-20' });
     expect(l.week).toEqual({ start: '2026-06-29', end: '2026-07-06' });
   });
   it('time course ranks by max distance; zero distance never qualifies', () => {
     const entries = [entry('20260630080000', '2026-06-30',
-      [p('dad', null, 2100), p('milo', null, 2400), p('alan', null, 0)],
+      [p('dad', null, 2100), p('user_3', null, 2400), p('user_4', null, 0)],
       { course_id: 'endurance-5min', win_condition: 'time', time_cap_s: 300, goal_m: null })];
     const l = computeLadder({ course: COURSE_T, entries, ...W });
-    expect(l.standings.map((s) => s.userId)).toEqual(['milo', 'dad']);
+    expect(l.standings.map((s) => s.userId)).toEqual(['user_3', 'dad']);
   });
   it('excludes ghosts and null finish times (DNF) on distance courses', () => {
     const entries = [entry('20260630080000', '2026-06-30', [
       p('dad', 150),
       p('ghost:20260601080000:dad', 145, 1500, { isGhost: true }),
-      p('milo', null) // rode but never finished
+      p('user_3', null) // rode but never finished
     ])];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
     expect(l.standings).toHaveLength(1);
@@ -103,22 +103,22 @@ describe('computeLadder', () => {
   });
   it('tie goes to the earlier raceId', () => {
     const entries = [
-      entry('20260630080000', '2026-06-30', [p('milo', 150)]),
+      entry('20260630080000', '2026-06-30', [p('user_3', 150)]),
       entry('20260629080000', '2026-06-29', [p('dad', 150)])
     ];
     const l = computeLadder({ course: COURSE_D, entries, ...W });
-    expect(l.standings.map((s) => s.userId)).toEqual(['dad', 'milo']);
+    expect(l.standings.map((s) => s.userId)).toEqual(['dad', 'user_3']);
   });
 });
 
 describe('computePersonalBest', () => {
   it('returns the all-time best for one rider, or best:null', () => {
     const entries = [
-      entry('20260620080000', '2026-06-20', [p('milo', 190)]),
-      entry('20260630080000', '2026-06-30', [p('milo', 170)])
+      entry('20260620080000', '2026-06-20', [p('user_3', 190)]),
+      entry('20260630080000', '2026-06-30', [p('user_3', 170)])
     ];
-    expect(computePersonalBest({ entries, course: COURSE_D, userId: 'milo' })).toEqual({
-      userId: 'milo', courseId: 'sprint-1500m',
+    expect(computePersonalBest({ entries, course: COURSE_D, userId: 'user_3' })).toEqual({
+      userId: 'user_3', courseId: 'sprint-1500m',
       best: { bestValue: 170, raceId: '20260630080000', date: '2026-06-30' }
     });
     expect(computePersonalBest({ entries, course: COURSE_D, userId: 'nobody' }).best).toBeNull();

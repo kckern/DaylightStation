@@ -88,8 +88,8 @@ curl -X PUT http://localhost:3111/api/v1/admin/content/lists/menus/fhe/items/swa
 ### Current state of fhe.yml
 
 The data has been modified by multiple swap attempts and needs manual correction. Known issues:
-- Felix (index 2): `plex:642175` — may not be the intended content
-- Alan (index 4): `plex:457404` — may not be the intended content
+- User_2 (index 2): `plex:642175` — may not be the intended content
+- User_4 (index 4): `plex:457404` — may not be the intended content
 - Closing Hymn (index 8): still needs `input: singalong:primary/57` (see Bug 2)
 
 ---

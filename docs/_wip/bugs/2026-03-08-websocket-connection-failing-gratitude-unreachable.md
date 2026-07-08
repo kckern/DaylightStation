@@ -16,10 +16,10 @@ Gratitude items submitted via Telegram homebot are processed successfully by the
 
 **Backend homebot — working fine:**
 ```
-assignItemToUser.start  {username:"elizabeth", category:"hopes"}
-assignItemToUser.complete {itemCount:1, username:"elizabeth", category:"hopes"}
-assignItemToUser.start  {username:"kckern", category:"gratitude"}
-assignItemToUser.complete {itemCount:1, username:"kckern", category:"gratitude"}
+assignItemToUser.start  {username:"user_9", category:"hopes"}
+assignItemToUser.complete {itemCount:1, username:"user_9", category:"hopes"}
+assignItemToUser.start  {username:"user_1", category:"gratitude"}
+assignItemToUser.complete {itemCount:1, username:"user_1", category:"gratitude"}
 ```
 
 **Frontend WebSocket — continuous failures:**

@@ -44,7 +44,7 @@ describe('UserManager — kid guest array-shaped zone overrides (Task 9 review)'
   });
 
   it('resolveUserForDevice returns a user whose zoneConfig has the kid mins after assignGuest', () => {
-    manager.assignGuest('48291', 'Guest', {
+    manager.assignGuest('90006', 'Guest', {
       profileId: 'guest_48291',
       occupantType: 'guest',
       candidateId: 'guest-kid',
@@ -52,9 +52,9 @@ describe('UserManager — kid guest array-shaped zone overrides (Task 9 review)'
     });
 
     // Scenario fidelity: the ledger really carries the ARRAY shape.
-    expect(Array.isArray(ledger.get('48291')?.metadata?.zones)).toBe(true);
+    expect(Array.isArray(ledger.get('90006')?.metadata?.zones)).toBe(true);
 
-    const user = manager.resolveUserForDevice('48291');
+    const user = manager.resolveUserForDevice('90006');
     expect(user).toBeTruthy();
     expect(minOf(user.zoneConfig, 'active')).toBe(95);
     expect(minOf(user.zoneConfig, 'warm')).toBe(130);
@@ -98,23 +98,23 @@ describe('UserManager — kid guest array-shaped zone overrides (Task 9 review)'
 
   it('re-tagging kid → plain Guest on the same device resets to global thresholds', () => {
     // Kid first: zone overrides applied to the shared guest_<deviceId> identity.
-    manager.assignGuest('48291', 'Guest', {
+    manager.assignGuest('90006', 'Guest', {
       profileId: 'guest_48291',
       occupantType: 'guest',
       candidateId: 'guest-kid',
       zones: KID_ZONES_ARRAY
     });
-    let user = manager.resolveUserForDevice('48291');
+    let user = manager.resolveUserForDevice('90006');
     expect(minOf(user.zoneConfig, 'active')).toBe(95);
 
     // Re-tag the SAME strap as a plain adult Guest (no zones). The reused
     // User object must NOT keep the previous occupant's kid thresholds.
-    manager.assignGuest('48291', 'Guest', {
+    manager.assignGuest('90006', 'Guest', {
       profileId: 'guest_48291',
       occupantType: 'guest',
       candidateId: 'guest'
     });
-    user = manager.resolveUserForDevice('48291');
+    user = manager.resolveUserForDevice('90006');
     expect(minOf(user.zoneConfig, 'active')).toBe(100);
     expect(minOf(user.zoneConfig, 'warm')).toBe(120);
     expect(minOf(user.zoneConfig, 'hot')).toBe(140);

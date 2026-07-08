@@ -25,19 +25,19 @@ const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'kckern', tricycle: 'felix' };
+  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
-    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
-    felix: { name: 'Felix', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
+    user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
-      { id: 'kckern', name: 'KC' },
-      { id: 'felix', name: 'Felix' }
+      { id: 'user_1', name: 'KC' },
+      { id: 'user_2', name: 'User_2' }
     ],
     zones: [
       { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
@@ -168,8 +168,8 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   });
 
   it('logs a rider_overtime edge (never rider_dnf) for a mercy-kill straggler (audit game-design #7)', () => {
-    // kckern (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
-    // felix (tricycle) crawls the whole time (rpm > 0 — never idle-quits) and is
+    // user_1 (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
+    // user_2 (tricycle) crawls the whole time (rpm > 0 — never idle-quits) and is
     // still short of the line when the mercy window closes 3s after the winner.
     mockCtx = makeCtx({
       cycleGameConfig: {
@@ -183,7 +183,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_mercy_after_winner_s: 3
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 100, connected: true } : { rpm: 1, connected: true })
       }
     });
@@ -194,16 +194,16 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-start')); });
     act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
 
-    // 20 wall-clock seconds: enough for kckern to cross the line (~15 ticks) and
-    // for the 3s mercy window to close on felix afterward.
+    // 20 wall-clock seconds: enough for user_1 to cross the line (~15 ticks) and
+    // for the 3s mercy window to close on user_2 afterward.
     nowMs = 20000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
     const overtimeCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_overtime');
     expect(overtimeCalls.length).toBe(1);
-    expect(overtimeCalls[0][1]).toMatchObject({ userId: 'felix' });
+    expect(overtimeCalls[0][1]).toMatchObject({ userId: 'user_2' });
 
-    // The whole point of the audit fix: felix rode the entire time — the closure
+    // The whole point of the audit fix: user_2 rode the entire time — the closure
     // must never be logged (or later rendered) as a DNF.
     const dnfCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_dnf');
     expect(dnfCalls).toHaveLength(0);
@@ -212,7 +212,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   });
 
   it('a permanently dead sensor rides through the capped hold, gets flagged sensor_lost, then idle-DNFs (audit game-design #6)', () => {
-    // felix's sensor connects for the first two ticks (so he "starts" — registers
+    // user_2's sensor connects for the first two ticks (so he "starts" — registers
     // movement — before it dies), then never reconnects. With the pre-fix
     // unbounded hold, rpmDuringGap would keep returning his last rpm forever:
     // infinite counted distance, and the idle-DNF clock (fed a real 0) could
@@ -231,9 +231,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides on, unaffected
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides on, unaffected
           return { rpm: 100, connected: felixConnected };
         }
       }
@@ -242,7 +242,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     nowMs = 0;
     driveToGo(renderApi);
 
-    // Two connected ticks — felix registers movement (past the start-grace path).
+    // Two connected ticks — user_2 registers movement (past the start-grace path).
     nowMs = 2000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
@@ -254,16 +254,16 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
 
     const sensorLostCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_lost');
     expect(sensorLostCalls).toHaveLength(1); // edge-only, not once per tick
-    expect(sensorLostCalls[0][1]).toMatchObject({ userId: 'felix', equipmentId: 'tricycle' });
+    expect(sensorLostCalls[0][1]).toMatchObject({ userId: 'user_2', equipmentId: 'tricycle' });
 
-    // kckern's sensor never dropped — never flagged.
-    expect(sensorLostCalls.some(([, p]) => p.userId === 'kckern')).toBe(false);
+    // user_1's sensor never dropped — never flagged.
+    expect(sensorLostCalls.some(([, p]) => p.userId === 'user_1')).toBe(false);
 
     // The consequence the audit demanded: the hold now expires to a real 0,
     // so the controller's existing idle-DNF clock (previously starved by the
-    // infinite hold) finally fires for felix.
+    // infinite hold) finally fires for user_2.
     const dnfCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_dnf');
-    expect(dnfCalls.map(([, p]) => p.userId)).toContain('felix');
+    expect(dnfCalls.map(([, p]) => p.userId)).toContain('user_2');
   });
 
   it('clears the sensor_lost flag and logs sensor_recovered once the sensor reconnects', () => {
@@ -280,7 +280,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: 100, connected: true };
           return { rpm: 100, connected: felixConnected };
@@ -306,12 +306,12 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
 
     const recoveredCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_recovered');
     expect(recoveredCalls).toHaveLength(1);
-    expect(recoveredCalls[0][1]).toMatchObject({ userId: 'felix', equipmentId: 'tricycle' });
+    expect(recoveredCalls[0][1]).toMatchObject({ userId: 'user_2', equipmentId: 'tricycle' });
   });
 
   it('never flags sensor_lost for a rider who has not pedaled a single connected reading yet (cold start, not a dropout)', () => {
     // A rider who hasn't started pedaling at race start (still mounting the
-    // bike, clipping in) reads exactly like felix's dropout case above from
+    // bike, clipping in) reads exactly like user_2's dropout case above from
     // gapTicks alone — but rpmHistoryRef is empty, because there was never a
     // real reading to begin with. raceStartGraceS (30s) already covers this
     // gracefully at the DNF layer; SENSOR must not fire a false alarm here.
@@ -327,10 +327,10 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_start_grace_s: 30
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides normally
-          return { rpm: 0, connected: false }; // felix hasn't clipped in yet
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides normally
+          return { rpm: 0, connected: false }; // user_2 hasn't clipped in yet
         }
       }
     });

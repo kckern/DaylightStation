@@ -10,7 +10,7 @@
  * The central idea is a *context* that answers one question: **is this a family
  * scene — are the children present alongside the labeled adults?** When yes, a
  * relational/group label reads best ("Dad", "Mom"); when no, the full name does
- * ("KC Kern"). That context can be derived in real time (HR devices present) OR
+ * ("User_1"). That context can be derived in real time (HR devices present) OR
  * statically (a roster that simply lists the kids) — the resolver doesn't care
  * which; callers compute the flag and pass it in.
  */

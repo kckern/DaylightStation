@@ -14,7 +14,7 @@
 
 - [ ] Read `docs/_wip/audits/2026-04-30-cycling-challenge-simulator-unusable-audit.md` end-to-end. Every reference below cites that document.
 - [ ] Confirm dev server: `lsof -i :3112` (kckern-server). If not running: `node backend/index.js` (per `CLAUDE.md`'s runbook).
-- [ ] Confirm prod fixture data exists: `sudo docker exec daylight-station sh -c 'grep -A2 "id: cycle_ace" data/household/config/fitness.yml'` should print equipment with `cadence: 49904` and `eligible_users: [kckern, felix, milo]`.
+- [ ] Confirm prod fixture data exists: `sudo docker exec daylight-station sh -c 'grep -A2 "id: cycle_ace" data/household/config/fitness.yml'` should print equipment with `cadence: 49904` and `eligible_users: [user_1, user_2, user_3]`.
 
 ---
 
@@ -46,7 +46,7 @@ describe('DeviceEventRouter equipment catalog', () => {
 
   it('returns the entries previously set via setEquipmentCatalog', () => {
     const entries = [
-      { id: 'cycle_ace', cadence: 49904, eligible_users: ['felix'] },
+      { id: 'cycle_ace', cadence: 49904, eligible_users: ['user_2'] },
       { id: 'tricycle', cadence: 7153, eligible_users: ['niels'] }
     ];
     router.setEquipmentCatalog(entries);
@@ -169,7 +169,7 @@ describe('fitnessConfigBridge.applyEquipmentCatalogFromConfig', () => {
     const cfg = {
       fitness: {
         equipment: [
-          { id: 'cycle_ace', cadence: 49904, eligible_users: ['felix'] }
+          { id: 'cycle_ace', cadence: 49904, eligible_users: ['user_2'] }
         ]
       }
     };
@@ -261,7 +261,7 @@ Start dev server if not running, then in browser console at `/fitness`:
 ```javascript
 window.__fitnessSimController.getEquipment()
 ```
-Expected: an array including `{ equipmentId: 'cycle_ace', name: 'CycleAce', cadenceDeviceId: '49904', eligibleUsers: ['kckern','felix','milo'], ... }` (per the prod YAML).
+Expected: an array including `{ equipmentId: 'cycle_ace', name: 'CycleAce', cadenceDeviceId: '49904', eligibleUsers: ['user_1','user_2','user_3'], ... }` (per the prod YAML).
 
 - [ ] **Step 8: Commit**
 
@@ -325,7 +325,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
         type: 'cycle',
         cycleState: 'ramp',
         equipment: 'cycle_ace',
-        rider: { id: 'felix', name: 'Felix' },
+        rider: { id: 'user_2', name: 'User_2' },
         currentPhaseIndex: 1,
         totalPhases: 4,
         phaseProgressPct: 42,
@@ -337,7 +337,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
     expect(gov.activeChallengeType).toBe('cycle');
     expect(gov.cycleState).toBe('ramp');
     expect(gov.currentRpm).toBe(67);
-    expect(gov.riderId).toBe('felix');
+    expect(gov.riderId).toBe('user_2');
     expect(gov.currentPhaseIndex).toBe(1);
     expect(gov.totalPhases).toBe(4);
     expect(gov.phaseProgressPct).toBe(42);
@@ -474,7 +474,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     const cb = jest.fn();
     engine.onCycleStateChange = cb;
     engine.challengeState = {
-      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: { id: 'felix' } }
+      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: { id: 'user_2' } }
     };
     engine._updateGlobalState();
     expect(cb).toHaveBeenCalledTimes(1);

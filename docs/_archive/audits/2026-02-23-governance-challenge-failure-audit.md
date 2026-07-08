@@ -9,7 +9,7 @@
 
 ## Summary
 
-Audit of a live fitness session against the governance engine reference documentation reveals a **critical phase-transition bug** where failed challenges impose no meaningful penalty. A challenge requiring all 4 participants at "hot" zone failed (alan was at warm), but the video re-unlocked in 21ms because the base requirement (`active: all`) was still satisfied. The challenge failure penalty is effectively cosmetic — a single-frame flash that no one sees.
+Audit of a live fitness session against the governance engine reference documentation reveals a **critical phase-transition bug** where failed challenges impose no meaningful penalty. A challenge requiring all 4 participants at "hot" zone failed (user_4 was at warm), but the video re-unlocked in 21ms because the base requirement (`active: all`) was still satisfied. The challenge failure penalty is effectively cosmetic — a single-frame flash that no one sees.
 
 Additionally, the audit uncovered **6 secondary issues** including a race condition in the media start event, stale governance phase in render thrashing logs, and severe render thrashing sustained for 6+ minutes.
 
@@ -24,8 +24,8 @@ Additionally, the audit uncovered **6 secondary issues** including a race condit
 | Media | Mario Kart 8 (mediaId `606442`, labels: kidsfun, resumable, sequential) |
 | Policy | `default` — base requirement: `active: all` |
 | Grace period | 30 seconds |
-| Participants | felix, milo, alan, kckern (primary/superuser) |
-| Exempted | soren (per governance config) |
+| Participants | user_2, user_3, user_4, user_1 (primary/superuser) |
+| Exempted | user_5 (per governance config) |
 
 ---
 
@@ -38,7 +38,7 @@ Additionally, the audit uncovered **6 secondary issues** including a race condit
 
 #### What happened
 
-Challenge 3 ("all hot", requiredCount: 4, 90s limit) failed because alan was at warm (HR 159, hot threshold 160). The video locked for 21ms and immediately re-unlocked:
+Challenge 3 ("all hot", requiredCount: 4, 90s limit) failed because user_4 was at warm (HR 159, hot threshold 160). The video locked for 21ms and immediately re-unlocked:
 
 ```
 Log evidence (lines 7378-7381):
@@ -46,7 +46,7 @@ Log evidence (lines 7378-7381):
 03:03:16.472Z  governance.challenge.failed
                id: default_challenge_0_1771902106466
                zone: hot, requiredCount: 4, actualCount: 3
-               missingUsers: ["alan"]
+               missingUsers: ["user_4"]
 
 03:03:16.472Z  governance.phase_change
                from: "unlocked" → to: "locked"
@@ -65,11 +65,11 @@ Participant states at failure:
 
 | Participant | Zone | HR | Hot threshold | Met? |
 |-------------|------|----|---------------|------|
-| felix | hot | 166 | 160 | Yes |
-| milo | hot | 172 | 160 | Yes |
-| kckern | hot | 144 | 140 | Yes |
-| alan | **warm** | **159** | 160 | **No** |
-| soren | active | 125 | — | Exempted |
+| user_2 | hot | 166 | 160 | Yes |
+| user_3 | hot | 172 | 160 | Yes |
+| user_1 | hot | 144 | 140 | Yes |
+| user_4 | **warm** | **159** | 160 | **No** |
+| user_5 | active | 125 | — | Exempted |
 
 #### Root cause
 
@@ -317,9 +317,9 @@ Log evidence (lines 6903-6904):
 
 03:00:42.289Z  governance.challenge.completed     ← 17ms later
                participants: [
-                 felix: hot, milo: hot,
-                 alan: active, kckern: hot,
-                 soren: active
+                 user_2: hot, user_3: hot,
+                 user_4: active, user_1: hot,
+                 user_5: active
                ]
 ```
 
@@ -335,11 +335,11 @@ Full phase history reconstructed from `governance.phase_change` log events:
 |---|---|---|---|---|---|
 | 02:54:35 | pending | null | No media loaded | 1315 | Yes |
 | 02:57:11 | null | pending | Media loaded, 3 participants below active | 3517 | Yes |
-| 02:58:08 | pending | unlocked | All 4 at active, kckern reaches HR 100 | 4459 | Yes |
-| 03:03:16 | unlocked | locked | Challenge 3 failed (alan at warm, not hot) | 7379 | Yes |
+| 02:58:08 | pending | unlocked | All 4 at active, user_1 reaches HR 100 | 4459 | Yes |
+| 03:03:16 | unlocked | locked | Challenge 3 failed (user_4 at warm, not hot) | 7379 | Yes |
 | 03:03:16 | locked | unlocked | Base req still met — **should stay locked** | 7381 | **No** |
-| 03:13:38 | unlocked | warning | kckern drops to cool (HR 94), sole participant | 12812 | Yes |
-| 03:14:08 | warning | locked | Grace period expired, kckern still cool (HR 91) | 12883 | Yes |
+| 03:13:38 | unlocked | warning | user_1 drops to cool (HR 94), sole participant | 12812 | Yes |
+| 03:14:08 | warning | locked | Grace period expired, user_1 still cool (HR 91) | 12883 | Yes |
 | 03:17:12 | locked | pending | No participants remaining | 13240 | Yes |
 
 ---
@@ -350,11 +350,11 @@ All non-primary participants disconnected during the session, reconstructed from
 
 | Participant | Disconnect (approx) | Null ticks | Notes |
 |---|---|---|---|
-| soren | 19:08:37 | 104 ticks (520s) | Exempted; first to leave |
-| milo | 19:11:52 | 65 ticks (325s) | |
-| felix | 19:12:17 | 60 ticks (300s) | Voice memo: "Felix's maybe got broken again" |
-| alan | 19:12:27 | 58 ticks (290s) | |
-| kckern | 19:17:12 | 3 ticks (15s) | Last remaining; triggered warning → lock |
+| user_5 | 19:08:37 | 104 ticks (520s) | Exempted; first to leave |
+| user_3 | 19:11:52 | 65 ticks (325s) | |
+| user_2 | 19:12:17 | 60 ticks (300s) | Voice memo: "User_2's maybe got broken again" |
+| user_4 | 19:12:27 | 58 ticks (290s) | |
+| user_1 | 19:17:12 | 3 ticks (15s) | Last remaining; triggered warning → lock |
 
 Chart logs show repeated `Status corrected: {name} (removed → idle)` warnings as participants dropped.
 
@@ -414,11 +414,11 @@ Six of seven `bike:*:rotations` series and one `bike:*:rpm` series contain only 
 ```yaml
 bike:7153:rpm: '[[0,18],[null,250]]'                    # line 18
 bike:7153:rotations: '[[0,18],[null,250]]'               # line 19
-bike:28812:rotations: '[[0,212],[null,56]]'              # line 21
-bike:28688:rotations: '[[null,19],[0,186],[null,63]]'    # line 27
+bike:90003:rotations: '[[0,212],[null,56]]'              # line 21
+bike:90001:rotations: '[[null,19],[0,186],[null,63]]'    # line 27
 bike:28676:rotations: '[[null,22],[0,192],[null,54]]'    # line 33
 bike:40475:rotations: '[[null,30],[0,238]]'              # line 42
-bike:29413:rotations: '[[null,40],[0,129],[null,99]]'    # line 47
+bike:90005:rotations: '[[null,40],[0,129],[null,99]]'    # line 47
 ```
 
 Only `bike:49904:rotations` (line 40) and `bike:49904:rpm` (line 39) contain real data. The persist code in `PersistenceManager._runLengthEncode()` should skip series where every value is zero or null.
@@ -458,14 +458,14 @@ The same memo appears twice with overlapping data:
 
 ```yaml
 participants:
-  kckern:
-    display_name: KC Kern
+  user_1:
+    display_name: User_1
     hr_device: '40475'
     is_primary: true
-    base_user: KC Kern
+    base_user: User_1
 ```
 
-The series data contains 5 participants (felix, milo, alan, kckern, soren), but the `participants` block only lists kckern. This means the persisted session lacks display names, device mappings, and exemption/guest status for 4 of 5 participants. `PersistenceManager.js` builds participants from the session roster, but non-primary participants are being dropped during save.
+The series data contains 5 participants (user_2, user_3, user_4, user_1, user_5), but the `participants` block only lists kckern. This means the persisted session lacks display names, device mappings, and exemption/guest status for 4 of 5 participants. `PersistenceManager.js` builds participants from the session roster, but non-primary participants are being dropped during save.
 
 ---
 

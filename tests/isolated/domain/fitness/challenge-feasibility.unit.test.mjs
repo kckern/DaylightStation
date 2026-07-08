@@ -54,10 +54,10 @@ describe('challenge feasibility check', () => {
 
   it('should reject challenge when participant is 32+ BPM below hot threshold', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 138, zoneThresholds: { hot: 170 } }, // 32 BPM gap
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 138, zoneThresholds: { hot: 170 } }, // 32 BPM gap
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(false);
@@ -65,10 +65,10 @@ describe('challenge feasibility check', () => {
 
   it('should accept challenge when all participants are within 20 BPM', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 155, zoneThresholds: { hot: 170 } },
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 155, zoneThresholds: { hot: 170 } },
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(true);
@@ -76,10 +76,10 @@ describe('challenge feasibility check', () => {
 
   it('should accept majority rule when enough participants are close', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 100, zoneThresholds: { hot: 170 } }, // too far
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 100, zoneThresholds: { hot: 170 } }, // too far
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     // majority of 4 = 2
     const result = checkChallengeFeasibility('hot', 'majority', participants);
@@ -88,8 +88,8 @@ describe('challenge feasibility check', () => {
 
   it('should downgrade zone when target is not feasible', () => {
     const participants = [
-      { id: 'milo',   currentHr: 130, zoneThresholds: { warm: 120, hot: 160 } },
-      { id: 'alan',   currentHr: 125, zoneThresholds: { warm: 120, hot: 170 } },
+      { id: 'user_3',   currentHr: 130, zoneThresholds: { warm: 120, hot: 160 } },
+      { id: 'user_4',   currentHr: 125, zoneThresholds: { warm: 120, hot: 170 } },
     ];
     // hot not feasible for all
     const hotResult = checkChallengeFeasibility('hot', 'all', participants);
@@ -104,7 +104,7 @@ describe('challenge feasibility check', () => {
     const participants = [
       null,  // unresolved user
       null,  // unresolved user
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     // Only 1 of 3 achievable, 'all' requires 3
     const result = checkChallengeFeasibility('hot', 'all', participants);
@@ -115,8 +115,8 @@ describe('challenge feasibility check', () => {
   it('should NOT assume achievable when zone config is missing', () => {
     // Profile exists but has no threshold for the target zone
     const participants = [
-      { id: 'milo',  currentHr: 110, zoneThresholds: { cool: 80, active: 100 } }, // no 'hot' entry
-      { id: 'alan',  currentHr: 110, zoneThresholds: { cool: 80, active: 100 } },
+      { id: 'user_3',  currentHr: 110, zoneThresholds: { cool: 80, active: 100 } }, // no 'hot' entry
+      { id: 'user_4',  currentHr: 110, zoneThresholds: { cool: 80, active: 100 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(false); // Can't confirm they can reach hot

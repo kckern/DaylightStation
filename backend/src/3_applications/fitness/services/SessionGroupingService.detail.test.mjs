@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { SessionGroupingService } from './SessionGroupingService.mjs';
 
 const T0 = Date.parse('2026-06-05T16:22:00-07:00');
-const tl = (ticks, val) => ({ series: { 'milo:heart_rate': Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
+const tl = (ticks, val) => ({ series: { 'user_3:heart_rate': Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
 
-// two no-video sessions that groupSessions will merge (overlap on milo); 10-min idle gap
-const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { milo: { displayName: 'milo' }, alan: { displayName: 'alan' } }, media: null, totalCoins: 100 };
-const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { milo: { displayName: 'milo' } }, media: null, totalCoins: 50 };
+// two no-video sessions that groupSessions will merge (overlap on user_3); 10-min idle gap
+const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { user_3: { displayName: 'user_3' }, user_4: { displayName: 'user_4' } }, media: null, totalCoins: 100 };
+const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { user_3: { displayName: 'user_3' } }, media: null, totalCoins: 50 };
 
 const sessionService = {
   resolveHouseholdId: () => 'household',
@@ -16,7 +16,7 @@ const sessionService = {
 
 // one race inside s2, 2s after it starts, lasting 3s
 const registry = { enrich: async () => [{ type: 'cycle-game', count: 1,
-  items: [{ startMs: s2.startTime + 2000, endMs: s2.startTime + 5000, participants: ['milo'], meta: { winnerId: 'milo' } }] }] };
+  items: [{ startMs: s2.startTime + 2000, endMs: s2.startTime + 5000, participants: ['user_3'], meta: { winnerId: 'user_3' } }] }] };
 
 describe('SessionGroupingService.getGroupDetail', () => {
   it('stitches member timelines, compresses the gap, and emits a seam', async () => {
@@ -25,11 +25,11 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(detail.isGroup).toBe(true);
     expect(detail.date).toBe('2026-06-05');
     expect(detail.timeline.tick_count).toBe(5);                 // 3 + 0 + 2 (no null filler)
-    expect(detail.timeline.series['milo:heart_rate']).toEqual(['a','a','a','b','b']);
+    expect(detail.timeline.series['user_3:heart_rate']).toEqual(['a','a','a','b','b']);
     expect(detail.segments.map(s => s.offsetMs)).toEqual([0, 15000]); // 3 ticks * 5s
     expect(detail.seams).toEqual([{ atMs: 15000, gapMs: 585000 }]);   // gap = 600000 - 15000
     expect(detail.media).toBeNull();
-    expect(Object.keys(detail.participants).sort()).toEqual(['alan','milo']);
+    expect(Object.keys(detail.participants).sort()).toEqual(['user_3','user_4']);
   });
 
   it('rebases activity bands onto the compressed axis', async () => {
@@ -43,8 +43,8 @@ describe('SessionGroupingService.getGroupDetail', () => {
   it('truncates an earlier band so no race nests inside another', async () => {
     // two races in s2 whose rebased bands would overlap (A spans into B) — A must be cut to B's start
     const overlapReg = { enrich: async () => [{ type: 'cycle-game', count: 2, items: [
-      { startMs: s2.startTime + 0,    endMs: s2.startTime + 8000, participants: ['milo'], meta: { raceId: 'A' } },
-      { startMs: s2.startTime + 2000, endMs: s2.startTime + 5000, participants: ['milo'], meta: { raceId: 'B' } },
+      { startMs: s2.startTime + 0,    endMs: s2.startTime + 8000, participants: ['user_3'], meta: { raceId: 'A' } },
+      { startMs: s2.startTime + 2000, endMs: s2.startTime + 5000, participants: ['user_3'], meta: { raceId: 'B' } },
     ] }] };
     const svc = new SessionGroupingService({ activityRegistry: overlapReg, sessionService });
     const detail = await svc.getGroupDetail('group:20260605162200', 'household');
@@ -58,22 +58,22 @@ describe('SessionGroupingService.getGroupDetail', () => {
   });
 
   it('keeps cumulative series continuous across seams (offsets later segments by the running total)', async () => {
-    // milo:coins is cumulative and restarts each session; heart_rate is instantaneous
+    // user_3:coins is cumulative and restarts each session; heart_rate is instantaneous
     const svcSessions = {
       resolveHouseholdId: () => 'household',
       listSessionsByDate: async () => [ { ...s1 }, { ...s2 } ],
       getSession: async (id) => ({
         timeline: id === s1.sessionId
-          ? { series: { 'milo:coins': [10, 20, 30], 'milo:heart_rate': [100, 100, 100] }, events: [], tick_count: 3, interval_seconds: 5 }
-          : { series: { 'milo:coins': [5, 15], 'milo:heart_rate': [120, 120] }, events: [], tick_count: 2, interval_seconds: 5 },
+          ? { series: { 'user_3:coins': [10, 20, 30], 'user_3:heart_rate': [100, 100, 100] }, events: [], tick_count: 3, interval_seconds: 5 }
+          : { series: { 'user_3:coins': [5, 15], 'user_3:heart_rate': [120, 120] }, events: [], tick_count: 2, interval_seconds: 5 },
       }),
     };
     const svc = new SessionGroupingService({ activityRegistry: registry, sessionService: svcSessions });
     const detail = await svc.getGroupDetail('group:20260605162200', 'household');
     // cumulative: second segment offset by 30 (running total at the seam) -> 5+30, 15+30
-    expect(detail.timeline.series['milo:coins']).toEqual([10, 20, 30, 35, 45]);
+    expect(detail.timeline.series['user_3:coins']).toEqual([10, 20, 30, 35, 45]);
     // instantaneous untouched
-    expect(detail.timeline.series['milo:heart_rate']).toEqual([100, 100, 100, 120, 120]);
+    expect(detail.timeline.series['user_3:heart_rate']).toEqual([100, 100, 100, 120, 120]);
   });
 });
 
@@ -83,11 +83,11 @@ describe('SessionGroupingService.enrichSession (standalone session detail)', () 
   const SOLO_START = Date.parse('2026-06-12T08:14:13-07:00');
   const solo = {
     sessionId: SOLO, date: '2026-06-12', startTime: SOLO_START, durationMs: 690000,
-    participants: { felix: { displayName: 'Felix' } }, media: null, totalCoins: 216,
+    participants: { user_2: { displayName: 'User_2' } }, media: null, totalCoins: 216,
   };
   const raceReg = { enrich: async () => [{ type: 'cycle-game', count: 2, items: [
-    { startMs: SOLO_START + 70000, endMs: SOLO_START + 130000, participants: ['felix'], meta: { raceId: 'a', winnerId: 'felix' } },
-    { startMs: SOLO_START + 200000, endMs: SOLO_START + 380000, participants: ['felix'], meta: { raceId: 'b', winnerId: 'felix' } },
+    { startMs: SOLO_START + 70000, endMs: SOLO_START + 130000, participants: ['user_2'], meta: { raceId: 'a', winnerId: 'user_2' } },
+    { startMs: SOLO_START + 200000, endMs: SOLO_START + 380000, participants: ['user_2'], meta: { raceId: 'b', winnerId: 'user_2' } },
   ] }] };
   const sessions = { resolveHouseholdId: () => 'household', listSessionsByDate: async () => [ { ...solo } ] };
 

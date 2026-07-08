@@ -61,14 +61,14 @@ describe('GovernanceEngine reactive evaluation', () => {
     const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     engine.configure({
-      governed_labels: ['kckern'],
+      governed_labels: ['user_1'],
       policies: {
         warmup: { zones: ['active', 'warm', 'hot', 'fire'], rule: 'all_above' }
       }
     });
 
     // Simulate zone change notification
-    engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
+    engine.notifyZoneChange('user_1', { fromZone: 'cool', toZone: 'active' });
 
     expect(evaluateSpy).toHaveBeenCalledTimes(1);
   });
@@ -77,14 +77,14 @@ describe('GovernanceEngine reactive evaluation', () => {
     const evaluateSpy = vi.spyOn(engine, 'evaluate');
 
     engine.configure({
-      governed_labels: ['kckern', 'felix'],
+      governed_labels: ['user_1', 'user_2'],
       policies: {}
     });
 
     // Rapid zone changes
-    engine.notifyZoneChange('kckern', { fromZone: 'cool', toZone: 'active' });
-    engine.notifyZoneChange('felix', { fromZone: 'warm', toZone: 'hot' });
-    engine.notifyZoneChange('kckern', { fromZone: 'active', toZone: 'warm' });
+    engine.notifyZoneChange('user_1', { fromZone: 'cool', toZone: 'active' });
+    engine.notifyZoneChange('user_2', { fromZone: 'warm', toZone: 'hot' });
+    engine.notifyZoneChange('user_1', { fromZone: 'active', toZone: 'warm' });
 
     // Should debounce to single evaluation
     await new Promise(r => setTimeout(r, 150));
@@ -191,7 +191,7 @@ Fixes: Issue #1 and #6 from bug bash report"
 - Modify: `frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx:947`
 - Test: Manual verification (label appears consistently)
 
-**Problem:** "Dad" label shows on governance overlay but "KC Kern" shows in roster. The roster prefers `ownerName` (from cached `deviceOwnership`) over `displayLabel` (from fresh `participantRoster`).
+**Problem:** "Dad" label shows on governance overlay but "User_1" shows in roster. The roster prefers `ownerName` (from cached `deviceOwnership`) over `displayLabel` (from fresh `participantRoster`).
 
 **Solution:** Reorder the priority to prefer SSOT sources.
 

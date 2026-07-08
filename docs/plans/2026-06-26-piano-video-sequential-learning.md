@@ -23,7 +23,7 @@ Completion no longer requires dismissing an engagement gate. The stored entry ca
 **R3 — Future seasons are hidden, not just locked.**
 Task 6 is reworked: CourseDetail groups episodes by season (from the `parents` map), renders seasons only up through the first per-user-incomplete season, and HIDES later seasons entirely. Within the visible current season, episodes after the first incomplete one are locked (sequential gate). Single-season courses keep the flat list + per-episode locks. The unlock toast+chime fires when a season transitions to complete, revealing the next.
 
-**Smaller:** per-user resume prefers `lecture.userPlayhead` over the Plex `watchSeconds` (Task 10). Milo's backfilled `video-progress.yml` field `engagementCount: 0` becomes `engaged: false`.
+**Smaller:** per-user resume prefers `lecture.userPlayhead` over the Plex `watchSeconds` (Task 10). User_3's backfilled `video-progress.yml` field `engagementCount: 0` becomes `engaged: false`.
 
 **Revised stored entry shape** (`data/users/{userId}/apps/piano/video-progress.yml`):
 ```yaml
@@ -40,7 +40,7 @@ plex:{episodeId}:
 
 - **Task R-A — `UserVideoProgressStore` service** (`backend/src/3_applications/piano/UserVideoProgressStore.mjs` + test): owns `record({userId, plexId, percent, seconds, duration, engaged})` (sticky-engaged + completion stamping) and `enrich(items, userId)` (adds `userPercent/userPlayhead/userWatched/userEngaged/userCompletedAt`). Tolerates legacy `engagementCount > 0` as engaged for back-compat. Single source of truth for completion logic.
 - **Task R-B — extend `POST /play/log`**: inject the store into `createPlayRouter`; after the existing media-memory write, if `req.body.userId` present, call `store.record(...)`. Remove the standalone `/users/:userId/video-log` route from `piano.mjs` and migrate its tests to the store + play/log.
-- **Task R-C — repoint courses-playable**: piano `GET /courses/:id/playable` uses `store.enrich(items, userId)` instead of inline merge; keep the `isSequential` computation. Wire the store into both routers in `app.mjs`. Update Milo's backfill file field.
+- **Task R-C — repoint courses-playable**: piano `GET /courses/:id/playable` uses `store.enrich(items, userId)` instead of inline merge; keep the `isSequential` computation. Wire the store into both routers in `app.mjs`. Update User_3's backfill file field.
 
 ---
 

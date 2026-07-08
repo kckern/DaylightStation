@@ -238,8 +238,8 @@ describe('resolveDisplayName', () => {
           createDevice({ deviceId: '2', heartRate: 130 }),
         ],
         deviceOwnership: new Map([
-          ['1', createOwnership({ name: 'KC Kern', groupLabel: 'Dad' })],
-          ['2', createOwnership({ name: 'Felix', groupLabel: null })],
+          ['1', createOwnership({ name: 'User_1', groupLabel: 'Dad' })],
+          ['2', createOwnership({ name: 'User_2', groupLabel: null })],
         ]),
         deviceAssignments: new Map(),
       });
@@ -255,14 +255,14 @@ describe('resolveDisplayName', () => {
       const ctx = buildDisplayNameContext({
         devices: [createDevice({ deviceId: '1', heartRate: 120 })],
         deviceOwnership: new Map([
-          ['1', createOwnership({ name: 'KC Kern', groupLabel: 'Dad' })],
+          ['1', createOwnership({ name: 'User_1', groupLabel: 'Dad' })],
         ]),
         deviceAssignments: new Map(),
       });
 
       const result = resolveDisplayName('1', ctx);
 
-      expect(result.displayName).toBe('KC Kern');
+      expect(result.displayName).toBe('User_1');
       expect(result.source).toBe('owner');
       expect(result.preferredGroupLabel).toBe(false);
     });
@@ -274,15 +274,15 @@ describe('resolveDisplayName', () => {
           createDevice({ deviceId: '2', heartRate: 130 }),
         ],
         deviceOwnership: new Map([
-          ['1', createOwnership({ name: 'KC Kern', groupLabel: null })],
-          ['2', createOwnership({ name: 'Felix' })],
+          ['1', createOwnership({ name: 'User_1', groupLabel: null })],
+          ['2', createOwnership({ name: 'User_2' })],
         ]),
         deviceAssignments: new Map(),
       });
 
       const result = resolveDisplayName('1', ctx);
 
-      expect(result.displayName).toBe('KC Kern');
+      expect(result.displayName).toBe('User_1');
       expect(result.source).toBe('owner');
     });
   });
@@ -414,17 +414,17 @@ describe('regression tests', () => {
     const ctx = buildDisplayNameContext({
       devices: [
         createDevice({ deviceId: '40475', heartRate: 120 }),
-        createDevice({ deviceId: '28812', heartRate: 130 }),
+        createDevice({ deviceId: '90003', heartRate: 130 }),
       ],
       deviceOwnership: new Map([
-        ['40475', createOwnership({ name: 'KC Kern', groupLabel: 'Dad', profileId: 'kckern' })],
-        ['28812', createOwnership({ name: 'Felix', groupLabel: null, profileId: 'felix' })],
+        ['40475', createOwnership({ name: 'User_1', groupLabel: 'Dad', profileId: 'user_1' })],
+        ['90003', createOwnership({ name: 'User_2', groupLabel: null, profileId: 'user_2' })],
       ]),
       deviceAssignments: new Map([
         ['40475', createAssignment({
           occupantType: 'member', // NOT a guest!
-          occupantName: 'KC Kern',
-          occupantId: 'kckern',
+          occupantName: 'User_1',
+          occupantId: 'user_1',
         })],
       ]),
     });
@@ -432,7 +432,7 @@ describe('regression tests', () => {
     // With 2 devices, preferGroupLabels should be true
     expect(ctx.preferGroupLabels).toBe(true);
 
-    // kckern should show "Dad", not "KC Kern"
+    // user_1 should show "Dad", not "User_1"
     const result = resolveDisplayName('40475', ctx);
     expect(result.displayName).toBe('Dad');
     expect(result.source).toBe('groupLabel');
@@ -442,14 +442,14 @@ describe('regression tests', () => {
     const ctx = buildDisplayNameContext({
       devices: [createDevice({ deviceId: '40475', heartRate: 120 })],
       deviceOwnership: new Map([
-        ['40475', createOwnership({ name: 'KC Kern', groupLabel: 'Dad' })],
+        ['40475', createOwnership({ name: 'User_1', groupLabel: 'Dad' })],
       ]),
     });
 
     expect(ctx.preferGroupLabels).toBe(false);
 
     const result = resolveDisplayName('40475', ctx);
-    expect(result.displayName).toBe('KC Kern');
+    expect(result.displayName).toBe('User_1');
     expect(result.source).toBe('owner');
   });
 });

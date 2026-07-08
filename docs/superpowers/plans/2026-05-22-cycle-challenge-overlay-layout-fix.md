@@ -50,7 +50,7 @@ Append this `describe` block to the end of `cycleOverlayVisuals.test.js`:
 ```js
 describe('getBoosterAvatarSlots — percentage positioning', () => {
   it('returns percentage-based positions, not pixels', () => {
-    const slots = getBoosterAvatarSlots(['kc', 'alan']);
+    const slots = getBoosterAvatarSlots(['kc', 'user_4']);
     expect(slots).toHaveLength(2);
     expect(slots[0].style).toEqual({ top: '16%', left: '84%' }); // NE
     expect(slots[1].style).toEqual({ top: '84%', left: '84%' }); // SE

@@ -352,7 +352,7 @@ non-seek stalls."
 
 ## Task 3: Challenge Feasibility Check (Unwinnable Challenges)
 
-**Why:** Same failure pattern in 2 audits (Feb 16, Feb 25). Challenges target hot zone with `rule: 'all'` when participants are 30+ BPM below their hot threshold. Challenge is structurally impossible. Alan spent <1% of session in hot zone, had HR of 124–138 with hot threshold of 170.
+**Why:** Same failure pattern in 2 audits (Feb 16, Feb 25). Challenges target hot zone with `rule: 'all'` when participants are 30+ BPM below their hot threshold. Challenge is structurally impossible. User_4 spent <1% of session in hot zone, had HR of 124–138 with hot threshold of 170.
 
 **Files:**
 - Modify: `frontend/src/hooks/fitness/GovernanceEngine.js:1885-1954` (startChallenge)
@@ -406,10 +406,10 @@ describe('challenge feasibility check', () => {
 
   it('should reject challenge when participant is 32+ BPM below hot threshold', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 138, zoneThresholds: { hot: 170 } }, // 32 BPM gap
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 138, zoneThresholds: { hot: 170 } }, // 32 BPM gap
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(false);
@@ -417,10 +417,10 @@ describe('challenge feasibility check', () => {
 
   it('should accept challenge when all participants are within 20 BPM', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 155, zoneThresholds: { hot: 170 } },
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 155, zoneThresholds: { hot: 170 } },
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(true);
@@ -428,10 +428,10 @@ describe('challenge feasibility check', () => {
 
   it('should accept majority rule when enough participants are close', () => {
     const participants = [
-      { id: 'milo',   currentHr: 155, zoneThresholds: { hot: 160 } },
-      { id: 'alan',   currentHr: 100, zoneThresholds: { hot: 170 } }, // too far
-      { id: 'felix',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
+      { id: 'user_4',   currentHr: 100, zoneThresholds: { hot: 170 } }, // too far
+      { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     // majority of 4 = 2
     const result = checkChallengeFeasibility('hot', 'majority', participants);
@@ -440,8 +440,8 @@ describe('challenge feasibility check', () => {
 
   it('should downgrade zone when target is not feasible', () => {
     const participants = [
-      { id: 'milo',   currentHr: 130, zoneThresholds: { warm: 120, hot: 160 } },
-      { id: 'alan',   currentHr: 125, zoneThresholds: { warm: 120, hot: 170 } },
+      { id: 'user_3',   currentHr: 130, zoneThresholds: { warm: 120, hot: 160 } },
+      { id: 'user_4',   currentHr: 125, zoneThresholds: { warm: 120, hot: 170 } },
     ];
     // hot not feasible for all
     const hotResult = checkChallengeFeasibility('hot', 'all', participants);
@@ -659,13 +659,13 @@ describe('TreasureBox zone update', () => {
     // Simulate: raw zone is 'active', committed (hysteresis) zone is 'warm'
     const mockZoneProfileStore = {
       getCommittedZone: jest.fn((userId) => {
-        if (userId === 'alan') return { zoneId: 'warm', zoneName: 'Warm', zoneColor: '#ffaa00' };
+        if (userId === 'user_4') return { zoneId: 'warm', zoneName: 'Warm', zoneColor: '#ffaa00' };
         return null;
       })
     };
 
     const rawZone = { id: 'active', name: 'Active', color: '#00cc00', min: 100 };
-    const committedZone = mockZoneProfileStore.getCommittedZone('alan');
+    const committedZone = mockZoneProfileStore.getCommittedZone('user_4');
 
     // The fix: use committed zone when available
     const finalZoneId = committedZone?.zoneId || rawZone.id;
@@ -781,13 +781,13 @@ describe('device startup HR discard', () => {
   it('should track counts per device independently', () => {
     const counts = new Map();
     expect(shouldDiscardHr('28676', counts)).toBe(true);
-    expect(shouldDiscardHr('28688', counts)).toBe(true);
+    expect(shouldDiscardHr('90001', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(true);
-    expect(shouldDiscardHr('28688', counts)).toBe(true);
+    expect(shouldDiscardHr('90001', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(true);
     expect(shouldDiscardHr('28676', counts)).toBe(false); // 28676 past threshold
-    expect(shouldDiscardHr('28688', counts)).toBe(true);  // 28688 still discarding
-    expect(shouldDiscardHr('28688', counts)).toBe(false);  // 28688 past threshold
+    expect(shouldDiscardHr('90001', counts)).toBe(true);  // 90001 still discarding
+    expect(shouldDiscardHr('90001', counts)).toBe(false);  // 90001 past threshold
   });
 
   it('should pass through non-HR device data immediately', () => {

@@ -12,7 +12,7 @@ describe('GovernanceEngine cycle ramp state', () => {
     nowValue = 20000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     active = {
-      id: 'test_0', type: 'cycle', rider: 'felix', cycleState: 'ramp',
+      id: 'test_0', type: 'cycle', rider: 'user_2', cycleState: 'ramp',
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 }
       ],

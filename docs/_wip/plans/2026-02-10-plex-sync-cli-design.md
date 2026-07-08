@@ -91,7 +91,7 @@ title: "Free Solo"
 year: 2018
 summary: "Alex Honnold attempts to free solo climb..."
 studio: National Geographic
-director: Jimmy Chin, Elizabeth Chai Vasarhelyi
+director: Jimmy Chin, User_9 Chai Vasarhelyi
 
 labels:
   - documentary

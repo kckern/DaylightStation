@@ -20,7 +20,7 @@ Avatars are consistently offset **80px to the left** of their intended line endp
 2. **Consistent 80px X-axis displacement** observed in logs:
    ```json
    {
-     "id": "milo",
+     "id": "user_3",
      "raw": {"x": "846.00", "y": "60.08"},
      "rendered": {"x": "766.00", "y": "60.08"},
      "diff": {"dx": "80.00", "dy": "0.00"}

@@ -58,26 +58,26 @@ describe('GET /fingerprints', () => {
   it('merges config admins with primary, admins first, deduped, and flags them admin', async () => {
     const { app } = appWith({
       profiles: {
-        kckern: { display_name: 'KC', identities: { fingerprints: [fp('k1')] } },
-        elizabeth: { display_name: 'Elizabeth', identities: { fingerprints: [] } },
-        felix: { display_name: 'Felix', identities: { fingerprints: [] } },
+        user_1: { display_name: 'KC', identities: { fingerprints: [fp('k1')] } },
+        user_9: { display_name: 'User_9', identities: { fingerprints: [] } },
+        user_2: { display_name: 'User_2', identities: { fingerprints: [] } },
       },
-      primary: ['kckern', 'felix'],
-      admin: ['kckern', 'elizabeth'], // elizabeth is admin-only (not primary); kckern is in both
+      primary: ['user_1', 'user_2'],
+      admin: ['user_1', 'user_9'], // user_9 is admin-only (not primary); user_1 is in both
     });
     const res = await request(app).get('/fingerprints');
     expect(res.status).toBe(200);
-    // admins first (kckern, elizabeth), then remaining primary (felix); kckern not duplicated
-    expect(res.body.map((u) => u.username)).toEqual(['kckern', 'elizabeth', 'felix']);
-    expect(res.body.find((u) => u.username === 'elizabeth')).toMatchObject({ displayName: 'Elizabeth', admin: true });
-    expect(res.body.find((u) => u.username === 'kckern')).toMatchObject({ admin: true });
-    expect(res.body.find((u) => u.username === 'felix')).toMatchObject({ admin: false });
+    // admins first (user_1, user_9), then remaining primary (user_2); user_1 not duplicated
+    expect(res.body.map((u) => u.username)).toEqual(['user_1', 'user_9', 'user_2']);
+    expect(res.body.find((u) => u.username === 'user_9')).toMatchObject({ displayName: 'User_9', admin: true });
+    expect(res.body.find((u) => u.username === 'user_1')).toMatchObject({ admin: true });
+    expect(res.body.find((u) => u.username === 'user_2')).toMatchObject({ admin: false });
   });
 
   it('hides simulated fixtures so they never show as phantom duplicate fingers', async () => {
     const { app } = appWith({
       profiles: {
-        kckern: {
+        user_1: {
           display_name: 'KC',
           identities: {
             fingerprints: [
@@ -88,10 +88,10 @@ describe('GET /fingerprints', () => {
           },
         },
       },
-      primary: ['kckern'],
+      primary: ['user_1'],
     });
     const res = await request(app).get('/fingerprints');
-    const kc = res.body.find((u) => u.username === 'kckern');
+    const kc = res.body.find((u) => u.username === 'user_1');
     // Only the two REAL prints — one right-index, no duplicate, no sim uuid leaked.
     expect(kc.fingerprints).toHaveLength(2);
     expect(kc.fingerprints.filter((f) => f.finger === 'right-index')).toHaveLength(1);
@@ -101,11 +101,11 @@ describe('GET /fingerprints', () => {
 
 describe('DELETE /fingerprints with a simulated fixture present', () => {
   it('deletes the real finger without 409 ambiguity from the colliding sim entry', async () => {
-    const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'kckern' });
+    const requestUnlock = vi.fn().mockResolvedValue({ matched: true, userId: 'user_1' });
     const requestDelete = vi.fn().mockResolvedValue({ success: true });
     const { app, fingerprintProfileWriter } = appWith({
       profiles: {
-        kckern: {
+        user_1: {
           identities: {
             fingerprints: [
               { id: 'sim-kckern-0001', finger: 'right-index', enrolled: '2026-06-17', simulated: true },
@@ -114,14 +114,14 @@ describe('DELETE /fingerprints with a simulated fixture present', () => {
           },
         },
       },
-      primary: ['kckern'],
+      primary: ['user_1'],
       unlockService: { requestUnlock },
       manageService: { requestDelete },
     });
-    const res = await request(app).delete('/fingerprints').send({ username: 'kckern', finger: 'right-index' });
+    const res = await request(app).delete('/fingerprints').send({ username: 'user_1', finger: 'right-index' });
     expect(res.status).toBe(200);
     expect(requestDelete).toHaveBeenCalledWith({ uuid: 'real-1' });
-    expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('kckern', 'real-1');
+    expect(fingerprintProfileWriter.removeFingerprint).toHaveBeenCalledWith('user_1', 'real-1');
   });
 });
 
@@ -129,16 +129,16 @@ describe('admin eligibility (config admin, not primary)', () => {
   it('a config admin who is not primary can still enroll (TOFU)', async () => {
     const requestEnroll = vi.fn().mockResolvedValue({ success: true, uuid: 'e-uuid' });
     const { app, fingerprintProfileWriter } = appWith({
-      profiles: { elizabeth: { display_name: 'Elizabeth', identities: { fingerprints: [] } } },
+      profiles: { user_9: { display_name: 'User_9', identities: { fingerprints: [] } } },
       primary: [],
-      admin: ['elizabeth'],
+      admin: ['user_9'],
       unlockService: { requestUnlock: vi.fn() },
       manageService: { requestEnroll },
     });
-    const res = await request(app).post('/fingerprints/enroll').send({ username: 'elizabeth', finger: 'right-index' });
+    const res = await request(app).post('/fingerprints/enroll').send({ username: 'user_9', finger: 'right-index' });
     expect(res.status).toBe(200);
     expect(requestEnroll).toHaveBeenCalled();
-    expect(fingerprintProfileWriter.addFingerprint).toHaveBeenCalledWith('elizabeth', expect.objectContaining({ id: 'e-uuid', finger: 'right-index' }));
+    expect(fingerprintProfileWriter.addFingerprint).toHaveBeenCalledWith('user_9', expect.objectContaining({ id: 'e-uuid', finger: 'right-index' }));
   });
 });
 
@@ -244,7 +244,7 @@ describe('DELETE /fingerprints', () => {
       profiles: { 'test-user': { identities: { fingerprints: [fp('own-1', 'right-index')] } } },
       unlockService: { requestUnlock },
       manageService: { requestDelete },
-      identityRelay: { adminVerifiedWithin: () => ({ userId: 'kckern' }) },
+      identityRelay: { adminVerifiedWithin: () => ({ userId: 'user_1' }) },
     });
     const res = await request(app).delete('/fingerprints').send({ username: 'test-user', finger: 'right-index' });
     expect(res.status).toBe(200);

@@ -36,7 +36,7 @@ narrows the suspect list. A backend-instrumented re-test is needed to confirm.
 - **Total fragmented duration:** 36m 45s
 - **Inter-session gaps:** 11 sec (122815→123501), 13 sec (123501→124229)
 - **Same primary contentId** (`plex:606203`) on all three
-- **Same primary participant** (`kckern`, HR device `40475`)
+- **Same primary participant** (`user_1`, HR device `40475`)
 - **Coin counts restart at 0** in every session — a clean indicator they are not
   hydrated/resumed
 

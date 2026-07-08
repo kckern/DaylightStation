@@ -140,7 +140,7 @@ export class UserService {
       }
 
       // Family and friends stay as-is (inline definitions) but need device mappings applied
-      // Require explicit id — never derive from display name (produces wrong keys like 'kc_kern' for 'kckern')
+      // Require explicit id — never derive from display name (produces wrong keys like 'kc_kern' for 'user_1')
       const hydrateInlineUser = (user) => {
         if (!user.id) {
           console.warn(`[UserService] Family/friend user missing 'id' field (name: "${user.name}") — skipping`);

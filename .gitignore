@@ -100,3 +100,6 @@ data/agents/*.db-shm
 _deleteme/
 .firecrawl/
 tests/_scratch/
+
+# runtime logs (may contain PII) — never track
+dev.log*

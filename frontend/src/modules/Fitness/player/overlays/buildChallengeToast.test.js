@@ -23,7 +23,7 @@ describe('buildChallengeToast', () => {
   });
 
   it('builds a cycling-specific start toast for cycle challenges', () => {
-    const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'felix', name: 'Felix' } });
+    const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } });
     expect(toast.title).toBe('Cycling challenge started');
     expect(toast.variant).toBe('info');
     expect(toast.subtitle).toBeUndefined();
@@ -59,22 +59,22 @@ describe('buildChallengeToast', () => {
     it('cycle success: the rider is the sole contributor, with avatar + name', () => {
       const toast = buildChallengeToast('end', {
         type: 'cycle',
-        rider: { id: 'felix', name: 'Felix' },
+        rider: { id: 'user_2', name: 'User_2' },
       });
       expect(toast.variant).toBe('success');
       expect(toast.contributors).toEqual([
-        { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' },
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
       ]);
     });
 
     it('cycle success: resolves the rider name when the snapshot lacks one', () => {
       const toast = buildChallengeToast(
         'end',
-        { type: 'cycle', rider: { id: 'felix' } },
-        { resolveUserName: (id) => (id === 'felix' ? 'Felix' : null) }
+        { type: 'cycle', rider: { id: 'user_2' } },
+        { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : null) }
       );
       expect(toast.contributors).toEqual([
-        { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' },
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
       ]);
     });
 
@@ -86,13 +86,13 @@ describe('buildChallengeToast', () => {
     it('HR success: every metUser is a contributor, names resolved', () => {
       const toast = buildChallengeToast(
         'end',
-        { zoneLabel: 'Active', requiredCount: 2, actualCount: 2, metUsers: ['felix', 'soren'] },
-        { resolveUserName: (id) => ({ felix: 'Felix', soren: 'Soren' }[id] || null) }
+        { zoneLabel: 'Active', requiredCount: 2, actualCount: 2, metUsers: ['user_2', 'user_5'] },
+        { resolveUserName: (id) => ({ user_2: 'User_2', user_5: 'User_5' }[id] || null) }
       );
       expect(toast.subtitle).toBe('2 of 2 people reached Active');
       expect(toast.contributors).toEqual([
-        { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' },
-        { id: 'soren', name: 'Soren', avatarUrl: '/api/v1/static/img/users/soren' },
+        { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' },
+        { id: 'user_5', name: 'User_5', avatarUrl: '/api/v1/static/img/users/user_5' },
       ]);
     });
 
@@ -104,7 +104,7 @@ describe('buildChallengeToast', () => {
     });
 
     it('start events never carry contributors', () => {
-      const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'felix', name: 'Felix' } });
+      const toast = buildChallengeToast('start', { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } });
       expect('contributors' in toast).toBe(false);
     });
   });
@@ -141,7 +141,7 @@ describe('buildChallengeToast — zone pill (issue 3)', () => {
   it('omits the zone key for cycle challenges (no HR zone pill)', () => {
     const toast = buildChallengeToast(
       'end',
-      { type: 'cycle', rider: { id: 'felix', name: 'Felix' } },
+      { type: 'cycle', rider: { id: 'user_2', name: 'User_2' } },
       { resolveZoneColor: () => '#facc15' }
     );
     expect('zone' in toast).toBe(false);
@@ -164,21 +164,21 @@ describe('buildChallengeToast — cycle success', () => {
   it('uses a phase-count subtitle and the rider as contributor', () => {
     const toast = buildChallengeToast('end', {
       type: 'cycle',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       totalPhases: 4
-    }, { resolveUserName: (id) => (id === 'felix' ? 'Felix' : id) });
+    }, { resolveUserName: (id) => (id === 'user_2' ? 'User_2' : id) });
     expect(toast.variant).toBe('success');
     expect(toast.title).toBe('Challenge complete!');
-    expect(toast.subtitle).toBe('Felix completed 4 phases');
+    expect(toast.subtitle).toBe('User_2 completed 4 phases');
     expect(toast.contributors).toEqual([
-      { id: 'felix', name: 'Felix', avatarUrl: '/api/v1/static/img/users/felix' }
+      { id: 'user_2', name: 'User_2', avatarUrl: '/api/v1/static/img/users/user_2' }
     ]);
   });
 
   it('singular phase wording', () => {
     const toast = buildChallengeToast('end', {
-      type: 'cycle', rider: { id: 'felix', name: 'Felix' }, totalPhases: 1
+      type: 'cycle', rider: { id: 'user_2', name: 'User_2' }, totalPhases: 1
     });
-    expect(toast.subtitle).toBe('Felix completed 1 phase');
+    expect(toast.subtitle).toBe('User_2 completed 1 phase');
   });
 });

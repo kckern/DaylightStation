@@ -19,7 +19,7 @@
 /**
  * @typedef {Object} Participant
  * @property {string} id - Canonical participant ID (from config or generated)
- * @property {string} name - Display name (e.g., "KC", "Felix")
+ * @property {string} name - Display name (e.g., "KC", "User_2")
  * @property {string} displayLabel - Resolved label for UI display (may differ for guests)
  * @property {string|null} profileId - Avatar/profile lookup ID
  * @property {string|null} deviceId - Associated HR device ID (may be null during grace period)

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import CycleEventToast, { CYCLE_TOAST_DURATION_MS, CYCLE_TOAST_EXIT_MS } from './CycleEventToast.jsx';
 
-const dnfToast = { id: 1, variant: 'dnf', icon: '🛑', title: 'Alan — Did Not Finish', subtitle: 'Stopped pedaling for 20s' };
+const dnfToast = { id: 1, variant: 'dnf', icon: '🛑', title: 'User_4 — Did Not Finish', subtitle: 'Stopped pedaling for 20s' };
 
 describe('CycleEventToast', () => {
   it('renders nothing when there is no toast', () => {

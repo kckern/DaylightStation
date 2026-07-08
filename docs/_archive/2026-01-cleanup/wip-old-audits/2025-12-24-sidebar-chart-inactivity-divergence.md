@@ -392,7 +392,7 @@ This is the simplest fix and keeps DeviceManager as the single source of truth f
 #### Attempt 2: Use DeviceManager's inactiveSince as Source of Truth (Option A)
 **Change:** In `_collectTimelineTick()`, check `device.inactiveSince` when processing devices. If inactive, skip the user for `currentTickActiveHR` and ensure HR null is recorded.
 
-**Result:** The FitnessSession now correctly excludes inactive users from `currentTickActiveHR`. The ActivityMonitor correctly shows `activityStatus: "idle"` for Milo.
+**Result:** The FitnessSession now correctly excludes inactive users from `currentTickActiveHR`. The ActivityMonitor correctly shows `activityStatus: "idle"` for User_3.
 
 **Why it failed:** The chart component has its OWN status derivation logic that overrides this.
 
@@ -438,10 +438,10 @@ status: ParticipantStatus.ACTIVE, // HARDCODED AGAIN!
 **Result:** The guardrail fires correctly! Logs show:
 ```
 [FitnessChart] GUARDRAIL ENFORCED: Correcting status mismatch
-{id:"milo", wasStatus:"removed", nowStatus:"idle", endsWithGap:true}
+{id:"user_3", wasStatus:"removed", nowStatus:"idle", endsWithGap:true}
 ```
 
-**Why it STILL failed:** Despite the guardrail firing and correcting the status to IDLE, Milo still shows as a live avatar. The problem is somewhere AFTER `validatedEntries` is computed.
+**Why it STILL failed:** Despite the guardrail firing and correcting the status to IDLE, User_3 still shows as a live avatar. The problem is somewhere AFTER `validatedEntries` is computed.
 
 ---
 
@@ -460,9 +460,9 @@ Looking at the component:
 - Line 660: `const { presentEntries, ... } = useRaceChartWithHistory(...)`
 - Line 773: `computeAvatarPositions(presentEntries, ...)`
 
-The `presentEntries` is built from `validatedEntries.filter(e => isBroadcasting(e.status))`. If the guardrail correctly sets Milo to IDLE, and IDLE fails `isBroadcasting()`, Milo should NOT be in `presentEntries`.
+The `presentEntries` is built from `validatedEntries.filter(e => isBroadcasting(e.status))`. If the guardrail correctly sets User_3 to IDLE, and IDLE fails `isBroadcasting()`, User_3 should NOT be in `presentEntries`.
 
-**YET MILO IS STILL SHOWING AS LIVE.**
+**YET USER_3 IS STILL SHOWING AS LIVE.**
 
 This means either:
 1. The `validatedEntries` useMemo is not running (stale closure)
@@ -521,7 +521,7 @@ Add an explicit `isActive` boolean to the participant roster that:
 ```javascript
 // In roster entry
 {
-  profileId: 'milo',
+  profileId: 'user_3',
   isActive: false,  // ← Single source of truth
   inactiveSince: 1703424000000,
   // ... other fields
@@ -558,7 +558,7 @@ Have DeviceManager emit events that ALL consumers subscribe to:
 
 ```javascript
 // DeviceManager
-this.emit('participantInactive', { profileId: 'milo', timestamp: now });
+this.emit('participantInactive', { profileId: 'user_3', timestamp: now });
 
 // FitnessContext
 deviceManager.on('participantInactive', ({ profileId }) => {

@@ -35,7 +35,7 @@ describe('_normalizeRequiredCount() with exemptions', () => {
 
   beforeEach(() => {
     const mockSession = {
-      roster: ['alice', 'bob', 'charlie', 'soren'],
+      roster: ['alice', 'bob', 'charlie', 'user_5'],
       zoneProfileStore: null,
       snapshot: {
         zoneConfig: [
@@ -51,7 +51,7 @@ describe('_normalizeRequiredCount() with exemptions', () => {
     engine.configure({
       governed_labels: ['exercise'],
       grace_period_seconds: 30,
-      exemptions: ['soren']
+      exemptions: ['user_5']
     }, [], {});
   });
 
@@ -59,7 +59,7 @@ describe('_normalizeRequiredCount() with exemptions', () => {
     const result = engine._normalizeRequiredCount(
       'all',
       4,
-      ['alice', 'bob', 'charlie', 'soren']
+      ['alice', 'bob', 'charlie', 'user_5']
     );
     // 'all' of non-exempt participants = 3 (alice, bob, charlie)
     expect(result).toBe(3);
@@ -89,7 +89,7 @@ describe('challenge creation respects exemptions', () => {
 
   beforeEach(() => {
     const mockSession = {
-      roster: ['alice', 'bob', 'charlie', 'soren'],
+      roster: ['alice', 'bob', 'charlie', 'user_5'],
       zoneProfileStore: null,
       snapshot: {
         zoneConfig: [
@@ -105,7 +105,7 @@ describe('challenge creation respects exemptions', () => {
     engine.configure({
       governed_labels: ['exercise'],
       grace_period_seconds: 30,
-      exemptions: ['soren'],
+      exemptions: ['user_5'],
       challenges: [{
         id: 'test-challenge',
         selections: [{ id: 's1', zone: 'hot', rule: 'all', timeAllowedSeconds: 90 }],
@@ -119,8 +119,8 @@ describe('challenge creation respects exemptions', () => {
     // The engine needs active participants and zone data
     engine._latestInputs = {
       ...engine._latestInputs,
-      activeParticipants: ['alice', 'bob', 'charlie', 'soren'],
-      userZoneMap: { alice: 'warm', bob: 'warm', charlie: 'warm', soren: 'cool' },
+      activeParticipants: ['alice', 'bob', 'charlie', 'user_5'],
+      userZoneMap: { alice: 'warm', bob: 'warm', charlie: 'warm', user_5: 'cool' },
       totalCount: 4
     };
 
@@ -133,7 +133,7 @@ describe('challenge creation respects exemptions', () => {
 
     engine.evaluate();
 
-    // The preview should have requiredCount = 3 (excluding soren)
+    // The preview should have requiredCount = 3 (excluding user_5)
     const preview = engine.challengeState.nextChallenge;
     expect(preview).not.toBeNull();
     expect(preview.requiredCount).toBe(3); // NOT 4
@@ -207,7 +207,7 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
 
   beforeEach(() => {
     const mockSession = {
-      roster: ['alice', 'bob', 'charlie', 'soren'],
+      roster: ['alice', 'bob', 'charlie', 'user_5'],
       zoneProfileStore: null,
       snapshot: {
         zoneConfig: [
@@ -223,7 +223,7 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
     engine.configure({
       governed_labels: ['exercise'],
       grace_period_seconds: 30,
-      exemptions: ['soren'],
+      exemptions: ['user_5'],
       challenges: [{
         id: 'test-challenge',
         selections: [{ id: 's1', zone: 'hot', rule: 'all', timeAllowedSeconds: 90 }],
@@ -233,11 +233,11 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
   });
 
   it('should mark challenge as satisfied when all non-exempt users meet the zone', () => {
-    // alice, bob, charlie are hot; soren is cool (but exempt)
+    // alice, bob, charlie are hot; user_5 is cool (but exempt)
     engine._latestInputs = {
       ...engine._latestInputs,
-      activeParticipants: ['alice', 'bob', 'charlie', 'soren'],
-      userZoneMap: { alice: 'hot', bob: 'hot', charlie: 'hot', soren: 'cool' },
+      activeParticipants: ['alice', 'bob', 'charlie', 'user_5'],
+      userZoneMap: { alice: 'hot', bob: 'hot', charlie: 'hot', user_5: 'cool' },
       totalCount: 4
     };
 
@@ -268,17 +268,17 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
     const challenge = engine.challengeState.activeChallenge;
     expect(challenge.summary).not.toBeNull();
     expect(challenge.summary.satisfied).toBe(true);
-    // soren should NOT appear in missingUsers
-    expect(challenge.summary.missingUsers).not.toContain('soren');
+    // user_5 should NOT appear in missingUsers
+    expect(challenge.summary.missingUsers).not.toContain('user_5');
     expect(challenge.summary.metUsers).toEqual(expect.arrayContaining(['alice', 'bob', 'charlie']));
   });
 
   it('should not count exempt user as missing when they fail to meet zone', () => {
-    // alice and bob are hot, charlie is warm, soren is cool (exempt)
+    // alice and bob are hot, charlie is warm, user_5 is cool (exempt)
     engine._latestInputs = {
       ...engine._latestInputs,
-      activeParticipants: ['alice', 'bob', 'charlie', 'soren'],
-      userZoneMap: { alice: 'hot', bob: 'hot', charlie: 'warm', soren: 'cool' },
+      activeParticipants: ['alice', 'bob', 'charlie', 'user_5'],
+      userZoneMap: { alice: 'hot', bob: 'hot', charlie: 'warm', user_5: 'cool' },
       totalCount: 4
     };
 
@@ -310,8 +310,8 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
     expect(challenge.summary.satisfied).toBe(false);
     // charlie is the only non-exempt missing user
     expect(challenge.summary.missingUsers).toEqual(['charlie']);
-    // soren should NOT be in missingUsers even though soren is in cool
-    expect(challenge.summary.missingUsers).not.toContain('soren');
+    // user_5 should NOT be in missingUsers even though user_5 is in cool
+    expect(challenge.summary.missingUsers).not.toContain('user_5');
   });
 });
 ```
@@ -319,7 +319,7 @@ describe('buildChallengeSummary exemption filtering (Bug B)', () => {
 **Step 2: Run test to verify it fails**
 
 Run: `npx jest tests/unit/governance/GovernanceEngine.test.mjs --verbose --testNamePattern="buildChallengeSummary" 2>&1 | tail -30`
-Expected: FAIL — `missingUsers` contains `'soren'` (no exemption filtering in `buildChallengeSummary`), and `satisfied` is `false` even when all non-exempt users are hot (because `requiredCount` on the challenge object is stale).
+Expected: FAIL — `missingUsers` contains `'user_5'` (no exemption filtering in `buildChallengeSummary`), and `satisfied` is `false` even when all non-exempt users are hot (because `requiredCount` on the challenge object is stale).
 
 **Step 3: Commit**
 
@@ -454,7 +454,7 @@ describe('challenge recovery after roster change', () => {
 
   beforeEach(() => {
     const mockSession = {
-      roster: ['alice', 'bob', 'charlie', 'soren'],
+      roster: ['alice', 'bob', 'charlie', 'user_5'],
       zoneProfileStore: null,
       snapshot: {
         zoneConfig: [
@@ -470,7 +470,7 @@ describe('challenge recovery after roster change', () => {
     engine.configure({
       governed_labels: ['exercise'],
       grace_period_seconds: 30,
-      exemptions: ['soren'],
+      exemptions: ['user_5'],
       challenges: [{
         id: 'test-challenge',
         selections: [{ id: 's1', zone: 'hot', rule: 'all', timeAllowedSeconds: 90 }],
@@ -481,11 +481,11 @@ describe('challenge recovery after roster change', () => {
 
   it('should recover from failed challenge when roster shrinks and remaining users meet zone', () => {
     // Scenario: challenge was created with requiredCount=5 (bug), then expired as failed.
-    // User removes soren from roster. Now 3 non-exempt users all at hot.
+    // User removes user_5 from roster. Now 3 non-exempt users all at hot.
     // The challenge should recover (satisfied=true).
     engine._latestInputs = {
       ...engine._latestInputs,
-      activeParticipants: ['alice', 'bob', 'charlie'], // soren removed
+      activeParticipants: ['alice', 'bob', 'charlie'], // user_5 removed
       userZoneMap: { alice: 'hot', bob: 'hot', charlie: 'hot' },
       totalCount: 3
     };
@@ -507,7 +507,7 @@ describe('challenge recovery after roster change', () => {
       expiresAt: Date.now() - 10000, // expired
       status: 'failed',
       historyRecorded: false,
-      summary: { satisfied: false, metUsers: ['alice', 'bob', 'charlie'], missingUsers: ['soren'], actualCount: 3, zoneLabel: 'Hot' },
+      summary: { satisfied: false, metUsers: ['alice', 'bob', 'charlie'], missingUsers: ['user_5'], actualCount: 3, zoneLabel: 'Hot' },
       pausedAt: null,
       pausedRemainingMs: null
     };

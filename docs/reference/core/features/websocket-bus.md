@@ -76,7 +76,7 @@ All messages are JSON objects with at least a `topic` field:
   "source": "fitness-simulator",
   "action": "heartrate_update",
   "data": {
-    "userId": "kckern",
+    "userId": "user_1",
     "heartRate": 142,
     "zone": "warm"
   }
@@ -222,7 +222,7 @@ import { broadcastToWebsockets } from './websocket.mjs';
 broadcastToWebsockets({
   topic: 'gratitude',
   action: 'new_entry',
-  data: { text: 'Grateful for sunny weather', user: 'kckern' }
+  data: { text: 'Grateful for sunny weather', user: 'user_1' }
 });
 ```
 

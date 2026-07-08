@@ -605,7 +605,7 @@ Expected garage log sequence:
 - an in-flight `emergency` identify is running,
 - `🔐 foreground preempts in-flight emergency scan`,
 - a `foreground` identify starts and **waits** for your finger (does NOT instant-return),
-- on press: `Unlock result sent (hardware match, user=kckern …)` for the dance_party requestId.
+- on press: `Unlock result sent (hardware match, user=user_1 …)` for the dance_party requestId.
 
 Expected backend: `fitness.unlock.result {lock: dance_party, matched: true}` — NOT an instant `matched:false`.
 

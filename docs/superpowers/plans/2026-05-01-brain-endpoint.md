@@ -1057,7 +1057,7 @@ describe('MemorySkill', () => {
     const mem = new InMemoryBrainMemory();
     const s = new MemorySkill({ memory: mem, logger: console });
     const remember = s.getTools().find(t => t.name === 'remember_note');
-    await remember.execute({ content: 'Soren is allergic to peanuts' }, {});
+    await remember.execute({ content: 'User_5 is allergic to peanuts' }, {});
     const notes = await mem.get('notes');
     assert.strictEqual(notes.length, 1);
     assert.match(notes[0].content, /peanuts/);
@@ -2063,7 +2063,7 @@ Expected log lines: `brain.satellite.config_reload count=1`.
 curl -sS http://localhost:3111/v1/chat/completions \
   -H 'Authorization: Bearer devtok' \
   -H 'Content-Type: application/json' \
-  -d '{"model":"daylight-house","messages":[{"role":"user","content":"Remember that Soren is allergic to peanuts."}]}' | jq .
+  -d '{"model":"daylight-house","messages":[{"role":"user","content":"Remember that User_5 is allergic to peanuts."}]}' | jq .
 ```
 
 Expected: 200 with `choices[0].message.content` containing a brief acknowledgement, AND in the docker logs: `brain.tool.invoke tool=remember_note`.
@@ -2077,7 +2077,7 @@ curl -sS http://localhost:3111/v1/chat/completions \
   -d '{"model":"daylight-house","messages":[{"role":"user","content":"What allergies do we have?"}]}' | jq -r '.choices[0].message.content'
 ```
 
-Expected: response mentions peanuts and Soren.
+Expected: response mentions peanuts and User_5.
 
 - [ ] **Step 6: Stream test**
 
@@ -3358,7 +3358,7 @@ git commit -m "docs(local): record Voice PE → DS Brain wiring"
 | "Play the workout playlist" | Music plays from puck speaker, logs show `brain.skill.media.play ok=true` |
 | "Pause the music" | HA's native `HassMediaPause` handles it (no DS tool call expected — verify with `brain.runtime.complete tool_calls=0`) |
 | "What's on my calendar today?" | TTS list, logs show `brain.skill.calendar.read` |
-| "Remember that Soren is allergic to peanuts" | TTS acknowledgement, logs show `brain.skill.memory.note_added` |
+| "Remember that User_5 is allergic to peanuts" | TTS acknowledgement, logs show `brain.skill.memory.note_added` |
 | "What allergies do we have?" *(later turn)* | TTS mentions peanuts |
 | "Do something dangerous I have no skill for" | Polite refusal; no tool call |
 

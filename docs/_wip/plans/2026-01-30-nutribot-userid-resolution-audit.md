@@ -1,11 +1,11 @@
 # Nutribot User ID Resolution Audit
 
 **Date:** 2026-01-30  
-**Issue:** Data being written to `telegram:b6898194425_c575596036` instead of `kckern`
+**Issue:** Data being written to `telegram:b6898194425_c575596036` instead of `user_1`
 
 ## Problem Summary
 
-Nutribot is writing user data to conversation-ID-based paths (`telegram:b6898194425_c575596036`) instead of resolved username paths (`kckern`), causing data fragmentation across multiple directories.
+Nutribot is writing user data to conversation-ID-based paths (`telegram:b6898194425_c575596036`) instead of resolved username paths (`user_1`), causing data fragmentation across multiple directories.
 
 ## Root Cause
 
@@ -44,7 +44,7 @@ identities:
 ```javascript
 {
   telegram: {
-    "575596036": "kckern"  // platform ID → username
+    "575596036": "user_1"  // platform ID → username
   }
 }
 ```

@@ -778,7 +778,7 @@ The `zones` array flows untouched through `assignGuestToDevice` → ledger `meta
 // alongside is_guest: true; entries without ageClass have no guest_profile key.
 ```
 
-Write the test using the construction pattern from `PersistenceManager.lateTagMerge.test.js` (same mock session/roster shape; pass `deviceAssignments` containing `{ occupantId: 'guest_48291', deviceId: '48291', metadata: { ageClass: 'kid' } }`). Run it — FAIL.
+Write the test using the construction pattern from `PersistenceManager.lateTagMerge.test.js` (same mock session/roster shape; pass `deviceAssignments` containing `{ occupantId: 'guest_48291', deviceId: '90006', metadata: { ageClass: 'kid' } }`). Run it — FAIL.
 
 Implement in `buildParticipantsForPersist` (`PersistenceManager.js`), inside the `participants[participantId] = { ... }` literal:
 

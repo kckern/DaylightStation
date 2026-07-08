@@ -53,7 +53,7 @@ data/
 │
 └── users/                  # Stays separate (not household-scoped)
     ├── kckern/
-    ├── elizabeth/
+    ├── user_9/
     └── guest-abc/          # Guests may span households
 ```
 
@@ -103,12 +103,12 @@ function toFolderName(householdId) {
 # data/household/household.yml
 household_id: default        # Optional - derived from folder if omitted
 name: "The Kern Family"
-head: kckern
+head: user_1
 
 users:
-  - kckern
-  - elizabeth
-  - felix
+  - user_1
+  - user_9
+  - user_2
 
 integrations:
   media:
@@ -120,7 +120,7 @@ integrations:
 apps:
   fitness:
     enabled: true
-    primary_users: [kckern, felix]
+    primary_users: [user_1, user_2]
   nutribot:
     enabled: true
 ```

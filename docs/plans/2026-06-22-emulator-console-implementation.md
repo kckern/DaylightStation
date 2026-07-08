@@ -135,7 +135,7 @@ const cfg = {
   defaults: { governance: { mode: 'gate', required_zone: 'active', grace_seconds: 20, earn_rate: 1 }, shader: 'crt', chrome: null },
   games: [{ id: 'pkmn', system: 'gbc', rom: 'p.gbc', title: 'Pokémon',
             shader: 'lcd-grid', governance: { mode: 'credit', required_zone: 'warm', earn_rate: 1.5 } }],
-  users: { soren: { governance: { required_zone: 'cool' } } },
+  users: { user_5: { governance: { required_zone: 'cool' } } },
 };
 
 describe('resolveGameRules', () => {
@@ -145,7 +145,7 @@ describe('resolveGameRules', () => {
     expect(r.shader).toBe('lcd-grid');
   });
   it('applies per-user overlay last', () => {
-    const r = resolveGameRules(cfg, 'pkmn', 'soren');
+    const r = resolveGameRules(cfg, 'pkmn', 'user_5');
     expect(r.governance.required_zone).toBe('cool');
     expect(r.governance.mode).toBe('credit');
   });
@@ -183,7 +183,7 @@ import { describe, it, expect } from 'vitest';
 import { safeSegment } from './emulatorPaths.mjs';
 
 describe('safeSegment', () => {
-  it('accepts slug', () => expect(safeSegment('soren')).toBe('soren'));
+  it('accepts slug', () => expect(safeSegment('user_5')).toBe('user_5'));
   it('accepts rom with dot', () => expect(safeSegment('pokemon-red.gb', { dot: true })).toBe('pokemon-red.gb'));
   it('rejects traversal', () => expect(() => safeSegment('../etc')).toThrow());
   it('rejects slashes', () => expect(() => safeSegment('a/b')).toThrow());
@@ -235,8 +235,8 @@ describe('emulator router — library', () => {
     expect(g.boxartUrl).toBe('/api/v1/emulator/boxart/pkmn.png');
   });
   it('accepts ?user= and applies overlay', async () => {
-    const res = await request(appWith({ loadConfig: () => ({ ...cfg, users:{ soren:{ governance:{ required_zone:'cool' } } } }) }))
-      .get('/library?user=soren');
+    const res = await request(appWith({ loadConfig: () => ({ ...cfg, users:{ user_5:{ governance:{ required_zone:'cool' } } } }) }))
+      .get('/library?user=user_5');
     expect(res.body.games[0].governance.required_zone).toBe('cool');
   });
 });

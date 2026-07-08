@@ -114,21 +114,21 @@ const validatedEntries = useMemo(() => {
 - Each new object triggers `buildSegments()` recalculation
 - `buildSegments()` creates new data point arrays
 - These aren't deduplicated - they accumulate in memory
-- With Alan's status flickering every ~250ms, that's 4 renders/second
+- With User_4's status flickering every ~250ms, that's 4 renders/second
 - 260 seconds × 4 renders/sec × 20 series × ~6 users = ~124,800 theoretical base
 - Factor in cascading re-renders from multiple state updates = **692K+ actual**
 
 ### Timeline Analysis
 - **02:02:48** - 380 points (normal accumulation)
 - **02:03:19** - **131,808 points** (jump of 131,428 in 31 seconds = **4,239 points/sec**)
-  - This is when Alan's status started flickering
+  - This is when User_4's status started flickering
 - **02:05:37** - 692,783 points (continued acceleration)
 
-### The Trigger: User "alan" Status Oscillation
-Logs show repeated status corrections specifically for user "alan":
+### The Trigger: User "user_4" Status Oscillation
+Logs show repeated status corrections specifically for user "user_4":
 - `wasStatus: "removed"`, `nowStatus: "idle"`
 - Firing multiple times per second
-- Suggests Alan's device was connecting/disconnecting rapidly
+- Suggests User_4's device was connecting/disconnecting rapidly
 - OR the `isActive` flag was oscillating due to timing issues in roster updates
 
 ## Root Causes Summary

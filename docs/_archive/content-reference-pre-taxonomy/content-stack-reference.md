@@ -190,7 +190,7 @@ Pattern: `{modifier}.{track}={value}`
 | local | Alias for watchlist (via ContentIdResolver) | `local:TVApp` |
 | singalong | `singalong:{collection}/{id}` | `singalong:hymn/166` |
 | readalong | `readalong:{collection}/{id}` | `readalong:scripture/alma-32` |
-| app | `app:{appId}[/{param}]` | `app:webcam`, `app:family-selector/alan` |
+| app | `app:{appId}[/{param}]` | `app:webcam`, `app:family-selector/user_4` |
 | query | `query:{savedQueryName}` | `query:dailynews` |
 | hymn | Alias → `singalong:hymn/{id}` | `hymn:166` |
 | scripture | Alias → `readalong:scripture/{id}` | `scripture:alma-32` |

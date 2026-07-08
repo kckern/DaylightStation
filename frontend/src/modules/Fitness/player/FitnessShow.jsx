@@ -254,7 +254,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack,
     return new Set(normalized);
   }, [nomusicLabels]);
 
-  // Config-driven locks map (e.g. { governance_bypass: ['kckern'], skip_content: [...] }).
+  // Config-driven locks map (e.g. { governance_bypass: ['user_1'], skip_content: [...] }).
   // A lock is ACTIVE iff its value is a non-empty array of authorized usernames.
   // Surfaced via the unified fitness config (root + nested fitness block) — mirrors
   // FitnessModuleMenu (Task 4.1). Absent/empty lock ⇒ today's behavior unchanged.

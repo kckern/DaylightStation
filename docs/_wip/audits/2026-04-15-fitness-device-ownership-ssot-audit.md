@@ -1,7 +1,7 @@
 # Fitness Device Ownership — SSoT / DRY / Separation of Concerns Audit
 
 **Date:** 2026-04-15
-**Trigger:** Adding a second ANT+ HR strap for user "alan" (device 20991) revealed that the system assumes a 1:1 device-to-user mapping at every layer. The fix required changes across **10+ files** and **~15 code sites** — evidence of severe SSoT and DRY violations in device ownership resolution.
+**Trigger:** Adding a second ANT+ HR strap for user "user_4" (device 20991) revealed that the system assumes a 1:1 device-to-user mapping at every layer. The fix required changes across **10+ files** and **~15 code sites** — evidence of severe SSoT and DRY violations in device ownership resolution.
 
 **Related prior audit:** `2026-02-25-fitness-participant-resolution-ssot-audit.md` (covers participant *list building* fragmentation; this audit covers *device ownership* fragmentation specifically).
 
@@ -71,7 +71,7 @@ for (const [deviceId, userId] of Object.entries(deviceMappings.heart_rate)) {
 }
 ```
 
-The `break` statement silently discarded all but the first matching device. The YAML config supports N devices per user (`20991: alan`, `10366: alan`, `28676: alan`) but the hydration layer collapsed this to 1.
+The `break` statement silently discarded all but the first matching device. The YAML config supports N devices per user (`20991: user_4`, `10366: user_4`, `28676: user_4`) but the hydration layer collapsed this to 1.
 
 **Fixed in this session** — now sends `hr_device_ids: [28676, 10366, 20991]` alongside `hr` for backwards compat.
 
@@ -104,7 +104,7 @@ Device IDs arrive as numbers from ANT+ but are compared as strings throughout. T
 - Some use bare `===` with no coercion
 - The User class stores them as strings in a Set; the backend sends integers
 
-There is no canonical type for a device ID. This creates subtle bugs when `28812` (number) doesn't match `"28812"` (string).
+There is no canonical type for a device ID. This creates subtle bugs when `90003` (number) doesn't match `"90003"` (string).
 
 ---
 
@@ -218,9 +218,9 @@ Instead of each client reconstructing device→user from two separate config sec
 {
   "deviceOwnership": {
     "heartRate": {
-      "20991": { "userId": "alan", "color": "green" },
-      "10366": { "userId": "alan", "color": "green" },
-      "28812": { "userId": "felix", "color": "red" }
+      "20991": { "userId": "user_4", "color": "green" },
+      "10366": { "userId": "user_4", "color": "green" },
+      "90003": { "userId": "user_2", "color": "red" }
     }
   }
 }

@@ -730,7 +730,7 @@ const asset = (over = {}) => ({
 const makeClient = () => ({
   getAlbums: vi.fn(async () => [{ id: 'alb1', albumName: 'Family Favorites' }]),
   getAlbum: vi.fn(async (id) => ({ id, assets: [asset({ id: 'a1' }), asset({ id: 'v1', type: 'VIDEO' })] })),
-  getPeople: vi.fn(async () => [{ id: 'per1', name: 'Felix' }]),
+  getPeople: vi.fn(async () => [{ id: 'per1', name: 'User_2' }]),
   getPersonAssets: vi.fn(async () => [asset({ id: 'a2' })]),
   smartSearch: vi.fn(async () => [asset({ id: 'a3' })]),
 });
@@ -756,7 +756,7 @@ describe('createImmichSource.resolveCandidates', () => {
   it('person selector resolves a name to id and fetches assets', async () => {
     const client = makeClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
-    const c = await src.resolveCandidates({ source: 'immich', person: 'Felix' });
+    const c = await src.resolveCandidates({ source: 'immich', person: 'User_2' });
     expect(client.getPersonAssets).toHaveBeenCalledWith('per1');
     expect(c[0].id).toBe('immich:a2');
   });

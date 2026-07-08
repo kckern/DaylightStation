@@ -35,10 +35,10 @@ describe('UserManager — generic Guest device-keyed alias (W2)', () => {
   it('creates two distinct User objects when generic Guest is tagged on two devices', () => {
     // Simulate the post-W2 menu behavior: a deterministic device-keyed
     // profileId is synthesized for isGeneric tags before reaching UserManager.
-    manager.assignGuest('48291', 'Guest', { profileId: 'guest_48291', occupantType: 'guest' });
+    manager.assignGuest('90006', 'Guest', { profileId: 'guest_48291', occupantType: 'guest' });
     manager.assignGuest('48292', 'Guest', { profileId: 'guest_48292', occupantType: 'guest' });
 
-    const userA = manager.resolveUserForDevice('48291');
+    const userA = manager.resolveUserForDevice('90006');
     const userB = manager.resolveUserForDevice('48292');
 
     expect(userA).toBeTruthy();
@@ -56,8 +56,8 @@ describe('UserManager — generic Guest device-keyed alias (W2)', () => {
   });
 
   it('keeps the display name as "Guest" while the internal id is device-keyed', () => {
-    manager.assignGuest('48291', 'Guest', { profileId: 'guest_48291', occupantType: 'guest' });
-    const user = manager.resolveUserForDevice('48291');
+    manager.assignGuest('90006', 'Guest', { profileId: 'guest_48291', occupantType: 'guest' });
+    const user = manager.resolveUserForDevice('90006');
     expect(user.name).toBe('Guest');
     expect(user.id).toMatch(/^guest_/);
   });
@@ -66,10 +66,10 @@ describe('UserManager — generic Guest device-keyed alias (W2)', () => {
     // This documents the bug the menu fix prevents. If both devices were to
     // ever again pass the same profileId, UserManager would collapse them.
     // This test guards the rationale, not a behavior we want.
-    manager.assignGuest('48291', 'Guest', { profileId: 'guest', occupantType: 'guest' });
+    manager.assignGuest('90006', 'Guest', { profileId: 'guest', occupantType: 'guest' });
     manager.assignGuest('48292', 'Guest', { profileId: 'guest', occupantType: 'guest' });
 
-    const userA = manager.resolveUserForDevice('48291');
+    const userA = manager.resolveUserForDevice('90006');
     const userB = manager.resolveUserForDevice('48292');
     expect(userA).toBe(userB); // SAME instance — confirms the bug scenario
     expect(userA.id).toBe('guest');

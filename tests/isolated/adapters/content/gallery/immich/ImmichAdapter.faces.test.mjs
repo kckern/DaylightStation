@@ -16,7 +16,7 @@ describe('ImmichAdapter face enrichment', () => {
 
   it('transforms people with face bounding boxes', () => {
     const input = [{
-      name: 'Felix',
+      name: 'User_2',
       id: 'person-uuid-1',
       faces: [{
         boundingBoxX1: 100, boundingBoxY1: 50,
@@ -27,7 +27,7 @@ describe('ImmichAdapter face enrichment', () => {
 
     const result = transformPeople(input);
     expect(result).toEqual([{
-      name: 'Felix',
+      name: 'User_2',
       id: 'person-uuid-1',
       faces: [{
         x1: 100, y1: 50, x2: 300, y2: 250,
@@ -48,10 +48,10 @@ describe('ImmichAdapter face enrichment', () => {
   });
 
   it('preserves backward compatibility — name field still accessible', () => {
-    const input = [{ name: 'Felix', id: 'p1', faces: [] }];
+    const input = [{ name: 'User_2', id: 'p1', faces: [] }];
     const result = transformPeople(input);
-    expect(result[0].name).toBe('Felix');
-    expect(result.map(p => p.name)).toEqual(['Felix']);
+    expect(result[0].name).toBe('User_2');
+    expect(result.map(p => p.name)).toEqual(['User_2']);
   });
 });
 

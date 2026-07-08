@@ -19,7 +19,7 @@
 
 **Context:** `SessionSerializerV3.js` already has `computeHrStats()`, `computeZoneTime()`, `getLastValue()` — we reuse those static methods. The new `buildSessionSummary()` orchestrates them into a summary block.
 
-Series key formats differ between PersistenceManager (pre-encoding: `user:alan:heart_rate`) and YAML storage (compact: `alan:hr`). The function handles both via a helper `getParticipantSeries()`.
+Series key formats differ between PersistenceManager (pre-encoding: `user:user_4:heart_rate`) and YAML storage (compact: `user_4:hr`). The function handles both via a helper `getParticipantSeries()`.
 
 **Step 1: Write the test file**
 
@@ -34,17 +34,17 @@ describe('buildSessionSummary', () => {
   // Sample data: 2 participants, 10 ticks each, 1 media event, 1 challenge, 1 voice memo
   const baseSeries = {
     // Compact key format (from YAML storage)
-    'alan:hr': [120, 130, 140, 150, 160, 155, 145, 135, 125, 115],
-    'alan:zone': ['c', 'a', 'a', 'w', 'h', 'h', 'w', 'a', 'c', 'c'],
-    'alan:coins': [0, 0, 1, 2, 3, 5, 7, 9, 11, 13],
-    'milo:hr': [100, 110, 115, 120, 125, 120, 115, 110, 105, 100],
-    'milo:zone': ['c', 'c', 'a', 'a', 'w', 'w', 'a', 'c', 'c', 'c'],
-    'milo:coins': [0, 0, 0, 1, 2, 3, 4, 5, 6, 7],
+    'user_4:hr': [120, 130, 140, 150, 160, 155, 145, 135, 125, 115],
+    'user_4:zone': ['c', 'a', 'a', 'w', 'h', 'h', 'w', 'a', 'c', 'c'],
+    'user_4:coins': [0, 0, 1, 2, 3, 5, 7, 9, 11, 13],
+    'user_3:hr': [100, 110, 115, 120, 125, 120, 115, 110, 105, 100],
+    'user_3:zone': ['c', 'c', 'a', 'a', 'w', 'w', 'a', 'c', 'c', 'c'],
+    'user_3:coins': [0, 0, 0, 1, 2, 3, 4, 5, 6, 7],
   };
 
   const baseParticipants = {
-    alan: { display_name: 'Alan', hr_device: '28676', is_primary: true },
-    milo: { display_name: 'Milo', hr_device: '28688', is_primary: true },
+    user_4: { display_name: 'User_4', hr_device: '28676', is_primary: true },
+    user_3: { display_name: 'User_3', hr_device: '90001', is_primary: true },
   };
 
   const baseEvents = [
@@ -65,7 +65,7 @@ describe('buildSessionSummary', () => {
     {
       timestamp: 1020000,
       type: 'challenge',
-      data: { result: 'success', metUsers: ['alan', 'milo'] },
+      data: { result: 'success', metUsers: ['user_4', 'user_3'] },
     },
     {
       timestamp: 1040000,
@@ -92,12 +92,12 @@ describe('buildSessionSummary', () => {
       intervalSeconds: INTERVAL_SECONDS,
     });
 
-    expect(summary.participants.alan.hr_avg).toBe(138); // Math.round(mean of alan:hr)
-    expect(summary.participants.alan.hr_max).toBe(160);
-    expect(summary.participants.alan.hr_min).toBe(115);
-    expect(summary.participants.milo.hr_avg).toBe(112);
-    expect(summary.participants.milo.hr_max).toBe(125);
-    expect(summary.participants.milo.hr_min).toBe(100);
+    expect(summary.participants.user_4.hr_avg).toBe(138); // Math.round(mean of user_4:hr)
+    expect(summary.participants.user_4.hr_max).toBe(160);
+    expect(summary.participants.user_4.hr_min).toBe(115);
+    expect(summary.participants.user_3.hr_avg).toBe(112);
+    expect(summary.participants.user_3.hr_max).toBe(125);
+    expect(summary.participants.user_3.hr_min).toBe(100);
   });
 
   it('computes per-participant coins from final cumulative value', () => {
@@ -109,8 +109,8 @@ describe('buildSessionSummary', () => {
       intervalSeconds: INTERVAL_SECONDS,
     });
 
-    expect(summary.participants.alan.coins).toBe(13);
-    expect(summary.participants.milo.coins).toBe(7);
+    expect(summary.participants.user_4.coins).toBe(13);
+    expect(summary.participants.user_3.coins).toBe(7);
   });
 
   it('computes zone_minutes per participant', () => {
@@ -122,8 +122,8 @@ describe('buildSessionSummary', () => {
       intervalSeconds: INTERVAL_SECONDS,
     });
 
-    // alan zones: c,a,a,w,h,h,w,a,c,c = cool:3*5=15s, active:3*5=15s, warm:2*5=10s, hot:2*5=10s
-    const alanZone = summary.participants.alan.zone_minutes;
+    // user_4 zones: c,a,a,w,h,h,w,a,c,c = cool:3*5=15s, active:3*5=15s, warm:2*5=10s, hot:2*5=10s
+    const alanZone = summary.participants.user_4.zone_minutes;
     expect(alanZone.cool).toBeCloseTo(0.25, 1);  // 15s / 60
     expect(alanZone.active).toBeCloseTo(0.25, 1);
     expect(alanZone.warm).toBeCloseTo(0.17, 1);   // 10s / 60
@@ -224,22 +224,22 @@ describe('buildSessionSummary', () => {
 
   it('handles user:slug:metric key format (PersistenceManager input)', () => {
     const v2Series = {
-      'user:alan:heart_rate': [120, 130, 140],
-      'user:alan:zone_id': ['c', 'a', 'w'],
-      'user:alan:coins_total': [0, 5, 10],
+      'user:user_4:heart_rate': [120, 130, 140],
+      'user:user_4:zone_id': ['c', 'a', 'w'],
+      'user:user_4:coins_total': [0, 5, 10],
     };
 
     const summary = buildSessionSummary({
-      participants: { alan: { display_name: 'Alan' } },
+      participants: { user_4: { display_name: 'User_4' } },
       series: v2Series,
       events: [],
       treasureBox: { totalCoins: 10, buckets: {} },
       intervalSeconds: INTERVAL_SECONDS,
     });
 
-    expect(summary.participants.alan.hr_avg).toBe(130);
-    expect(summary.participants.alan.hr_max).toBe(140);
-    expect(summary.participants.alan.coins).toBe(10);
+    expect(summary.participants.user_4.hr_avg).toBe(130);
+    expect(summary.participants.user_4.hr_max).toBe(140);
+    expect(summary.participants.user_4.coins).toBe(10);
   });
 
   it('returns empty summary for missing data', () => {
@@ -294,10 +294,10 @@ const METRIC_ALIASES = {
 
 /**
  * Find a participant's series by trying multiple key formats.
- * Supports compact (alan:hr) and v2 (user:alan:heart_rate) key formats.
+ * Supports compact (user_4:hr) and v2 (user:user_4:heart_rate) key formats.
  *
  * @param {Object} series - All series keyed by name
- * @param {string} slug - Participant slug (e.g., 'alan')
+ * @param {string} slug - Participant slug (e.g., 'user_4')
  * @param {string} metric - Desired metric (e.g., 'hr')
  * @returns {Array|null}
  */
@@ -318,7 +318,7 @@ function getParticipantSeries(series, slug, metric) {
  * Build a pre-computed summary block from raw session data.
  *
  * @param {Object} params
- * @param {Object} params.participants - Keyed participant object { alan: { display_name, ... } }
+ * @param {Object} params.participants - Keyed participant object { user_4: { display_name, ... } }
  * @param {Object} params.series - Raw decoded series arrays (not RLE-encoded strings)
  * @param {Array} params.events - Consolidated events array
  * @param {Object|null} params.treasureBox - { totalCoins, buckets }
@@ -442,7 +442,7 @@ git commit -m "feat(fitness): add buildSessionSummary computation function with 
 
 **Context:** `persistSession()` builds the payload, validates it, restructures the timeline, then encodes series. We insert the summary computation AFTER the timeline is restructured (events are consolidated, participants built) but BEFORE series encoding (line 822). At this point, `persistSessionData.timeline.series` still has raw arrays.
 
-However, the series keys at this point are the ORIGINAL format (`user:alan:heart_rate`), not compact yet. `buildSessionSummary()` handles both formats via `getParticipantSeries()`.
+However, the series keys at this point are the ORIGINAL format (`user:user_4:heart_rate`), not compact yet. `buildSessionSummary()` handles both formats via `getParticipantSeries()`.
 
 The `persistSessionData.participants` object is already built (line 730-745) with `display_name`, `hr_device`, etc.
 

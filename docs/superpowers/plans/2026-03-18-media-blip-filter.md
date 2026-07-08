@@ -47,7 +47,7 @@ describe('_consolidateEvents — media blip filtering', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -92,7 +92,7 @@ describe('_consolidateEvents — media blip filtering', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -125,7 +125,7 @@ describe('_consolidateEvents — media blip filtering', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -167,7 +167,7 @@ describe('_consolidateEvents — media blip filtering', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -209,7 +209,7 @@ describe('_consolidateEvents — media blip filtering', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },

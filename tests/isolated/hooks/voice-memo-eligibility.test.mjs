@@ -41,48 +41,48 @@ describe('VoiceMemoManager — auto-popup eligibility', () => {
 
   it('is eligible when an eligible user is currently active (match by profileId)', () => {
     session.roster = [
-      { id: 'felix', profileId: 'felix', isActive: true },
-      { id: 'kckern', profileId: 'kckern', isActive: true },
+      { id: 'user_2', profileId: 'user_2', isActive: true },
+      { id: 'user_1', profileId: 'user_1', isActive: true },
     ];
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(true);
   });
 
   it('is NOT eligible when the eligible user is present but inactive (live semantics)', () => {
     session.roster = [
-      { id: 'kckern', profileId: 'kckern', isActive: false },
+      { id: 'user_1', profileId: 'user_1', isActive: false },
     ];
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(false);
   });
 
   it('is NOT eligible when only non-eligible users are active', () => {
     session.roster = [
-      { id: 'felix', profileId: 'felix', isActive: true },
-      { id: 'milo', profileId: 'milo', isActive: true },
+      { id: 'user_2', profileId: 'user_2', isActive: true },
+      { id: 'user_3', profileId: 'user_3', isActive: true },
     ];
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(false);
   });
 
   it('counts a guest riding under an eligible user (match by baseUserName)', () => {
     session.roster = [
-      { id: 'device:42', profileId: null, baseUserName: 'kckern', isGuest: true, isActive: true },
+      { id: 'device:42', profileId: null, baseUserName: 'user_1', isGuest: true, isActive: true },
     ];
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(true);
   });
 
   it('matches by roster entry id as well as profileId', () => {
     session.roster = [
-      { id: 'kckern', profileId: null, isActive: true },
+      { id: 'user_1', profileId: null, isActive: true },
     ];
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(true);
   });
 
   it('returns to default-allow after eligible list is cleared', () => {
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(false);
     manager.setEligibleUsers([]);
     expect(manager.isAutoPromptEligible()).toBe(true);
@@ -90,7 +90,7 @@ describe('VoiceMemoManager — auto-popup eligibility', () => {
 
   it('handles a missing/empty roster without throwing (not eligible when gated)', () => {
     session.roster = undefined;
-    manager.setEligibleUsers(['kckern']);
+    manager.setEligibleUsers(['user_1']);
     expect(manager.isAutoPromptEligible()).toBe(false);
   });
 });

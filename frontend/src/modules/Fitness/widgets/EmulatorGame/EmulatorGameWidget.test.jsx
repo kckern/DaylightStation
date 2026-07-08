@@ -58,7 +58,7 @@ import EmulatorGameWidget, { fullscreenClass } from './EmulatorGameWidget.jsx';
 const fitnessContext = {
   getUserVitals: () => ({ zoneId: 'warm' }),
   zones: { cool: {}, warm: {}, hot: {} },
-  userCollections: { all: [{ id: 'soren', name: 'Soren' }] },
+  userCollections: { all: [{ id: 'user_5', name: 'User_5' }] },
 };
 
 function libraryWith(saveMode) {
@@ -179,7 +179,7 @@ describe('EmulatorGameWidget save flow', () => {
     kiosk.value = true;
     api.mockImplementation((p) => {
       if (p === 'api/v1/emulator/library') return Promise.resolve(libraryWith('battery'));
-      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['soren'] });
+      if (p.startsWith('api/v1/emulator/saves/')) return Promise.resolve({ users: ['user_5'] });
       return Promise.resolve({});
     });
     identity.registerAdmin.mockResolvedValue({ matched: true, userId: 'dad', authz: { admin: true } });
@@ -190,7 +190,7 @@ describe('EmulatorGameWidget save flow', () => {
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0'); // fresh + anonymous
     await screen.findByTestId('player-select');
-    expect(screen.getByTestId('saver-soren')).toBeTruthy();
+    expect(screen.getByTestId('saver-user_5')).toBeTruthy();
   });
 
   it('second launch in the same session skips the admin gate', async () => {
@@ -214,18 +214,18 @@ describe('EmulatorGameWidget save flow', () => {
     kiosk.value = true;
     api.mockImplementation((p) => (p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('battery'))
-      : Promise.resolve({ users: ['soren'] })));
+      : Promise.resolve({ users: ['user_5'] })));
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
-    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'soren' });
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
     await screen.findByTestId('player-select');
-    fireEvent.click(screen.getByTestId('saver-soren'));
+    fireEvent.click(screen.getByTestId('saver-user_5'));
     await waitFor(() => {
       const el = screen.getByTestId('console');
       expect(el.getAttribute('data-persist')).toBe('1');
-      expect(el.getAttribute('data-user')).toBe('soren');
+      expect(el.getAttribute('data-user')).toBe('user_5');
     });
   });
 
@@ -233,14 +233,14 @@ describe('EmulatorGameWidget save flow', () => {
     kiosk.value = true;
     api.mockImplementation((p) => (p === 'api/v1/emulator/library'
       ? Promise.resolve(libraryWith('battery'))
-      : Promise.resolve({ users: ['soren'] })));
+      : Promise.resolve({ users: ['user_5'] })));
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
-    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'soren' });
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
     fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
     await screen.findByTestId('player-select');
-    // Claim the running fresh game; the scanner (soren) already has a save → conflict warning.
+    // Claim the running fresh game; the scanner (user_5) already has a save → conflict warning.
     fireEvent.click(screen.getByTestId('claim'));
     const overwrite = await screen.findByText('Overwrite');
     // Still anonymous until the user confirms the overwrite.
@@ -249,7 +249,7 @@ describe('EmulatorGameWidget save flow', () => {
     await waitFor(() => {
       const el = screen.getByTestId('console');
       expect(el.getAttribute('data-persist')).toBe('1');
-      expect(el.getAttribute('data-user')).toBe('soren');
+      expect(el.getAttribute('data-user')).toBe('user_5');
     });
   });
 });

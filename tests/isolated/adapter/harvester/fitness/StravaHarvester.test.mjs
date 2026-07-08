@@ -229,8 +229,8 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: {
-            display_name: 'KC Kern',
+          user_1: {
+            display_name: 'User_1',
             hr_device: '40475',
             is_primary: true,
           },
@@ -265,7 +265,7 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+      const matches = await harvester.matchHomeSessions('user_1', [activity]);
 
       expect(matches).toHaveLength(1);
       expect(matches[0].activityId).toBe(17418186050);
@@ -287,7 +287,7 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          milo: { display_name: 'Milo', is_primary: true },
+          user_3: { display_name: 'User_3', is_primary: true },
         },
         treasureBox: { totalCoins: 10 },
         timeline: { events: [] },
@@ -316,7 +316,7 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+      const matches = await harvester.matchHomeSessions('user_1', [activity]);
       expect(matches).toHaveLength(0);
     });
 
@@ -335,7 +335,7 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: { display_name: 'KC Kern', is_primary: true },
+          user_1: { display_name: 'User_1', is_primary: true },
         },
         treasureBox: { totalCoins: 5 },
         timeline: { events: [] },
@@ -364,7 +364,7 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+      const matches = await harvester.matchHomeSessions('user_1', [activity]);
       expect(matches).toHaveLength(0);
     });
 
@@ -383,7 +383,7 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: { display_name: 'KC Kern', is_primary: true },
+          user_1: { display_name: 'User_1', is_primary: true },
         },
         treasureBox: { totalCoins: 15 },
         timeline: {
@@ -426,7 +426,7 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+      await harvester.applyHomeSessionEnrichment('user_1', [activity]);
 
       const saveCalls = mockLifelogStore.save.mock.calls;
       const summarySave = saveCalls.find(c => c[1] === 'strava');
@@ -454,7 +454,7 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: { display_name: 'KC Kern', is_primary: true },
+          user_1: { display_name: 'User_1', is_primary: true },
         },
         treasureBox: { totalCoins: 15 },
         timeline: { events: [] },
@@ -491,14 +491,14 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+      await harvester.applyHomeSessionEnrichment('user_1', [activity]);
 
       const updated = loadYamlSafe(sessionPath);
-      expect(updated.participants.kckern.strava).toBeDefined();
-      expect(updated.participants.kckern.strava.activityId).toBe(17418186050);
-      expect(updated.participants.kckern.strava.type).toBe('WeightTraining');
-      expect(updated.participants.kckern.strava.sufferScore).toBe(5);
-      expect(updated.participants.kckern.strava.deviceName).toBe('Garmin Forerunner 245 Music');
+      expect(updated.participants.user_1.strava).toBeDefined();
+      expect(updated.participants.user_1.strava.activityId).toBe(17418186050);
+      expect(updated.participants.user_1.strava.type).toBe('WeightTraining');
+      expect(updated.participants.user_1.strava.sufferScore).toBe(5);
+      expect(updated.participants.user_1.strava.deviceName).toBe('Garmin Forerunner 245 Music');
     });
 
     it('should retry matching for recent summary entries missing homeSessionId', async () => {
@@ -521,7 +521,7 @@ describe('StravaHarvester', () => {
         },
         timezone: 'America/Los_Angeles',
         participants: {
-          kckern: { display_name: 'KC Kern', is_primary: true },
+          user_1: { display_name: 'User_1', is_primary: true },
         },
         treasureBox: { totalCoins: 20 },
         timeline: { events: [] },
@@ -557,7 +557,7 @@ describe('StravaHarvester', () => {
         logger: mockLogger,
       });
 
-      await harvester.matchBacklog('kckern', 7);
+      await harvester.matchBacklog('user_1', 7);
 
       const saveCalls = mockLifelogStore.save.mock.calls;
       const summarySave = saveCalls.find(c => c[1] === 'strava');

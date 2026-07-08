@@ -171,8 +171,8 @@ describe('ImmichClient', () => {
       mockHttpClient.get.mockResolvedValue({
         data: {
           people: [
-            { id: 'person-1', name: 'Felix' },
-            { id: 'person-2', name: 'Milo' }
+            { id: 'person-1', name: 'User_2' },
+            { id: 'person-2', name: 'User_3' }
           ]
         }
       });
@@ -185,14 +185,14 @@ describe('ImmichClient', () => {
       const result = await client.getPeople();
 
       expect(result).toHaveLength(2);
-      expect(result[0].name).toBe('Felix');
+      expect(result[0].name).toBe('User_2');
     });
 
     test('handles direct array response', async () => {
       mockHttpClient.get.mockResolvedValue({
         data: [
-          { id: 'person-1', name: 'Felix' },
-          { id: 'person-2', name: 'Milo' }
+          { id: 'person-1', name: 'User_2' },
+          { id: 'person-2', name: 'User_3' }
         ]
       });
 

@@ -10,7 +10,7 @@ const BANDS = [
 ];
 const baseProps = {
   rpm: 92, cadenceBands: BANDS, distanceMeters: 2340,
-  avatar: { name: 'Milo', heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', progress: 0.5 }
+  avatar: { name: 'User_3', heartRate: 168, zoneId: 'hot', zoneColor: '#e67e22', progress: 0.5 }
 };
 
 describe('CycleSpeedometer', () => {

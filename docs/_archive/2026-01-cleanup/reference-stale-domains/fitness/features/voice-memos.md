@@ -419,7 +419,7 @@ if (transcriptToMatch) {
   videoTimeSeconds: 245,                 // Video timestamp when recorded
   sessionElapsedSeconds: 600,            // Session time when recorded
   createdAt: 1735689600000,              // Unix timestamp
-  author: 'kckern'                       // User who recorded
+  author: 'user_1'                       // User who recorded
 }
 ```
 

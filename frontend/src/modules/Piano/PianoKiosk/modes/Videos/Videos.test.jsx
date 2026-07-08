@@ -108,7 +108,7 @@ describe('Videos mode', () => {
       if (path.startsWith('api/v1/piano/courses/progress')) {
         expect(path).toContain('ids=plex:2');
         return Promise.resolve({ courses: {
-          'plex:2': { isSequential: true, total: 40, users: [{ id: 'felix', name: 'Felix', completed: 12, total: 40 }] },
+          'plex:2': { isSequential: true, total: 40, users: [{ id: 'user_2', name: 'User_2', completed: 12, total: 40 }] },
         } });
       }
       return Promise.resolve({});

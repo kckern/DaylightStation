@@ -12,7 +12,7 @@ function logger() {
  * Supports single-day, date-range, scope, and category modes.
  *
  * @param {Object} params
- * @param {string} [params.username] - defaults to 'kckern'
+ * @param {string} [params.username] - defaults to 'user_1'
  * @param {string} [params.date] - single day YYYY-MM-DD
  * @param {string} [params.start] - range start
  * @param {string} [params.end] - range end
@@ -25,7 +25,7 @@ export function useLifelog(params = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const { username = 'kckern', date, start, end, scope, at, category } = params;
+  const { username = 'user_1', date, start, end, scope, at, category } = params;
 
   const url = useMemo(() => {
     const base = '/api/v1/life/log';

@@ -76,10 +76,10 @@ value is a **non-empty array**; absent/empty ⇒ the gated control behaves as be
 
 ```yaml
 locks:
-  dance_party:        [kckern, elizabeth]   # open Dance Party from the menu
-  governance_bypass:  [kckern, elizabeth]   # bypass the HR/effort governance lock
-  skip_content:       [kckern, elizabeth]   # play a sequentially-locked episode
-  emergency:          [kckern, elizabeth]   # arm/abort/release the emergency lockdown
+  dance_party:        [user_1, user_9]   # open Dance Party from the menu
+  governance_bypass:  [user_1, user_9]   # bypass the HR/effort governance lock
+  skip_content:       [user_1, user_9]   # play a sequentially-locked episode
+  emergency:          [user_1, user_9]   # arm/abort/release the emergency lockdown
 ```
 
 `locks` must be surfaced to the fitness config the frontend reads (root or nested `fitness`

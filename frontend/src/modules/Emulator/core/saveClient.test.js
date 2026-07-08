@@ -17,10 +17,10 @@ describe('saveClient URLs', () => {
   it('builds user-keyed save + state URLs (slot defaults to auto)', async () => {
     const fetchImpl = vi.fn(async () => res({ status: 204 }));
     const c = clientWith(fetchImpl);
-    await c.getSave('gb', 'pokemon-red', 'soren');
-    await c.getState('gb', 'pokemon-red', 'soren');
-    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/emulator/save/gb/pokemon-red?user=soren');
-    expect(fetchImpl.mock.calls[1][0]).toBe(`/api/v1/emulator/state/gb/pokemon-red/${DEFAULT_SLOT}?user=soren`);
+    await c.getSave('gb', 'pokemon-red', 'user_5');
+    await c.getState('gb', 'pokemon-red', 'user_5');
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+    expect(fetchImpl.mock.calls[1][0]).toBe(`/api/v1/emulator/state/gb/pokemon-red/${DEFAULT_SLOT}?user=user_5`);
   });
 
   it('encodes path + user segments', async () => {
@@ -115,20 +115,20 @@ describe('battery-both resume', () => {
     // snapshot present → kind:state
     let fetchImpl = vi.fn(async (url) =>
       url.includes('/state/') ? res({ status: 200, buffer: new ArrayBuffer(4) }) : res({ status: 404 }));
-    let r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    let r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(r.kind).toBe('state');
 
     // snapshot absent, .srm present → kind:battery
     fetchImpl = vi.fn(async (url) =>
       url.includes('/state/') ? res({ status: 404 }) : res({ status: 200, buffer: new ArrayBuffer(4) }));
-    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(r.kind).toBe('battery');
 
     // neither → absent
     fetchImpl = vi.fn(async () => res({ status: 404 }));
-    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    r = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('absent');
   });
 
@@ -136,7 +136,7 @@ describe('battery-both resume', () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
     const r = await clientWith(fetchImpl).persistResume({
-      system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery',
+      system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery',
       captured: { state: new Uint8Array([1]), battery: new Uint8Array([2]) },
     });
     expect(r.status).toBe('ok');
@@ -148,7 +148,7 @@ describe('battery-both resume', () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
     await clientWith(fetchImpl).persistResume({
-      system: 'gb', gameId: 'g', user: 'soren', saveMode: 'state', captured: { state: new Uint8Array([1]) },
+      system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'state', captured: { state: new Uint8Array([1]) },
     });
     expect(calls.every(([u]) => u.includes('/state/'))).toBe(true);
   });
@@ -156,7 +156,7 @@ describe('battery-both resume', () => {
   it('clearResume(battery) deletes BOTH', async () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });
-    const r = await clientWith(fetchImpl).clearResume({ system: 'gb', gameId: 'g', user: 'soren', saveMode: 'battery' });
+    const r = await clientWith(fetchImpl).clearResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
     expect(r.status).toBe('ok');
     expect(calls.filter(([, m]) => m === 'DELETE').length).toBe(2);
   });

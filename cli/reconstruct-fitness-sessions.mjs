@@ -56,7 +56,7 @@ const numericArg = args.find(a => /^\d+$/.test(a));
 // Default: back to Jan 2024
 const defaultDays = Math.ceil(moment().diff(moment('2024-01-01'), 'days'));
 const daysBack = parseInt(numericArg || String(defaultDays), 10);
-const username = 'kckern';
+const username = 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 
 console.log(`Reconstruct fitness sessions for ${username}, ${daysBack} days back`);
@@ -331,10 +331,10 @@ for (const { date, entry } of entries) {
     timezone: TIMEZONE,
     participants: {
       [username]: {
-        display_name: 'KC Kern',
+        display_name: 'User_1',
         hr_device: '40475',
         is_primary: true,
-        base_user: 'KC Kern',
+        base_user: 'User_1',
         strava: {
           activityId: entry.id,
           type: entry.type,

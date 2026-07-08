@@ -6,7 +6,7 @@
 
 **Architecture:** The fix lives entirely in `ParticipantRoster.getRoster()` and `_buildRosterEntry()`. Instead of iterating `heartRateDevices.forEach(device => emit one entry)`, the new loop groups devices by the user UUID that owns them (via `userManager.resolveUserForDevice(deviceId).id`). One entry is emitted per unique user UUID, plus one per unmapped device (anonymous riders). The "primary" device passed to `_buildRosterEntry` — the one whose `device.heartRate` / `device.inactiveSince` drives `entry.heartRate` and `entry.isActive` — is the user's first active device, falling back to any device the user owns. `entry.hrDeviceId` (singular, legacy) is set to that primary device; `entry.hrDeviceIds` is the full array of the user's devices.
 
-No config-file change is required. The device→user N-to-1 mapping already lives in `data/household/config/fitness.yml` under `devices.heart_rate` as `{ deviceId: userId }` (e.g. Alan already has three entries: `28676, 10366, 20991`). `UserService.hydrateUsers()` emits `hr_device_ids: [...]` and `UserManager.registerUser()` consumes it — the data path is intact end-to-end and well-tested (`DeviceOwnershipIndex.test.mjs:33-40`). **The chosen mapping location is (B) — `data/household/config/fitness.yml` under `devices.heart_rate`** because every existing production record for multi-device users (Alan) already lives there and the hydration path is established. Option A (`profile.yml`) is rejected: introducing a second source would double the places a future editor must keep in sync. Option C (both with fallback) is rejected as scope creep.
+No config-file change is required. The device→user N-to-1 mapping already lives in `data/household/config/fitness.yml` under `devices.heart_rate` as `{ deviceId: userId }` (e.g. User_4 already has three entries: `28676, 10366, 20991`). `UserService.hydrateUsers()` emits `hr_device_ids: [...]` and `UserManager.registerUser()` consumes it — the data path is intact end-to-end and well-tested (`DeviceOwnershipIndex.test.mjs:33-40`). **The chosen mapping location is (B) — `data/household/config/fitness.yml` under `devices.heart_rate`** because every existing production record for multi-device users (User_4) already lives there and the hydration path is established. Option A (`profile.yml`) is rejected: introducing a second source would double the places a future editor must keep in sync. Option C (both with fallback) is rejected as scope creep.
 
 **Out of scope:**
 - No UI-layer changes (avatars, MiniMonitor, SidebarFooter) — they already read `hrDeviceIds || [hrDeviceId]` correctly (see `frontend/src/modules/Fitness/nav/SidebarFooter.jsx:90, 125`)
@@ -51,7 +51,7 @@ heartRateDevices.forEach((device) => {
 });
 ```
 
-`_buildRosterEntry(device, ...)` at lines 350-459 resolves the mapped user via `this._userManager.resolveUserForDevice(String(device.id))`. If Alan owns devices `28676, 10366, 20991`, three separate calls each return the same Alan user and push three near-identical entries. The snapshot `hrDeviceIds: mappedUser?.hrDeviceIds ? [...mappedUser.hrDeviceIds] : [String(deviceId)]` at line 445 already records Alan's full device list on each entry — but three entries still exist.
+`_buildRosterEntry(device, ...)` at lines 350-459 resolves the mapped user via `this._userManager.resolveUserForDevice(String(device.id))`. If User_4 owns devices `28676, 10366, 20991`, three separate calls each return the same User_4 user and push three near-identical entries. The snapshot `hrDeviceIds: mappedUser?.hrDeviceIds ? [...mappedUser.hrDeviceIds] : [String(deviceId)]` at line 445 already records User_4's full device list on each entry — but three entries still exist.
 
 The min-HR arbitration at `UserManager.js:192-205` writes the aggregated HR into `user.currentData.heartRate`, **but** `_buildRosterEntry` reads HR from `device.heartRate` at line 355, not from `user.currentData.heartRate`. So each per-device entry gets that device's raw reading, not the aggregate. The plan fixes both: group by user AND read the aggregated HR from the user object.
 
@@ -126,35 +126,35 @@ function newRoster(devices, userByDevice) {
 
 describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   it('emits one entry per device when each device belongs to a different user', () => {
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 120 });
-    const felix = makeUser({ id: 'felix', name: 'Felix', hrDeviceIds: ['28812'], currentHR: 95 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 120 });
+    const user_2 = makeUser({ id: 'user_2', name: 'User_2', hrDeviceIds: ['90003'], currentHR: 95 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 120 }),
-      makeDevice({ id: '28812', heartRate: 95 }),
+      makeDevice({ id: '90003', heartRate: 95 }),
     ];
-    const userByDevice = new Map([['20991', alan], ['28812', felix]]);
+    const userByDevice = new Map([['20991', user_4], ['90003', user_2]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(2);
     const names = roster.map(e => e.name).sort();
-    expect(names).toEqual(['Alan', 'Felix']);
+    expect(names).toEqual(['User_4', 'User_2']);
   });
 
   it('collapses two devices owned by the same user into ONE entry', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 118
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 118
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: 120 }),
       makeDevice({ id: '10366', heartRate: 118 }), // the lower — matches currentHR
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     const entry = roster[0];
-    expect(entry.name).toBe('Alan');
-    expect(entry.id).toBe('alan');
+    expect(entry.name).toBe('User_4');
+    expect(entry.id).toBe('user_4');
     // Full device list — the whole point of the fix
     expect(entry.hrDeviceIds.sort()).toEqual(['10366', '20991']);
   });
@@ -162,23 +162,23 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   it('uses the user\'s aggregated HR (min-HR arbitration result) not a single device\'s raw reading', () => {
     // UserManager.updateFromDevice picks the minimum and writes it to
     // user.currentData.heartRate. The roster must surface THAT value.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 118 // the min
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 118 // the min
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: 150 }), // spurious-high outlier
       makeDevice({ id: '10366', heartRate: 118 }),
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     expect(roster[0].heartRate).toBe(118);
   });
 
-  it('collapses THREE devices (real-world: Alan has 28676, 10366, 20991 in prod config)', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['28676', '10366', '20991'], currentHR: 100
+  it('collapses THREE devices (real-world: User_4 has 28676, 10366, 20991 in prod config)', () => {
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['28676', '10366', '20991'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '28676', heartRate: 130 }), // "bad readings" device
@@ -186,7 +186,7 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
       makeDevice({ id: '20991', heartRate: 105 }),
     ];
     const userByDevice = new Map([
-      ['28676', alan], ['10366', alan], ['20991', alan]
+      ['28676', user_4], ['10366', user_4], ['20991', user_4]
     ]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
@@ -200,27 +200,27 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
     // user-less device must be silently dropped per the CURRENT contract —
     // _buildRosterEntry returns null when participantName is absent (line 363).
     // This test locks in the drop-anon behavior (it is NOT new behavior).
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 110 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 110 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 110 }),
       makeDevice({ id: '99999', heartRate: 80 }), // unknown, unowned
     ];
-    const userByDevice = new Map([['20991', alan]]); // 99999 not mapped
+    const userByDevice = new Map([['20991', user_4]]); // 99999 not mapped
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
-    expect(roster[0].name).toBe('Alan');
+    expect(roster[0].name).toBe('User_4');
   });
 
   it('anonymous rider with a ledger assignment still renders as its own entry', () => {
     // When a device is claimed via GuestAssignmentService, _buildRosterEntry
     // reads the ledger name. That path must survive the group-by-user change.
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 110 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 110 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 110 }),
       makeDevice({ id: '44444', heartRate: 88 }),
     ];
-    const userByDevice = new Map([['20991', alan]]);
+    const userByDevice = new Map([['20991', user_4]]);
     // Stub ledger: device 44444 is assigned to "Visitor Joe"
     const ledger = {
       get: (id) => String(id) === '44444'
@@ -237,20 +237,20 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
 
     expect(out).toHaveLength(2);
     const names = out.map(e => e.name).sort();
-    expect(names).toEqual(['Alan', 'Visitor Joe']);
+    expect(names).toEqual(['User_4', 'Visitor Joe']);
   });
 
   it('entry.hrDeviceId (singular, legacy) points to an active device when available', () => {
     // Backwards-compat: many downstream consumers still read entry.hrDeviceId
     // (singular). It must be one of the user's devices, and prefer an active one.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: Date.now() - 60000 }),
       makeDevice({ id: '10366', heartRate: 100 }), // active
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
@@ -259,54 +259,54 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   });
 
   it('entry.isActive is true when ANY owned device is active', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: Date.now() - 60000 }), // inactive
       makeDevice({ id: '10366', heartRate: 100 }), // active
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
     expect(roster[0].isActive).toBe(true);
   });
 
   it('entry.isActive is false when ALL owned devices are inactive', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: null
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: null
     });
     const t = Date.now() - 60000;
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: t }),
       makeDevice({ id: '10366', heartRate: null, inactiveSince: t }),
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
     expect(roster[0].isActive).toBe(false);
   });
 
   it('preferGroupLabels triggers only when 2+ USERS are present (not 2+ devices from one user)', () => {
-    // Key regression: before the fix, Alan alone with 3 devices would trip
+    // Key regression: before the fix, User_4 alone with 3 devices would trip
     // the "2+ present devices" group-label threshold and cards would show
-    // "Dad" instead of "Alan" in a single-user session. After the fix, only
+    // "Dad" instead of "User_4" in a single-user session. After the fix, only
     // real multi-user presence switches labels.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366', '28676'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366', '28676'], currentHR: 100
     });
-    alan.groupLabel = 'Dad';
+    user_4.groupLabel = 'Dad';
     const devices = [
       makeDevice({ id: '20991', heartRate: 100 }),
       makeDevice({ id: '10366', heartRate: 100 }),
       makeDevice({ id: '28676', heartRate: 100 }),
     ];
     const userByDevice = new Map([
-      ['20991', alan], ['10366', alan], ['28676', alan]
+      ['20991', user_4], ['10366', user_4], ['28676', user_4]
     ]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     // Solo user → displayLabel is the first name, not the group label
-    expect(roster[0].displayLabel).toBe('Alan');
+    expect(roster[0].displayLabel).toBe('User_4');
   });
 });
 ```
@@ -320,7 +320,7 @@ Expected: 10 tests, several failures. The key failures will be:
 - "collapses THREE devices" → received 3, expected 1
 - "uses the user's aggregated HR" → received 150 (first-device raw), expected 118
 - "entry.hrDeviceId … points to an active device when available" → received `20991` (first by insertion), expected `10366`
-- "preferGroupLabels triggers only when 2+ USERS are present" → received `Dad`, expected `Alan`
+- "preferGroupLabels triggers only when 2+ USERS are present" → received `Dad`, expected `User_4`
 
 The single-device, pure-anonymous, and all-inactive cases may PASS — that's fine, they lock in existing behavior.
 
@@ -594,7 +594,7 @@ value (already min-HR-arbitrated by UserManager.updateFromDevice) instead
 of the per-device raw reading. Anonymous riders and ledger-assigned guests
 remain on the existing one-entry-per-device path.
 
-Fixes bug-bash issue D (2026-04-23) — Alan's three HR monitors were
+Fixes bug-bash issue D (2026-04-23) — User_4's three HR monitors were
 producing three separate roster cards.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -628,11 +628,11 @@ const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
 const { DeviceManager } = await import('#frontend/hooks/fitness/DeviceManager.js');
 
 describe('ParticipantRoster — integration with real UserManager min-HR arbitration', () => {
-  it('alan with 3 HR monitors → ONE entry, HR = minimum across devices', () => {
+  it('user_4 with 3 HR monitors → ONE entry, HR = minimum across devices', () => {
     const userManager = new UserManager();
     userManager.registerUser({
-      id: 'alan',
-      name: 'Alan',
+      id: 'user_4',
+      name: 'User_4',
       birth_year: 1984,
       hr_device_ids: [28676, 10366, 20991],
     });
@@ -647,10 +647,10 @@ describe('ParticipantRoster — integration with real UserManager min-HR arbitra
 
     // Send readings: spurious-high 150 on the "bad" device, real 105 and 100
     // on the other two. Min-HR arbitration must pick 100.
-    const alan = userManager.getUser('alan');
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '28676', heartRate: 150 });
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '10366', heartRate: 105 });
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 100 });
+    const user_4 = userManager.getUser('user_4');
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '28676', heartRate: 150 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '10366', heartRate: 105 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 100 });
     // Mirror readings into DeviceManager so roster sees device.heartRate.
     deviceManager.addOrUpdateDevice({ id: '28676', type: 'heart_rate', heartRate: 150, lastSeen: t });
     deviceManager.addOrUpdateDevice({ id: '10366', type: 'heart_rate', heartRate: 105, lastSeen: t });
@@ -661,7 +661,7 @@ describe('ParticipantRoster — integration with real UserManager min-HR arbitra
     const out = roster.getRoster();
 
     expect(out).toHaveLength(1);
-    expect(out[0].name).toBe('Alan');
+    expect(out[0].name).toBe('User_4');
     expect(out[0].heartRate).toBe(100);
     expect(out[0].hrDeviceIds.sort()).toEqual(['10366', '20991', '28676']);
   });
@@ -670,7 +670,7 @@ describe('ParticipantRoster — integration with real UserManager min-HR arbitra
 
 - [ ] **Step 3: Run the integration test**
 
-Run: `cd /opt/Code/DaylightStation && npx jest tests/unit/fitness/ParticipantRoster.test.mjs -t "alan with 3 HR monitors"`
+Run: `cd /opt/Code/DaylightStation && npx jest tests/unit/fitness/ParticipantRoster.test.mjs -t "user_4 with 3 HR monitors"`
 
 Expected: PASS. If it fails with `heartRate: 150` instead of `100`, it means the min-HR arbitration path didn't fire — investigate whether `hrDeviceIds.size > 1` was truthy at the time of the update (line 192 of UserManager.js). If it fails with length 3 instead of 1, Task 2's grouping logic is incorrect — revisit.
 
@@ -739,7 +739,7 @@ Otherwise move on.
 
 **Files:** none modified — pure verification.
 
-- [ ] **Step 1: Confirm Alan's 3-device config is present**
+- [ ] **Step 1: Confirm User_4's 3-device config is present**
 
 Run:
 
@@ -747,19 +747,19 @@ Run:
 sudo docker exec daylight-station sh -c 'grep -B1 -A6 "^  heart_rate:" data/household/config/fitness.yml' | head -20
 ```
 
-Expected output contains all three Alan device IDs:
+Expected output contains all three User_4 device IDs:
 
 ```
-    28676: alan
-    10366: alan
-    20991: alan
+    28676: user_4
+    10366: user_4
+    20991: user_4
 ```
 
 - [ ] **Step 2: Reload the fitness page in the browser with the dev frontend active**
 
-Steps (manual): open the fitness module, ensure Alan is wearing (at least simulated) two of his HR monitors.
+Steps (manual): open the fitness module, ensure User_4 is wearing (at least simulated) two of his HR monitors.
 
-Expected: the roster shows ONE card labelled "Alan" with the HR value reflecting the minimum across connected devices. Before the fix: two or three "Alan" cards with different HR readings.
+Expected: the roster shows ONE card labelled "User_4" with the HR value reflecting the minimum across connected devices. Before the fix: two or three "User_4" cards with different HR readings.
 
 - [ ] **Step 3: Inspect the `participant.roster.build` log line**
 
@@ -788,6 +788,6 @@ Summary of what changed:
 - **Primary device selection:** When a user owns multiple devices, `entry.hrDeviceId` (legacy singular) points to the first **active** device, falling back to the first owned device. `entry.hrDeviceIds` contains every device the user owns.
 - **Activity flag:** `entry.isActive` is true when ANY owned device is broadcasting. `entry.inactiveSince` is null when active, else the latest across owned devices.
 - **Group-label threshold:** `preferGroupLabels` now counts distinct **users** with an active device, not distinct devices — a single user with three monitors no longer trips the multi-participant display-label switch.
-- **Config:** No change. Alan's `28676/10366/20991 → alan` triple already lives in `data/household/config/fitness.yml` and flows through `UserService.hydrateUsers` → `UserManager.registerUser` → `User.hrDeviceIds: Set`.
+- **Config:** No change. User_4's `28676/10366/20991 → user_4` triple already lives in `data/household/config/fitness.yml` and flows through `UserService.hydrateUsers` → `UserManager.registerUser` → `User.hrDeviceIds: Set`.
 - **Tests:** 1 new file `tests/unit/fitness/ParticipantRoster.test.mjs` with 10 unit cases + 1 integration case covering single-device, multi-device-same-user (2 and 3 devices), anonymous, ledger-assigned, active-device primary selection, all-inactive, group-label threshold, and end-to-end min-HR with real `UserManager`/`DeviceManager`.
 - **Out of scope:** UI-layer changes (none needed — `SidebarFooter`, `FitnessChart`, etc. already handle the new shape), `updateFromDevice`'s min-HR arbitration (unchanged), `DeviceOwnershipIndex` (already correct), config-file format (already supports N-to-1).

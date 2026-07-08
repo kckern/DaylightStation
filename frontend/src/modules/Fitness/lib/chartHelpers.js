@@ -184,7 +184,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   const targetId = normalizeId(rosterEntry);
   if (!targetId || typeof getSeries !== 'function') return { beats: [], zones: [], active: [] };
 
-  // For grace period transfer: use original user's timeline data (Jin displays Soren's line)
+  // For grace period transfer: use original user's timeline data (User_6 displays User_5's line)
   const timelineUserId = rosterEntry?.timelineUserId || rosterEntry?.metadata?.timelineUserId || targetId;
   
   // Phase 5: Check if roster entry has entityId for entity-based lookup

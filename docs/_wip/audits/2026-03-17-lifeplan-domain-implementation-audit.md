@@ -59,7 +59,7 @@ The Lifeplan domain is **substantially implemented** across all DDD layers with 
 2. Add `'/life': 'life'` to the `routeMap` in `api.mjs`
 3. Pass the life router into `createApiRouter()` config
 
-**Additionally:** No `lifeplan.yml` data file exists for user `kckern`. Even after mounting the router, all plan reads will return `null`/`{}` and writes will return 404 until seed data is created.
+**Additionally:** No `lifeplan.yml` data file exists for user `user_1`. Even after mounting the router, all plan reads will return `null`/`{}` and writes will return 404 until seed data is created.
 
 ### SPA & Navigation: 13/14 Passed
 
@@ -138,7 +138,7 @@ All 8 endpoints timeout at 15s. Requests reach the Nginx proxy but never hit a b
 │                                                         │
 │  1. bootstrapLifeplan() never called in app.mjs         │
 │  2. No '/life' entry in api.mjs routeMap                │
-│  3. No lifeplan.yml seed data for user kckern           │
+│  3. No lifeplan.yml seed data for user user_1           │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```

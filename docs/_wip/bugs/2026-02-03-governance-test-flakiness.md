@@ -153,7 +153,7 @@ With requirement `active: all` (rank 1):
 
 ```
 [UNLOCK] Moving users to target zone...
-  Set device 28812 to warm zone
+  Set device 90003 to warm zone
   Video unlocked!                    ← Overlay disappeared
   WARNING: Governance phase is pending, not 'unlocked'  ← But engine didn't complete hysteresis
 ```
@@ -291,7 +291,7 @@ Exposed internal GovernanceEngine state in `window.__fitnessGovernance` for test
 ### Remaining Issues
 
 **`challenge-fail-recover` (SKIPPED):**
-Zone propagation issue in test environment. WebSocket HR updates don't consistently reach ZoneProfileStore for all users - only kckern's zone updates while other users remain at 'cool'. This prevents maintaining the base requirement (active: all) needed for the challenge timer to run. The issue appears to be in how the test environment's simulator interacts with the DeviceManager/UserManager data flow, not in production code.
+Zone propagation issue in test environment. WebSocket HR updates don't consistently reach ZoneProfileStore for all users - only user_1's zone updates while other users remain at 'cool'. This prevents maintaining the base requirement (active: all) needed for the challenge timer to run. The issue appears to be in how the test environment's simulator interacts with the DeviceManager/UserManager data flow, not in production code.
 
 **`hydration-video-first` (FLAKY):**
 Timing-sensitive test trying to observe a transient "waiting" UI state. In some runs, the UI hydrates too quickly and the state is never observable. Consider increasing retry attempts or relaxing the assertion.
@@ -310,22 +310,22 @@ Timing-sensitive test trying to observe a transient "waiting" UI state. In some 
 
 ### Background
 
-While implementing a test for the `group_label` fallback behavior (switching from "KC Kern" to "Dad" when multiple HR devices join), I discovered a deeper architectural issue that affects device counting.
+While implementing a test for the `group_label` fallback behavior (switching from "User_1" to "Dad" when multiple HR devices join), I discovered a deeper architectural issue that affects device counting.
 
 ### The group_label Mechanism
 
-When a single user exercises alone, the sidebar shows their full `display_name` (e.g., "KC Kern"). When multiple users join, the system switches to `group_label` (e.g., "Dad") for users who have one configured.
+When a single user exercises alone, the sidebar shows their full `display_name` (e.g., "User_1"). When multiple users join, the system switches to `group_label` (e.g., "Dad") for users who have one configured.
 
 The trigger condition is `heartRateDevices.length > 1`.
 
 ### What the Test Revealed
 
-The test consistently fails at Phase 1, showing "Dad" instead of "KC Kern" even when only 1 HR device is active:
+The test consistently fails at Phase 1, showing "Dad" instead of "User_1" even when only 1 HR device is active:
 
 ```
 [PHASE 1] Single device - expecting display_name
-  Activating kckern (40475)...
-  TIMEOUT: Device 40475 shows "Dad" (expected "KC Kern")
+  Activating user_1 (40475)...
+  TIMEOUT: Device 40475 shows "Dad" (expected "User_1")
 ```
 
 ### Root Cause: Device Count Discrepancy Between Systems
@@ -349,21 +349,21 @@ Both supposedly reference the same `session.deviceManager`, but they see differe
 2. **ParticipantRoster** computes `displayLabel` for roster entries:
    - Sees 5 devices (all configured primary users' HR devices)
    - Sets `preferGroupLabels = true`
-   - Log: `heartRateDeviceCount: 5, preferGroupLabels: true, deviceIds: ["40475","28688","28676","28812","29413"]`
+   - Log: `heartRateDeviceCount: 5, preferGroupLabels: true, deviceIds: ["40475","90001","28676","90003","90005"]`
 
 3. **Device name resolution** in FitnessUsers.jsx:
    - Priority: `guestAssignment` → **`displayLabel`** → `ownerName`
    - `displayLabel` = "Dad" (from `participantEntry.displayLabel`)
-   - `ownerName` = "KC Kern" (from `hrDisplayNameMap`)
+   - `ownerName` = "User_1" (from `hrDisplayNameMap`)
    - Result: "Dad" wins because `displayLabel` has higher priority
 
 ### The 5 Device IDs
 
 The 5 device IDs match the configured primary users' HR devices:
-- 40475 (kckern)
-- 28688, 28676 (other users)
-- 28812 (felix)
-- 29413 (another user)
+- 40475 (user_1)
+- 90001, 28676 (other users)
+- 90003 (user_2)
+- 90005 (another user)
 
 These devices are being **pre-populated** into the DeviceManager, even though only 1 device is actively sending HR data.
 
@@ -447,7 +447,7 @@ const preferGroupLabels = activeHeartRateDevices.length > 1;
 **To verify the fix:**
 - Close all other browser windows with the fitness app open
 - Or stop all simulators in other browser tabs before running the test
-- Debug logs confirm: `preferGroupLabels: false` and `result: "KC Kern"` when properly isolated
+- Debug logs confirm: `preferGroupLabels: false` and `result: "User_1"` when properly isolated
 
 ---
 
@@ -457,7 +457,7 @@ const preferGroupLabels = activeHeartRateDevices.length > 1;
 
 The device count fix was necessary but not sufficient. A second bug in the render-time priority chain prevented the group_label from being displayed:
 
-**The Bug:** In `FitnessUsers.jsx`, the device name resolution checked `guestAssignment?.occupantName` for ALL device assignments, not just actual guests. A "member" assignment (like kckern's primary device) still had `occupantName: "KC Kern"`, which bypassed the `hrDisplayNameMap` that correctly computed "Dad".
+**The Bug:** In `FitnessUsers.jsx`, the device name resolution checked `guestAssignment?.occupantName` for ALL device assignments, not just actual guests. A "member" assignment (like user_1's primary device) still had `occupantName: "User_1"`, which bypassed the `hrDisplayNameMap` that correctly computed "Dad".
 
 ### The Fix
 
@@ -480,9 +480,9 @@ if (isActualGuest && guestAssignment?.occupantName) {
 ### Test Result
 
 All 3 phases of `group-label-fallback.runtime.test.mjs` now pass:
-- Phase 1: Single device shows "KC Kern"
-- Phase 2: Second device joins, kckern switches to "Dad"
-- Phase 3: Device drops, kckern restores to "KC Kern"
+- Phase 1: Single device shows "User_1"
+- Phase 2: Second device joins, user_1 switches to "Dad"
+- Phase 3: Device drops, user_1 restores to "User_1"
 
 ### Files Changed
 

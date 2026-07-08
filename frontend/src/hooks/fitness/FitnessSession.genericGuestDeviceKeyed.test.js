@@ -52,7 +52,7 @@ describe('FitnessSession — two simultaneous generic Guest tags (W2 integration
 
   it('produces two distinct participants in session summary when two devices are Guest-tagged', () => {
     // Simulate the menu's post-W2 behavior: device-keyed profileId per tag.
-    const result48291 = service.assignGuest('48291', {
+    const result48291 = service.assignGuest('90006', {
       name: 'Guest',
       profileId: 'guest_48291',
       candidateId: 'guest',
@@ -95,7 +95,7 @@ describe('FitnessSession — two simultaneous generic Guest tags (W2 integration
     // Documents the pre-W2 failure mode: GuestAssignmentService's one-device-per-user
     // check blocks the second Guest tap when both share profileId='guest'.
     // The user-visible result was "the Guest button does nothing on the second device".
-    const a = service.assignGuest('48291', { name: 'Guest', profileId: 'guest', candidateId: 'guest', source: 'Guest' });
+    const a = service.assignGuest('90006', { name: 'Guest', profileId: 'guest', candidateId: 'guest', source: 'Guest' });
     const b = service.assignGuest('48292', { name: 'Guest', profileId: 'guest', candidateId: 'guest', source: 'Guest' });
 
     expect(a.ok).toBe(true);

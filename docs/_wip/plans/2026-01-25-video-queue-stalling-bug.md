@@ -43,7 +43,7 @@ Videos in queue playback mode pause at the end and fail to automatically advance
 00:00:35.245Z - playback.paused (video ended at 390.78s, duration: 390.78s)
 [NO AUTOMATIC ADVANCE]
 00:01:54.542Z - playback.intent (user manually selected next, source: "menu-selection")
-00:01:54.877Z - playback.queue-track-changed (Mary and Elizabeth loaded)
+00:01:54.877Z - playback.queue-track-changed (Mary and User_9 loaded)
 ```
 **Gap:** 1 minute 19 seconds of manual intervention
 

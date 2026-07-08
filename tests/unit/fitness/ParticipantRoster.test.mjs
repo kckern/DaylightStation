@@ -55,35 +55,35 @@ function newRoster(devices, userByDevice) {
 
 describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   it('emits one entry per device when each device belongs to a different user', () => {
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 120 });
-    const felix = makeUser({ id: 'felix', name: 'Felix', hrDeviceIds: ['28812'], currentHR: 95 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 120 });
+    const user_2 = makeUser({ id: 'user_2', name: 'User_2', hrDeviceIds: ['90003'], currentHR: 95 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 120 }),
-      makeDevice({ id: '28812', heartRate: 95 }),
+      makeDevice({ id: '90003', heartRate: 95 }),
     ];
-    const userByDevice = new Map([['20991', alan], ['28812', felix]]);
+    const userByDevice = new Map([['20991', user_4], ['90003', user_2]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(2);
     const names = roster.map(e => e.name).sort();
-    expect(names).toEqual(['Alan', 'Felix']);
+    expect(names).toEqual(['User_4', 'User_2']);
   });
 
   it('collapses two devices owned by the same user into ONE entry', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 118
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 118
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: 120 }),
       makeDevice({ id: '10366', heartRate: 118 }), // the lower — matches currentHR
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     const entry = roster[0];
-    expect(entry.name).toBe('Alan');
-    expect(entry.id).toBe('alan');
+    expect(entry.name).toBe('User_4');
+    expect(entry.id).toBe('user_4');
     // Full device list — the whole point of the fix
     expect(entry.hrDeviceIds.sort()).toEqual(['10366', '20991']);
   });
@@ -91,23 +91,23 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   it('uses the user\'s aggregated HR (min-HR arbitration result) not a single device\'s raw reading', () => {
     // UserManager.updateFromDevice picks the minimum and writes it to
     // user.currentData.heartRate. The roster must surface THAT value.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 118 // the min
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 118 // the min
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: 150 }), // spurious-high outlier
       makeDevice({ id: '10366', heartRate: 118 }),
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     expect(roster[0].heartRate).toBe(118);
   });
 
-  it('collapses THREE devices (real-world: Alan has 28676, 10366, 20991 in prod config)', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['28676', '10366', '20991'], currentHR: 100
+  it('collapses THREE devices (real-world: User_4 has 28676, 10366, 20991 in prod config)', () => {
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['28676', '10366', '20991'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '28676', heartRate: 130 }), // "bad readings" device
@@ -115,7 +115,7 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
       makeDevice({ id: '20991', heartRate: 105 }),
     ];
     const userByDevice = new Map([
-      ['28676', alan], ['10366', alan], ['20991', alan]
+      ['28676', user_4], ['10366', user_4], ['20991', user_4]
     ]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
@@ -129,27 +129,27 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
     // user-less device must be silently dropped per the CURRENT contract —
     // _buildRosterEntry returns null when participantName is absent (line 363).
     // This test locks in the drop-anon behavior (it is NOT new behavior).
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 110 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 110 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 110 }),
       makeDevice({ id: '99999', heartRate: 80 }), // unknown, unowned
     ];
-    const userByDevice = new Map([['20991', alan]]); // 99999 not mapped
+    const userByDevice = new Map([['20991', user_4]]); // 99999 not mapped
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
-    expect(roster[0].name).toBe('Alan');
+    expect(roster[0].name).toBe('User_4');
   });
 
   it('anonymous rider with a ledger assignment still renders as its own entry', () => {
     // When a device is claimed via GuestAssignmentService, _buildRosterEntry
     // reads the ledger name. That path must survive the group-by-user change.
-    const alan = makeUser({ id: 'alan', name: 'Alan', hrDeviceIds: ['20991'], currentHR: 110 });
+    const user_4 = makeUser({ id: 'user_4', name: 'User_4', hrDeviceIds: ['20991'], currentHR: 110 });
     const devices = [
       makeDevice({ id: '20991', heartRate: 110 }),
       makeDevice({ id: '44444', heartRate: 88 }),
     ];
-    const userByDevice = new Map([['20991', alan]]);
+    const userByDevice = new Map([['20991', user_4]]);
     // Stub ledger: device 44444 is assigned to "Visitor Joe"
     const ledger = {
       get: (id) => String(id) === '44444'
@@ -166,20 +166,20 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
 
     expect(out).toHaveLength(2);
     const names = out.map(e => e.name).sort();
-    expect(names).toEqual(['Alan', 'Visitor Joe']);
+    expect(names).toEqual(['User_4', 'Visitor Joe']);
   });
 
   it('entry.hrDeviceId (singular, legacy) points to an active device when available', () => {
     // Backwards-compat: many downstream consumers still read entry.hrDeviceId
     // (singular). It must be one of the user's devices, and prefer an active one.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: Date.now() - 60000 }),
       makeDevice({ id: '10366', heartRate: 100 }), // active
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
@@ -188,54 +188,54 @@ describe('ParticipantRoster.getRoster — dual-device aggregation', () => {
   });
 
   it('entry.isActive is true when ANY owned device is active', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: 100
     });
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: Date.now() - 60000 }), // inactive
       makeDevice({ id: '10366', heartRate: 100 }), // active
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
     expect(roster[0].isActive).toBe(true);
   });
 
   it('entry.isActive is false when ALL owned devices are inactive', () => {
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366'], currentHR: null
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366'], currentHR: null
     });
     const t = Date.now() - 60000;
     const devices = [
       makeDevice({ id: '20991', heartRate: null, inactiveSince: t }),
       makeDevice({ id: '10366', heartRate: null, inactiveSince: t }),
     ];
-    const userByDevice = new Map([['20991', alan], ['10366', alan]]);
+    const userByDevice = new Map([['20991', user_4], ['10366', user_4]]);
     const roster = newRoster(devices, userByDevice).getRoster();
     expect(roster[0].isActive).toBe(false);
   });
 
   it('preferGroupLabels triggers only when 2+ USERS are present (not 2+ devices from one user)', () => {
-    // Key regression: before the fix, Alan alone with 3 devices would trip
+    // Key regression: before the fix, User_4 alone with 3 devices would trip
     // the "2+ present devices" group-label threshold and cards would show
-    // "Dad" instead of "Alan" in a single-user session. After the fix, only
+    // "Dad" instead of "User_4" in a single-user session. After the fix, only
     // real multi-user presence switches labels.
-    const alan = makeUser({
-      id: 'alan', name: 'Alan', hrDeviceIds: ['20991', '10366', '28676'], currentHR: 100
+    const user_4 = makeUser({
+      id: 'user_4', name: 'User_4', hrDeviceIds: ['20991', '10366', '28676'], currentHR: 100
     });
-    alan.groupLabel = 'Dad';
+    user_4.groupLabel = 'Dad';
     const devices = [
       makeDevice({ id: '20991', heartRate: 100 }),
       makeDevice({ id: '10366', heartRate: 100 }),
       makeDevice({ id: '28676', heartRate: 100 }),
     ];
     const userByDevice = new Map([
-      ['20991', alan], ['10366', alan], ['28676', alan]
+      ['20991', user_4], ['10366', user_4], ['28676', user_4]
     ]);
     const roster = newRoster(devices, userByDevice).getRoster();
 
     expect(roster).toHaveLength(1);
     // Solo user → displayLabel is the first name, not the group label
-    expect(roster[0].displayLabel).toBe('Alan');
+    expect(roster[0].displayLabel).toBe('User_4');
   });
 });
 
@@ -245,11 +245,11 @@ const { UserManager } = await import('#frontend/hooks/fitness/UserManager.js');
 const { DeviceManager } = await import('#frontend/hooks/fitness/DeviceManager.js');
 
 describe('ParticipantRoster — integration with real UserManager min-HR arbitration', () => {
-  it('alan with 3 HR monitors → ONE entry, HR = minimum across devices', () => {
+  it('user_4 with 3 HR monitors → ONE entry, HR = minimum across devices', () => {
     const userManager = new UserManager();
     userManager.registerUser({
-      id: 'alan',
-      name: 'Alan',
+      id: 'user_4',
+      name: 'User_4',
       birth_year: 1984,
       hr_device_ids: [28676, 10366, 20991],
     });
@@ -264,10 +264,10 @@ describe('ParticipantRoster — integration with real UserManager min-HR arbitra
 
     // Send readings: spurious-high 150 on the "bad" device, real 105 and 100
     // on the other two. Min-HR arbitration must pick 100.
-    const alan = userManager.getUser('alan');
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '28676', heartRate: 150 });
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '10366', heartRate: 105 });
-    alan.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 100 });
+    const user_4 = userManager.getUser('user_4');
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '28676', heartRate: 150 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '10366', heartRate: 105 });
+    user_4.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 100 });
     // Mirror readings into DeviceManager so roster sees device.heartRate.
     deviceManager.registerDevice({ id: '28676', type: 'heart_rate', heartRate: 150, lastSeen: t });
     deviceManager.registerDevice({ id: '10366', type: 'heart_rate', heartRate: 105, lastSeen: t });
@@ -278,7 +278,7 @@ describe('ParticipantRoster — integration with real UserManager min-HR arbitra
     const out = roster.getRoster();
 
     expect(out).toHaveLength(1);
-    expect(out[0].name).toBe('Alan');
+    expect(out[0].name).toBe('User_4');
     expect(out[0].heartRate).toBe(100);
     expect(out[0].hrDeviceIds.sort()).toEqual(['10366', '20991', '28676']);
   });

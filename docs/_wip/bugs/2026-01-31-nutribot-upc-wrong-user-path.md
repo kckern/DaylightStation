@@ -11,7 +11,7 @@ When a user scans a UPC barcode and selects a portion size, the food item is sav
 
 ## Symptom
 
-User `kckern` scanned a UPC barcode for "cracker sandwiches", selected 2x portion (400 cal), and the system:
+User `user_1` scanned a UPC barcode for "cracker sandwiches", selected 2x portion (400 cal), and the system:
 1. ✅ Logged the item to `nutrilog.yml` correctly
 2. ✅ Marked the log as `status: accepted`
 3. ❌ Saved the item to `nutrilist.yml` in the **wrong directory**
@@ -43,7 +43,7 @@ const listItems = scaledItems.map((item) => ({
 await this.#nutriListStore.saveMany(listItems);
 ```
 
-The `userId` parameter (`kckern`) was available in the `execute()` input but was NOT being passed to the list items.
+The `userId` parameter (`user_1`) was available in the `execute()` input but was NOT being passed to the list items.
 
 ### How YamlNutriListDatastore.saveMany() Resolves User Path
 

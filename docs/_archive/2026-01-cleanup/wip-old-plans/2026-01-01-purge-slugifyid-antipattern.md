@@ -4,7 +4,7 @@
 
 `slugifyId` is a runtime string transformation function that converts display names into URL-safe slugs. It is **100% anti-pattern** because:
 
-1. **Every user/participant already has a proper `id` field** (e.g., `kckern`, `guest-12345`)
+1. **Every user/participant already has a proper `id` field** (e.g., `user_1`, `guest-12345`)
 2. **Slugifying names at runtime creates identity mismatches** when names contain special characters or change
 3. **It duplicates logic everywhere** - the function is copy-pasted into 8+ files
 4. **It masks bugs** by silently "fixing" mismatched identifiers instead of failing loudly
@@ -12,8 +12,8 @@
 ### The Correct Approach
 
 User objects always have:
-- `id`: The canonical identifier (e.g., `kckern` from `profile.yml`, or `guest-{timestamp}` for guests)
-- `name`: Display name (e.g., "KC Kern")
+- `id`: The canonical identifier (e.g., `user_1` from `profile.yml`, or `guest-{timestamp}` for guests)
+- `name`: Display name (e.g., "User_1")
 - `profileId`: Sometimes used interchangeably with `id`
 
 **Never derive identity from display names. Always use the `id` field.**

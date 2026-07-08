@@ -114,7 +114,7 @@ When transitioning to `locked` from failed-challenge or grace-period paths, only
 ### CF7. Zone boundary warning spam (threshold calibration) [P2]
 
 **Source:** 2026-02-17-governance-feb17-session-audit.md
-**Status:** FIXED — Alan's `active` threshold lowered from 125→118, Milo's from 120→112 in their profile.yml files.
+**Status:** FIXED — User_4's `active` threshold lowered from 125→118, User_3's from 120→112 in their profile.yml files.
 
 ### CF8. Premature warning-phase video pause [P3]
 
@@ -175,7 +175,7 @@ These areas were audited and found correctly implemented:
 | # | Issue | Fix Effort | Risk if Unfixed |
 |---|-------|------------|-----------------|
 | CF3 | Missing per-user thresholds in warning logs | Small (enrich log) | Threshold calibration problems invisible in production logs |
-| CF7 | Threshold calibration (config) | Trivial (YAML change) | 19 false warnings per 33-min session for Alan |
+| CF7 | Threshold calibration (config) | Trivial (YAML change) | 19 false warnings per 33-min session for User_4 |
 
 ### Consider Fixing
 

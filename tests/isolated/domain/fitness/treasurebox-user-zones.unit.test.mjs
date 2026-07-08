@@ -63,47 +63,47 @@ function createTreasureBox(zoneProfileStore = null) {
 describe('TreasureBox per-user zone resolution', () => {
   it('uses global zones when no ZoneProfileStore is set', () => {
     const tb = createTreasureBox();
-    const zone = tb.resolveZone('soren', 113);
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('uses per-user zones from ZoneProfileStore when available', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    const zone = tb.resolveZone('soren', 113);
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
     expect(zone.coins).toBe(0);
   });
 
   it('falls back to global zones for users without custom profiles', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    const zone = tb.resolveZone('alan', 113);
+    const zone = tb.resolveZone('user_4', 113);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('respects per-user active threshold exactly at boundary', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    const zone = tb.resolveZone('soren', 125);
+    const zone = tb.resolveZone('user_5', 125);
     expect(zone.id).toBe('active');
     expect(zone.coins).toBe(1);
   });
 
   it('resolves higher zones correctly with per-user thresholds', () => {
-    const store = createMockZoneProfileStore({ soren: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
     const tb = createTreasureBox(store);
-    const zone = tb.resolveZone('soren', 155);
+    const zone = tb.resolveZone('user_5', 155);
     expect(zone.id).toBe('warm');
     expect(zone.coins).toBe(2);
   });
 
   it('still uses usersConfigOverrides if populated (backward compat)', () => {
     const tb = createTreasureBox();
-    tb.usersConfigOverrides.set('soren', { active: 125, warm: 150, hot: 170, fire: 190 });
-    const zone = tb.resolveZone('soren', 113);
+    tb.usersConfigOverrides.set('user_5', { active: 125, warm: 150, hot: 170, fire: 190 });
+    const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
     expect(zone.coins).toBe(0);
   });

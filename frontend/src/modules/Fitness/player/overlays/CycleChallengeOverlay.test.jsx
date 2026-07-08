@@ -11,7 +11,7 @@ const baseChallenge = {
   currentPhaseIndex: 0,
   totalPhases: 3,
   currentPhase: { hiRpm: 49, loRpm: 37 },
-  rider: { id: 'kckern', name: 'KC Kern' },
+  rider: { id: 'user_1', name: 'User_1' },
   currentRpm: 60,
   initRemainingMs: 23000,
   rampRemainingMs: null,
@@ -119,7 +119,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
 
   it('does not render the rider name text', () => {
     render(<CycleChallengeOverlay challenge={baseChallenge} />);
-    expect(screen.queryByText('KC Kern')).not.toBeInTheDocument();
+    expect(screen.queryByText('User_1')).not.toBeInTheDocument();
   });
 
   it('renders the heart-rate gate as a compact dot on the avatar', () => {
@@ -175,7 +175,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
   });
 
   it('shows initials when the avatar image fails, and recovers on rider change', () => {
-    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'KC Kern' } };
+    const ch = { ...baseChallenge, rider: { id: 'user_1', name: 'User_1' } };
     const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
     // Initially the image renders and initials are absent.
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
@@ -187,7 +187,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeFalsy();
 
     // New rider → fresh URL → effect resets imgFailed → image is attempted again.
-    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'alan', name: 'Alan' } }} />);
+    rerender(<CycleChallengeOverlay challenge={{ ...ch, rider: { id: 'user_4', name: 'User_4' } }} />);
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
     expect(container.querySelector('.cycle-challenge-overlay__avatar-initials')).toBeFalsy();
   });
@@ -219,7 +219,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
   it('renders the segmented health bar (not the old smooth meter)', () => {
     const challenge = {
       type: 'cycle', cycleState: 'maintain', status: 'pending',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       currentPhaseIndex: 1, totalPhases: 4,
       currentPhase: { hiRpm: 70, loRpm: 52 },
       currentRpm: 40, phaseProgressPct: 0.4, cycleHealthPct: 0.5
@@ -233,7 +233,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
   it('flashes the in-progress phase block (active = currentPhaseIndex)', () => {
     const challenge = {
       type: 'cycle', cycleState: 'maintain', status: 'pending',
-      rider: { id: 'felix', name: 'Felix' },
+      rider: { id: 'user_2', name: 'User_2' },
       currentPhaseIndex: 2, totalPhases: 4,
       currentPhase: { hiRpm: 70, loRpm: 52 },
       currentRpm: 68, phaseProgressPct: 0.3, cycleHealthPct: 1
@@ -260,7 +260,7 @@ describe('CycleChallengeOverlay — success completion hold (§5A)', () => {
   const successChallenge = {
     type: 'cycle',
     status: 'success',
-    rider: { id: 'felix', name: 'Felix' },
+    rider: { id: 'user_2', name: 'User_2' },
     totalPhases: 3,
     currentPhaseIndex: 3,
     currentPhase: { hiRpm: 80, loRpm: 60 }
@@ -300,8 +300,8 @@ describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no cou
     currentPhase: { hiRpm: 80, loRpm: 60 },
     cycleHealthPct: 100,
     boostMultiplier: 2.5,
-    boostingUsers: ['kckern', 'milo'],
-    rider: { id: 'felix', name: 'Felix' }
+    boostingUsers: ['user_1', 'user_3'],
+    rider: { id: 'user_2', name: 'User_2' }
   };
 
   it('renders the boost badge when multiplier > 1', () => {

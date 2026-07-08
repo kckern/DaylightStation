@@ -10,14 +10,14 @@ describe('GovernanceEngine eligible users lookup', () => {
     const session = {
       _deviceRouter: {
         getEquipmentCatalog: () => [
-          { id: 'cycle_ace', eligible_users: ['kckern', 'felix'] },
-          { id: 'tricycle', eligible_users: ['milo'] }
+          { id: 'cycle_ace', eligible_users: ['user_1', 'user_2'] },
+          { id: 'tricycle', eligible_users: ['user_3'] }
         ]
       }
     };
     const engine = new GovernanceEngine(session);
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['kckern', 'felix']);
-    expect(engine._getEligibleUsers('tricycle')).toEqual(['milo']);
+    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1', 'user_2']);
+    expect(engine._getEligibleUsers('tricycle')).toEqual(['user_3']);
     expect(engine._getEligibleUsers('unknown')).toEqual([]);
   });
 
@@ -39,12 +39,12 @@ describe('GovernanceEngine eligible users lookup', () => {
   it('returns a copy, not a reference', () => {
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['kckern'] }]
+        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_1'] }]
       }
     };
     const engine = new GovernanceEngine(session);
     const result = engine._getEligibleUsers('cycle_ace');
-    result.push('felix');
-    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['kckern']);
+    result.push('user_2');
+    expect(engine._getEligibleUsers('cycle_ace')).toEqual(['user_1']);
   });
 });

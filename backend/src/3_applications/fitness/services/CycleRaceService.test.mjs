@@ -9,7 +9,7 @@ describe('CycleRaceService', () => {
   it('refuses to save a zero-distance race', async () => {
     const saved = [];
     const svc = new CycleRaceService({ datastore: { save: (r) => saved.push(r) } });
-    const dead = { version: 1, race: { id: '20260602143012' }, participants: { milo: { final_distance_m: 0 } } };
+    const dead = { version: 1, race: { id: '20260602143012' }, participants: { user_3: { final_distance_m: 0 } } };
     expect(svc.save(dead, 'default')).toBeNull();
     expect(saved).toHaveLength(0);
   });
@@ -17,7 +17,7 @@ describe('CycleRaceService', () => {
   it('saves a race with real distance', async () => {
     const saved = [];
     const svc = new CycleRaceService({ datastore: { save: (r) => { saved.push(r); return r; } } });
-    const rec = { version: 1, race: { id: '20260602143012' }, participants: { milo: { final_distance_m: 3000 } } };
+    const rec = { version: 1, race: { id: '20260602143012' }, participants: { user_3: { final_distance_m: 3000 } } };
     expect(svc.save(rec, 'default')).toEqual(rec);
     expect(saved).toHaveLength(1);
   });
@@ -32,7 +32,7 @@ describe('ladder + personal bests', () => {
     { id: '20260629080000', date: '2026-06-29', course_id: 'sprint-1500m', win_condition: 'distance', goal_m: 1500, time_cap_s: null,
       participants: [{ userId: 'dad', isGhost: false, final_time_s: 150, final_distance_m: 1500, placement: 1 }] },
     { id: '20260101080000', date: '2026-01-01', course_id: 'sprint-1500m', win_condition: 'distance', goal_m: 1500, time_cap_s: null,
-      participants: [{ userId: 'milo', isGhost: false, final_time_s: 140, final_distance_m: 1500, placement: 1 }] }
+      participants: [{ userId: 'user_3', isGhost: false, final_time_s: 140, final_distance_m: 1500, placement: 1 }] }
   ];
   const makeSvc = () => new CycleRaceService({ datastore: {
     listIndexEntries: async () => ENTRIES.map((e) => ({ ...e }))
@@ -43,7 +43,7 @@ describe('ladder + personal bests', () => {
       week: '2026-W27', householdId: 'household' });
     expect(l.course.id).toBe('sprint-1500m');
     expect(l.standings).toEqual([{ userId: 'dad', bestValue: 150, raceId: '20260629080000', attempts: 1 }]);
-    expect(l.allTimeRecord.userId).toBe('milo');
+    expect(l.allTimeRecord.userId).toBe('user_3');
   });
 
   it('getLadder returns null with no featured courses; throws BAD_WEEK on garbage', async () => {
@@ -53,9 +53,9 @@ describe('ladder + personal bests', () => {
   });
 
   it('getPersonalBest resolves the course from config, or infers it from indexed entries', async () => {
-    const withCfg = await makeSvc().getPersonalBest({ cycleGameConfig: CFG, userId: 'milo', courseId: 'sprint-1500m', householdId: 'h' });
+    const withCfg = await makeSvc().getPersonalBest({ cycleGameConfig: CFG, userId: 'user_3', courseId: 'sprint-1500m', householdId: 'h' });
     expect(withCfg.best).toEqual({ bestValue: 140, raceId: '20260101080000', date: '2026-01-01' });
-    const noCfg = await makeSvc().getPersonalBest({ cycleGameConfig: {}, userId: 'milo', courseId: 'sprint-1500m', householdId: 'h' });
+    const noCfg = await makeSvc().getPersonalBest({ cycleGameConfig: {}, userId: 'user_3', courseId: 'sprint-1500m', householdId: 'h' });
     expect(noCfg.best?.bestValue).toBe(140);
   });
 });

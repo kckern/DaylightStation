@@ -34,7 +34,7 @@ if (!STRAVA_DIR || !MEDIA_PATH || !SESSIONS_DIR) {
   process.exit(1);
 }
 
-// Zone thresholds for kckern (from config)
+// Zone thresholds for user_1 (from config)
 const ZONE_THRESHOLDS = { cool: 0, active: 110, warm: 130, hot: 150, fire: 170 };
 
 function getZoneId(hr) {
@@ -230,11 +230,11 @@ session:
   duration_seconds: ${elapsedSeconds}
 timezone: America/Los_Angeles
 participants:
-  kckern:
-    display_name: KC Kern
+  user_1:
+    display_name: User_1
     hr_device: '40475'
     is_primary: true
-    base_user: KC Kern
+    base_user: User_1
     strava:
       activityId: ${d.id}
       type: ${activityType}
@@ -242,9 +242,9 @@ participants:
       deviceName: ${d.device_name || 'Garmin Forerunner 245 Music'}
 timeline:
   series:
-    kckern:hr: ${rleEncode(hrSeries)}
-    kckern:zone: ${rleEncode(zoneSeries)}
-    kckern:coins: ${rleEncode(coinsSeries)}
+    user_1:hr: ${rleEncode(hrSeries)}
+    user_1:zone: ${rleEncode(zoneSeries)}
+    user_1:coins: ${rleEncode(coinsSeries)}
     global:coins: ${rleEncode(coinsSeries)}
   events: []
   interval_seconds: ${TICK_INTERVAL}
@@ -261,7 +261,7 @@ treasureBox:
     red: 0
 summary:
   participants:
-    kckern:
+    user_1:
       coins: ${totalCoins}
       hr_avg: ${hrAvg}
       hr_max: ${hrMax}

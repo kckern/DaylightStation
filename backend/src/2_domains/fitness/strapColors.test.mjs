@@ -15,10 +15,10 @@ test('maps strap color names to the SSOT hex (matches the live UI)', () => {
 
 test('resolver maps an HR device id (string or number) to its assigned colour', () => {
   // fitness.yml device_colors.heart_rate shape: { [deviceId]: colorName }
-  const resolve = makeDeviceColorResolver({ 28812: 'red', 28688: 'yellow', 40475: 'watch' });
-  assert.equal(resolve('28812'), '#ff6b6b');   // felix, looked up by string
-  assert.equal(resolve(28812), '#ff6b6b');      // and by number
-  assert.equal(resolve('40475'), '#e9ecef');   // kckern watch
+  const resolve = makeDeviceColorResolver({ 90003: 'red', 90001: 'yellow', 40475: 'watch' });
+  assert.equal(resolve('90003'), '#ff6b6b');   // user_2, looked up by string
+  assert.equal(resolve(90003), '#ff6b6b');      // and by number
+  assert.equal(resolve('40475'), '#e9ecef');   // user_1 watch
 });
 
 test('resolver falls back to a stable per-device hash when unconfigured', () => {

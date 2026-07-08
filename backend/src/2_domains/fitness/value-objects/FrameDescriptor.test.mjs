@@ -11,7 +11,7 @@ test('FrameDescriptor holds frame spec and is frozen', () => {
     playerContentId: 'plex:674287',
     playerOffsetMs: 5000,
     title: 'Daytona USA 2001',
-    participants: [{ id: 'kckern', displayName: 'KC', hr: 142, color: '#f00', avatarRef: null }],
+    participants: [{ id: 'user_1', displayName: 'KC', hr: 142, color: '#f00', avatarRef: null }],
     zone: 'hot',
     rpm: 86
   });

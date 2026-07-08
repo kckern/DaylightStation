@@ -12,7 +12,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 30000;
     engine = new GovernanceEngine(null, { now: () => nowValue });
     active = {
-      id: 'test_0', type: 'cycle', rider: 'felix', cycleState: 'maintain',
+      id: 'test_0', type: 'cycle', rider: 'user_2', cycleState: 'maintain',
       currentPhaseIndex: 0, generatedPhases: [
         { hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 },
         { hiRpm: 70, loRpm: 55, rampSeconds: 20, maintainSeconds: 45 }
@@ -32,7 +32,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(1000);
     expect(active.cycleState).toBe('maintain');
@@ -42,7 +42,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 50, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(0);
     expect(active.cycleState).toBe('maintain');
@@ -56,7 +56,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'active' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'active' }, activeParticipants: ['user_2']
     });
     expect(active.cycleState).toBe('maintain');
     expect(active.lockReason).toBeFalsy();
@@ -72,7 +72,7 @@ describe('GovernanceEngine cycle maintain state', () => {
       nowValue += 200; // 20 ticks × 200 ms = 4 s total
       engine._evaluateCycleChallenge(active, {
         equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-        userZoneMap: { felix: 'active' }, activeParticipants: ['felix']
+        userZoneMap: { user_2: 'active' }, activeParticipants: ['user_2']
       });
       if (active.cycleState === 'locked') { lockObserved = true; break; }
     }
@@ -87,7 +87,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
 
@@ -95,7 +95,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 32000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.dangerSinceMs).toBeNull();
     expect(active.cycleState).toBe('maintain');
@@ -105,7 +105,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm', mickey: 'hot' }, activeParticipants: ['felix', 'mickey']
+      userZoneMap: { user_2: 'warm', mickey: 'hot' }, activeParticipants: ['user_2', 'mickey']
     });
     expect(active.phaseProgressMs).toBe(1500);
     expect(active.totalBoostedMs).toBe(500);
@@ -115,7 +115,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'fire' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'fire' }, activeParticipants: ['user_2']
     });
     expect(active.phaseProgressMs).toBe(2000);
   });
@@ -124,8 +124,8 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'fire', a: 'fire', b: 'fire', c: 'fire' },
-      activeParticipants: ['felix', 'a', 'b', 'c']
+      userZoneMap: { user_2: 'fire', a: 'fire', b: 'fire', c: 'fire' },
+      activeParticipants: ['user_2', 'a', 'b', 'c']
     });
     expect(active.phaseProgressMs).toBe(3000); // capped at 3.0x
   });
@@ -135,7 +135,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'warm' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
     expect(active.currentPhaseIndex).toBe(1);
     expect(active.cycleState).toBe('ramp');
@@ -148,7 +148,7 @@ describe('GovernanceEngine cycle maintain state', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 75, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
-      userZoneMap: { felix: 'hot' }, activeParticipants: ['felix']
+      userZoneMap: { user_2: 'hot' }, activeParticipants: ['user_2']
     });
     expect(active.status).toBe('success');
   });

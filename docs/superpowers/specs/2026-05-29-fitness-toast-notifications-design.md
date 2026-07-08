@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-29
 **Status:** Approved (design); ready for implementation plan
-**Author:** KC Kern + Claude
+**Author:** User_1 + Claude
 
 ## Problem
 

@@ -18,7 +18,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     const cb = jest.fn();
     engine.onCycleStateChange = cb;
     engine.challengeState = {
-      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: 'felix' }
+      activeChallenge: { type: 'cycle', cycleState: 'init', equipment: 'cycle_ace', rider: 'user_2' }
     };
     engine._updateGlobalState();
     expect(cb).toHaveBeenCalledTimes(1);
@@ -57,8 +57,8 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     engine.onCycleStateChange = cb;
     engine.media = null; // hits no-media early-return → tickManualCycle path
     engine._latestInputs = {
-      activeParticipants: ['kckern'],
-      userZoneMap: { kckern: 'hot' },
+      activeParticipants: ['user_1'],
+      userZoneMap: { user_1: 'hot' },
       equipmentCadenceMap: { cycle_ace: { rpm: 35, connected: true } }
     };
     engine.challengeState = {
@@ -67,7 +67,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
         type: 'cycle',
         cycleState: 'init',
         equipment: 'cycle_ace',
-        rider: 'kckern',
+        rider: 'user_1',
         manualTrigger: true,
         currentPhaseIndex: 0,
         totalPhases: 1,

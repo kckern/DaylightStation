@@ -141,7 +141,7 @@ console.error('Failed to load config');
 
 **Good:**
 ```javascript
-getLogger().info('user.login', { userId: 'kckern' });
+getLogger().info('user.login', { userId: 'user_1' });
 getLogger().error('config.load.failed', { path: configPath, error: err.message });
 ```
 

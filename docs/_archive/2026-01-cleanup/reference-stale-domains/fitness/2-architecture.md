@@ -85,7 +85,7 @@ ledger.resolveByDevice("42")
 
 // Returns
 {
-  userId: "kckern",
+  userId: "user_1",
   deviceId: "42",
   assignedAt: timestamp
 }
@@ -101,7 +101,7 @@ ledger.resolveByDevice("42")
 
 ```javascript
 // Input (from DeviceAssignmentLedger)
-userId: "kckern"
+userId: "user_1"
 heartRate: 150
 
 // Zone lookup (from user's zone profile)
@@ -115,8 +115,8 @@ zones: {
 
 // Output (roster entry)
 {
-  id: "kckern",           // ← userId (stable identifier)
-  name: "KC Kern",        // ← Display only
+  id: "user_1",           // ← userId (stable identifier)
+  name: "User_1",        // ← Display only
   deviceId: "42",
   heartRate: 150,
   zoneId: "hot",          // ← Calculated zone
@@ -135,16 +135,16 @@ zones: {
 ```javascript
 // Input: roster from ParticipantRoster
 roster = [
-  { id: "kckern", zoneId: "hot", isActive: true },
-  { id: "felix", zoneId: "warm", isActive: true },
-  { id: "milo", zoneId: "fire", isActive: false }  // Paused
+  { id: "user_1", zoneId: "hot", isActive: true },
+  { id: "user_2", zoneId: "warm", isActive: true },
+  { id: "user_3", zoneId: "fire", isActive: false }  // Paused
 ]
 
 // Build activeParticipants (CRITICAL: must use userId)
 activeParticipants = roster
   .filter(entry => entry.isActive !== false)
   .map(entry => entry.id || entry.profileId);
-// Result: ["kckern", "felix"]
+// Result: ["user_1", "user_2"]
 
 // Build userZoneMap (CRITICAL: must key by userId)
 userZoneMap = {};
@@ -154,7 +154,7 @@ roster.forEach(entry => {
     userZoneMap[userId] = entry.zoneId;
   }
 });
-// Result: { "kckern": "hot", "felix": "warm" }
+// Result: { "user_1": "hot", "user_2": "warm" }
 ```
 
 **Key Contract:**
@@ -169,8 +169,8 @@ roster.forEach(entry => {
 
 ```javascript
 treasureBox.processTick({
-  activeParticipants: new Set(["kckern", "felix"]),  // userId Set
-  inactiveParticipants: ["milo"]                    // userId array
+  activeParticipants: new Set(["user_1", "user_2"]),  // userId Set
+  inactiveParticipants: ["user_3"]                    // userId array
 });
 ```
 
@@ -178,8 +178,8 @@ treasureBox.processTick({
 
 ```javascript
 // perUser Map (keyed by userId)
-perUser.set("kckern", {
-  userId: "kckern",
+perUser.set("user_1", {
+  userId: "user_1",
   currentZone: "hot",
   coins: 42,
   // ...
@@ -191,7 +191,7 @@ perUser.set("kckern", {
 ```javascript
 // MetricsRecorder writes coins to timeline
 assignMetric(`user:${userId}:coins_total`, 42);
-// Key: "user:kckern:coins_total"
+// Key: "user:user_1:coins_total"
 ```
 
 **Key Decision:** All TreasureBox operations key by `userId`, timeline series use `user:` prefix
@@ -204,10 +204,10 @@ assignMetric(`user:${userId}:coins_total`, 42);
 
 ```javascript
 governanceEngine.evaluate({
-  activeParticipants: ["kckern", "felix"],  // userId array
+  activeParticipants: ["user_1", "user_2"],  // userId array
   userZoneMap: {
-    "kckern": "hot",
-    "felix": "warm"
+    "user_1": "hot",
+    "user_2": "warm"
   },
   zoneRankMap: {
     "cool": 0,
@@ -227,7 +227,7 @@ requirement = { active: "all" };  // "active" has rank 1
 
 // Check each participant
 activeParticipants.forEach(userId => {
-  const zoneId = userZoneMap[userId];          // "hot" for kckern
+  const zoneId = userZoneMap[userId];          // "hot" for user_1
   const rank = zoneRankMap[zoneId];            // 3 for "hot"
   const meetsRequirement = rank >= 1;          // 3 >= 1 = true ✓
 });
@@ -258,9 +258,9 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // Examples
-"kckern"
-"felix"
-"milo"
+"user_1"
+"user_2"
+"user_3"
 "guest-abc123"
 ```
 
@@ -271,7 +271,7 @@ activeParticipants.forEach(userId => {
 - TreasureBox perUser tracking
 
 **NOT for identifiers:**
-- ❌ Display names (`"KC Kern"`, `"Alan"`) - case-sensitive, not unique
+- ❌ Display names (`"User_1"`, `"User_4"`) - case-sensitive, not unique
 - ❌ entityId (`"entity-123-abc"`) - session-specific, Phase 2 incomplete
 
 ---
@@ -282,9 +282,9 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // User-scoped metrics
-"user:kckern:coins_total"
-"user:kckern:heart_rate"
-"user:felix:zone_id"
+"user:user_1:coins_total"
+"user:user_1:heart_rate"
+"user:user_2:zone_id"
 
 // Global metrics
 "global:session_coins"
@@ -306,13 +306,13 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // ✅ CORRECT
-activeParticipants = ["kckern", "felix"];
-userZoneMap = { "kckern": "hot", "felix": "warm" };
-treasureBox.perUser.set("kckern", data);
+activeParticipants = ["user_1", "user_2"];
+userZoneMap = { "user_1": "hot", "user_2": "warm" };
+treasureBox.perUser.set("user_1", data);
 
 // ❌ WRONG (mixed identifiers)
-activeParticipants = ["kckern", "felix"];
-userZoneMap = { "KC Kern": "hot", "Felix": "warm" };  // Using names!
+activeParticipants = ["user_1", "user_2"];
+userZoneMap = { "User_1": "hot", "User_2": "warm" };  // Using names!
 ```
 
 ### Rule 2: Explicit Null Handling
@@ -477,10 +477,10 @@ if (!zone) {
 
 ```javascript
 // WRONG (mixed names and IDs)
-activeParticipants = ["kckern", "Felix", "milo"];  // IDs and names mixed
+activeParticipants = ["user_1", "User_2", "user_3"];  // IDs and names mixed
 
 // CORRECT (all userId)
-activeParticipants = ["kckern", "felix", "milo"];
+activeParticipants = ["user_1", "user_2", "user_3"];
 ```
 
 ---

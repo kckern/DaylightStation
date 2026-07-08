@@ -20,7 +20,7 @@ describe('WeeklyDigest', () => {
     ];
     const gathered = await digest.gather({
       tools: mockTools,
-      userId: 'kckern',
+      userId: 'user_1',
       memory: { serialize: () => '' },
       logger: { warn: () => {}, info: () => {} },
     });
@@ -53,7 +53,7 @@ describe('WeeklyDigest', () => {
   it('act sets last_weekly_digest in memory with 7-day TTL', async () => {
     const digest = new WeeklyDigest();
     const memory = { set: vi.fn() };
-    await digest.act({ should_send: true, text: 'Weekly summary.' }, { memory, userId: 'kckern', logger: { info: () => {} } });
+    await digest.act({ should_send: true, text: 'Weekly summary.' }, { memory, userId: 'user_1', logger: { info: () => {} } });
 
     expect(memory.set.mock.calls.length).toBe(1);
     expect(memory.set.mock.calls[0][0]).toBe('last_weekly_digest');

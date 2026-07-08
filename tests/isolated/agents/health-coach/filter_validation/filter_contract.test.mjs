@@ -7,7 +7,7 @@ const makeSvc = (sessions = []) => new EventQueryService({
   adapters: {
     workout: new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern',
+      householdId: 'user_1',
     }),
   },
 });

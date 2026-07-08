@@ -28,7 +28,7 @@ Neither issue is a regression from the 03-07/03-10/03-11 video player fixes. Tho
 | Render rate | 12.8–15.4 renders/sec | `fitness.render_thrashing` logs |
 | Sustained duration | 152+ seconds (still going at last log) | `sustainedMs` field |
 | forceUpdateCount | 115–124 per 30s profiling window | `fitness-profile` samples |
-| Status correction log | `[FitnessChart] Status corrected: kckern (removed → idle)` | Every 5s (throttled) |
+| Status correction log | `[FitnessChart] Status corrected: user_1 (removed → idle)` | Every 5s (throttled) |
 | Session impact | Continuous from first 30s of session onward | Profile sample #2 at 02:24:38 |
 
 ### Timeline
@@ -68,12 +68,12 @@ The chain:
 4. validatedEntries useMemo [FitnessChart.jsx:442]
    → Checks entry.isActive !== false → correctStatus = ACTIVE or IDLE
    → If entry.status !== correctStatus → creates NEW object { ...entry, status: corrected }
-   → This triggers the "Status corrected: kckern (removed → idle)" log
+   → This triggers the "Status corrected: user_1 (removed → idle)" log
 ```
 
 **The specific oscillation pattern (`removed → idle`):**
 
-When the user `kckern` has two devices (rosterSize: 2, deviceCount: 2 from profile data), one of the participant IDs may appear in `presentEntries` on some ticks but not others, depending on whether the HR device sent data in that tick window. When the ID is NOT in `presentIds`, line 414-416 sets `status: REMOVED, isActive: false`. Then `validatedEntries` at line 447 sees `isActive === false` and corrects to `IDLE`.
+When the user `user_1` has two devices (rosterSize: 2, deviceCount: 2 from profile data), one of the participant IDs may appear in `presentEntries` on some ticks but not others, depending on whether the HR device sent data in that tick window. When the ID is NOT in `presentIds`, line 414-416 sets `status: REMOVED, isActive: false`. Then `validatedEntries` at line 447 sees `isActive === false` and corrects to `IDLE`.
 
 But the deeper issue is **every recomputation creates new object references**, which cascades through the dependency chain:
 - New `participantCache` → new `allEntries` (line 427, `useMemo([participantCache])`)

@@ -128,8 +128,8 @@ describe('EchoAgent — buildPromptSections (inherited from BaseAgent)', () => {
 
   it('includes Active User section when userId is in context', async () => {
     const agent = makeAgent();
-    const sections = await agent.buildPromptSections({ userId: 'kckern' }, null);
+    const sections = await agent.buildPromptSections({ userId: 'user_1' }, null);
     const userSection = sections.find(s => s?.includes('Active User'));
-    expect(userSection).toMatch(/kckern/);
+    expect(userSection).toMatch(/user_1/);
   });
 });

@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { GUEST_PROFILE, resolveProfile } from './pianoUser.js';
 
 describe('resolveProfile', () => {
-  const users = [{ id: 'kc', name: 'KC' }, { id: 'milo', name: 'Milo' }];
+  const users = [{ id: 'kc', name: 'KC' }, { id: 'user_3', name: 'User_3' }];
   it('returns the roster match for a known user', () => {
-    expect(resolveProfile(users, 'milo')).toEqual({ id: 'milo', name: 'Milo' });
+    expect(resolveProfile(users, 'user_3')).toEqual({ id: 'user_3', name: 'User_3' });
   });
   it('returns the synthetic Guest profile for "guest" (never from the roster)', () => {
     expect(resolveProfile(users, 'guest')).toEqual(GUEST_PROFILE);

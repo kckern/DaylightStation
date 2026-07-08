@@ -23,19 +23,19 @@ const COUNTDOWN_TICK_MS = 1000;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'kckern', tricycle: 'felix' };
+  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
-    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
-    felix: { name: 'Felix', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
+    user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
-      { id: 'kckern', name: 'KC' },
-      { id: 'felix', name: 'Felix' }
+      { id: 'user_1', name: 'KC' },
+      { id: 'user_2', name: 'User_2' }
     ],
     zones: [
       { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
@@ -91,10 +91,10 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
   });
 
   it('raises a LEAD_CHANGE toast the instant the trailing rider overtakes', () => {
-    let phase = 1; // 1: kckern ahead · 2: felix overtakes
+    let phase = 1; // 1: user_1 ahead · 2: user_2 overtakes
     mockCtx = makeCtx({
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: phase === 1 ? 120 : 5, connected: true };
           return { rpm: phase === 1 ? 5 : 150, connected: true };
@@ -105,11 +105,11 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     nowMs = 0;
     driveToGo(renderApi);
 
-    // Phase 1: kckern rides hard, felix crawls — kckern takes an early lead.
+    // Phase 1: user_1 rides hard, user_2 crawls — user_1 takes an early lead.
     nowMs = 4000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
-    // Phase 2: felix surges, kckern nearly stops — felix overtakes within a
+    // Phase 2: user_2 surges, user_1 nearly stops — user_2 overtakes within a
     // handful of ticks.
     phase = 2;
     nowMs = 4000 + 16000;
@@ -117,17 +117,17 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
 
     const toast = renderApi.getByTestId('cycle-event-toast');
     expect(toast.dataset.variant).toBe('lead-change');
-    expect(toast.textContent).toContain('Felix takes the lead!');
+    expect(toast.textContent).toContain('User_2 takes the lead!');
   });
 
   it('raises a RIDER_FINISHED ceremony toast the instant a rider crosses the goal — while the race is still live', () => {
-    // 100 m "Flash" tier: kckern rides hard and crosses first; felix rides at
+    // 100 m "Flash" tier: user_1 rides hard and crosses first; user_2 rides at
     // a real (non-zero, non-idle) pace the whole time, so the race is still
-    // actively 'racing' — not yet at the results screen — when kckern's
+    // actively 'racing' — not yet at the results screen — when user_1's
     // ceremony toast fires.
     mockCtx = makeCtx({
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'felix' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 120, connected: true } : { rpm: 20, connected: true })
       }
     });
@@ -138,7 +138,7 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-start')); });
     act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
 
-    // ~15 ticks is enough for kckern to cross 100 m at rpm 120 (mirrors the
+    // ~15 ticks is enough for user_1 to cross 100 m at rpm 120 (mirrors the
     // wallclock mercy-kill fixture's own timing note).
     nowMs = 16000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
