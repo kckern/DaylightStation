@@ -37,3 +37,36 @@ export function resolveManageAccess(profilesByUser, targetUsername) {
 
   return { requiresAuth, gallery };
 }
+
+/** Config-declared admin usernames (`fitness.yml → users.admin`). */
+export function resolveAdminUsernames(fitnessConfig) {
+  return fitnessConfig?.users?.admin || [];
+}
+
+/** Config-declared primary usernames (`fitness.yml → users.primary`). */
+export function resolvePrimaryUsernames(fitnessConfig) {
+  return fitnessConfig?.users?.primary || [];
+}
+
+/**
+ * The fingerprint-enrollment universe: admins + primary users, deduped with
+ * admins first (pure; no IO).
+ *
+ * Both groups have a profile.yml and may hold fingerprints; an admin need not be
+ * primary (e.g. a spouse who manages but doesn't follow the program). Inline
+ * family/friends have no profile and are never eligible. Falsy/blank usernames
+ * are skipped.
+ *
+ * @param {object} fitnessConfig - parsed fitness.yml (reads `.users.admin/.primary`)
+ * @returns {string[]} ordered, deduped eligible usernames
+ */
+export function resolveEligibleUsernames(fitnessConfig) {
+  const seen = new Set();
+  const ordered = [];
+  for (const username of [...resolveAdminUsernames(fitnessConfig), ...resolvePrimaryUsernames(fitnessConfig)]) {
+    if (!username || seen.has(username)) continue;
+    seen.add(username);
+    ordered.push(username);
+  }
+  return ordered;
+}
