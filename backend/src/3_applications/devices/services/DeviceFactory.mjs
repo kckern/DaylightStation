@@ -1,19 +1,15 @@
 /**
  * DeviceFactory - Builds Device instances from configuration
  *
- * Reads device config and creates appropriate capability adapters
+ * Reads device config and selects the appropriate capability adapter
  * (HomeAssistant, FullyKiosk, SSH, WebSocket) based on provider settings.
+ * Concrete adapters are supplied by the composition root via
+ * `adapterFactories` — this service holds selection logic only.
  *
  * @module applications/devices/services
  */
 
 import { Device } from './Device.mjs';
-import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDeviceAdapter.mjs';
-import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
-import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
-import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
-import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
-import { ResilientContentAdapter } from '#adapters/devices/ResilientContentAdapter.mjs';
 
 export class DeviceFactory {
   #haGateway;
@@ -22,6 +18,7 @@ export class DeviceFactory {
   #remoteExec;
   #daylightHost;
   #configService;
+  #adapterFactories;
   #logger;
 
   /**
@@ -31,6 +28,9 @@ export class DeviceFactory {
    * @param {Object} config.wsBus - WebSocket broadcast service
    * @param {Object} config.remoteExec - Remote execution service
    * @param {string} config.daylightHost - Base URL for content loading
+   * @param {Object} config.adapterFactories - Adapter factory fns from the
+   *   composition root: { homeAssistantDevice, fullyKioskContent,
+   *   webSocketContent, sshOs, adb, resilientContent }, each `(cfg, deps) => adapter`
    * @param {Object} [config.configService] - ConfigService for auth lookups
    * @param {Object} [config.logger]
    */
@@ -41,6 +41,7 @@ export class DeviceFactory {
     this.#remoteExec = config.remoteExec;
     this.#daylightHost = config.daylightHost;
     this.#configService = config.configService;
+    this.#adapterFactories = config.adapterFactories || {};
     this.#logger = config.logger || console;
   }
 
@@ -115,7 +116,7 @@ export class DeviceFactory {
       adapterConfig.waitOptions = config.waitOptions;
     }
 
-    return new HomeAssistantDeviceAdapter(
+    return this.#createAdapter('homeAssistantDevice',
       adapterConfig,
       { gateway: this.#haGateway, logger: this.#logger }
     );
@@ -136,7 +137,7 @@ export class DeviceFactory {
       return null;
     }
 
-    return new SshOsAdapter(
+    return this.#createAdapter('sshOs',
       {
         host: config.host,
         user: config.user,
@@ -175,7 +176,7 @@ export class DeviceFactory {
       let adbAdapter = null;
       let launchActivity = null;
       if (config.fallback?.provider === 'adb') {
-        adbAdapter = new AdbAdapter(
+        adbAdapter = this.#createAdapter('adb',
           { host: config.fallback.host, port: config.fallback.port },
           { logger: this.#logger }
         );
@@ -188,7 +189,7 @@ export class DeviceFactory {
         });
       }
 
-      const fkbAdapter = new FullyKioskContentAdapter(
+      const fkbAdapter = this.#createAdapter('fullyKioskContent',
         {
           host: config.host,
           port: config.port,
@@ -203,7 +204,7 @@ export class DeviceFactory {
 
       // Wrap with ADB recovery if fallback is configured
       if (adbAdapter) {
-        return new ResilientContentAdapter(
+        return this.#createAdapter('resilientContent',
           {
             primary: fkbAdapter,
             recovery: adbAdapter,
@@ -222,7 +223,7 @@ export class DeviceFactory {
         return null;
       }
 
-      return new WebSocketContentAdapter(
+      return this.#createAdapter('webSocketContent',
         {
           topic: config.topic,
           deviceId,
@@ -234,6 +235,23 @@ export class DeviceFactory {
 
     this.#logger.warn?.('deviceFactory.unsupportedContentProvider', { provider });
     return null;
+  }
+
+  /**
+   * Invoke a composition-root-supplied adapter factory by name.
+   * @private
+   * @param {string} name - Factory key in adapterFactories
+   * @param {Object} adapterConfig - Adapter-specific config
+   * @param {Object} deps - Adapter-specific dependencies
+   * @returns {Object|null} Adapter instance, or null if no factory registered
+   */
+  #createAdapter(name, adapterConfig, deps) {
+    const factory = this.#adapterFactories[name];
+    if (typeof factory !== 'function') {
+      this.#logger.warn?.('deviceFactory.noAdapterFactory', { name });
+      return null;
+    }
+    return factory(adapterConfig, deps);
   }
 }
 
