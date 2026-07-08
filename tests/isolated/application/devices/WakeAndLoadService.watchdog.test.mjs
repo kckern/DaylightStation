@@ -214,4 +214,58 @@ describe('WakeAndLoadService playback watchdog', () => {
     expect(subscribeSpy).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  test('arms watchdog for play-next queries and times out when nothing plays', async () => {
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    const device = makeDevice();
+    const svc = new WakeAndLoadService({
+      deviceService: { get: () => device },
+      readinessPolicy: { isReady: async () => ({ ready: true }) },
+      broadcast,
+      eventBus,
+      logger,
+    });
+
+    const result = await svc.execute('living-room', { 'play-next': 'plex:621568', op: 'play-next' });
+    expect(result.ok).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(90_000);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'wake-and-load.playback.timeout',
+      expect.objectContaining({ expectedContentId: 'plex:621568' })
+    );
+    vi.useRealTimers();
+  });
+
+  test('play-next watchdog resolves when matching playback.log arrives', async () => {
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const eventBus = makeEventBus();
+    const device = makeDevice();
+    const svc = new WakeAndLoadService({
+      deviceService: { get: () => device },
+      readinessPolicy: { isReady: async () => ({ ready: true }) },
+      broadcast: vi.fn(),
+      eventBus,
+      logger,
+    });
+
+    await svc.execute('living-room', { 'play-next': 'plex:621568', op: 'play-next' });
+    eventBus.publish('playback.log', { contentId: 'plex:621568' });
+    await vi.advanceTimersByTimeAsync(90_000);
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'wake-and-load.playback.timeout',
+      expect.anything()
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'wake-and-load.playback.confirmed',
+      expect.objectContaining({ contentId: 'plex:621568' })
+    );
+    vi.useRealTimers();
+  });
 });
