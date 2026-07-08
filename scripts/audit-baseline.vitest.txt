@@ -1,0 +1,19 @@
+# GATE-VITEST baseline — the SET of vitest files currently failing.
+# Population: *.test.{js,jsx,mjs} under tests/unit + tests/isolated that
+# import from vitest, minus suite/ (jest) and backend/ (node:test).
+# A file failing that is NOT listed here is a REGRESSION (gate exits 1).
+# Captured: 6162 tests, 6115 pass, 35 fail.
+# Regenerate with: node scripts/gate-vitest.mjs --update
+tests/isolated/adapter/content/canvas/ImmichCanvasAdapter.test.mjs
+tests/isolated/adapter/content/gallery/immich/ImmichAdapter.test.mjs
+tests/isolated/adapter/weekly-review/WeeklyReviewImmichAdapter.test.mjs
+tests/isolated/api/piano-router.test.mjs
+tests/isolated/api/routers/fitness-debug-voice-memo.test.mjs
+tests/isolated/api/routers/localContent.test.mjs
+tests/isolated/assembly/infrastructure/infrastructure-ownership.test.mjs
+tests/isolated/domain/fitness/active-participant-state.unit.test.mjs
+tests/isolated/domain/fitness/build-session-summary.unit.test.mjs
+tests/unit/adapters/fitness/danceLightingConfig.test.mjs
+tests/unit/api/routers/display.test.mjs
+tests/unit/api/routers/info.test.mjs
+tests/unit/livestream/StreamChannel.test.mjs
