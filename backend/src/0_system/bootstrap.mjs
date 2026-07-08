@@ -92,6 +92,9 @@ import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTransc
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
+import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+import { FitnessSimulationService } from '#apps/fitness/services/FitnessSimulationService.mjs';
+import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { GenerateSessionTimelapse } from '#apps/fitness/usecases/GenerateSessionTimelapse.mjs';
 import { makeDeviceColorResolver } from '#domains/fitness/strapColors.mjs';
 import { RecapSweep } from '#apps/fitness/usecases/RecapSweep.mjs';
@@ -1219,11 +1222,25 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
+  // Session lock + simulation supervision + session-query use case are
+  // constructed HERE (composition root) and injected — they must not be
+  // module-scope shared state inside the router.
+  const sessionLockService = new SessionLockService();
+  const simulationService = new FitnessSimulationService({ logger });
+  const querySessions = new QuerySessions({
+    sessionService: fitnessServices.sessionService,
+    sessionGroupingService: fitnessServices.sessionGroupingService,
+    logger
+  });
+
   const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     cycleRaceService: fitnessServices.cycleRaceService,
     generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
+    sessionLockService,
+    simulationService,
+    querySessions,
     zoneLedController: fitnessServices.ambientLedController,
     danceLightingController: fitnessServices.danceLightingController,
     equipmentFanController: fitnessServices.equipmentFanController,

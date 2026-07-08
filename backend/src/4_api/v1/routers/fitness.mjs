@@ -38,12 +38,11 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
-import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
+import { QuerySessions } from '#apps/fitness/usecases/QuerySessions.mjs';
 import { getUnlockService } from '#apps/fitness/unlockService.mjs';
 import { resolveManageAccess } from '#apps/fitness/manageAccessPolicy.mjs';
 import { getManageService } from '#apps/fitness/manageService.mjs';
@@ -73,6 +72,9 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} [config.providerWebhookAdapters] - Map of provider webhook adapters (e.g. { strava: StravaWebhookAdapter })
  * @param {Object} [config.enrichmentService] - StravaEnrichmentService instance
  * @param {Object} [config.agentOrchestrator] - AgentOrchestrator for triggering agent assignments (optional)
+ * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
+ * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
+ * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -98,6 +100,12 @@ export function createFitnessRouter(config) {
     fitnessSuggestionService = null,
     cycleRaceService = null,
     sessionGroupingService = null,
+    // Session lock + simulation supervision are constructed at the composition
+    // root and injected here — they must NOT be module-scope in this router
+    // (shared-state-across-requests bug).
+    sessionLockService = null,
+    simulationService = null,
+    querySessions = null,
     // Test seam: defaults to the process-level unlock service singleton.
     // Tests inject a fake so the endpoint can be exercised without a live eventbus.
     resolveUnlockService = getUnlockService,
@@ -112,6 +120,12 @@ export function createFitnessRouter(config) {
   } = config;
 
   const router = express.Router();
+
+  // QuerySessions use case: prefer the injected instance (composition root);
+  // otherwise wire it here from the already-injected session services so the
+  // router is self-sufficient for direct-construction tests.
+  const sessionsUseCase = querySessions
+    || (sessionService ? new QuerySessions({ sessionService, sessionGroupingService, logger }) : null);
 
   /**
    * GET /api/fitness - Get fitness config (hydrated with user profiles)
@@ -290,64 +304,13 @@ export function createFitnessRouter(config) {
    * - limit: number (max sessions to return when using since, default: 20)
    */
   router.get('/sessions', asyncHandler(async (req, res) => {
-    const { date, since, limit, household } = req.query;
-    const doGroup = sessionGroupingService && req.query.group !== 'none';
-
-    // Mode 1: Single date query (backwards compat)
-    if (date && !since) {
-      let sessions = await sessionService.listSessionsByDate(date, household);
-      if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
-      return res.json({
-        sessions,
-        date,
-        household: sessionService.resolveHouseholdId(household)
-      });
+    const { date, since, limit, household, group } = req.query;
+    const body = await sessionsUseCase.execute({ date, since, limit, household, group });
+    // Null = neither date nor since provided.
+    if (!body) {
+      return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
     }
-
-    // Mode 2: Date range query (since -> today)
-    if (since) {
-      const t0 = Date.now();
-      const endDate = new Date().toISOString().split('T')[0]; // Today
-      // Parse relative date notation (e.g. "30d" = 30 days ago)
-      let startDate = since;
-      const relMatch = since.match(/^(\d+)d$/);
-      if (relMatch) {
-        const d = new Date();
-        d.setDate(d.getDate() - parseInt(relMatch[1], 10));
-        startDate = d.toISOString().split('T')[0];
-      }
-      let sessions = await sessionService.listSessionsInRange(startDate, endDate, household);
-      const tAfterList = Date.now();
-      if (doGroup) sessions = await sessionGroupingService.group(sessions, household);
-      const tAfterGroup = Date.now();
-      sessions.sort((a, b) => b.startTime - a.startTime); // grouping returns ascending; list is desc
-      const maxLimit = parseInt(limit) || 20;
-      const limited = sessions.slice(0, maxLimit);
-
-      logger.info?.('fitness.sessions.range.timing', {
-        since,
-        startDate,
-        endDate,
-        total: sessions.length,
-        returned: limited.length,
-        grouped: Boolean(doGroup),
-        listMs: tAfterList - t0,
-        groupMs: tAfterGroup - tAfterList,
-        totalMs: Date.now() - t0
-      });
-
-      return res.json({
-        sessions: limited,
-        since,
-        endDate,
-        total: sessions.length,
-        returned: limited.length,
-        household: sessionService.resolveHouseholdId(household)
-      });
-    }
-
-    // Neither date nor since provided
-    return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
+    return res.json(body);
   }));
 
   /**
