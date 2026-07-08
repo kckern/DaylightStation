@@ -18,7 +18,7 @@ user gets **no error message at all** — the status indicator vanishes silently
 For each failed scan, the sequence was:
 
 ```
-direct.upc.received            (GET /upc, user=kckern)
+direct.upc.received            (GET /upc, user=user_1)
 upc.lookup.found               (OpenFoodFacts, hasImage:true)
 telegram.api.error  method=sendPhoto        "Request failed with status code 400"
 logUPC.error

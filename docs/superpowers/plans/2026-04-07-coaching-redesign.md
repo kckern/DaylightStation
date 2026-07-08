@@ -783,7 +783,7 @@ describe('CoachingOrchestrator', () => {
 
   it('sends post-report message with status block + commentary', async () => {
     await orchestrator.sendPostReport({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:123',
       date: '2026-04-07',
       totals: { calories: 850, protein: 62, carbs: 100, fat: 30 },
@@ -801,7 +801,7 @@ describe('CoachingOrchestrator', () => {
     mockCommentary.generate.mockResolvedValue('');
 
     await orchestrator.sendPostReport({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:123',
       date: '2026-04-07',
       totals: { calories: 850, protein: 62, carbs: 100, fat: 30 },
@@ -814,7 +814,7 @@ describe('CoachingOrchestrator', () => {
 
   it('persists coaching message to history', async () => {
     await orchestrator.sendPostReport({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:123',
       date: '2026-04-07',
       totals: { calories: 850, protein: 62, carbs: 100, fat: 30 },
@@ -822,7 +822,7 @@ describe('CoachingOrchestrator', () => {
 
     expect(mockHealthStore.saveCoachingData).toHaveBeenCalledOnce();
     const [userId, data] = mockHealthStore.saveCoachingData.mock.calls[0];
-    expect(userId).toBe('kckern');
+    expect(userId).toBe('user_1');
     expect(data['2026-04-07']).toBeDefined();
     expect(data['2026-04-07'][0].type).toBe('post-report');
   });
@@ -831,7 +831,7 @@ describe('CoachingOrchestrator', () => {
     mockCommentary.generate.mockRejectedValue(new Error('timeout'));
 
     await orchestrator.sendPostReport({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:123',
       date: '2026-04-07',
       totals: { calories: 850, protein: 62, carbs: 100, fat: 30 },

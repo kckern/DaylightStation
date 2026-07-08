@@ -19,7 +19,7 @@ function makeSvc(sessions) {
         sessionService: {
           listSessionsInRange: vi.fn(async () => sessions),
         },
-        householdId: 'kckern',
+        householdId: 'user_1',
       }),
     },
   });
@@ -95,7 +95,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
             listSessionsInRange: vi.fn(async () => [sparseSummary]),
             getSession: vi.fn(async (id) => id === '20260507060000' ? fullSession : null),
           },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -127,7 +127,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
             listSessionsInRange: vi.fn(async () => five),
             getSession,
           },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -155,7 +155,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
             listSessionsInRange: vi.fn(async () => [sparseSummary]),
             getSession: vi.fn(async () => fullSession),
           },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -177,7 +177,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
             listSessionsInRange: vi.fn(async () => [sparseSummary]),
             getSession: vi.fn(async () => { throw new Error('boom'); }),
           },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -196,7 +196,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
       adapters: {
         workout: new FitnessEventAdapter({
           sessionService: { listSessionsInRange: vi.fn(async () => [sparseSummary]) },  // no getSession
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -216,7 +216,7 @@ describe('EventQueryService.queryEvents — canonical kind', () => {
       adapters: {
         workout: new FitnessEventAdapter({
           sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });
@@ -234,7 +234,7 @@ describe('EventQueryService.queryEvents — canonical kind', () => {
       adapters: {
         workout: new FitnessEventAdapter({
           sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-          householdId: 'kckern',
+          householdId: 'user_1',
         }),
       },
     });

@@ -11,8 +11,8 @@ const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEng
  * per-test code mutates its cycleState / phaseProgressMs / etc. as needed.
  */
 function buildEngine({
-  eligibleUsers = ['user_2', 'user_3', 'kckern'],
-  profiles = { user_2: { name: 'User_2 the Cat' }, user_3: { name: 'User_3' }, kckern: { name: 'KC' } },
+  eligibleUsers = ['user_2', 'user_3', 'user_1'],
+  profiles = { user_2: { name: 'User_2 the Cat' }, user_3: { name: 'User_3' }, user_1: { name: 'KC' } },
   nowValue = 30000
 } = {}) {
   const session = {
@@ -205,9 +205,9 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     // Set user_3 on cooldown
     engine._cycleCooldowns = { user_3: now + 10000 };
     const snap = engine._buildChallengeSnapshot(now);
-    // Eligible pool: user_2, user_3, kckern
-    // Remove user_2 (rider) and user_3 (cooldown) → kckern remains
-    expect(snap.swapEligibleUsers).toEqual(['kckern']);
+    // Eligible pool: user_2, user_3, user_1
+    // Remove user_2 (rider) and user_3 (cooldown) → user_1 remains
+    expect(snap.swapEligibleUsers).toEqual(['user_1']);
   });
 
   it('swapEligibleUsers includes users whose cooldown has expired', () => {
@@ -217,7 +217,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     engine._cycleCooldowns = { user_3: now - 1000 };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapEligibleUsers).toContain('user_3');
-    expect(snap.swapEligibleUsers).toContain('kckern');
+    expect(snap.swapEligibleUsers).toContain('user_1');
     expect(snap.swapEligibleUsers).not.toContain('user_2');
   });
 

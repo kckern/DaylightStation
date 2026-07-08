@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Nutribot is saving user data to conversation-ID-based paths (`telegram:b6898194425_c575596036`) instead of resolved username paths (`kckern`). This causes:
+Nutribot is saving user data to conversation-ID-based paths (`telegram:b6898194425_c575596036`) instead of resolved username paths (`user_1`). This causes:
 - Data fragmentation across multiple user directories
 - Report generation showing 0 calories (can't find the correct data files)
 - Potential data loss for affected users
@@ -67,7 +67,7 @@ data/users/kckern/lifelog/nutrition/
 │                                                                     │
 │  if (userResolver && event.platform && event.platformUserId) {      │
 │    username = userResolver.resolveUser(platform, platformUserId)    │
-│    if (username) return username;  // ✅ Should return 'kckern'     │
+│    if (username) return username;  // ✅ Should return 'user_1'     │
 │  }                                                                  │
 │  return event.conversationId;  // ❌ Fallback being hit             │
 └─────────────────────────────────────────────────────────────────────┘
@@ -77,7 +77,7 @@ data/users/kckern/lifelog/nutrition/
 │  UserResolver.resolveUser('telegram', '575596036')                  │
 │                                                                     │
 │  Looks up: chatbotsConfig.identity_mappings.telegram['575596036']   │
-│  Expected: 'kckern'                                                 │
+│  Expected: 'user_1'                                                 │
 │  Actual: ??? (possibly null or not reached)                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -88,7 +88,7 @@ data/users/kckern/lifelog/nutrition/
 ```yaml
 identity_mappings:
   telegram:
-    "575596036": kckern
+    "575596036": user_1
 ```
 
 ### Suspected Failure Points
@@ -98,7 +98,7 @@ identity_mappings:
 | 1 | `this.#userResolver` | `UserResolver instance` | May be `null` if not passed to NutribotInputRouter |
 | 2 | `event.platform` | `'telegram'` | May be `undefined` if toInputEvent not called |
 | 3 | `event.platformUserId` | `'575596036'` | May be `undefined` if TelegramChatRef fails |
-| 4 | `resolveUser()` return | `'kckern'` | May return `null` if config not loaded |
+| 4 | `resolveUser()` return | `'user_1'` | May return `null` if config not loaded |
 
 ### Most Likely Cause
 

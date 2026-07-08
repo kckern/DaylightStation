@@ -409,7 +409,7 @@ describe('challenge feasibility check', () => {
       { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
       { id: 'user_4',   currentHr: 138, zoneThresholds: { hot: 170 } }, // 32 BPM gap
       { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(false);
@@ -420,7 +420,7 @@ describe('challenge feasibility check', () => {
       { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
       { id: 'user_4',   currentHr: 155, zoneThresholds: { hot: 170 } },
       { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     const result = checkChallengeFeasibility('hot', 'all', participants);
     expect(result.feasible).toBe(true);
@@ -431,7 +431,7 @@ describe('challenge feasibility check', () => {
       { id: 'user_3',   currentHr: 155, zoneThresholds: { hot: 160 } },
       { id: 'user_4',   currentHr: 100, zoneThresholds: { hot: 170 } }, // too far
       { id: 'user_2',  currentHr: 150, zoneThresholds: { hot: 160 } },
-      { id: 'kckern', currentHr: 160, zoneThresholds: { hot: 155 } },
+      { id: 'user_1', currentHr: 160, zoneThresholds: { hot: 155 } },
     ];
     // majority of 4 = 2
     const result = checkChallengeFeasibility('hot', 'majority', participants);

@@ -33,7 +33,7 @@ describe('ChatOverlay', () => {
   });
 
   it('renders userId in header', () => {
-    r(<ChatOverlay open={true} onClose={vi.fn()} userId="kckern">x</ChatOverlay>);
-    expect(screen.getByText(/kckern/)).toBeInTheDocument();
+    r(<ChatOverlay open={true} onClose={vi.fn()} userId="user_1">x</ChatOverlay>);
+    expect(screen.getByText(/user_1/)).toBeInTheDocument();
   });
 });

@@ -314,7 +314,7 @@ git commit -m "feat(strava): replace activityId scan with time-based session mat
 
 ```yaml
 participants:
-  kckern:
+  user_1:
     strava:
       activityId: 17541823520
       type: WeightTraining
@@ -342,7 +342,7 @@ After the `_findMatchingSession` call succeeds and before `buildStravaDescriptio
 
 ```javascript
 // Write Strava data back to session YAML
-const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
 if (session.participants?.[username] && !session.participants[username]?.strava?.activityId) {
   session.participants[username].strava = {
     activityId: currentActivity.id,
@@ -500,7 +500,7 @@ After a successful time-match, the service writes the Strava block to the sessio
 
 ```yaml
 participants:
-  kckern:
+  user_1:
     strava:
       activityId: 17541823520
       type: WeightTraining

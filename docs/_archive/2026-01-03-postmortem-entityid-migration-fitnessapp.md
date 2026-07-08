@@ -186,8 +186,8 @@ Video locked overlay showed "Waiting for participants" despite 5 active users.
 
 **Fix:** Use consistent userId for both:
 ```javascript
-.map(entry => entry.id || entry.profileId);  // ["kckern", "user_2"]
-userZoneMap[entry.id || entry.profileId] = entry.zoneId;  // {"kckern": "fire"}
+.map(entry => entry.id || entry.profileId);  // ["user_1", "user_2"]
+userZoneMap[entry.id || entry.profileId] = entry.zoneId;  // {"user_1": "fire"}
 ```
 
 ### 2. TreasureBox Dual-Mode Confusion
@@ -404,7 +404,7 @@ if (!participantZoneId) {
 // Add integration tests
 test('governance detects active users', () => {
   const session = createFitnessSession();
-  session.addParticipant({ id: 'kckern', name: 'KC' });
+  session.addParticipant({ id: 'user_1', name: 'KC' });
   session.updateSnapshot();
 
   const result = session.governanceEngine.evaluate();
@@ -604,15 +604,15 @@ grep -r "user:\${.*\.id}" frontend/src/hooks/fitness/
  * Participant Identifier
  * @typedef {string} ParticipantId
  * @description Stable user identifier.
- * - Format: userId ("kckern", "user_3") OR entityId ("entity-1735689600000-abc")
+ * - Format: userId ("user_1", "user_3") OR entityId ("entity-1735689600000-abc")
  * - NOT display name ("User_4", "Bob")
- * @example "kckern", "entity-1735689600000-abc123"
+ * @example "user_1", "entity-1735689600000-abc123"
  */
 
 /**
  * Timeline Series Key Format
  * @description All timeline series MUST use this format
- * @example "user:kckern:coins_total" OR "entity:entity-123-abc:coins_total"
+ * @example "user:user_1:coins_total" OR "entity:entity-123-abc:coins_total"
  */
 ```
 
@@ -924,7 +924,7 @@ The entityId migration exposed **fundamental architectural fragility** in the Fi
 | Scheme | Format | Example | Usage | Status |
 |--------|--------|---------|-------|--------|
 | **Slug** | `slugifyId(name)` | `"user_4"` | Legacy keys | ⏪ Deprecated |
-| **User ID** | `user.id` | `"kckern"` | Profile identity | ✅ Current |
+| **User ID** | `user.id` | `"user_1"` | Profile identity | ✅ Current |
 | **Entity ID** | `entity-{timestamp}-{hash}` | `"entity-1735689600000-abc"` | Session participation | ⚠️ Partial |
 
 ## Appendix B: Migration Completion Checklist

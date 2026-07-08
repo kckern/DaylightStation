@@ -251,13 +251,13 @@ subset to race against (default all).
 ### F14 — Ghost-of-a-ghost breaks identity resolution — **High** (log-corroborated)
 
 `participantIdentity.js:16`: `sourceId = isGhost ? (id.split(':')[2] || id) : id`. For a
-first-order ghost `ghost:R1:kckern` → `[2] = "kckern"` ✓. For a **second-order** ghost
-`ghost:R2:ghost:R1:kckern` → `split(':') = ['ghost','R2','ghost','R1','kckern']` → `[2] = "ghost"`
+first-order ghost `ghost:R1:user_1` → `[2] = "user_1"` ✓. For a **second-order** ghost
+`ghost:R2:ghost:R1:user_1` → `split(':') = ['ghost','R2','ghost','R1','user_1']` → `[2] = "ghost"`
 → `avatarSrc = /api/v1/static/img/users/ghost` → 404 → broken/generic face. This is exactly the
 "avatar completely messed up" the tester saw.
 
 **Corroboration:** the morning's log contains the nested id being created in practice —
-`ghost:20260604055802:ghost:20260604055230:kckern` — confirming second-order ghosts are minted
+`ghost:20260604055802:ghost:20260604055230:user_1` — confirming second-order ghosts are minted
 rather than dereferenced.
 
 **Direction:** two layers. (1) Defensive parse: resolve `sourceId` to the **last** segment
@@ -288,7 +288,7 @@ The session log (`2026-06-04T12-47-54.jsonl`, ~105 MB, 6 races, debug firehose o
 
 - **Lap cadence** is consistent with 100 m laps — `cycle_game.tick` `distanceM` advances ~3 m/s,
   ~33 ticks per 100 m. (Lap *completion* is an overlay detail, not its own log event.)
-- **Second-order ghost ids are real** — `ghost:<race>:ghost:<race>:kckern` appears (F14).
+- **Second-order ghost ids are real** — `ghost:<race>:ghost:<race>:user_1` appears (F14).
 - **Multi-rider ghost import** — a 3-entity field (human + 2 ghost variants) ran (F13).
 - **No cycle-game errors/warnings** were emitted (the F14 break is a silent 404 avatar fallback,
   not a thrown error; the animation issues are visual and never reach the event stream).

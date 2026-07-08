@@ -96,7 +96,7 @@ interface AgentTranscript {
   // Identity
   turnId: string;                          // UUID v4
   agentId: string;                         // 'health-coach' | 'lifeplan-guide' | ...
-  userId: string | null;                   // 'kckern' | 'default' | null
+  userId: string | null;                   // 'user_1' | 'default' | null
 
   // Timing
   startedAt: string;                       // ISO8601 with ms

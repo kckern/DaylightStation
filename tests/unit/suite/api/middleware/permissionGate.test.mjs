@@ -70,7 +70,7 @@ describe('permissionGate middleware', () => {
   const gate = permissionGate({ roles, appRoutes });
 
   it('allows sysadmin to access any route', (done) => {
-    const req = mockReq('/admin/household', ['sysadmin'], { sub: 'kckern' });
+    const req = mockReq('/admin/household', ['sysadmin'], { sub: 'user_1' });
     gate(req, mockRes(), () => { done(); });
   });
 
@@ -89,7 +89,7 @@ describe('permissionGate middleware', () => {
   });
 
   it('blocks parent from admin routes with 403 (has user)', () => {
-    const req = mockReq('/admin/household', ['parent'], { sub: 'kckern' });
+    const req = mockReq('/admin/household', ['parent'], { sub: 'user_1' });
     const res = mockRes();
     const next = jest.fn();
     gate(req, res, next);

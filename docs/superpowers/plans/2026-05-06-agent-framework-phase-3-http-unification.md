@@ -1048,17 +1048,17 @@ Start the dev server (or test against the deployed instance):
 # Echo agent — sync
 curl -X POST http://localhost:3111/api/v1/agents/echo/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"hello","context":{"userId":"kckern"}}'
+  -d '{"input":"hello","context":{"userId":"user_1"}}'
 
 # Echo agent — stream
 curl -N -X POST http://localhost:3111/api/v1/agents/echo/run-stream \
   -H "Content-Type: application/json" \
-  -d '{"input":"hello","context":{"userId":"kckern"}}' | head -20
+  -d '{"input":"hello","context":{"userId":"user_1"}}' | head -20
 
 # Health-coach — stream
 curl -N -X POST http://localhost:3111/api/v1/agents/health-coach/run-stream \
   -H "Content-Type: application/json" \
-  -d '{"input":"What is my weight?","context":{"userId":"kckern"}}' | head -20
+  -d '{"input":"What is my weight?","context":{"userId":"user_1"}}' | head -20
 
 # Memory CRUD (legacy router still serves this)
 curl -s http://localhost:3111/api/v1/agents/echo/memory/kckern

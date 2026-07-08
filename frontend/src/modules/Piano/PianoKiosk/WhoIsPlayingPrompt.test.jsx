@@ -45,7 +45,7 @@ describe('WhoIsPlayingPrompt', () => {
 
   it('shows relational labels (Dad/Mom) when the kids are in the roster, no subtitle', () => {
     const family = [
-      { id: 'kckern', name: 'User_1', group_label: 'Dad' },
+      { id: 'user_1', name: 'User_1', group_label: 'Dad' },
       { id: 'user_9', name: 'User_9', group_label: 'Mom' },
       { id: 'user_2', name: 'User_2' },
     ];
@@ -59,7 +59,7 @@ describe('WhoIsPlayingPrompt', () => {
 
   it('uses full names when no kids are present (adults only)', () => {
     const adults = [
-      { id: 'kckern', name: 'User_1', group_label: 'Dad' },
+      { id: 'user_1', name: 'User_1', group_label: 'Dad' },
       { id: 'user_9', name: 'User_9', group_label: 'Mom' },
     ];
     render(<WhoIsPlayingPrompt open users={adults} onPick={() => {}} onDismiss={() => {}} />);
@@ -69,10 +69,10 @@ describe('WhoIsPlayingPrompt', () => {
 
   it('still calls onPick with the user id (not the resolved label)', () => {
     const onPick = vi.fn();
-    const family = [{ id: 'kckern', name: 'User_1', group_label: 'Dad' }, { id: 'user_2', name: 'User_2' }];
+    const family = [{ id: 'user_1', name: 'User_1', group_label: 'Dad' }, { id: 'user_2', name: 'User_2' }];
     render(<WhoIsPlayingPrompt open users={family} onPick={onPick} onDismiss={() => {}} />);
     fireEvent.click(screen.getByText('Dad'));
-    expect(onPick).toHaveBeenCalledWith('kckern');
+    expect(onPick).toHaveBeenCalledWith('user_1');
   });
 
   it('paginates a roster larger than one 3×2 page, showing dots and switching pages', () => {

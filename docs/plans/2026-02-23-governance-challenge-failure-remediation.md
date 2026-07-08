@@ -575,14 +575,14 @@ The `buildParticipantsForPersist()` function at line 157 iterates `safeRoster` b
       startTime: now - 120000,
       endTime: now,
       roster: [
-        { id: 'kckern', name: 'User_1', isPrimary: true, hrDeviceId: '40475' },
+        { id: 'user_1', name: 'User_1', isPrimary: true, hrDeviceId: '40475' },
         { id: 'user_2', name: 'User_2', hrDeviceId: '90001' },
         { id: 'user_3', name: 'User_3', hrDeviceId: '90003' },
         { id: 'user_4', name: 'User_4', hrDeviceId: '28676' },
         { id: 'user_5', name: 'User_5', isExempt: true, hrDeviceId: '7153' }
       ],
       deviceAssignments: [
-        { deviceId: '40475', occupantId: 'kckern' },
+        { deviceId: '40475', occupantId: 'user_1' },
         { deviceId: '90001', occupantId: 'user_2' },
         { deviceId: '90003', occupantId: 'user_3' },
         { deviceId: '28676', occupantId: 'user_4' },
@@ -591,7 +591,7 @@ The `buildParticipantsForPersist()` function at line 157 iterates `safeRoster` b
       timeline: {
         timebase: { tickCount: 6 },
         series: {
-          'user:kckern:heart_rate': [100, 110, 120, 130, 140, 144],
+          'user:user_1:heart_rate': [100, 110, 120, 130, 140, 144],
           'user:user_2:heart_rate': [120, 130, 140, 150, 160, 166],
           'user:user_3:heart_rate': [130, 140, 150, 160, 170, 172],
           'user:user_4:heart_rate': [110, 120, 130, 140, 150, 159],
@@ -607,7 +607,7 @@ The `buildParticipantsForPersist()` function at line 157 iterates `safeRoster` b
     const participants = buildParticipantsForPersist(sessionData.roster, sessionData.deviceAssignments);
 
     expect(Object.keys(participants)).toHaveLength(5);
-    expect(participants).toHaveProperty('kckern');
+    expect(participants).toHaveProperty('user_1');
     expect(participants).toHaveProperty('user_2');
     expect(participants).toHaveProperty('user_3');
     expect(participants).toHaveProperty('user_4');

@@ -24,7 +24,7 @@ Additionally, the audit uncovered **6 secondary issues** including a race condit
 | Media | Mario Kart 8 (mediaId `606442`, labels: kidsfun, resumable, sequential) |
 | Policy | `default` — base requirement: `active: all` |
 | Grace period | 30 seconds |
-| Participants | user_2, user_3, user_4, kckern (primary/superuser) |
+| Participants | user_2, user_3, user_4, user_1 (primary/superuser) |
 | Exempted | user_5 (per governance config) |
 
 ---
@@ -67,7 +67,7 @@ Participant states at failure:
 |-------------|------|----|---------------|------|
 | user_2 | hot | 166 | 160 | Yes |
 | user_3 | hot | 172 | 160 | Yes |
-| kckern | hot | 144 | 140 | Yes |
+| user_1 | hot | 144 | 140 | Yes |
 | user_4 | **warm** | **159** | 160 | **No** |
 | user_5 | active | 125 | — | Exempted |
 
@@ -318,7 +318,7 @@ Log evidence (lines 6903-6904):
 03:00:42.289Z  governance.challenge.completed     ← 17ms later
                participants: [
                  user_2: hot, user_3: hot,
-                 user_4: active, kckern: hot,
+                 user_4: active, user_1: hot,
                  user_5: active
                ]
 ```
@@ -335,11 +335,11 @@ Full phase history reconstructed from `governance.phase_change` log events:
 |---|---|---|---|---|---|
 | 02:54:35 | pending | null | No media loaded | 1315 | Yes |
 | 02:57:11 | null | pending | Media loaded, 3 participants below active | 3517 | Yes |
-| 02:58:08 | pending | unlocked | All 4 at active, kckern reaches HR 100 | 4459 | Yes |
+| 02:58:08 | pending | unlocked | All 4 at active, user_1 reaches HR 100 | 4459 | Yes |
 | 03:03:16 | unlocked | locked | Challenge 3 failed (user_4 at warm, not hot) | 7379 | Yes |
 | 03:03:16 | locked | unlocked | Base req still met — **should stay locked** | 7381 | **No** |
-| 03:13:38 | unlocked | warning | kckern drops to cool (HR 94), sole participant | 12812 | Yes |
-| 03:14:08 | warning | locked | Grace period expired, kckern still cool (HR 91) | 12883 | Yes |
+| 03:13:38 | unlocked | warning | user_1 drops to cool (HR 94), sole participant | 12812 | Yes |
+| 03:14:08 | warning | locked | Grace period expired, user_1 still cool (HR 91) | 12883 | Yes |
 | 03:17:12 | locked | pending | No participants remaining | 13240 | Yes |
 
 ---
@@ -354,7 +354,7 @@ All non-primary participants disconnected during the session, reconstructed from
 | user_3 | 19:11:52 | 65 ticks (325s) | |
 | user_2 | 19:12:17 | 60 ticks (300s) | Voice memo: "User_2's maybe got broken again" |
 | user_4 | 19:12:27 | 58 ticks (290s) | |
-| kckern | 19:17:12 | 3 ticks (15s) | Last remaining; triggered warning → lock |
+| user_1 | 19:17:12 | 3 ticks (15s) | Last remaining; triggered warning → lock |
 
 Chart logs show repeated `Status corrected: {name} (removed → idle)` warnings as participants dropped.
 
@@ -458,14 +458,14 @@ The same memo appears twice with overlapping data:
 
 ```yaml
 participants:
-  kckern:
+  user_1:
     display_name: User_1
     hr_device: '40475'
     is_primary: true
     base_user: User_1
 ```
 
-The series data contains 5 participants (user_2, user_3, user_4, kckern, user_5), but the `participants` block only lists kckern. This means the persisted session lacks display names, device mappings, and exemption/guest status for 4 of 5 participants. `PersistenceManager.js` builds participants from the session roster, but non-primary participants are being dropped during save.
+The series data contains 5 participants (user_2, user_3, user_4, user_1, user_5), but the `participants` block only lists kckern. This means the persisted session lacks display names, device mappings, and exemption/guest status for 4 of 5 participants. `PersistenceManager.js` builds participants from the session roster, but non-primary participants are being dropped during save.
 
 ---
 

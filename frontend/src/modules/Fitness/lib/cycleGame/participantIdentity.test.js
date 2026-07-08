@@ -33,17 +33,17 @@ describe('resolveParticipantIdentity', () => {
 
 describe('resolveParticipantIdentity — ghost dereference', () => {
   it('resolves a first-generation ghost to its source user', () => {
-    const r = resolveParticipantIdentity('ghost:20260604055230:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:20260604055230:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+    expect(r.sourceId).toBe('user_1');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_1');
   });
 
   it('resolves a SECOND-generation ghost back to the original user (not "ghost")', () => {
-    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+    expect(r.sourceId).toBe('user_1');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_1');
   });
 
   it('resolves a ghost of a hyphenated guest id', () => {

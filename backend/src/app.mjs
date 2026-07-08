@@ -1078,7 +1078,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     // Start daily prefetch timer for abs-ebooks chapter cache
     if (absEbookFeedAdapter) {
-      const allQueries = [...queryConfigs, ...loadUserQueries('kckern')];
+      const allQueries = [...queryConfigs, ...loadUserQueries('user_1')];
       absEbookFeedAdapter.startPrefetchTimer(allQueries);
     }
 
@@ -2445,7 +2445,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const agentsScheduler = v1Routers.agents?.scheduler;
   if (agentsScheduler && journalistServices?.journalistContainer) {
     const debriefCron = journalistConfig.morning_debrief?.schedule || '0 7 * * *';
-    const debriefUsername = configService.getHeadOfHousehold?.() || 'kckern';
+    const debriefUsername = configService.getHeadOfHousehold?.() || 'user_1';
 
     agentsScheduler.registerTask('journalist:morning-debrief', debriefCron, async () => {
       const container = journalistServices.journalistContainer;
@@ -2791,7 +2791,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     );
 
     const weeklyReviewCalendarAdapter = new WeeklyReviewCalendarAdapter(
-      { householdId, defaultUser: configService.getHeadOfHousehold?.() || 'kckern' },
+      { householdId, defaultUser: configService.getHeadOfHousehold?.() || 'user_1' },
       { userDataService, logger: rootLogger.child({ module: 'weekly-review-calendar' }) }
     );
 

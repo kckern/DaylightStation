@@ -35,7 +35,7 @@
  *
  * Environment:
  *   DAYLIGHT_BASE_PATH          Override project root (default: detect from script location)
- *   DAYLIGHT_USER               Override user (default: "kckern")
+ *   DAYLIGHT_USER               Override user (default: "user_1")
  *   DEBUG                       Print stack traces on error
  *
  * @module cli/strava
@@ -85,7 +85,7 @@ try {
 // Constants & paths
 // ---------------------------------------------------------------------------
 const STRAVA_BASE = 'https://www.strava.com';
-const username = process.env.DAYLIGHT_USER || 'kckern';
+const username = process.env.DAYLIGHT_USER || 'user_1';
 
 const systemAuthPath = path.join(dataDir, 'system', 'auth', 'strava.yml');
 const userAuthBase   = path.join(dataDir, 'users', username, 'auth', 'strava'); // saveYaml appends .yml
@@ -436,7 +436,7 @@ EXAMPLES
 
 ENVIRONMENT
   DAYLIGHT_BASE_PATH    Override project root (default: derived from script location)
-  DAYLIGHT_USER         Override user (default: "kckern")
+  DAYLIGHT_USER         Override user (default: "user_1")
   DEBUG                 Print stack traces on error
 
 AUTH FILES (read/written automatically)

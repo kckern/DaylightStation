@@ -8,7 +8,7 @@ Session `fs_20260306053853` (March 6, 05:38–06:15 PST) lost all data. 36 minut
 
 | Time (UTC) | Event |
 |---|---|
-| 13:38:53 | Session started (`buffer_threshold_met`), HR device 40475, user kckern |
+| 13:38:53 | Session started (`buffer_threshold_met`), HR device 40475, user user_1 |
 | 13:38:53 | Tick timer + autosave timer started (15s interval) |
 | 13:39:04 | P90X3 CVX video selected and started |
 | 14:03:53 | Health check: 300 ticks, 20 series, 6040 points — session healthy |
@@ -151,7 +151,7 @@ The lost session can be partially reconstructed from:
 | Strava activity | HR stream (per-second), duration, start/end, type | Activity 17624884199 via Strava API |
 | Voice memo transcript | Workout description | Backend log at 06:14:50-06:14:52 UTC |
 | Prod logs | Session metadata, media events, tick counts | Docker logs |
-| Zone profile | HR zone thresholds for kckern | `data/household/apps/fitness/config.yml` or zone profile store |
+| Zone profile | HR zone thresholds for user_1 | `data/household/apps/fitness/config.yml` or zone profile store |
 | Media memory | Plex content played (P90X3 CVX, plex:53324) | `data/household/history/media_memory/plex/14_fitness.yml` |
 
 ### Reconstruction script
@@ -165,7 +165,7 @@ Existing: `cli/reconstruct-fitness-sessions.mjs` — reads Strava activity archi
 - Start: `2026-03-06 05:38:53` PST (13:38:53 UTC)
 - End: ~`2026-03-06 06:14:04` PST (video ended) or `06:17:48` PST (session ended)
 - Duration: ~2111s (35 min)
-- Participant: kckern, HR device 40475
+- Participant: user_1, HR device 40475
 - Media: P90X3 CVX (plex:53324 show, specific episode TBD from Plex)
 - Strava activity: 17624884199, "Morning Workout", 05:38:58–06:15:32 PST
 - Voice memo: "The press jacks at the beginning really got things warmed up. It felt like a pretty intense cardio burn, above average intensity. I used 7.5 pounds for most of the weighted cardio, 10s on a few. The twist moves helped loosen up my back. My hips are still a little inflamed, but overall this was a pretty good cardio burn."
@@ -194,7 +194,7 @@ Yesterday's session at `/usr/src/app/data/household/history/fitness/2026-03-05/2
 - Session ID: `20260306053853`
 - Start: `2026-03-06 05:38:53.000` PST (13:38:53 UTC)
 - End: ~`2026-03-06 06:14:04` PST (video ended) or `06:17:48` PST (session ended by empty_roster)
-- Participant: kckern, HR device 40475
+- Participant: user_1, HR device 40475
 - Timezone: America/Los_Angeles
 
 **Media:**

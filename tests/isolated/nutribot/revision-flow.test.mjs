@@ -345,7 +345,7 @@ describe('ProcessRevisionInput — responseContext', () => {
     });
 
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:bot_user',
       text: 'Double the recipe.',
       messageId: 'user-msg',

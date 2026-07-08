@@ -211,7 +211,7 @@ export class FitnessActivityEnrichmentService {
       const session = match.data;
 
       // Write provider data back to session YAML (if not already linked)
-      const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+      const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
       if (session.participants?.[username] && !session.participants[username]?.strava?.activityId) {
         session.participants[username].strava = {
           activityId: currentActivity.id,
@@ -475,7 +475,7 @@ export class FitnessActivityEnrichmentService {
     if (this.#activityGateway.hasAccessToken()) return;
 
     // Load user auth — default to head of household
-    const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
     const auth = this.#authStore?.loadUserAuth?.('strava', username);
 
     if (!auth?.refresh) {
@@ -496,7 +496,7 @@ export class FitnessActivityEnrichmentService {
    */
   async _createStravaOnlySession(activity, activityGateway = null) {
     const tz = this.#configService?.getTimezone?.() || 'America/Los_Angeles';
-    const username = this.#configService.getHeadOfHousehold?.() || 'kckern';
+    const username = this.#configService.getHeadOfHousehold?.() || 'user_1';
     const startLocal = moment(activity.start_date).tz(tz);
     const sessionId = startLocal.format('YYYYMMDDHHmmss');
     const date = startLocal.format('YYYY-MM-DD');

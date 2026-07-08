@@ -20,7 +20,7 @@ describe('EndOfDayReport', () => {
     ];
     const gathered = await report.gather({
       tools: mockTools,
-      userId: 'kckern',
+      userId: 'user_1',
       memory: { serialize: () => '' },
       logger: { warn: () => {}, info: () => {} },
     });
@@ -46,7 +46,7 @@ describe('EndOfDayReport', () => {
     ];
     const gathered = await report.gather({
       tools: mockTools,
-      userId: 'kckern',
+      userId: 'user_1',
       memory: { serialize: () => '' },
       logger: { warn: () => {}, info: () => {} },
     });
@@ -103,7 +103,7 @@ describe('EndOfDayReport', () => {
     // Should not throw
     await report.act(
       { should_send: true, text: 'Day complete.' },
-      { memory, userId: 'kckern', logger: { info: () => {} } },
+      { memory, userId: 'user_1', logger: { info: () => {} } },
     );
   });
 });

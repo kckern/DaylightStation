@@ -54,7 +54,7 @@ import { computeMomentum, addDays } from './momentum.js';
 
 const roster = [
   { id: 'user_2', name: 'User_2' },
-  { id: 'kckern', name: 'User_1' },
+  { id: 'user_1', name: 'User_1' },
 ];
 // "today" anchor used across tests
 const TODAY = '2026-06-24';
@@ -77,12 +77,12 @@ describe('computeMomentum', () => {
   it('sums active minutes per participant over the rolling 7 days only', () => {
     const sessions = [
       sess('2026-06-24', 30 * 60000, ['user_2']),          // in week
-      sess('2026-06-20', 20 * 60000, ['user_2', 'kckern']), // in week (both)
+      sess('2026-06-20', 20 * 60000, ['user_2', 'user_1']), // in week (both)
       sess('2026-06-10', 99 * 60000, ['user_2']),          // OUTSIDE 7d window
     ];
     const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150 });
     const user_2 = members.find((m) => m.id === 'user_2');
-    const kc = members.find((m) => m.id === 'kckern');
+    const kc = members.find((m) => m.id === 'user_1');
     expect(user_2.activeMinutes).toBe(50);   // 30 + 20, NOT the 99 from 14d ago
     expect(kc.activeMinutes).toBe(20);
     expect(user_2.goalMinutes).toBe(150);
@@ -113,7 +113,7 @@ describe('computeMomentum', () => {
 
   it('reports zero for a roster member with no sessions, but still lists them', () => {
     const { members } = computeMomentum([], roster, { now: NOW, todayStr: TODAY });
-    expect(members.map((m) => m.id)).toEqual(['user_2', 'kckern']); // roster order preserved
+    expect(members.map((m) => m.id)).toEqual(['user_2', 'user_1']); // roster order preserved
     expect(members[0].activeMinutes).toBe(0);
     expect(members[0].streakDays).toBe(0);
   });
@@ -121,7 +121,7 @@ describe('computeMomentum', () => {
   it('aggregates the household: minutes = sum of members, goal = members*goal, streak = any-member days', () => {
     const sessions = [
       sess('2026-06-24', 30 * 60000, ['user_2']),
-      sess('2026-06-23', 40 * 60000, ['kckern']),
+      sess('2026-06-23', 40 * 60000, ['user_1']),
     ];
     const { household } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150, householdLabel: 'Kern Family' });
     expect(household.label).toBe('Kern Family');
@@ -395,7 +395,7 @@ const sessions = [
 ];
 vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => sessions }));
 vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
-  useFitnessScreen: () => ({ roster: [{ id: 'user_2', name: 'User_2' }, { id: 'kckern', name: 'User_1' }], householdLabel: 'Kern Family' }),
+  useFitnessScreen: () => ({ roster: [{ id: 'user_2', name: 'User_2' }, { id: 'user_1', name: 'User_1' }], householdLabel: 'Kern Family' }),
 }));
 
 import FitnessMomentum from './FitnessMomentum.jsx';

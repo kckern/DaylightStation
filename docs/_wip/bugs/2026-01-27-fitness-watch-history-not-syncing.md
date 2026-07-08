@@ -72,8 +72,8 @@ treasureBox:
 timeline:
   tick_count: 342
   series:
-    kckern:hr: '[83,82,90,91,...]'  # Full heart rate data
-    kckern:zone: '[["c",11],["a",7],...]'  # Zone transitions
+    user_1:hr: '[83,82,90,91,...]'  # Full heart rate data
+    user_1:zone: '[["c",11],["a",7],...]'  # Zone transitions
 ```
 
 #### 2. Watch History Empty

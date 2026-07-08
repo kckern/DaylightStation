@@ -34,7 +34,7 @@ hydrateProcessEnvFromConfigs(configDir);
 await initConfigService(dataDir);
 
 const daysBack = parseInt(process.argv[2] || '90', 10);
-const username = process.argv[3] || 'kckern';
+const username = process.argv[3] || 'user_1';
 
 console.log(`Backfilling Strava-home session matching for ${username}, ${daysBack} days back...`);
 

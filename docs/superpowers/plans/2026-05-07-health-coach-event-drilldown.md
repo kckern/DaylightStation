@@ -82,7 +82,7 @@ function makeSvc(sessions) {
     sessionService: {
       listSessionsInRange: vi.fn(async () => sessions),
     },
-    householdId: 'kckern',
+    householdId: 'user_1',
   });
 }
 
@@ -317,7 +317,7 @@ describe('EventQueryService.getEventDetail', () => {
         listSessionsInRange: vi.fn(async () => []),
         getById: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.getEventDetail({ id: '20260507060000' });
     expect(r.session_id).toBe('20260507060000');
@@ -336,7 +336,7 @@ describe('EventQueryService.getEventDetail', () => {
         getById: vi.fn(async () => null),
         findByStravaId: vi.fn(async (id) => id === 12345 ? session : null),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.getEventDetail({ id: 12345 });
     expect(r.strava_id).toBe(12345);
@@ -349,14 +349,14 @@ describe('EventQueryService.getEventDetail', () => {
         getById: vi.fn(async () => null),
         findByStravaId: vi.fn(async () => null),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.getEventDetail({ id: 'unknown' });
     expect(r.error).toMatch(/not found/);
   });
 
   it('rejects when id missing', async () => {
-    const svc = new EventQueryService({ sessionService: {}, householdId: 'kckern' });
+    const svc = new EventQueryService({ sessionService: {}, householdId: 'user_1' });
     await expect(svc.getEventDetail({})).rejects.toThrow(/id/);
   });
 });
@@ -843,7 +843,7 @@ Read the actual streamExecute first; the structure depends on Mastra's event API
 ```bash
 curl -N -X POST http://localhost:3111/api/v1/agents/health-coach/run-stream \
   -H "Content-Type: application/json" \
-  -d '{"input":"what is my current weight?","context":{"userId":"kckern"}}' | head -50
+  -d '{"input":"what is my current weight?","context":{"userId":"user_1"}}' | head -50
 ```
 
 Look for `tool-end` chunks — each should include `"latencyMs": <non-zero>`.
@@ -897,7 +897,7 @@ Two-turn sequence: ask about today's run, then drill into HR.
 echo "=== Turn 1: how was my run today? ==="
 curl -sS -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"how was my run today?","context":{"userId":"kckern"}}' \
+  -d '{"input":"how was my run today?","context":{"userId":"user_1"}}' \
   > /tmp/turn1.json
 python3 -c "
 import json
@@ -913,7 +913,7 @@ echo
 echo "=== Turn 2: what about heart rate? ==="
 curl -sS -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"what about heart rate?","context":{"userId":"kckern"}}' \
+  -d '{"input":"what about heart rate?","context":{"userId":"user_1"}}' \
   > /tmp/turn2.json
 python3 -c "
 import json

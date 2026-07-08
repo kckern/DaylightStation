@@ -466,7 +466,7 @@ describe('CycleGameHome', () => {
   // starting grid as the real bikes.
   it('shows a phantom grid slot for each selected ghost rider, alongside the real bikes', () => {
     const ghostRoster = [
-      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+      { userId: 'ghost:20260701120000:user_1', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
     ];
     const { getByTestId, queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} ghostRoster={ghostRoster} />
@@ -475,7 +475,7 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // The ghost gets its own lane in the same grid.
-    const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:kckern');
+    const ghostSlot = getByTestId('ghost-slot-ghost:20260701120000:user_1');
     expect(ghostSlot.textContent).toContain('KC 👻');
     expect(ghostSlot.className).toContain('cgh-slot--ghost');
   });
@@ -489,12 +489,12 @@ describe('CycleGameHome', () => {
 
   it('shows the ghost lane even with zero physical bikes (never the "no bikes" empty state)', () => {
     const ghostRoster = [
-      { userId: 'ghost:20260701120000:kckern', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
+      { userId: 'ghost:20260701120000:user_1', displayName: 'KC 👻', avatarSrc: '/api/v1/static/img/users/kckern' }
     ];
     const { getByTestId, queryByText } = render(
       <CycleGameHome bikes={[]} people={people} records={[]} ghostRoster={ghostRoster} />
     );
-    expect(getByTestId('ghost-slot-ghost:20260701120000:kckern')).toBeTruthy();
+    expect(getByTestId('ghost-slot-ghost:20260701120000:user_1')).toBeTruthy();
     expect(queryByText(/No bikes detected/i)).toBeNull();
   });
 

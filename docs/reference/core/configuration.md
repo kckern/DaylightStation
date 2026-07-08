@@ -278,17 +278,17 @@ Identity and users:
 version: "1.0"
 household_id: default
 name: "Default Household"
-head: kckern
+head: user_1
 
 users:
-  - kckern
+  - user_1
   - user_9
   - user_2
   - user_3
 
 apps:
   fitness:
-    primary_users: [kckern, user_2, user_3]
+    primary_users: [user_1, user_2, user_3]
 ```
 
 ### integrations.yml
@@ -429,7 +429,7 @@ configService.getSecret('OPENAI_API_KEY');
 configService.getHouseholdAuth('plex', 'default');
 
 // User secret
-configService.getUserAuth('strava', 'kckern');
+configService.getUserAuth('strava', 'user_1');
 ```
 
 ---

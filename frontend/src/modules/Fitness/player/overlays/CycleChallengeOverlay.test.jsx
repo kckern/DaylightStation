@@ -11,7 +11,7 @@ const baseChallenge = {
   currentPhaseIndex: 0,
   totalPhases: 3,
   currentPhase: { hiRpm: 49, loRpm: 37 },
-  rider: { id: 'kckern', name: 'User_1' },
+  rider: { id: 'user_1', name: 'User_1' },
   currentRpm: 60,
   initRemainingMs: 23000,
   rampRemainingMs: null,
@@ -175,7 +175,7 @@ describe('CycleChallengeOverlay — extended UI', () => {
   });
 
   it('shows initials when the avatar image fails, and recovers on rider change', () => {
-    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'User_1' } };
+    const ch = { ...baseChallenge, rider: { id: 'user_1', name: 'User_1' } };
     const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
     // Initially the image renders and initials are absent.
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();
@@ -300,7 +300,7 @@ describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no cou
     currentPhase: { hiRpm: 80, loRpm: 60 },
     cycleHealthPct: 100,
     boostMultiplier: 2.5,
-    boostingUsers: ['kckern', 'user_3'],
+    boostingUsers: ['user_1', 'user_3'],
     rider: { id: 'user_2', name: 'User_2' }
   };
 

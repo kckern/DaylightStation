@@ -488,7 +488,7 @@ Routers: `nutribot.mjs:35`, `journalist.mjs:37`, `homebot.mjs:23` (`(container, 
 **Fix:** Mechanical `({ container, logger, ... })` refactor + bootstrap call sites.
 
 ### [API-8 · MEDIUM] configService queried inside handlers across ~15 routers
-`getDefaultHouseholdId()` in fitness (10 sites), gratitude :58, finance :61, calendar :33,39, admin/content (17 sites); `getHouseholdAppConfig` in media :80, content :80, piano :59,395,491; `getHeadOfHousehold` in `lifelog.mjs:76` (with a hardcoded `'kckern'` fallback — also a PII-ish default) and homeAutomation :302; `getStreamingProfiles` in proxy :705; `getDataDir()` in all five fs-CRUD admin routers.
+`getDefaultHouseholdId()` in fitness (10 sites), gratitude :58, finance :61, calendar :33,39, admin/content (17 sites); `getHouseholdAppConfig` in media :80, content :80, piano :59,395,491; `getHeadOfHousehold` in `lifelog.mjs:76` (with a hardcoded `'user_1'` fallback — also a PII-ish default) and homeAutomation :302; `getStreamingProfiles` in proxy :705; `getDataDir()` in all five fs-CRUD admin routers.
 **Fix:** Inject resolved values, or push household resolution into the already-existing `4_api/middleware/householdResolver.mjs`.
 
 ### [API-9 · MEDIUM] Domain entities constructed and domain rules applied in routers

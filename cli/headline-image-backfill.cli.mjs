@@ -96,7 +96,7 @@ Examples:
   node cli/headline-image-backfill.cli.mjs
   node cli/headline-image-backfill.cli.mjs --source cnn
   node cli/headline-image-backfill.cli.mjs --dry-run
-  node cli/headline-image-backfill.cli.mjs --username kckern --source bbc --dry-run
+  node cli/headline-image-backfill.cli.mjs --username user_1 --source bbc --dry-run
 `);
 }
 

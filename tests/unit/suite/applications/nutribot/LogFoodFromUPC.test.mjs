@@ -43,15 +43,15 @@ describe('LogFoodFromUPC', () => {
   describe('userId handling', () => {
     it('uses the passed userId parameter, not extracted from conversationId', async () => {
       await useCase.execute({
-        userId: 'kckern',  // This is the resolved username
+        userId: 'user_1',  // This is the resolved username
         conversationId: 'telegram:b6898194425_c575596036',
         upc: '012345678901',
         messageId: '50',
       });
 
-      // The saved log should have userId='kckern', not 'c575596036'
+      // The saved log should have userId='user_1', not 'c575596036'
       expect(savedLog).not.toBeNull();
-      expect(savedLog.userId).toBe('kckern');
+      expect(savedLog.userId).toBe('user_1');
     });
   });
 });

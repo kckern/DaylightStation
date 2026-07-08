@@ -1238,7 +1238,7 @@ Expected: same pass count, no new failures. If any test fails, the decorator cha
 ```bash
 curl -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"What is my current weight?","context":{"userId":"kckern"}}' \
+  -d '{"input":"What is my current weight?","context":{"userId":"user_1"}}' \
   | head -c 300
 ```
 
@@ -1319,7 +1319,7 @@ describe('BaseAgent.buildPromptSections (default)', () => {
       agentRuntime: { execute: async () => ({}) },
       workingMemory: { load: async () => null, save: async () => {} },
     });
-    const sections = await agent.buildPromptSections({ userId: 'kckern' }, null);
+    const sections = await agent.buildPromptSections({ userId: 'user_1' }, null);
     const userSection = sections.find(s => s?.includes('Active User'));
     expect(userSection).toMatch(/kckern/);
   });
@@ -1601,18 +1601,18 @@ Expected: all green. The pre-Plan-A snapshot was 1502 tests passing in `tests/is
 # Echo agent — sanity check the orchestrator path
 curl -X POST http://localhost:3111/api/v1/agents/echo/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"hello","context":{"userId":"kckern"}}'
+  -d '{"input":"hello","context":{"userId":"user_1"}}'
 
 # Health-coach agent — sanity check the full stack including tools
 curl -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"What is my current weight?","context":{"userId":"kckern"}}' \
+  -d '{"input":"What is my current weight?","context":{"userId":"user_1"}}' \
   | head -c 500
 
 # SSE — sanity check the streaming path
 curl -N -X POST http://localhost:3111/api/v1/agents/health-coach/run-stream \
   -H "Content-Type: application/json" \
-  -d '{"input":"hi","context":{"userId":"kckern"}}' | head -20
+  -d '{"input":"hi","context":{"userId":"user_1"}}' | head -20
 ```
 
 Expected: all three return valid responses.

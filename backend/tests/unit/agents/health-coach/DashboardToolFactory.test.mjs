@@ -56,11 +56,11 @@ describe('DashboardToolFactory', () => {
       const tool = tools.find(t => t.name === 'write_dashboard');
       const dashboard = { generated_at: '2026-02-14T04:00:00Z', curated: {}, coach: { briefing: 'hi' } };
 
-      const result = await tool.execute({ userId: 'kckern', date: '2026-02-14', dashboard });
+      const result = await tool.execute({ userId: 'user_1', date: '2026-02-14', dashboard });
 
       assert.ok(result.success);
       assert.ok(writtenPath.includes('health-dashboard/2026-02-14'));
-      assert.strictEqual(writtenUser, 'kckern');
+      assert.strictEqual(writtenUser, 'user_1');
       assert.strictEqual(writtenData.generated_at, '2026-02-14T04:00:00Z');
     });
   });
@@ -69,7 +69,7 @@ describe('DashboardToolFactory', () => {
     it('should return goals from DataService', async () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_user_goals');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.ok(result.goals);
       assert.strictEqual(result.goals.weight.target_lbs, 175);
@@ -79,7 +79,7 @@ describe('DashboardToolFactory', () => {
       mockDataService.user.read = () => null;
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'get_user_goals');
-      const result = await tool.execute({ userId: 'kckern' });
+      const result = await tool.execute({ userId: 'user_1' });
 
       assert.strictEqual(result.goals, null);
     });
@@ -93,7 +93,7 @@ describe('DashboardToolFactory', () => {
       const tools = factory.createTools();
       const tool = tools.find(t => t.name === 'log_coaching_note');
       const result = await tool.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         date: '2026-02-14',
         note: { type: 'observation', text: 'Consistent workout pattern this week' },
       });

@@ -76,10 +76,10 @@ transferAccumulator(from, to)    // Transfer coins on grace period
 
 ## Naming Conventions
 
-- **userId:** Stable user identifier (e.g., `"kckern"`)
+- **userId:** Stable user identifier (e.g., `"user_1"`)
 - **entityId:** Per-session participation ID (e.g., `"entity-1735689600000-abc12"`)
 - **deviceId:** ANT+ device identifier (e.g., `"28676"`)
-- **Series keys:** `{type}:{id}:{metric}` (e.g., `"user:kckern:heart_rate"`)
+- **Series keys:** `{type}:{id}:{metric}` (e.g., `"user:user_1:heart_rate"`)
 
 ---
 

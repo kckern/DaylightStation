@@ -14,7 +14,7 @@
 
 - [ ] Read `docs/_wip/audits/2026-04-30-cycling-challenge-simulator-unusable-audit.md` end-to-end. Every reference below cites that document.
 - [ ] Confirm dev server: `lsof -i :3112` (kckern-server). If not running: `node backend/index.js` (per `CLAUDE.md`'s runbook).
-- [ ] Confirm prod fixture data exists: `sudo docker exec daylight-station sh -c 'grep -A2 "id: cycle_ace" data/household/config/fitness.yml'` should print equipment with `cadence: 49904` and `eligible_users: [kckern, user_2, user_3]`.
+- [ ] Confirm prod fixture data exists: `sudo docker exec daylight-station sh -c 'grep -A2 "id: cycle_ace" data/household/config/fitness.yml'` should print equipment with `cadence: 49904` and `eligible_users: [user_1, user_2, user_3]`.
 
 ---
 
@@ -261,7 +261,7 @@ Start dev server if not running, then in browser console at `/fitness`:
 ```javascript
 window.__fitnessSimController.getEquipment()
 ```
-Expected: an array including `{ equipmentId: 'cycle_ace', name: 'CycleAce', cadenceDeviceId: '49904', eligibleUsers: ['kckern','user_2','user_3'], ... }` (per the prod YAML).
+Expected: an array including `{ equipmentId: 'cycle_ace', name: 'CycleAce', cadenceDeviceId: '49904', eligibleUsers: ['user_1','user_2','user_3'], ... }` (per the prod YAML).
 
 - [ ] **Step 8: Commit**
 

@@ -25,18 +25,18 @@ const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'kckern', tricycle: 'user_2' };
+  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
-    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
     user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
-      { id: 'kckern', name: 'KC' },
+      { id: 'user_1', name: 'KC' },
       { id: 'user_2', name: 'User_2' }
     ],
     zones: [
@@ -168,7 +168,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   });
 
   it('logs a rider_overtime edge (never rider_dnf) for a mercy-kill straggler (audit game-design #7)', () => {
-    // kckern (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
+    // user_1 (cycle_ace) rides hard and finishes the 100 m "Flash" tier fast;
     // user_2 (tricycle) crawls the whole time (rpm > 0 — never idle-quits) and is
     // still short of the line when the mercy window closes 3s after the winner.
     mockCtx = makeCtx({
@@ -183,7 +183,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_mercy_after_winner_s: 3
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => (id === 'cycle_ace' ? { rpm: 100, connected: true } : { rpm: 1, connected: true })
       }
     });
@@ -194,7 +194,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-start')); });
     act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
 
-    // 20 wall-clock seconds: enough for kckern to cross the line (~15 ticks) and
+    // 20 wall-clock seconds: enough for user_1 to cross the line (~15 ticks) and
     // for the 3s mercy window to close on user_2 afterward.
     nowMs = 20000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
@@ -231,9 +231,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides on, unaffected
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides on, unaffected
           return { rpm: 100, connected: felixConnected };
         }
       }
@@ -256,8 +256,8 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(sensorLostCalls).toHaveLength(1); // edge-only, not once per tick
     expect(sensorLostCalls[0][1]).toMatchObject({ userId: 'user_2', equipmentId: 'tricycle' });
 
-    // kckern's sensor never dropped — never flagged.
-    expect(sensorLostCalls.some(([, p]) => p.userId === 'kckern')).toBe(false);
+    // user_1's sensor never dropped — never flagged.
+    expect(sensorLostCalls.some(([, p]) => p.userId === 'user_1')).toBe(false);
 
     // The consequence the audit demanded: the hold now expires to a real 0,
     // so the controller's existing idle-DNF clock (previously starved by the
@@ -280,7 +280,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_idle_dnf_s: 5
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: 100, connected: true };
           return { rpm: 100, connected: felixConnected };
@@ -327,9 +327,9 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         race_start_grace_s: 30
       },
       fitnessSessionInstance: {
-        getEquipmentRider: (id) => ({ cycle_ace: 'kckern', tricycle: 'user_2' })[id] || null,
+        getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
-          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // kckern rides normally
+          if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides normally
           return { rpm: 0, connected: false }; // user_2 hasn't clipped in yet
         }
       }

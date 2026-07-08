@@ -26,8 +26,8 @@ test('participantNames title-cases bare slugs, excludes device:* ids', () => {
 });
 
 test('participantNames uses resolveName when the session name is just the slug', () => {
-  const data = { participants: { kckern: { display_name: 'kckern' }, user_2: {} } };
-  const resolve = (id) => ({ kckern: 'User_1' }[id] || id);
+  const data = { participants: { user_1: { display_name: 'user_1' }, user_2: {} } };
+  const resolve = (id) => ({ user_1: 'User_1' }[id] || id);
   assert.deepEqual(participantNames(data, resolve), ['User_1', 'User_2']);
 });
 
@@ -77,7 +77,7 @@ test('recapDescription falls back to voice-memo transcripts when no strava notes
 });
 
 test('plexFileBase strips filesystem-hostile characters', () => {
-  const data = { sessionId: '20260101120000', participants: { kckern: {} },
+  const data = { sessionId: '20260101120000', participants: { user_1: {} },
     summary: { media: [{ showTitle: 'Yoga: Flow / Core', primary: true }] } };
   const m = buildPlexMeta(data);
   assert.equal(m.plexFileBase.includes('/'), false);

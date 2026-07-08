@@ -5,9 +5,9 @@
  * configured show their group_label instead of display_name in the sidebar.
  *
  * Test flow:
- * 1. kckern alone → shows "User_1"
- * 2. user_2 joins → kckern shows "Dad", user_2 shows "User_2"
- * 3. user_2 drops → kckern shows "User_1"
+ * 1. user_1 alone → shows "User_1"
+ * 2. user_2 joins → user_1 shows "Dad", user_2 shows "User_2"
+ * 3. user_2 drops → user_1 shows "User_1"
  *
  * SSOT validation: If governance overlay is visible, verify it shows the same
  * label as the sidebar.
@@ -36,7 +36,7 @@ const KCKERN_DEVICE_ID = '40475';
 const FELIX_DEVICE_ID = '90003';
 
 const EXPECTED = {
-  kckern: { single: 'User_1', group: 'Dad' },
+  user_1: { single: 'User_1', group: 'Dad' },
   user_2: { single: 'User_2', group: 'User_2' } // no group_label configured
 };
 
@@ -206,7 +206,7 @@ async function getVisibleDeviceCount(page) {
 
 /**
  * Check governance overlay for SSOT validation
- * Returns the displayed name if kckern is shown, null otherwise
+ * Returns the displayed name if user_1 is shown, null otherwise
  * @param {import('@playwright/test').Page} page
  * @returns {Promise<string|null>}
  */
@@ -216,7 +216,7 @@ async function getGovernanceOverlayName(page) {
     return null;
   }
 
-  // Look for chip-name elements that might contain kckern's name
+  // Look for chip-name elements that might contain user_1's name
   const chipNames = govOverlay.locator('[class*="chip-name"]');
   const count = await chipNames.count();
 
@@ -331,17 +331,17 @@ test.describe('Group Label Fallback', () => {
       const hasFelix = devices.some(d => String(d.deviceId) === FELIX_DEVICE_ID);
 
       console.log(`  Configured devices: ${devices.length}`);
-      console.log(`  kckern (${KCKERN_DEVICE_ID}): ${hasKckern ? 'found' : 'MISSING'}`);
+      console.log(`  user_1 (${KCKERN_DEVICE_ID}): ${hasKckern ? 'found' : 'MISSING'}`);
       console.log(`  user_2 (${FELIX_DEVICE_ID}): ${hasFelix ? 'found' : 'MISSING'}`);
 
-      expect(hasKckern, `kckern device (${KCKERN_DEVICE_ID}) must exist`).toBe(true);
+      expect(hasKckern, `user_1 device (${KCKERN_DEVICE_ID}) must exist`).toBe(true);
       expect(hasFelix, `user_2 device (${FELIX_DEVICE_ID}) must exist`).toBe(true);
 
       // ═══════════════════════════════════════════════════════════════
       // PHASE 1: Single device - should show display_name
       // ═══════════════════════════════════════════════════════════════
       console.log('\n[PHASE 1] Single device - expecting display_name');
-      console.log(`  Activating kckern (${KCKERN_DEVICE_ID})...`);
+      console.log(`  Activating user_1 (${KCKERN_DEVICE_ID})...`);
 
       await sim.setZone(KCKERN_DEVICE_ID, 'warm');
       await page.waitForTimeout(1000);
@@ -355,13 +355,13 @@ test.describe('Group Label Fallback', () => {
       }
 
       const deviceAppeared = await waitForDeviceVisible(page, KCKERN_DEVICE_ID);
-      expect(deviceAppeared, 'kckern device should appear in sidebar').toBe(true);
+      expect(deviceAppeared, 'user_1 device should appear in sidebar').toBe(true);
 
       const nameFound = await waitForDeviceName(page, KCKERN_DEVICE_ID, EXPECTED.kckern.single);
-      expect(nameFound, `kckern should show "${EXPECTED.kckern.single}" when alone`).toBe(true);
+      expect(nameFound, `user_1 should show "${EXPECTED.kckern.single}" when alone`).toBe(true);
 
       const singleName = await getDeviceName(page, KCKERN_DEVICE_ID);
-      console.log(`  ✓ kckern shows: "${singleName}"`);
+      console.log(`  ✓ user_1 shows: "${singleName}"`);
       expect(singleName).toBe(EXPECTED.kckern.single);
 
       // ═══════════════════════════════════════════════════════════════
@@ -376,14 +376,14 @@ test.describe('Group Label Fallback', () => {
       const felixAppeared = await waitForDeviceVisible(page, FELIX_DEVICE_ID);
       expect(felixAppeared, 'user_2 device should appear in sidebar').toBe(true);
 
-      // Wait for kckern's name to switch to group_label
+      // Wait for user_1's name to switch to group_label
       const switchedToGroup = await waitForDeviceName(page, KCKERN_DEVICE_ID, EXPECTED.kckern.group);
-      expect(switchedToGroup, `kckern should switch to "${EXPECTED.kckern.group}" when user_2 joins`).toBe(true);
+      expect(switchedToGroup, `user_1 should switch to "${EXPECTED.kckern.group}" when user_2 joins`).toBe(true);
 
       const groupName = await getDeviceName(page, KCKERN_DEVICE_ID);
       const felixName = await getDeviceName(page, FELIX_DEVICE_ID);
 
-      console.log(`  ✓ kckern shows: "${groupName}"`);
+      console.log(`  ✓ user_1 shows: "${groupName}"`);
       console.log(`  ✓ user_2 shows: "${felixName}"`);
 
       expect(groupName).toBe(EXPECTED.kckern.group);
@@ -422,12 +422,12 @@ test.describe('Group Label Fallback', () => {
       const felixGone = await waitForDeviceGone(page, FELIX_DEVICE_ID, 10000);
       console.log(`  user_2 device gone: ${felixGone}`);
 
-      // Wait for kckern's name to switch back to display_name
+      // Wait for user_1's name to switch back to display_name
       const switchedBack = await waitForDeviceName(page, KCKERN_DEVICE_ID, EXPECTED.kckern.single, 10000);
-      expect(switchedBack, `kckern should switch back to "${EXPECTED.kckern.single}" when user_2 leaves`).toBe(true);
+      expect(switchedBack, `user_1 should switch back to "${EXPECTED.kckern.single}" when user_2 leaves`).toBe(true);
 
       const restoredName = await getDeviceName(page, KCKERN_DEVICE_ID);
-      console.log(`  ✓ kckern shows: "${restoredName}"`);
+      console.log(`  ✓ user_1 shows: "${restoredName}"`);
       expect(restoredName).toBe(EXPECTED.kckern.single);
 
       // ═══════════════════════════════════════════════════════════════
@@ -436,9 +436,9 @@ test.describe('Group Label Fallback', () => {
       console.log('\n' + '═'.repeat(80));
       console.log('RESULTS');
       console.log('═'.repeat(80));
-      console.log('\n  Phase 1 (single device): kckern showed "User_1" ✓');
-      console.log('  Phase 2 (multi device):  kckern showed "Dad", user_2 showed "User_2" ✓');
-      console.log('  Phase 3 (device drop):   kckern restored to "User_1" ✓');
+      console.log('\n  Phase 1 (single device): user_1 showed "User_1" ✓');
+      console.log('  Phase 2 (multi device):  user_1 showed "Dad", user_2 showed "User_2" ✓');
+      console.log('  Phase 3 (device drop):   user_1 restored to "User_1" ✓');
       if (overlayName !== null) {
         console.log('  SSOT check:              governance overlay matched sidebar ✓');
       }

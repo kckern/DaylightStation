@@ -19,11 +19,11 @@ describe('directUPCHandler', () => {
     executeMock = jest.fn().mockResolvedValue({ success: true });
     container = { getLogFoodFromUPC: () => ({ execute: executeMock }) };
     identityAdapter = {
-      resolve: jest.fn().mockReturnValue({ username: 'kckern', conversationIdString: 'telegram:1_2' }),
+      resolve: jest.fn().mockReturnValue({ username: 'user_1', conversationIdString: 'telegram:1_2' }),
     };
     handler = directUPCHandler(container, {
       identityAdapter,
-      defaultMember: 'kckern',
+      defaultMember: 'user_1',
       logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
   });

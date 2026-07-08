@@ -311,7 +311,7 @@ sync:
 **Step 4: Verify CLI runs against fixture**
 
 ```bash
-npx node cli/ingest-health-archive.cli.mjs --user kckern --source tests/_fixtures/health-archive/external --dry-run
+npx node cli/ingest-health-archive.cli.mjs --user user_1 --source tests/_fixtures/health-archive/external --dry-run
 ```
 Expected: prints planned ops, exits 0.
 

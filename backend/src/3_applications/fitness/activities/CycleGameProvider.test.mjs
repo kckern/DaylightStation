@@ -9,7 +9,7 @@ const race = (id, utcIso, riders) => ({
 
 const svc = {
   listByDate: async () => [
-    race('r-morning', '2026-06-05T15:48:00Z', [['kckern', 0], ['user_2', 0]]), // 08:48 PDT
+    race('r-morning', '2026-06-05T15:48:00Z', [['user_1', 0], ['user_2', 0]]), // 08:48 PDT
     race('r-after',   '2026-06-05T23:22:37Z', [['user_3', 215], ['user_4', 222]]),// 16:22 PDT
   ],
 };
@@ -38,7 +38,7 @@ describe('CycleGameProvider', () => {
     expect(items[0].meta.winnerId).toBe('user_3');               // placement 1
     expect(items[0].meta.distances).toEqual({ user_3: 215, user_4: 222 });
     expect(items[0].meta.backgroundPlexId).toBe(674141);
-    expect(items[0].participants.sort()).toEqual(['user_4', 'user_3']);
+    expect(items[0].participants.sort()).toEqual(['user_3', 'user_4']);
   });
 
   it('allows a small slack at the window edges and sorts by startMs', async () => {

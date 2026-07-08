@@ -68,10 +68,10 @@ Barcodes reach the backend through three paths:
 # POST with body
 curl -X POST http://localhost:3111/api/v1/nutribot/upc \
   -H "Content-Type: application/json" \
-  -d '{"user": "kckern", "upc": "749826002019"}'
+  -d '{"user": "user_1", "upc": "749826002019"}'
 
 # Or query params
-curl "http://localhost:3111/api/v1/nutribot/upc?user=kckern&upc=749826002019"
+curl "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
 ```
 
 ### Telegram Auto-Detection
@@ -331,5 +331,5 @@ mosquitto_pub -h localhost -t "daylight/scanner/barcode" \
   -m '{"barcode":"office:pause","timestamp":"2026-03-30T12:00:00Z","device":"symbol-scanner"}'
 
 # UPC food scanning still works via direct API
-curl "http://localhost:3111/api/v1/nutribot/upc?user=kckern&upc=749826002019"
+curl "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
 ```

@@ -15,7 +15,7 @@ Pulled live from `GET /api/v1/fitness/sessions/20260612180809`:
 |---|---|
 | Date / time | Fri 2026-06-12, 18:08 → 18:50 (**42.3 min**) |
 | Duration | 510 ticks × 5s |
-| Participants | 5 — kckern, user_3, user_2, user_5, user_4 |
+| Participants | 5 — user_1, user_3, user_2, user_5, user_4 |
 | **Final coins** | **User_1 431**, **User_3 382**, **User_2 382 (TIE)**, User_4 99, User_5 42 |
 | Total coins | 1336 |
 | Events | 15 → 1 media (Daytona USA 2001), 13 challenges (warm×9, hot×1, active×1, cycle×1), 1 voice memo |

@@ -21,7 +21,7 @@ The warning `conversation.state.user_not_found` fires on **every** Telegram nutr
 }
 ```
 
-Meanwhile, the direct image route resolves the **same user** correctly as `kckern`.
+Meanwhile, the direct image route resolves the **same user** correctly as `user_1`.
 
 ## Impact
 
@@ -54,14 +54,14 @@ const userId = identifier.includes('_') ? identifier.split('_')[1] : identifier;
 The identity mapping table has the **raw numeric ID**:
 
 ```javascript
-{ telegram: { '575596036': 'kckern' } }
+{ telegram: { '575596036': 'user_1' } }
 ```
 
 So looking up `"c575596036"` fails — it should be `"575596036"`.
 
 ## Why the direct image route works
 
-`directInput.mjs` takes the opposite path: it starts with the **username** (`kckern`) from the request params, resolves it via `TelegramIdentityAdapter` to get the platform ID, and **constructs** the conversationId from scratch. It never needs to parse the conversationId back into a user ID.
+`directInput.mjs` takes the opposite path: it starts with the **username** (`user_1`) from the request params, resolves it via `TelegramIdentityAdapter` to get the platform ID, and **constructs** the conversationId from scratch. It never needs to parse the conversationId back into a user ID.
 
 ## Affected Code
 

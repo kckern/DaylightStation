@@ -23,7 +23,7 @@ Automated monitoring and recovery system to prevent the kiosk browser from becom
 - Logs all actions to `/home/kckern/kiosk-watchdog.log`
 
 **Health check criteria:**
-- Process check: `pgrep -u kckern -f "brave.*--kiosk"`
+- Process check: `pgrep -u user_1 -f "brave.*--kiosk"`
 - Port check: `curl http://localhost:9222/json`
 
 ### 2. Systemd Timer (Continuous Monitoring)
@@ -87,7 +87,7 @@ ssh homeserver.local 'sudo systemctl start kiosk-watchdog.service'
 
 OR directly:
 ```bash
-ssh homeserver.local 'pkill brave; sleep 3; sudo -u kckern bash -c "export WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0; brave-browser --kiosk --no-first-run --disable-infobars --enable-features=WebUIDarkMode,VaapiVideoDecoder --ozone-platform=wayland --remote-debugging-port=9222 https://daylightlocal.kckern.net/screen/office >/dev/null 2>&1 &"'
+ssh homeserver.local 'pkill brave; sleep 3; sudo -u user_1 bash -c "export WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0; brave-browser --kiosk --no-first-run --disable-infobars --enable-features=WebUIDarkMode,VaapiVideoDecoder --ozone-platform=wayland --remote-debugging-port=9222 https://daylightlocal.kckern.net/screen/office >/dev/null 2>&1 &"'
 ```
 
 ### Disable Monitoring (if needed)
@@ -171,7 +171,7 @@ ssh homeserver.local 'lsof -i :9222'
 
 - **Wayland required:** Brave is launched with `--ozone-platform=wayland` because the kiosk runs under Sway
 - **Remote debugging:** Port 9222 enables health checks and remote browser control
-- **Sudo required:** Watchdog runs as root to kill/restart processes owned by kckern user
+- **Sudo required:** Watchdog runs as root to kill/restart processes owned by user_1 user
 - **No nested scripts:** Watchdog launches Brave directly, not via `/home/kckern/browser-kiosk.sh` to avoid startup delays during recovery
 
 ## Future Improvements

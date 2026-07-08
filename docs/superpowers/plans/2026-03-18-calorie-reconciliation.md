@@ -652,7 +652,7 @@ describe('ReconciliationProcessor', () => {
   });
 
   it('loads data and produces reconciliation records', async () => {
-    const results = await processor.process('kckern', { windowDays: 3 });
+    const results = await processor.process('user_1', { windowDays: 3 });
     expect(results).toHaveLength(3);
     expect(mockHealthStore.saveReconciliationData).toHaveBeenCalledOnce();
   });
@@ -661,7 +661,7 @@ describe('ReconciliationProcessor', () => {
     mockHealthStore.loadReconciliationData.mockResolvedValue({
       '2026-03-10': { implied_intake: 2000 },
     });
-    await processor.process('kckern', { windowDays: 3 });
+    await processor.process('user_1', { windowDays: 3 });
     const savedData = mockHealthStore.saveReconciliationData.mock.calls[0][1];
     expect(savedData['2026-03-10']).toBeDefined(); // old data preserved
     expect(savedData['2026-03-15']).toBeDefined(); // new data added

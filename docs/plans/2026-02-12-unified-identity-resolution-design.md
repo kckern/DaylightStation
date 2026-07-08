@@ -71,7 +71,7 @@ System (0_system/)
 ```js
 // 2_domains/messaging/services/UserIdentityService.mjs
 export class UserIdentityService {
-  #mappings; // { telegram: { '575596036': 'kckern' }, ... }
+  #mappings; // { telegram: { '575596036': 'user_1' }, ... }
 
   constructor(identityMappings) {
     this.#mappings = Object.freeze(identityMappings);
@@ -121,9 +121,9 @@ Telegram webhook
 
 **Direct API path:**
 ```
-HTTP request (member=kckern or user_id=575596036)
-  → TelegramIdentityAdapter.resolve('nutribot', { username: 'kckern' })
-  → ResolvedIdentity { username: 'kckern', conversationId }
+HTTP request (member=user_1 or user_id=575596036)
+  → TelegramIdentityAdapter.resolve('nutribot', { username: 'user_1' })
+  → ResolvedIdentity { username: 'user_1', conversationId }
   → use case
 ```
 

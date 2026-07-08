@@ -18,8 +18,8 @@ Gratitude items submitted via Telegram homebot are processed successfully by the
 ```
 assignItemToUser.start  {username:"user_9", category:"hopes"}
 assignItemToUser.complete {itemCount:1, username:"user_9", category:"hopes"}
-assignItemToUser.start  {username:"kckern", category:"gratitude"}
-assignItemToUser.complete {itemCount:1, username:"kckern", category:"gratitude"}
+assignItemToUser.start  {username:"user_1", category:"gratitude"}
+assignItemToUser.complete {itemCount:1, username:"user_1", category:"gratitude"}
 ```
 
 **Frontend WebSocket — continuous failures:**

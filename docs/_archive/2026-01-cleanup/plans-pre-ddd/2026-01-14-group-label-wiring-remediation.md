@@ -58,18 +58,18 @@ describe('userGroupLabelMap indexing logic', () => {
   it('indexes by id when id differs from name', () => {
     const config = {
       primary: [
-        { id: 'kckern', name: 'User_1', group_label: 'Dad' }
+        { id: 'user_1', name: 'User_1', group_label: 'Dad' }
       ]
     };
     const map = buildUserGroupLabelMap(config);
 
-    expect(map.get('kckern')).toBe('Dad');
+    expect(map.get('user_1')).toBe('Dad');
   });
 
   it('indexes by display name when it differs from id', () => {
     const config = {
       primary: [
-        { id: 'kckern', name: 'User_1', group_label: 'Dad' }
+        { id: 'user_1', name: 'User_1', group_label: 'Dad' }
       ]
     };
     const map = buildUserGroupLabelMap(config);
@@ -94,7 +94,7 @@ describe('userGroupLabelMap indexing logic', () => {
   it('handles multiple user categories', () => {
     const config = {
       primary: [
-        { id: 'kckern', name: 'User_1', group_label: 'Dad' }
+        { id: 'user_1', name: 'User_1', group_label: 'Dad' }
       ],
       family: [
         { id: 'spouse', name: 'Jane Kern', group_label: 'Mom' }
@@ -105,7 +105,7 @@ describe('userGroupLabelMap indexing logic', () => {
     };
     const map = buildUserGroupLabelMap(config);
 
-    expect(map.get('kckern')).toBe('Dad');
+    expect(map.get('user_1')).toBe('Dad');
     expect(map.get('User_1')).toBe('Dad');
     expect(map.get('spouse')).toBe('Mom');
     expect(map.get('Jane Kern')).toBe('Mom');
@@ -199,7 +199,7 @@ git add tests/unit/fitness/userGroupLabelMap.unit.test.mjs frontend/src/context/
 git commit -m "fix: index userGroupLabelMap by both id and display name
 
 Lookups using display name (e.g., 'User_1') now resolve to group_label
-just like id-based lookups ('kckern'). This fixes components that pass
+just like id-based lookups ('user_1'). This fixes components that pass
 name instead of id to getDisplayLabel().
 
 Adds unit tests for the indexing logic."

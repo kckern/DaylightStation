@@ -85,7 +85,7 @@ ledger.resolveByDevice("42")
 
 // Returns
 {
-  userId: "kckern",
+  userId: "user_1",
   deviceId: "42",
   assignedAt: timestamp
 }
@@ -101,7 +101,7 @@ ledger.resolveByDevice("42")
 
 ```javascript
 // Input (from DeviceAssignmentLedger)
-userId: "kckern"
+userId: "user_1"
 heartRate: 150
 
 // Zone lookup (from user's zone profile)
@@ -115,7 +115,7 @@ zones: {
 
 // Output (roster entry)
 {
-  id: "kckern",           // ← userId (stable identifier)
+  id: "user_1",           // ← userId (stable identifier)
   name: "User_1",        // ← Display only
   deviceId: "42",
   heartRate: 150,
@@ -135,7 +135,7 @@ zones: {
 ```javascript
 // Input: roster from ParticipantRoster
 roster = [
-  { id: "kckern", zoneId: "hot", isActive: true },
+  { id: "user_1", zoneId: "hot", isActive: true },
   { id: "user_2", zoneId: "warm", isActive: true },
   { id: "user_3", zoneId: "fire", isActive: false }  // Paused
 ]
@@ -144,7 +144,7 @@ roster = [
 activeParticipants = roster
   .filter(entry => entry.isActive !== false)
   .map(entry => entry.id || entry.profileId);
-// Result: ["kckern", "user_2"]
+// Result: ["user_1", "user_2"]
 
 // Build userZoneMap (CRITICAL: must key by userId)
 userZoneMap = {};
@@ -154,7 +154,7 @@ roster.forEach(entry => {
     userZoneMap[userId] = entry.zoneId;
   }
 });
-// Result: { "kckern": "hot", "user_2": "warm" }
+// Result: { "user_1": "hot", "user_2": "warm" }
 ```
 
 **Key Contract:**
@@ -169,7 +169,7 @@ roster.forEach(entry => {
 
 ```javascript
 treasureBox.processTick({
-  activeParticipants: new Set(["kckern", "user_2"]),  // userId Set
+  activeParticipants: new Set(["user_1", "user_2"]),  // userId Set
   inactiveParticipants: ["user_3"]                    // userId array
 });
 ```
@@ -178,8 +178,8 @@ treasureBox.processTick({
 
 ```javascript
 // perUser Map (keyed by userId)
-perUser.set("kckern", {
-  userId: "kckern",
+perUser.set("user_1", {
+  userId: "user_1",
   currentZone: "hot",
   coins: 42,
   // ...
@@ -191,7 +191,7 @@ perUser.set("kckern", {
 ```javascript
 // MetricsRecorder writes coins to timeline
 assignMetric(`user:${userId}:coins_total`, 42);
-// Key: "user:kckern:coins_total"
+// Key: "user:user_1:coins_total"
 ```
 
 **Key Decision:** All TreasureBox operations key by `userId`, timeline series use `user:` prefix
@@ -204,9 +204,9 @@ assignMetric(`user:${userId}:coins_total`, 42);
 
 ```javascript
 governanceEngine.evaluate({
-  activeParticipants: ["kckern", "user_2"],  // userId array
+  activeParticipants: ["user_1", "user_2"],  // userId array
   userZoneMap: {
-    "kckern": "hot",
+    "user_1": "hot",
     "user_2": "warm"
   },
   zoneRankMap: {
@@ -227,7 +227,7 @@ requirement = { active: "all" };  // "active" has rank 1
 
 // Check each participant
 activeParticipants.forEach(userId => {
-  const zoneId = userZoneMap[userId];          // "hot" for kckern
+  const zoneId = userZoneMap[userId];          // "hot" for user_1
   const rank = zoneRankMap[zoneId];            // 3 for "hot"
   const meetsRequirement = rank >= 1;          // 3 >= 1 = true ✓
 });
@@ -258,7 +258,7 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // Examples
-"kckern"
+"user_1"
 "user_2"
 "user_3"
 "guest-abc123"
@@ -282,8 +282,8 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // User-scoped metrics
-"user:kckern:coins_total"
-"user:kckern:heart_rate"
+"user:user_1:coins_total"
+"user:user_1:heart_rate"
 "user:user_2:zone_id"
 
 // Global metrics
@@ -306,12 +306,12 @@ activeParticipants.forEach(userId => {
 
 ```javascript
 // ✅ CORRECT
-activeParticipants = ["kckern", "user_2"];
-userZoneMap = { "kckern": "hot", "user_2": "warm" };
-treasureBox.perUser.set("kckern", data);
+activeParticipants = ["user_1", "user_2"];
+userZoneMap = { "user_1": "hot", "user_2": "warm" };
+treasureBox.perUser.set("user_1", data);
 
 // ❌ WRONG (mixed identifiers)
-activeParticipants = ["kckern", "user_2"];
+activeParticipants = ["user_1", "user_2"];
 userZoneMap = { "User_1": "hot", "User_2": "warm" };  // Using names!
 ```
 
@@ -477,10 +477,10 @@ if (!zone) {
 
 ```javascript
 // WRONG (mixed names and IDs)
-activeParticipants = ["kckern", "User_2", "user_3"];  // IDs and names mixed
+activeParticipants = ["user_1", "User_2", "user_3"];  // IDs and names mixed
 
 // CORRECT (all userId)
-activeParticipants = ["kckern", "user_2", "user_3"];
+activeParticipants = ["user_1", "user_2", "user_3"];
 ```
 
 ---

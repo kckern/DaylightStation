@@ -15,7 +15,7 @@ When a single user is exercising, the sidebar shows their full `display_name` (e
 
 ### Config Sources
 
-- **kckern** (device 40475): `display_name: "User_1"`, `group_label: "Dad"`
+- **user_1** (device 40475): `display_name: "User_1"`, `group_label: "Dad"`
 - **user_2** (device 90003): `display_name: "User_2"`, no group_label
 
 ### Trigger Condition
@@ -27,17 +27,17 @@ The switch happens when `heartRateDevices.length > 1` (see `FitnessContext.jsx:1
 ```
 1. Navigate to governed content
 2. Wait for FitnessSimController ready
-3. Activate kckern device (40475) → zone 'warm'
+3. Activate user_1 device (40475) → zone 'warm'
 4. Wait for sidebar to show device row
-5. ASSERT: kckern row shows "User_1"
+5. ASSERT: user_1 row shows "User_1"
 6. Activate user_2 device (90003) → zone 'warm'
-7. Poll until kckern row shows "Dad" (with timeout)
-8. ASSERT: kckern row shows "Dad"
+7. Poll until user_1 row shows "Dad" (with timeout)
+8. ASSERT: user_1 row shows "Dad"
 9. ASSERT: user_2 row shows "User_2"
 10. (SSOT) If governance overlay visible, assert it also shows "Dad"
 11. Deactivate user_2 device
-12. Poll until kckern row shows "User_1" (with timeout)
-13. ASSERT: kckern row shows "User_1"
+12. Poll until user_1 row shows "User_1" (with timeout)
+13. ASSERT: user_1 row shows "User_1"
 ```
 
 ## DOM Selectors
@@ -126,7 +126,7 @@ test.describe('Group Label Fallback', () => {
       const devices = await sim.getDevices();
       const hasKckern = devices.some(d => String(d.deviceId) === '40475');
       const hasFelix = devices.some(d => String(d.deviceId) === '90003');
-      expect(hasKckern, 'kckern device (40475) must exist').toBe(true);
+      expect(hasKckern, 'user_1 device (40475) must exist').toBe(true);
       expect(hasFelix, 'user_2 device (90003) must exist').toBe(true);
 
       // Phase 1: Single device - should show display_name

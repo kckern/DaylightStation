@@ -80,7 +80,7 @@ describe('UnlockPrompt', () => {
         open
         state="granted"
         lockLabel="Dance Party"
-        unlockedUser={{ userId: 'kckern', name: 'User_1', avatarSrc: '/static/img/users/kckern' }}
+        unlockedUser={{ userId: 'user_1', name: 'User_1', avatarSrc: '/static/img/users/kckern' }}
         onCancel={() => {}}
       />
     );

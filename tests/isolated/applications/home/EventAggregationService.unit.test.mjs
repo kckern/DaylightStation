@@ -14,7 +14,7 @@ describe('EventAggregationService', () => {
       },
     };
     mockConfigService = {
-      getHeadOfHousehold: vi.fn().mockReturnValue('kckern'),
+      getHeadOfHousehold: vi.fn().mockReturnValue('user_1'),
     };
     mockLogger = {
       debug: vi.fn(),
@@ -299,9 +299,9 @@ describe('EventAggregationService', () => {
     service.getUpcomingEvents();
 
     expect(mockConfigService.getHeadOfHousehold).toHaveBeenCalled();
-    expect(mockDataService.user.read).toHaveBeenCalledWith('current/calendar', 'kckern');
-    expect(mockDataService.user.read).toHaveBeenCalledWith('current/todoist', 'kckern');
-    expect(mockDataService.user.read).toHaveBeenCalledWith('current/clickup', 'kckern');
+    expect(mockDataService.user.read).toHaveBeenCalledWith('current/calendar', 'user_1');
+    expect(mockDataService.user.read).toHaveBeenCalledWith('current/todoist', 'user_1');
+    expect(mockDataService.user.read).toHaveBeenCalledWith('current/clickup', 'user_1');
   });
 
   it('uses provided username instead of head of household', () => {
