@@ -25,7 +25,7 @@ function stubOsmd({ steps = 100, onStep = () => {} } = {}) {
   };
   const cursor = {
     Iterator,
-    cursorElement: null, // → opRect null → noteheadBox short-circuits (no DOM)
+    cursorElement: null, // → opRect null → boxOfEl short-circuits (no DOM)
     show() {},
     reset() { i = 0; },
     hide() {},
