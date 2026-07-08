@@ -32,14 +32,15 @@ const PALETTE = {
 /**
  * @typedef {Object} EpaperConfig
  * @property {string} fontDir - Path to fonts directory
- * @property {string} [baseUrl] - Backend base URL for data fetching
  * @property {Object} [screenConfig] - Eink screen layout/data/theme config
- * @property {Function} [dataProvider] - Async function returning dashboard data
+ * @property {Function} [dataProvider] - Async function returning dashboard data.
+ *   REQUIRED unless every render(data) call supplies data: the eink renderer no
+ *   longer fetches (data resolution is an application-layer concern), so this
+ *   adapter must be handed its data.
  */
 
 export class EpaperAdapter {
   #fontDir;
-  #baseUrl;
   #screenConfig;
   #dataProvider;
   #logger;
@@ -54,7 +55,6 @@ export class EpaperAdapter {
   constructor(config, deps = {}) {
     this.#logger = deps.logger || console;
     this.#fontDir = config.fontDir;
-    this.#baseUrl = config.baseUrl || 'http://localhost:3112';
     this.#screenConfig = config.screenConfig || null;
     this.#dataProvider = config.dataProvider || null;
   }
@@ -74,26 +74,24 @@ export class EpaperAdapter {
 
   /**
    * Render the dashboard and return a PNG buffer.
-   * @param {Object} [data] - Dashboard data (overrides data fetching)
+   * @param {Object} [data] - Dashboard data; falls back to the configured
+   *   dataProvider. One of the two MUST supply the data — the renderer draws
+   *   what it receives and never fetches.
    * @returns {Promise<Buffer>} PNG image buffer
    */
   async render(data) {
     const startTime = Date.now();
 
-    // Build screen config, using provided data or fetching via DataResolver
     const screenConfig = this.#screenConfig || EpaperAdapter.defaultScreenConfig();
-    const options = {
-      baseUrl: this.#baseUrl,
-      fontDir: this.#fontDir,
-    };
-
-    if (data) {
-      options.dataOverride = data;
-    } else if (this.#dataProvider) {
-      options.dataOverride = await this.#dataProvider();
+    const resolved = data || (this.#dataProvider ? await this.#dataProvider() : null);
+    if (!resolved || typeof resolved !== 'object') {
+      throw new TypeError('EpaperAdapter.render needs data (argument or configured dataProvider) — the eink renderer no longer fetches');
     }
 
-    const buffer = await einkRender(screenConfig, options);
+    const buffer = await einkRender(screenConfig, {
+      data: resolved,
+      fontDir: this.#fontDir,
+    });
     this.#lastRender = buffer;
     this.#lastRenderTime = Date.now();
 

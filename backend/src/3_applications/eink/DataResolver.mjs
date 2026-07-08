@@ -1,9 +1,13 @@
 /**
  * Data Resolver — fetches all data sources before render
- * @module 1_rendering/eink/data/DataResolver
+ * @module 3_applications/eink/DataResolver
  *
  * Server-side equivalent of ScreenDataProvider.jsx.
  * Given a data config map, fetches all sources and returns a keyed object.
+ *
+ * Lives in the APPLICATION layer: data acquisition (network I/O) is
+ * orchestration, not presentation. The eink renderer (1_rendering) takes the
+ * resolved data as input and never fetches.
  */
 
 import { loadImage } from '#system/canvas/index.mjs';
@@ -15,12 +19,15 @@ import { loadImage } from '#system/canvas/index.mjs';
  * @param {Object} [opts]
  * @param {boolean} [opts.loadImages=false] - when true, a source that declares
  *   `image: '<field>'` has the URL at json[field] fetched and decoded into a
- *   ready-to-draw `imageEl`. This is the EXPENSIVE pixel path — only the renderer
- *   passes it; the cheap /config snapshot resolves data WITHOUT images so its
+ *   ready-to-draw `imageEl`. This is the EXPENSIVE pixel path — only the render
+ *   path passes it; the cheap /config snapshot resolves data WITHOUT images so its
  *   battery-saving hash check never downloads a photo.
+ * @param {Object} [opts.logger] - optional logger; each REJECTED source is
+ *   logged as a warn (the render still degrades gracefully — the widget draws
+ *   its no-data fallback — but the failure is no longer silent).
  * @returns {Promise<Object>} - { [key]: fetchedData }
  */
-export async function resolveData(sources, baseUrl, { loadImages = false } = {}) {
+export async function resolveData(sources, baseUrl, { loadImages = false, logger } = {}) {
   if (!sources || typeof sources !== 'object') return {};
 
   const entries = Object.entries(sources);
@@ -54,11 +61,20 @@ export async function resolveData(sources, baseUrl, { loadImages = false } = {})
   );
 
   const data = {};
-  for (const result of results) {
+  results.forEach((result, i) => {
     if (result.status === 'fulfilled') {
       const [key, value] = result.value;
       data[key] = value;
+    } else {
+      // Degradation behavior unchanged (the feed is simply absent from the
+      // returned map) — but the drop is observable now instead of vanishing.
+      const [key, config] = entries[i];
+      logger?.warn?.('eink.data.source_rejected', {
+        key,
+        source: config?.source,
+        error: result.reason?.message || String(result.reason),
+      });
     }
-  }
+  });
   return data;
 }
