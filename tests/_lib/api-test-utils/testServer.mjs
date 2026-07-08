@@ -18,7 +18,7 @@ import {
   createContentRegistry,
   createWatchStore,
   createApiRouters
-} from '#backend/src/0_system/bootstrap.mjs';
+} from '#composition/bootstrap.mjs';
 import {
   initConfigService,
   resetConfigService,

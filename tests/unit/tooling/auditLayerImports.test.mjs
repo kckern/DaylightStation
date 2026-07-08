@@ -8,7 +8,7 @@ describe('audit-layer-imports', () => {
     expect(v.some(r => r.rule === 'domains-no-adapters')).toBe(true);
   });
   it('allows the composition root to import adapters', () => {
-    const v = scanViolations('backend/src/0_system/bootstrap.mjs',
+    const v = scanViolations('backend/src/5_composition/bootstrap.mjs',
       "import { Bar } from '#adapters/thing/Bar.mjs';");
     expect(v.length).toBe(0);
   });

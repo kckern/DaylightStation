@@ -1,4 +1,4 @@
-// backend/src/0_system/bootstrap.mjs
+// backend/src/5_composition/bootstrap.mjs
 
 import path from 'path';
 import fs from 'fs/promises';
@@ -7,13 +7,13 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Integration registry imports
-import { AdapterRegistry } from './registries/AdapterRegistry.mjs';
-import { IntegrationLoader } from './registries/IntegrationLoader.mjs';
-import { SystemBotLoader } from './registries/SystemBotLoader.mjs';
+import { AdapterRegistry } from '#system/registries/AdapterRegistry.mjs';
+import { IntegrationLoader } from '#system/registries/IntegrationLoader.mjs';
+import { SystemBotLoader } from '#system/registries/SystemBotLoader.mjs';
 
 // EventBus imports
-import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
-import { HttpClient } from './services/HttpClient.mjs';
+import { WebSocketEventBus } from '#system/eventbus/WebSocketEventBus.mjs';
+import { HttpClient } from '#system/services/HttpClient.mjs';
 
 // Content domain imports
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
@@ -108,12 +108,12 @@ import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
 import nodeFs from 'node:fs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
-import { FitnessSuggestionService } from '../3_applications/fitness/suggestions/FitnessSuggestionService.mjs';
-import { NextUpStrategy } from '../3_applications/fitness/suggestions/NextUpStrategy.mjs';
-import { ResumeStrategy } from '../3_applications/fitness/suggestions/ResumeStrategy.mjs';
-import { FavoriteStrategy } from '../3_applications/fitness/suggestions/FavoriteStrategy.mjs';
-import { MemorableStrategy } from '../3_applications/fitness/suggestions/MemorableStrategy.mjs';
-import { DiscoveryStrategy } from '../3_applications/fitness/suggestions/DiscoveryStrategy.mjs';
+import { FitnessSuggestionService } from '#apps/fitness/suggestions/FitnessSuggestionService.mjs';
+import { NextUpStrategy } from '#apps/fitness/suggestions/NextUpStrategy.mjs';
+import { ResumeStrategy } from '#apps/fitness/suggestions/ResumeStrategy.mjs';
+import { FavoriteStrategy } from '#apps/fitness/suggestions/FavoriteStrategy.mjs';
+import { MemorableStrategy } from '#apps/fitness/suggestions/MemorableStrategy.mjs';
+import { DiscoveryStrategy } from '#apps/fitness/suggestions/DiscoveryStrategy.mjs';
 
 // Home automation imports
 import { TVControlAdapter } from '#adapters/home-automation/tv/TVControlAdapter.mjs';
@@ -140,7 +140,7 @@ import {
   createDeviceLivenessService as createDeviceLivenessServiceFactory,
   getDeviceLivenessService as getDeviceLivenessServiceInstance,
   stopDeviceLivenessService as stopDeviceLivenessServiceInstance,
-} from './bootstrap/deviceLiveness.mjs';
+} from './modules/deviceLiveness.mjs';
 
 // Device registry imports
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
@@ -174,7 +174,7 @@ import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelect
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 // Proxy infrastructure imports
-import { ProxyService } from './proxy/ProxyService.mjs';
+import { ProxyService } from '#system/proxy/ProxyService.mjs';
 import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
@@ -232,7 +232,7 @@ import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
-import { toFolderName } from './config/configLoader.mjs';
+import { toFolderName } from '#system/config/configLoader.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
@@ -249,7 +249,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 // Agents application imports
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
-import { PersonalContextLoader } from '../3_applications/health/PersonalContextLoader.mjs';
+import { PersonalContextLoader } from '#apps/health/PersonalContextLoader.mjs';
 import { HealthArchiveScopeFactory } from '#apps/health/archive/HealthArchiveScopeFactory.mjs';
 import { SimilarPeriodFinder } from '#domains/health/services/SimilarPeriodFinder.mjs';
 import { PatternDetector } from '#domains/health/services/PatternDetector.mjs';
@@ -284,7 +284,7 @@ import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs'
 import { ReconciliationProcessor } from '#apps/health/ReconciliationProcessor.mjs';
 import { HealthDashboardUseCase } from '#apps/health/HealthDashboardUseCase.mjs';
 import { FoodCatalogService } from '#apps/health/FoodCatalogService.mjs';
-import { LongitudinalAggregationService } from '../3_applications/health/LongitudinalAggregationService.mjs';
+import { LongitudinalAggregationService } from '#apps/health/LongitudinalAggregationService.mjs';
 import { SetDailyCoachingUseCase } from '#apps/health/SetDailyCoachingUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { YamlFoodCatalogDatastore } from '#adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
@@ -338,7 +338,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, listSubdirectories, ensureDir, writeBinary } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, listSubdirectories, ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -372,7 +372,7 @@ export async function initializeIntegrations(config) {
 
   // Create and discover adapters (singleton)
   if (!adapterRegistryInstance) {
-    // Adapters are at backend/src/1_adapters, relative to this file (0_system/bootstrap.mjs)
+    // Adapters are at backend/src/1_adapters, relative to this file (5_composition/bootstrap.mjs)
     const adaptersRoot = path.resolve(__dirname, '../1_adapters');
     adapterRegistryInstance = new AdapterRegistry({ adaptersRoot });
     await adapterRegistryInstance.discover();
@@ -811,7 +811,7 @@ export function createMediaProgressMemory(config) {
  * @param {Function} [config.saveFile] - Function to save YAML files
  * @param {string} [config.cacheBasePath] - Base path for image cache
  * @param {string} [config.dataPath] - Base data path for local content
- * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
+ * @param {import('#system/proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [config.composePresentationUseCase] - Use case for composing presentations
  * @param {Object<string, string>} [config.prefixAliases] - Prefix aliases (e.g., { hymn: 'singalong:hymn' })
  * @param {Object} [config.logger] - Logger instance

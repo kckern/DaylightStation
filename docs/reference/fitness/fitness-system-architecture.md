@@ -757,7 +757,7 @@ progressClassification:
 | File | Layer | Purpose |
 |------|-------|---------|
 | `backend/src/0_system/eventbus/WebSocketEventBus.mjs` | System | Pub/sub event bus with WebSocket server |
-| `backend/src/0_system/bootstrap.mjs` | System | Wiring: creates fitness router with injected dependencies |
+| `backend/src/5_composition/bootstrap.mjs` | System | Wiring: creates fitness router with injected dependencies |
 | `backend/src/1_adapters/FitSyncAdapter.mjs` | Adapter | ANT+ USB → event bus bridge |
 | `backend/src/1_adapters/fitness/AmbientLedAdapter.mjs` | Adapter | Zone → LED scene control via Home Assistant |
 | `backend/src/1_adapters/fitness/VoiceMemoTranscriptionService.mjs` | Adapter | Whisper + GPT-4o voice memo transcription |

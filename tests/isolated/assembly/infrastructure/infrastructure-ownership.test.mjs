@@ -18,7 +18,7 @@ describe('Infrastructure Ownership', () => {
     beforeEach(async () => {
       // Reset module cache to get fresh singleton
       vi.resetModules();
-      bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
+      bootstrap = await import('#composition/bootstrap.mjs');
     });
 
     afterEach(() => {
@@ -90,7 +90,7 @@ describe('Infrastructure Ownership', () => {
 
     beforeEach(async () => {
       vi.resetModules();
-      bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
+      bootstrap = await import('#composition/bootstrap.mjs');
     });
 
     afterEach(() => {
@@ -226,7 +226,7 @@ describe('Infrastructure Ownership', () => {
   describe('Load Order Verification', () => {
     it('first backend to create EventBus owns it', async () => {
       vi.resetModules();
-      const bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
+      const bootstrap = await import('#composition/bootstrap.mjs');
 
       const mockServer = { on: vi.fn() };
       const logger1 = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

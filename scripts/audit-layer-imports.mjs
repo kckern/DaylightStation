@@ -13,10 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const IMPORT_RE = /^\s*(?:import\b[^'"]*|export\b[^'"]*from\s*)['"]([^'"]+)['"]/;
 
-// exempt: composition root (bootstrap) — the one sanctioned cross-layer zone
-const isCompositionRoot = (f) =>
-  f.includes('0_system/bootstrap') || f.endsWith('0_system/bootstrap.mjs') ||
-  f.includes('5_composition/'); // future home (Task P2.7)
+// exempt: composition root (5_composition) — the one sanctioned cross-layer zone
+const isCompositionRoot = (f) => f.includes('5_composition/');
 const isTest = (f) => f.includes('__tests__') || f.endsWith('.test.mjs');
 
 export const RULES = [

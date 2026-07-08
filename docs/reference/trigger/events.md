@@ -244,7 +244,7 @@ If the YAML fails to parse at boot, the registry falls back to an empty shape (`
 - **Domain (resolvers):** `backend/src/2_domains/trigger/services/{NfcResolver,StateResolver,ResolverRegistry}.mjs`
 - **Application (dispatcher + actions):** `backend/src/3_applications/trigger/{TriggerDispatchService,actionHandlers}.mjs`
 - **API:** `backend/src/4_api/v1/routers/trigger.mjs`
-- **Bootstrap:** `createTriggerApiRouter` in `backend/src/0_system/bootstrap.mjs`
+- **Bootstrap:** `createTriggerApiRouter` in `backend/src/5_composition/bootstrap.mjs`
 - **Screen consumer:** `frontend/src/screen-framework/subscriptions/useScreenSubscriptions.js`
 - **Tests:** `tests/isolated/{adapter,domain,application}/trigger/`
 - **Schema reference:** [`schema.md`](./schema.md)

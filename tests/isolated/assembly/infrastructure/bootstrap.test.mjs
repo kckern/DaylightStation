@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
-import { createContentRegistry } from '#backend/src/0_system/bootstrap.mjs';
+import { createContentRegistry } from '#composition/bootstrap.mjs';
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
@@ -55,7 +55,7 @@ describe('bootstrap', () => {
       // 'watchlist' source; ListAdapter (source 'list') is registered as
       // the alias 'watchlist' via the legacy registry.adapters map only —
       // not the structured #adapterEntries (see ListAdapter wiring in
-      // backend/src/0_system/bootstrap.mjs:507).
+      // backend/src/5_composition/bootstrap.mjs:507).
       const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {

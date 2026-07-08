@@ -8,7 +8,7 @@ import { CadenceService } from '#domains/lifeplan/services/CadenceService.mjs';
  * DI container for the lifeplan domain.
  *
  * Persistence stores are constructed at the composition root
- * (0_system/bootstrap/lifeplan.mjs) and injected as instances (Decision D1:
+ * (5_composition/modules/lifeplan.mjs) and injected as instances (Decision D1:
  * containers never import concrete adapter classes). Pure domain services
  * are lazily constructed here.
  */
