@@ -1,6 +1,6 @@
 import { vi, describe, test, expect } from 'vitest';
 import { createCanvas } from 'canvas';
-import { compositeHeroImage } from '../../../../backend/src/0_system/canvas/compositeHero.mjs';
+import { compositeHeroImage } from '../../../../backend/src/1_rendering/canvas/compositeHero.mjs';
 
 describe('compositeHeroImage', () => {
   /**

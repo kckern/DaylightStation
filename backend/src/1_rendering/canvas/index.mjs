@@ -1,6 +1,6 @@
 /**
  * Canvas System Module
- * @module 0_system/canvas
+ * @module 1_rendering/canvas
  *
  * Exports canvas renderer and drawing utilities.
  */

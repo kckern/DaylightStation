@@ -16,7 +16,7 @@ import { parseFile } from 'music-metadata';
 import { lookupReference, generateReference } from 'scripture-guide';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { dirExists, listDirs, getStats, findMediaFileByPrefix, fileExists } from '#system/utils/FileIO.mjs';
-import { generatePlaceholderImage } from '#system/utils/placeholderImage.mjs';
+import { generatePlaceholderImage } from '#rendering/placeholder/placeholderImage.mjs';
 
 // Volume to first verse_id mapping (for determining volume from verse_id)
 const VOLUME_RANGES = {
@@ -126,6 +126,9 @@ function resolveScripturePath(input, dataPath) {
 export function createLocalContentRouter(config) {
   const { registry, dataPath, mediaBasePath, mediaProgressMemory } = config;
   const router = express.Router();
+  // Label font for generated placeholder art, resolved here (API layer owns
+  // path resolution; the renderer just takes a fontPath).
+  const placeholderFontPath = path.join(mediaBasePath, 'fonts/RobotoCondensed-Regular.ttf');
 
   // Deprecation notice: these endpoints are superseded by the unified Play API
   // (GET /api/v1/play/:source/*) which returns a `format` field for frontend dispatch.
@@ -516,7 +519,7 @@ export function createLocalContentRouter(config) {
     }
 
     // Generate placeholder
-    const placeholder = generatePlaceholderImage(mediaKey);
+    const placeholder = generatePlaceholderImage(mediaKey, { fontPath: placeholderFontPath });
     res.set({
       'Content-Type': 'image/png',
       'Content-Length': placeholder.length,

@@ -1,6 +1,6 @@
 /**
  * Composite Hero Image Generator
- * @module 0_system/canvas/compositeHero
+ * @module 1_rendering/canvas/compositeHero
  *
  * Creates a 1280x720 composite image from multiple source images.
  * Images are placed side-by-side at equal height, cropped at 16:9 right edge.

@@ -1,6 +1,6 @@
 /**
  * Canvas Renderer
- * @module 0_system/canvas/CanvasRenderer
+ * @module 1_rendering/canvas/CanvasRenderer
  *
  * System-level renderer for canvas instance management.
  * Handles font registration and canvas creation.
