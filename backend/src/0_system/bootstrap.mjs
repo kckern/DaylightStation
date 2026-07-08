@@ -146,6 +146,19 @@ import {
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
 import { DeviceFactory } from '#apps/devices/services/DeviceFactory.mjs';
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
+import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDeviceAdapter.mjs';
+import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
+import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
+import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
+import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
+import { ResilientContentAdapter } from '#adapters/devices/ResilientContentAdapter.mjs';
+
+// Camera imports
+import { CameraService } from '#apps/camera/CameraService.mjs';
+import { ReolinkCameraAdapter } from '#adapters/camera/ReolinkCameraAdapter.mjs';
+import { HlsStreamManager } from '#adapters/camera/HlsStreamManager.mjs';
+import { ReolinkStateAdapter } from '#adapters/camera/ReolinkStateAdapter.mjs';
+import { HomeAssistantControlAdapter } from '#adapters/camera/HomeAssistantControlAdapter.mjs';
 
 // Trigger domain + application imports
 import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
@@ -1942,6 +1955,38 @@ export async function createPlaybackHubServices(config) {
 }
 
 // =============================================================================
+// Camera Bootstrap
+// =============================================================================
+
+/**
+ * Create camera application services.
+ * Composes the Reolink/HLS/Home Assistant adapters and hands them to CameraService.
+ * @param {Object} options
+ * @param {Object} options.configService - ConfigService for device/auth lookups
+ * @param {string} [options.householdId]
+ * @param {Object} [options.haGateway]
+ * @param {Object} [options.logger]
+ * @returns {{ cameraService: CameraService }}
+ */
+export function createCameraServices({ configService, householdId, haGateway, logger = console } = {}) {
+  const devicesConfig = configService.getHouseholdDevices(householdId)?.devices || {};
+  const getAuth = (authRef) => configService.getHouseholdAuth(authRef, householdId);
+
+  const gateway = new ReolinkCameraAdapter({ devicesConfig, getAuth, logger });
+  const streamAdapter = new HlsStreamManager({ logger });
+  const stateGateway = new ReolinkStateAdapter({ devicesConfig, getAuth, logger });
+  const controlGateway = haGateway
+    ? new HomeAssistantControlAdapter({ devicesConfig, haGateway, logger })
+    : null;
+
+  const cameraService = new CameraService({
+    gateway, streamAdapter, stateGateway, controlGateway, logger,
+  });
+
+  return { cameraService };
+}
+
+// =============================================================================
 // Device Registry Bootstrap
 // =============================================================================
 
@@ -1970,6 +2015,17 @@ export async function createDeviceServices(config) {
     logger = console
   } = config;
 
+  // Concrete capability adapters are composed here; DeviceFactory only
+  // selects which one a device config calls for.
+  const adapterFactories = {
+    homeAssistantDevice: (cfg, deps) => new HomeAssistantDeviceAdapter(cfg, deps),
+    fullyKioskContent: (cfg, deps) => new FullyKioskContentAdapter(cfg, deps),
+    webSocketContent: (cfg, deps) => new WebSocketContentAdapter(cfg, deps),
+    sshOs: (cfg, deps) => new SshOsAdapter(cfg, deps),
+    adb: (cfg, deps) => new AdbAdapter(cfg, deps),
+    resilientContent: (cfg, deps) => new ResilientContentAdapter(cfg, deps),
+  };
+
   // Create device factory with all capability adapters
   const deviceFactory = new DeviceFactory({
     haGateway,
@@ -1978,6 +2034,7 @@ export async function createDeviceServices(config) {
     remoteExec,
     daylightHost,
     configService,
+    adapterFactories,
     logger
   });
 

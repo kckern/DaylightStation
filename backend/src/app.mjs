@@ -2116,8 +2116,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.trigger = triggerRouter;
 
   // Camera feeds
-  const { createCameraServices } = await import('#apps/camera/index.mjs');
+  const { createCameraServices } = await import('./0_system/bootstrap.mjs');
   const { cameraService } = createCameraServices({
+    configService,
     householdId,
     haGateway: homeAutomationAdapters.haGateway,
     logger: rootLogger.child({ module: 'camera' }),
