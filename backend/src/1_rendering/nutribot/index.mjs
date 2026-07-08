@@ -1,6 +1,6 @@
 /**
  * Nutribot Rendering Module
- * @module 2_adapters/nutribot/rendering
+ * @module 1_rendering/nutribot
  */
 
 export { NutriReportRenderer } from './NutriReportRenderer.mjs';

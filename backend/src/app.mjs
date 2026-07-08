@@ -1680,7 +1680,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
-    const { NutriReportRenderer } = await import('#adapters/nutribot/rendering/NutriReportRenderer.mjs');
+    const { NutriReportRenderer } = await import('#rendering/nutribot/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
       logger: rootLogger.child({ module: 'nutribot-renderer' }),
       fontDir: configService.getPath('font'),

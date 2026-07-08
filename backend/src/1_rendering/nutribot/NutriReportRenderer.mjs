@@ -1,6 +1,6 @@
 /**
  * Nutrition Report Renderer
- * @module 2_adapters/nutribot/rendering/NutriReportRenderer
+ * @module 1_rendering/nutribot/NutriReportRenderer
  *
  * Generates PNG images for nutrition reports using node-canvas.
  * Design modeled after food_report.mjs
