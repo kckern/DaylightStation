@@ -10,7 +10,7 @@ import {
   usePianoRoster,
   resolvePianoConfig,
 } from '../modules/Piano/PianoKiosk/PianoConfig.jsx';
-import { PianoMidiProvider, usePianoMidi } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
+import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
@@ -149,7 +149,11 @@ export function ConnectGate({ children }) {
  */
 function ScreensaverDriver() {
   const { config } = usePianoKioskConfig();
-  const { activeNotes, noteHistory } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
+  // Global playing flag: Listen-mode performs via timestamped sendNoteAt (no
+  // activeNotes churn), so without this hold a long performance would blank the
+  // screen mid-piece. keepAlive holds it awake, same gate useInactivityReturn uses.
+  const { playing } = usePianoPlayback();
   usePianoScreensaver({
     deviceId: config.screensaver?.deviceId,
     activeNotes,
@@ -157,13 +161,15 @@ function ScreensaverDriver() {
     timeoutMinutes: config.screensaver?.timeoutMinutes,
     quietHours: config.screensaver?.quietHours,
     offCooldownMinutes: config.screensaver?.offCooldownMinutes,
+    keepAlive: playing,
   });
   return null;
 }
 
 function PianoShell() {
   const { config, pianoId, basePath } = usePianoKioskConfig();
-  const { activeNotes, noteHistory, subscribe } = usePianoMidi();
+  const { subscribe } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useMemo(() => getLogger().child({ component: 'piano-app' }), []);
@@ -194,7 +200,9 @@ function PianoShell() {
   // Suppressed while a video lecture is open: the open player is already earning
   // watch credit for the current user, so a mid-lesson re-prompt would mis-credit.
   useWhoIsPlaying(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
-    if (videoActive) return;
+    // Suppress mid-performance too: Listen mode performs via timestamped MIDI
+    // with no activeNotes churn, so the idle-gap could otherwise fire mid-piece.
+    if (videoActive || playing) return;
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
@@ -269,16 +277,20 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
               with it so a playing video (a hold set by the modes below) still
               keeps the screen awake. PianoScreenControlProvider wraps both the
               screensaver and the shell so the Who's-Playing "Turn off screen"
-              button (in the shell) can arm the screensaver's MIDI-wake mute. */}
+              button (in the shell) can arm the screensaver's MIDI-wake mute.
+              PianoPlaybackProvider is hoisted above ScreensaverDriver too so the
+              screensaver can read the global `playing` flag (keepAlive): Listen
+              mode performs via timestamped MIDI with no activeNotes churn, so
+              that flag is the only signal keeping the screen awake mid-piece. */}
           <PianoScreenControlProvider>
-            <ScreensaverDriver />
-            <ConnectGate>
-              <PianoPlaybackProvider>
+            <PianoPlaybackProvider>
+              <ScreensaverDriver />
+              <ConnectGate>
                 <PianoMixProvider>
                   <PianoShell />
                 </PianoMixProvider>
-              </PianoPlaybackProvider>
-            </ConnectGate>
+              </ConnectGate>
+            </PianoPlaybackProvider>
           </PianoScreenControlProvider>
         </PianoWakeLockProvider>
       </PianoMidiProvider>

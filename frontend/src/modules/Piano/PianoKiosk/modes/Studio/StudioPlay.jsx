@@ -4,7 +4,7 @@ import { StudioTopPane } from '../../../components/StudioTopPane.jsx';
 import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import Icon from '../../icons/Icon.jsx';
 
 /** ms → M:SS for the recording read-out. */
@@ -24,7 +24,8 @@ function mmss(ms) {
  * and shows up under the Recordings tab. All review/curation lives there.
  */
 export default function StudioPlay({ recording, elapsedMs, onRecordToggle }) {
-  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
+  const { pressNote, releaseNote } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { startNote, endNote } = useMemo(() => computeKeyboardRange(null), []);
 
   return (

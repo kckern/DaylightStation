@@ -4,7 +4,7 @@ import { buildOrder, nextPos, prevPos } from './musicQueue.js';
 import { formatTime } from './musicTracks.js';
 import useVanishingControls from '../../useVanishingControls.js';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
@@ -24,7 +24,8 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-music-player' });
 
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
-  const { activeNotes, noteHistory, pressNote, releaseNote } = usePianoMidi();
+  const { pressNote, releaseNote } = usePianoMidi();
+  const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const { mediaLevel, setMediaLevel, pianoLevel, setPianoLevel } = usePianoMix();

@@ -54,7 +54,7 @@
  */
 import { useEffect, useMemo, useState, useCallback, useReducer, useRef } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
@@ -104,7 +104,8 @@ export function Producer() {
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const midi = usePianoMidi();
-  const { activeNotes, pressNote, releaseNote } = midi;
+  const { pressNote, releaseNote } = midi;
+  const { activeNotes } = usePianoMidiNotes();
   const lib = useLoopLibrary();
 
   // ── workspace state ─────────────────────────────────────────────────────────

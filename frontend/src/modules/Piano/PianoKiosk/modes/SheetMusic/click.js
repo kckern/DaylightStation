@@ -13,22 +13,30 @@ function audioContext() {
   return ctx;
 }
 
+export { audioContext };
+
+/** Schedule the standard ~1kHz/40ms blip at an exact AudioContext time. */
+export function scheduleBlipAt(ac, t) {
+  try {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 1000;
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    osc.connect(gain).connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + 0.045);
+  } catch { /* audio device gone — ignore */ }
+}
+
 /** Emit a short ~1kHz tick with a ~40ms decay envelope. Silent no-op if no WebAudio. */
 export function playClick() {
   const ac = audioContext();
   if (!ac) return;
   try {
     if (ac.state === 'suspended') ac.resume();
-    const now = ac.currentTime;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.type = 'square';
-    osc.frequency.value = 1000;
-    gain.gain.setValueAtTime(0.18, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
-    osc.connect(gain).connect(ac.destination);
-    osc.start(now);
-    osc.stop(now + 0.045);
+    scheduleBlipAt(ac, ac.currentTime);
   } catch { /* audio device gone — ignore */ }
 }
 

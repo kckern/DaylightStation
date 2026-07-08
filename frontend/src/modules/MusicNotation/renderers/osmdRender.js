@@ -294,23 +294,31 @@ export function extractEvents(osmd) {
 /**
  * Sliced, non-blocking twin of {@link extractEvents}: the SAME cursor walk
  * (same {@link makeCursorWalk} per-step body → identical events/notes/steps/
- * tempoEntries), but yielding to the event loop every `sliceSize` steps so the
- * tablet's main thread breathes while geometry is extracted. The React wrapper
+ * tempoEntries), but yielding to the event loop on a time budget (see below) so
+ * the tablet's main thread breathes while geometry is extracted. The React wrapper
  * paints the engraved sheet first, then runs this to fill in the play-along
  * geometry without freezing.
  *
  * The total step count is unknown up front, so we don't use {@link runSliced}
  * (which needs a total); we drive the cursor directly and estimate a soft total
  * from the measure count for a monotonic progress fraction.
+ *
+ * Slicing is TIME-BOXED, not step-counted: each cursor step forces a synchronous
+ * DOM reflow (moving the cursor + reading getBoundingClientRect per notehead) in a
+ * several-thousand-node SVG, so per-step cost varies wildly. A fixed step count
+ * could block the main thread for hundreds of ms on the aging kiosk, starving the
+ * playback transport tick + input handling (audit E1.1). Yielding on a ~8ms budget
+ * caps how long any one slice can hog the thread, regardless of per-step cost.
  * @param {object} osmd - an already-engraved OSMD instance
- * @param {{ sliceSize?:number, yieldFn?:(cb:Function)=>void,
+ * @param {{ budgetMs?:number, yieldFn?:(cb:Function)=>void,
  *           onProgress?:(p:number)=>void, shouldAbort?:() => boolean }} [opts]
  * @returns {Promise<{events:Array,notes:Array,tempoEntries:Array,steps:Array}|null>}
  *   null when aborted mid-walk.
  */
 export async function extractLayoutSliced(osmd, opts = {}) {
   const {
-    sliceSize = 256,
+    budgetMs = 8,          // max main-thread time per slice — keeps the tablet's
+                           // transport tick + input handling breathing (audit E1.1)
     yieldFn = scheduleYield,
     onProgress,
     shouldAbort = () => false,
@@ -337,6 +345,7 @@ export async function extractLayoutSliced(osmd, opts = {}) {
   };
 
   let done = 0;
+  let sliceStart = performance.now();
   try {
     if (shouldAbort()) return null;
     cursor.show(); // geometry only updates while the cursor is visible
@@ -346,10 +355,11 @@ export async function extractLayoutSliced(osmd, opts = {}) {
       walk.processStep();
       cursor.next();
       done++;
-      if (done % sliceSize === 0) {
+      if (performance.now() - sliceStart > budgetMs) {
         reportProgress(done);
         await new Promise((r) => yieldFn(r));
         if (shouldAbort()) return null; // checked before the next slice's work
+        sliceStart = performance.now(); // fresh budget for the next slice
       }
     }
   } finally {
