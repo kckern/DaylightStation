@@ -60,8 +60,8 @@ export class DiscoveryStrategy {
     const fresh = [];
     for (const show of allShows) {
       if (excludeShowIds.has(show.id)) continue;
-      const compoundId = `plex:${show.id}`;
-      const lastDone = lastDoneMap.get(compoundId);
+      const contentId = `plex:${show.id}`;
+      const lastDone = lastDoneMap.get(contentId);
       if (lastDone && lastDone < lapsedThresholdStr) {
         lapsed.push({ ...show, lastDone });
       } else if (!lastDone) {
