@@ -1,0 +1,39 @@
+// Dual gamepad-activity LED on the emulator chrome (top-right). Deliberately
+// tiny + dim so it reads as a hardware indicator, not UI. pointer-events:none so
+// it never intercepts touches. Sits above the game/shader/controls but below the
+// modals; visible even over the pause overlay (so you can tell if the pad is
+// still alive while paused).
+.emulator-input-led {
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  z-index: 9;
+
+  &__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    // Off = a barely-lit dark bulb, so its position is known but quiet.
+    background: #232833;
+    box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.7);
+    transition: background 40ms linear, box-shadow 40ms linear;
+
+    &.is-browser { --led-on: #46b1ff; } // blue — the browser saw it
+    &.is-emulator { --led-on: #3ad16b; } // green — the emulator consumed it
+
+    &.is-active {
+      background: var(--led-on);
+      box-shadow:
+        0 0 5px var(--led-on),
+        0 0 1px rgba(255, 255, 255, 0.9);
+    }
+  }
+}

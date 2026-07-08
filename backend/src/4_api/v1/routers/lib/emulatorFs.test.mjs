@@ -11,6 +11,8 @@ import {
   readBinary,
   writeBinary,
   makeReadEngineFile,
+  makeLoaderReentrant,
+  CORE_LOAD_CALL,
   listSaveUsers,
 } from './emulatorFs.mjs';
 
@@ -153,6 +155,41 @@ describe('makeReadEngineFile (real tmp engine dir)', () => {
     } finally {
       fs.rmSync(secret, { force: true });
     }
+  });
+
+  it('serves loader.js with the re-entrancy guard injected', () => {
+    const loader = `else {\n        ${CORE_LOAD_CALL}\n        await loadStyle("emulator.min.css");\n    }`;
+    fs.writeFileSync(path.join(engineDir, 'loader.js'), loader);
+    const read = makeReadEngineFile(engineDir);
+    const served = read('loader.js').buffer.toString();
+    expect(served).toContain('typeof window.EmulatorJS === "undefined"');
+    expect(read('loader.js').size).toBe(Buffer.byteLength(served));
+    // other files pass through untouched
+    fs.writeFileSync(path.join(engineDir, 'emulator.min.js'), CORE_LOAD_CALL);
+    expect(read('emulator.min.js').buffer.toString()).toBe(CORE_LOAD_CALL);
+  });
+});
+
+describe('makeLoaderReentrant', () => {
+  it('guards the unconditional core load exactly once', () => {
+    const src = `        ${CORE_LOAD_CALL}\n        await loadStyle("emulator.min.css");`;
+    const out = makeLoaderReentrant(src);
+    expect(out).toBe(`        if (typeof window.EmulatorJS === "undefined") { ${CORE_LOAD_CALL} }\n        await loadStyle("emulator.min.css");`);
+  });
+
+  it('is idempotent — a second pass changes nothing', () => {
+    const once = makeLoaderReentrant(`x\n${CORE_LOAD_CALL}\ny`);
+    expect(makeLoaderReentrant(once)).toBe(once);
+  });
+
+  it('leaves an unrecognized loader untouched (re-vendored / shape changed)', () => {
+    const src = 'await loadScript("something-else.js");';
+    expect(makeLoaderReentrant(src)).toBe(src);
+  });
+
+  it('returns non-strings unchanged', () => {
+    expect(makeLoaderReentrant(null)).toBe(null);
+    expect(makeLoaderReentrant(undefined)).toBe(undefined);
   });
 });
 
