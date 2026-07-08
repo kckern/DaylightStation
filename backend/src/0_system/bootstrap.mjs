@@ -1233,6 +1233,33 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
+  // Filesystem access the router used to do inline now lives behind these
+  // injected providers (keeps the API layer free of fs/path).
+  const menuMusicProvider = () => {
+    const musicDir = path.join(configService.getMediaDir(), 'apps', 'fitness', 'ux', 'menus');
+    try {
+      return nodeFs.readdirSync(musicDir)
+        .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
+        .sort()
+        .map(f => `media/apps/fitness/ux/menus/${f}`);
+    } catch (_) {
+      // Directory missing or unreadable — return empty list gracefully.
+      return [];
+    }
+  };
+  const voiceMemoDebugStore = {
+    // DEBUG ONLY: dump the raw webm blob under <dataDir>/_debug/voice_memos/.
+    async save(buffer) {
+      const savedAt = Date.now();
+      const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
+      const filename = `${iso}.webm`;
+      const filePath = path.join(configService.getDataDir(), '_debug', 'voice_memos', filename);
+      // writeBinary handles mkdirSync({ recursive: true }) internally.
+      writeBinary(filePath, buffer);
+      return { path: filePath, filename, size: buffer.length, savedAt };
+    },
+  };
+
   const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     cycleRaceService: fitnessServices.cycleRaceService,
@@ -1262,6 +1289,8 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    menuMusicProvider,
+    voiceMemoDebugStore,
     logger
   });
 
