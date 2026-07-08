@@ -3493,6 +3493,8 @@ export async function createAgentsServices(config) {
       logger,
       mediaDir,
       dataPath,
+      // Runtime class injected so the app-layer factory holds no adapter import
+      AgentRuntime: MastraAdapter,
     };
 
     const REFLECTIVE_AGENTS = [HealthCoachAgent];
@@ -3629,6 +3631,7 @@ export async function createAgentsServices(config) {
       logger,
       mediaDir,
       agentId: 'lifeplan-guide',
+      AgentRuntime: MastraAdapter,
     };
     const lifeplanMemoryConfig = LifeplanGuideAgent.getMemoryConfig?.({ configService }) ?? null;
     const lifeplanMemory = buildAgentMemory(lifeplanMemoryConfig, lifeplanMemoryDeps);
