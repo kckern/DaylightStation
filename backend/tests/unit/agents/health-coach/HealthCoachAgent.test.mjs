@@ -47,7 +47,7 @@ describe('HealthCoachAgent', () => {
         },
       },
       configService: {
-        getHeadOfHousehold: () => 'kckern',
+        getHeadOfHousehold: () => 'user_1',
       },
     };
   });
@@ -142,7 +142,7 @@ describe('HealthCoachAgent', () => {
         // May fail on write — that's OK, we just check userId was injected
       }
 
-      assert.strictEqual(capturedUserId, 'kckern');
+      assert.strictEqual(capturedUserId, 'user_1');
     });
   });
 });

@@ -30,8 +30,8 @@ Challenge `default_0_7_1777773785468`, started 2026-05-02 19:03:05 PT.
 |---|---|
 | Selection | `default_0_7` |
 | Equipment | `cycle_ace` |
-| Rider | `kckern` |
-| Eligible riders | `kckern`, `felix`, `milo` |
+| Rider | `user_1` |
+| Eligible riders | `user_1`, `user_2`, `user_3` |
 | Sequence type | `progressive` |
 | Phases | 3 (hi 50 / lo 38 / 12s ramp / 29s maintain) → (hi 67 / lo 50 / 20s ramp / 24s maintain) → (hi 86 / lo 65 / 17s ramp / 40s maintain) |
 | Init total | 60 000 ms |
@@ -48,7 +48,7 @@ Challenge `default_0_7_1777773785468`, started 2026-05-02 19:03:05 PT.
 All from `governance.cycle.*` events in the docker log:
 
 ```
-02:03:05.468  cycle.started               rider=kckern  totalPhases=3  initTotalMs=60000
+02:03:05.468  cycle.started               rider=user_1  totalPhases=3  initTotalMs=60000
 02:04:05.646  init  →  locked   rpm=59.94  reason=init_timeout
 02:04:05.896  locked  →  init   rpm=59.94  reason=recovered_from_init_lock     (locked for 250 ms)
 02:05:06.051  init  →  locked   rpm=61.13  reason=init_timeout
@@ -334,7 +334,7 @@ In severity order — **F2 is the spine, everything else is contributory**.
 
 ## Open Questions
 
-- **Why was `baseReqSatisfiedForRider` false?** The rider's HR device on this date was `28812` (Felix's? — `participants.felix.hr_device: '28812'` in the session yml). If `kckern` was the cycle rider but `kckern` had no HR device assigned, `baseReqSatisfiedForRider` would always be false. A cycle challenge that requires HR-zone gating but is launched without an HR device for the rider may be unwinnable by construction. Worth checking the device-ownership ledger for this session.
+- **Why was `baseReqSatisfiedForRider` false?** The rider's HR device on this date was `90003` (User_2's? — `participants.user_2.hr_device: '90003'` in the session yml). If `user_1` was the cycle rider but `user_1` had no HR device assigned, `baseReqSatisfiedForRider` would always be false. A cycle challenge that requires HR-zone gating but is launched without an HR device for the rider may be unwinnable by construction. Worth checking the device-ownership ledger for this session.
 - **Was `cycle-demo=1` actually present in the URL?** The presence of `cli/verify-cycle-demo.mjs` (untracked) suggests recent work in this area; need to confirm whether the user clicked the demo card or a production card.
 - **Is `manualTrigger` plumbed end-to-end from the demo entry point?** A grep over `_startCycleChallenge` callers and `selection.manualTrigger` would close this.
 

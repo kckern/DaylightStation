@@ -104,19 +104,19 @@ services:
 version: "1.0"
 household_id: default
 name: "Default Household"
-head: kckern
+head: user_1
 
 users:
-  - kckern
-  - elizabeth
-  - felix
-  - milo
-  - alan
-  - soren
+  - user_1
+  - user_9
+  - user_2
+  - user_3
+  - user_4
+  - user_5
 
 apps:
   fitness:
-    primary_users: [kckern, felix, milo, alan, soren]
+    primary_users: [user_1, user_2, user_3, user_4, user_5]
   gratitude:
     enabled_categories: [gratitude, hopes]
 ```
@@ -139,9 +139,9 @@ apps:
 ```yaml
 # data/users/kckern/profile.yml
 version: "1.0"
-username: kckern
+username: user_1
 household_id: default
-display_name: "KC Kern"
+display_name: "User_1"
 birthyear: 1984
 type: owner
 
@@ -309,7 +309,7 @@ import { configService } from '../lib/config/ConfigService.mjs';
 
 configService.getSystem('paths.data');
 configService.getAppConfig('fitness', 'zones');
-configService.getUserProfile('kckern');
+configService.getUserProfile('user_1');
 configService.getHouseholdConfig('default');
 configService.resolveUsername('telegram', '575596036');
 ```
@@ -375,7 +375,7 @@ Platform IDs are resolved to internal usernames via multiple sources:
 ```yaml
 identity_mappings:
   telegram:
-    "575596036": kckern
+    "575596036": user_1
 ```
 
 ### 6.2 User Profile Identities
@@ -392,7 +392,7 @@ identities:
 ```yaml
 chatbots:
   users:
-    kckern:
+    user_1:
       telegram_user_id: 575596036
 ```
 
@@ -874,7 +874,7 @@ class ConfigService {
 }
 
 // Usage throughout codebase (replaces process.env.path.*)
-const lifelogPath = configService.userPath('kckern', 'lifelog', 'strava.yml');
+const lifelogPath = configService.userPath('user_1', 'lifelog', 'strava.yml');
 const fitnessConfig = configService.householdPath('default', 'apps', 'fitness', 'config.yml');
 ```
 
@@ -1187,7 +1187,7 @@ vim /path/to/data/config/secrets.yml
 
 # 5. Create first household and user
 npm run create-household default
-npm run create-user kckern --household=default --head
+npm run create-user user_1 --household=default --head
 
 # 6. Start application
 docker-compose up -d

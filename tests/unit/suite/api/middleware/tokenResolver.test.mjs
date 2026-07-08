@@ -17,14 +17,14 @@ function mockRes() { return {}; }
 describe('tokenResolver', () => {
   it('merges token roles into existing roles', (done) => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['parent'] },
+      { sub: 'user_1', hid: 'default', roles: ['parent'] },
       SECRET, { issuer: JWT_CONFIG.issuer, expiresIn: '10y', algorithm: JWT_CONFIG.algorithm }
     );
     const middleware = tokenResolver({ jwtSecret: SECRET, jwtConfig: JWT_CONFIG });
     const req = mockReq(`Bearer ${token}`, ['kiosk']);
     middleware(req, mockRes(), () => {
       expect(req.roles).toEqual(expect.arrayContaining(['kiosk', 'parent']));
-      expect(req.user).toEqual({ sub: 'kckern', hid: 'default', roles: ['parent'] });
+      expect(req.user).toEqual({ sub: 'user_1', hid: 'default', roles: ['parent'] });
       done();
     });
   });
@@ -51,7 +51,7 @@ describe('tokenResolver', () => {
 
   it('deduplicates merged roles', (done) => {
     const token = signToken(
-      { sub: 'kckern', hid: 'default', roles: ['kiosk', 'parent'] },
+      { sub: 'user_1', hid: 'default', roles: ['kiosk', 'parent'] },
       SECRET, { issuer: JWT_CONFIG.issuer, expiresIn: '10y', algorithm: JWT_CONFIG.algorithm }
     );
     const middleware = tokenResolver({ jwtSecret: SECRET, jwtConfig: JWT_CONFIG });

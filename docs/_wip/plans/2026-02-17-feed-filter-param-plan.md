@@ -106,8 +106,8 @@ describe('FeedFilterResolver', () => {
     });
 
     test('resolves alias with subsource', () => {
-      expect(resolver.resolve('photos:felix')).toEqual({
-        type: 'source', sourceType: 'immich', subsources: ['felix'],
+      expect(resolver.resolve('photos:user_2')).toEqual({
+        type: 'source', sourceType: 'immich', subsources: ['user_2'],
       });
     });
 
@@ -290,7 +290,7 @@ Add these tests inside the existing `describe('GET /scroll', ...)` block in `tes
     test('passes filter param to feedAssemblyService', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll?filter=reddit:worldnews,usnews');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ filter: 'reddit:worldnews,usnews' }),
       );
     });
@@ -298,7 +298,7 @@ Add these tests inside the existing `describe('GET /scroll', ...)` block in `tes
     test('filter param defaults to null when not provided', async () => {
       await request(scrollApp).get('/api/v1/feed/scroll');
       expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-        'kckern',
+        'user_1',
         expect.objectContaining({ filter: null }),
       );
     });

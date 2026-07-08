@@ -40,7 +40,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
   });
 
   it('honors all segments when 3+ consecutive sub-T alternations between 2 occupants are detected', async () => {
-    // Alice-Bob-Alice-Bob-Alice, each 2-min segments on device 48291.
+    // Alice-Bob-Alice-Bob-Alice, each 2-min segments on device 90006.
     // Threshold = 5 min → each segment is sub-T. Strict forward-absorb would
     // cascade Alice→Bob→Alice→Bob→Alice, leaving only the final Alice.
     // Cycling detection (3+ consecutive sub-T, 2+ distinct occupants) honors
@@ -72,7 +72,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
         entityId: `entity-${seg}-${occupantId}`,
         profileId: occupantId,
         name: occupantId === 'alice' ? 'Alice' : 'Bob',
-        deviceId: '48291',
+        deviceId: '90006',
         startTime: sessionStart + seg * segDuration,
         endTime: sessionStart + (seg + 1) * segDuration,
         // Each transition exceeded grace logic in-session? Actually NO — they
@@ -99,11 +99,11 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: 'alice', name: 'Alice', hrDeviceId: '48291' },
-        { profileId: 'bob', name: 'Bob', hrDeviceId: '48291' }
+        { profileId: 'alice', name: 'Alice', hrDeviceId: '90006' },
+        { profileId: 'bob', name: 'Bob', hrDeviceId: '90006' }
       ],
       deviceAssignments: [
-        { deviceId: '48291', occupantId: 'alice', occupantName: 'Alice' }
+        { deviceId: '90006', occupantId: 'alice', occupantName: 'Alice' }
       ],
       entities,
       timeline: {
@@ -165,19 +165,19 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: 'test-user-a', name: 'Test User A', hrDeviceId: '48291' },
-        { profileId: 'test-user-b', name: 'Test User B', hrDeviceId: '48291' },
-        { profileId: '#guest123', name: 'Guest', isGuest: true, hrDeviceId: '48291' }
+        { profileId: 'test-user-a', name: 'Test User A', hrDeviceId: '90006' },
+        { profileId: 'test-user-b', name: 'Test User B', hrDeviceId: '90006' },
+        { profileId: '#guest123', name: 'Guest', isGuest: true, hrDeviceId: '90006' }
       ],
       deviceAssignments: [
-        { deviceId: '48291', occupantId: '#guest123', occupantName: 'Guest' }
+        { deviceId: '90006', occupantId: '#guest123', occupantName: 'Guest' }
       ],
       entities: [
         {
           entityId: 'entity-test-user-a-1',
           profileId: 'test-user-a',
           name: 'Test User A',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart,
           endTime: aEnd,
           status: 'dropped',
@@ -187,7 +187,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
           entityId: 'entity-test-user-b-1',
           profileId: 'test-user-b',
           name: 'Test User B',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: aEnd,
           endTime: bEnd,
           status: 'dropped',
@@ -197,7 +197,7 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
           entityId: 'entity-guest123-1',
           profileId: '#guest123',
           name: 'Guest',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: bEnd,
           endTime: sessionEnd,
           status: 'active',

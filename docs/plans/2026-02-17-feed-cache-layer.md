@@ -442,7 +442,7 @@ sleep 5
 **Step 2: First request (cold cache — populates cache)**
 
 ```bash
-curl -s "http://localhost:3112/api/v1/feed/scroll?username=kckern" | \
+curl -s "http://localhost:3112/api/v1/feed/scroll?username=user_1" | \
   python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -467,7 +467,7 @@ Expected: Items from multiple wire sources (reddit, freshrss, youtube, googlenew
 **Step 3: Second request (should be fast — served from cache)**
 
 ```bash
-time curl -s "http://localhost:3112/api/v1/feed/scroll?username=kckern" > /dev/null
+time curl -s "http://localhost:3112/api/v1/feed/scroll?username=user_1" > /dev/null
 ```
 
 Expected: Response time significantly faster than first request (sub-100ms vs multi-second).
@@ -483,7 +483,7 @@ Expected: File exists with recent timestamp.
 **Step 5: Test nocache bypass**
 
 ```bash
-time curl -s "http://localhost:3112/api/v1/feed/scroll?username=kckern&nocache=1" > /dev/null
+time curl -s "http://localhost:3112/api/v1/feed/scroll?username=user_1&nocache=1" > /dev/null
 ```
 
 Expected: Slower response (fresh fetch from all sources).

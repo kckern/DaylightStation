@@ -17,7 +17,7 @@ describe('useCycleSuccessHold', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  const cycle = (status) => ({ id: 'c1', type: 'cycle', status, rider: { id: 'felix', name: 'Felix' } });
+  const cycle = (status) => ({ id: 'c1', type: 'cycle', status, rider: { id: 'user_2', name: 'User_2' } });
 
   it('is not done while the challenge is pending', () => {
     const { result } = renderHook(({ c }) => useCycleSuccessHold(c), { initialProps: { c: cycle('pending') } });
@@ -29,7 +29,7 @@ describe('useCycleSuccessHold', () => {
     const { result, rerender } = renderHook(({ c }) => useCycleSuccessHold(c), { initialProps: { c: cycle('pending') } });
     act(() => { rerender({ c: cycle('success') }); });
     expect(result.current.done).toBe(true);
-    expect(result.current.challenge).toMatchObject({ id: 'c1', status: 'success', rider: { id: 'felix' } });
+    expect(result.current.challenge).toMatchObject({ id: 'c1', status: 'success', rider: { id: 'user_2' } });
 
     act(() => { vi.advanceTimersByTime(CHALLENGE_SUCCESS_HOLD_MS + 1); });
     expect(result.current.done).toBe(false);

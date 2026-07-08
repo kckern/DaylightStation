@@ -57,11 +57,11 @@ describe('buildAuthz', () => {
     expect(buildAuthz('sitter', cfg)).toEqual({ admin: false, locks: ['emergency'] });
   });
   it('grants the ADMIN_LOCK to fitness.yml admins (in sync, not hand-listed)', () => {
-    const cfg = { locks: { dance_party: ['kc'] }, users: { admin: ['kc', 'elizabeth'] } };
+    const cfg = { locks: { dance_party: ['kc'] }, users: { admin: ['kc', 'user_9'] } };
     expect(ADMIN_LOCK).toBe('admin');
     expect(buildAuthz('kc', cfg).locks).toEqual(['dance_party', 'admin']);
-    // elizabeth is admin-only (no lock-map membership) but still gets the admin lock.
-    expect(buildAuthz('elizabeth', cfg).locks).toEqual(['admin']);
+    // user_9 is admin-only (no lock-map membership) but still gets the admin lock.
+    expect(buildAuthz('user_9', cfg).locks).toEqual(['admin']);
     // a non-admin gets no admin lock.
     expect(buildAuthz('guest', cfg).locks).toEqual([]);
   });

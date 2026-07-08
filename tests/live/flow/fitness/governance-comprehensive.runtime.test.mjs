@@ -565,8 +565,8 @@ async function runHydrationVideoFirst(page, sim, devices, timeline, issues) {
 
 // Universal HR values that put ALL users in the same zone regardless of age-adjusted thresholds
 // Based on zone config analysis:
-// - Adults (kckern): warm=120, hot=170
-// - Young children (felix/milo): warm=150, hot=180
+// - Adults (user_1): warm=120, hot=170
+// - Young children (user_2/user_3): warm=150, hot=180
 // These values are above the HIGHEST threshold for each zone across all users
 const UNIVERSAL_HR = {
   cool: 70,      // Below all active thresholds

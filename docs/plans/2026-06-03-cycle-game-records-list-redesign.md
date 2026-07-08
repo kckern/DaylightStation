@@ -22,10 +22,10 @@ header. No engine/director/persistence changes.
 ```
  HISTORY
  RIDERS         DISTANCE    TIME      WHEN
- 👑 Milo        105 m       🏁 1:00   Today 6:12p
- 👑 Milo ·ᶠ     171 m       🏁 1:00   Today 5:48p
- 👑 Milo        🏁 1.00 km  5:13      Today 3:30p
- 👑 Felix ·ᵐ    🏁 1.00 km  3:47      Yest 7:22p
+ 👑 User_3        105 m       🏁 1:00   Today 6:12p
+ 👑 User_3 ·ᶠ     171 m       🏁 1:00   Today 5:48p
+ 👑 User_3        🏁 1.00 km  5:13      Today 3:30p
+ 👑 User_2 ·ᵐ    🏁 1.00 km  3:47      Yest 7:22p
 ```
 🏁 marks the GOAL cell (distance-goal vs time-goal = the race type). 👑 = winner.
 
@@ -59,9 +59,9 @@ describe('relativeWhen', () => {
 describe('buildRecordRow', () => {
   const base = {
     raceId: '20260603181200', day: '2026-06-03', timeOfDay: '6:12 pm',
-    winnerName: 'Milo',
-    participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/a' },
-                   { id: 'felix', displayName: 'Felix', avatarSrc: '/b' }]
+    winnerName: 'User_3',
+    participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/a' },
+                   { id: 'user_2', displayName: 'User_2', avatarSrc: '/b' }]
   };
   it('a distance race marks the distance cell as the goal', () => {
     const r = buildRecordRow({ ...base, winCondition: 'distance',
@@ -70,8 +70,8 @@ describe('buildRecordRow', () => {
     expect(r.timeLabel).toBe('5:13');
     expect(r.goalColumn).toBe('distance');
     expect(r.when).toBe('Today 6:12p');
-    expect(r.winnerId).toBe('milo');
-    expect(r.others).toEqual([{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }]);
+    expect(r.winnerId).toBe('user_3');
+    expect(r.others).toEqual([{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b' }]);
   });
   it('a time race marks the time cell as the goal', () => {
     const r = buildRecordRow({ ...base, winCondition: 'time',
@@ -166,13 +166,13 @@ rail.)
 ```javascript
 it('renders the history table: winner, both metric columns, goal mark, and when', () => {
   const records = [{
-    raceId: 'r1', winnerId: 'milo', winnerName: 'Milo', winnerAvatar: '/a',
-    others: [{ id: 'felix', displayName: 'Felix', avatarSrc: '/b' }],
+    raceId: 'r1', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a',
+    others: [{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b' }],
     distanceLabel: '1.00 km', timeLabel: '5:13', goalColumn: 'distance', when: 'Today 6:12p'
   }];
   render(<CycleGameHome {...baseProps} records={records} />);
   const row = screen.getByTestId('record-r1');
-  expect(row).toHaveTextContent('Milo');
+  expect(row).toHaveTextContent('User_3');
   expect(row).toHaveTextContent('1.00 km');
   expect(row).toHaveTextContent('5:13');
   expect(row).toHaveTextContent('Today 6:12p');

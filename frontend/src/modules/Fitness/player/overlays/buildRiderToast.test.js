@@ -2,16 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { buildRiderToast } from './buildRiderToast.js';
 
 const resolvers = {
-  resolveUserName: (uid) => ({ felix: 'Felix' }[uid] || uid),
+  resolveUserName: (uid) => ({ user_2: 'User_2' }[uid] || uid),
   resolveEquipmentName: (eid) => ({ niceday: 'NiceDay' }[eid] || eid),
 };
 
 describe('buildRiderToast', () => {
   it('builds an avatar/title/subtitle payload from a rider_select event', () => {
-    const toast = buildRiderToast({ userId: 'felix', equipmentId: 'niceday' }, resolvers);
+    const toast = buildRiderToast({ userId: 'user_2', equipmentId: 'niceday' }, resolvers);
     expect(toast).toEqual({
-      avatarUrl: '/api/v1/static/img/users/felix',
-      title: 'Felix',
+      avatarUrl: '/api/v1/static/img/users/user_2',
+      title: 'User_2',
       subtitle: 'is riding the NiceDay',
       variant: 'success',
     });

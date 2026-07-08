@@ -38,7 +38,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
         type: 'cycle',
         cycleState: 'ramp',
         equipment: 'cycle_ace',
-        rider: { id: 'felix', name: 'Felix' },
+        rider: { id: 'user_2', name: 'User_2' },
         currentPhaseIndex: 1,
         totalPhases: 4,
         phaseProgressPct: 42,
@@ -50,7 +50,7 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
     expect(gov.activeChallengeType).toBe('cycle');
     expect(gov.cycleState).toBe('ramp');
     expect(gov.currentRpm).toBe(67);
-    expect(gov.riderId).toBe('felix');
+    expect(gov.riderId).toBe('user_2');
     expect(gov.currentPhaseIndex).toBe(1);
     expect(gov.totalPhases).toBe(4);
     expect(gov.phaseProgressPct).toBe(42);
@@ -71,10 +71,10 @@ describe('GovernanceEngine._updateGlobalState — cycle fields', () => {
         type: 'cycle',
         cycleState: 'maintain',
         equipment: 'cycle_ace',
-        rider: 'felix' // live engine stores rider as a userId string
+        rider: 'user_2' // live engine stores rider as a userId string
       }
     };
     engine._updateGlobalState();
-    expect(window.__fitnessGovernance.riderId).toBe('felix');
+    expect(window.__fitnessGovernance.riderId).toBe('user_2');
   });
 });

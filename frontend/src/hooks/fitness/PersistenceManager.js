@@ -217,10 +217,10 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
  * Map series keys to v2 compact format for persistence.
  *
  * Transformations:
- * - user:alan:heart_rate -> alan:hr
- * - user:alan:zone_id -> alan:zone
- * - user:alan:heart_beats -> alan:beats
- * - user:alan:coins_total -> alan:coins
+ * - user:user_4:heart_rate -> user_4:hr
+ * - user:user_4:zone_id -> user_4:zone
+ * - user:user_4:heart_beats -> user_4:beats
+ * - user:user_4:coins_total -> user_4:coins
  * - device:7138:rpm -> bike:7138:rpm (equipment metrics)
  * - device:device_7138:rpm -> bike:7138:rpm (fix double-prefix)
  * - global:coins-total -> global:coins

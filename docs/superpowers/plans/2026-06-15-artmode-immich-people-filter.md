@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an Immich `people` + `minPeople` collection selector (photos containing ≥N of a set of people) and a `kids` preset (≥2 of Felix/Milo/Alan/Soren), then trigger it on the office TV.
+**Goal:** Add an Immich `people` + `minPeople` collection selector (photos containing ≥N of a set of people) and a `kids` preset (≥2 of User_2/User_3/User_4/User_5), then trigger it on the office TV.
 
 **Architecture:** `immichSource` gains a `people` selector that resolves names→face ids, runs one Immich metadata search per `minPeople`-sized id-combination (Immich ANDs each combo server-side), and unions the assets by id — expressing "≥N of the set" at the Immich query level. Config adds a `kids` collection (`art.yml`) and a `kids` preset (`artmode.yml`).
 
@@ -65,12 +65,12 @@ describe('createImmichSource people selector', () => {
 
   const makePeopleClient = (over = {}) => ({
     getPeople: vi.fn(async () => ([
-      { id: 'felix-id', name: 'Felix' }, { id: 'milo-id', name: 'Milo' },
-      { id: 'alan-id', name: 'Alan' }, { id: 'soren-id', name: 'Soren' },
+      { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' },
+      { id: 'user_4-id', name: 'User_4' }, { id: 'user_5-id', name: 'User_5' },
     ])),
     searchMetadata: vi.fn(async ({ personIds }) => {
-      // The Felix+Milo pair returns a1 (image) + v1 (video); every other pair returns a1 (dup) + a2.
-      if (personIds.includes('felix-id') && personIds.includes('milo-id')) {
+      // The User_2+User_3 pair returns a1 (image) + v1 (video); every other pair returns a1 (dup) + a2.
+      if (personIds.includes('user_2-id') && personIds.includes('user_3-id')) {
         return { items: [img('a1'), vid('v1')] };
       }
       return { items: [img('a1'), img('a2')] };
@@ -81,7 +81,7 @@ describe('createImmichSource people selector', () => {
   it('runs one search per pair, unions/dedupes, drops video, maps dims', async () => {
     const client = makePeopleClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    const c = await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo', 'Alan', 'Soren'], minPeople: 2 });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
     // C(4,2) = 6 searches, each with a 2-id personIds.
     expect(client.searchMetadata).toHaveBeenCalledTimes(6);
     expect(client.searchMetadata.mock.calls[0][0].personIds).toHaveLength(2);
@@ -94,19 +94,19 @@ describe('createImmichSource people selector', () => {
   it('skips names that do not resolve and combines the rest', async () => {
     const client = makePeopleClient({
       getPeople: vi.fn(async () => ([
-        { id: 'felix-id', name: 'Felix' }, { id: 'milo-id', name: 'Milo' }, { id: 'alan-id', name: 'Alan' },
+        { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' }, { id: 'user_4-id', name: 'User_4' },
       ])),
     });
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo', 'Alan', 'Soren'], minPeople: 2 });
+    await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
     // Only 3 resolve → C(3,2) = 3 searches.
     expect(client.searchMetadata).toHaveBeenCalledTimes(3);
   });
 
   it('returns [] when fewer than minPeople resolve', async () => {
-    const client = makePeopleClient({ getPeople: vi.fn(async () => ([{ id: 'felix-id', name: 'Felix' }])) });
+    const client = makePeopleClient({ getPeople: vi.fn(async () => ([{ id: 'user_2-id', name: 'User_2' }])) });
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    const c = await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo'], minPeople: 2 });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3'], minPeople: 2 });
     expect(c).toEqual([]);
     expect(client.searchMetadata).not.toHaveBeenCalled();
   });
@@ -187,7 +187,7 @@ Add this entry under `collections:` (alongside `all`, the periods, etc.):
 ```yaml
   kids:
     source: immich
-    people: [Felix, Milo, Alan, Soren]
+    people: [User_2, User_3, User_4, User_5]
     minPeople: 2
 ```
 Write the COMPLETE file back via `sudo docker exec daylight-station sh -c "cat > data/household/config/art.yml << 'YAML' ... YAML"` with that block included.
@@ -196,7 +196,7 @@ Write the COMPLETE file back via `sudo docker exec daylight-station sh -c "cat >
 ```bash
 sudo docker exec daylight-station node -e "const y=require('js-yaml');const c=y.load(require('fs').readFileSync('data/household/config/art.yml','utf8')).collections;console.log('kids:', JSON.stringify(c.kids), '| total collections:', Object.keys(c).length);"
 ```
-Expected: `kids: {"source":"immich","people":["Felix","Milo","Alan","Soren"],"minPeople":2}` and the prior collection count + 1.
+Expected: `kids: {"source":"immich","people":["User_2","User_3","User_4","User_5"],"minPeople":2}` and the prior collection count + 1.
 
 - [ ] **Step 3: Add the `kids` preset to `artmode.yml`.** Append a `kids` preset under `presets:` (the artmode.yml already has gallery-silent, classical-evening, and the 7 periods — preserve them). The `kids` preset:
 ```yaml

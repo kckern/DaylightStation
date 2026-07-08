@@ -81,7 +81,7 @@ Pure domain service. No I/O, no dependencies. Takes an array of daily HealthMetr
 
 **New endpoint:** `GET /api/v1/health/dashboard`
 
-Query params: `?userId=kckern` (optional, defaults to primary user)
+Query params: `?userId=user_1` (optional, defaults to primary user)
 
 **Response shape:**
 ```javascript

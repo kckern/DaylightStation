@@ -63,7 +63,7 @@ describe('IMediaSearchable', () => {
     });
 
     test('accepts valid query with people', () => {
-      const query = { people: ['Felix', 'Milo'] };
+      const query = { people: ['User_2', 'User_3'] };
       expect(() => validateSearchQuery(query)).not.toThrow();
     });
 
@@ -178,7 +178,7 @@ describe('IMediaSearchable', () => {
     test('accepts complex query with multiple fields', () => {
       const query = {
         text: 'vacation',
-        people: ['Felix'],
+        people: ['User_2'],
         dateFrom: '2024-01-01',
         dateTo: '2024-12-31',
         mediaType: 'image',

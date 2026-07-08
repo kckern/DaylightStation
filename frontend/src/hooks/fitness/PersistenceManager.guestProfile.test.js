@@ -57,13 +57,13 @@ describe('PersistenceManager — guest_profile persistence (audit N4)', () => {
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        // Kid guest riding the borrowed strap 48291.
-        { profileId: 'guest_48291', name: 'Guest', isGuest: true, hrDeviceId: '48291' },
+        // Kid guest riding the borrowed strap 90006.
+        { profileId: 'guest_48291', name: 'Guest', isGuest: true, hrDeviceId: '90006' },
         // Regular primary user on their own strap — must NOT get guest_profile.
         { profileId: 'alice', name: 'Alice', isPrimary: true, hrDeviceId: '50000' }
       ],
       deviceAssignments: [
-        { occupantId: 'guest_48291', deviceId: '48291', occupantName: 'Guest', metadata: { ageClass: 'kid' } },
+        { occupantId: 'guest_48291', deviceId: '90006', occupantName: 'Guest', metadata: { ageClass: 'kid' } },
         { occupantId: 'alice', deviceId: '50000', occupantName: 'Alice', metadata: {} }
       ],
       entities: [],

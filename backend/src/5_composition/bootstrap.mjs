@@ -1988,7 +1988,7 @@ export function createJournalistServices(config) {
 
   // Get journalist config from config service
   const journalistConfig = {
-    username: configService?.getHeadOfHousehold?.() || 'kckern',
+    username: configService?.getHeadOfHousehold?.() || 'user_1',
     dataDir: configService?.getDataDir?.() || './data',
     getUserTimezone: (userId) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(userId)) || 'America/Los_Angeles'
   };
@@ -2253,7 +2253,7 @@ export function createHealthServices(config) {
   const reconciliationReader = async () => {
     try {
       const data = await healthStore.loadReconciliationData(
-        configService.getHeadOfHousehold?.() || 'kckern'
+        configService.getHeadOfHousehold?.() || 'user_1'
       );
       const dates = Object.keys(data).sort();
       return dates.length > 0 ? data[dates[dates.length - 1]] : null;

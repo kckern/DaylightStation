@@ -42,7 +42,7 @@ test('FrameDescriptor holds frame spec and is frozen', () => {
     playerContentId: 'plex:674287',
     playerOffsetMs: 5000,
     title: 'Daytona USA 2001',
-    participants: [{ id: 'kckern', displayName: 'KC', hr: 142, color: '#f00', avatarRef: null }],
+    participants: [{ id: 'user_1', displayName: 'KC', hr: 142, color: '#f00', avatarRef: null }],
     zone: 'hot',
     rpm: 86
   });
@@ -136,7 +136,7 @@ function fakeSession() {
       series: {
         // RLE-encoded JSON strings (as persisted)
         'bike:7138:rpm': JSON.stringify([[80, 6], [90, 6]]), // 80 for ticks 0-5, 90 for 6-11
-        'kckern:hr': JSON.stringify([[140, 12]])
+        'user_1:hr': JSON.stringify([[140, 12]])
       },
       events: [
         { timestamp: 1000_000, type: 'media', data: { contentId: 'plex:674287', title: 'Daytona USA' } }
@@ -146,7 +146,7 @@ function fakeSession() {
       { index: 0, timestamp: 1000_000, path: 'a/0.jpg', filename: '0.jpg' },
       { index: 1, timestamp: 1000_000 + 40_000, path: 'a/1.jpg', filename: '1.jpg' }
     ] },
-    roster: [{ id: 'kckern', displayName: 'KC', color: '#f00' }]
+    roster: [{ id: 'user_1', displayName: 'KC', color: '#f00' }]
   };
 }
 

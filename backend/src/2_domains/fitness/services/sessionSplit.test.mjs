@@ -9,15 +9,15 @@ const COLORS = ['blue', 'green', 'yellow', 'orange', 'red'];
 const sum = (o) => COLORS.reduce((s, c) => s + (o[c] || 0), 0);
 
 test('isCumulativeKey: cumulative suffixes only', () => {
-  assert.equal(isCumulativeKey('milo:beats'), true);
-  assert.equal(isCumulativeKey('milo:coins'), true);
+  assert.equal(isCumulativeKey('user_3:beats'), true);
+  assert.equal(isCumulativeKey('user_3:coins'), true);
   assert.equal(isCumulativeKey('bike:7138:rotations'), true);
   assert.equal(isCumulativeKey('vib:step-platform:impacts'), true);
   assert.equal(isCumulativeKey('global:coins'), true);
-  assert.equal(isCumulativeKey('milo:hr'), false);
-  assert.equal(isCumulativeKey('milo:zone'), false);
+  assert.equal(isCumulativeKey('user_3:hr'), false);
+  assert.equal(isCumulativeKey('user_3:zone'), false);
   assert.equal(isCumulativeKey('bike:7138:rpm'), false);
-  assert.equal(isCumulativeKey('device:28688:heart-rate'), false);
+  assert.equal(isCumulativeKey('device:90001:heart-rate'), false);
 });
 
 test('zoneToColor: standard mapping', () => {
@@ -35,17 +35,17 @@ test('computeSplitTick rounds (splitTs - startAbs)/intervalMs', () => {
 
 test('splitDecodedSeries: instantaneous sliced, cumulative re-zeroed in part2', () => {
   const decoded = {
-    'milo:hr':    [100, 110, 120, 130, 140],   // instantaneous
-    'milo:coins': [10, 20, 30, 40, 50],         // cumulative
+    'user_3:hr':    [100, 110, 120, 130, 140],   // instantaneous
+    'user_3:coins': [10, 20, 30, 40, 50],         // cumulative
   };
   const { part1, part2 } = splitDecodedSeries(decoded, 2); // split at tick 2
 
-  assert.deepEqual(part1['milo:hr'], [100, 110]);
-  assert.deepEqual(part2['milo:hr'], [120, 130, 140]);
+  assert.deepEqual(part1['user_3:hr'], [100, 110]);
+  assert.deepEqual(part2['user_3:hr'], [120, 130, 140]);
 
-  assert.deepEqual(part1['milo:coins'], [10, 20]);
+  assert.deepEqual(part1['user_3:coins'], [10, 20]);
   // baseline = part1 last = 20 → part2 re-zeroed
-  assert.deepEqual(part2['milo:coins'], [10, 20, 30]);
+  assert.deepEqual(part2['user_3:coins'], [10, 20, 30]);
 });
 
 test('splitDecodedSeries: cumulative re-zero carries nulls forward for baseline', () => {
@@ -57,18 +57,18 @@ test('splitDecodedSeries: cumulative re-zero carries nulls forward for baseline'
 test('recomputeSummaryForPart maps zone SYMBOLS (a/w/h) to color buckets + full-name minutes', () => {
   // zones stored as single-char symbols (ZONE_SYMBOL_MAP); coins cumulative.
   const series = {
-    'milo:hr': [120, 130, 140],
-    'milo:zone': ['a', 'w', 'h'],   // active, warm, hot
-    'milo:coins': [10, 25, 40],     // deltas: 10, 15, 15
+    'user_3:hr': [120, 130, 140],
+    'user_3:zone': ['a', 'w', 'h'],   // active, warm, hot
+    'user_3:coins': [10, 25, 40],     // deltas: 10, 15, 15
   };
   const { summary } = recomputeSummaryForPart({
-    series, slugs: ['milo'], events: [], intervalMs: 5000, coinTimeUnitMs: 5000,
+    series, slugs: ['user_3'], events: [], intervalMs: 5000, coinTimeUnitMs: 5000,
   });
   assert.equal(summary.coins.total, 40);
   assert.equal(summary.coins.buckets.green, 10);   // active tick delta
   assert.equal(summary.coins.buckets.yellow, 15);  // warm tick delta
   assert.equal(summary.coins.buckets.orange, 15);  // hot tick delta
-  assert.deepEqual(Object.keys(summary.participants.milo.zone_minutes).sort(), ['active', 'hot', 'warm']);
+  assert.deepEqual(Object.keys(summary.participants.user_3.zone_minutes).sort(), ['active', 'hot', 'warm']);
 });
 
 test('allocateBucketsRedistribute: preserves per-color totals AND per-part coin totals exactly', () => {
@@ -105,12 +105,12 @@ test('recomputeSummaryForPart excludes participants below the HR-sample threshol
 });
 
 test('recomputeSummaryForPart marks the longest media as primary (so the part stands alone)', () => {
-  const series = { 'milo:hr': [120, 130], 'milo:zone': ['a', 'w'], 'milo:coins': [5, 10] };
+  const series = { 'user_3:hr': [120, 130], 'user_3:zone': ['a', 'w'], 'user_3:coins': [5, 10] };
   const events = [
     { type: 'media', timestamp: 1, data: { contentId: 'plex:1', grandparentTitle: 'Short Show', start: 0, end: 60000 } },
     { type: 'media', timestamp: 2, data: { contentId: 'plex:2', grandparentTitle: 'Long Show', start: 60000, end: 600000 } },
   ];
-  const { summary } = recomputeSummaryForPart({ series, slugs: ['milo'], events, intervalMs: 5000, coinTimeUnitMs: 5000 });
+  const { summary } = recomputeSummaryForPart({ series, slugs: ['user_3'], events, intervalMs: 5000, coinTimeUnitMs: 5000 });
   const primaries = summary.media.filter(m => m.primary === true);
   assert.equal(primaries.length, 1, 'exactly one primary');
   assert.equal(primaries[0].contentId, 'plex:2', 'longest-duration media is primary');

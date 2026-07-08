@@ -48,8 +48,8 @@ function validSession() {
     startTime: now - 600000,
     endTime: now,
     durationMs: 600000,
-    roster: [{ userId: 'felix' }],
-    timeline: { series: { felix: { hr: [1, 2, 3] } } },
+    roster: [{ userId: 'user_2' }],
+    timeline: { series: { user_2: { hr: [1, 2, 3] } } },
     tickCount: 100
   };
 }

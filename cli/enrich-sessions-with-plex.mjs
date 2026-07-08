@@ -117,7 +117,7 @@ function getAllSessions() {
 // Session files may have wrong timestamps (timezone bug in reconstruct),
 // so we use the archive's UTC start_date as ground truth.
 // ------------------------------------------------------------------
-const stravaLifelogDir = path.join(dataDir, 'users', 'kckern', 'lifelog', 'strava');
+const stravaLifelogDir = path.join(dataDir, 'users', 'user_1', 'lifelog', 'strava');
 const olderArchiveDir = path.join(baseDir, 'media', 'archives', 'strava');
 
 function buildStravaIndex() {

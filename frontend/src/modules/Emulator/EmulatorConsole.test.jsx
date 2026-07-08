@@ -515,7 +515,7 @@ describe('autosave', () => {
     const { factories } = makeFactories();
     const saveResume = vi.fn(() => Promise.resolve({ status: 'ok' }));
     const persistence = {
-      saveMode: 'battery', persist: true, userId: 'soren',
+      saveMode: 'battery', persist: true, userId: 'user_5',
       loadResume: () => Promise.resolve({ status: 'absent' }),
       saveResume,
       clearResume: () => Promise.resolve({ status: 'ok' }),
@@ -526,7 +526,7 @@ describe('autosave', () => {
           game={baseGame}
           engineConfig={{ core: 'gb', controls: {} }}
           governanceGate={makeGate()}
-          identity={{ getActivePlayerId: () => 'soren' }}
+          identity={{ getActivePlayerId: () => 'user_5' }}
           persistence={persistence}
           autosaveSeconds={15}
           factories={factories}

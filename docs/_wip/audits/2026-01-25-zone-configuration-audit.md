@@ -34,7 +34,7 @@ apps:
 ```yaml
 users:
   friends:
-    - name: Lila
+    - name: User_7
       zones:
         active: 120
         warm: 140
@@ -120,14 +120,14 @@ If one is populated correctly but the other isn't, zone colors will mismatch.
 Production logs confirm user-specific zones ARE being honored:
 
 ```json
-// milo: HR=152 → warm zone with min=140 (user-specific, not global 120)
-{"event":"treasurebox.zone_resolved","data":{"profileId":"milo","hr":152,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+// user_3: HR=152 → warm zone with min=140 (user-specific, not global 120)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"user_3","hr":152,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
 
-// felix: HR=149 → warm zone with min=140 (user-specific)
-{"event":"treasurebox.zone_resolved","data":{"profileId":"felix","hr":149,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+// user_2: HR=149 → warm zone with min=140 (user-specific)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"user_2","hr":149,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
 
-// soren: HR=112 → cool zone (user-specific active threshold is 120)
-{"event":"treasurebox.zone_resolved","data":{"profileId":"soren","hr":112,"zone":{"id":"cool","min":0},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+// user_5: HR=112 → cool zone (user-specific active threshold is 120)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"user_5","hr":112,"zone":{"id":"cool","min":0},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
 ```
 
 **Key finding:** All users show `hasOverrides: true` and `min: 140` for warm zone, which is the user-specific threshold (not the global 120).
@@ -154,8 +154,8 @@ Updated to use Logger instead of console.log. Needs redeploy to verify.
    - `[ZoneProfileStore]` - Should show `hasCustomZones: true` for same users
 
 3. **Compare** warm thresholds:
-   - Milo: Should be 140 (not 120)
-   - Alan: Should be 150 (not 120)
+   - User_3: Should be 140 (not 120)
+   - User_4: Should be 150 (not 120)
 
 4. **Verify avatar color** matches governance requirement at zone boundaries
 

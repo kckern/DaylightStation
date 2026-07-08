@@ -25,9 +25,9 @@ describe('POST /play/log user delegation', () => {
     const store = { record: vi.fn().mockReturnValue({ percent: 92, completedAt: '2026-01-01T00:00:00Z', engaged: true }) };
     const res = await request(makeRouter(store))
       .post('/api/v1/play/log')
-      .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'milo', engaged: true });
+      .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'user_3', engaged: true });
     expect(res.status).toBe(200);
-    expect(store.record).toHaveBeenCalledWith(expect.objectContaining({ userId: 'milo', plexId: 'plex:100', engaged: true }));
+    expect(store.record).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user_3', plexId: 'plex:100', engaged: true }));
     expect(res.body.response.userProgress).toBeTruthy();
   });
 
@@ -44,7 +44,7 @@ describe('POST /play/log user delegation', () => {
     const store = { record: vi.fn(() => { throw new Error('disk full'); }) };
     const res = await request(makeRouter(store))
       .post('/api/v1/play/log')
-      .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'milo', engaged: true });
+      .send({ type: 'plex', assetId: 'plex:100', percent: 92, seconds: 480, userId: 'user_3', engaged: true });
     expect(res.status).toBe(200);
   });
 });

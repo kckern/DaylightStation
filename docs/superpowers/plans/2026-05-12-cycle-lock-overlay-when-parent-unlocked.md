@@ -57,7 +57,7 @@ Insert this block after the existing `'returns show:false for unlocked'` test (i
           type: 'cycle',
           cycleState: 'locked',
           lockReason: 'maintain',
-          rider: { id: 'felix', name: 'Felix' },
+          rider: { id: 'user_2', name: 'User_2' },
           currentRpm: 42,
           currentPhase: { hiRpm: 69, loRpm: 52 },
           status: 'pending'
@@ -72,7 +72,7 @@ Insert this block after the existing `'returns show:false for unlocked'` test (i
     expect(result.status).toBe('unlocked');
     expect(result.challenge).toBeTruthy();
     expect(result.challenge.cycleState).toBe('locked');
-    expect(result.challenge.rider.id).toBe('felix');
+    expect(result.challenge.rider.id).toBe('user_2');
     expect(result.rows).toEqual([]);
     expect(result.requirements).toEqual([]);
     expect(result.videoLocked).toBe(false);
@@ -88,7 +88,7 @@ Insert this block after the existing `'returns show:false for unlocked'` test (i
           id: 'default_0_7_1234',
           type: 'cycle',
           cycleState: 'maintain',
-          rider: { id: 'felix', name: 'Felix' },
+          rider: { id: 'user_2', name: 'User_2' },
           status: 'pending'
         }
       },

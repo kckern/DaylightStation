@@ -200,15 +200,15 @@ describe('LogFoodFromUPC', () => {
   describe('userId handling', () => {
     it('uses the passed userId parameter, not extracted from conversationId', async () => {
       await useCase.execute({
-        userId: 'kckern',  // This is the resolved username
+        userId: 'user_1',  // This is the resolved username
         conversationId: 'telegram:b6898194425_c575596036',
         upc: '012345678901',
         messageId: '50',
       });
 
-      // The saved log should have userId='kckern', not 'c575596036'
+      // The saved log should have userId='user_1', not 'c575596036'
       expect(savedLog).not.toBeNull();
-      expect(savedLog.userId).toBe('kckern');
+      expect(savedLog.userId).toBe('user_1');
     });
   });
 });
@@ -218,7 +218,7 @@ describe('LogFoodFromUPC', () => {
 
 Run: `node tests/unit/harness.mjs --pattern=LogFoodFromUPC`
 
-Expected: FAIL - expects `userId` to be `kckern` but gets `c575596036`
+Expected: FAIL - expects `userId` to be `user_1` but gets `c575596036`
 
 **Step 3: Implement the fix**
 
@@ -323,16 +323,16 @@ describe('SelectUPCPortion', () => {
   describe('userId handling', () => {
     it('uses the passed userId parameter, not extracted from conversationId', async () => {
       await useCase.execute({
-        userId: 'kckern',  // This is the resolved username
+        userId: 'user_1',  // This is the resolved username
         conversationId: 'telegram:b6898194425_c575596036',
         logUuid: 'abc123',
         portionFactor: 1,
         messageId: '50',
       });
 
-      // findByUuid should be called with 'kckern', not 'c575596036'
+      // findByUuid should be called with 'user_1', not 'c575596036'
       expect(findByUuidCalledWith).not.toBeNull();
-      expect(findByUuidCalledWith.userId).toBe('kckern');
+      expect(findByUuidCalledWith.userId).toBe('user_1');
     });
   });
 });
@@ -342,7 +342,7 @@ describe('SelectUPCPortion', () => {
 
 Run: `node tests/unit/harness.mjs --pattern=SelectUPCPortion`
 
-Expected: FAIL - expects `userId` to be `kckern` but gets `c575596036`
+Expected: FAIL - expects `userId` to be `user_1` but gets `c575596036`
 
 **Step 3: Implement the fix**
 

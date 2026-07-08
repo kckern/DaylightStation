@@ -168,14 +168,14 @@ items:
     image: https://...
     uid: e7302007-...
   - label: Spotlight
-    input: app:family-selector/alan
+    input: app:family-selector/user_4
     action: Open
     fixed_order: true
-  - label: Felix
+  - label: User_2
     input: plex:457385
     action: Play
     active: true
-  - label: Soren
+  - label: User_5
     input: canvas:religious/treeoflife.jpg
     action: Display
   - label: Gratitude and Hope

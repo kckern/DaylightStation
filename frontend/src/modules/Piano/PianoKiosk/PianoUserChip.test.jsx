@@ -13,7 +13,7 @@ import PianoUserContext from './PianoUserContext.jsx';
 
 const setCurrentUser = vi.fn();
 const ctxValue = {
-  users: [{ id: 'milo', name: 'Milo' }, { id: 'dad', name: 'Dad' }],
+  users: [{ id: 'user_3', name: 'User_3' }, { id: 'dad', name: 'Dad' }],
   currentProfile: { id: 'dad', name: 'Dad' },
   currentUser: 'dad',
   setCurrentUser,
@@ -36,8 +36,8 @@ describe('PianoUserChip', () => {
     renderChip();
     fireEvent.click(screen.getByLabelText('Switch player'));
     expect(screen.getByText("Who’s playing?")).toBeTruthy();
-    fireEvent.click(screen.getByText('Milo'));
-    expect(setCurrentUser).toHaveBeenCalledWith('milo');
+    fireEvent.click(screen.getByText('User_3'));
+    expect(setCurrentUser).toHaveBeenCalledWith('user_3');
   });
 
   it('locks switching while a video lecture is open', () => {

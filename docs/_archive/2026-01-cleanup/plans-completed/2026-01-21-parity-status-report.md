@@ -34,12 +34,12 @@ The previous issue where app actions were incorrectly placed in `play` instead o
 
 **Legacy:**
 ```json
-{ "label": "Spotlight", "open": { "app": "family-selector/felix" }, "play": null }
+{ "label": "Spotlight", "open": { "app": "family-selector/user_2" }, "play": null }
 ```
 
 **DDD (now correct):**
 ```json
-{ "label": "Spotlight", "open": { "app": "family-selector/felix" }, "play": null }
+{ "label": "Spotlight", "open": { "app": "family-selector/user_2" }, "play": null }
 ```
 
 ### Remaining Differences

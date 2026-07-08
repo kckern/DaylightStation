@@ -6,7 +6,7 @@ function espnSession() {
   return {
     sessionId: '20260629203200',
     session: { duration_seconds: 905 },
-    participants: { 'device:10266': {}, felix: { display_name: 'Felix' }, milo: {} },
+    participants: { 'device:10266': {}, user_2: { display_name: 'User_2' }, user_3: {} },
     summary: {
       media: [
         { showTitle: 'ESPN', mediaType: 'video', primary: null },
@@ -22,13 +22,13 @@ test('primaryTitle honours the .primary flag over media order', () => {
 });
 
 test('participantNames title-cases bare slugs, excludes device:* ids', () => {
-  assert.deepEqual(participantNames(espnSession()), ['Felix', 'Milo']);
+  assert.deepEqual(participantNames(espnSession()), ['User_2', 'User_3']);
 });
 
 test('participantNames uses resolveName when the session name is just the slug', () => {
-  const data = { participants: { kckern: { display_name: 'kckern' }, felix: {} } };
-  const resolve = (id) => ({ kckern: 'KC Kern' }[id] || id);
-  assert.deepEqual(participantNames(data, resolve), ['KC Kern', 'Felix']);
+  const data = { participants: { user_1: { display_name: 'user_1' }, user_2: {} } };
+  const resolve = (id) => ({ user_1: 'User_1' }[id] || id);
+  assert.deepEqual(participantNames(data, resolve), ['User_1', 'User_2']);
 });
 
 test('buildSlug: {sessionId}_{Nm}_{users}_{video}', () => {
@@ -37,8 +37,8 @@ test('buildSlug: {sessionId}_{Nm}_{users}_{video}', () => {
 
 test('buildPlexMeta maps the full Plex episode tag set', () => {
   const m = buildPlexMeta(espnSession());
-  assert.equal(m.title, 'Family Fitness - S2026E06292032 - Felix, Milo - Game Cycling');
-  assert.equal(m.plexFileBase, 'Family Fitness - S2026E06292032 - Felix, Milo - Game Cycling');
+  assert.equal(m.title, 'Family Fitness - S2026E06292032 - User_2, User_3 - Game Cycling');
+  assert.equal(m.plexFileBase, 'Family Fitness - S2026E06292032 - User_2, User_3 - Game Cycling');
   assert.equal(m.tags.show, 'Family Fitness');
   assert.equal(m.tags.episode_id, '06292032');
   assert.equal(m.tags.media_type, '10');
@@ -46,7 +46,7 @@ test('buildPlexMeta maps the full Plex episode tag set', () => {
   assert.equal('season_number' in m.tags, false);
   assert.equal('episode_sort' in m.tags, false);
   assert.equal(m.epTag, 'S2026E06292032');
-  assert.equal(m.tags.artist, 'Felix, Milo');
+  assert.equal(m.tags.artist, 'User_2, User_3');
   assert.equal(m.tags.album, 'Game Cycling');
   assert.equal(m.tags.genre, 'Fitness');
   assert.equal(m.tags.date, '2026');
@@ -77,7 +77,7 @@ test('recapDescription falls back to voice-memo transcripts when no strava notes
 });
 
 test('plexFileBase strips filesystem-hostile characters', () => {
-  const data = { sessionId: '20260101120000', participants: { kckern: {} },
+  const data = { sessionId: '20260101120000', participants: { user_1: {} },
     summary: { media: [{ showTitle: 'Yoga: Flow / Core', primary: true }] } };
   const m = buildPlexMeta(data);
   assert.equal(m.plexFileBase.includes('/'), false);

@@ -11,8 +11,8 @@ const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEng
  * per-test code mutates its cycleState / phaseProgressMs / etc. as needed.
  */
 function buildEngine({
-  eligibleUsers = ['felix', 'milo', 'kckern'],
-  profiles = { felix: { name: 'Felix the Cat' }, milo: { name: 'Milo' }, kckern: { name: 'KC' } },
+  eligibleUsers = ['user_2', 'user_3', 'user_1'],
+  profiles = { user_2: { name: 'User_2 the Cat' }, user_3: { name: 'User_3' }, user_1: { name: 'KC' } },
   nowValue = 30000
 } = {}) {
   const session = {
@@ -30,8 +30,8 @@ function baseActiveCycle(overrides = {}) {
     id: 'cyc_1',
     type: 'cycle',
     status: 'pending',
-    rider: 'felix',
-    ridersUsed: ['felix'],
+    rider: 'user_2',
+    ridersUsed: ['user_2'],
     equipment: 'cycle_ace',
     generatedPhases: [
       { hiRpm: 60, loRpm: 45, rampSeconds: 15, maintainSeconds: 30 },
@@ -75,8 +75,8 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       initTotalMs: 60000
     });
     engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 25, ts: now } };
-    engine._latestInputs.activeParticipants = ['felix'];
-    engine._latestInputs.userZoneMap = { felix: 'warm' };
+    engine._latestInputs.activeParticipants = ['user_2'];
+    engine._latestInputs.userZoneMap = { user_2: 'warm' };
 
     const snap = engine._buildChallengeSnapshot(now);
 
@@ -84,7 +84,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     expect(snap.id).toBe('cyc_1');
     expect(snap.type).toBe('cycle');
     expect(snap.status).toBe('pending');
-    expect(snap.rider).toEqual({ id: 'felix', name: 'Felix the Cat' });
+    expect(snap.rider).toEqual({ id: 'user_2', name: 'User_2 the Cat' });
     expect(snap.cycleState).toBe('init');
     expect(snap.currentPhaseIndex).toBe(0);
     expect(snap.totalPhases).toBe(2);
@@ -202,23 +202,23 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('swapEligibleUsers excludes current rider and cooldown users', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
     engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
-    // Set milo on cooldown
-    engine._cycleCooldowns = { milo: now + 10000 };
+    // Set user_3 on cooldown
+    engine._cycleCooldowns = { user_3: now + 10000 };
     const snap = engine._buildChallengeSnapshot(now);
-    // Eligible pool: felix, milo, kckern
-    // Remove felix (rider) and milo (cooldown) → kckern remains
-    expect(snap.swapEligibleUsers).toEqual(['kckern']);
+    // Eligible pool: user_2, user_3, user_1
+    // Remove user_2 (rider) and user_3 (cooldown) → user_1 remains
+    expect(snap.swapEligibleUsers).toEqual(['user_1']);
   });
 
   it('swapEligibleUsers includes users whose cooldown has expired', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
     engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
-    // milo cooldown expired (<= now)
-    engine._cycleCooldowns = { milo: now - 1000 };
+    // user_3 cooldown expired (<= now)
+    engine._cycleCooldowns = { user_3: now - 1000 };
     const snap = engine._buildChallengeSnapshot(now);
-    expect(snap.swapEligibleUsers).toContain('milo');
-    expect(snap.swapEligibleUsers).toContain('kckern');
-    expect(snap.swapEligibleUsers).not.toContain('felix');
+    expect(snap.swapEligibleUsers).toContain('user_3');
+    expect(snap.swapEligibleUsers).toContain('user_1');
+    expect(snap.swapEligibleUsers).not.toContain('user_2');
   });
 
   it('phaseProgressPct clamps to 1.0 — never exceeds', () => {
@@ -249,12 +249,12 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('boostMultiplier computed correctly with boosters and self-boost', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
     engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
-    // felix (rider) is in fire (+1.0), milo is in hot (+0.5) → 1.0 + 1.0 + 0.5 = 2.5
-    engine._latestInputs.userZoneMap = { felix: 'fire', milo: 'hot' };
-    engine._latestInputs.activeParticipants = ['felix', 'milo'];
+    // user_2 (rider) is in fire (+1.0), user_3 is in hot (+0.5) → 1.0 + 1.0 + 0.5 = 2.5
+    engine._latestInputs.userZoneMap = { user_2: 'fire', user_3: 'hot' };
+    engine._latestInputs.activeParticipants = ['user_2', 'user_3'];
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.boostMultiplier).toBeCloseTo(2.5, 5);
-    expect(snap.boostingUsers).toEqual(expect.arrayContaining(['felix', 'milo']));
+    expect(snap.boostingUsers).toEqual(expect.arrayContaining(['user_2', 'user_3']));
     expect(snap.boostingUsers).toHaveLength(2);
   });
 
@@ -263,7 +263,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
     engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
     const snap = engine._buildChallengeSnapshot(now);
-    expect(snap.rider).toEqual({ id: 'felix', name: 'felix' });
+    expect(snap.rider).toEqual({ id: 'user_2', name: 'user_2' });
   });
 
   it('currentRpm is 0 when equipmentCadenceMap missing', () => {

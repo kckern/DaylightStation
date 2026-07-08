@@ -40,7 +40,7 @@ if (!BASE_PATH) {
 const DATA_DIR = path.join(BASE_PATH, 'data');
 
 const TSV_PATH = path.join(ROOT, 'strava-plex-media.tsv');
-const USER_AUTH_PATH = path.join(DATA_DIR, 'users', 'kckern', 'auth', 'strava.yml');
+const USER_AUTH_PATH = path.join(DATA_DIR, 'users', 'user_1', 'auth', 'strava.yml');
 const SYSTEM_AUTH_PATH = path.join(DATA_DIR, 'system', 'auth', 'strava.yml');
 const FITNESS_HISTORY_DIR = path.join(DATA_DIR, 'household', 'history', 'fitness');
 const PLEX_HOST = 'http://10.0.0.10:32400';

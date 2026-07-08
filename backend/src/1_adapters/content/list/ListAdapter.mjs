@@ -939,7 +939,7 @@ export class ListAdapter {
       if (item.play) {
         Object.assign(playAction, baseAction, item.play);
       } else if (item.open) {
-        // open is a string (e.g., "family-selector/alan") — wrap as { app: value }
+        // open is a string (e.g., "family-selector/user_4") — wrap as { app: value }
         Object.assign(openAction, typeof item.open === 'string' ? { app: item.open } : item.open);
       } else if (item.queue) {
         Object.assign(queueAction, baseAction, item.queue);

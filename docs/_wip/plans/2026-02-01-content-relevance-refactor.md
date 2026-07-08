@@ -414,34 +414,34 @@ describe('RelevanceScoringService', () => {
   describe('score with title matching', () => {
     it('adds 20 for exact title match', () => {
       const item = {
-        title: 'Milo',
+        title: 'User_3',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(170); // 150 + 20
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(170); // 150 + 20
     });
 
     it('adds 10 for title starts with search', () => {
       const item = {
-        title: 'Milo Smith',
+        title: 'User_3 Smith',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(160); // 150 + 10
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(160); // 150 + 10
     });
 
     it('adds 5 for title contains search', () => {
       const item = {
-        title: 'John Milo Smith',
+        title: 'John User_3 Smith',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'Milo')).toBe(155); // 150 + 5
+      expect(RelevanceScoringService.score(item, 'User_3')).toBe(155); // 150 + 5
     });
 
     it('is case insensitive', () => {
       const item = {
-        title: 'MILO',
+        title: 'USER_3',
         metadata: { category: ContentCategory.IDENTITY }
       };
-      expect(RelevanceScoringService.score(item, 'milo')).toBe(170); // exact match
+      expect(RelevanceScoringService.score(item, 'user_3')).toBe(170); // exact match
     });
   });
 
@@ -484,17 +484,17 @@ describe('RelevanceScoringService', () => {
 
     it('considers search text for title matching', () => {
       const items = [
-        { title: 'Milo Track', metadata: { category: ContentCategory.TRACK } },
+        { title: 'User_3 Track', metadata: { category: ContentCategory.TRACK } },
         { title: 'John', metadata: { category: ContentCategory.IDENTITY } },
-        { title: 'Milo', metadata: { category: ContentCategory.IDENTITY } }
+        { title: 'User_3', metadata: { category: ContentCategory.IDENTITY } }
       ];
 
-      const sorted = RelevanceScoringService.sortByRelevance(items, 'Milo');
+      const sorted = RelevanceScoringService.sortByRelevance(items, 'User_3');
 
-      // Milo (exact match 170) > John (150) > Milo Track (15 + 10 = 25)
-      expect(sorted[0].title).toBe('Milo');
+      // User_3 (exact match 170) > John (150) > User_3 Track (15 + 10 = 25)
+      expect(sorted[0].title).toBe('User_3');
       expect(sorted[1].title).toBe('John');
-      expect(sorted[2].title).toBe('Milo Track');
+      expect(sorted[2].title).toBe('User_3 Track');
     });
 
     it('does not mutate original array', () => {
@@ -1327,14 +1327,14 @@ Expected: All PASS
 
 Start the dev server and test search:
 ```bash
-curl -s "http://localhost:3112/api/v1/content/query/search?text=Milo&take=10" | jq '[.items[:5] | .[] | {title, type: .metadata.type, category: .metadata.category}]'
+curl -s "http://localhost:3112/api/v1/content/query/search?text=User_3&take=10" | jq '[.items[:5] | .[] | {title, type: .metadata.type, category: .metadata.category}]'
 ```
 
 Expected output should show category field on all items:
 ```json
 [
-  { "title": "Milo", "type": "person", "category": "identity" },
-  { "title": "Milo O. Frank", "type": "author", "category": "creator" },
+  { "title": "User_3", "type": "person", "category": "identity" },
+  { "title": "User_3 O. Frank", "type": "author", "category": "creator" },
   ...
 ]
 ```

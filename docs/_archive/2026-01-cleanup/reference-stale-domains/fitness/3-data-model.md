@@ -33,8 +33,8 @@ All lookup tables keyed by participant identity MUST be keyed by `userId`.
 
 | Pattern | Example |
 |---------|---------|
-| `activeParticipants: Set<userId>` | `new Set(["kckern", "felix"])` |
-| `userZoneMap: Record<userId, zoneId>` | `{ "kckern": "hot", "felix": "warm" }` |
+| `activeParticipants: Set<userId>` | `new Set(["user_1", "user_2"])` |
+| `userZoneMap: Record<userId, zoneId>` | `{ "user_1": "hot", "user_2": "warm" }` |
 
 ---
 
@@ -44,7 +44,7 @@ All lookup tables keyed by participant identity MUST be keyed by `userId`.
 
 **Participant Series**
 - **Format:** `user:<userId>:<metric>`
-- **Example:** `user:kckern:heart_rate`
+- **Example:** `user:user_1:heart_rate`
 
 **Device Series**
 - **Format:** `device:<deviceId>:<metric>`
@@ -91,10 +91,10 @@ Explicit `null` values are meaningful and must be preserved:
 
 | Context | Use | Format | Example |
 |---------|-----|--------|---------|
-| Dictionary keys | **userId** | `string` | `"kckern"` |
-| Timeline series | **userId** | `user:${userId}:${metric}` | `"user:kckern:coins"` |
-| activeParticipants | **userId** | `string[]` | `["kckern", "felix"]` |
-| Display in UI | **name** | `string` | `"KC Kern"` |
+| Dictionary keys | **userId** | `string` | `"user_1"` |
+| Timeline series | **userId** | `user:${userId}:${metric}` | `"user:user_1:coins"` |
+| activeParticipants | **userId** | `string[]` | `["user_1", "user_2"]` |
+| Display in UI | **name** | `string` | `"User_1"` |
 
 ---
 

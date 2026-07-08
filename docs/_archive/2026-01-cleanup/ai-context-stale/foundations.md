@@ -163,7 +163,7 @@ const data = await api.get('/media/search', { q: 'query' });
 
 **Key Concepts:**
 - **Household:** Container for users, configs, data
-- **User/Profile:** Persistent identity (`userId` like "kckern")
+- **User/Profile:** Persistent identity (`userId` like "user_1")
 - **Entity:** Session participation instance (for fitness)
 
 **Pattern:**

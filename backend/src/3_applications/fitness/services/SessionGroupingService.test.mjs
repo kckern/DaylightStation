@@ -8,9 +8,9 @@ const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
 });
 
 const sessions = [
-  sess('s1', H(14,54), 5.5, ['milo'], null, 60),
-  sess('s3', H(16,22), 37.5, ['alan','milo'], null, 1139),
-  sess('s7', H(19,10), 46.4, ['kckern','milo'],
+  sess('s1', H(14,54), 5.5, ['user_3'], null, 60),
+  sess('s3', H(16,22), 37.5, ['user_4','user_3'], null, 1139),
+  sess('s7', H(19,10), 46.4, ['user_1','user_3'],
        { primary: { contentId: 'plex:674286', title: 'Looney Tunes Racing' } }, 2745),
 ];
 
@@ -20,7 +20,7 @@ describe('SessionGroupingService', () => {
     const svc = new SessionGroupingService({ activityRegistry: registry });
     const groups = await svc.group(sessions, 'household');
 
-    // s1+s3 merge (overlap on milo), s7 is video standalone
+    // s1+s3 merge (overlap on user_3), s7 is video standalone
     expect(groups.map(g => g.id)).toEqual(['group:s1', 's7']);
 
     // enrich called once — only for the non-video group

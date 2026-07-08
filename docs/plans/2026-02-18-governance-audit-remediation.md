@@ -20,7 +20,7 @@ After cross-referencing the audit findings with the actual code, three issues ar
 |---|----------|----------|-------|
 | 1 | N1 | P1 | Path B `userZoneMap` allows `null` zones, bypassing ghost filter |
 | 2 | N4 | P3 | `_setPhase()` logging reads stale `activeParticipants` count |
-| 3 | CF7 | P2 | Zone threshold calibration — Alan/Milo thresholds cause warning spam |
+| 3 | CF7 | P2 | Zone threshold calibration — User_4/User_3 thresholds cause warning spam |
 
 **Note on CF1/CF2/CF3:** These carry-forward findings from the Feb 17 audit appear already fixed in the current code. `_getParticipantsBelowThreshold()` (line 716) and `_getParticipantStates()` (line 766) both use `evalContext?.userZoneMap` correctly. The `_getParticipantsBelowThreshold` function also already includes `hr`, `threshold`, and `delta` fields (lines 731-755). Task 4 below adds a verification step to confirm these are working.
 
@@ -157,26 +157,26 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Calibrate zone thresholds for Alan and Milo
+### Task 3: Calibrate zone thresholds for User_4 and User_3
 
 **Files:**
-- Modify: `data/users/alan/profile.yml`
-- Modify: `data/users/milo/profile.yml`
+- Modify: `data/users/user_4/profile.yml`
+- Modify: `data/users/user_3/profile.yml`
 
 **Context:**
 
-The Feb 17 session audit logged 19 warnings in 33 minutes from Alan's HR oscillating 121-127 BPM around his 125 BPM `active` threshold. The root cause is threshold calibration, not code.
+The Feb 17 session audit logged 19 warnings in 33 minutes from User_4's HR oscillating 121-127 BPM around his 125 BPM `active` threshold. The root cause is threshold calibration, not code.
 
 Current thresholds vs recommended:
 
 | User | Current `active` | Recommended `active` | Rationale |
 |------|-----------------|---------------------|-----------|
-| Alan (b. 2021) | 125 BPM | 118 BPM | HR floor observed at 121; need margin below |
-| Milo (b. 2018) | 120 BPM | 112 BPM | Similar oscillation pattern; proportional reduction |
+| User_4 (b. 2021) | 125 BPM | 118 BPM | HR floor observed at 121; need margin below |
+| User_3 (b. 2018) | 120 BPM | 112 BPM | Similar oscillation pattern; proportional reduction |
 
-**Step 1: Update Alan's profile**
+**Step 1: Update User_4's profile**
 
-In `data/users/alan/profile.yml`, change:
+In `data/users/user_4/profile.yml`, change:
 ```yaml
     heart_rate_zones:
       active: 125
@@ -187,9 +187,9 @@ to:
       active: 118
 ```
 
-**Step 2: Update Milo's profile**
+**Step 2: Update User_3's profile**
 
-In `data/users/milo/profile.yml`, change:
+In `data/users/user_3/profile.yml`, change:
 ```yaml
     heart_rate_zones:
       active: 120
@@ -203,10 +203,10 @@ to:
 **Step 3: Commit**
 
 ```bash
-git add data/users/alan/profile.yml data/users/milo/profile.yml
-git commit -m "fix(fitness): lower active zone thresholds for Alan and Milo
+git add data/users/user_4/profile.yml data/users/user_3/profile.yml
+git commit -m "fix(fitness): lower active zone thresholds for User_4 and User_3
 
-Alan 125→118, Milo 120→112. Previous thresholds caused 19 false
+User_4 125→118, User_3 120→112. Previous thresholds caused 19 false
 warnings in 33 min from HR oscillating near boundary. Lowering gives
 margin below observed HR floor.
 

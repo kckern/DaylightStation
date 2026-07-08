@@ -135,7 +135,7 @@ import { EventQueryService } from '../../../../../backend/src/3_applications/age
 
 const makeSvc = (sessions = []) => new EventQueryService({
   sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-  householdId: 'kckern',
+  householdId: 'user_1',
 });
 
 describe('queryEvents — filter contract', () => {
@@ -311,7 +311,7 @@ it('attaches canonical kind to each row', async () => {
   ];
   const svc = new EventQueryService({
     sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-    householdId: 'kckern',
+    householdId: 'user_1',
   });
   const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
   expect(r.events[0].kind).toBe('run');
@@ -325,7 +325,7 @@ it('filters by canonical kind', async () => {
   ];
   const svc = new EventQueryService({
     sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-    householdId: 'kckern',
+    householdId: 'user_1',
   });
   const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' }, filter: { kind: 'strength' } });
   expect(r.events).toHaveLength(1);
@@ -477,7 +477,7 @@ describe('FitnessEventAdapter', () => {
         listSessionsInRange: vi.fn(async () => sessions),
         getSession: vi.fn(async () => ({ ...sessions[0], timeline: { series: { kc: Array(60).fill(140) } } })),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } });
@@ -502,7 +502,7 @@ describe('FitnessEventAdapter', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.detail('20260507060000');
@@ -519,7 +519,7 @@ describe('FitnessEventAdapter', () => {
     ];
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => sessions) },
-      householdId: 'kckern',
+      householdId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_7d' } });
@@ -848,7 +848,7 @@ describe('NutritionEventAdapter', () => {
         getDailySummary: vi.fn(),
         getWeeklySummary: vi.fn(),
       },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } });
@@ -866,7 +866,7 @@ describe('NutritionEventAdapter', () => {
     });
     const svc = new NutritionEventAdapter({
       foodLogService: { getLogById: vi.fn(async () => log) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.detail('a');
@@ -881,7 +881,7 @@ describe('NutritionEventAdapter', () => {
       foodLogService: {
         getWeeklySummary: vi.fn(async () => ({ days: 7, kcal_total: 14_000, kcal_avg: 2000, protein_g_avg: 130 })),
       },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_7d' } });
@@ -1061,7 +1061,7 @@ describe('WeightEventAdapter', () => {
     ];
     const svc = new WeightEventAdapter({
       healthService: { getHealthMetric: vi.fn(async () => points) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' } });
@@ -1078,7 +1078,7 @@ describe('WeightEventAdapter', () => {
     }));
     const svc = new WeightEventAdapter({
       healthService: { getHealthMetric: vi.fn(async () => points) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_30d' } });
@@ -1252,7 +1252,7 @@ describe('FitnessEventAdapter.detail — rich surface', () => {
         listSessionsInRange: vi.fn(async () => []),
         getSession: vi.fn(async () => session),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.voice_memos).toHaveLength(1);
@@ -1269,7 +1269,7 @@ describe('FitnessEventAdapter.detail — rich surface', () => {
     };
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => []), getSession: vi.fn(async () => session) },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.treasure_stats).toEqual({ total_coins: 47, buckets: { z2: 23, z3: 18, z4: 6 } });
@@ -1290,7 +1290,7 @@ describe('FitnessEventAdapter.detail — rich surface', () => {
     };
     const svc = new FitnessEventAdapter({
       sessionService: { listSessionsInRange: vi.fn(async () => []), getSession: vi.fn(async () => session) },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.detail('20260507060000');
     expect(r.strava_summary.map_polyline).toBe('abc123');
@@ -1645,7 +1645,7 @@ describe('PersonalBaselineService', () => {
     const dataService = { user: { read: vi.fn(async () => cached), write: vi.fn() } };
     const workoutAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const svc = makeSvc({ workoutAdapter, dataService });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(r).toBe(cached);
     expect(workoutAdapter.list).not.toHaveBeenCalled();
   });
@@ -1659,9 +1659,9 @@ describe('PersonalBaselineService', () => {
     const mealAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const weighinAdapter = { list: vi.fn(async () => ({ events: [] })) };
     const svc = makeSvc({ workoutAdapter, mealAdapter, weighinAdapter, dataService });
-    const r = await svc.getBaselines({ userId: 'kckern' });
+    const r = await svc.getBaselines({ userId: 'user_1' });
     expect(workoutAdapter.list).toHaveBeenCalled();
-    expect(dataService.user.write).toHaveBeenCalledWith('profile/baselines', expect.any(Object), 'kckern');
+    expect(dataService.user.write).toHaveBeenCalledWith('profile/baselines', expect.any(Object), 'user_1');
     expect(r.computed_at).toBe('2026-05-07T12:00:00.000Z');
   });
 });
@@ -1730,7 +1730,7 @@ describe('UserModelService.composeContext', () => {
       personalConstantsService: { get: vi.fn(async () => profile) },
       baselineService: { getBaselines: vi.fn(async () => baselines) },
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/Profile/);
     expect(ctx).toMatch(/175 lbs/);
     expect(ctx).toMatch(/Workouts: 4\.2\/wk/);
@@ -1744,7 +1744,7 @@ describe('UserModelService.composeContext', () => {
       personalConstantsService: { get: vi.fn(async () => ({})) },
       baselineService: { getBaselines: vi.fn(async () => null) },
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/No baselines available yet/);
   });
 });
@@ -2002,7 +2002,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [fullSession]),
         getSession: vi.fn(async () => fullSession),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const baseline = {
       run: { median_duration_min: 35, median_hr_avg: 148, median_hr_max: 172, median_distance_mi: 4.5 },
@@ -2027,7 +2027,7 @@ describe('FitnessEventAdapter — vs_baseline annotations', () => {
         listSessionsInRange: vi.fn(async () => [fullSession]),
         getSession: vi.fn(async () => fullSession),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.list({ period: { rolling: 'last_1d' } }, { baseline: { run: null } });
     expect(r.events[0].vs_baseline).toBeUndefined();
@@ -2379,7 +2379,7 @@ def run(input_text):
       ['curl', '-sS', '-m', '90', '-X', 'POST',
        'http://localhost:3111/api/v1/agents/health-coach/run',
        '-H', 'Content-Type: application/json',
-       '-d', json.dumps({'input': input_text, 'context': {'userId': 'kckern'}})],
+       '-d', json.dumps({'input': input_text, 'context': {'userId': 'user_1'}})],
       capture_output=True, text=True
     )
     return json.loads(r.stdout)

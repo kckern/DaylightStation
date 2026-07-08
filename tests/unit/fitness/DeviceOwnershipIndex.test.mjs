@@ -22,21 +22,21 @@ describe('DeviceOwnershipIndex', () => {
   describe('rebuild', () => {
     it('maps a single HR device to its owner', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       const owner = index.getOwner('20991');
       expect(owner).not.toBeNull();
-      expect(owner.id).toBe('alan');
-      expect(owner.name).toBe('Alan');
+      expect(owner.id).toBe('user_4');
+      expect(owner.name).toBe('User_4');
     });
 
     it('maps multiple HR devices to the same owner', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366', '28676']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366', '28676']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner('20991').id).toBe('alan');
-      expect(index.getOwner('10366').id).toBe('alan');
-      expect(index.getOwner('28676').id).toBe('alan');
+      expect(index.getOwner('20991').id).toBe('user_4');
+      expect(index.getOwner('10366').id).toBe('user_4');
+      expect(index.getOwner('28676').id).toBe('user_4');
     });
 
     it('maps cadence devices', () => {
@@ -48,35 +48,35 @@ describe('DeviceOwnershipIndex', () => {
 
     it('returns null for unknown device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       expect(index.getOwner('99999')).toBeNull();
     });
 
     it('coerces numeric device IDs to strings', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner(20991).id).toBe('alan');
+      expect(index.getOwner(20991).id).toBe('user_4');
     });
 
     it('replaces previous index on rebuild', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
       index.rebuild([
-        { id: 'felix', name: 'Felix', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_2', name: 'User_2', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.getOwner('20991').id).toBe('felix');
+      expect(index.getOwner('20991').id).toBe('user_2');
     });
   });
 
   describe('getDeviceIdsForUser', () => {
     it('returns all device IDs for a user', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: '7183' }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: '7183' }
       ]);
-      const ids = index.getDeviceIdsForUser('alan');
+      const ids = index.getDeviceIdsForUser('user_4');
       expect(ids).toContain('20991');
       expect(ids).toContain('10366');
       expect(ids).toContain('7183');
@@ -91,25 +91,25 @@ describe('DeviceOwnershipIndex', () => {
   describe('ownsDevice', () => {
     it('returns true when user owns the device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991', '10366']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '20991')).toBe(true);
-      expect(index.ownsDevice('alan', '10366')).toBe(true);
+      expect(index.ownsDevice('user_4', '20991')).toBe(true);
+      expect(index.ownsDevice('user_4', '10366')).toBe(true);
     });
 
     it('returns false when a different user owns the device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null },
-        { id: 'felix', name: 'Felix', hrDeviceIds: new Set(['28812']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null },
+        { id: 'user_2', name: 'User_2', hrDeviceIds: new Set(['90003']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '28812')).toBe(false);
+      expect(index.ownsDevice('user_4', '90003')).toBe(false);
     });
 
     it('returns false for unknown device', () => {
       index.rebuild([
-        { id: 'alan', name: 'Alan', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
+        { id: 'user_4', name: 'User_4', hrDeviceIds: new Set(['20991']), cadenceDeviceId: null }
       ]);
-      expect(index.ownsDevice('alan', '99999')).toBe(false);
+      expect(index.ownsDevice('user_4', '99999')).toBe(false);
     });
   });
 });

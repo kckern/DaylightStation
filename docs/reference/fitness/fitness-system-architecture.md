@@ -325,9 +325,9 @@ GovernanceEngine.evaluate() [on next pulse/zone change]
      │   FitnessPlayerOverlay renders lock screen:
      │   ┌─────────────────────────────────────────────┐
      │   │  ┌────┐                                     │
-     │   │  │ 🧑 │ Felix    Cool ●━━━━━▶ Active ●     │
+     │   │  │ 🧑 │ User_2    Cool ●━━━━━▶ Active ●     │
      │   │  ├────┤                                     │
-     │   │  │ 👦 │ Alan     Cool ●━━━━━▶ Active ●     │
+     │   │  │ 👦 │ User_4     Cool ●━━━━━▶ Active ●     │
      │   │  ├────┤                                     │
      │   │  │ 👨 │ KC       Cool ●━━━━━▶ Active ●     │
      │   │  └────┘                                     │
@@ -408,17 +408,17 @@ session:
   duration_seconds: 2536
 timezone: "America/Denver"
 participants:
-  felix: { display_name: "Felix", is_primary: true, hr_device: "28688" }
-  alan:  { display_name: "Alan",  is_primary: true, hr_device: "28689" }
+  user_2: { display_name: "User_2", is_primary: true, hr_device: "90001" }
+  user_4:  { display_name: "User_4",  is_primary: true, hr_device: "28689" }
 timeline:
   interval_seconds: 5
   tick_count: 507
   series:                          # Delta-encoded by TimelineService
-    "felix:hr": [120, 1, -2, 3, ...] # First value absolute, rest are deltas
-    "felix:zone": ["a", "", "", "w", ...] # Run-length: empty = same as previous
-    "felix:coins": [0, 1, 1, 3, ...]
+    "user_2:hr": [120, 1, -2, 3, ...] # First value absolute, rest are deltas
+    "user_2:zone": ["a", "", "", "w", ...] # Run-length: empty = same as previous
+    "user_2:coins": [0, 1, 1, 3, ...]
   events:
-    - { type: "zone_change", tick: 42, data: { user: "felix", from: "cool", to: "active" } }
+    - { type: "zone_change", tick: 42, data: { user: "user_2", from: "cool", to: "active" } }
 treasureBox:
   totalCoins: 1847
   buckets: { green: 450, yellow: 620, orange: 500, red: 277 }
@@ -429,7 +429,7 @@ media:
 startTime: 1739664182000
 endTime: 1739666718000
 durationMs: 2536000
-roster: [{ name: "felix", isPrimary: true, hrDeviceId: "28688" }]
+roster: [{ name: "user_2", isPrimary: true, hrDeviceId: "90001" }]
 ```
 
 **Storage paths:**
@@ -476,7 +476,7 @@ The complete path for a single heart rate reading, naming every component it tou
 2.  FitSyncAdapter (backend) receives via USB ANT+ stick
          │
 3.  WebSocketEventBus.broadcast('fitness', {
-         deviceId: '28688', type: 'heart_rate', heartRate: 130
+         deviceId: '90001', type: 'heart_rate', heartRate: 130
     })
          │
 4.  WebSocket delivers to browser client
@@ -493,12 +493,12 @@ The complete path for a single heart rate reading, naming every component it tou
          │
 8.  FitnessSession.recordDeviceActivity()
     │   ├── DeviceManager.registerDevice()          → device.heartRate = 130
-    │   ├── UserManager.resolveUserForDevice()       → user = "felix"
+    │   ├── UserManager.resolveUserForDevice()       → user = "user_2"
     │   ├── user.updateFromDevice()                  → user.currentData.heartRate = 130
     │   ├── TreasureBox.recordHeartRateForDevice()   → acc.highestZone = "active"
     │   ├── ZoneProfileStore.syncFromUsers()          → profile.currentZoneId = "active"
     │   └── [if zone changed]
-    │       GovernanceEngine.notifyZoneChange("felix", {fromZone: "cool", toZone: "active"})
+    │       GovernanceEngine.notifyZoneChange("user_2", {fromZone: "cool", toZone: "active"})
     │       → debounce 100ms → evaluate()
          │
 9.  batchedForceUpdate() → requestAnimationFrame → version++
@@ -506,7 +506,7 @@ The complete path for a single heart rate reading, naming every component it tou
 10. React re-render → useEffect([version]) → updateSnapshot()
          │
 11. UI components read from FitnessContext:
-    ├── FitnessSidebar: "Felix: 130 bpm [Active ●]"
+    ├── FitnessSidebar: "User_2: 130 bpm [Active ●]"
     ├── FitnessChart: coin line moves up
     ├── FitnessPlayerOverlay: zone progress bar updates
     └── FitnessPlayer: governance lock/unlock decision
@@ -532,7 +532,7 @@ Zone Hierarchy (lowest → highest):
   │ fire     │    160 bpm    │ red    │     7     │
   └──────────┴───────────────┴────────┴───────────┘
 
-Per-user overrides can adjust thresholds (e.g., Felix's "warm" starts at 110).
+Per-user overrides can adjust thresholds (e.g., User_2's "warm" starts at 110).
 ```
 
 ### Zone Hysteresis (ZoneProfileStore)
@@ -678,24 +678,24 @@ Fitness configuration is loaded from `data/household/config/fitness.yml` via `GE
 ```yaml
 devices:
   heart_rate:
-    "28688": felix          # ANT+ device ID → user ID mapping
-    "28689": alan
-    "28690": kckern
+    "90001": user_2          # ANT+ device ID → user ID mapping
+    "28689": user_4
+    "28690": user_1
   cadence:
     "54321": equipment_bike
 
 users:
   primary:                  # Always shown in sidebar
-    - id: felix
-      name: Felix
-      hr: 28688
-    - id: alan
-      name: Alan
+    - id: user_2
+      name: User_2
+      hr: 90001
+    - id: user_4
+      name: User_4
       hr: 28689
   secondary:                # Shown only when device is active
-    - id: milo
-      name: Milo
-      hr: 28691
+    - id: user_3
+      name: User_3
+      hr: 90002
 
 zones:                      # Heart rate zone definitions
   - id: cool
@@ -863,7 +863,7 @@ Analysis of 14 audit/bug documents, 72 fix commits (Dec 2025 – Feb 2026), and 
 | Zone data (ZoneProfileStore vs TreasureBox vs GovernanceEngine) | 5 | Three subsystems each maintained independent zone state |
 | `preferGroupLabels` trigger | 3 | Sidebar, getUserVitals, card visibility — each checked independently |
 
-**Structural cause:** FitnessSession has 15+ subsystems, each with its own internal state. UI components often reach into multiple subsystems and combine their data with local logic. When the combination logic differs between components (e.g., sidebar says "KC Kern" while overlay says "Dad"), the user sees inconsistency.
+**Structural cause:** FitnessSession has 15+ subsystems, each with its own internal state. UI components often reach into multiple subsystems and combine their data with local logic. When the combination logic differs between components (e.g., sidebar says "User_1" while overlay says "Dad"), the user sees inconsistency.
 
 **Lessons:**
 - New derived values must have exactly ONE computation site, exposed via a single accessor.

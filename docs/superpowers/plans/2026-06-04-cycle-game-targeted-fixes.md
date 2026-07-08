@@ -40,7 +40,7 @@
 
 ## Task 1: F14 — Dereference ghost-of-a-ghost to the original rider
 
-**Why:** `participantIdentity.js:16` does `id.split(':')[2]`, which returns the literal `"ghost"` for a nested id `ghost:R2:ghost:R1:kckern` → avatar URL `/users/ghost` → 404/broken face. The morning's log proves nested ids are minted (`ghost:20260604055802:ghost:20260604055230:kckern`). Fix the resolver to take the final segment, and stop `onSelectGhost` from nesting in the first place (store a first-generation ghost). Guest source ids are hyphenated (`guest-adult`) so they contain no inner colons — the final segment is always the real source slug.
+**Why:** `participantIdentity.js:16` does `id.split(':')[2]`, which returns the literal `"ghost"` for a nested id `ghost:R2:ghost:R1:user_1` → avatar URL `/users/ghost` → 404/broken face. The morning's log proves nested ids are minted (`ghost:20260604055802:ghost:20260604055230:user_1`). Fix the resolver to take the final segment, and stop `onSelectGhost` from nesting in the first place (store a first-generation ghost). Guest source ids are hyphenated (`guest-adult`) so they contain no inner colons — the final segment is always the real source slug.
 
 **Files:**
 - Modify: `frontend/src/modules/Fitness/lib/cycleGame/participantIdentity.js:14-24`
@@ -57,16 +57,16 @@ import { resolveParticipantIdentity } from './participantIdentity.js';
 
 describe('resolveParticipantIdentity — ghost dereference', () => {
   it('resolves a first-generation ghost to its source user', () => {
-    const r = resolveParticipantIdentity('ghost:20260604055230:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:20260604055230:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
+    expect(r.sourceId).toBe('user_1');
     expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
   });
 
   it('resolves a SECOND-generation ghost back to the original user (not "ghost")', () => {
-    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
+    expect(r.sourceId).toBe('user_1');
     expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
   });
 
@@ -76,9 +76,9 @@ describe('resolveParticipantIdentity — ghost dereference', () => {
   });
 
   it('passes a real (non-ghost) id through unchanged', () => {
-    const r = resolveParticipantIdentity('milo', 'Milo');
+    const r = resolveParticipantIdentity('user_3', 'User_3');
     expect(r.isGhost).toBe(false);
-    expect(r.sourceId).toBe('milo');
+    expect(r.sourceId).toBe('user_3');
   });
 });
 ```
@@ -86,7 +86,7 @@ describe('resolveParticipantIdentity — ghost dereference', () => {
 - [ ] **Step 2: Run the tests to verify the second-gen case fails**
 
 Run: `./node_modules/.bin/vitest run frontend/src/modules/Fitness/lib/cycleGame/participantIdentity.test.js`
-Expected: FAIL on "resolves a SECOND-generation ghost…" — `sourceId` is `"ghost"`, not `"kckern"`.
+Expected: FAIL on "resolves a SECOND-generation ghost…" — `sourceId` is `"ghost"`, not `"user_1"`.
 
 - [ ] **Step 3: Fix the resolver to take the final segment**
 

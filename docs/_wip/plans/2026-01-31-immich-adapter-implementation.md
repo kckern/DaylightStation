@@ -259,7 +259,7 @@ describe('IMediaSearchable', () => {
     });
 
     test('accepts valid query with people', () => {
-      const query = { people: ['Felix', 'Milo'] };
+      const query = { people: ['User_2', 'User_3'] };
       expect(() => validateSearchQuery(query)).not.toThrow();
     });
 
@@ -625,8 +625,8 @@ describe('ImmichClient', () => {
       mockHttpClient.get.mockResolvedValue({
         data: {
           people: [
-            { id: 'person-1', name: 'Felix' },
-            { id: 'person-2', name: 'Milo' }
+            { id: 'person-1', name: 'User_2' },
+            { id: 'person-2', name: 'User_3' }
           ]
         }
       });
@@ -639,7 +639,7 @@ describe('ImmichClient', () => {
       const result = await client.getPeople();
 
       expect(result).toHaveLength(2);
-      expect(result[0].name).toBe('Felix');
+      expect(result[0].name).toBe('User_2');
     });
   });
 
@@ -1017,7 +1017,7 @@ describe('ImmichAdapter', () => {
           width: 4000,
           height: 3000,
           exifInfo: { iso: 200, city: 'Seattle' },
-          people: [{ id: 'p1', name: 'Felix' }]
+          people: [{ id: 'p1', name: 'User_2' }]
         }
       });
 
@@ -1043,8 +1043,8 @@ describe('ImmichAdapter', () => {
       // Mock getPeople for name->ID resolution
       mockHttpClient.get.mockResolvedValueOnce({
         data: [
-          { id: 'person-1', name: 'Felix' },
-          { id: 'person-2', name: 'Milo' }
+          { id: 'person-1', name: 'User_2' },
+          { id: 'person-2', name: 'User_3' }
         ]
       });
 
@@ -1063,7 +1063,7 @@ describe('ImmichAdapter', () => {
         { httpClient: mockHttpClient }
       );
 
-      const result = await adapter.search({ people: ['Felix'], mediaType: 'image' });
+      const result = await adapter.search({ people: ['User_2'], mediaType: 'image' });
 
       expect(result.items).toHaveLength(1);
       expect(result.total).toBe(1);

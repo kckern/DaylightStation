@@ -93,7 +93,7 @@ bindsym $mod+Shift+e exec swaynag -t warning -m "Exit sway?" -B "Yes" "swaymsg e
 [daemon]
 DefaultSession=sway.desktop
 AutomaticLoginEnable=True
-AutomaticLogin=kckern
+AutomaticLogin=user_1
 ```
 
 **Path:** `/var/lib/AccountsService/users/kckern`

@@ -12,12 +12,12 @@
 
 ## Why this exists
 
-Live transcript at `/usr/src/app/media/logs/agents/health-coach/2026-05-06/kckern/012927-301-a51f0bce.json` shows the deployed chat-fix working — the model picked `metric_trajectory` from the cheatsheet, with the resolved `userId: 'kckern'` auto-injected. But the call **errored**:
+Live transcript at `/usr/src/app/media/logs/agents/health-coach/2026-05-06/kckern/012927-301-a51f0bce.json` shows the deployed chat-fix working — the model picked `metric_trajectory` from the cheatsheet, with the resolved `userId: 'user_1'` auto-injected. But the call **errored**:
 
 ```json
 {
   "name": "metric_trajectory",
-  "args": { "metric": "weight_lbs", "period": "last_30d", "userId": "kckern" },
+  "args": { "metric": "weight_lbs", "period": "last_30d", "userId": "user_1" },
   "ok": false,
   "result": { "error": "..." }
 }

@@ -11,7 +11,7 @@ const makeStore = () => {
 const record = (id = '20260602143012') => ({
   version: 1,
   race: { id, date: '2026-06-02', mode: 'simultaneous', win_condition: 'distance', goal_m: 3000 },
-  participants: { milo: { display_name: 'Milo', final_distance_m: 3000, placement: 1, distance_series: '[1000,2000,3000]' } }
+  participants: { user_3: { display_name: 'User_3', final_distance_m: 3000, placement: 1, distance_series: '[1000,2000,3000]' } }
 });
 
 beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cgrace-')); });
@@ -29,7 +29,7 @@ describe('YamlCycleRaceDatastore', () => {
     await ds.save(record(), 'default');
     const got = await ds.findById('20260602143012', 'default');
     expect(got.race.id).toBe('20260602143012');
-    expect(got.participants.milo.final_distance_m).toBe(3000);
+    expect(got.participants.user_3.final_distance_m).toBe(3000);
   });
   it('returns null for a missing id', async () => {
     const ds = makeStore();

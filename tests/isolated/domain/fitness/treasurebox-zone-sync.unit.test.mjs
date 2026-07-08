@@ -5,13 +5,13 @@ describe('TreasureBox zone update', () => {
     // Simulate: raw zone is 'active', committed (hysteresis) zone is 'warm'
     const mockZoneProfileStore = {
       getZoneState: vi.fn((userId) => {
-        if (userId === 'alan') return { zoneId: 'warm', zoneName: 'Warm', zoneColor: '#ffaa00' };
+        if (userId === 'user_4') return { zoneId: 'warm', zoneName: 'Warm', zoneColor: '#ffaa00' };
         return null;
       })
     };
 
     const rawZone = { id: 'active', name: 'Active', color: '#00cc00', min: 100 };
-    const committedZone = mockZoneProfileStore.getZoneState('alan');
+    const committedZone = mockZoneProfileStore.getZoneState('user_4');
 
     // The fix: use committed zone when available
     const finalZoneId = committedZone?.zoneId || rawZone.id;

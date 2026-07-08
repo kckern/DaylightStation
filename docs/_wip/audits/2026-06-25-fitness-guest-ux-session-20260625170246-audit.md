@@ -9,7 +9,7 @@
 
 ## Context — who the "guest" was
 
-The configured roster includes the **grandparents — "Grannie" (`grannie`) and "Grandpa" (`grandpa-kern`)** — the de-facto guests of this household. Grannie's config carries `hrDeviceIds: ["null"]`: she has **no permanently-bound strap**, so any strap she puts on arrives at the app as an *unregistered* device. In this session that strap was **device `10266`**, and it became the center of every guest-facing failure below.
+The configured roster includes the **grandparents — "Grannie" (`grannie`) and "Grandpa" (`user_10`)** — the de-facto guests of this household. Grannie's config carries `hrDeviceIds: ["null"]`: she has **no permanently-bound strap**, so any strap she puts on arrives at the app as an *unregistered* device. In this session that strap was **device `10266`**, and it became the center of every guest-facing failure below.
 
 ## Issues at a glance
 

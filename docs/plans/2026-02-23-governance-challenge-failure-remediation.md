@@ -336,7 +336,7 @@ Add to `tests/unit/fitness/persistence-validation.test.mjs`:
     const series = {
       'alice:hr': [80, 85, 90, 88, 92, 95],           // real data — keep
       'bike:7153:rotations': [0, 0, 0, null, null],    // all zero/null — drop
-      'bike:28812:rotations': [0, null, 0, null, 0],   // all zero/null — drop
+      'bike:90003:rotations': [0, null, 0, null, 0],   // all zero/null — drop
       'bike:49904:rotations': [0, 0, 5, 10, 15, 20],   // has real data — keep
     };
     const { encodedSeries } = pm.encodeSeries(series);
@@ -344,7 +344,7 @@ Add to `tests/unit/fitness/persistence-validation.test.mjs`:
     expect(encodedSeries).toHaveProperty('alice:hr');
     expect(encodedSeries).toHaveProperty('bike:49904:rotations');
     expect(encodedSeries).not.toHaveProperty('bike:7153:rotations');
-    expect(encodedSeries).not.toHaveProperty('bike:28812:rotations');
+    expect(encodedSeries).not.toHaveProperty('bike:90003:rotations');
   });
 ```
 
@@ -423,7 +423,7 @@ describe('_consolidateEvents — voice memo consolidation', () => {
       startTime: now - 120000,
       endTime: now,
       roster: [{ id: 'alice', name: 'Alice' }],
-      deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+      deviceAssignments: [{ deviceId: '90001', userId: 'alice' }],
       timeline: {
         timebase: { tickCount: 6 },
         series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
@@ -575,27 +575,27 @@ The `buildParticipantsForPersist()` function at line 157 iterates `safeRoster` b
       startTime: now - 120000,
       endTime: now,
       roster: [
-        { id: 'kckern', name: 'KC Kern', isPrimary: true, hrDeviceId: '40475' },
-        { id: 'felix', name: 'Felix', hrDeviceId: '28688' },
-        { id: 'milo', name: 'Milo', hrDeviceId: '28812' },
-        { id: 'alan', name: 'Alan', hrDeviceId: '28676' },
-        { id: 'soren', name: 'Soren', isExempt: true, hrDeviceId: '7153' }
+        { id: 'user_1', name: 'User_1', isPrimary: true, hrDeviceId: '40475' },
+        { id: 'user_2', name: 'User_2', hrDeviceId: '90001' },
+        { id: 'user_3', name: 'User_3', hrDeviceId: '90003' },
+        { id: 'user_4', name: 'User_4', hrDeviceId: '28676' },
+        { id: 'user_5', name: 'User_5', isExempt: true, hrDeviceId: '7153' }
       ],
       deviceAssignments: [
-        { deviceId: '40475', occupantId: 'kckern' },
-        { deviceId: '28688', occupantId: 'felix' },
-        { deviceId: '28812', occupantId: 'milo' },
-        { deviceId: '28676', occupantId: 'alan' },
-        { deviceId: '7153', occupantId: 'soren' }
+        { deviceId: '40475', occupantId: 'user_1' },
+        { deviceId: '90001', occupantId: 'user_2' },
+        { deviceId: '90003', occupantId: 'user_3' },
+        { deviceId: '28676', occupantId: 'user_4' },
+        { deviceId: '7153', occupantId: 'user_5' }
       ],
       timeline: {
         timebase: { tickCount: 6 },
         series: {
-          'user:kckern:heart_rate': [100, 110, 120, 130, 140, 144],
-          'user:felix:heart_rate': [120, 130, 140, 150, 160, 166],
-          'user:milo:heart_rate': [130, 140, 150, 160, 170, 172],
-          'user:alan:heart_rate': [110, 120, 130, 140, 150, 159],
-          'user:soren:heart_rate': [90, 95, 100, 110, 120, 125]
+          'user:user_1:heart_rate': [100, 110, 120, 130, 140, 144],
+          'user:user_2:heart_rate': [120, 130, 140, 150, 160, 166],
+          'user:user_3:heart_rate': [130, 140, 150, 160, 170, 172],
+          'user:user_4:heart_rate': [110, 120, 130, 140, 150, 159],
+          'user:user_5:heart_rate': [90, 95, 100, 110, 120, 125]
         }
       }
     };
@@ -607,11 +607,11 @@ The `buildParticipantsForPersist()` function at line 157 iterates `safeRoster` b
     const participants = buildParticipantsForPersist(sessionData.roster, sessionData.deviceAssignments);
 
     expect(Object.keys(participants)).toHaveLength(5);
-    expect(participants).toHaveProperty('kckern');
-    expect(participants).toHaveProperty('felix');
-    expect(participants).toHaveProperty('milo');
-    expect(participants).toHaveProperty('alan');
-    expect(participants).toHaveProperty('soren');
+    expect(participants).toHaveProperty('user_1');
+    expect(participants).toHaveProperty('user_2');
+    expect(participants).toHaveProperty('user_3');
+    expect(participants).toHaveProperty('user_4');
+    expect(participants).toHaveProperty('user_5');
     expect(participants.kckern.is_primary).toBe(true);
   });
 ```

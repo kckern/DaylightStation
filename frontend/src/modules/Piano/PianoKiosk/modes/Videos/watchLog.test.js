@@ -26,7 +26,7 @@ describe('buildWatchLogPayload', () => {
     expect(p).not.toHaveProperty('engaged');
   });
   it('includes userId and engaged when supplied', () => {
-    const p = buildWatchLogPayload({ contentId: 'plex:9', seconds: 30, duration: 120, reason: 'progress', userId: 'milo', engaged: true });
-    expect(p).toMatchObject({ userId: 'milo', engaged: true });
+    const p = buildWatchLogPayload({ contentId: 'plex:9', seconds: 30, duration: 120, reason: 'progress', userId: 'user_3', engaged: true });
+    expect(p).toMatchObject({ userId: 'user_3', engaged: true });
   });
 });

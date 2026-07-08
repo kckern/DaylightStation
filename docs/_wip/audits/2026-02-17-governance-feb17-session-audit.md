@@ -17,11 +17,11 @@ Follow-up verification of governance fixes against the Feb 17 session, which had
 
 | User | Active Threshold | Warm Threshold | Status |
 |------|-----------------|----------------|--------|
-| Alan | 125 | 150 | Active participant |
-| Milo | 120 | 140 | Active participant |
-| Felix | 120 | 140 | Active participant |
-| Soren | 125 | 150 | Intermittent (exempt user) |
-| kckern | 120 (default) | — | Background, not governed |
+| User_4 | 125 | 150 | Active participant |
+| User_3 | 120 | 140 | Active participant |
+| User_2 | 120 | 140 | Active participant |
+| User_5 | 125 | 150 | Intermittent (exempt user) |
+| user_1 | 120 (default) | — | Background, not governed |
 
 ---
 
@@ -119,18 +119,18 @@ Every `governance.phase_change` that creates a lock has `lockRowCount: 1` and `a
 
 ### Root Cause
 
-Alan's HR oscillates at 119-127, straddling his active threshold of 125. Milo's HR oscillates at 117-127, straddling his threshold of 120. Every time either drops 1-2 BPM below threshold, the governance engine triggers a warning. When they cross back above, the warning dismisses.
+User_4's HR oscillates at 119-127, straddling his active threshold of 125. User_3's HR oscillates at 117-127, straddling his threshold of 120. Every time either drops 1-2 BPM below threshold, the governance engine triggers a warning. When they cross back above, the warning dismisses.
 
 ### Evidence: Zone Drop to Cool Events
 
 | Count | User | HR Range | Phase When Dropped |
 |-------|------|----------|--------------------|
-| 14 | Alan | 107-124 | 11 during warning, 3 during unlocked |
-| 6 | Milo | 117-119 | 4 during warning, 2 during unlocked |
-| 3 | Felix | 0-119 | all during warning |
-| 1 | Soren | 0 | unlocked (absent, hr:0) |
+| 14 | User_4 | 107-124 | 11 during warning, 3 during unlocked |
+| 6 | User_3 | 117-119 | 4 during warning, 2 during unlocked |
+| 3 | User_2 | 0-119 | all during warning |
+| 1 | User_5 | 0 | unlocked (absent, hr:0) |
 
-Alan accounts for 56% of all cool zone drops, with HR consistently at 122-124 — just 1-3 BPM below his 125 threshold.
+User_4 accounts for 56% of all cool zone drops, with HR consistently at 122-124 — just 1-3 BPM below his 125 threshold.
 
 ### Warning-to-Unlock Cycle Timing
 
@@ -148,28 +148,28 @@ Alan accounts for 56% of all cool zone drops, with HR consistently at 122-124 �
 
 ### The Problem
 
-The governance "all" rule was supposed to exempt only the configured exempt user (Soren) from requirements. Instead, the exempt user's above-threshold status masked ANY single non-exempt user dropping below threshold.
+The governance "all" rule was supposed to exempt only the configured exempt user (User_5) from requirements. Instead, the exempt user's above-threshold status masked ANY single non-exempt user dropping below threshold.
 
 ### Mechanism
 
 In `GovernanceEngine._evaluateZoneRequirement()`:
 
 ```
-metUsers     = ALL participants above threshold (including exempt Soren)
+metUsers     = ALL participants above threshold (including exempt User_5)
 requiredCount = non-exempt participant count (effectiveCount)
 satisfied     = metUsers.length >= requiredCount  ← BUG
 ```
 
-With 4 participants (milo, felix, alan, soren-exempt):
-- `requiredCount = 3` (non-exempt: milo, felix, alan)
-- If Alan drops but Soren is above: `metUsers = [milo, felix, soren] = 3 ≥ 3 = SATISFIED`
-- Alan's drop silently ignored
+With 4 participants (user_3, user_2, user_4, user_5-exempt):
+- `requiredCount = 3` (non-exempt: user_3, user_2, user_4)
+- If User_4 drops but User_5 is above: `metUsers = [user_3, user_2, user_5] = 3 ≥ 3 = SATISFIED`
+- User_4's drop silently ignored
 
 ### Evidence
 
-At 01:35:56 Alan drops to cool (hr:107) during unlocked phase. No warning fires. Felix (hr:140) and Milo (hr:148) still above threshold. Soren (hr:159) above threshold pads `metUsers` to 3, satisfying `requiredCount:3`.
+At 01:35:56 User_4 drops to cool (hr:107) during unlocked phase. No warning fires. User_2 (hr:140) and User_3 (hr:148) still above threshold. User_5 (hr:159) above threshold pads `metUsers` to 3, satisfying `requiredCount:3`.
 
-Warning doesn't fire until 01:36:32 when Milo AND Felix also drop — then `metUsers = [soren] = 1 < 3`.
+Warning doesn't fire until 01:36:32 when User_3 AND User_2 also drop — then `metUsers = [user_5] = 1 < 3`.
 
 ### Fix Applied
 
@@ -208,7 +208,7 @@ Video paused at 01:25:50 during the **warning** phase (not locked). The video sh
 
 ### Possible Cause
 
-The trigger at 01:25:40 was Alan going from **fire to cool** with hr:0 — a device disconnection artifact, not a real HR drop. With Alan's device dropping (hr:0), the remaining 2 active participants (milo, felix) were above threshold but `requiredCount:3` with Alan counted as non-exempt. The warning fires, but something causes `media.pause()` to fire during warning rather than waiting for locked.
+The trigger at 01:25:40 was User_4 going from **fire to cool** with hr:0 — a device disconnection artifact, not a real HR drop. With User_4's device dropping (hr:0), the remaining 2 active participants (user_3, user_2) were above threshold but `requiredCount:3` with User_4 counted as non-exempt. The warning fires, but something causes `media.pause()` to fire during warning rather than waiting for locked.
 
 **Needs further investigation:** Check if the playback pause code checks for `videoLocked` or `phase !== 'unlocked'`.
 
@@ -308,7 +308,7 @@ Changed `_evaluateZoneRequirement` and `buildChallengeSummary` to count only non
 
 19 warning flashes in 33 minutes is too disruptive. Options:
 1. **Hysteresis buffer:** Require HR to be ≥N BPM below threshold for M seconds before triggering warning
-2. **Raise thresholds:** Alan's active=125 with HR oscillating 119-127 is too tight
+2. **Raise thresholds:** User_4's active=125 with HR oscillating 119-127 is too tight
 3. **Warning cooldown:** After dismissing a warning, don't re-warn for N seconds
 
 ### P3: Premature Warning-Phase Pause

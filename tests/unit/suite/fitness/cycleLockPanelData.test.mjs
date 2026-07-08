@@ -6,7 +6,7 @@ describe('computeCycleLockPanelData rounding', () => {
     type: 'cycle',
     cycleState: 'locked',
     lockReason: 'maintain',
-    rider: { id: 'felix', name: 'Felix' },
+    rider: { id: 'user_2', name: 'User_2' },
     currentPhase: { hiRpm: 84.7172, loRpm: 63.4 }
   };
 

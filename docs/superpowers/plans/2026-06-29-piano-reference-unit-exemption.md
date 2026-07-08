@@ -134,8 +134,8 @@ describe('reference units', () => {
   });
 
   it('excludes reference episodes from the co-progress count', async () => {
-    // milo watched 4 lessons + 5 reference; felix watched none. buffer 5.
-    // Counting reference would make milo 9 ahead (lock); excluding it leaves 4 (no lock).
+    // user_3 watched 4 lessons + 5 reference; user_2 watched none. buffer 5.
+    // Counting reference would make user_3 9 ahead (lock); excluding it leaves 4 (no lock).
     const lessons = Array.from({ length: 6 }, (_, i) => ({
       plex: String(400 + i), label: `Lesson ${i + 1}`, itemIndex: i + 1, parentId: '20',
     }));
@@ -329,14 +329,14 @@ In `frontend/src/modules/Piano/PianoKiosk/modes/Videos/usePianoCoursePlayable.te
 ```javascript
   it('exposes referenceUnitIds from response', async () => {
     api.mockResolvedValue({ items: [], info: {}, isSequential: true, referenceUnitIds: ['30', '40'] });
-    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'user_3'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.referenceUnitIds).toEqual(['30', '40']);
   });
 
   it('exposes referenceUnitIds: [] when not present in response', async () => {
     api.mockResolvedValue({ items: [], info: {}, isSequential: true });
-    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'user_3'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.referenceUnitIds).toEqual([]);
   });

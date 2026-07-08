@@ -113,13 +113,13 @@ if (Array.isArray(sessionData.timeline?.events)) {
 
 **Sample overlay.lock_rows_changed spam (from YAML):**
 ```
-02:32:14.064 - Felix joins
-02:32:27.995 - Felix joins again (duplicate)
-02:32:34.073 - Milo joins (1 second after)
-02:32:37.250 - Alan joins (3 seconds after)
-02:32:37.541 - Alan leaves (0.3 seconds after!)
-02:32:38.704 - Alan joins (1 second after)
-02:33:07.108 - Felix leaves
+02:32:14.064 - User_2 joins
+02:32:27.995 - User_2 joins again (duplicate)
+02:32:34.073 - User_3 joins (1 second after)
+02:32:37.250 - User_4 joins (3 seconds after)
+02:32:37.541 - User_4 leaves (0.3 seconds after!)
+02:32:38.704 - User_4 joins (1 second after)
+02:33:07.108 - User_2 leaves
 ...
 [20 total events in 28 minutes, many within 1-5 seconds]
 ```

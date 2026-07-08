@@ -83,7 +83,7 @@ FolderAdapter separates concerns between showing menus and building playback que
 **`getList()`** - For menu/UI display
 - Returns ALL items (only filters `active: false`)
 - Enriches items with watch state for UI indicators (progress %, "watched" badges)
-- Use case: Show "Felix" in FHE menu even if his assigned video was watched
+- Use case: Show "User_2" in FHE menu even if his assigned video was watched
 
 **`resolvePlayables()`** - For automated playback queues
 - Filters out: watched (>90%), on hold, past skip_after, wait_until >2 days

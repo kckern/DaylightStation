@@ -343,7 +343,7 @@ devices:
     os_control:
       provider: ssh
       host: 172.17.0.1
-      user: kckern
+      user: user_1
       port: 22
       commands:
         volume: "amixer set Master {level}%"

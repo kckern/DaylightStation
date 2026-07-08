@@ -8,11 +8,11 @@ const LADDER = {
   week: { start: '2026-06-29', end: '2026-07-06' },
   standings: [
     { userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 2 },
-    { userId: 'milo', bestValue: 190.4, raceId: 'r2', attempts: 1 }
+    { userId: 'user_3', bestValue: 190.4, raceId: 'r2', attempts: 1 }
   ],
   allTimeRecord: { userId: 'dad', bestValue: 141, raceId: 'r0', date: '2026-05-12' }
 };
-const names = { dad: 'Dad', milo: 'Milo' };
+const names = { dad: 'Dad', user_3: 'User_3' };
 const resolveName = (id) => names[id] || id;
 
 afterEach(cleanup);
@@ -23,7 +23,7 @@ describe('FeaturedCourseCard', () => {
     expect(screen.getByTestId('featured-course-card')).toBeTruthy();
     expect(screen.getByText('Sprint 1500')).toBeTruthy();
     expect(screen.getByTestId('featured-row-dad').textContent).toContain('2:30');
-    expect(screen.getByTestId('featured-row-milo').textContent).toContain('3:10');
+    expect(screen.getByTestId('featured-row-user_3').textContent).toContain('3:10');
     expect(screen.getByText(/2:21/).textContent).toBeTruthy(); // all-time record
     expect(screen.getByTestId('featured-ride')).toBeTruthy();
   });

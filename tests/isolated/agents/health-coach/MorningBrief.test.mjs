@@ -18,7 +18,7 @@ describe('MorningBrief', () => {
       { name: 'get_user_goals', execute: async (p) => { calls.push('goals'); return { goals: { calories: 2000 } }; } },
       { name: 'get_today_nutrition', execute: async (p) => { calls.push('today'); return { logged: false }; } },
     ];
-    const gathered = await brief.gather({ tools: mockTools, userId: 'kckern', memory: { serialize: () => '' }, logger: console });
+    const gathered = await brief.gather({ tools: mockTools, userId: 'user_1', memory: { serialize: () => '' }, logger: console });
     expect(calls.sort()).toEqual(['goals', 'recon', 'today', 'weight']);
     expect(gathered.reconciliation).toBeTruthy();
     expect(gathered.weight).toBeTruthy();
@@ -33,7 +33,7 @@ describe('MorningBrief', () => {
       { name: 'get_reconciliation_summary', execute: async () => ({ avgAccuracy: 0.53, days: [] }) },
       { name: 'get_weight_trend', execute: async () => ({ current: { lbs: 185 } }) },
     ];
-    const gathered = await brief.gather({ tools: mockTools, userId: 'kckern', memory: { serialize: () => '' }, logger: { warn: () => {} } });
+    const gathered = await brief.gather({ tools: mockTools, userId: 'user_1', memory: { serialize: () => '' }, logger: { warn: () => {} } });
     expect(gathered.reconciliation).toBeTruthy();
     expect(gathered.weight).toBeTruthy();
     expect(gathered.goals).toBe(null);
@@ -70,7 +70,7 @@ describe('MorningBrief', () => {
   it('act sets last_morning_brief in memory', async () => {
     const brief = new MorningBrief();
     const memory = { set: vi.fn() };
-    await brief.act({ should_send: true, text: 'test' }, { memory, userId: 'kckern', logger: console });
+    await brief.act({ should_send: true, text: 'test' }, { memory, userId: 'user_1', logger: console });
     expect(memory.set.mock.calls.length).toBe(1);
     expect(memory.set.mock.calls[0][0]).toBe('last_morning_brief');
     // TTL should be 24h in ms
@@ -81,7 +81,7 @@ describe('MorningBrief', () => {
   it('act still sets memory when should_send is false', async () => {
     const brief = new MorningBrief();
     const memory = { set: vi.fn() };
-    await brief.act({ should_send: false }, { memory, userId: 'kckern', logger: { info: () => {} } });
+    await brief.act({ should_send: false }, { memory, userId: 'user_1', logger: { info: () => {} } });
     expect(memory.set.mock.calls.length).toBe(1);
     expect(memory.set.mock.calls[0][0]).toBe('last_morning_brief');
   });

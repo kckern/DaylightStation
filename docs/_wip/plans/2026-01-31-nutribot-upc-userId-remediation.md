@@ -37,7 +37,7 @@ it('passes userId (not conversationId) to nutriListStore.saveMany', async () => 
   });
 
   await useCase.execute({
-    userId: 'kckern',
+    userId: 'user_1',
     conversationId: 'telegram:b6898194425_c575596036',
     logUuid: 'abc123',
     portionFactor: 1,
@@ -46,7 +46,7 @@ it('passes userId (not conversationId) to nutriListStore.saveMany', async () => 
 
   expect(savedItems).not.toBeNull();
   expect(savedItems.length).toBeGreaterThan(0);
-  expect(savedItems[0].userId).toBe('kckern');
+  expect(savedItems[0].userId).toBe('user_1');
   expect(savedItems[0].chatId).toBe('telegram:b6898194425_c575596036');
 });
 ```
@@ -223,7 +223,7 @@ describe('userId validation', () => {
 
   it('allows valid userId without special characters', async () => {
     const items = [{
-      userId: 'kckern',
+      userId: 'user_1',
       label: 'Test Food',
       calories: 200,
       date: '2026-01-31',

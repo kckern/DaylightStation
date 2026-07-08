@@ -16,7 +16,7 @@ The DDD `/api/v1/list/folder/{key}` endpoint returns a different response struct
   "media_key": "FHE",
   "label": "FHE",
   "items": [{
-    "label": "Felix",
+    "label": "User_2",
     "uid": "75cdcd12-...",
     "folder": "FHE",
     "folder_color": "#9FA5C2",
@@ -35,8 +35,8 @@ The DDD `/api/v1/list/folder/{key}` endpoint returns a different response struct
   "label": "FHE",
   "items": [{
     "id": "plex:457381",
-    "title": "Felix",
-    "label": "Felix",
+    "title": "User_2",
+    "label": "User_2",
     "plex": "457381",
     "src": "plex",
     "uid": "75cdcd12-..."

@@ -48,16 +48,16 @@ describe('SelectUPCPortion', () => {
   describe('userId handling', () => {
     it('uses the passed userId parameter, not extracted from conversationId', async () => {
       await useCase.execute({
-        userId: 'kckern',  // This is the resolved username
+        userId: 'user_1',  // This is the resolved username
         conversationId: 'telegram:b6898194425_c575596036',
         logUuid: 'abc123',
         portionFactor: 1,
         messageId: '50',
       });
 
-      // findByUuid should be called with 'kckern', not 'c575596036'
+      // findByUuid should be called with 'user_1', not 'c575596036'
       expect(findByUuidCalledWith).not.toBeNull();
-      expect(findByUuidCalledWith.userId).toBe('kckern');
+      expect(findByUuidCalledWith.userId).toBe('user_1');
     });
 
     it('passes userId (not conversationId) to nutriListStore.saveMany', async () => {
@@ -68,7 +68,7 @@ describe('SelectUPCPortion', () => {
       });
 
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:b6898194425_c575596036',
         logUuid: 'abc123',
         portionFactor: 1,
@@ -77,7 +77,7 @@ describe('SelectUPCPortion', () => {
 
       expect(savedItems).not.toBeNull();
       expect(savedItems.length).toBeGreaterThan(0);
-      expect(savedItems[0].userId).toBe('kckern');
+      expect(savedItems[0].userId).toBe('user_1');
       expect(savedItems[0].chatId).toBe('telegram:b6898194425_c575596036');
     });
   });
@@ -86,7 +86,7 @@ describe('SelectUPCPortion', () => {
     it('updates message in-place with caption instead of deleting and resending', async () => {
       mockFoodLogStore.findByUuid = jest.fn().mockResolvedValue({
         id: 'abc123',
-        userId: 'kckern',
+        userId: 'user_1',
         status: 'pending',
         items: [{ label: 'Diet Coke', grams: 355, calories: 0, unit: 'g', amount: 1 }],
         meal: { date: '2026-02-12' },
@@ -94,7 +94,7 @@ describe('SelectUPCPortion', () => {
       });
 
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:b6898194425_c575596036',
         logUuid: 'abc123',
         portionFactor: 1,
@@ -123,14 +123,14 @@ describe('SelectUPCPortion', () => {
 
       mockFoodLogStore.findByUuid = jest.fn().mockResolvedValue({
         id: 'abc123',
-        userId: 'kckern',
+        userId: 'user_1',
         status: 'pending',
         items: [{ label: 'Diet Coke', grams: 355, calories: 0 }],
         meal: { date: '2026-02-12' },
       });
 
       await useCase.execute({
-        userId: 'kckern',
+        userId: 'user_1',
         conversationId: 'telegram:b6898194425_c575596036',
         logUuid: 'abc123',
         portionFactor: 1,

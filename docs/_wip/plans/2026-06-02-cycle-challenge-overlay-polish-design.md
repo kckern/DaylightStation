@@ -10,7 +10,7 @@ The cycle challenge feature (RPM-based, single-rider, multi-phase, with progress
 dimming and an HR-driven social boost) is functionally built and shipped. A round of visual
 polish and bug-fix requests was given verbally but the written plan was lost; this spec
 re-captures those requests, grounded in the current code and a real session log
-(`media/logs/fitness/2026-06-03T02-32-44.jsonl`, a 4-phase success run by rider `felix`
+(`media/logs/fitness/2026-06-03T02-32-44.jsonl`, a 4-phase success run by rider `user_2`
 that exercised ramp-timeout and health locks).
 
 Five work items, plus one cleanup. Most of the underlying data and plumbing already exist;
@@ -122,7 +122,7 @@ already has a `type === 'cycle'` contributor branch. The logs show
   evaluation before the challenge is cleared (cooldown nulls `activeChallenge`), so the toast
   tracker never observes `status: 'success'` for that id. Ensure the success snapshot is
   emitted for at least one evaluation tick before clearing.
-- Give `buildChallengeToast` a **cycle-specific subtitle** (e.g. "Felix completed 4 phases")
+- Give `buildChallengeToast` a **cycle-specific subtitle** (e.g. "User_2 completed 4 phases")
   instead of the HR "X of Y people reached zone" text, which is meaningless for a cycle.
 
 ## 6. Cleanup — delete the stale overlay test

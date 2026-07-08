@@ -203,7 +203,7 @@ test('buildSlug prefers the primary media item over earlier background audio (ES
   const data = {
     sessionId: '20260625170246',
     session: { duration_seconds: 1825 },
-    participants: { 'device:10266': {}, kckern: {}, milo: {}, felix: {} },
+    participants: { 'device:10266': {}, user_1: {}, user_3: {}, user_2: {} },
     summary: {
       media: [
         { showTitle: 'ESPN', mediaType: 'video', primary: null },          // started first, NOT primary
@@ -211,14 +211,14 @@ test('buildSlug prefers the primary media item over earlier background audio (ES
       ]
     }
   };
-  assert.equal(buildSlug(data), '20260625170246_30m_kckern-milo-felix_game-cycling');
+  assert.equal(buildSlug(data), '20260625170246_30m_kckern-user_3-felix_game-cycling');
 });
 
 test('buildSlug drops the redundant date prefix (sessionId already carries the date)', () => {
   const data = {
     sessionId: '20260626151907',
     session: { duration_seconds: 2010 },
-    participants: { kckern: {}, felix: {} },
+    participants: { user_1: {}, user_2: {} },
     summary: { media: [{ showTitle: 'Insanity Max:30', primary: true }] }
   };
   const slug = buildSlug(data);
@@ -239,9 +239,9 @@ test('buildSlug omits users/duration segments when unavailable', () => {
 });
 
 test('participantSlug excludes device:* pseudo-ids and preserves order', () => {
-  assert.equal(participantSlug({ participants: { 'device:1': {}, kckern: {}, 'grandpa-kern': {}, soren: {} } }),
-    'kckern-grandpa-kern-soren');
-  assert.equal(participantSlug({ summary: { participants: { milo: {} } } }), 'milo');
+  assert.equal(participantSlug({ participants: { 'device:1': {}, user_1: {}, 'user_10': {}, user_5: {} } }),
+    'kckern-user_10-user_5');
+  assert.equal(participantSlug({ summary: { participants: { user_3: {} } } }), 'user_3');
   assert.equal(participantSlug({}), '');
 });
 

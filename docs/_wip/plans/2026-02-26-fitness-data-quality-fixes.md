@@ -516,7 +516,7 @@ git commit -m "feat(fitness): add backfill script for media ID namespacing"
 
 **Problem:** Two distinct bugs cause wrong HR data at the start of fitness sessions:
 
-1. **Stale device HR:** BLE devices send a cached first reading from a previous session (e.g., Felix connects at 163 BPM, immediately drops to 88). Already partially mitigated by 3-reading startup discard (`FitnessSession.js:515-527`).
+1. **Stale device HR:** BLE devices send a cached first reading from a previous session (e.g., User_2 connects at 163 BPM, immediately drops to 88). Already partially mitigated by 3-reading startup discard (`FitnessSession.js:515-527`).
 
 2. **Phantom user HR:** `MetricsRecorder._stageUserEntry()` (line 331) falls back to `user.currentData.heartRate` via `??` coalesce. If a user was previously assigned a device, their `currentData` retains the old HR, which leaks into the new session's time series before the new device sends data.
 

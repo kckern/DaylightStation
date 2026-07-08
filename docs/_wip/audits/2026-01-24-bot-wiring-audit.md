@@ -176,7 +176,7 @@ All three bot routers (`nutribot.mjs`, `journalist.mjs`, `homebot.mjs`) now use 
 
 | Issue | Severity | Description |
 |-------|----------|-------------|
-| HandleSlashCommand missing `userId` | Medium | Hardcoded fallback to 'kckern' |
+| HandleSlashCommand missing `userId` | Medium | Hardcoded fallback to 'user_1' |
 | No input validation | Low | Use cases accept any shape without validation |
 
 ### 4.3 Homebot

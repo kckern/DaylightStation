@@ -25,13 +25,13 @@ function seededRng(seed) {
 function buildSession() {
   return {
     _deviceRouter: {
-      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix'] }]
+      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
     },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
     getActiveParticipantState: () => ({
-      participants: ['felix'],
-      zoneMap: { felix: 'active' },
+      participants: ['user_2'],
+      zoneMap: { user_2: 'active' },
       totalCount: 1
     })
   };
@@ -39,8 +39,8 @@ function buildSession() {
 
 function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } = {}) {
   return engine.evaluate({
-    activeParticipants: ['felix'],
-    userZoneMap: { felix: zone },
+    activeParticipants: ['user_2'],
+    userZoneMap: { user_2: zone },
     zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
     zoneInfoMap: { active: { id: 'active', name: 'Active' }, warm: { id: 'warm', name: 'Warm' } },
     totalCount: 1,
@@ -99,7 +99,7 @@ describe('GovernanceEngine cycle challenge dispatch', () => {
     expect(active).toBeTruthy();
     expect(active.type).toBe('cycle');
     expect(active.cycleState).toBe('init');
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
     expect(active.equipment).toBe('cycle_ace');
 
     // Tick 3: rider above min_rpm (30) while base_req is satisfied → init→ramp.

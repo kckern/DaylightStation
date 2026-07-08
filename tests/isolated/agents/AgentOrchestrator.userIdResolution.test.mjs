@@ -21,27 +21,27 @@ function makeOrch(configService = null) {
 
 describe('AgentOrchestrator userId resolution', () => {
   it('resolves userId="default" → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
     await orch.run('fake', 'hi', { userId: 'default' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('kckern');
+    expect(call.context.userId).toBe('user_1');
   });
 
   it('resolves missing userId → getHeadOfHousehold()', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
     await orch.run('fake', 'hi', {}); // no userId
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('kckern');
+    expect(call.context.userId).toBe('user_1');
   });
 
   it('passes through real userId untouched', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const { orch, agentRuntime } = makeOrch(cfg);
-    await orch.run('fake', 'hi', { userId: 'soren' });
+    await orch.run('fake', 'hi', { userId: 'user_5' });
     const call = agentRuntime.execute.mock.calls.at(-1)[0];
-    expect(call.context.userId).toBe('soren');
+    expect(call.context.userId).toBe('user_5');
     expect(cfg.getHeadOfHousehold).not.toHaveBeenCalled();
   });
 
@@ -62,7 +62,7 @@ describe('AgentOrchestrator userId resolution', () => {
   });
 
   it('logs the resolved userId in orchestrator.run', async () => {
-    const cfg = { getHeadOfHousehold: vi.fn(() => 'kckern') };
+    const cfg = { getHeadOfHousehold: vi.fn(() => 'user_1') };
     const logEvents = [];
     const agentRuntime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
     const orch = new AgentOrchestrator({
@@ -77,6 +77,6 @@ describe('AgentOrchestrator userId resolution', () => {
     await orch.run('fake', 'hi', { userId: 'default' });
     const runEvent = logEvents.find(e => e.event === 'orchestrator.run');
     expect(runEvent).toBeDefined();
-    expect(runEvent.data.userId).toBe('kckern');
+    expect(runEvent.data.userId).toBe('user_1');
   });
 });

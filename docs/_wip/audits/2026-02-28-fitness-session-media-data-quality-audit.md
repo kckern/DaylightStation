@@ -238,7 +238,7 @@ summary:
 
 | Session | Date | Duration | Participants | Coins | Finding |
 |---------|------|----------|-------------|-------|---------|
-| `20260228191219` | 2026-02-28 | 2.2m | 3 (Felix, Alan, Milo) | 13 | **Legitimate** — YAML has empty `events: []` and `media: []`. Short family session, no video loaded. |
+| `20260228191219` | 2026-02-28 | 2.2m | 3 (User_2, User_4, User_3) | 13 | **Legitimate** — YAML has empty `events: []` and `media: []`. Short family session, no video loaded. |
 | `20260204054123` | 2026-02-04 | 13.4m | 1 | 32 | Needs investigation |
 | `20260130190430` | 2026-01-30 | 12.7m | 1 | 176 | Needs investigation |
 | `20260128051015` | 2026-01-28 | 16.3m | 1 | 137 | Needs investigation |

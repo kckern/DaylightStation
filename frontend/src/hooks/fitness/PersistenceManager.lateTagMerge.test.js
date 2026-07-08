@@ -56,7 +56,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
   it('merges a 10-min Pikachu segment into a 5-min test-friend segment when test-friend is tagged late', async () => {
     // Build a sessionData that mirrors the FitnessSession.summary shape after
     // the scenario described in the task spec:
-    //   t0    .. t0+10m   Pikachu '#48291' on device 48291, 120 HR readings
+    //   t0    .. t0+10m   Pikachu '#90006' on device 90006, 120 HR readings
     //   t0+10m .. t0+15m  test-friend tagged onto same device, 60 HR readings
     // The Pikachu segment is 10 minutes — well past the 5-min threshold —
     // so the in-session GuestAssignmentService logged GUEST_REPLACED, not
@@ -83,21 +83,21 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: '#48291', name: 'Pikachu', isGuest: true, hrDeviceId: '48291' },
-        { profileId: 'test-friend', name: 'Test Friend', hrDeviceId: '48291' }
+        { profileId: '#90006', name: 'Pikachu', isGuest: true, hrDeviceId: '90006' },
+        { profileId: 'test-friend', name: 'Test Friend', hrDeviceId: '90006' }
       ],
       deviceAssignments: [
         // Live ledger only reflects the latest assignment on each device.
-        { deviceId: '48291', occupantId: 'test-friend', occupantName: 'Test Friend' }
+        { deviceId: '90006', occupantId: 'test-friend', occupantName: 'Test Friend' }
       ],
       entities: [
         // Per-device segment history. Pikachu segment ended status:'dropped'
         // (exceeded threshold). test-friend segment is the active one.
         {
           entityId: 'entity-pikachu-1',
-          profileId: '#48291',
+          profileId: '#90006',
           name: 'Pikachu',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart,
           endTime: sessionStart + 10 * 60 * 1000,
           status: 'dropped',
@@ -107,7 +107,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
           entityId: 'entity-test-friend-1',
           profileId: 'test-friend',
           name: 'Test Friend',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
@@ -121,7 +121,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
           tickCount: 180
         },
         series: {
-          'user:#48291:heart_rate': pikachuHr,
+          'user:#90006:heart_rate': pikachuHr,
           'user:test-friend:heart_rate': friendHr
         },
         events: []
@@ -163,18 +163,18 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: 'alice', name: 'Alice', hrDeviceId: '48291' },
-        { profileId: 'bob', name: 'Bob', hrDeviceId: '48291' }
+        { profileId: 'alice', name: 'Alice', hrDeviceId: '90006' },
+        { profileId: 'bob', name: 'Bob', hrDeviceId: '90006' }
       ],
       deviceAssignments: [
-        { deviceId: '48291', occupantId: 'bob', occupantName: 'Bob' }
+        { deviceId: '90006', occupantId: 'bob', occupantName: 'Bob' }
       ],
       entities: [
         {
           entityId: 'entity-alice-1',
           profileId: 'alice',
           name: 'Alice',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart,
           endTime: sessionStart + 10 * 60 * 1000,
           status: 'dropped',
@@ -184,7 +184,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
           entityId: 'entity-bob-1',
           profileId: 'bob',
           name: 'Bob',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
@@ -246,18 +246,18 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: '#48291', name: 'Pikachu', isGuest: true, hrDeviceId: '48291' },
-        { profileId: 'test-friend', name: 'Test Friend', hrDeviceId: '48291' }
+        { profileId: '#90006', name: 'Pikachu', isGuest: true, hrDeviceId: '90006' },
+        { profileId: 'test-friend', name: 'Test Friend', hrDeviceId: '90006' }
       ],
       deviceAssignments: [
-        { deviceId: '48291', occupantId: 'test-friend', occupantName: 'Test Friend' }
+        { deviceId: '90006', occupantId: 'test-friend', occupantName: 'Test Friend' }
       ],
       entities: [
         {
           entityId: 'entity-pikachu-1',
-          profileId: '#48291',
+          profileId: '#90006',
           name: 'Pikachu',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart,
           endTime: sessionStart + 10 * 60 * 1000,
           // KEY: the in-session grace-period flow already absorbed this
@@ -269,7 +269,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
           entityId: 'entity-test-friend-1',
           profileId: 'test-friend',
           name: 'Test Friend',
-          deviceId: '48291',
+          deviceId: '90006',
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
@@ -283,7 +283,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
           tickCount: 180
         },
         series: {
-          'user:#48291:heart_rate': pikachuHr,
+          'user:#90006:heart_rate': pikachuHr,
           'user:test-friend:heart_rate': mergedHr
         },
         events: []
@@ -310,7 +310,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / Decision §5)', 
     if (backfillEvent) {
       const transfers = backfillEvent.data?.transfers || [];
       const redundant = transfers.find(
-        t => t.fromOccupantId === '#48291' && t.toOccupantId === 'test-friend'
+        t => t.fromOccupantId === '#90006' && t.toOccupantId === 'test-friend'
       );
       expect(redundant).toBeUndefined();
       // Also assert no other spurious transfers — the only legitimate

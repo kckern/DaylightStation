@@ -474,7 +474,7 @@ When recovery attempts are exhausted and the player is in a non-playing state:
 | Issue | Log Evidence | Severity |
 |-------|-------------|----------|
 | Todoist API 410 | `todoist.activity.completed.error: Request failed with status code 410` | Low — deprecated API |
-| Fitness dashboard missing | `"No dashboard available for today" userId=KC Kern date=2026-02-27` | Low — config |
+| Fitness dashboard missing | `"No dashboard available for today" userId=User_1 date=2026-02-27` | Low — config |
 | Progress report < 10s | `"Invalid request: seconds < 10"` on Chrome | Low — edge case |
 | `plextraktsync` restart loop | `Restarting (1) 4 seconds ago` in `docker ps` | Unrelated |
 

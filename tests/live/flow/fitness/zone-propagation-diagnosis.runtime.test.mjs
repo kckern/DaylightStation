@@ -209,7 +209,7 @@ test.describe('Zone Propagation Diagnosis', () => {
       return;
     }
 
-    // Pick a non-primary device (not the first one, which is usually kckern)
+    // Pick a non-primary device (not the first one, which is usually user_1)
     const targetDevice = initial.simDevices.length > 1
       ? initial.simDevices[1]
       : initial.simDevices[0];

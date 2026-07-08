@@ -5,14 +5,14 @@ import CircularUserAvatar from './CircularUserAvatar.jsx';
 
 describe('CircularUserAvatar boostBadge', () => {
   it('renders a boost badge when boostBadge is provided', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" boostBadge="×1.5" />);
+    const { container } = render(<CircularUserAvatar name="User_2" boostBadge="×1.5" />);
     const badge = container.querySelector('.vital-boost-badge');
     expect(badge).not.toBeNull();
     expect(badge.textContent).toBe('×1.5');
   });
 
   it('renders no badge when boostBadge is absent', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" />);
+    const { container } = render(<CircularUserAvatar name="User_2" />);
     expect(container.querySelector('.vital-boost-badge')).toBeNull();
   });
 });
@@ -42,7 +42,7 @@ describe('CircularUserAvatar weakSignal', () => {
   });
 
   it('omits .weak-signal by default', () => {
-    const { container } = render(<CircularUserAvatar name="Felix" heartRate={120} />);
+    const { container } = render(<CircularUserAvatar name="User_2" heartRate={120} />);
     expect(container.querySelector('.circular-user-avatar.weak-signal')).toBeNull();
   });
 });

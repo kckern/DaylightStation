@@ -12,8 +12,8 @@ describe('GovernanceEngine._evaluateCycleChallenge — terminal-status guard', (
   let active;
   const ctx = {
     equipmentRpm: 100,
-    activeParticipants: ['kckern'],
-    userZoneMap: { kckern: 'hot' },
+    activeParticipants: ['user_1'],
+    userZoneMap: { user_1: 'hot' },
     baseReqSatisfiedForRider: true,
     baseReqSatisfiedGlobal: true
   };
@@ -28,7 +28,7 @@ describe('GovernanceEngine._evaluateCycleChallenge — terminal-status guard', (
       generatedPhases: [{ hiRpm: 50, loRpm: 38, rampSeconds: 10, maintainSeconds: 20 }],
       phaseProgressMs: 50000,
       totalPhases: 1,
-      rider: 'kckern',
+      rider: 'user_1',
       manualTrigger: true,
       selection: { init: { minRpm: 30 } },
       _lastCycleTs: Date.now() - 1000

@@ -26,7 +26,7 @@ Create file at `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/
 
 identity_mappings:
   telegram:
-    "575596036": kckern
+    "575596036": user_1
 ```
 
 **Step 2: Remove identity_mappings from system config**
@@ -40,7 +40,7 @@ In `/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/system/
 # -----------------------------------------------------------------------------
 identity_mappings:
   telegram:
-    "575596036": kckern
+    "575596036": user_1
 ```
 
 **Step 3: Commit data changes**
@@ -203,7 +203,7 @@ describe('ConfigService', () => {
           apps: {
             chatbots: {
               identity_mappings: {
-                telegram: { '575596036': 'kckern' }
+                telegram: { '575596036': 'user_1' }
               }
             }
           }
@@ -216,14 +216,14 @@ describe('ConfigService', () => {
       const chatbotsConfig = service.getHouseholdAppConfig('default', 'chatbots');
 
       expect(chatbotsConfig).toBeDefined();
-      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('user_1');
     });
 
     it('uses default household when not specified', () => {
       const service = new ConfigService(mockConfig);
       const chatbotsConfig = service.getHouseholdAppConfig(null, 'chatbots');
 
-      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('user_1');
     });
 
     it('returns null for non-existent app', () => {
@@ -446,11 +446,11 @@ describe('UserResolver', () => {
         return {
           identity_mappings: {
             telegram: {
-              '575596036': 'kckern',
+              '575596036': 'user_1',
               '123456789': 'kirk',
             },
             discord: {
-              '987654321': 'kckern',
+              '987654321': 'user_1',
             },
           },
         };
@@ -463,14 +463,14 @@ describe('UserResolver', () => {
     it('resolves telegram user to system user', () => {
       const resolver = new UserResolver(mockConfigService);
 
-      expect(resolver.resolveUser('telegram', '575596036')).toBe('kckern');
+      expect(resolver.resolveUser('telegram', '575596036')).toBe('user_1');
       expect(resolver.resolveUser('telegram', '123456789')).toBe('kirk');
     });
 
     it('resolves discord user to system user', () => {
       const resolver = new UserResolver(mockConfigService);
 
-      expect(resolver.resolveUser('discord', '987654321')).toBe('kckern');
+      expect(resolver.resolveUser('discord', '987654321')).toBe('user_1');
     });
 
     it('returns null for unknown platform user', () => {

@@ -29,13 +29,13 @@ function seededRng(seed) {
 function buildSession() {
   return {
     _deviceRouter: {
-      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix'] }]
+      getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2'] }]
     },
     getParticipantProfile: () => null,
     zoneProfileStore: null,
     getActiveParticipantState: () => ({
-      participants: ['felix'],
-      zoneMap: { felix: 'active' },
+      participants: ['user_2'],
+      zoneMap: { user_2: 'active' },
       totalCount: 1
     })
   };
@@ -77,8 +77,8 @@ const CYCLE_SELECTION_ID = 'default_0_0';
 // closure clock.
 function tick(engine, nowValue, { zone = 'active', rpm = 0, connected = true } = {}) {
   return engine.evaluate({
-    activeParticipants: ['felix'],
-    userZoneMap: { felix: zone },
+    activeParticipants: ['user_2'],
+    userZoneMap: { user_2: zone },
     zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
     zoneInfoMap: {
       active: { id: 'active', name: 'Active' },
@@ -106,11 +106,11 @@ function makeEngineWithActiveCycle(seed = 42) {
   // Manual trigger sets manualTrigger=true on the active challenge, which
   // makes the cycle SM advance via tickManualCycle() regardless of the
   // surrounding governance phase. It also bypasses the per-user cooldown
-  // and forces 'felix' as the rider.
+  // and forces 'user_2' as the rider.
   const result = engine.triggerChallenge({
     type: 'cycle',
     selectionId: CYCLE_SELECTION_ID,
-    riderId: 'felix'
+    riderId: 'user_2'
   });
   if (!result || result.success !== true) {
     throw new Error(
@@ -139,8 +139,8 @@ function runCadenceSequence(samples, seed = 42) {
   for (const sample of samples) {
     fixture.setNow(sample.ts);
     fixture.engine.evaluate({
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'warm' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: {
         active: { id: 'active', name: 'Active' },
@@ -241,8 +241,8 @@ describe('Cycle SM — cadence freshness', () => {
     // the engine clock and the cadence ts agree.
     setNow(1000);
     engine.evaluate({
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'warm' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 1,
@@ -258,8 +258,8 @@ describe('Cycle SM — cadence freshness', () => {
     while (engine._now() < 6500) {
       advance(200);
       engine.evaluate({
-        activeParticipants: ['felix'],
-        userZoneMap: { felix: 'warm' },
+        activeParticipants: ['user_2'],
+        userZoneMap: { user_2: 'warm' },
         zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
         zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
         totalCount: 1,
@@ -377,8 +377,8 @@ describe('Cycle SM — init↔ramp gate symmetry (Task 7)', () => {
         equipmentRpm: 60,                  // above minRpm=30
         baseReqSatisfiedForRider: false,   // HR-zone gate unmet
         baseReqSatisfiedGlobal: true,      // global gate met (avoids pause)
-        activeParticipants: ['felix'],
-        userZoneMap: { felix: 'cool' }
+        activeParticipants: ['user_2'],
+        userZoneMap: { user_2: 'cool' }
       });
       states.push(active.cycleState);
     }
@@ -398,8 +398,8 @@ describe('Cycle SM — init↔ramp gate symmetry (Task 7)', () => {
         equipmentRpm: 5,                   // well below minRpm=30
         baseReqSatisfiedForRider: false,
         baseReqSatisfiedGlobal: true,
-        activeParticipants: ['felix'],
-        userZoneMap: { felix: 'cool' }
+        activeParticipants: ['user_2'],
+        userZoneMap: { user_2: 'cool' }
       });
       if (active.cycleState === 'locked') break;
     }
@@ -463,7 +463,7 @@ describe('Cycle SM — filter state reset', () => {
     const result = engine.triggerChallenge({
       type: 'cycle',
       selectionId: CYCLE_SELECTION_ID,
-      riderId: 'felix'
+      riderId: 'user_2'
     });
     expect(result.success).toBe(true);
 
@@ -496,7 +496,7 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
     const result = engine.triggerChallenge({
       type: 'cycle',
       selectionId: CYCLE_SELECTION_ID,
-      riderId: 'felix'
+      riderId: 'user_2'
     });
     if (!result || result.success !== true) {
       throw new Error(`triggerChallenge failed: ${result?.reason || 'unknown'}`);
@@ -521,8 +521,8 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: phase.loRpm - 5, // below lo
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'warm' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'warm' },
       baseReqSatisfiedForRider: true,
       baseReqSatisfiedGlobal: true
     });
@@ -534,8 +534,8 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
     engine._latestInputs.equipmentCadenceMap = {
       cycle_ace: { rpm: phase.loRpm - 5, connected: true, ts: engine._now() }
     };
-    engine._latestInputs.activeParticipants = ['felix'];
-    engine._latestInputs.userZoneMap = { felix: 'warm' };
+    engine._latestInputs.activeParticipants = ['user_2'];
+    engine._latestInputs.userZoneMap = { user_2: 'warm' };
     const snap = engine.state?.challenge;
     expect(snap.cycleHealthPct).toBeLessThan(1);
     expect(snap.cycleHealthPct).toBeGreaterThan(0.9); // only ~200ms depleted from 3000ms
@@ -549,7 +549,7 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
       advance(200);
       engine._evaluateCycleChallenge(active, {
         equipmentRpm: phase.loRpm - 5,
-        activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+        activeParticipants: ['user_2'], userZoneMap: { user_2: 'warm' },
         baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
       });
     }
@@ -560,7 +560,7 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: phase.hiRpm + 5,
-      activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+      activeParticipants: ['user_2'], userZoneMap: { user_2: 'warm' },
       baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
     });
     expect(active.cycleHealthMs).toBeGreaterThan(drained);
@@ -575,7 +575,7 @@ describe('Cycle SM — health meter direct eval (maintain branch)', () => {
       advance(200); // 25 ticks × 200 ms = 5 s
       engine._evaluateCycleChallenge(active, {
         equipmentRpm: phase.loRpm - 5,
-        activeParticipants: ['felix'], userZoneMap: { felix: 'warm' },
+        activeParticipants: ['user_2'], userZoneMap: { user_2: 'warm' },
         baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true
       });
       if (active.cycleState === 'locked') break;
@@ -609,16 +609,16 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 80,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'warm' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'warm' },
       baseReqSatisfiedForRider: true,    // in zone
       baseReqSatisfiedGlobal: true
     });
 
     // _latestInputs is consulted by _buildChallengeSnapshot for boost
     // contributors; populate enough to keep the snapshot path happy.
-    engine._latestInputs.activeParticipants = ['felix'];
-    engine._latestInputs.userZoneMap = { felix: 'warm' };
+    engine._latestInputs.activeParticipants = ['user_2'];
+    engine._latestInputs.userZoneMap = { user_2: 'warm' };
     engine._latestInputs.equipmentCadenceMap = {
       cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
     };
@@ -636,14 +636,14 @@ describe('Cycle SM — baseReqSatisfiedForRider snapshot exposure', () => {
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 80,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'cool' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'cool' },
       baseReqSatisfiedForRider: false,   // out of zone
       baseReqSatisfiedGlobal: true
     });
 
-    engine._latestInputs.activeParticipants = ['felix'];
-    engine._latestInputs.userZoneMap = { felix: 'cool' };
+    engine._latestInputs.activeParticipants = ['user_2'];
+    engine._latestInputs.userZoneMap = { user_2: 'cool' };
     engine._latestInputs.equipmentCadenceMap = {
       cycle_ace: { rpm: 80, connected: true, ts: engine._now() }
     };
@@ -744,29 +744,29 @@ describe('Cycle SM — standing rider claim', () => {
   const SELECTION = { id: CYCLE_SELECTION_ID, equipment: 'cycle_ace', init: {}, hiRpmRange: [60, 60], segmentCount: [1, 1], segmentDurationSeconds: [2, 2], rampSeconds: [5, 5], loRpmRatio: 0.5 };
 
   it('uses the standing claim as the rider when one is set', () => {
-    const engine = makeEngine(42, { cycle_ace: 'felix' });
+    const engine = makeEngine(42, { cycle_ace: 'user_2' });
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
     expect(active.ok).not.toBe(false);
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
   });
 
   it('grants eligibility to a claimed rider not in eligible_users', () => {
-    const engine = makeEngine(42, { cycle_ace: 'kckern' });
-    expect(engine._getEligibleUsers('cycle_ace')).toContain('kckern');
+    const engine = makeEngine(42, { cycle_ace: 'user_1' });
+    expect(engine._getEligibleUsers('cycle_ace')).toContain('user_1');
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
-    expect(active.rider).toBe('kckern');
+    expect(active.rider).toBe('user_1');
   });
 
   it('falls back to random-from-eligible when no claim is set', () => {
     const engine = makeEngine(42, {});
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
   });
 
   it('forceRiderId takes precedence over a standing claim', () => {
-    const engine = makeEngine(42, { cycle_ace: 'milo' });
-    const active = engine._startCycleChallenge({ ...SELECTION }, { forceRiderId: 'felix' });
-    expect(active.rider).toBe('felix');
+    const engine = makeEngine(42, { cycle_ace: 'user_3' });
+    const active = engine._startCycleChallenge({ ...SELECTION }, { forceRiderId: 'user_2' });
+    expect(active.rider).toBe('user_2');
   });
 });
 
@@ -777,22 +777,22 @@ describe('Cycle SM — live rider swap on claim change', () => {
     const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
     engine.configure(POLICY);
     engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
-    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
-    expect(engine.challengeState.activeChallenge.rider).toBe('felix');
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_2');
 
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'milo' };
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
     nowValue += 200;
     engine.evaluate({
-      activeParticipants: ['felix', 'milo'],
-      userZoneMap: { felix: 'warm', milo: 'warm' },
+      activeParticipants: ['user_2', 'user_3'],
+      userZoneMap: { user_2: 'warm', user_3: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 2,
       equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
-      equipmentRiderMap: { cycle_ace: 'milo' }
+      equipmentRiderMap: { cycle_ace: 'user_3' }
     });
 
-    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
   });
 });
 
@@ -800,7 +800,7 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
   // A tired rider must be able to hand off mid-challenge — including while the
   // challenge is in maintain or health-locked. Previously the swap window was
   // gated to init / ramp@phase0, so a rider-change press during maintain/locked
-  // was silently dropped (the 2026-06-01 session: milo's claim at 02:55:05 was
+  // was silently dropped (the 2026-06-01 session: user_3's claim at 02:55:05 was
   // ignored because cycleState was 'maintain').
   const makeActiveCycle = (claim) => {
     let nowValue = 100000;
@@ -808,39 +808,39 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
     const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
     engine.configure(POLICY);
     engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
-    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
     // Make the incoming rider eligible via a standing claim (mirrors a real press).
     engine._latestInputs.equipmentRiderMap = { cycle_ace: claim };
     return { engine, active: engine.challengeState.activeChallenge, advance: (ms) => { nowValue += ms; } };
   };
 
   it('honors a swap during the maintain phase', () => {
-    const { engine, active } = makeActiveCycle('milo');
+    const { engine, active } = makeActiveCycle('user_3');
     active.cycleState = 'maintain';
     active.currentPhaseIndex = 1;
-    const res = engine.swapCycleRider('milo', { force: true });
+    const res = engine.swapCycleRider('user_3', { force: true });
     expect(res.success).toBe(true);
-    expect(active.rider).toBe('milo');
+    expect(active.rider).toBe('user_3');
     // New rider re-warms up from init.
     expect(active.cycleState).toBe('init');
   });
 
   it('honors a swap while health-locked (fresh legs take over a tired rider)', () => {
-    const { engine, active } = makeActiveCycle('milo');
+    const { engine, active } = makeActiveCycle('user_3');
     active.cycleState = 'locked';
     active.lockReason = 'health';
-    const res = engine.swapCycleRider('milo', { force: true });
+    const res = engine.swapCycleRider('user_3', { force: true });
     expect(res.success).toBe(true);
-    expect(active.rider).toBe('milo');
+    expect(active.rider).toBe('user_3');
     expect(active.cycleState).toBe('init');
   });
 
   it('rejects a swap once the challenge is terminal (success)', () => {
-    const { engine, active } = makeActiveCycle('milo');
+    const { engine, active } = makeActiveCycle('user_3');
     active.cycleState = 'success';
-    const res = engine.swapCycleRider('milo', { force: true });
+    const res = engine.swapCycleRider('user_3', { force: true });
     expect(res.success).toBe(false);
-    expect(active.rider).toBe('felix');
+    expect(active.rider).toBe('user_2');
   });
 
   it('reassigns the rider when the claim changes during maintain (the 02:55 bug)', () => {
@@ -849,23 +849,23 @@ describe('Cycle SM — tag-team swap mid-challenge (any non-terminal state)', ()
     const engine = new GovernanceEngine(session, { now: () => nowValue, random: seededRng(42) });
     engine.configure(POLICY);
     engine.setMedia({ id: 'v1', type: 'episode', labels: ['cardio'] });
-    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'felix' });
+    engine.triggerChallenge({ type: 'cycle', selectionId: CYCLE_SELECTION_ID, riderId: 'user_2' });
     const active = engine.challengeState.activeChallenge;
     active.cycleState = 'maintain'; // phase 0 maintain — old gate only allowed ramp@phase0
 
-    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'milo' };
+    engine._latestInputs.equipmentRiderMap = { cycle_ace: 'user_3' };
     nowValue += 200;
     engine.evaluate({
-      activeParticipants: ['felix', 'milo'],
-      userZoneMap: { felix: 'warm', milo: 'warm' },
+      activeParticipants: ['user_2', 'user_3'],
+      userZoneMap: { user_2: 'warm', user_3: 'warm' },
       zoneRankMap: { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 },
       zoneInfoMap: { warm: { id: 'warm', name: 'Warm' } },
       totalCount: 2,
       equipmentCadenceMap: { cycle_ace: { rpm: 70, connected: true, ts: nowValue } },
-      equipmentRiderMap: { cycle_ace: 'milo' }
+      equipmentRiderMap: { cycle_ace: 'user_3' }
     });
 
-    expect(engine.challengeState.activeChallenge.rider).toBe('milo');
+    expect(engine.challengeState.activeChallenge.rider).toBe('user_3');
   });
 });
 
@@ -911,8 +911,8 @@ describe('Cycle SM — locked cycle recovers from cadence despite unmet global b
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 90,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'cool' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'cool' },
       baseReqSatisfiedForRider: false,
       baseReqSatisfiedGlobal: false
     });
@@ -934,8 +934,8 @@ describe('Cycle SM — locked cycle recovers from cadence despite unmet global b
     advance(200);
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 90,
-      activeParticipants: ['felix'],
-      userZoneMap: { felix: 'cool' },
+      activeParticipants: ['user_2'],
+      userZoneMap: { user_2: 'cool' },
       baseReqSatisfiedForRider: false,
       baseReqSatisfiedGlobal: false
     });
@@ -965,11 +965,11 @@ describe('Cycle SM — never-started failure timeout', () => {
     );
     expect(failedEntry).toBeTruthy();
     expect(failedEntry.failReason).toBe('never_started');
-    expect(failedEntry.rider).toBe('felix');
+    expect(failedEntry.rider).toBe('user_2');
     expect(failedEntry.phasesCompleted).toBe(0);
 
     // The original never-started challenge must be cleared (engine moved on),
-    // not stuck in init-lock limbo. (felix is on cooldown after the fail, so no
+    // not stuck in init-lock limbo. (user_2 is on cooldown after the fail, so no
     // replacement cycle can re-fire with him as the only eligible rider.)
     expect(engine.challengeState.activeChallenge?.id).not.toBe(originalId);
   });

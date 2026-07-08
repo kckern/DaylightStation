@@ -38,7 +38,7 @@ const FitnessModuleMenu = ({ activeModuleMenuId, onModuleSelect, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Config-driven locks map (e.g. { dance_party: ['kckern','elizabeth'] }). A
+  // Config-driven locks map (e.g. { dance_party: ['user_1','user_9'] }). A
   // module is gated iff locks[id] is a non-empty array. Surfaced via the unified
   // fitness config (root + nested fitness block).
   const { fitnessConfiguration } = useFitness();

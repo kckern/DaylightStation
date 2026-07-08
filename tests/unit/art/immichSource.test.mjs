@@ -12,7 +12,7 @@ const asset = (over = {}) => ({
 const makeClient = () => ({
   getAlbums: vi.fn(async () => [{ id: 'alb1', albumName: 'Family Favorites' }]),
   getAlbum: vi.fn(async (id) => ({ id, assets: [asset({ id: 'a1' }), asset({ id: 'v1', type: 'VIDEO' })] })),
-  getPeople: vi.fn(async () => [{ id: 'per1', name: 'Felix' }]),
+  getPeople: vi.fn(async () => [{ id: 'per1', name: 'User_2' }]),
   getPersonAssets: vi.fn(async () => [asset({ id: 'a2' })]),
   smartSearch: vi.fn(async () => [asset({ id: 'a3' })]),
 });
@@ -39,13 +39,13 @@ describe('createImmichSource.resolveCandidates', () => {
   it('labels people + location on the title line and the date alone beneath (no dup date)', async () => {
     const client = makeClient();
     client.getAlbum = vi.fn(async () => ({ assets: [
-      asset({ id: 'p1', people: [{ name: 'Felix' }, { name: 'Milo' }] }),
+      asset({ id: 'p1', people: [{ name: 'User_2' }, { name: 'User_3' }] }),
     ] }));
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
     const c = await src.resolveCandidates({ source: 'immich', album: 'Family Favorites' });
-    expect(c[0].meta.title).toBe('Felix and Milo • Lisbon'); // people + location
+    expect(c[0].meta.title).toBe('User_2 and User_3 • Lisbon'); // people + location
     expect(c[0].meta.artist).toMatch(/15 Aug, 2019/);        // date only — no people, no city
-    expect(c[0].meta.artist).not.toMatch(/Lisbon|Felix/);    // place/people not duplicated below
+    expect(c[0].meta.artist).not.toMatch(/Lisbon|User_2/);    // place/people not duplicated below
     expect(c[0].meta.date).toBeNull();                       // folded into artist; not repeated
   });
 
@@ -89,7 +89,7 @@ describe('createImmichSource.resolveCandidates', () => {
   it('person selector resolves a name to id and fetches assets', async () => {
     const client = makeClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath });
-    const c = await src.resolveCandidates({ source: 'immich', person: 'Felix' });
+    const c = await src.resolveCandidates({ source: 'immich', person: 'User_2' });
     expect(client.getPersonAssets).toHaveBeenCalledWith('per1', 100, { withExif: true, withPeople: true });
     expect(c[0].id).toBe('immich:a2');
   });
@@ -151,11 +151,11 @@ describe('createImmichSource people selector', () => {
 
   const makePeopleClient = (over = {}) => ({
     getPeople: vi.fn(async () => ([
-      { id: 'felix-id', name: 'Felix' }, { id: 'milo-id', name: 'Milo' },
-      { id: 'alan-id', name: 'Alan' }, { id: 'soren-id', name: 'Soren' },
+      { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' },
+      { id: 'user_4-id', name: 'User_4' }, { id: 'user_5-id', name: 'User_5' },
     ])),
     searchMetadata: vi.fn(async ({ personIds }) => {
-      if (personIds.includes('felix-id') && personIds.includes('milo-id')) {
+      if (personIds.includes('user_2-id') && personIds.includes('user_3-id')) {
         return { items: [img('a1'), vid('v1')] };
       }
       return { items: [img('a1'), img('a2')] };
@@ -166,7 +166,7 @@ describe('createImmichSource people selector', () => {
   it('runs one search per pair, unions/dedupes, drops video, maps dims', async () => {
     const client = makePeopleClient();
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    const c = await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo', 'Alan', 'Soren'], minPeople: 2 });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
     expect(client.searchMetadata).toHaveBeenCalledTimes(6);
     expect(client.searchMetadata.mock.calls[0][0].personIds).toHaveLength(2);
     // exif (city/date) + people must be requested so the placard isn't just a day-period.
@@ -179,18 +179,18 @@ describe('createImmichSource people selector', () => {
   it('skips names that do not resolve and combines the rest', async () => {
     const client = makePeopleClient({
       getPeople: vi.fn(async () => ([
-        { id: 'felix-id', name: 'Felix' }, { id: 'milo-id', name: 'Milo' }, { id: 'alan-id', name: 'Alan' },
+        { id: 'user_2-id', name: 'User_2' }, { id: 'user_3-id', name: 'User_3' }, { id: 'user_4-id', name: 'User_4' },
       ])),
     });
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo', 'Alan', 'Soren'], minPeople: 2 });
+    await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3', 'User_4', 'User_5'], minPeople: 2 });
     expect(client.searchMetadata).toHaveBeenCalledTimes(3);
   });
 
   it('returns [] when fewer than minPeople resolve', async () => {
-    const client = makePeopleClient({ getPeople: vi.fn(async () => ([{ id: 'felix-id', name: 'Felix' }])) });
+    const client = makePeopleClient({ getPeople: vi.fn(async () => ([{ id: 'user_2-id', name: 'User_2' }])) });
     const src = createImmichSource({ client, fetchImageBytes: async () => Buffer.from('x'), proxyPath: '/api/v1/proxy/immich' });
-    const c = await src.resolveCandidates({ source: 'immich', people: ['Felix', 'Milo'], minPeople: 2 });
+    const c = await src.resolveCandidates({ source: 'immich', people: ['User_2', 'User_3'], minPeople: 2 });
     expect(c).toEqual([]);
     expect(client.searchMetadata).not.toHaveBeenCalled();
   });

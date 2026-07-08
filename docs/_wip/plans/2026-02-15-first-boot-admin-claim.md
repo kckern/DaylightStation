@@ -46,14 +46,14 @@ describe('AuthService.needsSetup()', () => {
   });
 
   test('returns true when profiles exist but none have password hashes', () => {
-    const profiles = new Map([['kckern', { username: 'kckern', roles: ['sysadmin'] }]]);
+    const profiles = new Map([['user_1', { username: 'user_1', roles: ['sysadmin'] }]]);
     const svc = buildService({ profiles });
     expect(svc.needsSetup()).toBe(true);
   });
 
   test('returns false when at least one user has a password hash', () => {
-    const profiles = new Map([['kckern', { username: 'kckern', roles: ['sysadmin'] }]]);
-    const loginData = { kckern: { password_hash: '$2b$10$abc...' } };
+    const profiles = new Map([['user_1', { username: 'user_1', roles: ['sysadmin'] }]]);
+    const loginData = { user_1: { password_hash: '$2b$10$abc...' } };
     const svc = buildService({ profiles, loginData });
     expect(svc.needsSetup()).toBe(false);
   });
@@ -132,16 +132,16 @@ describe('AuthService.claim()', () => {
   }
 
   test('creates login credentials and returns user info for valid profile', async () => {
-    const profiles = new Map([['kckern', { username: 'kckern', household_id: 'default', roles: ['sysadmin'] }]]);
+    const profiles = new Map([['user_1', { username: 'user_1', household_id: 'default', roles: ['sysadmin'] }]]);
     const { svc, dataService } = buildService({ profiles });
 
-    const result = await svc.claim('kckern', 'mypassword');
+    const result = await svc.claim('user_1', 'mypassword');
 
-    expect(result).toEqual({ username: 'kckern', householdId: 'default', roles: ['sysadmin'] });
+    expect(result).toEqual({ username: 'user_1', householdId: 'default', roles: ['sysadmin'] });
     expect(dataService.user.write).toHaveBeenCalledWith(
       'auth/login',
       expect.objectContaining({ password_hash: expect.any(String) }),
-      'kckern'
+      'user_1'
     );
   });
 
@@ -152,11 +152,11 @@ describe('AuthService.claim()', () => {
   });
 
   test('throws if setup is already complete (a user has a password)', async () => {
-    const profiles = new Map([['kckern', { username: 'kckern', household_id: 'default', roles: ['sysadmin'] }]]);
-    const loginData = { kckern: { password_hash: '$2b$10$existing' } };
+    const profiles = new Map([['user_1', { username: 'user_1', household_id: 'default', roles: ['sysadmin'] }]]);
+    const loginData = { user_1: { password_hash: '$2b$10$existing' } };
     const { svc } = buildService({ profiles, loginData });
 
-    await expect(svc.claim('kckern', 'newpass')).rejects.toThrow('Setup already complete');
+    await expect(svc.claim('user_1', 'newpass')).rejects.toThrow('Setup already complete');
   });
 });
 ```
@@ -462,7 +462,7 @@ git commit -m "feat(auth): add first-boot claim flow to LoginScreen"
 
 ### Task 6: Manual smoke test
 
-**Step 1: Verify no login.yml exists for kckern**
+**Step 1: Verify no login.yml exists for user_1**
 
 ```bash
 ls data/users/kckern/auth/login.yml  # Should not exist
@@ -477,8 +477,8 @@ Open the admin app in browser. Should see:
 
 **Step 3: Enter username and continue**
 
-- Type `kckern`, click Continue
-- Should see: "Setting password for **kckern**", password field with toggle, "Set Password & Sign In" button
+- Type `user_1`, click Continue
+- Should see: "Setting password for **user_1**", password field with toggle, "Set Password & Sign In" button
 
 **Step 4: Set password and sign in**
 

@@ -487,7 +487,7 @@ const normalized = normalizeName(rawName || String(idx));
 
 But `userZoneProgress` stores names as-is from the user object (not normalized).
 
-If the name is "Alan" in `userZoneProgress` but the lookup uses "alan" (normalized), the lookup fails.
+If the name is "User_4" in `userZoneProgress` but the lookup uses "user_4" (normalized), the lookup fails.
 
 ### Additional Issue: `showBar` is False in Max Zone
 

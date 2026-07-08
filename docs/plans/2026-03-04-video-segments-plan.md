@@ -257,7 +257,7 @@ The immich item (starting at line 17) currently has `params`, `exclude`, `timeFi
       effect: kenburns
       zoom: 1.2
       transition: crossfade
-      focusPerson: Alan
+      focusPerson: User_4
       showMetadata: true
 ```
 

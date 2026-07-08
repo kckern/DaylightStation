@@ -14,10 +14,10 @@ describe('new launch model', () => {
   });
 
   it('loadLaunch resumes + persists for the user', () => {
-    expect(loadLaunch('soren')).toEqual({ action: 'resume', persist: true, userId: 'soren' });
+    expect(loadLaunch('user_5')).toEqual({ action: 'resume', persist: true, userId: 'user_5' });
   });
 
   it('claimLaunch keeps the fresh game + persists for the user', () => {
-    expect(claimLaunch('milo')).toEqual({ action: 'fresh', persist: true, userId: 'milo' });
+    expect(claimLaunch('user_3')).toEqual({ action: 'fresh', persist: true, userId: 'user_3' });
   });
 });

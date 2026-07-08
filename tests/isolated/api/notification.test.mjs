@@ -39,11 +39,11 @@ describe('Notification API Router', () => {
 
   describe('GET /notification/preferences', () => {
     it('returns user preferences', async () => {
-      const res = await request(app).get('/notification/preferences?username=kckern');
+      const res = await request(app).get('/notification/preferences?username=user_1');
       expect(res.status).toBe(200);
       expect(res.body.ceremony).toBeTruthy();
       expect(res.body.ceremony.normal).toEqual(['telegram']);
-      expect(mockPreferenceStore.load).toHaveBeenCalledWith('kckern');
+      expect(mockPreferenceStore.load).toHaveBeenCalledWith('user_1');
     });
   });
 
@@ -51,11 +51,11 @@ describe('Notification API Router', () => {
     it('updates preferences', async () => {
       const newPrefs = { ceremony: { normal: ['app'] } };
       const res = await request(app)
-        .patch('/notification/preferences?username=kckern')
+        .patch('/notification/preferences?username=user_1')
         .send(newPrefs);
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(mockPreferenceStore.save).toHaveBeenCalledWith('kckern', newPrefs);
+      expect(mockPreferenceStore.save).toHaveBeenCalledWith('user_1', newPrefs);
     });
   });
 

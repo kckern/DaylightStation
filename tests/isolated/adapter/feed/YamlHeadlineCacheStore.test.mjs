@@ -25,15 +25,15 @@ describe('YamlHeadlineCacheStore', () => {
         items: [{ title: 'Test', link: 'https://cnn.com/1', timestamp: '2026-02-15T09:00:00Z' }],
       });
 
-      const result = await store.loadSource('cnn', 'kckern');
-      expect(mockDataService.user.read).toHaveBeenCalledWith('current/feed/cnn', 'kckern');
+      const result = await store.loadSource('cnn', 'user_1');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('current/feed/cnn', 'user_1');
       expect(result.source).toBe('cnn');
       expect(result.items).toHaveLength(1);
     });
 
     test('returns null when no file exists', async () => {
       mockDataService.user.read.mockReturnValue(null);
-      const result = await store.loadSource('cnn', 'kckern');
+      const result = await store.loadSource('cnn', 'user_1');
       expect(result).toBeNull();
     });
   });
@@ -46,11 +46,11 @@ describe('YamlHeadlineCacheStore', () => {
         lastHarvest: '2026-02-15T10:00:00Z',
         items: [],
       };
-      await store.saveSource('cnn', data, 'kckern');
+      await store.saveSource('cnn', data, 'user_1');
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'current/feed/cnn',
         expect.objectContaining({ source: 'cnn' }),
-        'kckern'
+        'user_1'
       );
     });
   });
@@ -87,14 +87,14 @@ describe('YamlHeadlineCacheStore', () => {
         ],
       });
 
-      const pruned = await store.pruneOlderThan('cnn', cutoff, 'kckern');
+      const pruned = await store.pruneOlderThan('cnn', cutoff, 'user_1');
       expect(pruned).toBe(1);
       expect(mockDataService.user.write).toHaveBeenCalledWith(
         'current/feed/cnn',
         expect.objectContaining({
           items: [expect.objectContaining({ title: 'New' })],
         }),
-        'kckern'
+        'user_1'
       );
     });
   });

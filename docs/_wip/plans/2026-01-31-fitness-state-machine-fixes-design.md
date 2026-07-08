@@ -22,7 +22,7 @@ Production logs from a 10-minute session revealed critical state machine instabi
 
 2. **BUG-003 (Timer Coordination)**: Governance timers keep counting during playback stalls, unfairly penalizing users.
 
-3. **BUG-005 (Display Labels)**: Display label SSOT failure - sidebar shows "KC Kern" while governance shows "Dad".
+3. **BUG-005 (Display Labels)**: Display label SSOT failure - sidebar shows "User_1" while governance shows "Dad".
 
 ### Unconfirmed Root Cause
 
@@ -283,7 +283,7 @@ const reloadDocument = () => {
 
 ### Phase 5: Fix Display Label SSOT (BUG-005)
 
-**Problem**: Sidebar shows "KC Kern" while governance shows "Dad".
+**Problem**: Sidebar shows "User_1" while governance shows "Dad".
 
 **Files**:
 - `frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx`

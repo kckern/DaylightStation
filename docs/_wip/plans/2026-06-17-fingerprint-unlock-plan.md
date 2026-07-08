@@ -32,7 +32,7 @@ Mantine on the frontend; YAML config in the Dropbox data tree.
 
 - **Logging:** Frontend MUST use the logging framework (`getLogger().child(...)`), never raw
   console. Events: `unlock.requested|scanning|granted|denied|timeout`.
-- **No PII in tests:** use `test-user`, never `kckern`/real household identifiers.
+- **No PII in tests:** use `test-user`, never `user_1`/real household identifiers.
 - **Naming:** no `parent*`/`Parent*`. Use `unlock`/`lock`/`authorizedUsers`.
 - **Don't commit automatically** unless a step says to — but this plan uses frequent
   per-task commits, which is the agreed exception for this branch.
@@ -236,7 +236,7 @@ The container already runs Express (`/status` etc., host-network on :3000). Add:
 
 Test fingerprint seed (DONE during planning): `data/users/kckern/profile.yml` now has
 `identities.fingerprints[0] = { id: sim-kckern-0001, finger: right-index, simulated: true }`,
-so `kckern` (authorized for all three locks) yields a non-empty candidate list and the sim
+so `user_1` (authorized for all three locks) yields a non-empty candidate list and the sim
 path has a uuid to match.
 
 ### Task 1.5a: Container simulation path + endpoint
@@ -449,9 +449,9 @@ when no lock active. **Commit:** `feat(fitness): unlock/skip button in governanc
 - Modify (data tree): `data/household/config/fitness.yml` — add:
   ```yaml
   locks:
-    dance_party:        [kckern, elizabeth]
-    governance_bypass:  [kckern, elizabeth]
-    skip_content:       [kckern, elizabeth]
+    dance_party:        [user_1, user_9]
+    governance_bypass:  [user_1, user_9]
+    skip_content:       [user_1, user_9]
   ```
 - Modify (code): `frontend/src/Apps/FitnessApp.jsx` line ~989 `unifyKeys` array — add
   `'locks'` so the config normalizer surfaces it to `FitnessContext`.
@@ -473,7 +473,7 @@ when no lock active. **Commit:** `feat(fitness): unlock/skip button in governanc
 ## Phase 6 — End-to-end on hardware + deploy (MANUAL, KC-driven; needs Phases 1–5)
 
 ### Task 6.1: Enroll real authorized users
-- `ssh garage` → run `enroll-unlock kckern right-index`, etc. Confirm uuids land in each
+- `ssh garage` → run `enroll-unlock user_1 right-index`, etc. Confirm uuids land in each
   `profile.yml` (Dropbox tree). Enroll a couple of fingers each (thumb+index).
 
 ### Task 6.2: Deploy

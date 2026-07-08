@@ -30,7 +30,7 @@ slideshow:
   effect: kenburns
   zoom: 1.2
   showMetadata: true
-  focusPerson: Felix
+  focusPerson: User_2
 
 audio:
   contentId: music:anniversary

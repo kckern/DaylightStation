@@ -17,10 +17,10 @@ describe('msToTickX', () => {
 describe('computeRaceBands', () => {
   it('produces x/width rects for each race item with winner + raceId', () => {
     const activities = [{ type: 'cycle-game', items: [
-      { axisStartMs: 15000, axisEndMs: 20000, meta: { winnerId: 'milo', raceId: 'r1' } },
+      { axisStartMs: 15000, axisEndMs: 20000, meta: { winnerId: 'user_3', raceId: 'r1' } },
     ] }];
     const bands = computeRaceBands(activities, OPTS);
-    expect(bands).toEqual([{ x: 75, width: 25, winnerId: 'milo', raceId: 'r1' }]);
+    expect(bands).toEqual([{ x: 75, width: 25, winnerId: 'user_3', raceId: 'r1' }]);
   });
   it('falls back to a 0-width-safe band and skips items without axis fields', () => {
     const activities = [{ type: 'cycle-game', items: [ { meta: {} } ] }];
@@ -34,10 +34,10 @@ describe('computeRaceBands', () => {
     // Standalone session: items carry absolute startMs/endMs, no axisStartMs.
     const sessionStartMs = 1_000_000;
     const activities = [{ type: 'cycle-game', items: [
-      { startMs: sessionStartMs + 15000, endMs: sessionStartMs + 20000, meta: { winnerId: 'felix', raceId: 'r1' } },
+      { startMs: sessionStartMs + 15000, endMs: sessionStartMs + 20000, meta: { winnerId: 'user_2', raceId: 'r1' } },
     ] }];
     const bands = computeRaceBands(activities, { ...OPTS, sessionStartMs });
-    expect(bands).toEqual([{ x: 75, width: 25, winnerId: 'felix', raceId: 'r1' }]);
+    expect(bands).toEqual([{ x: 75, width: 25, winnerId: 'user_2', raceId: 'r1' }]);
   });
   it('still skips raw items when no sessionStartMs is available', () => {
     const activities = [{ type: 'cycle-game', items: [{ startMs: 5000, endMs: 9000, meta: {} }] }];
@@ -202,9 +202,9 @@ describe('snapChallengeEndsToZoneTicks', () => {
   });
   it('slides xEnd right to the first tick where a met user shows the zone', () => {
     // endTick 132.75-style case scaled down: end at tick 12.75, zone appears at tick 14
-    const m = mk(12.75, 'warm', ['felix']);
-    const zoneSeries = { felix: Array(20).fill('active') };
-    zoneSeries.felix[14] = 'warm';
+    const m = mk(12.75, 'warm', ['user_2']);
+    const zoneSeries = { user_2: Array(20).fill('active') };
+    zoneSeries.user_2[14] = 'warm';
     const [out] = snapChallengeEndsToZoneTicks([m], zoneSeries, opts);
     expect(out.xEnd).toBeCloseTo(14 * 5, 5);
     expect(out.width).toBeCloseTo(out.xEnd - out.x, 5);

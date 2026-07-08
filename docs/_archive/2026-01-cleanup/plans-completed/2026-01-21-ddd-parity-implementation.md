@@ -77,7 +77,7 @@ Wait: `sleep 5`
 Run: `curl -s http://localhost:3112/data/list/FHE | jq '.items[] | select(.open != null) | {label, open}'`
 Run: `curl -s http://localhost:3112/api/v1/list/folder/FHE | jq '.items[] | select(.open != null) | {label, open}'`
 
-Expected: Both return same items with `open` action (Spotlight, Soren, Gratitude and Hope)
+Expected: Both return same items with `open` action (Spotlight, User_5, Gratitude and Hope)
 
 **Step 6: Commit**
 

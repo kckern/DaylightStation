@@ -51,41 +51,41 @@ describe('FitnessTreasureBox — rotations', () => {
 
   it('accumulates per-user and global totals', () => {
     const box = new FitnessTreasureBox();
-    box.addRotations('milo', 10);
-    box.addRotations('milo', 5);
-    box.addRotations('felix', 7);
-    expect(box.getPerUserRotationTotals().get('milo')).toBe(15);
-    expect(box.getPerUserRotationTotals().get('felix')).toBe(7);
+    box.addRotations('user_3', 10);
+    box.addRotations('user_3', 5);
+    box.addRotations('user_2', 7);
+    expect(box.getPerUserRotationTotals().get('user_3')).toBe(15);
+    expect(box.getPerUserRotationTotals().get('user_2')).toBe(7);
     expect(box.totalRotations).toBe(22);
   });
 
   it('ignores missing user, zero, and negative deltas', () => {
     const box = new FitnessTreasureBox();
     box.addRotations(null, 10);
-    box.addRotations('milo', 0);
-    box.addRotations('milo', -3);
-    box.addRotations('milo', NaN);
+    box.addRotations('user_3', 0);
+    box.addRotations('user_3', -3);
+    box.addRotations('user_3', NaN);
     expect(box.totalRotations).toBe(0);
     expect(box.getPerUserRotationTotals().size).toBe(0);
   });
 
   it('exposes totalRotations in summary', () => {
     const box = new FitnessTreasureBox();
-    box.addRotations('milo', 12);
+    box.addRotations('user_3', 12);
     expect(box.summary.totalRotations).toBe(12);
   });
 
   it('returns a defensive copy from getPerUserRotationTotals', () => {
     const box = new FitnessTreasureBox();
-    box.addRotations('milo', 4);
+    box.addRotations('user_3', 4);
     const snap = box.getPerUserRotationTotals();
-    snap.set('milo', 999);
-    expect(box.getPerUserRotationTotals().get('milo')).toBe(4);
+    snap.set('user_3', 999);
+    expect(box.getPerUserRotationTotals().get('user_3')).toBe(4);
   });
 
   it('clears rotation state on reset', () => {
     const box = new FitnessTreasureBox();
-    box.addRotations('milo', 8);
+    box.addRotations('user_3', 8);
     box.reset();
     expect(box.totalRotations).toBe(0);
     expect(box.getPerUserRotationTotals().size).toBe(0);
@@ -259,15 +259,15 @@ describe('TimelineRecorder — per-rider rotations', () => {
     // 60 rpm over a 5s tick = 5 rotations
     const recorder = buildRecorder({
       devices: [makeDevice('cad1', { rpm: 60 })],
-      riderFor: { bike1: 'milo' },
+      riderFor: { bike1: 'user_3' },
       treasureBox,
       timeline
     });
     recorder.recordTick({ timestamp: 1000, sessionId: 's1' });
-    expect(treasureBox.getPerUserRotationTotals().get('milo')).toBeCloseTo(5, 5);
-    expect(timeline.series['user:milo:rotations_total'][0]).toBeCloseTo(5, 5);
+    expect(treasureBox.getPerUserRotationTotals().get('user_3')).toBeCloseTo(5, 5);
+    expect(timeline.series['user:user_3:rotations_total'][0]).toBeCloseTo(5, 5);
     expect(timeline.series['global:rotations_total'][0]).toBeCloseTo(5, 5);
-    expect(timeline.series['user:milo:rpm'][0]).toBe(60);
+    expect(timeline.series['user:user_3:rpm'][0]).toBe(60);
   });
 
   it('drops rotations for an unassigned bike', () => {
@@ -281,7 +281,7 @@ describe('TimelineRecorder — per-rider rotations', () => {
     });
     recorder.recordTick({ timestamp: 1000, sessionId: 's1' });
     expect(treasureBox.totalRotations).toBe(0);
-    expect(timeline.series['user:milo:rotations_total']).toBeUndefined();
+    expect(timeline.series['user:user_3:rotations_total']).toBeUndefined();
   });
 
   it('prefers the hardware crank counter delta and handles 16-bit wrap', () => {
@@ -290,30 +290,30 @@ describe('TimelineRecorder — per-rider rotations', () => {
     const device = makeDevice('cad1', { rpm: 999, revolutionCount: 65530 });
     const recorder = buildRecorder({
       devices: [device],
-      riderFor: { bike1: 'milo' },
+      riderFor: { bike1: 'user_3' },
       treasureBox,
       timeline
     });
     // Tick 1 establishes baseline (delta 0), rpm not used for counter path
     recorder.recordTick({ timestamp: 1000, sessionId: 's1' });
-    expect(treasureBox.getPerUserRotationTotals().get('milo') || 0).toBe(0);
+    expect(treasureBox.getPerUserRotationTotals().get('user_3') || 0).toBe(0);
     // Tick 2: counter wraps 65530 -> 4  => diff = 4 + 65536 - 65530 = 10
     device.getMetricsSnapshot = () => ({ rpm: 999, cadence: 999, revolutionCount: 4, heartRate: null });
     recorder.recordTick({ timestamp: 6000, sessionId: 's1' });
-    expect(treasureBox.getPerUserRotationTotals().get('milo')).toBe(10);
+    expect(treasureBox.getPerUserRotationTotals().get('user_3')).toBe(10);
   });
 
   it('does not carry rotations across a rider swap (delta lands on current rider)', () => {
     const timeline = makeTimeline();
     const treasureBox = makeTreasureBox();
-    const riderFor = { bike1: 'milo' };
+    const riderFor = { bike1: 'user_3' };
     const device = makeDevice('cad1', { rpm: 60 });
     const recorder = buildRecorder({ devices: [device], riderFor, treasureBox, timeline });
-    recorder.recordTick({ timestamp: 1000, sessionId: 's1' }); // milo +5
-    riderFor.bike1 = 'felix';                                  // swap
-    recorder.recordTick({ timestamp: 6000, sessionId: 's1' }); // felix +5
-    expect(treasureBox.getPerUserRotationTotals().get('milo')).toBeCloseTo(5, 5);
-    expect(treasureBox.getPerUserRotationTotals().get('felix')).toBeCloseTo(5, 5);
+    recorder.recordTick({ timestamp: 1000, sessionId: 's1' }); // user_3 +5
+    riderFor.bike1 = 'user_2';                                  // swap
+    recorder.recordTick({ timestamp: 6000, sessionId: 's1' }); // user_2 +5
+    expect(treasureBox.getPerUserRotationTotals().get('user_3')).toBeCloseTo(5, 5);
+    expect(treasureBox.getPerUserRotationTotals().get('user_2')).toBeCloseTo(5, 5);
   });
 });
 ```
@@ -321,7 +321,7 @@ describe('TimelineRecorder — per-rider rotations', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `./node_modules/.bin/vitest run --config vitest.config.mjs frontend/src/hooks/fitness/TimelineRecorder.rotations.test.js`
-Expected: FAIL — no rider attribution; `user:milo:rotations_total` undefined.
+Expected: FAIL — no rider attribution; `user:user_3:rotations_total` undefined.
 
 - [ ] **Step 3: Add the resolver field + crank-counter state to the constructor**
 
@@ -477,14 +477,14 @@ describe('SessionSerializerV3 — rotations', () => {
     timezone: 'UTC',
     treasureBox: { totalCoins: 40, totalRotations: 123.4, buckets: { red: 40 } },
     participants: {
-      milo: { display_name: 'Milo', is_primary: true }
+      user_3: { display_name: 'User_3', is_primary: true }
     },
     timeline: {
       timebase: { intervalMs: 5000, tickCount: 3 },
       series: {
-        'user:milo:heart_rate': [120, 121, 122],
-        'user:milo:rotations_total': [5, 10, 15],
-        'user:milo:rpm': [60, 60, 60],
+        'user:user_3:heart_rate': [120, 121, 122],
+        'user:user_3:rotations_total': [5, 10, 15],
+        'user:user_3:rpm': [60, 60, 60],
         'global:rotations_total': [5, 10, 15]
       }
     }
@@ -498,14 +498,14 @@ describe('SessionSerializerV3 — rotations', () => {
 
   it('emits per-participant total_rotations from the series', () => {
     const out = SessionSerializerV3.serialize(base);
-    expect(out.participants.milo.total_rotations).toBe(15);
+    expect(out.participants.user_3.total_rotations).toBe(15);
   });
 
   it('maps the rotations_total series into the timeline under "rotations"', () => {
     const out = SessionSerializerV3.serialize(base);
-    expect(out.timeline.participants.milo.rotations).toBeDefined();
+    expect(out.timeline.participants.user_3.rotations).toBeDefined();
     // rpm passes through unmapped
-    expect(out.timeline.participants.milo.rpm).toBeDefined();
+    expect(out.timeline.participants.user_3.rpm).toBeDefined();
     expect(out.timeline.global.rotations).toBeDefined();
   });
 
@@ -519,7 +519,7 @@ describe('SessionSerializerV3 — rotations', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `./node_modules/.bin/vitest run --config vitest.config.mjs frontend/src/hooks/fitness/SessionSerializerV3.rotations.test.js`
-Expected: FAIL — `out.totals.rotations` undefined; `total_rotations` undefined; `timeline.participants.milo.rotations` undefined (series key would map to `rotations_total`, not `rotations`).
+Expected: FAIL — `out.totals.rotations` undefined; `total_rotations` undefined; `timeline.participants.user_3.rotations` undefined (series key would map to `rotations_total`, not `rotations`).
 
 - [ ] **Step 3: Add `rotations` to the totals block**
 

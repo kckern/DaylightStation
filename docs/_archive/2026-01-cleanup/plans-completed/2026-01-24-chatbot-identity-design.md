@@ -18,7 +18,7 @@ Three distinct identity types:
 |------|--------|---------|-------|
 | **ConversationId** | `telegram:b6898194425_c575596036` | Routing, state storage | Domain |
 | **PlatformUserId** | `575596036` (platform-specific) | Identity resolution | Adapter extracts |
-| **SystemUser** | `kckern` | Internal user ID | Domain/Application |
+| **SystemUser** | `user_1` | Internal user ID | Domain/Application |
 
 **Key insight:** The adapter layer knows how to extract a platform user ID from a conversation context. This is platform-specific knowledge (Telegram has botId+chatId, Discord might have guildId+userId, etc.).
 
@@ -61,11 +61,11 @@ data_paths:
 ```yaml
 identity_mappings:
   telegram:
-    "575596036": kckern
+    "575596036": user_1
     "123456789": kirk
   # future platforms
   discord:
-    "987654321": kckern
+    "987654321": user_1
 ```
 
 This mirrors the fitness pattern:

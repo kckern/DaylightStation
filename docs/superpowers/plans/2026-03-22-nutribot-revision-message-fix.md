@@ -116,7 +116,7 @@ describe('LogFoodFromText — revision mode', () => {
 
   it('should NOT create a new status message when in revision mode', async () => {
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: CONVERSATION_ID,
       text: 'Double the recipe.',
       messageId: 'user-msg-789',
@@ -130,7 +130,7 @@ describe('LogFoodFromText — revision mode', () => {
 
   it('should update the ORIGINAL message with revised items', async () => {
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: CONVERSATION_ID,
       text: 'Double the recipe.',
       messageId: 'user-msg-789',
@@ -149,7 +149,7 @@ describe('LogFoodFromText — revision mode', () => {
 
   it('should clear conversation state after successful revision', async () => {
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: CONVERSATION_ID,
       text: 'Double the recipe.',
       messageId: 'user-msg-789',
@@ -161,7 +161,7 @@ describe('LogFoodFromText — revision mode', () => {
 
   it('should delete the user revision message', async () => {
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: CONVERSATION_ID,
       text: 'Double the recipe.',
       messageId: 'user-msg-789',
@@ -173,7 +173,7 @@ describe('LogFoodFromText — revision mode', () => {
 
   it('should call AI with revision-aware prompt including original items', async () => {
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: CONVERSATION_ID,
       text: 'Double the recipe.',
       messageId: 'user-msg-789',
@@ -537,7 +537,7 @@ describe('ProcessRevisionInput — responseContext', () => {
     });
 
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:bot_user',
       text: 'Double the recipe.',
       messageId: 'user-msg',

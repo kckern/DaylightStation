@@ -35,12 +35,12 @@ This created **three different identifier schemes** used inconsistently across s
 ## Timeline: The Migration Journey
 
 ### Phase 0: Legacy System (Pre-December 2025)
-**Identifier:** `slugifyId(user.name)` → `"alan"`, `"bob"`
+**Identifier:** `slugifyId(user.name)` → `"user_4"`, `"bob"`
 
 **How it worked:**
 ```javascript
 // Everywhere in the codebase
-const key = slugifyId(user.name);  // "Alan" → "alan"
+const key = slugifyId(user.name);  // "User_4" → "user_4"
 treasureBox.perUser.set(key, data);
 timeline.assignMetric(`user:${key}:coins`, value);
 activeParticipants.add(key);
@@ -49,7 +49,7 @@ activeParticipants.add(key);
 **Status:** ✅ Working (all subsystems used same identifier)
 
 **Problems:**
-- Not unique (two people named "Alan" would conflict)
+- Not unique (two people named "User_4" would conflict)
 - Case-sensitive name variations caused bugs
 - Guest reassignment broken (no concept of participation instance)
 
@@ -153,7 +153,7 @@ effectiveRoster.forEach(entry => {
 ```json
 {
   "actualCount": 0,
-  "missingUsers": ["Alan", "Milo", "Felix", "Soren", "KC Kern"],
+  "missingUsers": ["User_4", "User_3", "User_2", "User_5", "User_1"],
   "satisfied": false
 }
 ```
@@ -165,7 +165,7 @@ Video locked overlay showed "Waiting for participants" despite 5 active users.
 1. **Phase 2 change:** activeParticipants changed from names to entityIds
    ```javascript
    // Before
-   .map(entry => entry.name);  // ["Alan", "Felix"]
+   .map(entry => entry.name);  // ["User_4", "User_2"]
 
    // After Phase 2
    .map(entry => entry.entityId || entry.profileId || entry.id);  // ["entity-123-abc", "entity-456-def"]
@@ -173,7 +173,7 @@ Video locked overlay showed "Waiting for participants" despite 5 active users.
 
 2. **userZoneMap still keyed by names:**
    ```javascript
-   userZoneMap[entry.name] = entry.zoneId;  // {"Alan": "fire", "Felix": "warm"}
+   userZoneMap[entry.name] = entry.zoneId;  // {"User_4": "fire", "User_2": "warm"}
    ```
 
 3. **GovernanceEngine lookup failed:**
@@ -186,8 +186,8 @@ Video locked overlay showed "Waiting for participants" despite 5 active users.
 
 **Fix:** Use consistent userId for both:
 ```javascript
-.map(entry => entry.id || entry.profileId);  // ["kckern", "felix"]
-userZoneMap[entry.id || entry.profileId] = entry.zoneId;  // {"kckern": "fire"}
+.map(entry => entry.id || entry.profileId);  // ["user_1", "user_2"]
+userZoneMap[entry.id || entry.profileId] = entry.zoneId;  // {"user_1": "fire"}
 ```
 
 ### 2. TreasureBox Dual-Mode Confusion
@@ -404,7 +404,7 @@ if (!participantZoneId) {
 // Add integration tests
 test('governance detects active users', () => {
   const session = createFitnessSession();
-  session.addParticipant({ id: 'kckern', name: 'KC' });
+  session.addParticipant({ id: 'user_1', name: 'KC' });
   session.updateSnapshot();
 
   const result = session.governanceEngine.evaluate();
@@ -514,8 +514,8 @@ updateSnapshot(participantRoster) {
 
 **Before (Phase 0):**
 ```
-user:alan:coins_total
-user:alan:heart_rate
+user:user_4:coins_total
+user:user_4:heart_rate
 user:bob:coins_total
 ```
 
@@ -604,15 +604,15 @@ grep -r "user:\${.*\.id}" frontend/src/hooks/fitness/
  * Participant Identifier
  * @typedef {string} ParticipantId
  * @description Stable user identifier.
- * - Format: userId ("kckern", "milo") OR entityId ("entity-1735689600000-abc")
- * - NOT display name ("Alan", "Bob")
- * @example "kckern", "entity-1735689600000-abc123"
+ * - Format: userId ("user_1", "user_3") OR entityId ("entity-1735689600000-abc")
+ * - NOT display name ("User_4", "Bob")
+ * @example "user_1", "entity-1735689600000-abc123"
  */
 
 /**
  * Timeline Series Key Format
  * @description All timeline series MUST use this format
- * @example "user:kckern:coins_total" OR "entity:entity-123-abc:coins_total"
+ * @example "user:user_1:coins_total" OR "entity:entity-123-abc:coins_total"
  */
 ```
 
@@ -923,8 +923,8 @@ The entityId migration exposed **fundamental architectural fragility** in the Fi
 
 | Scheme | Format | Example | Usage | Status |
 |--------|--------|---------|-------|--------|
-| **Slug** | `slugifyId(name)` | `"alan"` | Legacy keys | ⏪ Deprecated |
-| **User ID** | `user.id` | `"kckern"` | Profile identity | ✅ Current |
+| **Slug** | `slugifyId(name)` | `"user_4"` | Legacy keys | ⏪ Deprecated |
+| **User ID** | `user.id` | `"user_1"` | Profile identity | ✅ Current |
 | **Entity ID** | `entity-{timestamp}-{hash}` | `"entity-1735689600000-abc"` | Session participation | ⚠️ Partial |
 
 ## Appendix B: Migration Completion Checklist

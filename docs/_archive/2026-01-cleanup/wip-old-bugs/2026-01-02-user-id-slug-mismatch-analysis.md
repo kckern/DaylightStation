@@ -80,8 +80,8 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 
 **The Mismatch**:
 - `currentTickActiveHR` contains: `["user-123-abc", "user-456-def"]` (user.id values)
-- `perUser` Map keys are: `["Alan", "Bob"]` (user.name values)
-- Lookup fails: `activeParticipants.has("Alan")` → **false** (because Set has "user-123-abc", not "Alan")
+- `perUser` Map keys are: `["User_4", "Bob"]` (user.name values)
+- Lookup fails: `activeParticipants.has("User_4")` → **false** (because Set has "user-123-abc", not "User_4")
 - **Result**: All users marked as inactive, no coins awarded, governance sees 0 active users
 
 ---
@@ -119,10 +119,10 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 │       const mappedUser = userManager.resolveUserForDevice() │
 │       const userId = mappedUser.id  ← "user-123-abc"        │
 │       const staged = stageUserEntry(mappedUser)             │
-│         → {slug: "alan", metadata: {name: "Alan"}, ...}     │
+│         → {slug: "user_4", metadata: {name: "User_4"}, ...}     │
 │                                                              │
 │       userMetricMap.set(userId, staged)                     │
-│         → Map { "user-123-abc" => {slug: "alan", ...} }     │
+│         → Map { "user-123-abc" => {slug: "user_4", ...} }     │
 │     })                                                       │
 │                                                              │
 │  2. userMetricMap.forEach((entry, userId) => {              │
@@ -141,15 +141,15 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  this.perUser = Map {                                        │
-│    "Alan" => {totalCoins: 45, ...},                         │
+│    "User_4" => {totalCoins: 45, ...},                         │
 │    "Bob" => {totalCoins: 30, ...}                           │
 │  }                                                           │
 │                                                              │
 │  for (const [accKey, acc] of this.perUser.entries()) {      │
-│    // accKey = "Alan"                                       │
-│    if (!activeParticipants.has("Alan")) {  ← MISMATCH!     │
+│    // accKey = "User_4"                                       │
+│    if (!activeParticipants.has("User_4")) {  ← MISMATCH!     │
 │      // activeParticipants = Set { "user-123-abc" }        │
-│      // "Alan" not in Set → Mark as inactive               │
+│      // "User_4" not in Set → Mark as inactive               │
 │      acc.highestZone = null                                 │
 │    }                                                         │
 │  }                                                           │
@@ -161,7 +161,7 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  return [                                                    │
-│    {user: "Alan", userId: "Alan", zoneId: null, ...},      │
+│    {user: "User_4", userId: "User_4", zoneId: null, ...},      │
 │    {user: "Bob", userId: "Bob", zoneId: null, ...}         │
 │  ]                                                           │
 │  // All zones are null because highestZone was cleared     │
@@ -172,7 +172,7 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 │ ParticipantRoster._buildRosterEntry()                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  const key = slugifyId(participantName)  ← "alan"           │
+│  const key = slugifyId(participantName)  ← "user_4"           │
 │  const zoneInfo = zoneLookup.get(key)  ← null              │
 │  // No zone data found → roster entries have no zones      │
 └─────────────────────────────────────────────────────────────┘
@@ -182,8 +182,8 @@ for (const [accKey, acc] of this.perUser.entries()) {  // ← perUser keyed by u
 │ GovernanceEngine.evaluate({activeParticipants, userZoneMap})│
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  activeParticipants = ["Alan", "Bob"]  ← Names from roster  │
-│  userZoneMap = {"alan": null, "bob": null}  ← No zones!    │
+│  activeParticipants = ["User_4", "Bob"]  ← Names from roster  │
+│  userZoneMap = {"user_4": null, "bob": null}  ← No zones!    │
 │                                                              │
 │  // No users in zones → activeUserCount = 0                │
 │  // Governance fails to detect any participants             │
@@ -434,11 +434,11 @@ test('userMetricMap should be keyed by slugifyId(user.name)', () => {
 ```javascript
 test('currentTickActiveHR should contain user slugs, not IDs', () => {
   const session = new FitnessSession();
-  // ... setup user "Alan" with user.id = "user-123-abc" ...
+  // ... setup user "User_4" with user.id = "user-123-abc" ...
   session._collectTimelineTick();
 
   const activeHR = session._testExports.currentTickActiveHR;
-  expect(activeHR.has('alan')).toBe(true);         // Slug
+  expect(activeHR.has('user_4')).toBe(true);         // Slug
   expect(activeHR.has('user-123-abc')).toBe(false); // NOT user.id
 });
 ```
@@ -466,17 +466,17 @@ test('TreasureBox.processTick should receive slugs', () => {
 ```javascript
 test('GovernanceEngine should detect active users after fix', () => {
   const session = new FitnessSession();
-  session.userManager.registerUser({ name: 'Alan' });
+  session.userManager.registerUser({ name: 'User_4' });
   session.deviceManager.updateDevice({ id: '7138', type: 'heart_rate', heartRate: 150 });
-  session.userManager.assignGuest('7138', 'Alan');
+  session.userManager.assignGuest('7138', 'User_4');
 
   // Run ticks
   session._collectTimelineTick();
   session._updateGovernanceEngine();
 
   const state = session.governanceEngine.state;
-  expect(state.activeUserCount).toBe(1);  // Should detect Alan
-  expect(state.watchers).toContain('Alan');
+  expect(state.activeUserCount).toBe(1);  // Should detect User_4
+  expect(state.watchers).toContain('User_4');
 });
 ```
 

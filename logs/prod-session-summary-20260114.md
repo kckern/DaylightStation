@@ -79,7 +79,7 @@ ReferenceError: intervalMs is not defined
 
 1. **FitnessChart Status Corrections** (~10,000+ occurrences)
    - "Status corrected from roster.isActive"
-   - Participants: felix, soren (marked as removed/idle)
+   - Participants: user_2, user_5 (marked as removed/idle)
    - Indicates state synchronization issues between roster and chart
 
 2. **Avatar Mismatch Warnings** (hundreds)

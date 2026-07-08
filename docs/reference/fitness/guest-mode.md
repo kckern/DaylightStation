@@ -310,7 +310,7 @@ participants:
   guest_48291:                  # generic Guest, device-keyed
     display_name: Guest
     is_guest: true
-    hr_device: "48291"
+    hr_device: "90006"
   guest_10366:                  # second simultaneous generic Guest — numbered name
     display_name: Guest 2
     is_guest: true

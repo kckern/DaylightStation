@@ -314,14 +314,14 @@ Commit: dfedd190
 **T+1429ms (HR_PRESENT_ZONES_PENDING):**
 ```
 Dad:  meta="50 / 60", currentZone="Cool", targetZone="Target zone" [HR:✓, CZ:✓, TZ:✗]
-Milo: meta="50 / 60", currentZone="Cool", targetZone="Target zone" [HR:✓, CZ:✓, TZ:✗]
+User_3: meta="50 / 60", currentZone="Cool", targetZone="Target zone" [HR:✓, CZ:✓, TZ:✗]
 ```
 
 **T+2156ms (FULLY_HYDRATED):**
 ```
 Dad:  meta="50 / 100", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
-Milo: meta="50 / 120", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
-Alan: meta="50 / 125", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
+User_3: meta="50 / 120", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
+User_4: meta="50 / 125", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
 ```
 
 ### Timing Deltas

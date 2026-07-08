@@ -36,8 +36,8 @@ describe('CourseTile', () => {
       isSequential: true,
       total: 40,
       users: [
-        { id: 'felix', name: 'Felix', completed: 12, total: 40 },
-        { id: 'milo', name: 'Milo', completed: 8, total: 40 },
+        { id: 'user_2', name: 'User_2', completed: 12, total: 40 },
+        { id: 'user_3', name: 'User_3', completed: 8, total: 40 },
       ],
     };
     render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);

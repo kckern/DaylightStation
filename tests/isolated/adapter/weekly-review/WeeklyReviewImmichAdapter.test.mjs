@@ -12,13 +12,13 @@ describe('WeeklyReviewImmichAdapter', () => {
       id: 'asset-1',
       type: 'IMAGE',
       localDateTime: '2026-03-23T14:00:00.000Z',
-      people: [{ name: 'Felix' }],
+      people: [{ name: 'User_2' }],
     },
     {
       id: 'asset-2',
       type: 'IMAGE',
       localDateTime: '2026-03-23T14:30:00.000Z',
-      people: [{ name: 'Felix' }, { name: 'Alan' }],
+      people: [{ name: 'User_2' }, { name: 'User_4' }],
     },
     {
       id: 'asset-3',
@@ -42,7 +42,7 @@ describe('WeeklyReviewImmichAdapter', () => {
       id: 'asset-6',
       type: 'IMAGE',
       localDateTime: '2026-03-25T10:30:00.000Z',
-      people: [{ name: 'Felix' }],
+      people: [{ name: 'User_2' }],
     },
   ];
 
@@ -57,7 +57,7 @@ describe('WeeklyReviewImmichAdapter', () => {
       error: vi.fn(),
     };
     adapter = new WeeklyReviewImmichAdapter({
-      priorityPeople: ['Felix', 'Alan', 'Soren', 'Milo'],
+      priorityPeople: ['User_2', 'User_4', 'User_5', 'User_3'],
       proxyPath: '/proxy/immich',
       sessionGapMinutes: 120,
     }, {

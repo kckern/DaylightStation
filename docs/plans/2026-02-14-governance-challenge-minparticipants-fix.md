@@ -63,8 +63,8 @@ describe('_evaluateChallenges() minParticipants guard', () => {
     });
 
     // Simulate 1 active participant (below minParticipants: 2)
-    const activeParticipants = ['alan'];
-    const userZoneMap = { alan: 'active' };
+    const activeParticipants = ['user_4'];
+    const userZoneMap = { user_4: 'active' };
     const zoneRankMap = { cool: 0, active: 1, warm: 2 };
     const zoneInfoMap = { cool: { name: 'Cool' }, active: { name: 'Active' }, warm: { name: 'Warm Up' } };
     const totalCount = 1;
@@ -105,8 +105,8 @@ describe('_evaluateChallenges() minParticipants guard', () => {
     const activePolicy = engine._normalizedPolicies?.[0] || engine.normalizedPolicies?.[0];
 
     // 2 participants meets minParticipants: 2
-    const activeParticipants = ['alan', 'bob'];
-    const userZoneMap = { alan: 'active', bob: 'active' };
+    const activeParticipants = ['user_4', 'bob'];
+    const userZoneMap = { user_4: 'active', bob: 'active' };
     const zoneRankMap = { cool: 0, active: 1, warm: 2 };
     const zoneInfoMap = { cool: { name: 'Cool' }, active: { name: 'Active' }, warm: { name: 'Warm Up' } };
     const totalCount = 2;
@@ -190,7 +190,7 @@ Add a new test to the existing `describe('resolveGovernanceDisplay', ...)` block
   test('includes failed challenge missingUsers in lock screen rows', () => {
     const displayMap = makeDisplayMap([
       {
-        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        id: 'user_4', displayName: 'User_4', avatarSrc: '/img/user_4.jpg',
         heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
         progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
       }
@@ -202,13 +202,13 @@ Add a new test to the existing `describe('resolveGovernanceDisplay', ...)` block
         status: 'locked',
         videoLocked: true,
         requirements: [
-          // Base requirement IS satisfied (alan is in active zone)
+          // Base requirement IS satisfied (user_4 is in active zone)
           { zone: 'active', rule: 'all_above', missingUsers: [], satisfied: true }
         ],
         challenge: {
           status: 'failed',
           zone: 'warm',
-          missingUsers: ['alan'],
+          missingUsers: ['user_4'],
           metUsers: [],
           requiredCount: 1,
           actualCount: 0,
@@ -219,17 +219,17 @@ Add a new test to the existing `describe('resolveGovernanceDisplay', ...)` block
       ZONE_META
     );
 
-    // Lock screen should show alan as needing to reach warm zone
+    // Lock screen should show user_4 as needing to reach warm zone
     expect(result.show).toBe(true);
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].userId).toBe('alan');
+    expect(result.rows[0].userId).toBe('user_4');
     expect(result.rows[0].targetZone.id).toBe('warm');
   });
 
   test('includes pending challenge missingUsers (existing behavior preserved)', () => {
     const displayMap = makeDisplayMap([
       {
-        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        id: 'user_4', displayName: 'User_4', avatarSrc: '/img/user_4.jpg',
         heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
         progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
       }
@@ -243,7 +243,7 @@ Add a new test to the existing `describe('resolveGovernanceDisplay', ...)` block
         challenge: {
           status: 'pending',
           zone: 'warm',
-          missingUsers: ['alan'],
+          missingUsers: ['user_4'],
           metUsers: [],
           requiredCount: 1,
           actualCount: 0,
@@ -256,7 +256,7 @@ Add a new test to the existing `describe('resolveGovernanceDisplay', ...)` block
 
     expect(result.show).toBe(true);
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].userId).toBe('alan');
+    expect(result.rows[0].userId).toBe('user_4');
   });
 ```
 

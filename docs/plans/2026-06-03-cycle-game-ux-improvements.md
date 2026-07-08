@@ -248,7 +248,7 @@ git commit -m "fix(cycle-game): raise faint text to WCAG AA contrast (3.0->5.1:1
   it('renders an explained placeholder when a record has no score', () => {
     const records = [{
       raceId: 'r-noscore',
-      avatars: [{ id: 'milo', src: '/api/v1/static/img/users/milo', name: 'Milo' }],
+      avatars: [{ id: 'user_3', src: '/api/v1/static/img/users/user_3', name: 'User_3' }],
       goalKind: 'distance', goalLabel: '3 km',
       scoreKind: 'time', scoreLabel: ''
     }];
@@ -391,7 +391,7 @@ git commit -m "feat(cycle-game): numeric volume readout (non-color level cue)"
   it('reveals a confirm hint on the focused ghost card', () => {
     const candidates = [{
       raceId: '20260602150118', day: '2026-06-02', timeOfDay: '3:01 pm',
-      participants: [{ id: 'milo', displayName: 'Milo', avatarSrc: '/x' }],
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x' }],
       goalKind: 'distance', goalLabel: '3 km', scoreKind: 'time', scoreLabel: '4:12'
     }];
     const { getByTestId, queryByText, getByText } = render(

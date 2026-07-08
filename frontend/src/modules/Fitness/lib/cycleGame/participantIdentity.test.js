@@ -3,19 +3,19 @@ import { resolveParticipantIdentity } from './participantIdentity.js';
 
 describe('resolveParticipantIdentity', () => {
   it('treats a plain user slug as a real (non-ghost) rider', () => {
-    const r = resolveParticipantIdentity('milo', 'Milo');
+    const r = resolveParticipantIdentity('user_3', 'User_3');
     expect(r.isGhost).toBe(false);
-    expect(r.sourceId).toBe('milo');
-    expect(r.displayName).toBe('Milo');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/milo');
+    expect(r.sourceId).toBe('user_3');
+    expect(r.displayName).toBe('User_3');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_3');
   });
 
   it('resolves a ghost id to its source user face and flags it as a ghost', () => {
-    const r = resolveParticipantIdentity('ghost:20260603120000:felix', 'Felix');
+    const r = resolveParticipantIdentity('ghost:20260603120000:user_2', 'User_2');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('felix');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/felix');
-    expect(r.displayName).toBe('Felix');
+    expect(r.sourceId).toBe('user_2');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_2');
+    expect(r.displayName).toBe('User_2');
   });
 
   it('falls back to the whole id when a ghost id has no source segment', () => {
@@ -33,17 +33,17 @@ describe('resolveParticipantIdentity', () => {
 
 describe('resolveParticipantIdentity — ghost dereference', () => {
   it('resolves a first-generation ghost to its source user', () => {
-    const r = resolveParticipantIdentity('ghost:20260604055230:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:20260604055230:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+    expect(r.sourceId).toBe('user_1');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_1');
   });
 
   it('resolves a SECOND-generation ghost back to the original user (not "ghost")', () => {
-    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:kckern', 'KC');
+    const r = resolveParticipantIdentity('ghost:R2:ghost:R1:user_1', 'KC');
     expect(r.isGhost).toBe(true);
-    expect(r.sourceId).toBe('kckern');
-    expect(r.avatarSrc).toBe('/api/v1/static/img/users/kckern');
+    expect(r.sourceId).toBe('user_1');
+    expect(r.avatarSrc).toBe('/api/v1/static/img/users/user_1');
   });
 
   it('resolves a ghost of a hyphenated guest id', () => {

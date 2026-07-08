@@ -11,14 +11,14 @@ describe('GovernanceEngine.swapCycleRider', () => {
     nowValue = 10000;
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['felix', 'milo', 'kckern'] }]
+        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3', 'user_1'] }]
       }
     };
     engine = new GovernanceEngine(session, { now: () => nowValue });
     // Set up a fake active cycle challenge in init state
     engine.challengeState.activeChallenge = {
-      id: 'cyc_1', type: 'cycle', cycleState: 'init', rider: 'felix',
-      ridersUsed: ['felix'], equipment: 'cycle_ace', currentPhaseIndex: 0,
+      id: 'cyc_1', type: 'cycle', cycleState: 'init', rider: 'user_2',
+      ridersUsed: ['user_2'], equipment: 'cycle_ace', currentPhaseIndex: 0,
       initStartedAt: 10000, initElapsedMs: 3000, initTotalMs: 60000,
       rampElapsedMs: 0, phaseProgressMs: 0,
       generatedPhases: [{ hiRpm: 60, loRpm: 45, rampSeconds: 10, maintainSeconds: 30 }],
@@ -27,11 +27,11 @@ describe('GovernanceEngine.swapCycleRider', () => {
   });
 
   it('swap during init succeeds — rider changes, init timer resets', () => {
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(true);
     const active = engine.challengeState.activeChallenge;
-    expect(active.rider).toBe('milo');
-    expect(active.ridersUsed).toEqual(['felix', 'milo']);
+    expect(active.rider).toBe('user_3');
+    expect(active.ridersUsed).toEqual(['user_2', 'user_3']);
     expect(active.initElapsedMs).toBe(0);
     expect(active.cycleState).toBe('init');
   });
@@ -40,7 +40,7 @@ describe('GovernanceEngine.swapCycleRider', () => {
     engine.challengeState.activeChallenge.cycleState = 'ramp';
     engine.challengeState.activeChallenge.rampElapsedMs = 5000;
     engine.challengeState.activeChallenge.currentPhaseIndex = 0;
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(true);
     const active = engine.challengeState.activeChallenge;
     expect(active.cycleState).toBe('init');
@@ -50,7 +50,7 @@ describe('GovernanceEngine.swapCycleRider', () => {
 
   it('swap during maintain rejected', () => {
     engine.challengeState.activeChallenge.cycleState = 'maintain';
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(false);
     expect(result.reason).toMatch(/window/i);
   });
@@ -58,14 +58,14 @@ describe('GovernanceEngine.swapCycleRider', () => {
   it('swap during phase-2 ramp rejected', () => {
     engine.challengeState.activeChallenge.cycleState = 'ramp';
     engine.challengeState.activeChallenge.currentPhaseIndex = 1;
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(false);
     expect(result.reason).toMatch(/window/i);
   });
 
   it('swap during locked rejected', () => {
     engine.challengeState.activeChallenge.cycleState = 'locked';
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(false);
     expect(result.reason).toMatch(/window/i);
   });
@@ -77,22 +77,22 @@ describe('GovernanceEngine.swapCycleRider', () => {
   });
 
   it('swap to cooldown user rejected unless force:true', () => {
-    engine._cycleCooldowns = { milo: nowValue + 10000 };
-    expect(engine.swapCycleRider('milo').success).toBe(false);
-    expect(engine.swapCycleRider('milo').reason).toMatch(/cooldown/i);
-    expect(engine.swapCycleRider('milo', { force: true }).success).toBe(true);
+    engine._cycleCooldowns = { user_3: nowValue + 10000 };
+    expect(engine.swapCycleRider('user_3').success).toBe(false);
+    expect(engine.swapCycleRider('user_3').reason).toMatch(/cooldown/i);
+    expect(engine.swapCycleRider('user_3', { force: true }).success).toBe(true);
   });
 
   it('rejects when no active cycle challenge', () => {
     engine.challengeState.activeChallenge = null;
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(false);
     expect(result.reason).toMatch(/no active/i);
   });
 
   it('rejects when active challenge is not cycle type', () => {
     engine.challengeState.activeChallenge = { type: 'zone' };
-    const result = engine.swapCycleRider('milo');
+    const result = engine.swapCycleRider('user_3');
     expect(result.success).toBe(false);
   });
 });

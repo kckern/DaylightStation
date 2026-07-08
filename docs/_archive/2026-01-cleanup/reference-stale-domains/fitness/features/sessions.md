@@ -79,8 +79,8 @@ A **Session Entity** represents a distinct participation instance, separate from
 
 ```
 Profile (who someone is)          Entity (a participation instance)
-├── profileId: "alan-123"         ├── entityId: "entity-1735689600000-abc12"
-├── name: "Alan"                  ├── profileId: "alan-123" (reference)
+├── profileId: "user_4-123"         ├── entityId: "entity-1735689600000-abc12"
+├── name: "User_4"                  ├── profileId: "user_4-123" (reference)
 ├── zones: [...]                  ├── deviceId: "42"
 └── avatarUrl: "..."              ├── startTime: 1735689600000
                                   ├── endTime: null
@@ -208,7 +208,7 @@ totals:
     red: 15
 
 participants:
-  kckern:
+  user_1:
     display_name: Keith
     is_primary: true
     is_guest: false
@@ -239,7 +239,7 @@ timeline:
   tick_count: 721
   encoding: rle
   participants:
-    kckern:
+    user_1:
       hr: '[[71,2],75,74,76,77,...]'
       beats: '[5.9,11.8,18.1,...]'
       coins: '[[0,17],1,2,3,...]'

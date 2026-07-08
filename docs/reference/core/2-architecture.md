@@ -88,7 +88,7 @@ DaylightStation/
         │           ├── nutriday.yml
         │           └── nutricoach.yml
         │
-        ├── elizabeth/
+        ├── user_9/
         │   ├── profile.yml
         │   ├── auth/                          # Her own credentials
         │   └── lifelog/
@@ -866,7 +866,7 @@ messages:
   - id: '1947a...'
     time: '08:30'
     subject: 'Re: Project update'
-    from: 'kckern@gmail.com'
+    from: 'user_1@gmail.com'
     to: 'colleague@company.com'
     category: sent
   - id: '1947f...'
@@ -878,7 +878,7 @@ messages:
   - id: '1946c...'
     time: '16:45'
     subject: 'Meeting confirmation'
-    from: 'kckern@gmail.com'
+    from: 'user_1@gmail.com'
     to: 'boss@company.com'
     category: sent
 ```

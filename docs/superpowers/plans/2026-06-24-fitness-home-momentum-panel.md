@@ -53,8 +53,8 @@ import { describe, it, expect } from 'vitest';
 import { computeMomentum, addDays } from './momentum.js';
 
 const roster = [
-  { id: 'felix', name: 'Felix' },
-  { id: 'kckern', name: 'KC Kern' },
+  { id: 'user_2', name: 'User_2' },
+  { id: 'user_1', name: 'User_1' },
 ];
 // "today" anchor used across tests
 const TODAY = '2026-06-24';
@@ -76,52 +76,52 @@ describe('addDays', () => {
 describe('computeMomentum', () => {
   it('sums active minutes per participant over the rolling 7 days only', () => {
     const sessions = [
-      sess('2026-06-24', 30 * 60000, ['felix']),          // in week
-      sess('2026-06-20', 20 * 60000, ['felix', 'kckern']), // in week (both)
-      sess('2026-06-10', 99 * 60000, ['felix']),          // OUTSIDE 7d window
+      sess('2026-06-24', 30 * 60000, ['user_2']),          // in week
+      sess('2026-06-20', 20 * 60000, ['user_2', 'user_1']), // in week (both)
+      sess('2026-06-10', 99 * 60000, ['user_2']),          // OUTSIDE 7d window
     ];
     const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150 });
-    const felix = members.find((m) => m.id === 'felix');
-    const kc = members.find((m) => m.id === 'kckern');
-    expect(felix.activeMinutes).toBe(50);   // 30 + 20, NOT the 99 from 14d ago
+    const user_2 = members.find((m) => m.id === 'user_2');
+    const kc = members.find((m) => m.id === 'user_1');
+    expect(user_2.activeMinutes).toBe(50);   // 30 + 20, NOT the 99 from 14d ago
     expect(kc.activeMinutes).toBe(20);
-    expect(felix.goalMinutes).toBe(150);
-    expect(felix.pct).toBeCloseTo(50 / 150, 5);
-    expect(felix.met).toBe(false);
+    expect(user_2.goalMinutes).toBe(150);
+    expect(user_2.pct).toBeCloseTo(50 / 150, 5);
+    expect(user_2.met).toBe(false);
   });
 
   it('counts a live streak through today or yesterday and stops at the first gap', () => {
     const sessions = [
-      sess('2026-06-24', 10 * 60000, ['felix']),
-      sess('2026-06-23', 10 * 60000, ['felix']),
-      sess('2026-06-22', 10 * 60000, ['felix']),
+      sess('2026-06-24', 10 * 60000, ['user_2']),
+      sess('2026-06-23', 10 * 60000, ['user_2']),
+      sess('2026-06-22', 10 * 60000, ['user_2']),
       // gap on 06-21
-      sess('2026-06-20', 10 * 60000, ['felix']),
+      sess('2026-06-20', 10 * 60000, ['user_2']),
     ];
     const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY });
-    expect(members.find((m) => m.id === 'felix').streakDays).toBe(3);
+    expect(members.find((m) => m.id === 'user_2').streakDays).toBe(3);
   });
 
   it('keeps a streak alive when today is empty but yesterday is active', () => {
     const sessions = [
-      sess('2026-06-23', 10 * 60000, ['felix']),
-      sess('2026-06-22', 10 * 60000, ['felix']),
+      sess('2026-06-23', 10 * 60000, ['user_2']),
+      sess('2026-06-22', 10 * 60000, ['user_2']),
     ];
     const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY });
-    expect(members.find((m) => m.id === 'felix').streakDays).toBe(2);
+    expect(members.find((m) => m.id === 'user_2').streakDays).toBe(2);
   });
 
   it('reports zero for a roster member with no sessions, but still lists them', () => {
     const { members } = computeMomentum([], roster, { now: NOW, todayStr: TODAY });
-    expect(members.map((m) => m.id)).toEqual(['felix', 'kckern']); // roster order preserved
+    expect(members.map((m) => m.id)).toEqual(['user_2', 'user_1']); // roster order preserved
     expect(members[0].activeMinutes).toBe(0);
     expect(members[0].streakDays).toBe(0);
   });
 
   it('aggregates the household: minutes = sum of members, goal = members*goal, streak = any-member days', () => {
     const sessions = [
-      sess('2026-06-24', 30 * 60000, ['felix']),
-      sess('2026-06-23', 40 * 60000, ['kckern']),
+      sess('2026-06-24', 30 * 60000, ['user_2']),
+      sess('2026-06-23', 40 * 60000, ['user_1']),
     ];
     const { household } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150, householdLabel: 'Kern Family' });
     expect(household.label).toBe('Kern Family');
@@ -131,12 +131,12 @@ describe('computeMomentum', () => {
   });
 
   it('caps pct at 1 but keeps real minutes; flags met', () => {
-    const sessions = [sess('2026-06-24', 200 * 60000, ['felix'])];
+    const sessions = [sess('2026-06-24', 200 * 60000, ['user_2'])];
     const { members } = computeMomentum(sessions, roster, { now: NOW, todayStr: TODAY, goalMinutes: 150 });
-    const felix = members.find((m) => m.id === 'felix');
-    expect(felix.activeMinutes).toBe(200);
-    expect(felix.pct).toBe(1);
-    expect(felix.met).toBe(true);
+    const user_2 = members.find((m) => m.id === 'user_2');
+    expect(user_2.activeMinutes).toBe(200);
+    expect(user_2.pct).toBe(1);
+    expect(user_2.met).toBe(true);
   });
 
   it('falls back to a generic household label and empty roster safely', () => {
@@ -391,11 +391,11 @@ import { render } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 const sessions = [
-  { date: '2026-06-24', durationMs: 30 * 60000, startTime: Date.parse('2026-06-24T12:00:00Z'), participants: { felix: { displayName: 'Felix' } } },
+  { date: '2026-06-24', durationMs: 30 * 60000, startTime: Date.parse('2026-06-24T12:00:00Z'), participants: { user_2: { displayName: 'User_2' } } },
 ];
 vi.mock('@/screen-framework/data/ScreenDataProvider.jsx', () => ({ useScreenData: () => sessions }));
 vi.mock('@/modules/Fitness/FitnessScreenProvider.jsx', () => ({
-  useFitnessScreen: () => ({ roster: [{ id: 'felix', name: 'Felix' }, { id: 'kckern', name: 'KC Kern' }], householdLabel: 'Kern Family' }),
+  useFitnessScreen: () => ({ roster: [{ id: 'user_2', name: 'User_2' }, { id: 'user_1', name: 'User_1' }], householdLabel: 'Kern Family' }),
 }));
 
 import FitnessMomentum from './FitnessMomentum.jsx';
@@ -405,8 +405,8 @@ describe('FitnessMomentum', () => {
     const { container, getByText } = render(<FitnessMomentum />);
     expect(getByText(/Kern Family/)).toBeTruthy();
     expect(container.querySelectorAll('.fitness-momentum__card').length).toBe(2);
-    expect(getByText('Felix')).toBeTruthy();
-    expect(getByText('KC Kern')).toBeTruthy();
+    expect(getByText('User_2')).toBeTruthy();
+    expect(getByText('User_1')).toBeTruthy();
   });
 
   it('shows a warm zero-state when nobody is active', () => {

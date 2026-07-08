@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Stop `ParticipantRoster.getRoster()` from doing full roster rebuilds ~55×/sec (137k+ per session), which saturates the garage Firefox kiosk's main thread and makes the cycle overlay stutter (the probable cause of the janky felix lock/unlock in session `20260606141443`).
+**Goal:** Stop `ParticipantRoster.getRoster()` from doing full roster rebuilds ~55×/sec (137k+ per session), which saturates the garage Firefox kiosk's main thread and makes the cycle overlay stutter (the probable cause of the janky user_2 lock/unlock in session `20260606141443`).
 
 **Architecture:** The two per-HR-packet hot-path callers (`FitnessSession.js:603` and `:1929`) call the *full* `getRoster()` only to extract the set of present participant IDs for zone-profile sync — they never use the live HR/zone/labels in the entries. We add a cheap `ParticipantRoster.getPresentParticipantIds()` that does device→user grouping ONLY (no zone lookup, no label resolution, no per-entry logging) and use it at those two sites. We deliberately do **NOT** memoize `getRoster()`'s result: roster entries carry live per-tick HR (`resolvedHeartRate`) and zone (`zoneInfo`), so caching would freeze the values the cards/charts display. After call-reduction, `getRoster()` runs only on the throttled render path (~4/sec) and the governance pulse (~0.2/sec), which is fine. A final task samples the remaining high-frequency debug logs that flood the session `.jsonl`.
 
@@ -219,4 +219,4 @@ End commit body with the Co-Authored-By trailer.
 - **Structured logger only**, no raw `console.*` (CLAUDE.md).
 - **No PII in tests** — use `test-user`-style IDs, never the real head-of-household identifier.
 - **Do not deploy/push without the user** (CLAUDE.md).
-- This fix is the probable resolution of the felix lock/unlock jank but that causation is correlational — Task 4 step 2 (no more overlay tick gaps) is the confirmation.
+- This fix is the probable resolution of the user_2 lock/unlock jank but that causation is correlational — Task 4 step 2 (no more overlay tick gaps) is the confirmation.

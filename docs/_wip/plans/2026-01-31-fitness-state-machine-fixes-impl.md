@@ -724,7 +724,7 @@ git add frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx
 git commit -m "fix(fitness): resolve display labels from household config SSOT
 
 Sidebar now prioritizes household configuration displayLabel
-(e.g., "Dad") over profile names (e.g., "KC Kern").
+(e.g., "Dad") over profile names (e.g., "User_1").
 
 BUG-005: Sidebar and governance now show consistent labels.
 

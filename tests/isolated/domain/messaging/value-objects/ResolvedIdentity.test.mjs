@@ -6,9 +6,9 @@ describe('ResolvedIdentity', () => {
   const conversationId = new ConversationId('telegram', 'b123_c456');
 
   it('creates with username and conversationId', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
-    expect(identity.username).toBe('kckern');
+    expect(identity.username).toBe('user_1');
     expect(identity.conversationId).toBe(conversationId);
   });
 
@@ -20,18 +20,18 @@ describe('ResolvedIdentity', () => {
   });
 
   it('requires conversationId', () => {
-    expect(() => new ResolvedIdentity({ username: 'kckern' }))
+    expect(() => new ResolvedIdentity({ username: 'user_1' }))
       .toThrow('conversationId is required');
   });
 
   it('is immutable', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
     expect(Object.isFrozen(identity)).toBe(true);
   });
 
   it('converts conversationId to string', () => {
-    const identity = new ResolvedIdentity({ username: 'kckern', conversationId });
+    const identity = new ResolvedIdentity({ username: 'user_1', conversationId });
 
     expect(identity.conversationIdString).toBe('telegram:b123_c456');
   });

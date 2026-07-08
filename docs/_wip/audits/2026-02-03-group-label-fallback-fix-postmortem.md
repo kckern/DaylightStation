@@ -10,7 +10,7 @@
 
 ## Summary
 
-When multiple HR devices join a fitness session, users with a configured `group_label` (e.g., "Dad" instead of "KC Kern") should see their shorter label displayed in the sidebar. This feature worked in production but failed in the automated test due to a device name resolution priority bug.
+When multiple HR devices join a fitness session, users with a configured `group_label` (e.g., "Dad" instead of "User_1") should see their shorter label displayed in the sidebar. This feature worked in production but failed in the automated test due to a device name resolution priority bug.
 
 ---
 
@@ -19,8 +19,8 @@ When multiple HR devices join a fitness session, users with a configured `group_
 | Time | Event |
 |------|-------|
 | T+0 | Test created for `group_label` fallback behavior |
-| T+15m | Phase 1 passes (single device shows "KC Kern") |
-| T+15m | Phase 2 fails ("KC Kern" instead of "Dad" when 2nd device joins) |
+| T+15m | Phase 1 passes (single device shows "User_1") |
+| T+15m | Phase 2 fails ("User_1" instead of "Dad" when 2nd device joins) |
 | T+30m | Identified `hrDisplayNameMap` correctly computes "Dad" |
 | T+45m | Added render-time logging, discovered priority issue |
 | T+60m | First fix attempt: swap `displayLabel` and `ownerName` priority |
@@ -47,17 +47,17 @@ The device name resolution in `FitnessUsers.jsx` has a priority chain:
 6. deviceId (fallback)
 ```
 
-**Problem:** `guestAssignment?.occupantName` was checked for ALL device assignments, not just actual guests. A "member" assignment (like kckern's primary device) still has:
+**Problem:** `guestAssignment?.occupantName` was checked for ALL device assignments, not just actual guests. A "member" assignment (like user_1's primary device) still has:
 
 ```json
 {
-  "occupantName": "KC Kern",
+  "occupantName": "User_1",
   "occupantType": "member",   // NOT a guest!
   ...
 }
 ```
 
-This meant the full display name "KC Kern" was always used, bypassing the `hrDisplayNameMap` which correctly applied the group_label override to "Dad".
+This meant the full display name "User_1" was always used, bypassing the `hrDisplayNameMap` which correctly applied the group_label override to "Dad".
 
 ### Why `hrDisplayNameMap` Was Correct But Unused
 
@@ -65,7 +65,7 @@ The `hrDisplayNameMap` useMemo correctly:
 1. Detected 2+ HR devices
 2. Looked up `heartRateOwners` to find group_label ("Dad")
 3. Applied the override: `out["40475"] = "Dad"`
-4. Logged: `Applied overrides: [{"deviceId":"40475","from":"KC Kern","to":"Dad"}]`
+4. Logged: `Applied overrides: [{"deviceId":"40475","from":"User_1","to":"Dad"}]`
 
 But the render never used this value because `guestAssignment.occupantName` had higher priority.
 
@@ -74,10 +74,10 @@ But the render never used this value because `guestAssignment.occupantName` had 
 Console logs revealed the issue:
 
 ```
-[RENDER 40475] deviceName= KC Kern
+[RENDER 40475] deviceName= User_1
                source= guestAssignment.occupantName
-               ownerName= KC Kern       // ← Stale value, not "Dad"
-               guestAssignment= {"occupantType":"member","occupantName":"KC Kern"...}
+               ownerName= User_1       // ← Stale value, not "Dad"
+               guestAssignment= {"occupantType":"member","occupantName":"User_1"...}
 ```
 
 When we saw `source= guestAssignment.occupantName` and `occupantType: "member"`, the fix became clear.
@@ -217,7 +217,7 @@ The fix was only possible after adding console logging at both:
 - The DATA layer (`hrDisplayNameMap` computation)
 - The RENDER layer (device name resolution)
 
-The discrepancy between "data computes 'Dad'" and "render shows 'KC Kern'" pointed directly to the priority chain issue.
+The discrepancy between "data computes 'Dad'" and "render shows 'User_1'" pointed directly to the priority chain issue.
 
 **Lesson:** When debugging React data flow issues, log at BOTH computation AND consumption points.
 
@@ -235,9 +235,9 @@ The system creates device assignments even for primary users (members), not just
 
 | Phase | Description | Assertion |
 |-------|-------------|-----------|
-| 1 | Single device | kckern shows "KC Kern" (display_name) |
-| 2 | Second device joins | kckern switches to "Dad" (group_label) |
-| 3 | Device drops out | kckern restores to "KC Kern" |
+| 1 | Single device | user_1 shows "User_1" (display_name) |
+| 2 | Second device joins | user_1 switches to "Dad" (group_label) |
+| 3 | Device drops out | user_1 restores to "User_1" |
 
 ### Related Tests
 
@@ -270,9 +270,9 @@ The system creates device assignments even for primary users (members), not just
 npx playwright test tests/live/flow/fitness/group-label-fallback.runtime.test.mjs
 
 # Expected output:
-#   Phase 1 (single device): kckern showed "KC Kern" ✓
-#   Phase 2 (multi device):  kckern showed "Dad", felix showed "Felix" ✓
-#   Phase 3 (device drop):   kckern restored to "KC Kern" ✓
+#   Phase 1 (single device): user_1 showed "User_1" ✓
+#   Phase 2 (multi device):  user_1 showed "Dad", user_2 showed "User_2" ✓
+#   Phase 3 (device drop):   user_1 restored to "User_1" ✓
 #   ✓ Test passed
 ```
 
@@ -283,18 +283,18 @@ npx playwright test tests/live/flow/fitness/group-label-fallback.runtime.test.mj
 ```
 [PHASE 1] Single device
   [hrDisplayNameMap] Recomputing with 1 HR devices: [40475]
-  [RENDER 40475] deviceName= KC Kern source= ownerName (hrDisplayNameMap)
-  ✓ kckern shows: "KC Kern"
+  [RENDER 40475] deviceName= User_1 source= ownerName (hrDisplayNameMap)
+  ✓ user_1 shows: "User_1"
 
 [PHASE 2] Second device joins
-  [hrDisplayNameMap] Recomputing with 2 HR devices: [40475, 28812]
+  [hrDisplayNameMap] Recomputing with 2 HR devices: [40475, 90003]
   [hrDisplayNameMap] heartRateOwners size: 5 labelLookup: {"40475":"Dad"}
-  [hrDisplayNameMap] Applied overrides: [{"deviceId":"40475","from":"KC Kern","to":"Dad"}]
+  [hrDisplayNameMap] Applied overrides: [{"deviceId":"40475","from":"User_1","to":"Dad"}]
   [RENDER 40475] deviceName= Dad source= ownerName (hrDisplayNameMap) ownerName= Dad
-  ✓ kckern shows: "Dad"
+  ✓ user_1 shows: "Dad"
 
 [PHASE 3] Device drops
   [hrDisplayNameMap] Recomputing with 1 HR devices: [40475]
-  [RENDER 40475] deviceName= KC Kern source= ownerName (hrDisplayNameMap)
-  ✓ kckern shows: "KC Kern"
+  [RENDER 40475] deviceName= User_1 source= ownerName (hrDisplayNameMap)
+  ✓ user_1 shows: "User_1"
 ```

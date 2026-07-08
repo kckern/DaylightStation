@@ -239,7 +239,7 @@ All internal data consistency checks **passed** for `20260217124549.yml`:
 | Zone minutes match tick counts | Pass |
 | Coin accumulation matches zone rewards (cool=0, active=1, warm=2, hot=3 per tick) | Pass |
 | Bucket sum (0+83+70+18+0) = totalCoins (171) | Pass |
-| kckern:coins = global:coins (single participant) | Pass |
+| user_1:coins = global:coins (single participant) | Pass |
 
 ---
 

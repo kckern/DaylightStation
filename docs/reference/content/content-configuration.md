@@ -412,9 +412,9 @@ items:
     image: https://...
     uid: e7302007-...
   - label: Spotlight
-    input: app:family-selector/alan
+    input: app:family-selector/user_4
     action: Open
-  - label: Felix
+  - label: User_2
     input: plex:457385
     action: Play
     active: true
@@ -516,7 +516,7 @@ title: Family Photos 2025
 source: immich
 filters:
   time: "2025-01-01..2025-12-31"
-  person: [Felix, Sarah]
+  person: [User_2, Sarah]
 sort: date
 take: 100
 ```

@@ -505,8 +505,8 @@ describe('CycleChallengeOverlay — C3 cleanup (badge float, no boosters, no cou
     currentPhase: { hiRpm: 80, loRpm: 60 },
     cycleHealthPct: 100,
     boostMultiplier: 2.5,
-    boostingUsers: ['kckern', 'milo'],
-    rider: { id: 'felix', name: 'Felix' }
+    boostingUsers: ['user_1', 'user_3'],
+    rider: { id: 'user_2', name: 'User_2' }
   };
 
   it('renders the boost badge when multiplier > 1', () => {

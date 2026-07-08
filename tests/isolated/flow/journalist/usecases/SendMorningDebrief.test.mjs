@@ -79,10 +79,10 @@ describe('SendMorningDebrief — adaptive headline assembly', () => {
     await useCase.execute({
       conversationId: 'c1',
       responseContext,
-      debrief: baseDebrief({ headline: 'Felix & the <locked> door?' }),
+      debrief: baseDebrief({ headline: 'User_2 & the <locked> door?' }),
     });
 
-    expect(sent.text).toContain('💬 <b>Felix &amp; the &lt;locked&gt; door?</b>');
+    expect(sent.text).toContain('💬 <b>User_2 &amp; the &lt;locked&gt; door?</b>');
   });
 
   it('persists the headline with the debrief so re-sends keep the teaser', async () => {

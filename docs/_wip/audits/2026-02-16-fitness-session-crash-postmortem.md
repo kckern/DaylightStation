@@ -117,7 +117,7 @@ Each incoming HR reading triggers `recordDeviceActivity`, which somehow triggers
 Sessions started and immediately failed validation:
 - `session-too-short` (duration: 1ms) — session created and validated in the same event loop tick
 - `no-participants` — session started but no users enrolled
-- Buffer threshold met by same device 3 times: `firstIds:[28688,28688,28688]`
+- Buffer threshold met by same device 3 times: `firstIds:[90001,90001,90001]`
 
 The validation runs as part of autosave, which fires immediately on session start. The session has no time to accumulate data before being validated and rejected.
 
@@ -130,10 +130,10 @@ At 03:02:46: `[FitnessSession] endSession() called recursively, skipping`. The s
 Challenge required 2 users in "hot" zone (HR > 160-170 depending on user overrides). All users were in "active" zone (HR 108-139). The challenge was auto-triggered by the governance engine without checking feasibility.
 
 Participant HRs at challenge failure:
-- Felix: 130 bpm (hot threshold: 160)
-- Alan: 139 bpm (hot threshold: 170)
+- User_2: 130 bpm (hot threshold: 160)
+- User_4: 139 bpm (hot threshold: 170)
 - KC: 108 bpm (no overrides)
-- Milo: 129 bpm (hot threshold: 165)
+- User_3: 129 bpm (hot threshold: 165)
 
 Nobody was within 20 bpm of their hot threshold.
 
@@ -197,7 +197,7 @@ The previous deploy (~Feb 12-13) did NOT include `c885e79c`. Without `onStateCha
 ### P2 — Session lifecycle
 
 5. **Require distinct devices for buffer threshold**
-   - Buffer currently fires on `[28688, 28688, 28688]` — same device 3 times
+   - Buffer currently fires on `[90001, 90001, 90001]` — same device 3 times
    - Require N distinct device IDs before triggering session start
 
 6. **Don't validate session on first autosave**

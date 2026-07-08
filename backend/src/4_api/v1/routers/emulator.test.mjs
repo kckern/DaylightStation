@@ -34,7 +34,7 @@ function makeCfg() {
     ],
     defaults: { governance: {}, shader: null, chrome: null },
     users: {
-      soren: { governance: { required_zone: 'hot' } },
+      user_5: { governance: { required_zone: 'hot' } },
     },
     input: {
       keyboard: { up: 'ArrowUp', a: 'x' },
@@ -83,7 +83,7 @@ function makeApp(overrides = {}) {
     resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
     resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
     resolveStatePath: vi.fn((system, gameId, slot, user) => `/media/${system}/states/${user}/${gameId}/${slot}.state`),
-    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['soren', 'alan'] : [])),
+    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['user_5', 'user_4'] : [])),
     readEngineFile: vi.fn((relPath) => {
       const ENGINE = {
         'loader.js': { buffer: Buffer.from('LOADER'), contentType: 'text/javascript' },
@@ -151,7 +151,7 @@ describe('createEmulatorRouter', () => {
 
     it('applies per-user governance overlay with ?user=', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/library?user=soren');
+      const res = await request(app).get('/api/v1/emulator/library?user=user_5');
       expect(res.status).toBe(200);
       expect(res.body.games[0].governance.required_zone).toBe('hot');
     });
@@ -282,20 +282,20 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const payload = Buffer.from([1, 2, 3, 4, 5]);
       const put = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=soren')
+        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(payload);
       expect(put.status).toBe(200);
       expect(put.body).toEqual({ ok: true, bytes: 5 });
 
-      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
       expect(get.status).toBe(200);
       expect(Buffer.from(get.body)).toEqual(payload);
     });
 
     it('GET ENOENT → 204', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      const res = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
       expect(res.status).toBe(204);
     });
 
@@ -317,7 +317,7 @@ describe('createEmulatorRouter', () => {
     it('PUT empty body → 400', async () => {
       const { app } = makeApp();
       const res = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=soren')
+        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.alloc(0));
       expect(res.status).toBe(400);
@@ -335,17 +335,17 @@ describe('createEmulatorRouter', () => {
     it('DELETE erases the save (reset) and is idempotent', async () => {
       const { app } = makeApp();
       await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=soren')
+        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([1, 2, 3]));
-      const del = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      const del = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
       expect(del.status).toBe(200);
       expect(del.body).toEqual({ ok: true });
       // gone now → GET 204
-      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
       expect(get.status).toBe(204);
       // second delete still ok (idempotent)
-      const del2 = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=soren');
+      const del2 = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
       expect(del2.status).toBe(200);
     });
 
@@ -361,32 +361,32 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const payload = Buffer.from([9, 8, 7]);
       const put = await request(app)
-        .put('/api/v1/emulator/state/gb/pokemon-red/1?user=soren')
+        .put('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(payload);
       expect(put.status).toBe(200);
       expect(put.body).toEqual({ ok: true, bytes: 3 });
 
-      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=soren');
+      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5');
       expect(get.status).toBe(200);
       expect(Buffer.from(get.body)).toEqual(payload);
     });
 
     it('GET ENOENT → 204', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=soren');
+      const res = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5');
       expect(res.status).toBe(204);
     });
 
     it('DELETE erases a state slot', async () => {
       const { app } = makeApp();
       await request(app)
-        .put('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren')
+        .put('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([5, 5]));
-      const del = await request(app).delete('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren');
+      const del = await request(app).delete('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5');
       expect(del.status).toBe(200);
-      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/auto?user=soren');
+      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5');
       expect(get.status).toBe(204);
     });
   });
@@ -430,7 +430,7 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp({ loadConfig: batteryCfg });
       const res = await request(app).get('/api/v1/emulator/saves/gb/pokemon-red');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ users: ['soren', 'alan'] });
+      expect(res.body).toEqual({ users: ['user_5', 'user_4'] });
     });
 
     it('returns [] for a none-save game without scanning', async () => {

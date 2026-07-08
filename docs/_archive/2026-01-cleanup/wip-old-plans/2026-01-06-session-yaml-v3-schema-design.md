@@ -57,7 +57,7 @@ totals:
     red: 15
 
 participants:
-  kckern:
+  user_1:
     display_name: Keith
     is_primary: true
     is_guest: false                       # Derived from household membership
@@ -83,8 +83,8 @@ participants:
       avg: 108
     total_beats: 4797
 
-  alan:
-    display_name: Alan
+  user_4:
+    display_name: User_4
     is_primary: false
     is_guest: false
     hr_device: '28676'
@@ -114,12 +114,12 @@ timeline:
   encoding: rle
 
   participants:
-    kckern:
+    user_1:
       hr: '[[71,2],75,74,76,77,...]'
       beats: '[5.9,11.8,18.1,...]'
       coins: '[[0,17],1,2,3,...]'
       zone: '[["c",18],["a",5],...]'
-    alan:
+    user_4:
       hr: '[[null,515],91,94,98,...]'
       beats: '[[null,512],[0,3],7.6,...]'
       coins: '[[null,512],[0,16],...]'

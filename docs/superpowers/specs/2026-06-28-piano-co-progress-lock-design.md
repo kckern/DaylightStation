@@ -7,7 +7,7 @@
 
 ## Problem
 
-Two students (Milo and Felix) share a sequential piano course (Hoffman Academy) and are competitive about progress. Without a gate, one student can race ahead indefinitely, demotivating the other. The goal is to keep them within a configurable episode buffer of each other, enforcing turn-taking without hard-stopping either student.
+Two students (User_3 and User_2) share a sequential piano course (Hoffman Academy) and are competitive about progress. Without a gate, one student can race ahead indefinitely, demotivating the other. The goal is to keep them within a configurable episode buffer of each other, enforcing turn-taking without hard-stopping either student.
 
 ---
 
@@ -20,7 +20,7 @@ videos:
   sequential_labels: [sequential]
   co_progress:
     - courseId: "plex:12345"   # matches compoundId from the playable endpoint
-      users: [milo, felix]
+      users: [user_3, user_2]
       buffer: 5
 ```
 
@@ -57,7 +57,7 @@ After the existing `isSequential` computation:
   "coProgressLock": {
     "locked": true,
     "aheadBy": 6,
-    "waitingForId": "felix",
+    "waitingForId": "user_2",
     "buffer": 5
   }
 }
@@ -127,6 +127,6 @@ No changes to `PianoVideoPlayer` or the engagement gate — the lock is purely a
 ## Out of Scope
 
 - Co-progress for non-sequential courses
-- Notifications pushed to the partner's device ("Felix is waiting for you")
+- Notifications pushed to the partner's device ("User_2 is waiting for you")
 - Admin UI for managing co-progress rules
 - More than two users per rule (supported by design but not the initial use case)

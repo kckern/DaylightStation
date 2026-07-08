@@ -40,14 +40,14 @@ describe('ScrollConfigLoader', () => {
 
   describe('load()', () => {
     test('returns defaults when no scroll.yml exists', () => {
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.batch_size).toBe(15);
       expect(config.algorithm.grounding_ratio).toBe(5);
       expect(config.algorithm.decay_rate).toBe(0.85);
       expect(config.algorithm.min_ratio).toBe(2);
       expect(config.spacing.max_consecutive).toBe(1);
       expect(config.sources).toEqual({});
-      expect(mockDataService.user.read).toHaveBeenCalledWith('config/scroll', 'kckern');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('config/scroll', 'user_1');
     });
 
     test('merges user overrides with defaults', () => {
@@ -58,7 +58,7 @@ describe('ScrollConfigLoader', () => {
           reddit: { max_per_batch: 5, min_spacing: 2 },
         },
       });
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.batch_size).toBe(20);
       expect(config.algorithm.grounding_ratio).toBe(8);
       expect(config.algorithm.decay_rate).toBe(0.85); // default preserved
@@ -70,7 +70,7 @@ describe('ScrollConfigLoader', () => {
       mockDataService.user.read.mockReturnValue({
         focus_mode: { grounding_ratio: 10 },
       });
-      const config = loader.load('kckern');
+      const config = loader.load('user_1');
       expect(config.focus_mode.grounding_ratio).toBe(10);
       expect(config.focus_mode.decay_rate).toBe(0.9);  // default
       expect(config.focus_mode.min_ratio).toBe(3);      // default
@@ -563,7 +563,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter, mockHealthAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockAdapter.fetchItems).toHaveBeenCalled();
     expect(mockHealthAdapter.fetchItems).not.toHaveBeenCalled();
   });
@@ -584,7 +584,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockAdapter.fetchItems).toHaveBeenCalled();
   });
 
@@ -595,7 +595,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     });
 
     const service = createService([]);
-    await service.getNextBatch('kckern', { focus: 'reddit:science' });
+    await service.getNextBatch('user_1', { focus: 'reddit:science' });
     // The spacing enforcer should be called (verifying the pipeline ran)
     expect(mockSpacingEnforcer.enforce).toHaveBeenCalled();
   });
@@ -614,7 +614,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    await service.getNextBatch('kckern');
+    await service.getNextBatch('user_1');
     expect(mockSpacingEnforcer.enforce).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ spacing: { max_consecutive: 1 } }),
@@ -639,7 +639,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    const result = await service.getNextBatch('kckern');
+    const result = await service.getNextBatch('user_1');
     expect(result.items.length).toBeLessThanOrEqual(5);
   });
 
@@ -661,7 +661,7 @@ describe('FeedAssemblyService scroll config integration', () => {
       [mockAdapter],
     );
 
-    const result = await service.getNextBatch('kckern', { limit: 8 });
+    const result = await service.getNextBatch('user_1', { limit: 8 });
     expect(result.items.length).toBeLessThanOrEqual(8);
   });
 });
@@ -949,7 +949,7 @@ test('filters by query _filename, not adapter type', async () => {
     [plexAdapter],
   );
 
-  await service.getNextBatch('kckern');
+  await service.getNextBatch('user_1');
   // Should only be called once (for plex.yml), not twice
   expect(plexAdapter.fetchItems).toHaveBeenCalledTimes(1);
 });
@@ -1066,7 +1066,7 @@ test('focus mode filters external items to focused source', async () => {
     [redditAdapter, headlinesAdapter, weatherAdapter],
   );
 
-  const result = await service.getNextBatch('kckern', { focus: 'reddit' });
+  const result = await service.getNextBatch('user_1', { focus: 'reddit' });
   const sources = result.items.map(i => i.source);
   // Should have reddit and weather (grounding), but NOT headlines
   expect(sources).not.toContain('headline');
@@ -1087,7 +1087,7 @@ test('focus mode with subsource filters to specific subsource', async () => {
     [redditAdapter],
   );
 
-  const result = await service.getNextBatch('kckern', { focus: 'reddit:science' });
+  const result = await service.getNextBatch('user_1', { focus: 'reddit:science' });
   const subs = result.items.filter(i => i.source === 'reddit').map(i => i.meta?.subreddit);
   expect(subs).toEqual(['science']);
 });
@@ -1169,7 +1169,7 @@ describe('GET /scroll', () => {
 
     await request(focusApp).get('/api/v1/feed/scroll?focus=reddit:science');
     expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-      'kckern',
+      'user_1',
       expect.objectContaining({ focus: 'reddit:science' }),
     );
   });
@@ -1190,7 +1190,7 @@ describe('GET /scroll', () => {
 
     await request(limitApp).get('/api/v1/feed/scroll');
     expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
-      'kckern',
+      'user_1',
       expect.objectContaining({ limit: undefined }),
     );
   });

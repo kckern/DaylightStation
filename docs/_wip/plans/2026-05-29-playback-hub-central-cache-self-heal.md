@@ -803,7 +803,7 @@ ssh kckern-playback-hub 'cd ~/playback-hub && cp playback-hub.sh playback-hub.sh
 ```bash
 rsync -av _extensions/playback-hub/playback-hub.sh _extensions/playback-hub/cache_manager.sh \
   _extensions/playback-hub/web.py _extensions/playback-hub/tests/ \
-  kckern@10.0.0.109:/home/kckern/playback-hub/
+  user_1@10.0.0.109:/home/kckern/playback-hub/
 ```
 
 **Step 3: Run the test suite on the box** before restarting:

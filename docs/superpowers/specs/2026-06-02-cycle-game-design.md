@@ -138,14 +138,14 @@ cycle_game:
 
 User overrides live in `data/users/{id}/profile.yml` under `apps.fitness.*` — the same place `heart_rate_zones` already lives. The override is a **`bandId → min` dict** (exactly like `heart_rate_zones` is a `zoneId → min` dict); names/colors are always inherited from the system default, and unspecified bands keep their default min (e.g. `warmup`'s 0 floor is implicit, just as `cool` is for HR).
 
-Confirmed against the real `data/users/felix/profile.yml`:
+Confirmed against the real `data/users/user_2/profile.yml`:
 
 ```yaml
-# data/users/felix/profile.yml  (existing shape)
+# data/users/user_2/profile.yml  (existing shape)
 version: "1.0"
-username: felix
+username: user_2
 household_id: default
-display_name: "Felix"
+display_name: "User_2"
 group: primary
 apps:
   fitness:
@@ -192,16 +192,16 @@ race:
   background_plex_id: "plex:123456"   # or null
   interval_seconds: 5
 participants:                   # keyed by userId
-  milo:
-    display_name: Milo
+  user_3:
+    display_name: User_3
     equipment: cycle_ace
     avg_hr: 152
     final_distance_m: 3000
     final_time_s: 252           # time to reach goal (distance race)
     placement: 1
     distance_series: "[0, 14, 31, ...]"   # RLE-encoded distance-over-time (the chart line / ghost)
-  felix:
-    display_name: Felix
+  user_2:
+    display_name: User_2
     equipment: tricycle
     final_distance_m: 2710
     final_time_s: 252

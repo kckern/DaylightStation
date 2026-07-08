@@ -29,7 +29,7 @@ export class AppRegistryAdapter {
   }
 
   /**
-   * @param {string} id - e.g. "webcam", "family-selector/alan", or "app:webcam"
+   * @param {string} id - e.g. "webcam", "family-selector/user_4", or "app:webcam"
    * @returns {Promise<Object|null>}
    */
   async getItem(id) {

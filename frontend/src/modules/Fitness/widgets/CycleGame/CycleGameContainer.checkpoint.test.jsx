@@ -25,19 +25,19 @@ const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
 
 function makeCtx(overrides = {}) {
-  const riders = { cycle_ace: 'kckern', tricycle: 'felix' };
+  const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
-    kckern: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
-    felix: { name: 'Felix', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
+    user_1: { name: 'KC', heartRate: 140, zoneId: 'hot', zoneColor: 'orange' },
+    user_2: { name: 'User_2', heartRate: 120, zoneId: 'warm', zoneColor: 'yellow' }
   };
   return {
     equipment: [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['kckern'] },
+      { id: 'cycle_ace', name: 'CycleAce', cadence: 49904, wheel_circumference_m: 2.1, eligible_users: ['user_1'] },
       { id: 'tricycle', name: 'Tricycle', cadence: 7153, wheel_circumference_m: 1.2 }
     ],
     configuredUsers: [
-      { id: 'kckern', name: 'KC' },
-      { id: 'felix', name: 'Felix' }
+      { id: 'user_1', name: 'KC' },
+      { id: 'user_2', name: 'User_2' }
     ],
     zones: [
       { id: 'warm', distance_multiplier: 1.5, color: 'yellow' },
@@ -129,7 +129,7 @@ describe('CycleGameContainer — mid-race checkpoint write (audit C1)', () => {
     expect(parsed.raceMeta).toMatchObject({ winCondition: 'distance' });
     expect(parsed.raceMeta.raceId).toBeTruthy();
     expect(parsed.engineState.riders).toBeTruthy();
-    expect(Object.keys(parsed.engineState.riders)).toEqual(expect.arrayContaining(['kckern', 'felix']));
+    expect(Object.keys(parsed.engineState.riders)).toEqual(expect.arrayContaining(['user_1', 'user_2']));
     expect(Number.isFinite(parsed.savedAt)).toBe(true);
   });
 
@@ -160,7 +160,7 @@ describe('CycleGameContainer — mid-race checkpoint write (audit C1)', () => {
     const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem');
 
     // Advance one real wall-clock second at a time (rather than one big jump)
-    // so the 30-tick-per-fire catch-up cap never truncates the race: felix
+    // so the 30-tick-per-fire catch-up cap never truncates the race: user_2
     // (tricycle, smaller wheel, 'warm' zone mult 1.5) is the slower of the two
     // and needs ~34 ticks to cross the 100 m line at rpm 100.
     await act(async () => {
@@ -216,8 +216,8 @@ describe('CycleGameContainer — mount-time crash recovery (audit C1)', () => {
       goalM: 3000,
       timeCapS: null,
       riders: {
-        kckern: {
-          userId: 'kckern',
+        user_1: {
+          userId: 'user_1',
           displayName: 'KC',
           equipmentId: 'cycle_ace',
           cumulativeDistanceM: distanceM,
@@ -258,7 +258,7 @@ describe('CycleGameContainer — mount-time crash recovery (audit C1)', () => {
     expect(postCall).toBeTruthy();
     const body = JSON.parse(postCall[1].body);
     expect(body.record.race.id).toBe(raceMeta.raceId);
-    expect(body.record.participants.kckern.final_distance_m).toBe(500);
+    expect(body.record.participants.user_1.final_distance_m).toBe(500);
 
     expect(window.sessionStorage.getItem(CHECKPOINT_KEY)).toBeNull();
   });

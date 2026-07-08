@@ -153,8 +153,8 @@ describe('User hrInactive flag', () => {
 
 describe('User multi-device ownership', () => {
   it('constructor accepts single hrDeviceId and stores in Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     expect(user.hrDeviceIds.has('20991')).toBe(true);
@@ -162,8 +162,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('ownsHrDevice checks the Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -173,8 +173,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('hrDeviceId setter adds to Set (does not replace)', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceId = '10366';
@@ -184,8 +184,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('hrDeviceId = null clears the Set', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -195,8 +195,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('updateFromDevice accepts any owned device', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('10366');
@@ -210,8 +210,8 @@ describe('User multi-device ownership', () => {
   });
 
   it('updateFromDevice ignores unowned device', () => {
-    const user = new User('Alan', 2018, '20991', null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, '20991', null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.updateFromDevice({ type: 'heart_rate', deviceId: '20991', heartRate: 110 });
@@ -222,8 +222,8 @@ describe('User multi-device ownership', () => {
 
 describe('Multi-device HR arbitration (lowest wins)', () => {
   it('uses lowest HR when both devices report', () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -235,8 +235,8 @@ describe('Multi-device HR arbitration (lowest wins)', () => {
   });
 
   it('uses single device reading when only one reports', () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -247,8 +247,8 @@ describe('Multi-device HR arbitration (lowest wins)', () => {
   });
 
   it('ignores stale readings from disconnected device', async () => {
-    const user = new User('Alan', 2018, null, null, {
-      id: 'alan',
+    const user = new User('User_4', 2018, null, null, {
+      id: 'user_4',
       globalZones: TEST_ZONES
     });
     user.hrDeviceIds.add('20991');
@@ -276,11 +276,11 @@ describe('UserManager.registerUser with hr_device_ids', () => {
 
   it('registers all device IDs from hr_device_ids array', () => {
     manager.registerUser({
-      name: 'Alan',
-      id: 'alan',
+      name: 'User_4',
+      id: 'user_4',
       hr_device_ids: [20991, 10366, 28676]
     });
-    const user = manager.getUser('alan');
+    const user = manager.getUser('user_4');
     expect(user.hrDeviceIds.size).toBe(3);
     expect(user.ownsHrDevice('20991')).toBe(true);
     expect(user.ownsHrDevice('10366')).toBe(true);
@@ -289,24 +289,24 @@ describe('UserManager.registerUser with hr_device_ids', () => {
 
   it('falls back to single hr field when hr_device_ids absent', () => {
     manager.registerUser({
-      name: 'Felix',
-      id: 'felix',
-      hr: 28812
+      name: 'User_2',
+      id: 'user_2',
+      hr: 90003
     });
-    const user = manager.getUser('felix');
+    const user = manager.getUser('user_2');
     expect(user.hrDeviceIds.size).toBe(1);
-    expect(user.ownsHrDevice('28812')).toBe(true);
+    expect(user.ownsHrDevice('90003')).toBe(true);
   });
 
   it('exposes deviceOwnershipIndex after registration', () => {
-    manager.registerUser({ name: 'Alan', id: 'alan', hr_device_ids: [20991, 10366] });
-    manager.registerUser({ name: 'Felix', id: 'felix', hr: 28812 });
+    manager.registerUser({ name: 'User_4', id: 'user_4', hr_device_ids: [20991, 10366] });
+    manager.registerUser({ name: 'User_2', id: 'user_2', hr: 90003 });
 
     const index = manager.deviceOwnershipIndex;
     expect(index).toBeDefined();
-    expect(index.getOwner('20991').id).toBe('alan');
-    expect(index.getOwner('10366').id).toBe('alan');
-    expect(index.getOwner('28812').id).toBe('felix');
+    expect(index.getOwner('20991').id).toBe('user_4');
+    expect(index.getOwner('10366').id).toBe('user_4');
+    expect(index.getOwner('90003').id).toBe('user_2');
     expect(index.getOwner('99999')).toBeNull();
   });
 });

@@ -73,7 +73,7 @@ describe('resolveGovernanceDisplay', () => {
           type: 'cycle',
           cycleState: 'locked',
           lockReason: 'maintain',
-          rider: { id: 'felix', name: 'Felix' },
+          rider: { id: 'user_2', name: 'User_2' },
           currentRpm: 42,
           currentPhase: { hiRpm: 69, loRpm: 52 },
           status: 'pending'
@@ -88,7 +88,7 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.status).toBe('unlocked');
     expect(result.challenge).toBeTruthy();
     expect(result.challenge.cycleState).toBe('locked');
-    expect(result.challenge.rider.id).toBe('felix');
+    expect(result.challenge.rider.id).toBe('user_2');
     expect(result.rows).toEqual([]);
     expect(result.requirements).toEqual([]);
     expect(result.videoLocked).toBe(false);
@@ -104,7 +104,7 @@ describe('resolveGovernanceDisplay', () => {
           id: 'default_0_7_1234',
           type: 'cycle',
           cycleState: 'maintain',
-          rider: { id: 'felix', name: 'Felix' },
+          rider: { id: 'user_2', name: 'User_2' },
           status: 'pending'
         }
       },
@@ -390,7 +390,7 @@ describe('resolveGovernanceDisplay', () => {
   test('includes failed challenge missingUsers in lock screen rows', () => {
     const displayMap = makeDisplayMap([
       {
-        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        id: 'user_4', displayName: 'User_4', avatarSrc: '/img/user_4.jpg',
         heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
         progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
       }
@@ -407,7 +407,7 @@ describe('resolveGovernanceDisplay', () => {
         challenge: {
           status: 'failed',
           zone: 'warm',
-          missingUsers: ['alan'],
+          missingUsers: ['user_4'],
           metUsers: [],
           requiredCount: 1,
           actualCount: 0,
@@ -420,14 +420,14 @@ describe('resolveGovernanceDisplay', () => {
 
     expect(result.show).toBe(true);
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].userId).toBe('alan');
+    expect(result.rows[0].userId).toBe('user_4');
     expect(result.rows[0].targetZone.id).toBe('warm');
   });
 
   test('includes pending challenge missingUsers (existing behavior preserved)', () => {
     const displayMap = makeDisplayMap([
       {
-        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        id: 'user_4', displayName: 'User_4', avatarSrc: '/img/user_4.jpg',
         heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
         progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
       }
@@ -441,7 +441,7 @@ describe('resolveGovernanceDisplay', () => {
         challenge: {
           status: 'pending',
           zone: 'warm',
-          missingUsers: ['alan'],
+          missingUsers: ['user_4'],
           metUsers: [],
           requiredCount: 1,
           actualCount: 0,
@@ -454,7 +454,7 @@ describe('resolveGovernanceDisplay', () => {
 
     expect(result.show).toBe(true);
     expect(result.rows.length).toBe(1);
-    expect(result.rows[0].userId).toBe('alan');
+    expect(result.rows[0].userId).toBe('user_4');
   });
 
   test('warning phase does NOT include paused challenge missingUsers', () => {

@@ -60,7 +60,7 @@ hydrateProcessEnvFromConfigs(configDir);
 initConfigService(dataDir);
 
 const WRITE_MODE = process.argv.includes('--write');
-const USERNAME = process.argv.find(a => !a.startsWith('-') && a !== process.argv[0] && a !== process.argv[1]) || 'kckern';
+const USERNAME = process.argv.find(a => !a.startsWith('-') && a !== process.argv[0] && a !== process.argv[1]) || 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 
 // --- Zone config from fitness.yml ---
@@ -391,10 +391,10 @@ function processEntry(item, mediaMemory, fitnessHistoryDir, stravaSummary, strav
     timezone: TIMEZONE,
     participants: {
       [USERNAME]: {
-        display_name: 'KC Kern',
+        display_name: 'User_1',
         hr_device: '40475',
         is_primary: true,
-        base_user: 'KC Kern',
+        base_user: 'User_1',
         strava: {
           activityId: entry.id,
           type: archive.type || archive.sport_type || entry.type,

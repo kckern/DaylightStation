@@ -73,7 +73,7 @@ export function createLifelogRouter(config) {
   router.get('/weight', async (req, res) => {
     try {
       // Get current user from session or use default
-      const username = req.user?.username || configService?.getHeadOfHousehold?.() || 'kckern';
+      const username = req.user?.username || configService?.getHeadOfHousehold?.() || 'user_1';
       
       console.log('[lifelog] Weight request for user:', username);
       
