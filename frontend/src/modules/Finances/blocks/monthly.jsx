@@ -87,12 +87,12 @@ const EMPTY_AGGREGATE = {
 export const getPeriodData = (budget, month) => {
   if (!month) {
     // Whole-period rollup is compiled backend-side (SSoT); the empty
-    // fallback covers a pre-recompile finances.yml.
-    return { month: budget.aggregate || EMPTY_AGGREGATE };
+    // fallback covers a pre-recompile finances.yml (or a missing budget).
+    return { month: budget?.aggregate || EMPTY_AGGREGATE };
   }
   return {
-    month: budget["monthlyBudget"][month],
-    daytoday: budget["dayToDayBudget"][month]
+    month: budget?.monthlyBudget?.[month],
+    daytoday: budget?.dayToDayBudget?.[month]
   };
 };
 
