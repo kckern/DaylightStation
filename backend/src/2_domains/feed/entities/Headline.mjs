@@ -60,23 +60,10 @@ export class Headline {
     return this.desc.substring(0, maxLength) + '...';
   }
 
-  toJSON() {
-    return {
-      id: this.id,
-      source: this.source,
-      title: this.title,
-      desc: this.desc,
-      link: this.link,
-      timestamp: this.timestamp.toISOString(),
-    };
-  }
-
-  static fromJSON(data) {
-    return new Headline({
-      ...data,
-      timestamp: new Date(data.timestamp),
-    });
-  }
+  // Serialization is owned by the persistence adapter (RssHeadlineHarvester
+  // #dehydrate) — audit D-3, serialization-ownership migration. The entity
+  // exposes its fields via getters for the dehydrator and no longer carries
+  // toJSON()/fromJSON(). (fromJSON was already dead — no callers.)
 }
 
 export default Headline;

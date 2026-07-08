@@ -39,26 +39,9 @@ describe('Headline', () => {
     expect(headline.truncateDesc(120)).toBe('Short');
   });
 
-  test('toJSON serializes correctly', () => {
-    const headline = new Headline(validData);
-    const json = headline.toJSON();
-    expect(json).toEqual({
-      id: 'testid1234',
-      source: 'cnn',
-      title: 'Breaking: Something happened',
-      desc: 'Officials confirmed today that the situation has developed...',
-      link: 'https://cnn.com/article/123',
-      timestamp: '2026-02-15T09:45:00.000Z',
-    });
-  });
-
-  test('fromJSON roundtrips', () => {
-    const headline = new Headline(validData);
-    const restored = Headline.fromJSON(headline.toJSON());
-    expect(restored.source).toBe(headline.source);
-    expect(restored.title).toBe(headline.title);
-    expect(restored.link).toBe(headline.link);
-  });
+  // NOTE: serialization (toJSON/fromJSON) moved OFF the entity to the
+  // persistence adapter (RssHeadlineHarvester #dehydrate) — audit D-3. The
+  // persisted-shape assertions now live in RssHeadlineHarvester.test.mjs.
 
   test('throws on missing source', () => {
     const { source, ...noSource } = validData;
@@ -93,15 +76,8 @@ describe('Headline', () => {
     expect(h1.id).toBe(h2.id);
   });
 
-  test('toJSON includes id', () => {
+  test('exposes id via getter', () => {
     const headline = new Headline(validData);
-    const json = headline.toJSON();
-    expect(json.id).toBe('testid1234');
-  });
-
-  test('fromJSON roundtrips with id', () => {
-    const headline = new Headline(validData);
-    const restored = Headline.fromJSON(headline.toJSON());
-    expect(restored.id).toBe(headline.id);
+    expect(headline.id).toBe('testid1234');
   });
 });
