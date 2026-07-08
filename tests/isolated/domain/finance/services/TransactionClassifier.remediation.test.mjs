@@ -32,4 +32,34 @@ describe('TransactionClassifier remediation', () => {
     const result = classifier.classify({ type: 'expense', tagNames: ['MysteryFund'] });
     expect(result).toEqual({ label: 'Uncategorized', bucket: 'shortTerm' });
   });
+
+  test('throws on config where a bucket tag collides with income/dayToDay tags', () => {
+    expect(() => new TransactionClassifier({
+      income: { tags: ['Paycheck'] },
+      monthly: [{ label: 'Utilities', tags: ['Paycheck'] }]
+    })).toThrow(/collision/i);
+  });
+
+  test('throws when a category LABEL collides with a dayToDay tag', () => {
+    expect(() => new TransactionClassifier({
+      dayToDay: { tags: ['Groceries'] },
+      shortTerm: [{ label: 'Groceries', tags: ['FoodFund'] }]
+    })).toThrow(/collision/i);
+  });
+
+  test('throws when a transferTag collides with income/dayToDay tags', () => {
+    expect(() => new TransactionClassifier({
+      income: { tags: ['RSU Vest'] },
+      monthly: [{ label: 'Long-term Savings', tags: ['Brokerage'], transferTags: ['RSU Vest'] }]
+    })).toThrow(/collision/i);
+  });
+
+  test('non-colliding config constructs fine', () => {
+    expect(() => new TransactionClassifier({
+      income: { tags: ['Paycheck'] },
+      dayToDay: { tags: ['Groceries'] },
+      monthly: [{ label: 'Utilities', tags: ['Electric'] }],
+      shortTerm: [{ label: 'Vacation', tags: ['Travel'] }]
+    })).not.toThrow();
+  });
 });

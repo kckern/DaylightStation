@@ -11,6 +11,8 @@ HC_More(Highcharts); // waterfall chart type lives in highcharts-more — keep
 import { TextInput } from '@mantine/core';
 import { formatAsCurrency, formatCompactCurrency, PALETTE } from "./lib/format.mjs";
 import { matchesTransactionFilter } from './lib/transactionFilter.mjs';
+import { groupSmall } from './lib/groupSmall.mjs';
+import { pressable } from './lib/a11y.mjs';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { useFinanceReload } from './FinanceDataContext.jsx';
 
@@ -56,10 +58,8 @@ export function Drawer({ cellKey, transactions, periodData }) {
           return value;
       };
 
-      const keyToUse = sortConfig.key === 'amount' ? 'expenseAmount' : sortConfig.key;
-
-      const aValue = parseValue(a[keyToUse]);
-      const bValue = parseValue(b[keyToUse]);
+      const aValue = parseValue(a[sortConfig.key]);
+      const bValue = parseValue(b[sortConfig.key]);
 
       if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
       if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
@@ -105,7 +105,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
         setPairMode(null);
         setPairDesc('');
         await reload();
-        setPairNotice('Pair saved and data refreshed \u2014 reopen this drawer to see updated amounts.');
+        setPairNotice('Pair saved \u2014 amounts updated.');
       } catch (err) {
         setPairNotice(`Failed to create pair: ${err.message}`);
       }
@@ -116,7 +116,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
       try {
         await DaylightAPI('api/v1/finance/pairs', { debit: transaction.id, credit: transaction.pairedWith }, 'DELETE');
         await reload();
-        setPairNotice('Pair removed and data refreshed \u2014 reopen this drawer to see updated amounts.');
+        setPairNotice('Pair removed \u2014 amounts updated.');
       } catch (err) {
         setPairNotice(`Failed to unpair: ${err.message}`);
       }
@@ -140,7 +140,7 @@ export function Drawer({ cellKey, transactions, periodData }) {
               {transactionFilter.tags && <div>{unfilterButton} Filtering by tags: {transactionFilter.tags.join(", ")}</div>}
               {transactionFilter.description && <div>{unfilterButton} Filtering by description: {transactionFilter.description}</div>}
               {pairMode && (
-                <div style={{ padding: '8px 12px', background: '#1a3a5c', borderRadius: '4px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="pair-banner">
                   <span>Select the offsetting transaction for: <strong>{pairMode.sourceTransaction.description}</strong></span>
                   <TextInput
                     size="xs"
@@ -149,34 +149,49 @@ export function Drawer({ cellKey, transactions, periodData }) {
                     onChange={(e) => setPairDesc(e.target.value)}
                     style={{ flex: 1 }}
                   />
-                  <button onClick={() => { setPairMode(null); setPairDesc(''); }} style={{ background: 'none', border: '1px solid #666', color: '#ccc', cursor: 'pointer', borderRadius: '3px', padding: '2px 8px' }}>Cancel</button>
+                  <button className="pair-banner-cancel" onClick={() => { setPairMode(null); setPairDesc(''); }}>Cancel</button>
                 </div>
               )}
               {pairNotice && (
-                <div style={{ padding: '8px 12px', background: '#2d2d3a', borderRadius: '4px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="pair-notice">
                   <span>{pairNotice}</span>
-                  <button onClick={() => setPairNotice(null)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}>×</button>
+                  <button className="pair-notice-dismiss" onClick={() => setPairNotice(null)}>×</button>
                 </div>
               )}
                 <table className="transactions-table">
                 <thead>
                     <tr>
-                      <th onClick={() => handleSorting('date')}>
+                      <th onClick={() => handleSorting('date')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('date'); } }}
+                        aria-sort={sortConfig.key === 'date' ? sortConfig.direction : 'none'}>
                         Date {getSortIcon('date')}
                       </th>
-                      <th onClick={() => handleSorting('accountName')}>
+                      <th onClick={() => handleSorting('accountName')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('accountName'); } }}
+                        aria-sort={sortConfig.key === 'accountName' ? sortConfig.direction : 'none'}>
                         Account {getSortIcon('accountName')}
                       </th>
-                      <th onClick={() => handleSorting('amount')}>
+                      <th onClick={() => handleSorting('amount')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('amount'); } }}
+                        aria-sort={sortConfig.key === 'amount' ? sortConfig.direction : 'none'}>
                         Amount {getSortIcon('amount')}
                       </th>
-                      <th onClick={() => handleSorting('description')} style={{ textAlign: 'left' }}>
+                      <th onClick={() => handleSorting('description')} className="th-left"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('description'); } }}
+                        aria-sort={sortConfig.key === 'description' ? sortConfig.direction : 'none'}>
                         Description {getSortIcon('description')}
                       </th>
-                      <th onClick={() => handleSorting('tagNames')}>
+                      <th onClick={() => handleSorting('tagNames')}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSorting('tagNames'); } }}
+                        aria-sort={sortConfig.key === 'tagNames' ? sortConfig.direction : 'none'}>
                         Tags {getSortIcon('tagNames')}
                       </th>
-                      <th style={{ width: '2rem' }}></th>
+                      <th className="actions-th"></th>
                     </tr>
                   </thead>
                     <tbody>
@@ -203,7 +218,9 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                     <tr key={guid} className={rowClassName + (pairMode ? ' pair-selectable' : '')}
                                       onClick={() => pairMode ? handleSelectPairTarget(transaction) : handleRowClick(transaction)}
                                       title={pairMode ? 'Select as offsetting transaction' : (hasId ? 'Open in Buxfer (new tab)' : undefined)}
-                                      style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}>
+                                      style={{ cursor: pairMode ? 'crosshair' : (hasId ? 'pointer' : 'default') }}
+                                      tabIndex={0}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (pairMode ? handleSelectPairTarget : handleRowClick)(transaction); } }}>
                                         <td className="date-col">{displayDate}</td>
                                         <td className="account-name-col">{transaction.accountName}</td>
                                         <td className="amount-col">{amountLabel}</td>
@@ -211,31 +228,25 @@ export function Drawer({ cellKey, transactions, periodData }) {
                                           {transaction.description}{memo}{pairBadge}
                                           {hasId && !pairMode && (
                                             <img src={externalIcon} alt="" aria-hidden="true"
-                                              style={{ width: '0.8em', height: '0.8em', marginLeft: '0.4em', opacity: 0.4, verticalAlign: 'baseline' }} />
+                                              className="row-external-icon" />
                                           )}
                                         </td>
                                         <td className="tags-col">{transaction.tagNames?.join(", ")}</td>
                                         <td className="actions-col" onClick={(e) => e.stopPropagation()}>
                                           {hasId && !pairMode && (
-                                            <div style={{ position: 'relative' }}>
+                                            <div className="txn-menu-wrap">
                                               <button
                                                 className="txn-menu-btn"
                                                 onClick={() => setMenuOpenId(menuOpenId === transaction.id ? null : transaction.id)}
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: '0.9rem', color: '#888' }}
+                                                aria-label="Transaction actions"
                                               >⋯</button>
                                               {menuOpenId === transaction.id && (
-                                                <div className="txn-menu-dropdown" style={{
-                                                  position: 'absolute', right: 0, top: '100%', zIndex: 10,
-                                                  background: '#1a1a2e', border: '1px solid #333', borderRadius: '4px',
-                                                  minWidth: '120px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-                                                }}>
+                                                <div className="txn-menu-dropdown">
                                                   {transaction.paired ? (
                                                     <button className="txn-menu-item" onClick={() => handleUnpair(transaction)}
-                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
                                                     >Unpair</button>
                                                   ) : (
                                                     <button className="txn-menu-item" onClick={() => handleStartPair(transaction)}
-                                                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem' }}
                                                     >Pair</button>
                                                   )}
                                                 </div>
@@ -273,7 +284,7 @@ function DrawerSummary({ sortedTransactions, summary }) {
               <img
                 src={externalIcon}
                 alt="external link"
-                style={{ width: "1em", height: "1em", marginBottom: "-0.2em" }}
+                className="external-link-icon"
               />
             </a>
           )}
@@ -298,6 +309,7 @@ function DrawerChart({ transactions, cellKey, periodData, setTransactionFilter }
   if(cellKey === 'month') return <DrawerWaterFallChart periodData={periodData} setTransactionFilter={setTransactionFilter} />;
   if(cellKey === 'day') return <DrawerTreeMapChart transactions={transactions} setTransactionFilter={setTransactionFilter} />;
 
+  return null;
 }
 
 function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
@@ -317,10 +329,10 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
     const [credit, debit] = val;
     if(credit) acc[0].push(credit);
     if(debit) acc[1].push(debit);
-    acc[0].sort((a, b) => a.y - b.y);
-    acc[1].sort((a, b) => a.y - b.y);
     return acc;
   }, [[],[]]);
+  categoryCredits.sort((a, b) => a.y - b.y);
+  categoryDebits.sort((a, b) => a.y - b.y);
 
   const surplusValue = month.surplus;
   const isNegative = surplusValue < 0;  
@@ -445,88 +457,69 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
   </div>
 
 }
-export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
+export function buildTreemapData(transactions) {
   const pastelColors = [
     '#FFD1DC', '#E2F0CB', '#FFABAB', '#B5EAD7', '#81F5FF',
     '#E3B5A4', '#FFF9C4', '#DAD5DB', '#C4B6EF', '#FFB6C1',
     '#FF677D', '#F2F3F5', '#D1C4E9', '#80DEEA', '#FFCCBC',
     '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7'
   ];
-
-  const options = useMemo(() => {
   const tagColorMap = {};
   let colorIndex = 0;
 
-  // Prepare raw data
-  const rawData = transactions.reduce((acc, tx) => {
-    const { tagNames, description, amount } = tx;
-    const [tag] = tagNames || ['Other'];
+  // Map-based accumulation (was O(n²) acc.find). Values use expenseAmount
+  // (signed spend) so refunds reduce their tag instead of producing negative
+  // nodes Highcharts silently drops.
+  const tags = new Map();
+  for (const tx of transactions) {
+    const [tag] = tx.tagNames || ['Other'];
     if (!tagColorMap[tag]) {
       tagColorMap[tag] = pastelColors[colorIndex % pastelColors.length];
       colorIndex++;
     }
-    let tagEntry = acc.find(e => e.id === tag);
-    if (!tagEntry) {
-      tagEntry = { id: tag, name: tag, value: 0, color: tagColorMap[tag] };
-      acc.push(tagEntry);
-    }
-    tagEntry.value += amount;
-    const descId = `${tag}-${description}`;
-    let descEntry = acc.find(e => e.id === descId);
-    if (!descEntry) {
-      descEntry = { id: descId, parent: tag, name: description, value: 0, color: tagColorMap[tag] };
-      acc.push(descEntry);
-    }
-    descEntry.value += amount;
-    return acc;
-  }, []);
+    if (!tags.has(tag)) tags.set(tag, { total: 0, byDesc: new Map() });
+    const entry = tags.get(tag);
+    const amount = tx.expenseAmount ?? tx.amount ?? 0;
+    entry.total += amount;
+    const desc = tx.description || '(no description)';
+    entry.byDesc.set(desc, (entry.byDesc.get(desc) || 0) + amount);
+  }
 
-  // Compute total for top-level entries
-  const grandTotal = rawData
-    .filter(e => !e.parent)
-    .reduce((sum, e) => sum + e.value, 0);
+  const data = [];
+  for (const [tag, entry] of tags) {
+    if (entry.total <= 0) continue; // fully-refunded tags can't render
+    const children = [...entry.byDesc.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .filter((c) => c.value > 0);
 
-  // Group children <= 20% into "Other"
-  const processedData = rawData.reduce((result, entry) => {
+    // Keep the biggest descriptions covering 80% of the tag; fold the rest.
+    const { kept, other } = groupSmall(children, { cumulativeShare: 0.8 });
+
+    data.push({
+      id: tag,
+      name: tag,
+      value: entry.total,
+      color: tagColorMap[tag]
+    });
+    kept.forEach((c) => data.push({ id: `${tag}-${c.name}`, parent: tag, name: c.name, value: c.value, color: tagColorMap[tag] }));
+    if (other) data.push({ id: `${tag}-Other`, parent: tag, name: 'Other', value: other.value, color: tagColorMap[tag] });
+  }
+
+  // Percent labels need the grand total of the KEPT parents.
+  const grandTotal = data.filter((e) => !e.parent).reduce((s, e) => s + e.value, 0);
+  for (const entry of data) {
     if (!entry.parent) {
-      const parentValueRounded = Math.round(entry.value).toLocaleString();
-      const parentPercent = Math.round((entry.value / grandTotal) * 100);
-      const parentWithLabel = {
-        ...entry,
-        name: `${parentPercent}% ${entry.id}
-        <br/>$${parentValueRounded}`
-      };
-
-      const children = rawData
-        .filter(child => child.parent === entry.id)
-        .sort((a, b) => b.value - a.value);
-
-      const parentTotal = children.reduce((sum, c) => sum + c.value, 0);
-      let accumulated = 0;
-      const mainChildren = [];
-
-      children.forEach(child => {
-        if (accumulated / parentTotal < 0.8) {
-          mainChildren.push(child);
-          accumulated += child.value;
-        }
-      });
-
-      const otherValue = parentTotal - accumulated;
-      result.push(parentWithLabel);
-      result.push(...mainChildren);
-      if (otherValue > 0) {
-        result.push({
-          id: `${entry.id}-Other`,
-          parent: entry.id,
-          name: 'Other',
-          value: otherValue,
-          color: entry.color
-        });
-      }
+      const pct = grandTotal > 0 ? Math.round((entry.value / grandTotal) * 100) : 0;
+      entry.name = `${pct}% ${entry.id}
+        <br/>$${Math.round(entry.value).toLocaleString()}`;
     }
-    return result;
-  }, []);
+  }
+  return data;
+}
+
+export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
+  const options = useMemo(() => {
+  const processedData = buildTreemapData(transactions);
 
   const options = {
     chart: { type: 'treemap' },
@@ -556,8 +549,7 @@ export function DrawerTreeMapChart({ transactions, setTransactionFilter }) {
     tooltip: {
       useHTML: true,
       pointFormatter: function() {
-        const val = Math.round(this.value);
-        return `${this.name}`;
+        return `<b>${this.name}</b><br/>$${Math.round(this.value).toLocaleString()}`;
       }
     },
     plotOptions: {
@@ -600,7 +592,7 @@ function safeGetTag(tx) {
   return tx.tagNames[0];
 }
 
-function buildDrillData(transactions) {
+export function buildDrillData(transactions) {
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return { topData: [], drillSeries: [], grandTotal: 0 };
   }
@@ -623,10 +615,9 @@ function buildDrillData(transactions) {
     txList: transactions.filter((t) => safeGetTag(t) === tag)
   }));
 
-  const lvl1Majors = all.filter((x) => x.pctOfGrand >= 2);
-  const lvl1Minors = all.filter((x) => x.pctOfGrand < 2);
+  const { kept: lvl1Kept, other: lvl1Other } = groupSmall(all, { minShare: 0.02, maxItems: MAX_ITEMS });
 
-  const top = lvl1Majors
+  const top = lvl1Kept
     .map((x) => ({
       name: x.tag,
       y: parseFloat(x.pctOfGrand.toFixed(2)),
@@ -637,37 +628,18 @@ function buildDrillData(transactions) {
     }))
     .sort((a, b) => b.y - a.y);
 
-  if (lvl1Minors.length) {
-    const sumPct = lvl1Minors.reduce((s, x) => s + x.pctOfGrand, 0);
-    const sumVal = lvl1Minors.reduce((s, x) => s + x.value, 0);
-    if (sumVal > 0) {
-      const allMinorTx = lvl1Minors.reduce((acc, item) => acc.concat(item.txList || []), []);
-      top.push({
-        name: "Other",
-        y: parseFloat(sumPct.toFixed(2)),
-        pctOfGrand: sumPct,
-        valueReal: sumVal,
-        drilldown: "Other",
-        txList: allMinorTx
-      });
-    }
-  }
-
-  if (top.length > MAX_ITEMS) {
-    const excess = top.splice(MAX_ITEMS);
-    const sumPct = excess.reduce((s, x) => s + x.pctOfGrand, 0);
-    const sumVal = excess.reduce((s, x) => s + x.valueReal, 0);
-    if (sumVal > 0) {
-      const allExcessTx = excess.reduce((acc, item) => acc.concat(item.txList || []), []);
-      top.push({
-        name: "Other",
-        y: parseFloat(sumPct.toFixed(2)),
-        pctOfGrand: sumPct,
-        valueReal: sumVal,
-        drilldown: "Other",
-        txList: allExcessTx
-      });
-    }
+  if (lvl1Other) {
+    const sumPct = lvl1Other.items.reduce((s, x) => s + x.pctOfGrand, 0);
+    const sumVal = lvl1Other.value;
+    const allMinorTx = lvl1Other.items.reduce((acc, item) => acc.concat(item.txList || []), []);
+    top.push({
+      name: "Other",
+      y: parseFloat(sumPct.toFixed(2)),
+      pctOfGrand: sumPct,
+      valueReal: sumVal,
+      drilldown: "Other",
+      txList: allMinorTx
+    });
   }
 
   const series = [];
@@ -689,25 +661,9 @@ function buildDrillData(transactions) {
       txList: otherEntry.txList.filter((t) => safeGetTag(t) === tag)
     }));
 
-    const sorted = otherItems.slice().sort((a, b) => b.pctOfOther - a.pctOfOther);
-    let cum = 0;
-    let splitIndex = sorted.length;
-    for (let i = 0; i < sorted.length; i++) {
-      cum += sorted[i].pctOfOther;
-      if (cum >= 90) {
-        splitIndex = i + 1;
-        break;
-      }
-    }
-    const lvl2Majors = sorted.slice(0, splitIndex);
-    const lvl2Minors = sorted.slice(splitIndex);
+    const { kept: lvl2Kept, other: lvl2Other } = groupSmall(otherItems, { cumulativeShare: 0.9, maxItems: 10 });
 
-    if (lvl2Majors.length > 10) {
-      const excess = lvl2Majors.splice(10);
-      lvl2Minors.push(...excess);
-    }
-
-    const d2 = lvl2Majors
+    const d2 = lvl2Kept
       .map((x) => ({
         name: x.tag,
         y: parseFloat(x.pctOfOther.toFixed(2)),
@@ -719,22 +675,23 @@ function buildDrillData(transactions) {
       }))
       .sort((a, b) => b.y - a.y);
 
-    if (lvl2Minors.length) {
-      const sumPctOfOther = lvl2Minors.reduce((s, x) => s + x.pctOfOther, 0);
-      const sumPctOfGrand = lvl2Minors.reduce((s, x) => s + x.pctOfGrand, 0);
-      const sumVal2 = lvl2Minors.reduce((s, x) => s + x.value, 0);
-      if (sumVal2 > 0) {
-        const allMinor2Tx = lvl2Minors.reduce((acc, i) => acc.concat(i.txList || []), []);
-        d2.push({
-          name: "Other2",
-          y: parseFloat(sumPctOfOther.toFixed(2)),
-          pctOfGrand: sumPctOfGrand,
-          valueReal: sumVal2,
-          valueFormatted: formatCompactCurrency(sumVal2),
-          drilldown: "Other2",
-          txList: allMinor2Tx
-        });
-      }
+    if (lvl2Other) {
+      const sumPctOfOther = lvl2Other.items.reduce((s, x) => s + x.pctOfOther, 0);
+      const sumPctOfGrand = lvl2Other.items.reduce((s, x) => s + x.pctOfGrand, 0);
+      const sumVal2 = lvl2Other.value;
+      const allMinor2Tx = lvl2Other.items.reduce((acc, i) => acc.concat(i.txList || []), []);
+      // Display name is "Other" (audit 4.2 — "Other2" must never leak to the
+      // user); the drilldown id stays "Other2" so level-3 lookup below can
+      // find this folded entry unambiguously.
+      d2.push({
+        name: "Other",
+        y: parseFloat(sumPctOfOther.toFixed(2)),
+        pctOfGrand: sumPctOfGrand,
+        valueReal: sumVal2,
+        valueFormatted: formatCompactCurrency(sumVal2),
+        drilldown: "Other2",
+        txList: allMinor2Tx
+      });
     }
 
     series.push({
@@ -743,7 +700,7 @@ function buildDrillData(transactions) {
       data: d2
     });
 
-    const other2Entry = d2.find((item) => item.name === "Other2");
+    const other2Entry = d2.find((item) => item.drilldown === "Other2");
     if (other2Entry && Array.isArray(other2Entry.txList) && other2Entry.txList.length > 0) {
       const other2Val = other2Entry.valueReal;
       if (other2Val > 0) {
@@ -798,42 +755,35 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
 
   const buildCrumbLabel = (point) => {
     const percentOfTop = (point.valueReal / grandTotal) * 100;
-    if (point.name === "Other" || point.name === "Other2") {
+    if (point.drilldown) {
       return `${formatCompactCurrency(point.valueReal)} (${percentOfTop.toFixed(1)}%)`;
     }
     return point.name;
   };
 
-  const handleClick = (point,e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (point.name === "Other" || point.name === "Other2") {
-      const subset = drillSeries.find((s) => s.id === point.name);
-      if (subset) {
-        const clickedData = topData.find((d) => d.name === point.name);
-        const childTxList = clickedData && Array.isArray(clickedData.txList) ? clickedData.txList : [];
-        if (point.name === "Other") {
-          if (childTxList.length) {
-            setDrillStack([...drillStack, childTxList]);
-            setCrumbs([...crumbs, buildCrumbLabel(point)]);
-          }
-        } else {
-          const d2Item = subset.data.find((d) => d.name === point.name);
-          if (d2Item && Array.isArray(d2Item.txList) && d2Item.txList.length) {
-            setDrillStack([...drillStack, d2Item.txList]);
-            setCrumbs([...crumbs, buildCrumbLabel(point)]);
-          } else if (childTxList.length) {
-            setDrillStack([...drillStack, childTxList]);
-            setCrumbs([...crumbs, buildCrumbLabel(point)]);
-          }
-        }
+  const handleClick = (point, e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    const drillId = point.drilldown;
+    if (drillId) {
+      const subset = drillSeries.find((s) => s.id === drillId);
+      if (!subset) return;
+      // Level-1 "Other": its txList lives on the topData entry itself.
+      // Level-2 "Other" (drilldown id "Other2"): its txList lives on the
+      // folded point inside the "Other breakdown" series (level-2 data).
+      const source = drillId === 'Other'
+        ? topData.find((d) => d.drilldown === 'Other')
+        : drillSeries.find((s) => s.id === 'Other')?.data.find((d) => d.drilldown === 'Other2');
+      const txList = source?.txList || [];
+      if (txList.length) {
+        setDrillStack([...drillStack, txList]);
+        setCrumbs([...crumbs, buildCrumbLabel(source)]);
       }
     } else {
       setTransactionFilter(point.name);
     }
   };
 
-  const chartOptions = {
+  const chartOptions = useMemo(() => ({
     chart: { type: "column", marginLeft: 20 },
     title: { text: "" },
     credits: { enabled: false },
@@ -966,7 +916,7 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
         }))
       }
     ]
-  };
+  }), [topData, drillSeries, drillStack, crumbs, grandTotal, setTransactionFilter]);
 
   function renderBreadcrumbs(handleBackClick) {
     return crumbs.map((c, i) => {
@@ -975,16 +925,9 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
       return (
         <span key={i}>
           <span
-        onClick={() => handleBackClick(i)}
-        style={{
-          fontWeight: i === crumbs.length - 1 ? "bold" : "normal",
-          color: "black",
-          textDecoration: "none",
-          cursor: "pointer",
-          backgroundColor: "#00000022",
-          borderRadius: "4px",
-          padding: "0 1ex",
-        }}
+        {...pressable(() => handleBackClick(i), {
+          className: i === crumbs.length - 1 ? 'drill-crumb drill-crumb--current' : 'drill-crumb'
+        })}
           >
         {c}
           </span>
@@ -1000,10 +943,9 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
   };
 
   return (
-    //max-width: 900px; margin: 0px auto; height:100%; display:flex; flex-direction: column
-    <div style={{ maxWidth: 900, margin: "0px auto", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ textAlign: "center", padding: "0.5ex 0"}}>
-        <span style={{ marginLeft: 10 }}>{renderBreadcrumbs(handleBackClick)}</span>
+    <div className="drill-chart-wrap">
+      <div className="drill-crumb-row">
+        <span className="drill-crumbs">{renderBreadcrumbs(handleBackClick)}</span>
       </div>
       <HighchartsReact highcharts={Highcharts} options={chartOptions} />
     </div>

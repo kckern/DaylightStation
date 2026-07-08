@@ -390,7 +390,7 @@ export class MortgageCalculator {
             closingBalance: this.#round(bridgeBalance),
             cumulativeInterest: this.#round(cumIntRunning),
             reconciliationAdj: 0,
-            source: 'buxfer'
+            source: 'ledger'
           });
         }
 
@@ -430,7 +430,7 @@ export class MortgageCalculator {
               allTransactions.push({
                 ...txn,
                 runningBalance: this.#round(running),
-                source: 'buxfer'
+                source: 'ledger'
               });
             }
           }
@@ -531,7 +531,7 @@ export class MortgageCalculator {
       return {
         ...txn,
         runningBalance: this.#round(startingBalanceNeg + runningTotal),
-        source: 'buxfer'
+        source: 'ledger'
       };
     });
 
