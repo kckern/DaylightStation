@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { AliasMap } from '../../../../../src/2_domains/common/AliasMap.mjs';
-import { vocabularyPrompt } from '../../../../../src/3_applications/concierge/prompts/system.mjs';
+import { vocabularyPrompt } from '../../../../../src/3_applications/agents/concierge/prompts/system.mjs';
 
 describe('vocabularyPrompt', () => {
   it('returns empty string when vocab is null', () => {

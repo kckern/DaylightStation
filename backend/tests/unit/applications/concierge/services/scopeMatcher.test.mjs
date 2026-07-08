@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { matchesScope, validateGlob } from '../../../../../src/3_applications/concierge/services/scopeMatcher.mjs';
+import { matchesScope, validateGlob } from '../../../../../src/3_applications/agents/concierge/policy/scopeMatcher.mjs';
 
 describe('matchesScope', () => {
   it('exact match returns true', () => {
