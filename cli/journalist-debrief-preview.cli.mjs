@@ -26,7 +26,7 @@ import { getConfigService } from './_bootstrap.mjs';
 import { GenerateMorningDebrief } from '#backend/src/3_applications/journalist/usecases/GenerateMorningDebrief.mjs';
 import { SendMorningDebrief } from '#backend/src/3_applications/journalist/usecases/SendMorningDebrief.mjs';
 
-const USERNAME = 'kckern';
+const USERNAME = 'user_1';
 
 async function readYaml(absPath) {
   try {

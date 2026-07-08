@@ -1197,7 +1197,7 @@ THREAD_HC = f"t-mem-{uuid.uuid4().hex[:8]}"
 THREAD_LP = f"t-mem-{uuid.uuid4().hex[:8]}"
 
 def run(agent, input_text, threadId, messages=None):
-    body = {"input": input_text, "context": {"userId": "kckern"}, "threadId": threadId}
+    body = {"input": input_text, "context": {"userId": "user_1"}, "threadId": threadId}
     if messages is not None: body["messages"] = messages
     r = subprocess.run(["curl","-sS","-m","120","-X","POST",
         f"http://localhost:3111/api/v1/agents/{agent}/run",

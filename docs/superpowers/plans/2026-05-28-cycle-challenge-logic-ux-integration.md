@@ -967,7 +967,7 @@ Append to `CycleChallengeOverlay.test.jsx` (add `fireEvent` to the testing-libra
 
 ```js
   it('shows initials when the avatar image fails, and recovers on rider change', () => {
-    const ch = { ...baseChallenge, rider: { id: 'kckern', name: 'User_1' } };
+    const ch = { ...baseChallenge, rider: { id: 'user_1', name: 'User_1' } };
     const { container, rerender } = render(<CycleChallengeOverlay challenge={ch} />);
     // Initially the image renders and initials are absent.
     expect(container.querySelector('.cycle-challenge-overlay__avatar-img')).toBeTruthy();

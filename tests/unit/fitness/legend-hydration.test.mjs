@@ -5,13 +5,13 @@ import { resolveHistoricalParticipant } from '#frontend/modules/Fitness/widgets/
 describe('resolveHistoricalParticipant', () => {
   it('returns displayMap entry when it has a non-slug displayName', () => {
     const displayMap = new Map([
-      ['kckern', { displayName: 'User_1', avatarSrc: '/avatars/kc.png', id: 'kckern' }]
+      ['user_1', { displayName: 'User_1', avatarSrc: '/avatars/kc.png', id: 'user_1' }]
     ]);
     const sessionMeta = new Map();
-    const out = resolveHistoricalParticipant('kckern', { displayMap, sessionMeta });
+    const out = resolveHistoricalParticipant('user_1', { displayMap, sessionMeta });
     expect(out.name).toBe('User_1');
     expect(out.avatarUrl).toBe('/avatars/kc.png');
-    expect(out.profileId).toBe('kckern');
+    expect(out.profileId).toBe('user_1');
   });
 
   it('falls back to sessionMeta when displayMap misses', () => {

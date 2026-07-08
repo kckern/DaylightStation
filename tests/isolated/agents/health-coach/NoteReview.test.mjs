@@ -16,7 +16,7 @@ describe('NoteReview', () => {
       { name: 'get_recent_workouts', execute: async () => ({ workouts: [] }) },
     ];
     const memory = { get: vi.fn(() => null), serialize: () => '' };
-    const gathered = await nr.gather({ tools: mockTools, userId: 'kckern', memory, logger: console, context: {} });
+    const gathered = await nr.gather({ tools: mockTools, userId: 'user_1', memory, logger: console, context: {} });
     expect(gathered.todayNutrition).toBeTruthy();
     expect(gathered.goals).toBeTruthy();
     expect(gathered.alertsSentToday.count).toBe(0);
@@ -30,7 +30,7 @@ describe('NoteReview', () => {
       { name: 'get_recent_workouts', execute: async () => ({}) },
     ];
     const memory = { get: vi.fn(() => null), serialize: () => '' };
-    const gathered = await nr.gather({ tools: mockTools, userId: 'kckern', memory, logger: console, context: { forceSpeak: true } });
+    const gathered = await nr.gather({ tools: mockTools, userId: 'user_1', memory, logger: console, context: { forceSpeak: true } });
     expect(gathered.forceSpeak).toBe(true);
   });
 
@@ -54,7 +54,7 @@ describe('NoteReview', () => {
       get: vi.fn(() => ({ count: 1, topics: ['prev'] })),
       set: vi.fn(),
     };
-    await nr.act({ should_send: true, text: 'Protein at 30%' }, { memory, userId: 'kckern', logger: console });
+    await nr.act({ should_send: true, text: 'Protein at 30%' }, { memory, userId: 'user_1', logger: console });
     expect(memory.set.mock.calls.length).toBe(1);
     const saved = memory.set.mock.calls[0][1];
     expect(saved.count).toBe(2);
@@ -63,7 +63,7 @@ describe('NoteReview', () => {
   it('act does nothing when should_send is false', async () => {
     const nr = new NoteReview();
     const memory = { get: vi.fn(), set: vi.fn() };
-    await nr.act({ should_send: false }, { memory, userId: 'kckern', logger: console });
+    await nr.act({ should_send: false }, { memory, userId: 'user_1', logger: console });
     expect(memory.set.mock.calls.length).toBe(0);
   });
 });

@@ -19,7 +19,7 @@ describe('Agents Memory API (unit)', () => {
 
   describe('getMemoryEntries', () => {
     it('should return all memory entries with metadata', async () => {
-      const state = await mockWorkingMemory.load('health-coach', 'kckern');
+      const state = await mockWorkingMemory.load('health-coach', 'user_1');
       const json = state.toJSON();
 
       assert.ok(json.coaching_style, 'Should have coaching_style entry');
@@ -34,11 +34,11 @@ describe('Agents Memory API (unit)', () => {
 
   describe('deleteMemoryEntry', () => {
     it('should remove a single key from memory', async () => {
-      const state = await mockWorkingMemory.load('health-coach', 'kckern');
+      const state = await mockWorkingMemory.load('health-coach', 'user_1');
       state.remove('temp_note');
-      await mockWorkingMemory.save('health-coach', 'kckern', state);
+      await mockWorkingMemory.save('health-coach', 'user_1', state);
 
-      const reloaded = await mockWorkingMemory.load('health-coach', 'kckern');
+      const reloaded = await mockWorkingMemory.load('health-coach', 'user_1');
       assert.strictEqual(reloaded.get('temp_note'), undefined);
       assert.strictEqual(reloaded.get('coaching_style'), 'direct feedback');
     });
@@ -47,9 +47,9 @@ describe('Agents Memory API (unit)', () => {
   describe('clearAllMemory', () => {
     it('should clear all entries', async () => {
       const emptyState = new WorkingMemoryState();
-      await mockWorkingMemory.save('health-coach', 'kckern', emptyState);
+      await mockWorkingMemory.save('health-coach', 'user_1', emptyState);
 
-      const reloaded = await mockWorkingMemory.load('health-coach', 'kckern');
+      const reloaded = await mockWorkingMemory.load('health-coach', 'user_1');
       assert.deepStrictEqual(reloaded.getAll(), {});
     });
   });

@@ -2912,7 +2912,7 @@ Expected: stdout contains "aggregate" and the period-shorthand block; exit 0.
 - [ ] **Step 3: Run `dscli health aggregate weight_lbs --period last_7d` against real data**
 
 ```bash
-cd /opt/Code/DaylightStation && DSCLI_USER_ID=kckern node cli/dscli.mjs health aggregate weight_lbs --period last_7d
+cd /opt/Code/DaylightStation && DSCLI_USER_ID=user_1 node cli/dscli.mjs health aggregate weight_lbs --period last_7d
 ```
 Expected: a JSON object on stdout with `metric: 'weight_lbs'`, `unit: 'lbs'`, `daysInPeriod: 7`. The exact `value` depends on actual data.
 

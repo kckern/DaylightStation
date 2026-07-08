@@ -25,7 +25,7 @@ describe('message handling on accept', () => {
     // UPC logs have metadata.source = 'upc' and a product image
     mockFoodLogStore.findByUuid = jest.fn().mockResolvedValue({
       id: 'abc123',
-      userId: 'kckern',
+      userId: 'user_1',
       status: 'pending',
       items: [{ label: 'Diet Coke', grams: 355, calories: 0, unit: 'g', amount: 1 }],
       meal: { date: '2026-02-12' },
@@ -33,7 +33,7 @@ describe('message handling on accept', () => {
     });
 
     await useCase.execute({
-      userId: 'kckern',
+      userId: 'user_1',
       conversationId: 'telegram:b6898194425_c575596036',
       logUuid: 'abc123',
       portionFactor: 1,

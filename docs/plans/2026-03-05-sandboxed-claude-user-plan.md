@@ -194,7 +194,7 @@ Run:
 su - claude -c 'ssh -T git@github.com' 2>&1 | head -3
 ```
 
-Expected: `Hi kckern! You've successfully authenticated` (or similar)
+Expected: `Hi user_1! You've successfully authenticated` (or similar)
 
 ---
 

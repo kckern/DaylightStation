@@ -291,7 +291,7 @@ Exposed internal GovernanceEngine state in `window.__fitnessGovernance` for test
 ### Remaining Issues
 
 **`challenge-fail-recover` (SKIPPED):**
-Zone propagation issue in test environment. WebSocket HR updates don't consistently reach ZoneProfileStore for all users - only kckern's zone updates while other users remain at 'cool'. This prevents maintaining the base requirement (active: all) needed for the challenge timer to run. The issue appears to be in how the test environment's simulator interacts with the DeviceManager/UserManager data flow, not in production code.
+Zone propagation issue in test environment. WebSocket HR updates don't consistently reach ZoneProfileStore for all users - only user_1's zone updates while other users remain at 'cool'. This prevents maintaining the base requirement (active: all) needed for the challenge timer to run. The issue appears to be in how the test environment's simulator interacts with the DeviceManager/UserManager data flow, not in production code.
 
 **`hydration-video-first` (FLAKY):**
 Timing-sensitive test trying to observe a transient "waiting" UI state. In some runs, the UI hydrates too quickly and the state is never observable. Consider increasing retry attempts or relaxing the assertion.
@@ -324,7 +324,7 @@ The test consistently fails at Phase 1, showing "Dad" instead of "User_1" even w
 
 ```
 [PHASE 1] Single device - expecting display_name
-  Activating kckern (40475)...
+  Activating user_1 (40475)...
   TIMEOUT: Device 40475 shows "Dad" (expected "User_1")
 ```
 
@@ -360,7 +360,7 @@ Both supposedly reference the same `session.deviceManager`, but they see differe
 ### The 5 Device IDs
 
 The 5 device IDs match the configured primary users' HR devices:
-- 40475 (kckern)
+- 40475 (user_1)
 - 90001, 28676 (other users)
 - 90003 (user_2)
 - 90005 (another user)
@@ -457,7 +457,7 @@ const preferGroupLabels = activeHeartRateDevices.length > 1;
 
 The device count fix was necessary but not sufficient. A second bug in the render-time priority chain prevented the group_label from being displayed:
 
-**The Bug:** In `FitnessUsers.jsx`, the device name resolution checked `guestAssignment?.occupantName` for ALL device assignments, not just actual guests. A "member" assignment (like kckern's primary device) still had `occupantName: "User_1"`, which bypassed the `hrDisplayNameMap` that correctly computed "Dad".
+**The Bug:** In `FitnessUsers.jsx`, the device name resolution checked `guestAssignment?.occupantName` for ALL device assignments, not just actual guests. A "member" assignment (like user_1's primary device) still had `occupantName: "User_1"`, which bypassed the `hrDisplayNameMap` that correctly computed "Dad".
 
 ### The Fix
 
@@ -481,8 +481,8 @@ if (isActualGuest && guestAssignment?.occupantName) {
 
 All 3 phases of `group-label-fallback.runtime.test.mjs` now pass:
 - Phase 1: Single device shows "User_1"
-- Phase 2: Second device joins, kckern switches to "Dad"
-- Phase 3: Device drops, kckern restores to "User_1"
+- Phase 2: Second device joins, user_1 switches to "Dad"
+- Phase 3: Device drops, user_1 restores to "User_1"
 
 ### Files Changed
 

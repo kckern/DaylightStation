@@ -23,7 +23,7 @@ function makeSvc({ getSession = null, listSessionsInRange = null } = {}) {
           listSessionsInRange: listSessionsInRange ?? vi.fn(async () => []),
           ...(getSession ? { getSession } : {}),
         },
-        householdId: 'kckern',
+        householdId: 'user_1',
       }),
     },
   });

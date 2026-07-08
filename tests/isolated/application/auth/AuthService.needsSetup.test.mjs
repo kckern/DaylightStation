@@ -25,14 +25,14 @@ describe('AuthService.needsSetup()', () => {
   });
 
   test('returns true when profiles exist but none have password hashes', () => {
-    const profiles = new Map([['kckern', { username: 'kckern', roles: ['sysadmin'] }]]);
+    const profiles = new Map([['user_1', { username: 'user_1', roles: ['sysadmin'] }]]);
     const svc = buildService({ profiles });
     expect(svc.needsSetup()).toBe(true);
   });
 
   test('returns false when at least one user has a password hash', () => {
-    const profiles = new Map([['kckern', { username: 'kckern', roles: ['sysadmin'] }]]);
-    const loginData = { kckern: { password_hash: '$2b$10$abc...' } };
+    const profiles = new Map([['user_1', { username: 'user_1', roles: ['sysadmin'] }]]);
+    const loginData = { user_1: { password_hash: '$2b$10$abc...' } };
     const svc = buildService({ profiles, loginData });
     expect(svc.needsSetup()).toBe(false);
   });

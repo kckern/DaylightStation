@@ -751,10 +751,10 @@ describe('Cycle SM — standing rider claim', () => {
   });
 
   it('grants eligibility to a claimed rider not in eligible_users', () => {
-    const engine = makeEngine(42, { cycle_ace: 'kckern' });
-    expect(engine._getEligibleUsers('cycle_ace')).toContain('kckern');
+    const engine = makeEngine(42, { cycle_ace: 'user_1' });
+    expect(engine._getEligibleUsers('cycle_ace')).toContain('user_1');
     const active = engine._startCycleChallenge({ ...SELECTION }, {});
-    expect(active.rider).toBe('kckern');
+    expect(active.rider).toBe('user_1');
   });
 
   it('falls back to random-from-eligible when no claim is set', () => {

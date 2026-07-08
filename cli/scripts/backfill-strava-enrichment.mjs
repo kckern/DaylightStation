@@ -57,7 +57,7 @@ const writeMode = args.includes('--write');
 const numericArg = args.find(a => /^\d+$/.test(a));
 const defaultDays = Math.ceil(moment().diff(moment('2024-01-01'), 'days'));
 const daysBack = parseInt(numericArg || String(defaultDays), 10);
-const username = 'kckern';
+const username = 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 const MIN_DURATION_SECONDS = 120;
 

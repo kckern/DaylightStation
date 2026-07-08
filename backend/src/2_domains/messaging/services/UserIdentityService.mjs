@@ -13,8 +13,8 @@ export class UserIdentityService {
    * @param {Object} identityMappings - Map of platform → { platformId: username }
    * @example
    * new UserIdentityService({
-   *   telegram: { '575596036': 'kckern' },
-   *   discord: { '987654321': 'kckern' },
+   *   telegram: { '575596036': 'user_1' },
+   *   discord: { '987654321': 'user_1' },
    * })
    */
   constructor(identityMappings = {}) {

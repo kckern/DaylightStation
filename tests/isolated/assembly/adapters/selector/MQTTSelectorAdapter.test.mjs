@@ -8,7 +8,7 @@ const SELECTORS = [
     id: 'niceday_rider_selector',
     mqtt_topic: 'zigbee2mqtt-usb/Garage Cycling Selector',
     equipment: 'niceday',
-    buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'kckern', '4_single': 'user_4' },
+    buttons: { '1_single': 'user_2', '2_single': 'user_3', '3_single': 'user_1', '4_single': 'user_4' },
   },
 ];
 

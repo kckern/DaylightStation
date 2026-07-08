@@ -4,7 +4,7 @@ import { computeMomentum, addDays } from './momentum.js';
 
 const roster = [
   { id: 'user_2', name: 'User_2' },
-  { id: 'kckern', name: 'User_1' },
+  { id: 'user_1', name: 'User_1' },
 ];
 const NOW = Date.UTC(2026, 5, 24, 18, 0, 0); // 2026-06-24T18:00Z
 
@@ -85,7 +85,7 @@ describe('computeMomentum — household + edges', () => {
   it('sums member weekly buckets position-by-position', () => {
     const sessions = [
       zsess('2026-06-24', { active: 30 }, ['user_2']),       // current week
-      zsess('2026-06-23', { active: 40, warm: 10 }, ['kckern']), // current week
+      zsess('2026-06-23', { active: 40, warm: 10 }, ['user_1']), // current week
       zsess('2026-06-15', { active: 25 }, ['user_2']),       // 1 week back
     ];
     const { household } = computeMomentum(sessions, roster, { now: NOW, householdLabel: 'Kern Family' });
@@ -101,7 +101,7 @@ describe('computeMomentum — household + edges', () => {
 
   it('lists roster members in order even with no sessions', () => {
     const { members } = computeMomentum([], roster, { now: NOW });
-    expect(members.map((m) => m.id)).toEqual(['user_2', 'kckern']);
+    expect(members.map((m) => m.id)).toEqual(['user_2', 'user_1']);
     expect(members[0].weeks.length).toBe(4);
   });
 

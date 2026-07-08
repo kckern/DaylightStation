@@ -168,7 +168,7 @@ Line 1999 (03:15:37): userId:user_2, HR:119, committedZone:active, rawZone:cool
 
 Aggregated suppression counts (final 60s window, line 1998):
 ```
-Users suppressed: kckern:86, user_2:124, user_3:96, user_4:80
+Users suppressed: user_1:86, user_2:124, user_3:96, user_4:80
 Total: 386 suppressions in 60 seconds
 ```
 
@@ -389,7 +389,7 @@ Option A is preferred — it's declarative and doesn't require state management.
 | Time | Window | Users | Total Suppressions |
 |------|--------|-------|--------------------|
 | 03:00:12 | 60s | user_2:15 | 25 (15 sampled+skipped) |
-| 03:15:37 | 60s | kckern:86, user_2:124, user_3:96, user_4:80 | 396 (386 skipped + 10 sampled) |
+| 03:15:37 | 60s | user_1:86, user_2:124, user_3:96, user_4:80 | 396 (386 skipped + 10 sampled) |
 
 **Assessment:** 396 suppressions in a single 60-second window means zone display is wrong ~6.6 times per second across all users. This is not occasional noise — it's the steady-state behavior whenever HR hovers near a zone boundary, which is most of the session.
 

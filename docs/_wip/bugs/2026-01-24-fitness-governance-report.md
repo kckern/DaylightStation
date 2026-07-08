@@ -16,7 +16,7 @@ This report analyzes fitness session governance activity from production logs, f
 
 ### Session Start: 19:23:09
 - **Phase:** `null` → `pending`
-- **Participants:** 5 (kckern, user_2, user_3, user_4, user_5)
+- **Participants:** 5 (user_1, user_2, user_3, user_4, user_5)
 - **Media:** Video 606440 (governed content)
 - **Requirement:** All participants must reach "Active" zone (HR threshold governance)
 
@@ -100,7 +100,7 @@ This report analyzes fitness session governance activity from production logs, f
   "reason": "requirements_not_met",
   "timeSinceWarningMs": null,
   "participantStates": [
-    {"id": "kckern", "zone": "warm", "hr": 120},
+    {"id": "user_1", "zone": "warm", "hr": 120},
     {"id": "user_2", "zone": "hot", "hr": 169},
     {"id": "user_3", "zone": "warm", "hr": 163},
     {"id": "user_4", "zone": "active", "hr": 136},
@@ -194,7 +194,7 @@ This report analyzes fitness session governance activity from production logs, f
 
 ### Zone Transition Summary (by Participant)
 
-**User_1 (kckern):**
+**User_1 (user_1):**
 - Zone changes: 8
 - Primary zones: Cool ↔ Active ↔ Warm
 - HR range: 99-121 bpm

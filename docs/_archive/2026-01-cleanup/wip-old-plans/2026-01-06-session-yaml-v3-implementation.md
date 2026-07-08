@@ -336,7 +336,7 @@ describe('participants block', () => {
       endTime: 1767732533431,
       timezone: 'America/Los_Angeles',
       participants: {
-        kckern: {
+        user_1: {
           display_name: 'Keith',
           is_primary: true,
           is_guest: false,
@@ -347,10 +347,10 @@ describe('participants block', () => {
       timeline: {
         timebase: { intervalMs: 5000 },
         series: {
-          'user:kckern:heart_rate': [71, 75, 80, 90, 100],
-          'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
-          'user:kckern:coins_total': [0, 1, 2, 3, 5],
-          'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
+          'user:user_1:heart_rate': [71, 75, 80, 90, 100],
+          'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
+          'user:user_1:coins_total': [0, 1, 2, 3, 5],
+          'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7]
         }
       }
     };
@@ -380,7 +380,7 @@ Expected: FAIL - participants is undefined
 // Add to serialize() method in SessionSerializerV3.js
 
 /**
- * Extract user ID from series key (e.g., 'user:kckern:heart_rate' -> 'kckern')
+ * Extract user ID from series key (e.g., 'user:user_1:heart_rate' -> 'user_1')
  */
 static extractUserIdFromKey(key) {
   const match = key.match(/^user:([^:]+):/);
@@ -494,10 +494,10 @@ describe('timeline block', () => {
       timeline: {
         timebase: { intervalMs: 5000, tickCount: 5 },
         series: {
-          'user:kckern:heart_rate': [71, 75, 80, 90, 100],
-          'user:kckern:zone_id': ['c', 'c', 'a', 'a', 'a'],
-          'user:kckern:coins_total': [0, 1, 2, 3, 5],
-          'user:kckern:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
+          'user:user_1:heart_rate': [71, 75, 80, 90, 100],
+          'user:user_1:zone_id': ['c', 'c', 'a', 'a', 'a'],
+          'user:user_1:coins_total': [0, 1, 2, 3, 5],
+          'user:user_1:heart_beats': [5.9, 12.2, 18.9, 26.4, 34.7],
           'device:49904:rpm': [null, null, 60, 65, 70],
           'device:49904:rotations': [null, null, 5, 10.5, 16.3],
           'global:coins_total': [0, 1, 2, 3, 5]
@@ -531,7 +531,7 @@ describe('timeline block', () => {
       timeline: {
         timebase: { intervalMs: 5000, tickCount: 5 },
         series: {
-          'user:kckern:heart_rate': [71, 75, 80, 90, 100],
+          'user:user_1:heart_rate': [71, 75, 80, 90, 100],
           'device:12345:power': [null, null, null, null, null],
           'device:12345:rotations': [0, 0, 0, 0, 0]
         }
@@ -589,7 +589,7 @@ static encodeSeries(series) {
  * Map v2 series key to v3 nested structure.
  */
 static mapSeriesKey(key) {
-  // user:kckern:heart_rate -> { type: 'participants', id: 'kckern', metric: 'hr' }
+  // user:user_1:heart_rate -> { type: 'participants', id: 'user_1', metric: 'hr' }
   // device:49904:rpm -> { type: 'equipment', id: '49904', metric: 'rpm' }
   // global:coins_total -> { type: 'global', id: null, metric: 'coins' }
 

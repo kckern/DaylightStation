@@ -58,7 +58,7 @@ const today = [
   sess('s4', H(16,59), 12.4,['user_3','user_4'], null, 466),
   sess('s5', H(17,19), 9.9, ['user_2'], null, 151),
   sess('s6', H(18,35), 8,   ['user_4','user_3'], null, 194),
-  sess('s7', H(19,10), 46.4,['kckern','user_3','user_4','user_2','user_5'],
+  sess('s7', H(19,10), 46.4,['user_1','user_3','user_4','user_2','user_5'],
        { primary: { contentId: 'plex:674286', title: 'Looney Tunes Racing' } }, 2745),
 ];
 
@@ -210,7 +210,7 @@ const race = (id, utcIso, riders) => ({
 
 const svc = {
   listByDate: async () => [
-    race('r-morning', '2026-06-05T15:48:00Z', [['kckern', 0], ['user_2', 0]]), // 08:48 PDT
+    race('r-morning', '2026-06-05T15:48:00Z', [['user_1', 0], ['user_2', 0]]), // 08:48 PDT
     race('r-after',   '2026-06-05T23:22:37Z', [['user_3', 215], ['user_4', 222]]),// 16:22 PDT
   ],
 };

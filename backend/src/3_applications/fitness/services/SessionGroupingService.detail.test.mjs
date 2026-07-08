@@ -29,7 +29,7 @@ describe('SessionGroupingService.getGroupDetail', () => {
     expect(detail.segments.map(s => s.offsetMs)).toEqual([0, 15000]); // 3 ticks * 5s
     expect(detail.seams).toEqual([{ atMs: 15000, gapMs: 585000 }]);   // gap = 600000 - 15000
     expect(detail.media).toBeNull();
-    expect(Object.keys(detail.participants).sort()).toEqual(['user_4','user_3']);
+    expect(Object.keys(detail.participants).sort()).toEqual(['user_3','user_4']);
   });
 
   it('rebases activity bands onto the compressed axis', async () => {

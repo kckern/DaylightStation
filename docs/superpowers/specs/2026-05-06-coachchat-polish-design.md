@@ -15,7 +15,7 @@
 
 Three bugs / gaps surfaced from live use:
 
-1. **`@` dropdown only shows Period suggestions.** Live verification: `GET /api/v1/health/mentions/all?user=kckern` returns 20 suggestions, all `group=period`. The handler only fans out to `/periods` and `metrics` (skipping `/recent-days` which covers day/workout/nutrition/weight) and applies a global `slice(0, 20)` that periods consume entirely.
+1. **`@` dropdown only shows Period suggestions.** Live verification: `GET /api/v1/health/mentions/all?user=user_1` returns 20 suggestions, all `group=period`. The handler only fans out to `/periods` and `metrics` (skipping `/recent-days` which covers day/workout/nutrition/weight) and applies a global `slice(0, 20)` that periods consume entirely.
 
 2. **Agent responses are not streaming.** The user sees "loading…" for 5+ seconds, then the entire prose answer appears at once. `MastraAdapter.streamExecute()` already exists and yields per-chunk events (`text-delta`, `tool-start`, `tool-end`, `finish`) but no HTTP route exposes it; the frontend's `useLocalRuntime` adapter does a single `POST /run` + await.
 

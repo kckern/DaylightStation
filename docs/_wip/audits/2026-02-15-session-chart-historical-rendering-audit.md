@@ -79,7 +79,7 @@ Historical session charts have **significant rendering degradation** compared to
 
 The API returns timeline series in V2 flat format:
 ```
-timeline.series = { "user_4:hr": [...], "user_4:zone": [...], "kckern:coins": [...] }
+timeline.series = { "user_4:hr": [...], "user_4:zone": [...], "user_1:coins": [...] }
 ```
 
 The adapter only looked for `timeline.participants` (V1 nested format). Added grouping logic that parses `userId:metric` flat keys into per-user objects.

@@ -65,7 +65,7 @@ describe('HeadlineService', () => {
 
   describe('harvestAll', () => {
     test('harvests all configured sources', async () => {
-      const result = await service.harvestAll('kckern');
+      const result = await service.harvestAll('user_1');
 
       expect(mockHarvester.harvest).toHaveBeenCalledTimes(2);
       expect(mockStore.saveSource).toHaveBeenCalledTimes(2);
@@ -73,7 +73,7 @@ describe('HeadlineService', () => {
     });
 
     test('prunes old items after harvest', async () => {
-      await service.harvestAll('kckern');
+      await service.harvestAll('user_1');
       expect(mockStore.pruneOlderThan).toHaveBeenCalledTimes(2);
     });
 
@@ -82,7 +82,7 @@ describe('HeadlineService', () => {
         .mockResolvedValueOnce({ source: 'cnn', label: 'CNN', lastHarvest: new Date().toISOString(), items: [], error: 'fail' })
         .mockResolvedValueOnce({ source: 'abc', label: 'ABC', lastHarvest: new Date().toISOString(), items: [{ title: 'X', timestamp: new Date().toISOString() }] });
 
-      const result = await service.harvestAll('kckern');
+      const result = await service.harvestAll('user_1');
       expect(result.harvested).toBe(2);
       expect(result.errors).toBe(1);
     });
@@ -95,7 +95,7 @@ describe('HeadlineService', () => {
         abc: { source: 'abc', label: 'ABC News', items: [{ title: 'B' }] },
       });
 
-      const result = await service.getAllHeadlines('kckern', 'main');
+      const result = await service.getAllHeadlines('user_1', 'main');
       expect(result.sources).toHaveProperty('cnn');
       expect(result.sources).toHaveProperty('abc');
     });
@@ -109,14 +109,14 @@ describe('HeadlineService', () => {
         items: [{ title: 'A' }],
       });
 
-      const result = await service.getSourceHeadlines('cnn', 'kckern');
+      const result = await service.getSourceHeadlines('cnn', 'user_1');
       expect(result.source).toBe('cnn');
       expect(result.items).toHaveLength(1);
     });
 
     test('returns null for unknown source', async () => {
       mockStore.loadSource.mockResolvedValue(null);
-      const result = await service.getSourceHeadlines('unknown', 'kckern');
+      const result = await service.getSourceHeadlines('unknown', 'user_1');
       expect(result).toBeNull();
     });
   });
@@ -179,7 +179,7 @@ describe('HeadlineService', () => {
       // No existing cache
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       // Should only fetch og:image for item-1 (item-2 already has an image)
       expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledTimes(1);
@@ -210,7 +210,7 @@ describe('HeadlineService', () => {
         items: [{ id: 'existing-1', title: 'Old article', link: 'https://example.com/old' }],
       });
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       // Should only enrich new-1 (existing-1 already in cache, so skipped)
       expect(mockWebContentGateway.extractReadableContent).toHaveBeenCalledTimes(1);
@@ -234,7 +234,7 @@ describe('HeadlineService', () => {
 
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       const savedResult = mockStore.saveSource.mock.calls[0][1];
       expect(savedResult.items[0].image).toBeUndefined();
@@ -263,7 +263,7 @@ describe('HeadlineService', () => {
 
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       const savedResult = mockStore.saveSource.mock.calls[0][1];
       expect(savedResult.items[0].image).toBeUndefined();
@@ -292,7 +292,7 @@ describe('HeadlineService', () => {
 
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       const savedResult = mockStore.saveSource.mock.calls[0][1];
       expect(savedResult.items[0].image).toBeUndefined();
@@ -321,7 +321,7 @@ describe('HeadlineService', () => {
 
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       const savedResult = mockStore.saveSource.mock.calls[0][1];
       expect(savedResult.items[0].image).toBeUndefined();
@@ -350,7 +350,7 @@ describe('HeadlineService', () => {
 
       mockStore.loadSource.mockResolvedValue(null);
 
-      await svc.harvestAll('kckern');
+      await svc.harvestAll('user_1');
 
       const savedResult = mockStore.saveSource.mock.calls[0][1];
       // Generic image should be stripped
@@ -376,7 +376,7 @@ describe('HeadlineService', () => {
       mockStore.loadSource.mockResolvedValue(null);
 
       // Should not throw — no webContentGateway means enrichment is skipped
-      const result = await service.harvestAll('kckern');
+      const result = await service.harvestAll('user_1');
       expect(result.harvested).toBe(2);
 
       // saveSource should still be called

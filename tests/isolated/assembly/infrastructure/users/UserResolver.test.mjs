@@ -7,11 +7,11 @@ describe('UserResolver', () => {
     resolveUsername: (platform, platformId) => {
       const mappings = {
         telegram: {
-          '575596036': 'kckern',
+          '575596036': 'user_1',
           '123456789': 'kirk',
         },
         discord: {
-          '987654321': 'kckern',
+          '987654321': 'user_1',
         },
       };
       return mappings[platform]?.[String(platformId)] ?? null;
@@ -22,14 +22,14 @@ describe('UserResolver', () => {
     it('resolves telegram user to system user', () => {
       const resolver = new UserResolver(mockConfigService);
 
-      expect(resolver.resolveUser('telegram', '575596036')).toBe('kckern');
+      expect(resolver.resolveUser('telegram', '575596036')).toBe('user_1');
       expect(resolver.resolveUser('telegram', '123456789')).toBe('kirk');
     });
 
     it('resolves discord user to system user', () => {
       const resolver = new UserResolver(mockConfigService);
 
-      expect(resolver.resolveUser('discord', '987654321')).toBe('kckern');
+      expect(resolver.resolveUser('discord', '987654321')).toBe('user_1');
     });
 
     it('returns null for unknown platform user', () => {

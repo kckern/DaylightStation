@@ -680,7 +680,7 @@ devices:
   heart_rate:
     "90001": user_2          # ANT+ device ID → user ID mapping
     "28689": user_4
-    "28690": kckern
+    "28690": user_1
   cadence:
     "54321": equipment_bike
 

@@ -14,7 +14,7 @@ const today = [
   sess('s4', H(16,59), 12.4,['user_3','user_4'], null, 466),
   sess('s5', H(17,19), 9.9, ['user_2'], null, 151),
   sess('s6', H(18,35), 8,   ['user_4','user_3'], null, 194),
-  sess('s7', H(19,10), 46.4,['kckern','user_3','user_4','user_2','user_5'],
+  sess('s7', H(19,10), 46.4,['user_1','user_3','user_4','user_2','user_5'],
        { primary: { contentId: 'plex:674286', title: 'Looney Tunes Racing' } }, 2745),
 ];
 
@@ -31,7 +31,7 @@ describe('groupSessions', () => {
     expect(g1.id).toBe('group:s1');
     expect(g1.isGroup).toBe(true);
     expect(g1.totalCoins).toBe(60 + 8 + 1139 + 466 + 151 + 194);
-    expect(Object.keys(g1.participants).sort()).toEqual(['user_4','user_2','user_3']);
+    expect(Object.keys(g1.participants).sort()).toEqual(['user_2','user_3','user_4']);
     expect(g1.media).toBeNull();
     expect(g1.segments[0].gapBeforeMs).toBe(0);
     expect(g1.segments[1].gapBeforeMs).toBeGreaterThan(0);
@@ -51,7 +51,7 @@ describe('groupSessions', () => {
   });
 
   it('keeps a non-cycling Strava workout (a run) standalone, never merged into a cycle block', () => {
-    const run = { ...sess('run', H(15, 30), 41, ['kckern']), strava: { name: 'Afternoon Run', sportType: 'Run' } };
+    const run = { ...sess('run', H(15, 30), 41, ['user_1']), strava: { name: 'Afternoon Run', sportType: 'Run' } };
     // The run sits mid-block between s1 and s2; without the guard it would absorb in.
     const groups = groupSessions([today[0], run, today[1]]);
     expect(groups.map(g => g.segments.map(x => x.sessionId))).toEqual([['s1'], ['run'], ['s2']]);
@@ -77,7 +77,7 @@ describe('groupSessions', () => {
   });
 
   it('preserves voice memos / suffer / strava passthrough fields (singleton spreads, group concatenates)', () => {
-    const vid = { ...sess('v', H(19,10), 46, ['kckern'], { primary: { contentId: 'plex:1', title: 'V' } }, 2745),
+    const vid = { ...sess('v', H(19,10), 46, ['user_1'], { primary: { contentId: 'plex:1', title: 'V' } }, 2745),
       voiceMemos: [{ transcript: 'we finished the course' }], maxSufferScore: 8, totalSufferScore: 8,
       stravaActivityId: 123, timezone: 'America/Los_Angeles' };
     const [g] = groupSessions([vid]);

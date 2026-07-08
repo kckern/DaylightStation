@@ -36,7 +36,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const categories = await adapter.getCategories('kckern');
+      const categories = await adapter.getCategories('user_1');
       expect(mockFetch).toHaveBeenCalledWith(
         `${freshrssHost}/api/greader.php/reader/api/0/tag/list?output=json`,
         expect.objectContaining({
@@ -61,7 +61,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const feeds = await adapter.getFeeds('kckern');
+      const feeds = await adapter.getFeeds('user_1');
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe('Hacker News');
     });
@@ -84,7 +84,7 @@ describe('FreshRSSFeedAdapter', () => {
         }),
       });
 
-      const { items } = await adapter.getItems('feed/1', 'kckern');
+      const { items } = await adapter.getItems('feed/1', 'user_1');
       expect(items).toHaveLength(1);
       expect(items[0].title).toBe('Test Article');
       expect(items[0].link).toBe('https://example.com/article');
@@ -95,7 +95,7 @@ describe('FreshRSSFeedAdapter', () => {
     test('sends edit-tag request', async () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
 
-      await adapter.markRead(['item-id-1'], 'kckern');
+      await adapter.markRead(['item-id-1'], 'user_1');
       expect(mockFetch).toHaveBeenCalledWith(
         `${freshrssHost}/api/greader.php/reader/api/0/edit-tag`,
         expect.objectContaining({
@@ -108,13 +108,13 @@ describe('FreshRSSFeedAdapter', () => {
   describe('auth', () => {
     test('reads API key from user auth file', async () => {
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ tags: [] }) });
-      await adapter.getCategories('kckern');
-      expect(mockDataService.user.read).toHaveBeenCalledWith('auth/freshrss', 'kckern');
+      await adapter.getCategories('user_1');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('auth/freshrss', 'user_1');
     });
 
     test('throws when no API key configured', async () => {
       mockDataService.user.read.mockReturnValue(null);
-      await expect(adapter.getCategories('kckern')).rejects.toThrow('FreshRSS API key not configured');
+      await expect(adapter.getCategories('user_1')).rejects.toThrow('FreshRSS API key not configured');
     });
   });
 });

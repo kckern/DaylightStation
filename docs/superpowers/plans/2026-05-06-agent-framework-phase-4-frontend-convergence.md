@@ -1829,7 +1829,7 @@ cd /opt/Code/DaylightStation && npm run dev
 # In another, trigger the health-coach via curl as a smoke test of the URL path
 curl -X POST http://localhost:3112/api/v1/agents/health-coach/run \
   -H 'Content-Type: application/json' \
-  -d '{"input":"hi","context":{"userId":"kckern","attachments":[]}}' \
+  -d '{"input":"hi","context":{"userId":"user_1","attachments":[]}}' \
   | head -c 200
 ```
 

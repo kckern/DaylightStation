@@ -25,9 +25,9 @@ describe('BaseAgent.buildPromptSections (default)', () => {
   });
 
   it('includes "## Active User" section when userId present', async () => {
-    const sections = await makeAgent().buildPromptSections({ userId: 'kckern' });
+    const sections = await makeAgent().buildPromptSections({ userId: 'user_1' });
     const userSection = sections.find(s => s?.includes('Active User'));
-    expect(userSection).toMatch(/kckern/);
+    expect(userSection).toMatch(/user_1/);
   });
 
   it('omits Active User section when userId absent', async () => {
@@ -36,7 +36,7 @@ describe('BaseAgent.buildPromptSections (default)', () => {
   });
 
   it('does NOT render a "## Working Memory" section (owned by Mastra)', async () => {
-    const sections = await makeAgent().buildPromptSections({ userId: 'kckern' });
+    const sections = await makeAgent().buildPromptSections({ userId: 'user_1' });
     expect(sections.find(s => s?.includes('Working Memory'))).toBeUndefined();
   });
 });

@@ -1873,7 +1873,7 @@ sudo docker exec daylight-station ls -la /usr/src/app/media/logs/agents/ 2>/dev/
 ```bash
 curl -s -X POST http://localhost:3111/api/v1/agents/echo/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"hi","context":{"userId":"kckern"}}'
+  -d '{"input":"hi","context":{"userId":"user_1"}}'
 ```
 
 Then:

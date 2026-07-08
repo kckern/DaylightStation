@@ -50,7 +50,7 @@ describe('FitnessSession — equipmentRider', () => {
 
   it('updates the claim when a rider_select event is routed', () => {
     const session = new FitnessSession();
-    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'kckern', action: '3_single' });
-    expect(session.getEquipmentRider('niceday')).toBe('kckern');
+    session.ingestData({ topic: 'rider_select', equipmentId: 'niceday', userId: 'user_1', action: '3_single' });
+    expect(session.getEquipmentRider('niceday')).toBe('user_1');
   });
 });

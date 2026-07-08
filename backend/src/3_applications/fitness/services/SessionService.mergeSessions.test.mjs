@@ -151,10 +151,10 @@ test('fills source-only participant sub-fields when both sides share a participa
     mkSession('20260617134452', '2026-06-17 13:44:52', '2026-06-17 14:05:29'), // target: same participant, NO strava
   ]);
   store._db.get('20260617131853').participants = {
-    kckern: { display_name: 'User_1', hr_device: '40475', strava: { activityId: 18963555842, type: 'WeightTraining' } },
+    user_1: { display_name: 'User_1', hr_device: '40475', strava: { activityId: 18963555842, type: 'WeightTraining' } },
   };
   store._db.get('20260617134452').participants = {
-    kckern: { display_name: 'User_1', hr_device: '40475' }, // same id, no strava sub-block
+    user_1: { display_name: 'User_1', hr_device: '40475' }, // same id, no strava sub-block
   };
 
   const svc = new SessionService({ sessionStore: store, defaultHouseholdId: 'test' });

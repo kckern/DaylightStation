@@ -33,10 +33,10 @@ test('Session round-trips summary through fromJSON/toJSON', () => {
     startTime: 1740556000000,
     version: 3,
     session: { id: '20260226054502', date: '2026-02-26' },
-    participants: { kckern: { display_name: 'kckern', is_primary: true } },
+    participants: { user_1: { display_name: 'user_1', is_primary: true } },
     timeline: { series: {}, events: [] },
     summary: {
-      participants: { kckern: { coins: 38, hr_avg: 120, hr_max: 155, hr_min: 85 } },
+      participants: { user_1: { coins: 38, hr_avg: 120, hr_max: 155, hr_min: 85 } },
       media: [{ mediaId: '602156', title: 'Cardio Power', primary: true }],
       coins: { total: 38, buckets: {} },
       challenges: { total: 0, succeeded: 0, failed: 0 },

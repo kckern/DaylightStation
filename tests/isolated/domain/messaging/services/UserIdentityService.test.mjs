@@ -3,11 +3,11 @@ import { UserIdentityService } from '#domains/messaging/services/UserIdentitySer
 
 const mappings = {
   telegram: {
-    '575596036': 'kckern',
+    '575596036': 'user_1',
     '123456789': 'kirk',
   },
   discord: {
-    '987654321': 'kckern',
+    '987654321': 'user_1',
   },
 };
 
@@ -15,13 +15,13 @@ describe('UserIdentityService', () => {
   describe('resolveUsername', () => {
     it('resolves telegram user to system username', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('telegram', '575596036')).toBe('kckern');
+      expect(service.resolveUsername('telegram', '575596036')).toBe('user_1');
       expect(service.resolveUsername('telegram', '123456789')).toBe('kirk');
     });
 
     it('resolves discord user to system username', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('discord', '987654321')).toBe('kckern');
+      expect(service.resolveUsername('discord', '987654321')).toBe('user_1');
     });
 
     it('returns null for unknown platform user', () => {
@@ -42,14 +42,14 @@ describe('UserIdentityService', () => {
 
     it('coerces numeric platformId to string', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolveUsername('telegram', 575596036)).toBe('kckern');
+      expect(service.resolveUsername('telegram', 575596036)).toBe('user_1');
     });
   });
 
   describe('resolvePlatformId', () => {
     it('resolves system username to telegram user ID', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolvePlatformId('telegram', 'kckern')).toBe('575596036');
+      expect(service.resolvePlatformId('telegram', 'user_1')).toBe('575596036');
     });
 
     it('returns null for unknown username', () => {
@@ -59,7 +59,7 @@ describe('UserIdentityService', () => {
 
     it('returns null for null inputs', () => {
       const service = new UserIdentityService(mappings);
-      expect(service.resolvePlatformId(null, 'kckern')).toBeNull();
+      expect(service.resolvePlatformId(null, 'user_1')).toBeNull();
       expect(service.resolvePlatformId('telegram', null)).toBeNull();
     });
   });

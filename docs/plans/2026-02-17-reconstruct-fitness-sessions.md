@@ -60,7 +60,7 @@ hydrateProcessEnvFromConfigs(configDir);
 initConfigService(dataDir);
 
 const WRITE_MODE = process.argv.includes('--write');
-const USERNAME = process.argv.find(a => !a.startsWith('-') && a !== process.argv[0] && a !== process.argv[1]) || 'kckern';
+const USERNAME = process.argv.find(a => !a.startsWith('-') && a !== process.argv[0] && a !== process.argv[1]) || 'user_1';
 const TIMEZONE = 'America/Los_Angeles';
 
 // --- Zone config from fitness.yml ---

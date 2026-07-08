@@ -550,10 +550,10 @@ describe('PersistenceManager — validation', () => {
     it('should include participants from series data missing from roster', () => {
       const pm = new PersistenceManager();
       const roster = [
-        { profileId: 'kckern', name: 'User_1', isPrimary: true, hrDeviceId: '40475' }
+        { profileId: 'user_1', name: 'User_1', isPrimary: true, hrDeviceId: '40475' }
       ];
       const seriesData = {
-        'user:kckern:heart_rate': [100, 110, 120],
+        'user:user_1:heart_rate': [100, 110, 120],
         'user:user_2:heart_rate': [120, 130, 140],
         'user:user_3:heart_rate': [130, 140, 150],
         'user:user_4:heart_rate': [110, 120, 130],
@@ -561,17 +561,17 @@ describe('PersistenceManager — validation', () => {
         'bike:40475:rotations': [0, 0, 0],  // device series — should be ignored
       };
       const deviceAssignments = [
-        { deviceId: '40475', occupantId: 'kckern' },
+        { deviceId: '40475', occupantId: 'user_1' },
         { deviceId: '90001', occupantId: 'user_2' },
         { deviceId: '90003', occupantId: 'user_3' },
       ];
 
       pm._augmentRosterFromSeries(roster, seriesData, deviceAssignments);
 
-      // Should have 5 entries: kckern (original) + user_2, user_3, user_4, user_5 (from series)
+      // Should have 5 entries: user_1 (original) + user_2, user_3, user_4, user_5 (from series)
       expect(roster).toHaveLength(5);
       const ids = roster.map(e => e.profileId);
-      expect(ids).toContain('kckern');
+      expect(ids).toContain('user_1');
       expect(ids).toContain('user_2');
       expect(ids).toContain('user_3');
       expect(ids).toContain('user_4');

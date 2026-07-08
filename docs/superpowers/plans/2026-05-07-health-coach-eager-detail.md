@@ -17,7 +17,7 @@ The plan is **not** done until this single-shot conversation produces a real ans
 ```bash
 curl -sS -m 90 -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"how was my run today?","context":{"userId":"kckern"}}'
+  -d '{"input":"how was my run today?","context":{"userId":"user_1"}}'
 ```
 
 Output text must satisfy ALL of:
@@ -349,7 +349,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
         listSessionsInRange: vi.fn(async () => [sparseSummary]),
         getSession: vi.fn(async (id) => id === '20260507060000' ? fullSession : null),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
@@ -377,7 +377,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
         listSessionsInRange: vi.fn(async () => five),
         getSession,
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_7d' } });
     expect(r.events).toHaveLength(5);
@@ -401,7 +401,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
         listSessionsInRange: vi.fn(async () => [sparseSummary]),
         getSession: vi.fn(async () => fullSession),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events[0].hr_avg).toBe(145);  // derived from series
@@ -419,7 +419,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
         listSessionsInRange: vi.fn(async () => [sparseSummary]),
         getSession: vi.fn(async () => { throw new Error('boom'); }),
       },
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
@@ -434,7 +434,7 @@ describe('EventQueryService.queryEvents — eager hydration (n ≤ 3)', () => {
     };
     const svc = new EventQueryService({
       sessionService: { listSessionsInRange: vi.fn(async () => [sparseSummary]) },  // no getSession
-      householdId: 'kckern',
+      householdId: 'user_1',
     });
     const r = await svc.queryEvents({ kind: 'workout', period: { rolling: 'last_1d' } });
     expect(r.events).toHaveLength(1);
@@ -705,7 +705,7 @@ until curl -sS -m 3 http://localhost:3111/api/v1/agents > /dev/null 2>&1; do sle
 ```bash
 curl -sS -m 90 -X POST http://localhost:3111/api/v1/agents/health-coach/run \
   -H "Content-Type: application/json" \
-  -d '{"input":"how was my run today?","context":{"userId":"kckern"}}' \
+  -d '{"input":"how was my run today?","context":{"userId":"user_1"}}' \
   > /tmp/exit.json
 
 python3 <<'PY'

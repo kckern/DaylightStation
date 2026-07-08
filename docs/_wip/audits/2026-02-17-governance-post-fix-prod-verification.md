@@ -219,7 +219,7 @@ Line 364 (05:26:46.855):
         "marybliss": 1697, "grandpa": 1697, "grannie": 1697,
         "user_7": 1697, "user_8": 1697, "user_6": 1697,
         "eli": 1697, "james": 1697, "josie": 1697,
-        "kckern": 1696, "user_2": 1696, "user_3": 1696,
+        "user_1": 1696, "user_2": 1696, "user_3": 1696,
         "user_4": 1696, "user_5": 1696
       }
     }
@@ -227,7 +227,7 @@ Line 364 (05:26:46.855):
 }
 ```
 
-28,844 profile rebuilds in 60 seconds across 17 users = ~1,697 rebuilds per user = **28 full profile rebuilds per second per user**. Only kckern is an active participant; the other 16 users are being unnecessarily rebuilt every cycle.
+28,844 profile rebuilds in 60 seconds across 17 users = ~1,697 rebuilds per user = **28 full profile rebuilds per second per user**. Only user_1 is an active participant; the other 16 users are being unnecessarily rebuilt every cycle.
 
 ---
 

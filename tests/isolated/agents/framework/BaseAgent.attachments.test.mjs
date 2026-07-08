@@ -55,10 +55,10 @@ describe('BaseAgent active-user injection', () => {
   it('adds "## Active User" section when context.userId is set', async () => {
     const runtime = { execute: vi.fn(async () => ({ output: 'ok', toolCalls: [] })) };
     const agent = new FakeAgent({ ...baseDeps, agentRuntime: runtime });
-    await agent.run('hi', { context: { userId: 'kckern' } });
+    await agent.run('hi', { context: { userId: 'user_1' } });
     const passed = runtime.execute.mock.calls.at(-1)[0];
     expect(passed.systemPrompt).toMatch(/## Active User/);
-    expect(passed.systemPrompt).toMatch(/\*\*kckern\*\*/);
+    expect(passed.systemPrompt).toMatch(/\*\*user_1\*\*/);
   });
 
   it('omits the Active User section when context.userId is null', async () => {

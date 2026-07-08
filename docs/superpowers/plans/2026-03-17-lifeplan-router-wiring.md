@@ -448,7 +448,7 @@ curl -s http://localhost:3111/api/v1/life/health | head -20
 Expected: JSON response with plan loaded status, service availability checks, no timeout.
 
 ```bash
-curl -s http://localhost:3111/api/v1/life/plan?username=kckern | head -20
+curl -s http://localhost:3111/api/v1/life/plan?username=user_1 | head -20
 ```
 
 Expected: JSON containing the seed plan data (purpose, goals, beliefs, values).

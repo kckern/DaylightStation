@@ -1359,7 +1359,7 @@ Expected: All tests PASS (20 tests across 4 files).
 - [ ] **Step 2: Verify the direct API still works as a comparison**
 
 ```bash
-curl -s "http://localhost:3112/api/v1/nutribot/upc?user=kckern&upc=749826002019" | head -c 200
+curl -s "http://localhost:3112/api/v1/nutribot/upc?user=user_1&upc=749826002019" | head -c 200
 ```
 
 Expected: Response from the nutribot UPC endpoint (confirms backend is running).

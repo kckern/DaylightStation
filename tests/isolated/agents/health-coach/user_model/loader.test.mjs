@@ -24,7 +24,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => baselines) },
       now: FROZEN_NOW,
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/Your model of this user/i);
     expect(ctx).toMatch(/175 lbs/);
     expect(ctx).toMatch(/Workouts: 4\.2\/wk/);
@@ -39,7 +39,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => null) },
       now: FROZEN_NOW,
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/No baselines available yet/i);
   });
 
@@ -55,7 +55,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => baselines) },
       now: FROZEN_NOW,
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/Workouts: 0\.4\/wk/);
     // No "Typical run" line when run is null
     expect(ctx).not.toMatch(/Typical run/);
@@ -70,7 +70,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => { throw new Error('boom'); }) },
       now: FROZEN_NOW,
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/175 lbs/);
     expect(ctx).toMatch(/No baselines available/i);
   });
@@ -81,7 +81,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => null) },
       now: FROZEN_NOW,
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/Your model of this user/i);
   });
 
@@ -91,7 +91,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => null) },
       now: () => new Date('2026-05-07T12:00:00Z'),  // Thursday
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/### Today/);
     expect(ctx).toMatch(/Date: 2026-05-07 \(Thursday\)/);
     expect(ctx).toMatch(/ground truth.*relative days/i);
@@ -103,7 +103,7 @@ describe('UserModelService.composeContext', () => {
       baselineService: { getBaselines: vi.fn(async () => null) },
       now: () => new Date('2026-01-01T00:00:00Z'),  // Thursday
     });
-    const ctx = await svc.composeContext({ userId: 'kckern' });
+    const ctx = await svc.composeContext({ userId: 'user_1' });
     expect(ctx).toMatch(/Date: 2026-01-01 \(Thursday\)/);
   });
 });

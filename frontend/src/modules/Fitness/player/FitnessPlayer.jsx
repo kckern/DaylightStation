@@ -262,7 +262,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
-  // Config-driven locks map (e.g. { governance_bypass: ['kckern'], skip_content: [...] }).
+  // Config-driven locks map (e.g. { governance_bypass: ['user_1'], skip_content: [...] }).
   // A lock is ACTIVE iff its value is a non-empty array of authorized usernames.
   // Mirrors FitnessShow (Task 4.2). Absent/empty lock ⇒ no in-player Skip/Unlock
   // button, so today's behavior is unchanged.

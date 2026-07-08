@@ -57,7 +57,7 @@ totals:
     red: 15
 
 participants:
-  kckern:
+  user_1:
     display_name: Keith
     is_primary: true
     is_guest: false                       # Derived from household membership
@@ -114,7 +114,7 @@ timeline:
   encoding: rle
 
   participants:
-    kckern:
+    user_1:
       hr: '[[71,2],75,74,76,77,...]'
       beats: '[5.9,11.8,18.1,...]'
       coins: '[[0,17],1,2,3,...]'

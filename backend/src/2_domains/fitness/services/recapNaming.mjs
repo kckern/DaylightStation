@@ -34,7 +34,7 @@ export function participantIds(data) {
  * Display names for the artist tag. Prefers the session's own `display_name`, but
  * only when it's a real name (not just the slug echoed back); otherwise consults
  * the injected `resolveName(id)` (profile lookup), then falls back to a
- * title-cased slug. So `user_2`→`User_2`, and `kckern`→`User_1` via the resolver.
+ * title-cased slug. So `user_2`→`User_2`, and `user_1`→`User_1` via the resolver.
  */
 export function participantNames(data, resolveName = null) {
   const participants = data?.summary?.participants || data?.participants || {};

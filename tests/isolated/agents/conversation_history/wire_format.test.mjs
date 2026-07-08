@@ -8,7 +8,7 @@ describe('native wire format — parseRequest messages', () => {
   it('passes through a valid messages array', () => {
     const r = parseRequest(makeReq({
       input: 'last',
-      context: { userId: 'kckern' },
+      context: { userId: 'user_1' },
       messages: [
         { role: 'user', content: 'first' },
         { role: 'assistant', content: 'reply' },

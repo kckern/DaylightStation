@@ -11,7 +11,7 @@ describe('GovernanceEngine.swapCycleRider', () => {
     nowValue = 10000;
     const session = {
       _deviceRouter: {
-        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3', 'kckern'] }]
+        getEquipmentCatalog: () => [{ id: 'cycle_ace', eligible_users: ['user_2', 'user_3', 'user_1'] }]
       }
     };
     engine = new GovernanceEngine(session, { now: () => nowValue });

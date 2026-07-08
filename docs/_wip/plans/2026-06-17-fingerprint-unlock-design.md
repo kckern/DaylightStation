@@ -97,9 +97,9 @@ gym staff, or business operator. Do **not** name code `ParentGate`/`parent*`.
 **`fitness.yml`** — new top-level `locks` map (lock name → authorized usernames):
 ```yaml
 locks:
-  dance_party:        [kckern, user_9]
-  governance_bypass:  [kckern, user_9]
-  skip_content:       [kckern, user_9]
+  dance_party:        [user_1, user_9]
+  governance_bypass:  [user_1, user_9]
+  skip_content:       [user_1, user_9]
 ```
 *(Must also be added to the `unifyKeys` list in `FitnessApp.jsx` so the frontend config
 normalizer surfaces it — same gotcha that hid `dance_party` historically.)*

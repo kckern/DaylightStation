@@ -22,7 +22,7 @@ describe('WeightEventAdapter', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' } });
@@ -40,7 +40,7 @@ describe('WeightEventAdapter', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' } });
@@ -56,7 +56,7 @@ describe('WeightEventAdapter', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.list({ period: { rolling: 'last_7d' } });
@@ -73,7 +73,7 @@ describe('WeightEventAdapter', () => {
     };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.detail('2026-05-05');
@@ -87,7 +87,7 @@ describe('WeightEventAdapter', () => {
     const range = { '2026-05-05': makeMetric({ date: '2026-05-05', lbs: null }) };
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.detail('2026-05-05');
@@ -103,7 +103,7 @@ describe('WeightEventAdapter', () => {
     }
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => range) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_30d' } });
@@ -116,7 +116,7 @@ describe('WeightEventAdapter', () => {
   it('summary handles empty range', async () => {
     const svc = new WeightEventAdapter({
       healthService: { getHealthForRange: vi.fn(async () => ({})) },
-      userId: 'kckern',
+      userId: 'user_1',
       now: FROZEN_NOW,
     });
     const r = await svc.summary({ period: { rolling: 'last_30d' } });

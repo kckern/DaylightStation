@@ -94,7 +94,7 @@ Phantom loading overlay flashes during active exercise. Misleading — users see
 Challenge `default_challenge_0_1772073479837` at 02:31:19:
 - Zone: **Hot**, required: **4 participants**, time allowed: 90s
 - Result: **failed**
-- Met: user_3, user_2, kckern
+- Met: user_3, user_2, user_1
 - Missing: **user_4**
 
 User_4's HR at challenge time (~tick 230–248): 124–138 BPM. User_4's hot threshold is 170 BPM. He was 32+ BPM below the hot zone and never close.
@@ -190,12 +190,12 @@ All for the same set of users with identical output (same zones, same thresholds
 ### Evidence
 
 230 `exit_margin_suppressed` events logged + aggregated data showing **1,495 skipped** in one 60-second window. Breakdown from aggregated data:
-- kckern: 442 suppressions (HR ~116, warm→active boundary, threshold 120, exit at 115)
+- user_1: 442 suppressions (HR ~116, warm→active boundary, threshold 120, exit at 115)
 - user_4: 808 suppressions
 - user_3: 107
 - user_2: 138
 
-kckern hovered near the warm/active boundary for extended periods, triggering continuous hysteresis.
+user_1 hovered near the warm/active boundary for extended periods, triggering continuous hysteresis.
 
 ### Status
 
@@ -261,8 +261,8 @@ Each phase change triggers UI updates (lock overlay, LED changes, playback pause
 
 | Time | Event | Roster Size |
 |------|-------|-------------|
-| 02:40:18 | locked→unlocked | 1 (only kckern) |
-| 02:40:29 | kckern zone → active | 1 |
+| 02:40:18 | locked→unlocked | 1 (only user_1) |
+| 02:40:29 | user_1 zone → active | 1 |
 | 02:41:21 | unlocked→pending | 0 |
 | 02:42:45 | tick_timer.stopped | 0 |
 
@@ -306,9 +306,9 @@ Sample:
   "rosterCount": 2,
   "chartPresentCount": 0,
   "chartTotalCount": 0,
-  "rosterIds": ["kckern", "global"],
+  "rosterIds": ["user_1", "global"],
   "chartPresentIds": [],
-  "missingFromChart": ["kckern", "global"]
+  "missingFromChart": ["user_1", "global"]
 }
 ```
 
@@ -342,7 +342,7 @@ The roster includes a `global` synthetic entry for combined scores, but the char
 6 `[FitnessChart] Segment shows gap but roster says active` events at 02:10:35–02:10:42, which is **~2 minutes before** the session log started at 02:12:16.
 
 ```
-02:10:35 kckern - endsWithGap: true, isActive: true, lastSegment: {isGap: true, status: 'idle'}
+02:10:35 user_1 - endsWithGap: true, isActive: true, lastSegment: {isGap: true, status: 'idle'}
 02:10:41 user_4   - same
 02:10:41 user_3   - same
 02:10:41 user_2  - same
