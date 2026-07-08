@@ -1,24 +1,64 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, cleanup } from '@testing-library/react';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 
-const step = { notes: [{ midi: 60, staff: 0, x: 10, top: 5, bottom: 20, width: 8 }, { midi: 48, staff: 1, x: 10, top: 40, bottom: 55, width: 8 }] };
+// Fake OSMD notehead <g> elements (only classList + style are touched).
+const mkEl = () => document.createElementNS('http://www.w3.org/2000/svg', 'g');
+const stepOf = (rhEl, lhEl) => ({
+  notes: [
+    { midi: 60, staff: 0, el: rhEl },
+    { midi: 48, staff: 1, el: lhEl },
+  ],
+});
 
 describe('NoteHighlightLayer', () => {
-  it('renders one chip per active-staff note with the right state', () => {
-    const { container } = render(
-      <NoteHighlightLayer step={step} activeParts={{ 0: true, 1: true }} struck={new Set([60])} scale={1} accent="#2ec46f" />,
+  it('lights each active-staff notehead in place and glows the struck ones', () => {
+    const rh = mkEl();
+    const lh = mkEl();
+    render(
+      <NoteHighlightLayer step={stepOf(rh, lh)} activeParts={{ 0: true, 1: true }} struck={new Set([60])} accent="#2ec46f" />,
     );
-    const chips = container.querySelectorAll('.piano-score-note');
-    expect(chips.length).toBe(2);
-    expect(container.querySelector('.piano-score-note--hit')).toBeTruthy();    // 60 struck
-    expect(container.querySelector('.piano-score-note--target')).toBeTruthy(); // 48 not yet
+    expect(rh.classList.contains('piano-note-lit')).toBe(true);
+    expect(rh.classList.contains('piano-note-hit')).toBe(true); // 60 struck
+    expect(rh.style.getPropertyValue('--nh-color')).toBe('#2ec46f');
+    expect(lh.classList.contains('piano-note-lit')).toBe(true);
+    expect(lh.classList.contains('piano-note-hit')).toBe(false); // 48 not yet struck
   });
 
-  it('omits notes on deactivated staves', () => {
-    const { container } = render(
-      <NoteHighlightLayer step={step} activeParts={{ 0: true, 1: false }} struck={new Set()} scale={1} accent="#2ec46f" />,
+  it('leaves deactivated-staff noteheads untouched', () => {
+    const rh = mkEl();
+    const lh = mkEl();
+    render(
+      <NoteHighlightLayer step={stepOf(rh, lh)} activeParts={{ 0: true, 1: false }} struck={new Set()} accent="#2ec46f" />,
     );
-    expect(container.querySelectorAll('.piano-score-note').length).toBe(1);
+    expect(rh.classList.contains('piano-note-lit')).toBe(true);
+    expect(lh.classList.contains('piano-note-lit')).toBe(false);
+  });
+
+  it('reverts the tint on unmount', () => {
+    const rh = mkEl();
+    const lh = mkEl();
+    const { unmount } = render(
+      <NoteHighlightLayer step={stepOf(rh, lh)} activeParts={{ 0: true, 1: true }} struck={new Set()} accent="#2ec46f" />,
+    );
+    unmount();
+    expect(rh.classList.contains('piano-note-lit')).toBe(false);
+    expect(rh.style.getPropertyValue('--nh-color')).toBe('');
+    expect(lh.classList.contains('piano-note-lit')).toBe(false);
+  });
+
+  it('reverts the previous set when the step advances', () => {
+    const rh1 = mkEl();
+    const rh2 = mkEl();
+    const { rerender } = render(
+      <NoteHighlightLayer step={{ notes: [{ midi: 60, staff: 0, el: rh1 }] }} activeParts={{ 0: true }} struck={new Set()} accent="#2ec46f" />,
+    );
+    expect(rh1.classList.contains('piano-note-lit')).toBe(true);
+    rerender(
+      <NoteHighlightLayer step={{ notes: [{ midi: 62, staff: 0, el: rh2 }] }} activeParts={{ 0: true }} struck={new Set()} accent="#2ec46f" />,
+    );
+    expect(rh1.classList.contains('piano-note-lit')).toBe(false); // old note reverted
+    expect(rh2.classList.contains('piano-note-lit')).toBe(true); // new note lit
+    cleanup();
   });
 });

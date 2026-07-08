@@ -27,7 +27,6 @@ import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
-const NO_MISSED = new Set(); // stable empty ref — note-level missed flashing is deferred (cursor already flashes wrong)
 
 /** Nearest melody event to a click at renderer-local (x, y). */
 function nearestEvent(events, x, y) {
@@ -705,8 +704,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
               step={steps[step]}
               activeParts={activeParts}
               struck={litNotes}
-              missed={NO_MISSED}
-              scale={scale}
               accent={cursorColor}
             />
           )}
