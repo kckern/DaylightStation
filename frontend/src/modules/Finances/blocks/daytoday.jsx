@@ -203,8 +203,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
             setDrawerContent({
               type: 'daytoday-month',
               title: header,
-              month: inferredMonth,
-              highlightDate: e.point.category
+              month: inferredMonth
             });
           }
         } : {}

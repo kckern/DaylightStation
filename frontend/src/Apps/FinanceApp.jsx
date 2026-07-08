@@ -157,7 +157,9 @@ export function BudgetViewer({ budget, mortgage, finance }) {
           padding="md"
           className="txn-drawer"
         >
-          <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />
+          <FinanceErrorBoundary label="Drawer">
+            <DrawerHost descriptor={drawerContent} budget={activeBudget} mortgage={mortgage} />
+          </FinanceErrorBoundary>
         </Drawer>
         <div className="grid-container">
           <FinanceErrorBoundary label="Monthly Cash Flow"><BudgetCashFlow setDrawerContent={setDrawerContent} budget={activeBudget} /></FinanceErrorBoundary>

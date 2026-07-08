@@ -497,7 +497,7 @@ export function buildTreemapData(transactions) {
 
     data.push({
       id: tag,
-      name: `${Math.round((entry.total) )}`, // placeholder — replaced below
+      name: tag,
       value: entry.total,
       color: tagColorMap[tag]
     });
