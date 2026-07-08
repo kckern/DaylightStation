@@ -22,8 +22,19 @@ Triage corrected two wrong assumptions in the original estimate below:
    '@jest/globals'`) living OUTSIDE `suite/`** (mostly `tests/unit/governance/`
    + `tests/unit/fitness/`). Those are run by NEITHER jest (harness only
    collects `suite/`) NOR vitest (they use jest globals). They are still dark.
-   **Next:** move them into `tests/unit/suite/` or add a jest glob that collects
-   `tests/unit/{governance,fitness}/**` — then baseline that too.
+   **Quantified 2026-07-08** (run under jest with `--experimental-vm-modules`):
+   72 files -> 55 pass / 17 fail; 535 tests -> 472 pass / **63 fail**. The 63
+   failing tests are genuine dark regressions (the audit's thesis, confirmed).
+   Distribution: 35 files `tests/unit/governance/`, 25 `tests/unit/fitness/`,
+   rest scattered (`tests/unit/{adapters,api,applications,content,domains}`,
+   `tests/isolated/{nutribot,application/fitness}`).
+   **Next (deliberate — reconfigures the primary `test:unit` gate):** broaden
+   the jest harness (`tests/unit/harness.mjs`, currently `--testPathPattern=
+   tests/unit/suite`) to also collect these files WITHOUT pulling in vitest
+   files (they import `vitest` and would crash jest) — an explicit dir allowlist
+   or content filter — then extend `scripts/audit-baseline.unit.txt` (its 410/23
+   counts are `suite/`-only and must not silently absorb the +63 fails). Triage
+   the 63 real failures separately; some may be trivial (path/config), some bugs.
 
 Also cleaned up en route: 4 dead vitest tests (deleted modules) removed, 8
 concierge tests repointed to the moved `agents/concierge/` subtree (commits
