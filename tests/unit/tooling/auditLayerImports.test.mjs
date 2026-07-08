@@ -53,4 +53,19 @@ describe('audit-layer-imports', () => {
       "    return { success: false };");
     expect(v.length).toBe(0);
   });
+  it('scanContent flags userDataService references outside 0_system/config', () => {
+    const v = scanContent('backend/src/1_adapters/x/FooAdapter.mjs',
+      "    const data = this.userDataService.readUserData(user, 'lifelog/fitness');");
+    expect(v.some(r => r.rule === 'no-userdataservice')).toBe(true);
+  });
+  it('scanContent flags UserDataService imports (uppercase) too', () => {
+    const v = scanContent('backend/src/3_applications/x/Svc.mjs',
+      "import { userDataService } from '#system/config/UserDataService.mjs';");
+    expect(v.some(r => r.rule === 'no-userdataservice')).toBe(true);
+  });
+  it('scanContent does not flag userDataService inside 0_system/config', () => {
+    const v = scanContent('backend/src/0_system/config/UserDataService.mjs',
+      "export const userDataService = new UserDataService();");
+    expect(v.some(r => r.rule === 'no-userdataservice')).toBe(false);
+  });
 });

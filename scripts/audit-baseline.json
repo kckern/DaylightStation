@@ -17,5 +17,6 @@
   "no-applications-alias": 0,
   "no-deep-relative-layer-cross": 0,
   "api-handrolled-500": 89,
-  "apps-success-false": 49
+  "apps-success-false": 49,
+  "no-userdataservice": 149
 }
