@@ -1,16 +1,11 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import {
-  STALE_NOTE_MS,
-  findLastActive,
-  closeNote,
-  trimHistory,
-  handleNoteOn,
-  handleNoteOff,
   parseMidiMessage,
   SUSTAIN_CONTROLLER,
   isSustainDown,
 } from '../noteHistory.js';
+import { createNoteStore } from './noteStore.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
 
@@ -94,9 +89,13 @@ function flushOut(out, bytes) {
 export function useWebMidiBLE({ preferredInputName } = {}) {
   const [status, setStatus] = useState('idle'); // idle | requesting | connected | no-input | unsupported | denied
   const [inputName, setInputName] = useState(null);
-  const [activeNotes, setActiveNotes] = useState(new Map());
-  const [sustainPedal, setSustainPedal] = useState(false);
-  const [noteHistory, setNoteHistory] = useState([]);
+
+  // Live-note state (activeNotes/noteHistory/sustainPedal/isPlaying) lives in an
+  // external store, NOT React state, so a note event re-renders only
+  // usePianoMidiNotes() subscribers — not every usePianoMidi() consumer
+  // (2026-07-06 decoupling audit R1).
+  const storeRef = useRef(null);
+  if (!storeRef.current) storeRef.current = createNoteStore();
 
   const accessRef = useRef(null);
   const inputRef = useRef(null);
@@ -132,25 +131,15 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   }, []);
 
   const applyNoteOn = useCallback((note, velocity) => {
-    const startTime = Date.now();
-    setActiveNotes((prev) => new Map(prev).set(note, { velocity, timestamp: startTime }));
-    setNoteHistory((prev) => handleNoteOn(prev, note, velocity, startTime));
-    emit({ type: 'note_on', note, velocity, time: startTime });
+    const time = Date.now();
+    storeRef.current.noteOn(note, velocity, time);
+    emit({ type: 'note_on', note, velocity, time });
   }, [emit]);
 
   const applyNoteOff = useCallback((note) => {
-    const endTime = Date.now();
-    setActiveNotes((prev) => {
-      if (!prev.has(note)) return prev;
-      const next = new Map(prev);
-      next.delete(note);
-      return next;
-    });
-    setNoteHistory((prev) => {
-      const idx = findLastActive(prev, note);
-      return idx < 0 ? prev : closeNote(prev, idx, endTime);
-    });
-    emit({ type: 'note_off', note, velocity: 0, time: endTime });
+    const time = Date.now();
+    storeRef.current.noteOff(note, time);
+    emit({ type: 'note_off', note, velocity: 0, time });
   }, [emit]);
 
   // On-screen (touch/click) keyboard injection. Routes through the same internal
@@ -173,7 +162,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (parsed.type === 'note_on') applyNoteOn(parsed.note, parsed.velocity);
     else if (parsed.type === 'note_off') applyNoteOff(parsed.note);
     else if (parsed.type === 'control' && parsed.controller === SUSTAIN_CONTROLLER) {
-      setSustainPedal(isSustainDown(parsed.value));
+      storeRef.current.sustain(isSustainDown(parsed.value));
     }
   }, [applyNoteOn, applyNoteOff, emitRaw]);
 
@@ -324,6 +313,28 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  /**
+   * Timestamped note senders — the audio plane of the score transport. `atMs` is
+   * an absolute performance.now()-domain time; Chromium queues the message in the
+   * browser-process MIDI service and dispatches it on schedule regardless of
+   * main-thread jank (the whole point — see the 2026-07-06 decoupling audit T2).
+   * Deliberately NO applyNoteOn/applyNoteOff: scheduled notes must not light the
+   * keyboard ahead of when they sound; visuals fire separately at due time.
+   */
+  const sendNoteAt = useCallback((note, velocity = 80, atMs, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f], atMs);
+    return true;
+  }, []);
+
+  const sendNoteOffAt = useCallback((note, atMs, channel = 0) => {
+    const out = outputRef.current;
+    if (!out) return false;
+    out.send([0x80 | (channel & 0x0f), note & 0x7f, 0], atMs);
+    return true;
+  }, []);
+
   /** Schedule an array of {t, type:'note_on'|'note_off', note, velocity} events (t in ms from now). */
   const scheduleNotes = useCallback((events, channel = 0) => {
     const out = outputRef.current;
@@ -340,25 +351,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   // Periodic cleanup of stale active notes / trim history (lost note-offs).
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = Date.now();
-      setActiveNotes((prev) => {
-        let changed = false;
-        const next = new Map(prev);
-        for (const [note, { timestamp }] of prev) {
-          if (now - timestamp > STALE_NOTE_MS) { next.delete(note); changed = true; }
-        }
-        return changed ? next : prev;
-      });
-      setNoteHistory((prev) => {
-        let history = prev;
-        for (let i = history.length - 1; i >= 0; i--) {
-          if (!history[i].endTime && now - history[i].startTime > STALE_NOTE_MS) {
-            history = closeNote(history, i, now);
-          }
-        }
-        const trimmed = trimHistory(history, now);
-        return trimmed.length !== prev.length || history !== prev ? trimmed : prev;
-      });
+      storeRef.current.sweepStale(Date.now());
     }, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -393,10 +386,10 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     status,
     inputName,
     connected: status === 'connected',
-    activeNotes,
-    sustainPedal,
-    noteHistory,
-    isPlaying: activeNotes.size > 0,
+    // Live-note store (activeNotes/noteHistory/sustainPedal/isPlaying). Read via
+    // usePianoMidiNotes() so only note-reading leaves re-render per note; this
+    // surface stays identity-stable across note traffic (2026-07-06 audit R1).
+    notes: storeRef.current,
     connect,
     sendProgramChange,
     sendVoice,
@@ -405,12 +398,14 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     sendPanic,
     sendNote,
     sendNoteOff,
+    sendNoteAt,
+    sendNoteOffAt,
     scheduleNotes,
     subscribe,
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, activeNotes, sustainPedal, noteHistory, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;

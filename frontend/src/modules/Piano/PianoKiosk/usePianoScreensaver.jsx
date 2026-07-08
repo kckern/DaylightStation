@@ -136,10 +136,18 @@ const POLL_INTERVAL_MS = 15_000;
  * @param {Array}    args.noteHistory      - grows on each note-on (= a fresh note)
  * @param {number}   [args.timeoutMinutes]
  * @param {{start?:string,end?:string}|null} [args.quietHours]
+ * @param {boolean}  [args.keepAlive]        - while true, hold the screen awake
+ *   (a performance is playing). Distinct from activeNotes/noteHistory activity:
+ *   Listen-mode playback performs via timestamped sendNoteAt and never churns
+ *   the note store, so the global playing flag is the only signal that a
+ *   performance is underway. Resets/holds the idle timer like continuous
+ *   activity; normal timeout behavior resumes once it goes false.
  */
-export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, offCooldownMinutes = 30 }) {
+export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeoutMinutes, quietHours, offCooldownMinutes = 30, keepAlive = false }) {
   const enabled = !!deviceId && timeoutMinutes > 0;
   const held = usePianoWakeLockState();
+  const keepAliveRef = useRef(keepAlive);
+  keepAliveRef.current = keepAlive;
 
   const historyLen = noteHistory?.length ?? 0;
   const lastActivityRef = useRef(Date.now());
@@ -238,6 +246,11 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
         logger().info('piano.screen-off-cooldown.cleared', { via: 'idle' });
       }
       if (heldRef.current) { lastActivityRef.current = Date.now(); return; } // video etc.
+      // A performance is playing (global playing flag). Listen-mode plays via
+      // timestamped sendNoteAt with no activeNotes churn, so this is the only
+      // hold that keeps the screen awake mid-performance. Refresh activity so the
+      // idle clock only starts elapsing once playback stops.
+      if (keepAliveRef.current) { lastActivityRef.current = Date.now(); return; }
       if (isWithinQuietHours(new Date(), quietRef.current)) { setScreen(false); return; }
       if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
     }, POLL_INTERVAL_MS);

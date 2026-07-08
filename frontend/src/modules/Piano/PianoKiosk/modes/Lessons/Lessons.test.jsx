@@ -16,7 +16,8 @@ vi.mock('../../../../MusicNotation/index.js', async (orig) => {
 // The drill view subscribes to MIDI and renders a keyboard; stub both so the
 // test stays focused on routing + content (no Web MIDI in jsdom).
 vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ activeNotes: new Map(), subscribe: () => () => {} }),
+  usePianoMidi: () => ({ subscribe: () => () => {}, pressNote: () => {}, releaseNote: () => {} }),
+  usePianoMidiNotes: () => ({ activeNotes: new Map(), noteHistory: [], sustainPedal: false, isPlaying: false }),
 }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 

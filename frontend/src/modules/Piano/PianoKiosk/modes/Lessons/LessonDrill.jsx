@@ -4,7 +4,7 @@ import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
-import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
+import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { AbcRenderer, generateMelodyAbc, expandDrill, handMidiSequence } from '../../../../MusicNotation/index.js';
 import { computeTargetScrollLeft } from './lessonScroll.js';
 
@@ -27,7 +27,7 @@ function tempoText(tempo) {
  */
 export default function LessonDrill({ collection, drillId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-lesson-drill' }), []);
-  const { activeNotes, subscribe, pressNote, releaseNote } = usePianoMidi();
+  const { subscribe, pressNote, releaseNote } = usePianoMidi();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const REST_FRACTION = 0.10; // active note rests ~10% from the left edge
@@ -239,8 +239,7 @@ export default function LessonDrill({ collection, drillId }) {
       {drill.focus && <p className="lesson-drill__focus">{drill.focus}</p>}
 
       <div className="lesson-drill__keys">
-        <PianoKeyboard
-          activeNotes={activeNotes}
+        <LiveKeyboard
           targetNotes={target != null ? new Set([target]) : null}
           startNote={kb.startNote}
           endNote={kb.endNote}
