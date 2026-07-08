@@ -45,6 +45,11 @@ export const CONTENT_RULES = [
   { rule: 'apps-success-false', layer: '3_applications/', re: /\bsuccess:\s*false\b/ },
   // UserDataService is deprecated (Task P2.8): no NEW consumers outside its home dir.
   { rule: 'no-userdataservice', layer: 'backend/src/', re: /userDataService/i, exclude: '0_system/config/' },
+  // Serialization ownership (audit D-3): entities must not define their storage
+  // format; datastores own hydration/dehydration. Counts toJSON() method
+  // DEFINITIONS (line starts with the method), not `.toJSON()` call sites.
+  // Migration: docs/_wip/plans/2026-07-08-serialization-ownership-migration.md
+  { rule: 'domains-tojson', layer: '2_domains/', re: /^\s*toJSON\s*\(\s*\)\s*\{/ },
 ];
 
 export function scanContent(filePath, content) {

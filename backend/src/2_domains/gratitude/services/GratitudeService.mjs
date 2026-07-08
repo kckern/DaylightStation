@@ -18,6 +18,26 @@ import { DomainInvariantError, EntityNotFoundError, ValidationError } from '#dom
 const CATEGORIES = ['gratitude', 'hopes'];
 
 /**
+ * Explicit DTO mappers for outward-facing plain shapes (bootstrap payloads,
+ * print formatting). Built from entity getters — entities do not own their
+ * serialized format; storage (de)hydration lives in the datastore adapter.
+ * See docs/_wip/plans/2026-07-08-serialization-ownership-migration.md.
+ */
+function toPlainItem(item) {
+  return { id: item.id, text: item.text };
+}
+
+function toPlainSelection(selection) {
+  return {
+    id: selection.id,
+    userId: selection.userId,
+    item: toPlainItem(selection.item),
+    datetime: selection.datetime,
+    printed: selection.printed
+  };
+}
+
+/**
  * Fisher-Yates shuffle
  * @param {Array} array
  * @returns {Array}
@@ -74,7 +94,7 @@ export class GratitudeService {
       }
     }
 
-    return shuffleArray(items.map(i => GratitudeItem.fromJSON(i)));
+    return shuffleArray(items);
   }
 
   /**
@@ -99,7 +119,7 @@ export class GratitudeService {
    */
   async addOption(householdId, category, text) {
     const item = new GratitudeItem({ text });
-    await this.#store.addOption(householdId, category, item.toJSON());
+    await this.#store.addOption(householdId, category, item);
     return item;
   }
 
@@ -114,8 +134,7 @@ export class GratitudeService {
    * @returns {Promise<Selection[]>}
    */
   async getSelections(householdId, category) {
-    const selections = await this.#store.getSelections(householdId, category);
-    return selections.map(s => Selection.fromJSON(s));
+    return this.#store.getSelections(householdId, category);
   }
 
   /**
@@ -155,7 +174,7 @@ export class GratitudeService {
     }
 
     const selection = Selection.create(userId, item, timestamp);
-    await this.#store.addSelection(householdId, category, selection.toJSON());
+    await this.#store.addSelection(householdId, category, selection);
 
     // Remove from options (transfer semantics)
     await this.#store.removeOption(householdId, category, item.id);
@@ -192,7 +211,7 @@ export class GratitudeService {
         text: item.text
       };
       const selection = Selection.create(userId, itemWithId, timestamp);
-      await this.#store.addSelection(householdId, category, selection.toJSON());
+      await this.#store.addSelection(householdId, category, selection);
       selections.push(selection);
     }
 
@@ -207,11 +226,7 @@ export class GratitudeService {
    * @returns {Promise<Selection|null>}
    */
   async removeSelection(householdId, category, selectionId) {
-    const removed = await this.#store.removeSelection(householdId, category, selectionId);
-    if (removed) {
-      return Selection.fromJSON(removed);
-    }
-    return null;
+    return this.#store.removeSelection(householdId, category, selectionId);
   }
 
   /**
@@ -244,7 +259,7 @@ export class GratitudeService {
       id: selection.id,
       userId: selection.userId,
       displayName: resolveDisplayName(selection.userId),
-      item: selection.item.toJSON(),
+      item: toPlainItem(selection.item),
       datetime: selection.datetime,
       printCount: selection.printCount
     });
@@ -266,8 +281,7 @@ export class GratitudeService {
    * @returns {Promise<GratitudeItem[]>}
    */
   async getDiscarded(householdId, category) {
-    const items = await this.#store.getDiscarded(householdId, category);
-    return items.map(i => GratitudeItem.fromJSON(i));
+    return this.#store.getDiscarded(householdId, category);
   }
 
   /**
@@ -292,7 +306,7 @@ export class GratitudeService {
    */
   async discardItem(householdId, category, item) {
     const gratitudeItem = new GratitudeItem(item);
-    await this.#store.addDiscarded(householdId, category, gratitudeItem.toJSON());
+    await this.#store.addDiscarded(householdId, category, gratitudeItem);
 
     // Remove from options
     await this.#store.removeOption(householdId, category, item.id);
@@ -318,16 +332,16 @@ export class GratitudeService {
 
     return {
       options: {
-        gratitude: options.gratitude.map(i => i.toJSON()),
-        hopes: options.hopes.map(i => i.toJSON())
+        gratitude: options.gratitude.map(toPlainItem),
+        hopes: options.hopes.map(toPlainItem)
       },
       selections: {
-        gratitude: selections.gratitude.map(s => s.toJSON()),
-        hopes: selections.hopes.map(s => s.toJSON())
+        gratitude: selections.gratitude.map(toPlainSelection),
+        hopes: selections.hopes.map(toPlainSelection)
       },
       discarded: {
-        gratitude: discarded.gratitude.map(i => i.toJSON()),
-        hopes: discarded.hopes.map(i => i.toJSON())
+        gratitude: discarded.gratitude.map(toPlainItem),
+        hopes: discarded.hopes.map(toPlainItem)
       }
     };
   }

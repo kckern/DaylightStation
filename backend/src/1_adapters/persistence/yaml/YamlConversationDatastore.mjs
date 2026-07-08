@@ -19,6 +19,8 @@ import {
 import { IConversationDatastore } from '#apps/common/ports/IConversationDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listHouseholdDirs, parseHouseholdId } from '#system/utils/householdDirs.mjs';
+import { Conversation } from '#domains/messaging/entities/Conversation.mjs';
+import { Message } from '#domains/messaging/entities/Message.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {
   #dataService;
@@ -80,6 +82,66 @@ export class YamlConversationDatastore extends IConversationDatastore {
     return loadYamlSafe(basePath);
   }
 
+  // ===========================================================================
+  // Hydration / Dehydration (the datastore owns the storage format)
+  // ===========================================================================
+
+  /**
+   * Storage -> Domain
+   * @private
+   * @param {Object} raw - Plain object as stored on disk
+   * @returns {Conversation}
+   */
+  #hydrate(raw) {
+    return new Conversation({
+      id: raw.id,
+      participants: raw.participants || [],
+      messages: (raw.messages || []).map(m => new Message({
+        id: m.id,
+        conversationId: m.conversationId,
+        senderId: m.senderId,
+        recipientId: m.recipientId,
+        type: m.type,
+        direction: m.direction ?? null,
+        content: m.content,
+        attachments: m.attachments || [],
+        timestamp: m.timestamp,
+        metadata: m.metadata || {}
+      })),
+      startedAt: raw.startedAt,
+      lastMessageAt: raw.lastMessageAt ?? null,
+      metadata: raw.metadata || {}
+    });
+  }
+
+  /**
+   * Domain -> Storage (the ONLY place the on-disk shape is defined)
+   * @private
+   * @param {Conversation} conversation
+   * @returns {Object} Plain object for YAML serialization
+   */
+  #dehydrate(conversation) {
+    return {
+      id: conversation.id,
+      participants: conversation.participants,
+      messages: conversation.messages.map(m => ({
+        id: m.id,
+        conversationId: m.conversationId,
+        senderId: m.senderId,
+        recipientId: m.recipientId,
+        type: m.type,
+        direction: m.direction,
+        content: m.content,
+        attachments: m.attachments,
+        timestamp: m.timestamp,
+        metadata: m.metadata
+      })),
+      startedAt: conversation.startedAt,
+      lastMessageAt: conversation.lastMessageAt,
+      metadata: conversation.metadata
+    };
+  }
+
   /**
    * Extract household ID from conversation ID or metadata
    * @private
@@ -110,12 +172,12 @@ export class YamlConversationDatastore extends IConversationDatastore {
 
   /**
    * Save a conversation
-   * @param {Object} conversation - Conversation to save
+   * @param {Conversation} conversation - Conversation entity to save
    * @returns {Promise<void>}
    */
   async save(conversation) {
-    const data = typeof conversation.toJSON === 'function'
-      ? conversation.toJSON()
+    const data = conversation instanceof Conversation
+      ? this.#dehydrate(conversation)
       : conversation;
 
     const householdId = this.#extractHouseholdId(data);
@@ -133,14 +195,14 @@ export class YamlConversationDatastore extends IConversationDatastore {
   /**
    * Find conversation by ID
    * @param {string} id - Conversation ID
-   * @returns {Promise<Object|null>}
+   * @returns {Promise<Conversation|null>}
    */
   async findById(id) {
     // Try default household first
     const defaultHouseholdId = 'default';
     let filePath = this.#getConversationPath(defaultHouseholdId, id);
     let data = this.#readFile(filePath);
-    if (data) return data;
+    if (data) return this.#hydrate(data);
 
     // Try to find in any household directory
     const dataRoot = this.#dataService.getDataRoot?.();
@@ -150,7 +212,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
         const hid = parseHouseholdId(folderName);
         filePath = this.#getConversationPath(hid, id);
         data = this.#readFile(filePath);
-        if (data) return data;
+        if (data) return this.#hydrate(data);
       }
     }
 
@@ -160,7 +222,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
   /**
    * Find conversation by participants (exact match)
    * @param {string[]} participants - Participant IDs
-   * @returns {Promise<Object|null>}
+   * @returns {Promise<Conversation|null>}
    */
   async findByParticipants(participants) {
     const sortedTarget = [...participants].sort();
@@ -170,7 +232,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
       const sortedParticipants = [...(conv.participants || [])].sort();
       if (sortedParticipants.length === sortedTarget.length &&
           sortedParticipants.every((p, i) => p === sortedTarget[i])) {
-        return conv;
+        return this.#hydrate(conv);
       }
     }
 
@@ -180,28 +242,30 @@ export class YamlConversationDatastore extends IConversationDatastore {
   /**
    * Find conversations for a participant
    * @param {string} participantId - Participant ID
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<Conversation[]>}
    */
   async findByParticipant(participantId) {
     const conversations = await this.#getAllConversations();
-    return conversations.filter(conv =>
-      (conv.participants || []).includes(participantId)
-    );
+    return conversations
+      .filter(conv => (conv.participants || []).includes(participantId))
+      .map(conv => this.#hydrate(conv));
   }
 
   /**
    * Find active conversations (recent messages within threshold)
    * @param {number} thresholdMinutes - Activity threshold in minutes
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<Conversation[]>}
    */
   async findActive(thresholdMinutes) {
     const conversations = await this.#getAllConversations();
     const threshold = Date.now() - (thresholdMinutes * 60 * 1000);
 
-    return conversations.filter(conv => {
-      const lastMessage = conv.lastMessageAt || conv.startedAt;
-      return lastMessage && new Date(lastMessage).getTime() > threshold;
-    });
+    return conversations
+      .filter(conv => {
+        const lastMessage = conv.lastMessageAt || conv.startedAt;
+        return lastMessage && new Date(lastMessage).getTime() > threshold;
+      })
+      .map(conv => this.#hydrate(conv));
   }
 
   /**
@@ -259,7 +323,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
   /**
    * Get conversations for a specific household
    * @param {string} householdId - Household ID
-   * @returns {Promise<Object[]>}
+   * @returns {Promise<Conversation[]>}
    */
   async getConversationsForHousehold(householdId) {
     const convDir = this.#getConversationsDir(householdId);
@@ -273,7 +337,7 @@ export class YamlConversationDatastore extends IConversationDatastore {
     for (const baseName of baseNames) {
       const conv = loadYamlSafe(path.join(convDir, baseName));
       if (conv) {
-        conversations.push(conv);
+        conversations.push(this.#hydrate(conv));
       }
     }
 
