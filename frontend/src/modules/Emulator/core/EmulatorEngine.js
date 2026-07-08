@@ -292,6 +292,47 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
   }
 
   /**
+   * Tap the core's input funnel for diagnostics. EmulatorJS routes EVERY input
+   * it consumes (keyboard + gamepad, after mapping) through
+   * `gameManager.functions.simulateInput(player, index, value)`. Wrapping it lets
+   * the chrome show — and the logs record — what the emulation *actually*
+   * received, as distinct from what the browser's Gamepad API merely reported.
+   * That gap is the "input reaches the page but not the game" failure.
+   *
+   * The wrapper calls `cb` (guarded — a diagnostic must never break input) then
+   * delegates to the original. Returns an untap function that restores the
+   * original; a no-op if the core isn't ready or doesn't expose simulateInput
+   * (older/broken builds), in which case the ejs channel simply never lights.
+   *
+   * @param {(player:number, index:number, value:number) => void} cb
+   * @returns {() => void} untap
+   */
+  function tapInput(cb) {
+    if (!ready || !instance || typeof cb !== 'function') return () => {};
+    let fns;
+    try { fns = instance.gameManager?.functions; } catch { fns = null; }
+    const fnsRef = fns;
+    if (!fnsRef || typeof fnsRef.simulateInput !== 'function') {
+      log().warn('input-tap.unavailable', {});
+      return () => {};
+    }
+    // Never stack wrappers (StrictMode double-invoke / re-tap): restore first.
+    const orig = fnsRef.simulateInput.__origSimulateInput || fnsRef.simulateInput;
+    const wrapped = function tappedSimulateInput(player, index, value) {
+      try { cb(player, index, value); } catch { /* diagnostic: swallow */ }
+      return orig.call(this, player, index, value);
+    };
+    wrapped.__origSimulateInput = orig;
+    fnsRef.simulateInput = wrapped;
+    log().info('input-tap.attached', {});
+    return () => {
+      try {
+        if (fnsRef.simulateInput === wrapped) fnsRef.simulateInput = orig;
+      } catch { /* best-effort restore */ }
+    };
+  }
+
+  /**
    * Best-effort teardown. EmulatorJS does not cleanly support re-init within a
    * single page; a full re-boot may require a page reload. That's acceptable —
    * this just releases what it can so a reload starts clean.
@@ -336,6 +377,7 @@ export function createEmulatorEngine({ load = loadEmulatorJS, win = window, logg
     captureResume,
     loadResume,
     restart,
+    tapInput,
     destroy,
   };
 }

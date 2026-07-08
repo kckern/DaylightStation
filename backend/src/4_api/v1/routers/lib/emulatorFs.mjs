@@ -101,12 +101,54 @@ export function readBinary(absPath, { range } = {}) {
   return { buffer: fs.readFileSync(absPath), size: stat.size, contentType };
 }
 
+// The exact core-load call in the vendored loader.js (prod, non-debug branch).
+// Stable across EmulatorJS builds; if it ever changes, makeLoaderReentrant
+// leaves the loader untouched rather than guessing.
+export const CORE_LOAD_CALL = 'await loadScript("emulator.min.js");';
+const GUARD_MARKER = 'typeof window.EmulatorJS === "undefined"';
+
+/**
+ * Make the vendored EmulatorJS loader re-entrant.
+ *
+ * loader.js unconditionally re-loads emulator.min.js each time it runs. That
+ * script declares `class EJS_STORAGE` (and the `EmulatorJS` class) at top level,
+ * so re-running the loader in the SAME page realm — which happens on every
+ * game-switch — throws "redeclaration of let EJS_STORAGE", aborting the fresh
+ * core mid-eval. The canvas still paints from the abandoned instance, but the
+ * new instance's gamepad→simulateInput wiring never attaches, so input silently
+ * dies on every game after the first (observed: green "consumed" LED dark,
+ * `emulator.input.summary gap:true`).
+ *
+ * The `EmulatorJS` class stays resident after the first load (it's assigned to
+ * `window.EmulatorJS`), so the core never needs re-loading. Guarding the core
+ * load behind `window.EmulatorJS` lets the loader be re-run to re-instantiate a
+ * fresh game with the resident class — game 2 boots as clean as game 1.
+ *
+ * Idempotent + defensive: returns the source unchanged if already guarded or if
+ * the expected call isn't found (a re-vendored loader we don't recognize).
+ *
+ * @param {string} source  loader.js contents
+ * @returns {string}
+ */
+export function makeLoaderReentrant(source) {
+  if (typeof source !== 'string') return source;
+  if (source.includes(GUARD_MARKER)) return source;      // already guarded
+  if (!source.includes(CORE_LOAD_CALL)) return source;   // unrecognized loader — leave as-is
+  return source.replace(
+    CORE_LOAD_CALL,
+    `if (${GUARD_MARKER}) { ${CORE_LOAD_CALL} }`,
+  );
+}
+
 /**
  * Build a reader for the vendored EmulatorJS engine bundle living under
  * engineDir. The relPath is expected to already be segment-validated by the
  * route, but we still resolve it under engineDir and reject any path that
  * escapes the directory (defense in depth). Reads use the same stat+read
  * approach as readBinary and map missing files to .code === 'ENOENT'.
+ *
+ * `loader.js` is served through makeLoaderReentrant so re-running it per game
+ * doesn't re-declare the core's top-level classes (see that function).
  *
  * @param {string} engineDir  Absolute path to the _engine bundle directory.
  * @returns {(relPath: string) => { buffer: Buffer, size: number, contentType: string }}
@@ -119,7 +161,13 @@ export function makeReadEngineFile(engineDir) {
     if (abs !== root && !abs.startsWith(root + path.sep)) {
       throw enoent();
     }
-    return readBinary(abs);
+    const result = readBinary(abs);
+    if (path.basename(relPath) === 'loader.js' && result.buffer) {
+      const patched = makeLoaderReentrant(result.buffer.toString('utf8'));
+      const buffer = Buffer.from(patched, 'utf8');
+      return { buffer, size: buffer.length, contentType: result.contentType };
+    }
+    return result;
   };
 }
 
