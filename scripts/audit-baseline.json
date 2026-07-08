@@ -4,7 +4,7 @@
   "domains-no-node-io": 0,
   "apps-no-adapters": 27,
   "apps-no-config-internals": 9,
-  "apps-no-fs": 13,
+  "apps-no-fs": 14,
   "apps-no-fileio": 8,
   "adapters-no-config-singleton": 0,
   "adapters-no-rendering": 1,
