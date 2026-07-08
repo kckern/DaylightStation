@@ -94,20 +94,47 @@ export class TransactionClassifier {
       return acc;
     }, {});
 
-    // The monthly/shortTerm dicts deliberately map each category LABEL to
-    // itself (label-as-tag matching). Labels and tags therefore share one
-    // namespace with the income/dayToDay tag lists — a key appearing in
-    // both would be resolved silently by branch order. Fail loud instead.
-    const reserved = new Set([...this.#incomeTags, ...this.#dayToDayTags]);
-    const collisions = [...new Set([
-      ...Object.keys(this.#monthlyTagDict),
-      ...Object.keys(this.#shortTermTagDict),
-      ...Object.keys(this.#transferTagDict)
-    ])].filter(key => reserved.has(key));
-    if (collisions.length > 0) {
+    this.#assertNoCrossBucketCollisions();
+  }
+
+  /**
+   * Every tag must route to exactly one bucket. classify() checks buckets in a
+   * fixed order (transfer → income → day → monthly → shortTerm), so a tag that
+   * appears in two namespaces is resolved silently by that order — a config
+   * error, not a feature. Fail loud at construction.
+   *
+   * The monthly/shortTerm dicts also map each category LABEL to itself
+   * (label-as-tag matching), so labels share this namespace too. transferTags
+   * route to the MONTHLY bucket, so a transferTag that also names a monthly tag
+   * lands in the same bucket and is NOT a collision.
+   * @private
+   */
+  #assertNoCrossBucketCollisions() {
+    const bucketOf = new Map();        // tag -> first bucket seen
+    const conflicts = new Map();       // tag -> Set<bucket>
+    const assign = (tag, bucket) => {
+      const prior = bucketOf.get(tag);
+      if (prior === undefined) { bucketOf.set(tag, bucket); return; }
+      if (prior === bucket) return;
+      const buckets = conflicts.get(tag) || new Set([prior]);
+      buckets.add(bucket);
+      conflicts.set(tag, buckets);
+    };
+
+    this.#incomeTags.forEach(t => assign(t, 'income'));
+    this.#dayToDayTags.forEach(t => assign(t, 'day'));
+    Object.keys(this.#monthlyTagDict).forEach(t => assign(t, 'monthly'));
+    Object.keys(this.#transferTagDict).forEach(t => assign(t, 'monthly'));
+    Object.keys(this.#shortTermTagDict).forEach(t => assign(t, 'shortTerm'));
+
+    if (conflicts.size > 0) {
+      const detail = [...conflicts.entries()]
+        .map(([tag, buckets]) => `${tag} (${[...buckets].sort().join('/')})`)
+        .sort()
+        .join(', ');
       throw new ValidationError(
-        `Classifier config collision: ${collisions.sort().join(', ')} appear in income/dayToDay tags AND in monthly/shortTerm buckets`,
-        { code: 'CLASSIFIER_TAG_COLLISION', collisions }
+        `Classifier config collision — tags route to multiple buckets: ${detail}`,
+        { code: 'CLASSIFIER_TAG_COLLISION', collisions: [...conflicts.keys()].sort() }
       );
     }
   }

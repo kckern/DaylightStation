@@ -62,4 +62,49 @@ describe('TransactionClassifier remediation', () => {
       shortTerm: [{ label: 'Vacation', tags: ['Travel'] }]
     })).not.toThrow();
   });
+
+  // Cross-bucket collisions: a tag routing to two DIFFERENT buckets is
+  // resolved silently by classify()'s fixed order — a config error.
+  test('throws when a tag appears in both a monthly and a shortTerm bucket', () => {
+    expect(() => new TransactionClassifier({
+      monthly: [{ label: 'Utilities', tags: ['Water'] }],
+      shortTerm: [{ label: 'Bills', tags: ['Water'] }]
+    })).toThrow(/collision/i);
+  });
+
+  test('throws when a tag appears in both income and dayToDay', () => {
+    expect(() => new TransactionClassifier({
+      income: { tags: ['Cashback'] },
+      dayToDay: { tags: ['Cashback'] }
+    })).toThrow(/collision/i);
+  });
+
+  test('throws when a monthly LABEL equals a shortTerm bucket tag', () => {
+    expect(() => new TransactionClassifier({
+      monthly: [{ label: 'Insurance', tags: ['Premium'] }],
+      shortTerm: [{ label: 'Health', tags: ['Insurance'] }]
+    })).toThrow(/collision/i);
+  });
+
+  // A transferTag routes to the MONTHLY bucket, so a transferTag that also
+  // names a monthly tag lands in the same bucket — NOT a collision.
+  test('a transferTag that also names a monthly tag is not a collision', () => {
+    expect(() => new TransactionClassifier({
+      monthly: [{ label: 'Housing', tags: ['Rent'], transferTags: ['Rent'] }]
+    })).not.toThrow();
+  });
+
+  test('error names each colliding tag with its buckets', () => {
+    let err;
+    try {
+      new TransactionClassifier({
+        monthly: [{ label: 'Utilities', tags: ['Water'] }],
+        shortTerm: [{ label: 'Bills', tags: ['Water'] }]
+      });
+    } catch (e) { err = e; }
+    expect(err).toBeDefined();
+    expect(err.message).toMatch(/Water/);
+    expect(err.message).toMatch(/monthly/);
+    expect(err.message).toMatch(/shortTerm/);
+  });
 });
