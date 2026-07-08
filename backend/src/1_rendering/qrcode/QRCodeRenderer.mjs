@@ -180,20 +180,19 @@ function renderCenteredLayout(data, options, theme) {
 // ─── Shared Helpers ─────────────────────────────────────────────
 
 function truncateLabel(text, fontSize, maxWidth) {
-  // Approximate character width as 0.55× font size for sans-serif bold, 0.5× for regular
-  const charWidth = fontSize * 0.55;
+  const charWidth = fontSize * qrcodeTheme.label.charWidthFactor;
   const maxChars = Math.floor(maxWidth / charWidth);
   if (text.length <= maxChars) return text;
   return text.slice(0, maxChars - 1).trimEnd() + '…';
 }
 
 function renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHeight, padding, label, sublabel, optionBadges, theme }) {
-  const boxGap = 4;
+  const boxGap = theme.label.box.gap;
   const boxX = frame;
   const boxY = frame + innerH + boxGap;
   const boxW = totalWidth - frame * 2;
   const boxH = totalHeight - boxY - frame;
-  const boxRadius = 8;
+  const boxRadius = theme.label.box.radius;
 
   // Reserve space for badges on the right
   const badgeSpace = optionBadges.length > 0
@@ -202,19 +201,19 @@ function renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHe
   const textMaxWidth = boxW - padding * 2 - badgeSpace;
 
   // White rounded box
-  parts.push(`<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="${boxRadius}" fill="#ffffff"/>`);
+  parts.push(`<rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="${boxRadius}" fill="${theme.label.box.color}"/>`);
 
   // Text centered within the box
   const textBlockHeight = sublabel ? theme.label.fontSize + theme.label.lineSpacing : theme.label.fontSize;
   const labelY = boxY + (boxH - textBlockHeight) / 2 + theme.label.fontSize;
 
   const truncatedLabel = truncateLabel(label, theme.label.fontSize, textMaxWidth);
-  parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="#000000">${escapeXml(truncatedLabel)}</text>`);
+  parts.push(`<text x="${totalWidth / 2}" y="${labelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.fontSize}" font-weight="bold" fill="${theme.label.color}">${escapeXml(truncatedLabel)}</text>`);
 
   if (sublabel) {
     const sublabelY = labelY + theme.label.lineSpacing;
     const truncatedSublabel = truncateLabel(sublabel, theme.label.sublabelFontSize, textMaxWidth);
-    parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="#000000">${escapeXml(truncatedSublabel)}</text>`);
+    parts.push(`<text x="${totalWidth / 2}" y="${sublabelY}" text-anchor="middle" font-family="${theme.label.fontFamily}" font-size="${theme.label.sublabelFontSize}" fill="${theme.label.sublabelColor}">${escapeXml(truncatedSublabel)}</text>`);
   }
 
   // Option badges — far right inside box
@@ -222,7 +221,7 @@ function renderLabelBox(parts, { totalWidth, totalHeight, frame, innerH, labelHe
     const badgeY = labelY;
     optionBadges.forEach((pathData, i) => {
       const bx = boxX + boxW - padding - (optionBadges.length - i) * (theme.badge.iconSize + theme.badge.gap);
-      parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="#666666"/></g>`);
+      parts.push(`<g transform="translate(${bx}, ${badgeY - theme.badge.iconSize}) scale(${(theme.badge.iconSize / 24).toFixed(3)})"><path d="${pathData}" fill="${theme.badge.color}"/></g>`);
     });
   }
 }

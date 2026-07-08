@@ -205,25 +205,27 @@ export function createFitnessReceiptRenderer(config) {
 
     let totalHeight = 0;
 
-    // Header section
-    const headerHeight = 10 + 55 + 30 + 30 + 30 + 10; // top pad + title + date + duration + names + gap
+    // Header section — same named advances the draw pass consumes below
+    const hdr = theme.header;
+    const headerHeight = hdr.topPad + hdr.titleAdvance + hdr.dateAdvance
+      + hdr.durationAdvance + hdr.namesAdvance + hdr.gap;
     totalHeight += headerHeight;
 
     // Treasure box
     let tbHeight = 0;
     if (hasTreasureBox) {
-      tbHeight = sectionGap + 70 + theme.treasureBox.barHeight + 30 + 10; // header + coin + bar + labels + gap
+      tbHeight = sectionGap + theme.treasureBox.coinAdvance + theme.treasureBox.barHeight + 30 + 10; // header + coin + bar + labels + gap
       totalHeight += tbHeight;
     }
 
     // Flame chart
     const chartContentHeight = chartRows * theme.chart.rowHeight;
-    const chartHeaderHeight = 25;
+    const chartHeaderHeight = theme.chart.headerHeight;
     const chartSectionHeight = sectionGap + 40 + chartHeaderHeight + chartContentHeight + 10;
     totalHeight += chartSectionHeight;
 
     // Leaderboard
-    const lbHeaderHeight = 40;
+    const lbHeaderHeight = theme.leaderboard.headerHeight;
     const lbContentHeight = leaderboard.length * theme.leaderboard.rowHeight;
     const lbSectionHeight = sectionGap + lbHeaderHeight + lbContentHeight + 10;
     totalHeight += lbSectionHeight;
@@ -272,7 +274,7 @@ export function createFitnessReceiptRenderer(config) {
       height - theme.layout.borderOffset * 2
     );
 
-    let y = 10;
+    let y = hdr.topPad;
 
     // ─── Section A: Header ────────────────────────────────
     ctx.fillStyle = theme.colors.text;
@@ -280,7 +282,7 @@ export function createFitnessReceiptRenderer(config) {
     const titleText = 'FITNESS REPORT';
     const titleW = ctx.measureText(titleText).width;
     ctx.fillText(titleText, (width - titleW) / 2, y);
-    y += 55;
+    y += hdr.titleAdvance;
 
     // Date + time
     ctx.font = theme.fonts.subtitle;
@@ -289,7 +291,7 @@ export function createFitnessReceiptRenderer(config) {
       : sessionInfo.date || '--';
     const dateW = ctx.measureText(dateStr).width;
     ctx.fillText(dateStr, (width - dateW) / 2, y);
-    y += 30;
+    y += hdr.dateAdvance;
 
     // Duration
     const durationSec = sessionInfo.duration_seconds || null;
@@ -298,14 +300,14 @@ export function createFitnessReceiptRenderer(config) {
     const durText = `Duration: ${durStr}`;
     const durW = ctx.measureText(durText).width;
     ctx.fillText(durText, (width - durW) / 2, y);
-    y += 30;
+    y += hdr.durationAdvance;
 
     // Participant names
     const nameStr = participantSlugs.map(s => stats[s].displayName).join('   ');
     ctx.font = theme.fonts.body;
     const nameW = ctx.measureText(nameStr).width;
     ctx.fillText(nameStr, (width - nameW) / 2, y);
-    y += 30;
+    y += hdr.namesAdvance;
 
     // Divider
     drawDivider(ctx, y, width);
@@ -319,7 +321,7 @@ export function createFitnessReceiptRenderer(config) {
       const coinStr = `${tbCoins}`;
       const coinW = ctx.measureText(coinStr).width;
       ctx.fillText(coinStr, (width - coinW) / 2, y);
-      y += 70;
+      y += theme.treasureBox.coinAdvance;
 
       // Coin label
       ctx.font = theme.fonts.label;
@@ -492,8 +494,8 @@ export function createFitnessReceiptRenderer(config) {
     ctx.fillText('LEADERBOARD', margin, y);
     y += lbHeaderHeight;
 
-    const zoneDensity = { cool: 6, active: 4, warm: 3, hot: 2, fire: 0 };
-    const zoneLabelsMap = { cool: 'Cool', active: 'Active', warm: 'Warm', hot: 'Hot', fire: 'Fire' };
+    const zoneDensity = theme.leaderboard.zoneDensity;
+    const zoneLabelsMap = theme.leaderboard.zoneLabels;
     const numBuckets = theme.leaderboard.histogramBuckets;
     const histH = theme.leaderboard.histogramHeight;
     const histLeft = margin + 10;
@@ -602,7 +604,7 @@ export function createFitnessReceiptRenderer(config) {
 
         // Per-bucket HR labels centered below each bar
         ly = histBottom + 3;
-        ctx.font = '11px "Roboto Condensed"';
+        ctx.font = theme.fonts.histLabel;
         ctx.fillStyle = theme.colors.gray;
         for (let b = 0; b < numBuckets; b++) {
           const bx = histLeft + b * (barWidth + barGap);

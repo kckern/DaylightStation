@@ -3,6 +3,8 @@
  * @module 1_rendering/eink/widgets/PlaceholderWidget
  */
 
+import { PLACEHOLDER_FONT } from '../einkTheme.mjs';
+
 export function draw(ctx, box, data, theme) {
   const { x, y, w, h } = box;
 
@@ -16,7 +18,7 @@ export function draw(ctx, box, data, theme) {
 
   // Label
   ctx.fillStyle = theme.muted || '#999';
-  ctx.font = '24px sans-serif';
+  ctx.font = PLACEHOLDER_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(data?._widgetName || '?', x + w / 2, y + h / 2);
