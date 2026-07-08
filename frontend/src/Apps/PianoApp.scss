@@ -2016,22 +2016,19 @@
 }
 @keyframes scoreCursorWrong { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
-// Task 11: note light-up chips (positioned over noteheads by NoteHighlightLayer;
-// left/top/width/height set inline). Accent comes from --nh-color. Non-interactive.
-.piano-score-note {
-  position: absolute; z-index: 6; pointer-events: none;
-  box-sizing: border-box; border-radius: 3px;
-  // NO ring/circle around the notehead — a translucent colour highlight (a
-  // "highlighter swash" behind the note) marks the note to read. Circles were
-  // confusing and didn't help reading; a colour tint does.
-  &--target { background: color-mix(in srgb, var(--nh-color, #2ec46f) 32%, transparent); }
-  // Struck correctly — stronger wash in the same accent (no blurred glow: it's a
-  // per-note paint cost on the tablet GPU).
-  &--hit { background: color-mix(in srgb, var(--nh-color, #2ec46f) 60%, transparent); }
-  // Missed — brief red wash that flashes then fades out.
-  &--missed { background: rgba(255, 82, 82, 0.5); animation: scoreNoteMissed 400ms ease forwards; }
+// Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
+// rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>
+// and sets --nh-color to the mode accent. A stylesheet `fill` beats vexflow's
+// black `fill` presentation attribute, so the real note glyph changes colour.
+.musicxml-renderer__svg {
+  .piano-note-lit {
+    path, rect, ellipse, text { fill: var(--nh-color, #2ec46f); }
+  }
+  // Struck correctly — same colour plus a soft glow (cheap single drop-shadow).
+  .piano-note-hit {
+    filter: drop-shadow(0 0 2.5px var(--nh-color, #2ec46f));
+  }
 }
-@keyframes scoreNoteMissed { 0% { opacity: 0.7; } 100% { opacity: 0; } }
 
 // ── Task 14: Polish per-measure grade wash + run summary ──────────────────────
 // Translucent fill over each graded measure (MeasureGradeLayer sets geometry
