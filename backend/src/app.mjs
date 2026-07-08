@@ -1605,13 +1605,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let createGratitudeCardCanvas = null;
   try {
     const { createGratitudeCardRenderer } = await import('#rendering/gratitude/GratitudeCardRenderer.mjs');
+    const { selectItemsForPrint } = await import('#domains/gratitude/services/PrintSelectionService.mjs');
     const householdId = configService.getDefaultHouseholdId();
+    // Print-selection POLICY (how many of each category go on a card) is an
+    // application decision — the renderer just draws what it is handed.
+    const GRATITUDE_PRINT_COUNTS = { gratitude: 2, hopes: 2 };
     const renderer = createGratitudeCardRenderer({
       getSelectionsForPrint: async () => {
-        return gratitudeServices.gratitudeService.getSelectionsForPrint(
+        const selections = await gratitudeServices.gratitudeService.getSelectionsForPrint(
           householdId,
           (userId) => userService.resolveGroupLabel(userId)
         );
+        if (!selections) return null;
+        const nowMs = Date.now();
+        const pick = (items, count) => (items?.length > 0
+          ? selectItemsForPrint(items, count, nowMs).map(s => ({
+            id: s.id,
+            text: s.item.text,
+            displayName: s.displayName
+          }))
+          : []);
+        return {
+          gratitude: pick(selections.gratitude, GRATITUDE_PRINT_COUNTS.gratitude),
+          hopes: pick(selections.hopes, GRATITUDE_PRINT_COUNTS.hopes),
+        };
       },
       fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
     });

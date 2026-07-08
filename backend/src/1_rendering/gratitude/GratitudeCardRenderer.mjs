@@ -8,7 +8,6 @@
  */
 
 import moment from 'moment-timezone';
-import { selectItemsForPrint } from '#domains/gratitude/services/PrintSelectionService.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
 import { flipCanvas } from '#rendering/lib/LayoutHelpers.mjs';
 import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
@@ -16,8 +15,15 @@ import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
 /**
  * Create a gratitude card renderer with dependency injection.
  *
+ * The renderer draws what it receives: WHICH items go on the card (and how
+ * many) is decided by the caller (application layer) — the callback returns
+ * already-selected items, not a candidate pool.
+ *
  * @param {Object} config - Configuration object
- * @param {Function} config.getSelectionsForPrint - Async function that returns { gratitude: [], hopes: [] }
+ * @param {Function} config.getSelectionsForPrint - Async function returning the
+ *   ALREADY-SELECTED items to print:
+ *   { gratitude: [{ id, text, displayName }], hopes: [{ id, text, displayName }] }
+ *   (or null when there is nothing to print)
  * @param {string} [config.fontDir] - Font directory path (optional)
  * @returns {Object} Renderer with createCanvas method
  */
@@ -40,28 +46,12 @@ export function createGratitudeCardRenderer(config) {
       ? `${fontDir}/${theme.fonts.fontPath}`
       : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
 
+    // Already selected by the caller — the renderer never decides what prints.
     const selections = await getSelectionsForPrint();
     if (!selections) return null;
 
-    const gratitudeItems = selections.gratitude || [];
-    const hopesItems = selections.hopes || [];
-    const nowMs = Date.now();
-
-    const selectedGratitude = gratitudeItems.length > 0
-      ? selectItemsForPrint(gratitudeItems, theme.selection.gratitudeCount, nowMs).map(s => ({
-        id: s.id,
-        text: s.item.text,
-        displayName: s.displayName
-      }))
-      : [];
-
-    const selectedHopes = hopesItems.length > 0
-      ? selectItemsForPrint(hopesItems, theme.selection.hopesCount, nowMs).map(s => ({
-        id: s.id,
-        text: s.item.text,
-        displayName: s.displayName
-      }))
-      : [];
+    const selectedGratitude = selections.gratitude || [];
+    const selectedHopes = selections.hopes || [];
 
     const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
 
