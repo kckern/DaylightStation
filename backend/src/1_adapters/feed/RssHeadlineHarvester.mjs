@@ -49,7 +49,7 @@ export class RssHeadlineHarvester {
               link: item.link.trim(),
               timestamp: this.#parseDate(item),
             });
-            const entry = headline.toJSON();
+            const entry = this.#dehydrate(headline);
             const imageData = this.#extractImageWithDims(item);
             if (imageData) {
               entry.image = imageData.url;
@@ -190,6 +190,20 @@ export class RssHeadlineHarvester {
       .replace(/<(?:[^>"']|"[^"]*"|'[^']*')*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  // Domain -> Storage. The harvester owns the persisted headline shape
+  // (serialization-ownership migration, audit D-3); Headline no longer carries
+  // toJSON(). The image fields are added by the caller after this.
+  #dehydrate(headline) {
+    return {
+      id: headline.id,
+      source: headline.source,
+      title: headline.title,
+      desc: headline.desc,
+      link: headline.link,
+      timestamp: headline.timestamp.toISOString(),
+    };
   }
 }
 

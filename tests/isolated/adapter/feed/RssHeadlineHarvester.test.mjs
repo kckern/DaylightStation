@@ -48,6 +48,22 @@ describe('RssHeadlineHarvester', () => {
     expect(result.items).toHaveLength(3);
   });
 
+  // Persisted headline shape — coverage moved here from Headline.test.mjs when
+  // serialization moved off the entity onto the harvester's #dehydrate (D-3).
+  test('dehydrates each headline to the exact persisted shape', async () => {
+    const result = await harvester.harvest({ id: 'cnn', label: 'CNN', url: 'http://example.com/rss' });
+    const entry = result.items[0];
+    expect(Object.keys(entry).sort()).toEqual(
+      ['desc', 'id', 'link', 'source', 'timestamp', 'title'].sort()
+    );
+    expect(entry.source).toBe('cnn');
+    expect(entry.link).toBe('https://cnn.com/article/1');
+    expect(typeof entry.id).toBe('string');
+    // timestamp is a serialized ISO string, not a Date instance
+    expect(typeof entry.timestamp).toBe('string');
+    expect(entry.timestamp).toBe(new Date(entry.timestamp).toISOString());
+  });
+
   test('extracts desc from contentSnippet', async () => {
     const result = await harvester.harvest({ id: 'cnn', label: 'CNN', url: 'http://example.com/rss' });
     expect(result.items[0].desc).toBeDefined();

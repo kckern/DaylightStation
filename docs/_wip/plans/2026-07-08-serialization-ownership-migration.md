@@ -92,7 +92,7 @@ Counts: `grep -rln "toJSON()" backend/src/2_domains --include='*.mjs' | grep -v 
 | 9 | `fitness/entities/Session`, `Participant`, `Zone`, `value-objects/SessionId` | `persistence/yaml/YamlSessionDatastore` (1) | 6 (fitness) |
 | 10 | `lifeplan/entities/LifePlan` + 17 child entities (`Goal`, `Value`, `Belief`, …) | `persistence/yaml/YamlLifePlanStore` (1) | 7 (lifeplan — largest aggregate, do last of the datastore groups) |
 | 11 | `journaling/entities/JournalEntry` | `persistence/yaml/YamlJournalDatastore` (1) | 8 (journaling) |
-| 12 | `feed/entities/Headline` | `feed/RssHeadlineHarvester` (1) | 9 (feed) |
+| 12 | `feed/entities/Headline` | `feed/RssHeadlineHarvester` (1) | **9 — done** (harvester #dehydrate owns shape; entity toJSON+dead fromJSON removed; shape coverage moved to harvester test; ratchet 69→68) |
 | 13 | `notification/entities/NotificationIntent`, `NotificationPreference` | `notification/AppNotificationAdapter` (1 — broadcast DTO, not storage; dehydrate in the adapter) | 9 |
 | 14 | `messaging/entities/Notification`, `value-objects/ConversationId`, `ResolvedIdentity` | no adapter call site — `toJSON` consumed by API/response DTOs | 10 (API DTO mapping) |
 | 15 | `journalist/entities/*` (5 files), `barcode/BarcodePayload`, `entropy/EntropyItem`, `finance/entities/*` (4), `health/HealthMetric`, `WorkoutEntry`, `HealthAggregationService`, `livestream/StreamChannel`, `playback-hub/value-objects/*` (6) | no 1_adapters call site found — consumers are application/API layers or the entity's own aggregate; audit each when its domain is touched | 10 (as touched) |
