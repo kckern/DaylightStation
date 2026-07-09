@@ -32,6 +32,7 @@ import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { ACTION_OPTIONS } from './listConstants.js';
 import { shouldRunScrollToHighlighted } from './comboboxScroll.js';
+import { notifySuccess } from '../shared/feedback.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -763,6 +764,10 @@ function ContentSearchCombobox({ value, onChange }) {
   const autoResolveRef = useRef(null);
   const userNavigatedRef = useRef(false);
   const paginationInFlightRef = useRef(false);
+  // Current committed value, readable from async callbacks (auto-resolve
+  // staleness check) without capturing a stale closure.
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   // Cleanup blur timeout and auto-resolve on unmount
   useEffect(() => {
@@ -1545,14 +1550,19 @@ function ContentSearchCombobox({ value, onChange }) {
         .then(data => {
           if (!autoResolveRef.current || autoResolveRef.current.query !== searchQuery) return;
           const items = data?.items || [];
-          if (items.length > 0) {
+          if (items.length > 0 && valueRef.current === searchQuery) {
+            // Only replace if the committed value is still the freeform text —
+            // never clobber a newer manual edit (audit I2).
             const resolved = items[0].id || `${items[0].source}:${items[0].localId}`;
             log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title, durationMs: Date.now() - autoResolveRef.current.startedAt });
             onChange(resolved);
+            notifySuccess({ title: 'Auto-resolved', message: `Resolved “${searchQuery}” → ${items[0].title}` });
             // Eagerly populate content cache so the row doesn't stay in loading state
             fetchContentMetadata(resolved).then(info => {
               if (info) setContentInfo(resolved, info);
             });
+          } else if (items.length > 0) {
+            log.info('search.auto_resolve.skipped_stale_value', { query: searchQuery, currentValue: valueRef.current });
           } else {
             log.info('search.auto_resolve.no_results', { query: searchQuery });
           }
