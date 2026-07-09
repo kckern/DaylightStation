@@ -240,6 +240,24 @@ describe('categoryOf', () => {
     expect(seasons[0].piano).toEqual({ category: 'repertoire', kind: 'tutorial' });
     expect(categoryOf(seasons[0])).toBe('repertoire');
   });
+
+  it('programStats and continueTarget count only lesson-category seasons', () => {
+    const mk = (id, index, category, watched) => ({
+      id, index, reference: false, piano: { category },
+      courses: [{ floor: 1, label: 'C', lessons: [{ plex: `${id}a`, itemIndex: 1, userWatched: watched }] }],
+      lessons: [{ plex: `${id}a`, parentId: id, itemIndex: 1, userWatched: watched }],
+    });
+    const seasons = [
+      mk('0', 0, 'reference', false),
+      mk('1', 1, 'lesson', false),
+      mk('10', 10, 'repertoire', false),
+    ];
+    // only the lesson season counts toward the denominator
+    expect(programStats(seasons).totalCourses).toBe(1);
+    // continue points at the lesson season's unwatched lesson, not the reference one
+    const t = continueTarget(seasons);
+    expect(t.seasonId).toBe('1');
+  });
 });
 
 describe('collectFacets', () => {
