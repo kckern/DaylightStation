@@ -156,7 +156,9 @@ public class PianoBridgeService extends Service {
 
     public PianoEngine getEngine() { return engine; }
 
-    public boolean isEngineRunning() { return engineRunning; }
+    /** Native stream state is the truth; the engineRunning flag goes stale when an
+     *  Oboe error closes the stream out from under us. */
+    public boolean isEngineRunning() { return engine != null && engine.isStreamRunning(); }
 
     /**
      * App-specific external files dir (no storage permission needed, always
@@ -168,7 +170,7 @@ public class PianoBridgeService extends Service {
 
     public synchronized void engineStart() {
         if (engine == null) { Log.w(TAG, "engineStart: no engine"); return; }
-        if (engineRunning) return;
+        if (engine.isStreamRunning()) return;
         engineRunning = engine.start();
         Log.i(TAG, "engineStart running=" + engineRunning);
     }
