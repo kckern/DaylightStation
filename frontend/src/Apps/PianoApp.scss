@@ -2373,4 +2373,20 @@
 .psc-ring__c{position:relative; font-size:.62rem; color:var(--piano-fg);
   font-variant-numeric:tabular-nums; font-family:var(--piano-mono, ui-monospace, monospace);}
 .psc-ring.is-done{background:conic-gradient(var(--psc-done) 100%, var(--psc-done) 0);}
+/* ── Subcourses redesign: list rows (seasons) ─────────────────────────────── */
+.psc-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.55rem;}
+.psc-row{position:relative; overflow:hidden; width:100%; display:flex; align-items:center; gap:.95rem;
+  text-align:left; cursor:pointer; padding:.85rem .9rem; border-radius:var(--r-md);
+  border:1px solid var(--piano-border); color:inherit;
+  background:color-mix(in srgb, var(--tint,transparent) 7%, var(--piano-surface-2));}
+.psc-row:hover,.psc-row:focus-visible{background:color-mix(in srgb, var(--tint,transparent) 12%, var(--piano-surface-2)); border-color:var(--piano-muted);}
+.psc-row__tint{position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--tint,var(--piano-muted));}
+.psc-row__idx{font-family:var(--piano-mono, ui-monospace, monospace); font-variant-numeric:tabular-nums; color:var(--piano-muted); width:2.1ch; text-align:right;}
+.psc-row__meta{flex:1; min-width:0;}
+.psc-row__name{display:block; font-family:var(--piano-serif, Georgia, serif); font-size:1.12rem; line-height:1.15;}
+.psc-row__sub{display:block; font-size:.78rem; color:var(--piano-muted); font-variant-numeric:tabular-nums;}
+.psc-row--resource{border-style:dashed; background:color-mix(in srgb, var(--tint,transparent) 5%, var(--piano-surface-1, var(--piano-surface-2)));}
+.psc-row__resmark{width:2.6rem; height:2.6rem; border-radius:var(--r-sm); flex:0 0 auto; display:grid; place-items:center; color:var(--piano-muted); border:1px dashed var(--piano-border);}
+.psc-tag{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.62rem; letter-spacing:.1em; text-transform:uppercase; padding:.22rem .5rem; border-radius:2rem; margin-left:auto;}
+.psc-tag--res{color:var(--piano-muted); border:1px dashed var(--piano-border);}
 .psc-ring.is-done .psc-ring__c{color:var(--psc-done); font-size:.9rem;}
