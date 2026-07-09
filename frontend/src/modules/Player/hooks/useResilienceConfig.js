@@ -8,8 +8,6 @@ export const DEFAULT_MEDIA_RESILIENCE_CONFIG = {
   },
   monitor: {
     progressEpsilonSeconds: 0.25,
-    stallDetectionThresholdMs: 5000,
-    hardRecoverAfterStalledForMs: 2000,
     // Grace period for initial load
     hardRecoverLoadingGraceMs: 15000,
     recoveryCooldownMs: 4000,
@@ -77,8 +75,6 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
       debugConfig,
       monitorSettings: {
         epsilonSeconds: coerceNumber(monitorConfig.progressEpsilonSeconds, 0.25),
-        stallDetectionThresholdMs: coerceNumber(monitorConfig.stallDetectionThresholdMs, 5000),
-        hardRecoverAfterStalledForMs: coerceNumber(monitorConfig.hardRecoverAfterStalledForMs, 2000),
         hardRecoverLoadingGraceMs: coerceNumber(monitorConfig.hardRecoverLoadingGraceMs, 15000),
         recoveryCooldownMs: coerceNumber(monitorConfig.recoveryCooldownMs, 4000),
         recoveryCooldownBackoffMultiplier: coerceNumber(monitorConfig.recoveryCooldownBackoffMultiplier, 3),
@@ -87,7 +83,7 @@ export function useResilienceConfig({ configOverrides, runtimeOverrides } = {}) 
       },
       recoveryConfig: {
         enabled: recoveryConfig.enabled ?? true,
-        maxAttempts: coerceNumber(recoveryConfig.maxAttempts, 3)
+        maxAttempts: coerceNumber(recoveryConfig.maxAttempts, 5)
       }
     };
   }, [contextConfig, configOverrides, runtimeOverrides]);
