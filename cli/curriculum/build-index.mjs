@@ -5,17 +5,17 @@ import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { parseEpisodeNfo, parseSeasonNfo, buildIndex } from './nfoIndex.mjs';
 
-// Authored season → category map (see spec). Adjust here if categories change.
+// Authored season → title/lane/groups map for the 9-season model.
 const SEASON_META = {
-  0: { title: 'Reference', category: 'reference', pinned: true },
-  1: { category: 'lesson', sequential: true }, 2: { category: 'lesson', sequential: true },
-  3: { category: 'lesson', sequential: true }, 4: { category: 'lesson', sequential: true },
-  5: { category: 'lesson', sequential: true }, 6: { category: 'lesson', sequential: true },
-  7: { category: 'lesson', sequential: true }, 8: { category: 'lesson', sequential: true },
-  9: { category: 'lesson', sequential: true },
-  10: { category: 'repertoire', kind: 'tutorial', facets: ['difficulty', 'instructor', 'style'] },
-  11: { category: 'repertoire', kind: 'challenge', facets: ['difficulty', 'instructor', 'style'] },
-  12: { category: 'repertoire', kind: 'accompaniment', facets: ['difficulty', 'instructor', 'style'] },
+  0: { title: 'Practice', lane: 'practice', groups: ['How to Practice', 'Scales', 'Chord & Voicing Exercises', 'Rhythm Exercises', 'Two-Hand Coordination'] },
+  1: { title: 'Soloing', lane: 'lessons', sequential: true, groups: ['Pop Soloing', '2-5-1 Soloing'] },
+  2: { title: 'Improvisation', lane: 'lessons', sequential: true },
+  3: { title: 'Chord Voicings', lane: 'lessons', sequential: true, groups: ['Rootless Voicings', 'Drop 2 Voicings', 'Quartal Voicings', 'Block Chords'] },
+  4: { title: 'Chord Theory & Color', lane: 'lessons', sequential: true },
+  5: { title: 'Lead Sheet Application', lane: 'lessons', sequential: true },
+  6: { title: 'Comping & Rhythm', lane: 'lessons', sequential: true, groups: ['Comping', 'Rhythm Essentials'] },
+  7: { title: 'Intros, Endings & Fills', lane: 'lessons', sequential: true },
+  8: { title: 'Song Library', lane: 'repertoire', facets: ['difficulty', 'instructor', 'style'] },
 };
 
 const [root, showId, out] = process.argv.slice(2);

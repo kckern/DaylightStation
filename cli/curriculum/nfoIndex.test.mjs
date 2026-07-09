@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { parseEpisodeNfo, parseSeasonNfo, buildIndex } from './nfoIndex.mjs';
 
 const EP = `<?xml version="1.0"?><episodedetails>
-  <title>Ain’t Misbehavin’ – 1 – Intro</title><season>10</season><episode>1</episode>
-  <plot>Intro. From "Ain’t Misbehavin’ – 1" by Piano With Jonny.</plot>
+  <title>Ain't Misbehavin' – 1 – Intro</title><season>10</season><episode>1</episode>
+  <plot>Intro. From "Ain't Misbehavin' – 1" by Piano With Jonny.</plot>
   <genre>Music</genre><genre>Educational</genre><genre>Jazz Ballads</genre>
-  <tag>Course: Ain’t Misbehavin’ – 1</tag><tag>Skill Level: Beginner</tag>
+  <tag>Course: Ain't Misbehavin' – 1</tag><tag>Skill Level: Beginner</tag>
   <tag>Focus: Songs</tag><tag>Type: Course</tag><credits>John Proulx</credits>
 </episodedetails>`;
 
@@ -17,13 +17,21 @@ const EP_MULTI = `<?xml version="1.0"?><episodedetails>
   <tag>Focus: Rhythm</tag><tag>Type: Tutorial</tag><credits>Jane Smith</credits>
 </episodedetails>`;
 
+const EP_NEW = `<?xml version="1.0"?><episodedetails>
+  <title>Rhumba Groove Exercise</title><season>8</season><episode>42</episode>
+  <plot>Groove.</plot><genre>Music</genre><genre>Educational</genre><genre>Latin</genre>
+  <tag>Course: Silent Night - Rhumba</tag><tag>Part: 1</tag><tag>Lane: repertoire</tag>
+  <tag>Song: Silent Night</tag><tag>Treatment: tutorial</tag>
+  <tag>Skill Level: Intermediate</tag><tag>Focus: Songs</tag><tag>Type: Course</tag><credits>John Proulx</credits>
+</episodedetails>`;
+
 describe('parseEpisodeNfo', () => {
   it('extracts fields and collects all non-generic genres into styles array', () => {
     expect(parseEpisodeNfo(EP)).toEqual({
       season: 10, episode: 1,
-      title: `Ain’t Misbehavin’ – 1 – Intro`,
-      plot: `Intro. From "Ain’t Misbehavin’ – 1" by Piano With Jonny.`,
-      course: `Ain’t Misbehavin’ – 1`, styles: ['Jazz Ballads'],
+      title: `Ain't Misbehavin' – 1 – Intro`,
+      plot: `Intro. From "Ain't Misbehavin' – 1" by Piano With Jonny.`,
+      course: `Ain't Misbehavin' – 1`, styles: ['Jazz Ballads'],
       skill: 'Beginner', focus: ['Songs'], type: 'Course', instructor: 'John Proulx',
     });
   });
@@ -54,7 +62,19 @@ describe('buildIndex', () => {
       episodes: [parseEpisodeNfo(EP)],
     });
     expect(idx.show).toBe(676490);
-    expect(idx.episodes['10:1'].course).toBe(`Ain’t Misbehavin’ – 1`);
+    expect(idx.episodes['10:1'].course).toBe(`Ain't Misbehavin' – 1`);
     expect(idx.seasons['10']).toMatchObject({ category: 'repertoire', kind: 'tutorial', episodes: 1 });
+  });
+});
+
+describe('parseEpisodeNfo — normalized tags', () => {
+  it('captures part/lane/song/treatment', () => {
+    const ep = parseEpisodeNfo(EP_NEW);
+    expect(ep).toMatchObject({
+      season: 8, episode: 42, course: 'Silent Night - Rhumba',
+      part: 1, lane: 'repertoire', song: 'Silent Night', treatment: 'tutorial',
+      styles: ['Latin'],
+    });
+    expect(ep.skillChallenge).toBeUndefined();  // omitted when absent
   });
 });

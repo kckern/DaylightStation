@@ -30,6 +30,12 @@ export function parseEpisodeNfo(xml) {
     focus: tagValues(xml, 'Focus'),
     type: tagValues(xml, 'Type')[0] || null,
     instructor: one(xml, 'credits'),
+    part: tagValues(xml, 'Part')[0] ? Number(tagValues(xml, 'Part')[0]) : null,
+    lane: tagValues(xml, 'Lane')[0] || null,
+    group: tagValues(xml, 'Group')[0] || null,
+    song: tagValues(xml, 'Song')[0] || null,
+    treatment: tagValues(xml, 'Treatment')[0] || null,
+    skillChallenge: /<tag>SkillChallenge:\s*true<\/tag>/i.test(xml) ? true : null,
   };
   // Drop empty/nullish fields (keep season/episode).
   for (const k of Object.keys(ep)) {
