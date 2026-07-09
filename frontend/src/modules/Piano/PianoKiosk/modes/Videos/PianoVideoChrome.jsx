@@ -13,7 +13,7 @@ const fmt = (s) => {
 
 export default function PianoVideoChrome({
   isPlaying, currentTime, duration, rate, loop,
-  onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek,
+  onToggle, onSkip, onRestart, onCycleRate, onMarkA, onMarkB, onToggleLoop, onClearLoop, onSeek, onToggleFullscreen,
   isSequential = false,
   furthestWatched = 0,
   gateOpen = false,
@@ -49,9 +49,11 @@ export default function PianoVideoChrome({
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--restart" onClick={onRestart} disabled={gateOpen} aria-label="Restart from beginning"><Icon name="previous" /></button>
         <span className="piano-video-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
         <div className="piano-video-chrome__spacer" />
+        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-30)} disabled={gateOpen} aria-label="Back 30 seconds"><Icon name="skip-back-30" /></button>
         <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-15)} disabled={gateOpen} aria-label="Back 15 seconds"><Icon name="skip-back-15" /></button>
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--play" onClick={onToggle} disabled={gateOpen} aria-label={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? <Icon name="pause" /> : <Icon name="play" />}</button>
         <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(15)} disabled={gateOpen || forwardDisabled} aria-label="Forward 15 seconds"><Icon name="skip-forward-15" /></button>
+        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(30)} disabled={gateOpen || forwardDisabled} aria-label="Forward 30 seconds"><Icon name="skip-forward-30" /></button>
         <div className="piano-video-chrome__spacer" />
         {!isSequential && (
           <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--rate" onClick={onCycleRate} disabled={gateOpen} aria-label="Playback speed">{rate}×</button>
@@ -76,6 +78,7 @@ export default function PianoVideoChrome({
             </div>
           )}
         </div>
+        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--fullscreen" onClick={onToggleFullscreen} disabled={gateOpen} aria-label="Toggle fullscreen"><Icon name="fullscreen" /></button>
       </div>
     </div>
   );
