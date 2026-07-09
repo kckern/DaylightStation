@@ -242,7 +242,7 @@ Expected: `wrote …/676490.json: 13 seasons, 2434 episodes`
 ```bash
 node -e "const d=require('./backend/src/1_adapters/content/media/plex/curriculum/676490.json'); console.log('seasons',Object.keys(d.seasons).length,'eps',Object.keys(d.episodes).length); console.log(d.episodes['10:1']); console.log(d.seasons['10']);"
 ```
-Expected: 13 seasons / 2434 eps; `10:1` has `course`/`style: 'Jazz Ballads'`/`skill`/`instructor`; season `10` has `category: 'repertoire'`, `kind: 'tutorial'`.
+Expected: 13 seasons / 2434 eps; `10:1` has `course`/`styles: ['Jazz Ballads']`/`skill`/`instructor`; season `10` has `category: 'repertoire'`, `kind: 'tutorial'`.
 
 - [ ] **Step 3: Commit the artifact**
 
@@ -262,7 +262,7 @@ git commit -m "data(curriculum): generated Piano With Jonny (676490) metadata in
 **Interfaces:**
 - Produces:
   - `getCurriculumIndex(showRatingKey) -> index | null` — loads `curriculum/<showRatingKey>.json` relative to this module, caches by key; returns null if none.
-  - `mergeEpisode(index, { season, episode }) -> { title?, piano? } | null` — looks up `index.episodes["season:episode"]`; returns `{ title, piano: { course, style, skill, instructor, focus, type } }`.
+  - `mergeEpisode(index, { season, episode }) -> { title?, piano? } | null` — looks up `index.episodes["season:episode"]`; returns `{ title, piano: { course, styles, skill, instructor, focus, type } }`.
   - `mergeSeason(index, season) -> { title?, piano? } | null` — looks up `index.seasons[String(season)]`; returns `{ title, piano: { category, kind, facets, sequential, pinned } }`.
 - `_resetCacheForTests()`.
 
@@ -277,14 +277,14 @@ const index = {
   show: 676490,
   seasons: { '10': { title: 'Song Tutorials', category: 'repertoire', kind: 'tutorial', facets: ['difficulty','instructor','style'], episodes: 1052 },
              '1': { title: 'Pop Soloing', category: 'lesson', sequential: true } },
-  episodes: { '10:1': { title: 'Ain’t Misbehavin’ – 1 – Intro', course: 'Ain’t Misbehavin’ – 1', style: 'Jazz Ballads', skill: 'Beginner', instructor: 'John Proulx', focus: ['Songs'], type: 'Course' } },
+  episodes: { '10:1': { title: 'Ain’t Misbehavin’ – 1 – Intro', course: 'Ain’t Misbehavin’ – 1', styles: ['Jazz Ballads'], skill: 'Beginner', instructor: 'John Proulx', focus: ['Songs'], type: 'Course' } },
 };
 
 describe('mergeEpisode', () => {
   it('returns corrected title + piano fields for a known episode', () => {
     const r = mergeEpisode(index, { season: 10, episode: 1 });
     expect(r.title).toBe('Ain’t Misbehavin’ – 1 – Intro');
-    expect(r.piano).toMatchObject({ course: 'Ain’t Misbehavin’ – 1', style: 'Jazz Ballads', skill: 'Beginner', instructor: 'John Proulx' });
+    expect(r.piano).toMatchObject({ course: 'Ain’t Misbehavin’ – 1', styles: ['Jazz Ballads'], skill: 'Beginner', instructor: 'John Proulx' });
   });
   it('returns null for an unknown episode', () => {
     expect(mergeEpisode(index, { season: 99, episode: 9 })).toBeNull();
@@ -327,7 +327,7 @@ export function getCurriculumIndex(showRatingKey) {
   return index;
 }
 
-const EP_PIANO = ['course', 'style', 'skill', 'instructor', 'focus', 'type'];
+const EP_PIANO = ['course', 'styles', 'skill', 'instructor', 'focus', 'type'];
 const SEASON_PIANO = ['category', 'kind', 'facets', 'sequential', 'pinned'];
 const pick = (obj, keys) => {
   const out = {};
@@ -394,7 +394,7 @@ describe('PlexAdapter curriculum merge', () => {
       grandparentRatingKey: '676490', parentIndex: 10, index: 1, Media: [] });
     expect(item.title).toBe('Ain’t Misbehavin’ – 1 – Intro');
     expect(item.metadata.piano.course).toBe('Ain’t Misbehavin’ – 1');
-    expect(item.metadata.piano.style).toBe('Jazz Ballads');
+    expect(item.metadata.piano.styles).toContain('Jazz Ballads');
   });
 
   it('season in an indexed show gets the category block', () => {
@@ -520,7 +520,7 @@ describe('toListItem piano passthrough', () => {
   it('surfaces metadata.piano to the top level', () => {
     const out = toListItem({
       id: 'plex:1', source: 'plex', title: 'X', itemType: 'leaf',
-      metadata: { type: 'episode', itemIndex: 1, piano: { course: 'C', style: 'Jazz Ballads', category: undefined } },
+      metadata: { type: 'episode', itemIndex: 1, piano: { course: 'C', styles: ['Jazz Ballads'], category: undefined } },
     });
     expect(out.piano).toEqual({ course: 'C', style: 'Jazz Ballads' });
   });
