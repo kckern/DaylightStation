@@ -9,12 +9,17 @@ import useArmedAction from './useArmedAction.js';
  * face → onPick(id). The ✕ / backdrop / timeout → onDismiss (the caller sets
  * the player to Guest). Presentational; the parent owns identity side-effects.
  *
+ * The SINGLE picker for the kiosk: both the idle-gap re-prompt (PianoApp) and
+ * the chrome chip's manual switch (PianoUserChip) render this. The two callers
+ * differ only in props — the chip marks the current player (`activeId`), skips
+ * the auto-dismiss (`timeoutMs={0}`) and omits `onScreenOff`.
+ *
  * Layout: a full page is a 3×2 grid of 6 faces (columnsForCount(6) → 3 columns);
  * a smaller trailing page balances into even rows (5→3+2) by capping the flex
  * grid to `columnsForCount` columns. A roster larger than 6 paginates, with page
  * dots beneath the grid.
  */
-export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss, onScreenOff, timeoutMs = 30000 }) {
+export default function WhoIsPlayingPrompt({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000 }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -53,7 +58,12 @@ export default function WhoIsPlayingPrompt({ open, users = [], onPick, onDismiss
         >
           {current.map((u) => (
             <li key={u.id}>
-              <button type="button" className="piano-usercard" onClick={() => onPick?.(u.id)}>
+              <button
+                type="button"
+                className={`piano-usercard${u.id === activeId ? ' is-active' : ''}`}
+                aria-pressed={activeId ? u.id === activeId : undefined}
+                onClick={() => onPick?.(u.id)}
+              >
                 <PianoAvatar id={u.id} name={u.name} />
                 <span className="piano-usercard__name">{resolveUserDisplayName(u, { familyContext }).displayName}</span>
               </button>

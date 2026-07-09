@@ -35,9 +35,26 @@ describe('PianoUserChip', () => {
   it('opens the roster picker and switches user when no video is active', () => {
     renderChip();
     fireEvent.click(screen.getByLabelText('Switch player'));
-    expect(screen.getByText("Who’s playing?")).toBeTruthy();
+    expect(screen.getByText("Who's playing?")).toBeTruthy();
     fireEvent.click(screen.getByText('User_3'));
     expect(setCurrentUser).toHaveBeenCalledWith('user_3');
+  });
+
+  // The chip renders the SAME WhoIsPlayingPrompt as the idle-gap re-prompt, but
+  // as a manual switch: it marks the current player and never auto-dismisses.
+  it('marks the current player and does not time out', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderChip();
+      fireEvent.click(screen.getByLabelText('Switch player'));
+      const pressed = [...container.querySelectorAll('.piano-usercard')]
+        .map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+      expect(pressed).toEqual([['User_3', 'false'], ['Dad', 'true']]);
+      vi.advanceTimersByTime(120000);
+      expect(screen.getByText("Who's playing?")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('locks switching while a video lecture is open', () => {
@@ -48,7 +65,7 @@ describe('PianoUserChip', () => {
     expect(screen.getByTestId('lock-icon')).toBeTruthy();
     // Clicking the locked chip must NOT open the picker.
     fireEvent.click(chip);
-    expect(screen.queryByText("Who’s playing?")).toBeNull();
+    expect(screen.queryByText("Who's playing?")).toBeNull();
     expect(setCurrentUser).not.toHaveBeenCalled();
   });
 });
