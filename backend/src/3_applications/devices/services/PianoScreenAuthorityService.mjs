@@ -38,7 +38,7 @@ export class PianoScreenAuthorityService {
   #ha; #deviceService; #logger; #clock;
   #deviceId; #pianoPowerEntity;
   #pollMs; #offDebounceMs; #reconcileMs; #maxRetries; #backoffBaseMs;
-  #notifyService; #sleep;
+  #notifyService; #sleep; #override;
 
   #pollTimer; #reconcileTimer;
 
@@ -75,6 +75,7 @@ export class PianoScreenAuthorityService {
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     notifyService = null,
     sleep,
+    screenOverrideService = null,
   } = {}) {
     if (!haGateway || typeof haGateway.getState !== 'function') {
       throw new Error('PianoScreenAuthorityService requires haGateway with getState');
@@ -97,6 +98,7 @@ export class PianoScreenAuthorityService {
     this.#maxRetries = maxRetries;
     this.#backoffBaseMs = backoffBaseMs;
     this.#notifyService = notifyService;
+    this.#override = screenOverrideService;
     this.#sleep = typeof sleep === 'function'
       ? sleep
       : (ms) => new Promise((r) => setTimeout(r, ms));
@@ -138,6 +140,12 @@ export class PianoScreenAuthorityService {
     this.#reconcileTimer = null;
   }
 
+  /** Test seam: run one poll tick without the interval. */
+  async _tickPollForTest() { return this.#tickPoll(); }
+
+  /** Test seam: run one reconcile tick without the interval. */
+  async _tickReconcileForTest() { return this.#tickReconcile(); }
+
   /**
    * Poll tick: read piano power, drive edges + the continuous-off debounce.
    * Wrapped so a throw never escapes into the interval machinery.
@@ -145,6 +153,9 @@ export class PianoScreenAuthorityService {
    */
   async #tickPoll() {
     try {
+      // A live manual override owns the screen — no edge pulse, no continuous-off
+      // debounce. (Reconcile enforces the window's state; see #tickReconcile.)
+      if (this.#override?.get(this.#deviceId)) return;
       const now = this.#clock.now();
       const reading = await this.#readPower();
 
@@ -203,6 +214,21 @@ export class PianoScreenAuthorityService {
    */
   async #tickReconcile() {
     try {
+      const ov = this.#override?.get(this.#deviceId);
+      if (ov) {
+        const overrideDevice = this.#deviceService.get(this.#deviceId);
+        if (!overrideDevice) {
+          this.#logger.warn?.('piano-screen-authority.reconcile.no-device', { deviceId: this.#deviceId });
+          return;
+        }
+        const overrideStatus = await overrideDevice.getStatus();
+        const desiredOn = ov.state === 'on';
+        if (overrideStatus?.screenOn !== desiredOn) {
+          this.#logger.info?.('piano-screen-authority.reconcile.override', { deviceId: this.#deviceId, state: ov.state });
+          await this.#applyScreen(desiredOn, 'override');
+        }
+        return;
+      }
       if (this.#committedPower !== 'off') return; // only enforce the OFF invariant
       const device = this.#deviceService.get(this.#deviceId);
       if (!device) {
