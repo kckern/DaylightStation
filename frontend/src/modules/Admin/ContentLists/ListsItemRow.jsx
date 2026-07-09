@@ -23,7 +23,7 @@ import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
-import { resolveDisplayItems, isContentIdLike } from './contentSearchLogic.js';
+import { resolveDisplayItems, isContentIdLike, shouldAutoAdd } from './contentSearchLogic.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
@@ -2956,9 +2956,10 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     }
   };
 
-  // Auto-save when input changes (content picked or auto-resolved)
+  // Auto-save only when the input is a real content id (dropdown pick or
+  // pasted id). Freeform text stays staged; Enter adds it explicitly.
   useEffect(() => {
-    if (input) {
+    if (input && shouldAutoAdd(input)) {
       doAdd(input, label, action);
     }
   }, [input]);
