@@ -74,7 +74,7 @@ void VoiceHost::panic() {
 
 void VoiceHost::render(float* out, int frames) {
     Engine* e = active_.load(std::memory_order_acquire);
-    if (e) {
+    if (e && gateOpen_.load(std::memory_order_acquire)) {
         e->render(out, frames);
     } else {
         std::memset(out, 0, sizeof(float) * frames * 2); // silence
