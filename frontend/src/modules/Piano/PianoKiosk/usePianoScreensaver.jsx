@@ -166,6 +166,10 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   const armNonce = ctrl?.armNonce ?? 0;
   const prevArmRef = useRef(armNonce);
 
+  // Server-side manual override (physical piano button / on-screen action). An
+  // 'off' window mutes MIDI-wake exactly like the local button-armed cooldown.
+  const serverOffRef = useRef(false);
+
   // Send a screen on/off command, deduped against believed state + in-flight.
   const setScreen = useCallback((on) => {
     if (!deviceId || inFlightRef.current || screenOnRef.current === on) return;
@@ -210,7 +214,7 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     // While the manual screen-off cooldown is armed, MIDI must NOT wake the
     // screen — but keep refreshing lastActivity so the "no input" clock (below)
     // only elapses once the player actually stops.
-    if (enabled && !midiSuppressedRef.current && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
+    if (enabled && !midiSuppressedRef.current && !serverOffRef.current && !isWithinQuietHours(new Date(), quietRef.current)) setScreen(true);
   }, [activeNotes, historyLen, enabled, setScreen]);
 
   // Touch/keypress: bump activity and wake (unless quiet hours).
@@ -239,6 +243,12 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     const thresholdMs = timeoutMinutes * 60_000;
     const cooldownMs = offCooldownMinutes * 60_000;
     const id = setInterval(() => {
+      // Fold the shared server override into the poll: an 'off' window mutes MIDI-wake.
+      if (deviceId) {
+        DaylightAPI(`api/v1/device/${deviceId}/screen/override`)
+          .then((r) => { serverOffRef.current = r?.override?.state === 'off'; })
+          .catch(() => { /* leave prior value; a transient failure shouldn't unmute */ });
+      }
       // Lift the manual screen-off cooldown once the player has been idle long
       // enough — MIDI-wake resumes on the next note (see the MIDI effect above).
       if (midiSuppressedRef.current && Date.now() - lastActivityRef.current >= cooldownMs) {

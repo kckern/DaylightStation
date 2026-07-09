@@ -29,9 +29,11 @@ export function screenOffFailureMessage(res) {
  *
  * `turnOffScreen()` prefers the FKB JS bridge (`fully.turnScreenOff()`) because
  * it is instant and needs neither the network nor a configured `deviceId`. When
- * the bridge is absent (returns false), it falls back to the backend screen-off
- * path (`/api/v1/device/:deviceId/screen/off`) — the same route the automatic
- * screensaver uses — resolving the deviceId from `config.screensaver.deviceId`.
+ * the bridge is absent (returns false), it falls back to the backend screen
+ * override (`POST /api/v1/device/:deviceId/screen/override {state:'off'}`) — a
+ * sticky off that all three screen writers honor (so a played note or the power
+ * reconcile won't immediately re-light it) — resolving the deviceId from
+ * `config.screensaver.deviceId`.
  * If neither lever is available it returns a status the caller can surface.
  *
  * @returns {{ turnOffScreen: () => Promise<{ok: boolean, lever: string, error?: string}> }}
@@ -51,7 +53,7 @@ export function useScreenControl() {
     if (deviceId) {
       logger().info('piano.screen-control.fallback', { lever: 'api', deviceId });
       try {
-        const res = await DaylightAPI(`api/v1/device/${deviceId}/screen/off`);
+        const res = await DaylightAPI(`api/v1/device/${deviceId}/screen/override`, { state: 'off' }, 'POST');
         if (res?.ok === false) {
           logger().warn('piano.screen-control.rejected', { deviceId, error: res.error });
           return { ok: false, lever: 'api', error: res.error || 'rejected' };

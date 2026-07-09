@@ -41,7 +41,7 @@ describe('useScreenControl.turnOffScreen', () => {
     let out;
     await act(async () => { out = await result.current.turnOffScreen(); });
 
-    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/device/piano-tablet/screen/off');
+    expect(DaylightAPI).toHaveBeenCalledWith('api/v1/device/piano-tablet/screen/override', { state: 'off' }, 'POST');
     expect(out).toEqual({ ok: true, lever: 'api' });
   });
 
