@@ -34,6 +34,11 @@ export function reducer(state, event) {
       return { ...state, mode: Modes.SEARCH, search: event.text, browse: emptyBrowse(), highlight: { idx: -1, userNavigated: false } };
     case 'RESULTS':
       return { ...state, results: event.items };
+    case 'BROWSE_LOADING':
+      // A browse fetch (siblings/drill/up) is in flight. Cleared by whichever
+      // *_LOADED event lands, by INPUT (browse reset), by CLOSE, or explicitly
+      // with { loading: false } from a failed fetch.
+      return { ...state, browse: { ...state.browse, loading: event.loading ?? true } };
     case 'BROWSE_LOADED':
       return { ...state, mode: Modes.BROWSE,
         browse: { items: event.items, breadcrumbs: event.breadcrumbs, pagination: event.pagination ?? null, loading: false },

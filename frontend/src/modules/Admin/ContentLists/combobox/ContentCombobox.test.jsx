@@ -114,6 +114,28 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'ARROW', dir: 1, itemCount: 2 });
   });
 
+  it('Enter never selects an auto-highlighted row (Mar-01 gate): dismisses instead', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('plex:123'),
+        value: 'plex:123',
+        mode: Modes.SEARCH,
+        search: 'plex:123', // unchanged text — nothing to commit
+        results: [
+          { id: 'plex:1', title: 'Result 1', source: 'plex' },
+          { id: 'plex:2', title: 'Result 2', source: 'plex' },
+        ],
+        highlight: { idx: 0, userNavigated: false }, // auto-highlight, NOT user navigation
+      },
+    });
+    renderCombobox({ value: 'plex:123' });
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.select).not.toHaveBeenCalled();
+    expect(currentHook.drill).not.toHaveBeenCalled();
+    expect(currentHook.handleClose).toHaveBeenCalledWith('dismiss');
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },

@@ -122,6 +122,7 @@ export function ContentCombobox({
   const search = state.search;
   const breadcrumbs = state.browse.breadcrumbs;
   const pagination = state.browse.pagination;
+  const browseLoading = state.browse.loading;
   const highlightIdx = state.highlight.idx;
   const normalizedValue = normalizeValue(value);
 
@@ -234,10 +235,12 @@ export function ContentCombobox({
         log.debug('key.enter.select', { contentId: item.id, isContainer: isContainer(item) });
         if (isContainer(item) && !selectContainers) drill(item);
         else select(item);
-      } else if (search && search !== value) {
+      } else if (search && search !== value && search.length >= 2) {
+        // Same >= 2 gate as the freeform row (S9): sub-2-char text never
+        // commits (id-like text is always >= 4 chars, so Mar-01 is unaffected).
         commitFreeform();
       } else {
-        handleClose('escape'); // nothing to commit — dismiss, keep value
+        handleClose('dismiss'); // nothing to commit — dismiss, keep value
       }
       return;
     }
@@ -254,12 +257,16 @@ export function ContentCombobox({
   // ── Scroll-edge pagination (hook owns in-flight/owner guards) ──
   const runPaginate = async (direction) => {
     setLoadingMore(true);
+    // Arm the scroll-suppression guard BEFORE the hook can dispatch PAGINATED;
+    // disarm if the hook reports it didn't dispatch (guard would otherwise
+    // leak and swallow the next arrow-navigation scroll).
     paginationScrollGuardRef.current = true;
     const viewport = viewportRef.current;
     const prevScrollHeight = direction === 'before' ? (viewport?.scrollHeight || 0) : 0;
     try {
-      await paginate(direction);
-      if (direction === 'before' && viewport) {
+      const dispatched = await paginate(direction);
+      if (!dispatched) paginationScrollGuardRef.current = false;
+      if (dispatched && direction === 'before' && viewport) {
         // Maintain scroll position after prepending
         requestAnimationFrame(() => {
           viewport.scrollTop += viewport.scrollHeight - prevScrollHeight;
@@ -291,6 +298,11 @@ export function ContentCombobox({
   const levelKey = isBrowse ? `b:${breadcrumbs.map((b) => b.id).join('>')}` : null;
   useEffect(() => {
     if (levelKey == null) return;
+    // Single scroll writer per level: reset prevIdx so the navigation effect
+    // hits its 'initial-render' guard on cross-level transitions — otherwise
+    // both writers race and a drill can misread as a pac-man wrap (bogus
+    // wrap-flash + jump).
+    prevIdxRef.current = -1;
     const idx = state.highlight.idx;
     if (idx < 0) return;
     requestAnimationFrame(() => {
@@ -484,14 +496,19 @@ export function ContentCombobox({
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          aria-label={placeholder}
           autoFocus={!!renderValue}
           leftSection={<IconSearch size={16} />}
-          rightSection={isSearching ? <Loader size="xs" /> : (value ? (
+          rightSection={(isSearching || browseLoading) ? <Loader size="xs" /> : (value ? (
             <ActionIcon
               size="sm"
               variant="subtle"
               aria-label="Clear selection"
               data-testid="combobox-clear"
+              // preventDefault: a mousedown here must not blur the input while
+              // editing — that closes the dropdown and commit-on-close fires
+              // BEFORE this button's click, double-committing in-progress text.
+              onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.stopPropagation();
                 log.info('clear.click', { prevValue: value });
@@ -569,11 +586,11 @@ export function ContentCombobox({
                 <Loader size="xs" />
               </Group>
             )}
-            {isSearching && items.length === 0 ? (
+            {(isSearching || browseLoading) && items.length === 0 ? (
               <Combobox.Empty>
-                <Group justify="center" p="md">
+                <Group justify="center" p="md" data-testid="combobox-loading">
                   <Loader size="sm" />
-                  <Text size="sm" c="dimmed">Searching...</Text>
+                  <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
                 </Group>
               </Combobox.Empty>
             ) : items.length === 0 ? (
