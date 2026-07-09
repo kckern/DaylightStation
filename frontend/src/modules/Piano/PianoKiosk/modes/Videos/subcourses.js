@@ -57,7 +57,7 @@ export function partitionSeasons(items, parents, referenceUnitIds = []) {
     index: Number.isFinite(p?.index) ? p.index : (parseInt(p?.index, 10) || 0),
     title: p?.title || null,
     thumbnail: p?.thumbnail || null,
-    reference: refSet.has(String(id)),
+    reference: refSet.has(String(id)) || p?.piano?.category === 'reference',
     piano: p?.piano || null,
   })).sort((a, b) => a.index - b.index);
   return seasons.map((s) => {
@@ -128,7 +128,7 @@ export function seasonStats(season) {
 
 /** Program progress across non-reference seasons. */
 export function programStats(seasons) {
-  const graded = (seasons || []).filter((s) => !s.reference);
+  const graded = (seasons || []).filter((s) => categoryOf(s) === 'lesson');
   const totalCourses = graded.reduce((n, s) => n + s.courses.length, 0);
   const completeCourses = graded.reduce((n, s) => n + s.courses.filter((c) => courseStats(c).complete).length, 0);
   const percent = totalCourses > 0 ? Math.round((completeCourses / totalCourses) * 100) : 0;
@@ -141,7 +141,7 @@ export function programStats(seasons) {
  * graded program is complete.
  */
 export function continueTarget(seasons) {
-  for (const s of (seasons || []).filter((x) => !x.reference)) {
+  for (const s of (seasons || []).filter((x) => categoryOf(x) === 'lesson')) {
     for (const c of s.courses) {
       const ordered = [...c.lessons].sort((a, b) => (Number(a?.itemIndex) || 0) - (Number(b?.itemIndex) || 0));
       const next = ordered.find((ep) => !lectureUserStatus(ep).watched);
