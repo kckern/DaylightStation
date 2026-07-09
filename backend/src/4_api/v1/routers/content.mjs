@@ -6,6 +6,7 @@ import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSea
 import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
 import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
 import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create content API router
@@ -82,9 +83,9 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * GET /api/content/item/:source/*
    * Get single item info
    */
-  router.get('/item/:source/*', asyncHandler(async (req, res) => {
+  router.get('/item/:source/*splat', asyncHandler(async (req, res) => {
     const { source } = req.params;
-    const localId = req.params[0] || '';
+    const localId = splatPath(req);
 
     // Try exact source match first, then prefix resolution
     let adapter = registry.get(source);
@@ -115,9 +116,9 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * GET /api/content/playables/:source/*
      * Resolve to playable items (deprecated: use /api/v1/queue)
    */
-    router.get('/playables/:source/*', asyncHandler(async (req, res) => {
+    router.get('/playables/:source/*splat', asyncHandler(async (req, res) => {
       const { source } = req.params;
-      const localId = req.params[0] || '';
+      const localId = splatPath(req);
       const queryIndex = req.url.indexOf('?');
       const query = queryIndex >= 0 ? req.url.slice(queryIndex) : '';
       const newUrl = `/api/v1/queue/${source}/${localId}${query}`;
@@ -132,13 +133,13 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * POST /api/content/progress/:source/*
    * Update watch progress for an item
    */
-  router.post('/progress/:source/*', asyncHandler(async (req, res) => {
+  router.post('/progress/:source/*splat', asyncHandler(async (req, res) => {
     if (!mediaProgressMemory) {
       return res.status(501).json({ error: 'Media progress storage not configured' });
     }
 
     const { source } = req.params;
-    const localId = req.params[0] || '';
+    const localId = splatPath(req);
     const { seconds, duration } = req.body;
 
     if (typeof seconds !== 'number' || typeof duration !== 'number') {
@@ -635,7 +636,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * DEPRECATED: Redirect to /api/v1/info/:source/:id
    * @deprecated Use /api/v1/info/:source/:id instead
    */
-  router.get('/:source/info/:id/:modifiers?', (req, res) => {
+  router.get('/:source/info/:id{/:modifiers}', (req, res) => {
     const { source, id, modifiers } = req.params;
     const newUrl = modifiers
       ? `/api/v1/info/${source}/${id}/${modifiers}`

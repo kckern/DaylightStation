@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create canvas API router
@@ -109,9 +110,9 @@ export function createCanvasRouter({ canvasService }) {
   /**
    * GET /image/* - Serve canvas image
    */
-  router.get('/image/*', async (req, res, next) => {
+  router.get('/image/*splat', async (req, res, next) => {
     try {
-      const imagePath = req.params[0];
+      const imagePath = splatPath(req);
 
       // Get basePath from the adapter (injected at bootstrap)
       const basePath = req.app.get('canvasBasePath');

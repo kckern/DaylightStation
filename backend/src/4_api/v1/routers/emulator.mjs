@@ -1,5 +1,6 @@
 import express from 'express';
 import { safeSegment } from './lib/emulatorPaths.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { buildCatalog, resolveGameRules } from '#apps/emulator/EmulatorCatalog.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
@@ -134,11 +135,11 @@ export function createEmulatorRouter({
   // cores/*, compression/*). This is what EJS_pathtodata points at. Each path
   // segment is validated (dot-allowed for filenames) so the wildcard can never
   // escape the engine dir.
-  router.get('/engine/*', (req, res) => {
+  router.get('/engine/*splat', (req, res) => {
     if (typeof readEngineFile !== 'function') {
       return res.status(404).json({ error: 'not found' });
     }
-    const wildcard = req.params[0] || '';
+    const wildcard = splatPath(req);
     let relPath;
     try {
       const segments = wildcard.split('/').filter((s) => s !== '');

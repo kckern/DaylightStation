@@ -11,6 +11,7 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create siblings router
@@ -24,7 +25,7 @@ export function createSiblingsRouter(config) {
 
   const handleSiblingsRequest = asyncHandler(async (req, res) => {
     const rawSource = req.params.source;
-    const rawPath = req.params[0] || '';
+    const rawPath = splatPath(req);
 
     const { source: parsedSource, localId: parsedLocalId, compoundId } = parseActionRouteId({
       source: rawSource,
@@ -64,7 +65,7 @@ export function createSiblingsRouter(config) {
     });
   });
 
-  router.get('/:source/*', handleSiblingsRequest);
+  router.get('/:source/*splat', handleSiblingsRequest);
   router.get('/:source', handleSiblingsRequest);
 
   return router;

@@ -7,6 +7,7 @@
  * @module api/v1/routers/launch
  */
 import express from 'express';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create launch API router
@@ -57,8 +58,8 @@ export function createLaunchRouter(config) {
    * Returns { target, params } that FKB clients can use with fully.startIntent()
    * to launch apps directly without ADB.
    */
-  router.get('/intent/*', async (req, res) => {
-    const contentId = req.params[0];
+  router.get('/intent/*splat', async (req, res) => {
+    const contentId = splatPath(req);
     if (!contentId) {
       return res.status(400).json({ error: 'Missing contentId' });
     }

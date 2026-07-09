@@ -16,6 +16,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { generatePlaceholderSvg } from '../utils/placeholderSvg.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create display API router for retrieving displayable content (images/thumbnails)
@@ -44,7 +45,7 @@ export function createDisplayRouter(config) {
    */
   const handleDisplayRequest = asyncHandler(async (req, res) => {
     const { source } = req.params;
-    const pathParam = req.params[0] || '';
+    const pathParam = splatPath(req);
 
     // Parse ID using unified parser
     const { source: parsedSource, localId: parsedLocalId, compoundId } = parseActionRouteId({ source, path: pathParam });
@@ -103,7 +104,7 @@ export function createDisplayRouter(config) {
 
   // Register routes: order matters - more specific first
   // GET /:source/* - handles path segments like /plex/12345
-  router.get('/:source/*', handleDisplayRequest);
+  router.get('/:source/*splat', handleDisplayRequest);
 
   // GET /:source - handles compound IDs like /plex:12345 and heuristics like /12345
   router.get('/:source', handleDisplayRequest);

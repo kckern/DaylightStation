@@ -13,6 +13,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create static assets router
@@ -109,8 +110,8 @@ export function createStaticRouter(config) {
    * GET /api/static/art/*
    * Serve art images from the art directory
    */
-  router.get('/art/*', (req, res) => {
-    const relativePath = req.params[0] || '';
+  router.get('/art/*splat', (req, res) => {
+    const relativePath = splatPath(req);
     const artDir = path.join(imgBasePath, 'art');
 
     const filePath = resolveImagePath(artDir, relativePath);
@@ -185,8 +186,8 @@ export function createStaticRouter(config) {
    * GET /api/static/img/*
    * Generic image serving for backward compatibility
    */
-  router.get('/img/*', (req, res) => {
-    const relativePath = req.params[0] || '';
+  router.get('/img/*splat', (req, res) => {
+    const relativePath = splatPath(req);
 
     const filePath = resolveImagePath(imgBasePath, relativePath);
     if (!filePath) {
