@@ -169,6 +169,10 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
   // Server-side manual override (physical piano button / on-screen action). An
   // 'off' window mutes MIDI-wake exactly like the local button-armed cooldown.
   const serverOffRef = useRef(false);
+  // An 'on' window holds the screen awake: the physical button press bumps no
+  // local activity, so without this the idle clock would sleep the panel
+  // mid-window and the press would look like it had been undone.
+  const serverOnRef = useRef(false);
 
   // Send a screen on/off command, deduped against believed state + in-flight.
   const setScreen = useCallback((on) => {
@@ -243,10 +247,15 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
     const thresholdMs = timeoutMinutes * 60_000;
     const cooldownMs = offCooldownMinutes * 60_000;
     const id = setInterval(() => {
-      // Fold the shared server override into the poll: an 'off' window mutes MIDI-wake.
+      // Fold the shared server override into the poll: an 'off' window mutes
+      // MIDI-wake, an 'on' window holds the screen awake.
       if (deviceId) {
         DaylightAPI(`api/v1/device/${deviceId}/screen/override`)
-          .then((r) => { serverOffRef.current = r?.override?.state === 'off'; })
+          .then((r) => {
+            const state = r?.override?.state;
+            serverOffRef.current = state === 'off';
+            serverOnRef.current = state === 'on';
+          })
           .catch(() => { /* leave prior value; a transient failure shouldn't unmute */ });
       }
       // Lift the manual screen-off cooldown once the player has been idle long
@@ -261,6 +270,10 @@ export function usePianoScreensaver({ deviceId, activeNotes, noteHistory, timeou
       // hold that keeps the screen awake mid-performance. Refresh activity so the
       // idle clock only starts elapsing once playback stops.
       if (keepAliveRef.current) { lastActivityRef.current = Date.now(); return; }
+      // A live 'on' override is an explicit human "keep this lit" — it outranks
+      // the idle clock AND quiet hours. Refresh activity so that when the window
+      // lapses the screen gets a full idle timeout, not an instant sleep.
+      if (serverOnRef.current) { lastActivityRef.current = Date.now(); return; }
       if (isWithinQuietHours(new Date(), quietRef.current)) { setScreen(false); return; }
       if (Date.now() - lastActivityRef.current >= thresholdMs) setScreen(false);
     }, POLL_INTERVAL_MS);
