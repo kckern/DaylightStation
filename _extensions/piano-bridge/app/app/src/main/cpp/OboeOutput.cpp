@@ -83,9 +83,17 @@ oboe::DataCallbackResult OboeOutput::onAudioReady(oboe::AudioStream* stream,
 }
 
 void OboeOutput::onErrorAfterClose(oboe::AudioStream* /*stream*/, oboe::Result error) {
-    LOGW("Oboe stream error after close: %s — restarting", oboe::convertToText(error));
-    // Disconnect (e.g. headphones unplugged) closes the stream; re-open.
     stop();
+    // A disconnect (A2DP drop) closes the stream. Reopening unconditionally would
+    // land the stream on the built-in speaker — exactly what the guard forbids.
+    // Only reopen while the gate is open; the Java guard reopens us on reconnect
+    // by re-asserting the gate, which PianoBridgeService turns into engine.start().
+    if (!host_->outputGate()) {
+        LOGW("stream error (%s) while gate closed — NOT reopening",
+             oboe::convertToText(error));
+        return;
+    }
+    LOGW("Oboe stream error after close: %s — restarting", oboe::convertToText(error));
     start();
 }
 
