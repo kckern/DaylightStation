@@ -104,3 +104,57 @@ describe('cleanTitle', () => {
     expect(cleanTitle('Jazzy Blues Comping', 'Jazzy Blues Comping')).toBe('Jazzy Blues Comping');
   });
 });
+
+import { buildNormalizationPlan } from './normalizePlan.mjs';
+
+const rec = (o) => ({ file: 'x.nfo', styles: [], wistia: 'w'+Math.abs(o.oldEpisode), ...o });
+
+describe('buildNormalizationPlan', () => {
+  it('renumbers each new season 1..N by (oldSeason, oldEpisode) and conserves count', () => {
+    const recs = [
+      rec({ oldSeason: 2, oldEpisode: 5, course: '2-5-1 Soloing with Bebop Scales', title: '2-5-1 Soloing with Bebop Scales – A' }),
+      rec({ oldSeason: 1, oldEpisode: 9, course: 'Pop Soloing', title: 'Pop Soloing – Intro' }),
+      rec({ oldSeason: 1, oldEpisode: 3, course: 'Pop Soloing', title: 'Pop Soloing – Setup' }),
+    ];
+    const plan = buildNormalizationPlan(recs);
+    expect(plan.episodes.length).toBe(3);
+    const soloing = plan.episodes.filter((e) => e.newSeason === 1).sort((a, b) => a.newEpisode - b.newEpisode);
+    // old S1E3, S1E9, then S2E5 → new E1,E2,E3
+    expect(soloing.map((e) => [e.oldSeason, e.oldEpisode, e.newEpisode]))
+      .toEqual([[1, 3, 1], [1, 9, 2], [2, 5, 3]]);
+    expect(soloing[0].newDir).toBe('Season 01 - Soloing');
+    expect(soloing[0].newBasename).toBe('Piano With Jonny - S01E01 - Setup');
+  });
+  it('collapses multi-part courses under one base with part numbers', () => {
+    const recs = [
+      rec({ oldSeason: 7, oldEpisode: 56, course: 'Soloing Over a Turnaround 2', title: 'Soloing Over a Turnaround 2 – Stride' }),
+      rec({ oldSeason: 7, oldEpisode: 34, course: 'Soloing Over a Turnaround 1', title: 'Soloing Over a Turnaround 1 – Progression' }),
+    ];
+    const plan = buildNormalizationPlan(recs);
+    const bases = plan.episodes.map((e) => ({ base: e.base, part: e.part, title: e.newTitle }));
+    expect(bases).toContainEqual({ base: 'Soloing Over a Turnaround', part: 1, title: 'Progression' });
+    expect(bases).toContainEqual({ base: 'Soloing Over a Turnaround', part: 2, title: 'Stride' });
+  });
+  it('emits a song-merge row joining treatment variants', () => {
+    const recs = [
+      rec({ oldSeason: 10, oldEpisode: 1, course: 'Fly Me To The Moon', title: 'Fly Me To The Moon – A' }),
+      rec({ oldSeason: 11, oldEpisode: 2, course: 'Fly Me to the Moon – Challenge', title: 'Fly Me to the Moon – Challenge – B' }),
+      rec({ oldSeason: 12, oldEpisode: 3, course: 'Fly Me To The Moon Accompaniment', title: 'Fly Me To The Moon Accompaniment – C' }),
+    ];
+    const plan = buildNormalizationPlan(recs);
+    const row = plan.songMerge.find((r) => r.songKey === 'fly me to the moon');
+    expect(row).toBeTruthy();
+    expect(row.treatments.sort()).toEqual(['accompaniment', 'challenge', 'tutorial']);
+    expect(row.count).toBe(3);
+  });
+  it('summarizes seasons with per-group counts', () => {
+    const recs = [
+      rec({ oldSeason: 4, oldEpisode: 1, course: 'Major Drop 2 Voicings', title: 'Major Drop 2 Voicings – A' }),
+      rec({ oldSeason: 4, oldEpisode: 2, course: 'Minor Block Chords', title: 'Minor Block Chords – A' }),
+    ];
+    const plan = buildNormalizationPlan(recs);
+    const s3 = plan.seasons.find((s) => s.newSeason === 3);
+    expect(s3).toMatchObject({ seasonName: 'Chord Voicings', lane: 'lessons', count: 2 });
+    expect(s3.groups.map((g) => g.name).sort()).toEqual(['Block Chords', 'Drop 2 Voicings']);
+  });
+});
