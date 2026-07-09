@@ -23,7 +23,7 @@ import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
-import { resolveDisplayItems } from './contentSearchLogic.js';
+import { resolveDisplayItems, isContentIdLike } from './contentSearchLogic.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
@@ -1467,9 +1467,14 @@ function ContentSearchCombobox({ value, onChange }) {
   const handleBlur = () => {
     // Delay to allow click events on dropdown to fire first
     blurTimeoutRef.current = setTimeout(() => {
-      // If user typed freeform text and clicked away, commit it (same as Tab/Enter)
-      if (searchQuery && searchQuery !== value) {
+      if (searchQuery && searchQuery !== value && isContentIdLike(searchQuery)) {
+        // Intentional direct-id entry — always saved (2026-03-01 invariant).
         commitFreeformText('blur');
+      } else if (searchQuery && searchQuery !== value) {
+        // Exploratory search text — revert, never commit on blur (audit I1).
+        // Explicit gestures (Enter/Tab) still commit freeform via handleKeyDown.
+        log.info('blur.revert_exploratory', { discarded: searchQuery, kept: value });
+        resetComboboxState();
       } else {
         log.debug('blur.no_change', { searchQuery, value });
         resetComboboxState();
