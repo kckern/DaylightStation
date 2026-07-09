@@ -2435,3 +2435,23 @@
 .psc-stage{display:grid; grid-template-columns:minmax(220px,32%) 1fr; min-height:0; padding:0;}
 .psc-pane{padding:1.3rem; min-width:0; display:flex; flex-direction:column; gap:.55rem;}
 @media(orientation:portrait){.psc-stage{grid-template-columns:1fr;} .psc-rail{border-right:none; border-bottom:1px solid var(--piano-border);}}
+/* ── Piano video: paused loop overlay ─────────────────────────────────────── */
+.piano-loop-overlay{
+  position:absolute; inset:0; z-index:40; display:flex; align-items:center; justify-content:center;
+  background:rgba(10,8,6,.55); cursor:pointer;
+}
+.piano-loop-overlay__cluster{
+  display:flex; align-items:center; gap:1rem; cursor:default;
+  padding:1rem 1.25rem; border-radius:2rem; background:rgba(20,18,16,.72);
+  box-shadow:0 12px 40px -12px rgba(0,0,0,.7);
+}
+.piano-loop-overlay__btn{
+  display:grid; place-items:center; width:3.4rem; height:3.4rem; border-radius:50%;
+  border:1px solid var(--piano-border); background:var(--piano-surface-2); color:var(--piano-fg);
+  font-size:1.2rem; cursor:pointer;
+}
+.piano-loop-overlay__btn:hover:not(:disabled),.piano-loop-overlay__btn:focus-visible{border-color:var(--piano-muted);}
+.piano-loop-overlay__btn:disabled{opacity:.4; cursor:default;}
+.piano-loop-overlay__btn--resume{
+  width:4.4rem; height:4.4rem; background:var(--piano-accent); color:var(--piano-accent-ink); border-color:transparent; font-size:1.6rem;
+}
