@@ -58,6 +58,7 @@ export function partitionSeasons(items, parents, referenceUnitIds = []) {
     title: p?.title || null,
     thumbnail: p?.thumbnail || null,
     reference: refSet.has(String(id)),
+    piano: p?.piano || null,
   })).sort((a, b) => a.index - b.index);
   return seasons.map((s) => {
     const lessons = (items || []).filter((it) => String(it.parentId) === s.id);
