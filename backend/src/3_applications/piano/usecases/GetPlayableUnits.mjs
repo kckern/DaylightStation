@@ -70,6 +70,11 @@ export class GetPlayableUnits {
           // The episode number (E12 badge) and intra-unit sort key live under
           // metadata too; lift so the grid can label + order lectures correctly.
           itemIndex: it.itemIndex ?? md.itemIndex ?? null,
+          // Curriculum metadata (course grouping, styles, skill, instructor, and
+          // the season category block) is merged onto metadata.piano by the Plex
+          // adapter; lift it top-level so the curriculum UX reads item.piano.*
+          // consistently with the /list contract.
+          piano: it.piano ?? md.piano ?? null,
         };
       });
     }
