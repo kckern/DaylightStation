@@ -232,6 +232,14 @@ describe('categoryOf', () => {
     const season = { reference: true, piano: { category: 'custom' } };
     expect(categoryOf(season)).toBe('custom');
   });
+
+  it('partitionSeasons carries season.piano; categoryOf reads it', () => {
+    const items = [{ parentId: '10', itemIndex: 1, piano: { course: 'A' } }];
+    const parents = { '10': { index: 10, title: 'Song Tutorials', piano: { category: 'repertoire', kind: 'tutorial' } } };
+    const seasons = partitionSeasons(items, parents);
+    expect(seasons[0].piano).toEqual({ category: 'repertoire', kind: 'tutorial' });
+    expect(categoryOf(seasons[0])).toBe('repertoire');
+  });
 });
 
 describe('collectFacets', () => {
