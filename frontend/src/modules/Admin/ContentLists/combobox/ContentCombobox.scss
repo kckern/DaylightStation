@@ -1,0 +1,103 @@
+// ContentCombobox.scss — styles for the unified content combobox.
+// Merged from ContentSearchCombobox.scss (pending-sources strip) and the
+// combobox option styles in ContentLists.scss (highlighted/current/wrap-flash),
+// scoped to .content-combobox-option so the legacy selectors keep working
+// until both legacy implementations are removed.
+
+// ── Pending-sources strip (ported from ContentSearchCombobox.scss) ──
+
+.pending-sources {
+  background-color: var(--mantine-color-dark-6);
+  animation: ccb-pulse 1.5s ease-in-out infinite;
+
+  .mantine-Badge-root {
+    animation: ccb-fade-in 0.2s ease-out;
+    // Fade out sources as they complete
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+  }
+}
+
+@keyframes ccb-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes ccb-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// ── Option states (ported from ContentLists.scss:443-500) ──
+// The machine owns highlight; Mantine's own selected/active states are
+// neutralized so `.highlighted` is the ONLY source of blue.
+
+.mantine-Combobox-option.content-combobox-option {
+  &[data-combobox-selected],
+  &[data-combobox-active] {
+    background: transparent !important;
+  }
+
+  // Subtle hover affordance for mouse users (never blue)
+  &:hover:not(.highlighted) {
+    background: var(--ds-bg-overlay, var(--mantine-color-dark-5)) !important;
+  }
+
+  // Keyboard-highlighted item - primary blue (ONLY source of blue)
+  &.highlighted,
+  &[data-highlighted='true'] {
+    background: var(--ds-accent) !important;
+    border-left: 3px solid var(--ds-accent-hover);
+
+    // Ensure text is readable on blue background
+    color: white !important;
+
+    .mantine-Text-root {
+      color: white !important;
+
+      &[data-c='dimmed'] {
+        color: rgba(255, 255, 255, 0.85) !important;
+      }
+    }
+
+    .mantine-Badge-root {
+      background: rgba(255, 255, 255, 0.2) !important;
+      color: white !important;
+    }
+
+    svg {
+      color: rgba(255, 255, 255, 0.9) !important;
+    }
+  }
+
+  // Current item (originally selected) - subtle gray, NO blue
+  &.current:not(.highlighted):not([data-highlighted='true']) {
+    background: var(--ds-bg-elevated) !important;
+    border-left: 3px solid var(--ds-text-muted);
+  }
+
+  // Wrap-around flash — draws eye to new position after pac-man wrap
+  &.wrap-flash {
+    animation: ccb-wrap-flash 400ms ease-out;
+  }
+}
+
+@keyframes ccb-wrap-flash {
+  0% {
+    background: var(--ds-accent);
+    box-shadow: 0 0 8px var(--ds-accent-glow);
+  }
+  100% {
+    background: var(--ds-accent);
+    box-shadow: none;
+  }
+}
