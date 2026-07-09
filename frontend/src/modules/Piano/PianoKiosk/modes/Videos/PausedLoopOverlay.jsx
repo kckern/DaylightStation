@@ -9,7 +9,7 @@ export default function PausedLoopOverlay({ onSkip, onResume, forwardDisabled = 
   const skip = (delta) => (e) => { e.stopPropagation(); onSkip(delta); };
   const resume = (e) => { e.stopPropagation(); onResume(); };
   return (
-    <div className="piano-loop-overlay" onClick={onResume}>
+    <div className="piano-loop-overlay" onClick={resume}>
       <div className="piano-loop-overlay__cluster" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="piano-loop-overlay__btn" onClick={skip(-30)} aria-label="Back 30 seconds"><Icon name="skip-back-30" /></button>
         <button type="button" className="piano-loop-overlay__btn" onClick={skip(-15)} aria-label="Back 15 seconds"><Icon name="skip-back-15" /></button>

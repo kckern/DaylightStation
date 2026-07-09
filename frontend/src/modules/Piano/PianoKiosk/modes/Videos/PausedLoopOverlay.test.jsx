@@ -27,4 +27,17 @@ describe('PausedLoopOverlay', () => {
     expect(screen.getByLabelText('Forward 15 seconds').disabled).toBe(true);
     expect(screen.getByLabelText('Forward 30 seconds').disabled).toBe(true);
   });
+
+  it('backdrop click resumes without bubbling to a parent onClick', () => {
+    const onResume = vi.fn();
+    const parentClick = vi.fn();
+    const { container } = render(
+      <div onClick={parentClick}>
+        <PausedLoopOverlay onSkip={vi.fn()} onResume={onResume} />
+      </div>,
+    );
+    fireEvent.click(container.querySelector('.piano-loop-overlay'));
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(parentClick).not.toHaveBeenCalled();
+  });
 });
