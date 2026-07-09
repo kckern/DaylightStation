@@ -36,6 +36,10 @@ describe('parseNfoFull', () => {
     });
     expect(f.plot).toContain('Groove.');
   });
+  it('decodes &amp; last so &amp;lt; survives as &lt;', () => {
+    const xml = `<episodedetails><plot>Use &amp;lt; here</plot><season>1</season><episode>1</episode></episodedetails>`;
+    expect(parseNfoFull(xml).plot).toBe('Use &lt; here');
+  });
 });
 
 describe('renderNfo', () => {
@@ -69,5 +73,9 @@ describe('renderNfo', () => {
       type: f.type, credits: f.credits, studio: f.studio, wistia: f.wistia, wistiaDefault: f.wistiaDefault });
     expect(out).toContain('<title>A &amp; B</title>');
     expect(parseNfoFull(out)).toMatchObject({ genres: ['Music', 'Educational', 'Latin'], wistia: 'po6f0g0bmc' });
+  });
+  it('throws on missing title or non-finite season/episode', () => {
+    expect(() => renderNfo({ title: '', season: 1, episode: 1 })).toThrow(/title/);
+    expect(() => renderNfo({ title: 'X', season: NaN, episode: 1, genres: [], focus: [] })).toThrow(/season/);
   });
 });
