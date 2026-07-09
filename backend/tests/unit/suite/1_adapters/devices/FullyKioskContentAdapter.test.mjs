@@ -662,4 +662,43 @@ describe('FullyKioskContentAdapter', () => {
       expect(result.error).toBeDefined();
     });
   });
+
+  describe('getStatus', () => {
+    function adapterWithDeviceInfo(deviceInfo) {
+      const httpClient = {
+        get: vi.fn(async (url) => {
+          const cmd = url.match(/[?&]cmd=([^&]+)/)?.[1];
+          if (cmd === 'getDeviceInfo') return { status: 200, data: JSON.stringify(deviceInfo) };
+          return { status: 200, data: '{}' };
+        }),
+      };
+      return new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+    }
+
+    // Regression: the REST deviceInfo field is `screenOn`. `isScreenOn` is the
+    // in-WebView JS API (fully.isScreenOn()) and never appears here. Reading the
+    // wrong key made screenOn permanently undefined, so PianoScreenAuthority's
+    // #verify() could never match and screen/toggle always read "off".
+    it('reads screenOn from the REST deviceInfo `screenOn` field', async () => {
+      const adapter = adapterWithDeviceInfo({ screenOn: true, appVersion: '1.57.1' });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ ready: true, screenOn: true });
+    });
+
+    it('reports screenOn false when the panel is off', async () => {
+      const adapter = adapterWithDeviceInfo({ screenOn: false });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ ready: true, screenOn: false });
+    });
+
+    it('falls back to isScreenOn for FKB builds that send it instead', async () => {
+      const adapter = adapterWithDeviceInfo({ isScreenOn: true });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ ready: true, screenOn: true });
+    });
+
+    it('leaves screenOn undefined when deviceInfo reports neither field', async () => {
+      const adapter = adapterWithDeviceInfo({ deviceModel: 'SM-T590' });
+      const status = await adapter.getStatus();
+      expect(status.ready).toBe(true);
+      expect(status.screenOn).toBeUndefined();
+    });
+  });
 });
