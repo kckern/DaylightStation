@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { findMediaFileByPrefix, fileExists, loadContainedYaml } from '#system/utils/FileIO.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * MIME types for common media formats
@@ -151,9 +152,9 @@ export function createStreamRouter(config) {
    * - /stream/readalong/scripture/nt/nirv/26046 → nt/nirv/26046.mp3
    * - /stream/readalong/talks/ldsgc202410/smith → talks/ldsgc202410/smith.mp4
    */
-  router.get('/readalong/:collection/*', asyncHandler(async (req, res) => {
+  router.get('/readalong/:collection/*splat', asyncHandler(async (req, res) => {
     const { collection } = req.params;
-    const itemPath = req.params[0] || '';
+    const itemPath = splatPath(req);
 
     if (!itemPath) {
       return res.status(400).json({ error: 'No item path specified' });

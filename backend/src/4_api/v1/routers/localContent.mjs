@@ -13,6 +13,7 @@
 import express from 'express';
 import path from 'path';
 import { parseFile } from 'music-metadata';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { lookupReference, generateReference } from 'scripture-guide';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { dirExists, listDirs, getStats, findMediaFileByPrefix, fileExists } from '#system/utils/FileIO.mjs';
@@ -148,8 +149,8 @@ export function createLocalContentRouter(config) {
    * - /scripture/bom (volume - returns first chapter)
    * - /scripture/bom/sebom/31103 (full path)
    */
-  router.get('/scripture/*', asyncHandler(async (req, res) => {
-      const input = req.params[0] || '';
+  router.get('/scripture/*splat', asyncHandler(async (req, res) => {
+      const input = splatPath(req);
       const adapter = registry.get('local-content');
 
       if (!adapter) {
@@ -302,8 +303,8 @@ export function createLocalContentRouter(config) {
    * Returns talk with paragraphs for ContentScroller
    * If path refers to a conference/series, auto-selects next unwatched talk
    */
-  router.get('/talk/*', asyncHandler(async (req, res) => {
-      const talkPath = req.params[0] || '';
+  router.get('/talk/*splat', asyncHandler(async (req, res) => {
+      const talkPath = splatPath(req);
       const adapter = registry.get('local-content');
 
       if (!adapter) {
@@ -461,8 +462,8 @@ export function createLocalContentRouter(config) {
    * GET /api/local-content/poem/*
    * Returns poem with stanzas for ContentScroller
    */
-  router.get('/poem/*', asyncHandler(async (req, res) => {
-      const path = req.params[0] || '';
+  router.get('/poem/*splat', asyncHandler(async (req, res) => {
+      const path = splatPath(req);
       const adapter = registry.get('local-content');
 
       if (!adapter) {
@@ -491,8 +492,8 @@ export function createLocalContentRouter(config) {
    * GET /api/local-content/cover/*
    * Returns cover art from embedded ID3 or placeholder
    */
-  router.get('/cover/*', async (req, res) => {
-    const mediaKey = req.params[0] || '';
+  router.get('/cover/*splat', async (req, res) => {
+    const mediaKey = splatPath(req);
 
     if (!mediaKey) {
       return res.status(400).json({ error: 'No media key provided' });
@@ -537,7 +538,7 @@ export function createLocalContentRouter(config) {
 
   const serveCoverImage = asyncHandler(async (req, res) => {
     const { adapter: adapterName, collection } = req.params;
-    const subPath = req.params[0] || '';
+    const subPath = splatPath(req);
     const adapter = registry.get(adapterName);
 
     if (!adapter?.resolveCoverImage) {
@@ -555,7 +556,7 @@ export function createLocalContentRouter(config) {
     res.sendFile(coverPath);
   });
 
-  router.get('/collection-cover/:adapter/:collection/*', serveCoverImage);
+  router.get('/collection-cover/:adapter/:collection/*splat', serveCoverImage);
   router.get('/collection-cover/:adapter/:collection', serveCoverImage);
 
   /**

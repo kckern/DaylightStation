@@ -270,7 +270,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   if (!configExists) {
-    app.get('*', (req, res, next) => {
+    // Express 5: '/{*splat}' (optional named wildcard) replaces the bare '*' catch-all
+    app.get('/{*splat}', (req, res, next) => {
       if (req.path.startsWith('/ws/')) return next();
       res.status(500).json({ error: 'Application not configured. Ensure system.yml exists.' });
     });

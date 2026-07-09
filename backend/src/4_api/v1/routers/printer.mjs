@@ -48,21 +48,21 @@ export function createPrinterRouter(config) {
       status: 'success',
       printers: printerRegistry.list(),
       endpoints: {
-        'GET /ping/:location?': 'TCP handshake probe (no bytes written)',
-        'GET /status/:location?': 'ESC/POS status query',
-        'POST /text/:location?': 'Print text',
-        'POST /image/:location?': 'Print image from path',
-        'POST /receipt/:location?': 'Print receipt-style document',
-        'POST /table/:location?': 'Print ASCII table',
-        'POST /print/:location?': 'Print a custom job object',
-        'GET /feed-button/:location?': 'Feed button status',
-        'GET /feed-button/on/:location?': 'Enable feed button',
-        'GET /feed-button/off/:location?': 'Disable feed button',
+        'GET /ping{/:location}': 'TCP handshake probe (no bytes written)',
+        'GET /status{/:location}': 'ESC/POS status query',
+        'POST /text{/:location}': 'Print text',
+        'POST /image{/:location}': 'Print image from path',
+        'POST /receipt{/:location}': 'Print receipt-style document',
+        'POST /table{/:location}': 'Print ASCII table',
+        'POST /print{/:location}': 'Print a custom job object',
+        'GET /feed-button{/:location}': 'Feed button status',
+        'GET /feed-button/on{/:location}': 'Enable feed button',
+        'GET /feed-button/off{/:location}': 'Disable feed button',
       },
     });
   });
 
-  router.get('/ping/:location?', asyncHandler(async (req, res) => {
+  router.get('/ping{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const result = await adapter.ping();
@@ -70,13 +70,13 @@ export function createPrinterRouter(config) {
     res.status(statusCode).json(result);
   }));
 
-  router.get('/status/:location?', asyncHandler(async (req, res) => {
+  router.get('/status{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     res.json(await adapter.getStatus());
   }));
 
-  router.post('/text/:location?', asyncHandler(async (req, res) => {
+  router.post('/text{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const { text, options = {} } = req.body;
@@ -86,7 +86,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Text printed successfully' : 'Print failed', printJob });
   }));
 
-  router.post('/image/:location?', asyncHandler(async (req, res) => {
+  router.post('/image{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const { path, options = {} } = req.body;
@@ -96,7 +96,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Image printed successfully' : 'Print failed', printJob });
   }));
 
-  router.post('/receipt/:location?', asyncHandler(async (req, res) => {
+  router.post('/receipt{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const receiptData = req.body;
@@ -106,7 +106,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Receipt printed successfully' : 'Print failed', printJob });
   }));
 
-  router.post('/table/:location?', asyncHandler(async (req, res) => {
+  router.post('/table{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const tableData = req.body;
@@ -118,7 +118,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Table printed successfully' : 'Print failed', printJob });
   }));
 
-  router.post('/print/:location?', asyncHandler(async (req, res) => {
+  router.post('/print{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const printJob = req.body;
@@ -127,7 +127,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Print job completed successfully' : 'Print failed', printJob });
   }));
 
-  router.get('/feed-button/:location?', asyncHandler(async (req, res) => {
+  router.get('/feed-button{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const status = await adapter.getStatus();
@@ -138,7 +138,7 @@ export function createPrinterRouter(config) {
     });
   }));
 
-  router.get('/feed-button/on/:location?', asyncHandler(async (req, res) => {
+  router.get('/feed-button/on{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const printJob = adapter.setFeedButton(true);
@@ -146,7 +146,7 @@ export function createPrinterRouter(config) {
     res.json({ success, message: success ? 'Feed button enabled successfully' : 'Feed button enable failed', enabled: true });
   }));
 
-  router.get('/feed-button/off/:location?', asyncHandler(async (req, res) => {
+  router.get('/feed-button/off{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const printJob = adapter.setFeedButton(false);

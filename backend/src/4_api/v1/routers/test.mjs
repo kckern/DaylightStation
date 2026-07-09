@@ -27,7 +27,8 @@ export function createTestRouter(config = {}) {
   const isDev = process.env.NODE_ENV !== 'production';
 
   if (!isDev) {
-    router.all('*', (req, res) => {
+    // {*splat} braces make the wildcard optional so the router root matches too
+    router.all('/{*splat}', (req, res) => {
       res.status(403).json({ error: 'Test endpoints disabled in production' });
     });
     return router;
@@ -35,7 +36,7 @@ export function createTestRouter(config = {}) {
 
   // Guard: If shutoff controls not provided, disable plex shutoff endpoints
   if (!plexShutoffControls) {
-    router.all('/plex/shutoff/*', (req, res) => {
+    router.all('/plex/shutoff/*splat', (req, res) => {
       res.status(503).json({ error: 'Plex shutoff controls not configured' });
     });
     return router;
