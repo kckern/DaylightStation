@@ -1,5 +1,5 @@
 // useResolvedMediaEl.test.js
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
 
@@ -35,5 +35,21 @@ describe('useResolvedMediaEl', () => {
     act(() => { vi.advanceTimersByTime(8100); });
     expect(result.current.timedOut).toBe(true);
     expect(result.current.el).toBe(null);
+  });
+
+  it('recovers when the element briefly goes null then a new one appears (swap gap)', () => {
+    const a = { id: 'A' }; const b = { id: 'B' };
+    let el = a;
+    const playerRef = { current: { getMediaElement: () => el } };
+    const { result } = renderHook(() => useResolvedMediaEl(playerRef, 300));
+    act(() => { vi.advanceTimersByTime(50); });
+    expect(result.current.el).toBe(a);           // initial element resolved
+    el = null;                                   // transient gap during swap
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(result.current.el).toBe(null);        // gap detected
+    el = b;                                      // replacement mounts
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(result.current.el).toBe(b);           // replacement resolved
+    expect(result.current.timedOut).toBe(false); // must NOT have latched timedOut
   });
 });
