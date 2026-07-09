@@ -105,6 +105,9 @@ export function buildNormalizationPlan(records) {
     };
   });
 
+  // Sort episodes deterministically by (oldSeason, oldEpisode) to ensure tutorial form wins in song-merge.
+  episodes.sort((a, b) => (a.oldSeason - b.oldSeason) || (a.oldEpisode - b.oldEpisode));
+
   // Renumber within each new season by (oldSeason, oldEpisode).
   const bySeason = new Map();
   for (const e of episodes) {
