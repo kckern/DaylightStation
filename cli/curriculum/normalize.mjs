@@ -35,6 +35,28 @@ for (const dir of readdirSync(root)) {
   }
 }
 
+// ---- fail-loud validation: manifest determinism depends on every ----
+// ---- (oldSeason, oldEpisode) being finite and unique ----
+const badRecords = records.filter((r) => !Number.isFinite(r.oldSeason) || !Number.isFinite(r.oldEpisode));
+if (badRecords.length) {
+  console.error(`FATAL: ${badRecords.length} episodes have a non-numeric season/episode:`);
+  for (const r of badRecords) console.error(`  ${r.file}  season=${r.oldSeason} episode=${r.oldEpisode}`);
+  process.exit(1);
+}
+
+const byKey = new Map();
+for (const r of records) {
+  const key = `${r.oldSeason}x${r.oldEpisode}`;
+  if (!byKey.has(key)) byKey.set(key, []);
+  byKey.get(key).push(r.file);
+}
+const dupes = [...byKey.entries()].filter(([, files]) => files.length > 1);
+if (dupes.length) {
+  console.error('FATAL: duplicate (season,episode) pairs — manifest would be non-deterministic:');
+  for (const [key, files] of dupes) console.error(`  ${key}:\n    ${files.join('\n    ')}`);
+  process.exit(1);
+}
+
 const plan = buildNormalizationPlan(records);
 
 // ---- machine-readable ----
