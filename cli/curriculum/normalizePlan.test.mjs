@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseCourseAndPart } from './normalizePlan.mjs';
+import { baseCourseAndPart, classify } from './normalizePlan.mjs';
 
 describe('baseCourseAndPart', () => {
   it('strips a trailing en-dash part number', () => {
@@ -15,5 +15,42 @@ describe('baseCourseAndPart', () => {
   it('does not strip a number that is part of the name', () => {
     expect(baseCourseAndPart('5 Jazz Comping Approaches 1')).toEqual({ base: '5 Jazz Comping Approaches', part: 1 });
     expect(baseCourseAndPart('2-5-1 Soloing with Bebop Scales')).toEqual({ base: '2-5-1 Soloing with Bebop Scales', part: null });
+  });
+});
+
+describe('classify', () => {
+  it('routes practice sources into new season 0 with topic groups', () => {
+    expect(classify(0, 'Practice Essentials Course')).toMatchObject({ lane: 'practice', newSeason: 0, seasonName: 'Practice', group: 'How to Practice' });
+    expect(classify(5, 'The Major Blues Scale (Gospel Scale)')).toMatchObject({ lane: 'practice', newSeason: 0, group: 'Scales' });
+    expect(classify(9, 'Two-Hand Coordination Exercises')).toMatchObject({ lane: 'practice', newSeason: 0, group: 'Two-Hand Coordination' });
+    expect(classify(9, 'Dominant 7th Chord Exercises')).toMatchObject({ lane: 'practice', newSeason: 0, group: 'Chord & Voicing Exercises' });
+  });
+  it('splits old Season 08 by strand: essentials→Lessons(6), exercises→Practice(0)', () => {
+    expect(classify(8, 'Jazz Swing Rhythm Essentials')).toMatchObject({ lane: 'lessons', newSeason: 6, seasonName: 'Comping & Rhythm', group: 'Rhythm Essentials' });
+    expect(classify(8, 'Bossa Nova – Rhythm Exercises')).toMatchObject({ lane: 'practice', newSeason: 0, group: 'Rhythm Exercises' });
+  });
+  it('combines old S01+S02 into Soloing with per-source groups', () => {
+    expect(classify(1, 'Pop Soloing With Chord Tone Targets')).toMatchObject({ newSeason: 1, seasonName: 'Soloing', group: 'Pop Soloing' });
+    expect(classify(2, '2-5-1 Soloing with Bebop Scales')).toMatchObject({ newSeason: 1, seasonName: 'Soloing', group: '2-5-1 Soloing' });
+  });
+  it('splits old Season 04 into Voicings / Theory / Lead Sheets', () => {
+    expect(classify(4, 'Major Drop 2 Voicings')).toMatchObject({ newSeason: 3, seasonName: 'Chord Voicings', group: 'Drop 2 Voicings' });
+    expect(classify(4, 'Dominant Quartal Voicings')).toMatchObject({ newSeason: 3, group: 'Quartal Voicings' });
+    expect(classify(4, 'Minor Block Chords')).toMatchObject({ newSeason: 3, group: 'Block Chords' });
+    expect(classify(4, 'Major Chord Rootless Voicings')).toMatchObject({ newSeason: 3, group: 'Rootless Voicings' });
+    expect(classify(4, 'Piano Chord Extensions')).toMatchObject({ newSeason: 4, seasonName: 'Chord Theory & Color', group: null });
+    expect(classify(4, 'Passing Chords & Reharmonization')).toMatchObject({ newSeason: 4, group: null });
+    expect(classify(4, 'Play Piano Lead Sheets With Block Chords')).toMatchObject({ newSeason: 5, seasonName: 'Lead Sheet Application', group: null });
+  });
+  it('maps remaining lessons seasons and repertoire treatments', () => {
+    expect(classify(3, 'Scales for Improv on 7th Chords')).toMatchObject({ lane: 'lessons', newSeason: 2, seasonName: 'Improvisation' });
+    expect(classify(6, 'Jazzy Blues Comping')).toMatchObject({ newSeason: 6, seasonName: 'Comping & Rhythm', group: 'Comping' });
+    expect(classify(7, 'Soloing Over a Turnaround')).toMatchObject({ newSeason: 7, seasonName: 'Intros, Endings & Fills' });
+    expect(classify(10, 'Autumn Leaves')).toMatchObject({ lane: 'repertoire', newSeason: 8, seasonName: 'Song Library', treatment: 'tutorial' });
+    expect(classify(11, 'Autumn Leaves – Challenge')).toMatchObject({ lane: 'repertoire', newSeason: 8, treatment: 'challenge' });
+    expect(classify(12, 'Jazz Swing Accompaniment')).toMatchObject({ lane: 'repertoire', newSeason: 8, treatment: 'accompaniment' });
+  });
+  it('keeps an in-lesson exercise inside its Lessons season (S07 exception)', () => {
+    expect(classify(7, 'Major Turnaround Exercises With 7th Chords')).toMatchObject({ lane: 'lessons', newSeason: 7 });
   });
 });
