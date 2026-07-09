@@ -113,6 +113,7 @@ export function createDeviceRouter(config) {
     configService,
     loadFile,
     pianoMidiWakeService,
+    screenOverrideService,
     logger = console,
   } = config;
 
@@ -706,6 +707,81 @@ export function createDeviceRouter(config) {
     logger.info?.('device.router.toggle', { deviceId, display });
     const result = await device.toggle(display);
     res.json(result);
+  }));
+
+  // --- Manual screen override (physical piano button + on-screen action) --------
+  // Hold windows: single-press-ON = onHoldMinutes; sticky-OFF inherits
+  // screensaver.offCooldownMinutes so the physical double-press can't drift from
+  // the on-screen "turn off screen" action. All three screen writers read the
+  // shared ScreenOverrideService, so a press outlives the 45s power reconcile.
+  //
+  // NOTE: these literal-path routes are declared BEFORE `screen/:state` so the
+  // `:state` param doesn't greedily capture 'toggle' / 'override'.
+  const pianoAppCfg = () => (configService?.getHouseholdAppConfig?.(null, 'piano')) || {};
+  const onHoldMinutes = () => Number(pianoAppCfg().button?.onHoldMinutes) || 10;
+  const offHoldMinutes = () => Number(pianoAppCfg().button?.offHoldMinutes)
+    || Number(pianoAppCfg().screensaver?.offCooldownMinutes) || 30;
+
+  /**
+   * GET /device/:deviceId/screen/toggle
+   * Flip the screen. ON → set an on-hold window (reconcile can't kill it).
+   * OFF → clear the window (soft: MIDI / piano-power / touch can re-light).
+   * getStatus() failure ⇒ assume OFF ⇒ turn ON (a press is never a no-op).
+   */
+  router.get('/:deviceId/screen/toggle', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const device = deviceService.get(deviceId);
+    if (!device) {
+      return res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
+    }
+    let currentlyOn = false;
+    try { currentlyOn = (await device.getStatus())?.screenOn === true; } catch { currentlyOn = false; }
+    const next = !currentlyOn;
+    if (screenOverrideService) {
+      if (next) screenOverrideService.set(deviceId, 'on', onHoldMinutes());
+      else screenOverrideService.clear(deviceId);
+    }
+    logger.info?.('device.router.screen.toggle', { deviceId, next });
+    const result = await device.setScreen(next);
+    res.json({ screenOn: next, override: screenOverrideService?.get(deviceId) ?? null, result });
+  }));
+
+  /**
+   * GET /device/:deviceId/screen/override — the live window (polled by the browser screensaver).
+   */
+  router.get('/:deviceId/screen/override', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    res.json({ override: screenOverrideService?.get(deviceId) ?? null });
+  }));
+
+  /**
+   * POST /device/:deviceId/screen/override   body: { state:'on'|'off', minutes?:number }
+   * Set a held window and drive the screen to it. OFF also relays to the midi-wake
+   * suppress (which owns the APK relay + writes the shared 'off' window).
+   */
+  router.post('/:deviceId/screen/override', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    const state = req.body?.state;
+    if (state !== 'on' && state !== 'off') {
+      return res.status(400).json(buildErrorBody({ error: `Invalid override state '${state}' (expected 'on'|'off')` }));
+    }
+    const device = deviceService.get(deviceId);
+    if (!device) {
+      return res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
+    }
+    const minutes = Number(req.body?.minutes) > 0
+      ? Number(req.body.minutes)
+      : (state === 'off' ? offHoldMinutes() : onHoldMinutes());
+    if (state === 'off') {
+      // suppressWakeUntil sets the shared 'off' window AND relays to the APK.
+      if (pianoMidiWakeService?.suppressWakeUntil) pianoMidiWakeService.suppressWakeUntil(Date.now() + minutes * 60_000);
+      else screenOverrideService?.set(deviceId, 'off', minutes);
+    } else {
+      screenOverrideService?.set(deviceId, 'on', minutes);
+    }
+    logger.info?.('device.router.screen.override', { deviceId, state, minutes });
+    const result = await device.setScreen(state === 'on');
+    res.json({ ok: true, override: screenOverrideService?.get(deviceId) ?? null, result });
   }));
 
   /**
