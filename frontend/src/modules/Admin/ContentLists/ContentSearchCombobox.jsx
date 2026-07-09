@@ -399,6 +399,10 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const newCrumb = { id: item.id, title: item.title, source, localId };
       log.info('browse_container.done', { source, localId, itemCount, newCrumb });
       setBrowseResults(data.items || []);
+      // Drop the committed value's sibling pagination — it belongs to the
+      // PREVIOUS listing. Left in place, the scroll handler would append
+      // sibling pages into this drilled folder (mixed lists, duplicate keys). (audit S1)
+      setPagination(null);
       setBreadcrumbs(prev => [...prev, newCrumb]);
     } catch (err) {
       log.error('browse_container.error', { contentId: item.id, source, localId, error: err.message });
@@ -418,6 +422,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       log.info('go_back.to_search_results', { reason: 'at_root_or_single_crumb' });
       setBreadcrumbs([]);
       setBrowseResults([]);
+      setPagination(null); // stale sibling pagination must not outlive its listing (audit S1)
       return;
     }
 
@@ -436,6 +441,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const itemCount = (data.items || []).length;
       log.info('go_back.done', { parentId: parent.id, itemCount, newDepth: newBreadcrumbs.length });
       setBrowseResults(data.items || []);
+      setPagination(null); // stale sibling pagination must not outlive its listing (audit S1)
       setBreadcrumbs(newBreadcrumbs);
     } catch (err) {
       log.error('go_back.error', { parentId: parent.id, error: err.message });
