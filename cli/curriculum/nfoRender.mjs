@@ -1,7 +1,7 @@
 // cli/curriculum/nfoRender.mjs — pure NFO full-parse + canonical render (no I/O).
 const unesc = (s) => (s == null ? s : s
-  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-  .replace(/&#39;/g, "'").replace(/&quot;/g, '"'));
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
 const esc = (s) => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/'/g, '&#39;').replace(/"/g, '&quot;');
@@ -23,6 +23,8 @@ export function parseNfoFull(xml) {
 }
 
 export function renderNfo(f) {
+  if (f.title == null || f.title === '') throw new Error('renderNfo: missing title');
+  if (!Number.isFinite(Number(f.season)) || !Number.isFinite(Number(f.episode))) throw new Error(`renderNfo: non-finite season/episode (${f.season}/${f.episode})`);
   const L = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<episodedetails>'];
   const line = (el, v) => { if (v != null && v !== '') L.push(`  <${el}>${esc(v)}</${el}>`); };
   const tag = (k, v) => { if (v != null && v !== '') L.push(`  <tag>${esc(k)}: ${esc(v)}</tag>`); };
