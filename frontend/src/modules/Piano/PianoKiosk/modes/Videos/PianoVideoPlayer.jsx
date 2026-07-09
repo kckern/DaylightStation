@@ -11,6 +11,8 @@ import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
+import PausedLoopOverlay from './PausedLoopOverlay.jsx';
+import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
@@ -30,6 +32,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
+  usePauseMediaOnUnmount(mediaEl);
   const { pressNote, releaseNote } = usePianoMidi();
   const { activeNotes } = usePianoMidiNotes();
   const { mediaLevel } = usePianoMix();
@@ -209,9 +212,12 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
           chord-theory column (fills all leftover width to the right). */}
       <div className="piano-video-player__body" ref={bodyRef}>
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
-          <div className="piano-video-player__video" ref={videoWrapRef} onClick={toggleFullscreen} style={{ position: 'relative' }}>
+          <div className="piano-video-player__video" ref={videoWrapRef} onClick={ctrl.toggle} style={{ position: 'relative' }}>
             {playerEl}
             {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
+            {!isPlaying && !gateOpen && mediaEl && (
+              <PausedLoopOverlay onSkip={handleSkip} onResume={ctrl.toggle} forwardDisabled={false} />
+            )}
           </div>
 
           <PianoVideoChrome
@@ -232,6 +238,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
             onToggleLoop={loop.toggle}
             onClearLoop={loop.clear}
             onSeek={ctrl.seek}
+            onToggleFullscreen={toggleFullscreen}
           />
         </div>
 
