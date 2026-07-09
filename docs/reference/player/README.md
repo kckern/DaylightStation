@@ -97,12 +97,13 @@ remount and finally to an operator-facing retry surface.
 | **Transcode warmup** | Consecutive 0-byte / empty segments while Plex spins up its encoder | Emits `transcodewarming` / `transcodewarmed`; the loading overlay stays up instead of failing |
 | **Stale-session watchdog** | `dash.error` code-28 bursts (3 within 10s) — MPD points at a dead Plex session | Escalates `stale-session-detected` before the startup deadline fires |
 | **Dash-error recovery** | `dash.error` 27 (segment unavailable) / 28 (manifest/init unavailable) | `hardReset({ refreshUrl: true })` — cache-busts the `src` so the proxy mints a fresh transcode session. Capped at 3 attempts per mount |
-| **Buffer resilience** | 404 / 0-byte segments mid-stream (non-DASH/Shaka path) | Self-healing retry while buffer is healthy; skip-ahead when buffer is exhausted |
 | **Recovery seek** | Stall after progress | Seek to last known good position before remounting |
 | **Stall exhaustion** | Repeated unrecovered stalls | After `maxAttempts` cycles, enters `exhausted` and renders a retry button |
 | **Media resilience / URL refresh** | Reasons for which the URL is suspect | Propagates `refreshUrl` through hardReset to re-fetch the MPD |
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |
+
+> 2026-07-09: the Shaka-era "buffer resilience" layer (`useBufferResilience`/`BufferResilienceManager`) was removed as dead code — it was never mounted after the move to dash.js; the live 0-byte detector is VideoPlayer's transcode-warmup emitter. The unreachable quality/ABR engine and `stallConfig` strategy-override machinery were removed at the same time (see `docs/_wip/audits/2026-07-09-player-module-sedimentary-fixes-audit.md` §4).
 
 **The loading/buffering spinner never sits over visibly-playing video.** The health
 layer samples the media clock directly and exposes an *advancing* signal — whether
