@@ -35,17 +35,18 @@ export function deriveCourseLabel(lessons, floor) {
   return `Course ${floor}`;
 }
 
+const courseKeyOf = (it) => (it?.piano?.course) || splitCoursePrefix(it?.title) || 'Course';
+
 export function partitionCourses(seasonItems) {
+  const items = (seasonItems || []).slice().sort((a, b) => (Number(a?.itemIndex) || 0) - (Number(b?.itemIndex) || 0));
   const groups = new Map();
-  for (const it of seasonItems || []) {
-    const f = floorOf(it) ?? 0;
-    if (!groups.has(f)) groups.set(f, []);
-    groups.get(f).push(it);
+  const order = [];
+  for (const it of items) {
+    const key = courseKeyOf(it);
+    if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+    groups.get(key).push(it);
   }
-  return [...groups.keys()].sort((a, b) => a - b).map((floor) => {
-    const lessons = groups.get(floor).slice().sort((a, b) => roomOf(a) - roomOf(b));
-    return { floor, label: deriveCourseLabel(lessons, floor), lessons };
-  });
+  return order.map((label, i) => ({ floor: i + 1, label, lessons: groups.get(label) }));
 }
 
 export function partitionSeasons(items, parents, referenceUnitIds = []) {
@@ -141,10 +142,41 @@ export function programStats(seasons) {
 export function continueTarget(seasons) {
   for (const s of (seasons || []).filter((x) => !x.reference)) {
     for (const c of s.courses) {
-      const ordered = [...c.lessons].sort((a, b) => roomOf(a) - roomOf(b));
+      const ordered = [...c.lessons].sort((a, b) => (Number(a?.itemIndex) || 0) - (Number(b?.itemIndex) || 0));
       const next = ordered.find((ep) => !lectureUserStatus(ep).watched);
       if (next) return { seasonId: s.id, floor: c.floor, lesson: next };
     }
   }
   return null;
+}
+
+/** The content category for a season: from season.piano.category, else reference-flag → 'reference', else 'lesson'. */
+export function categoryOf(season) {
+  const c = season?.piano?.category;
+  if (c) return c;
+  return season?.reference ? 'reference' : 'lesson';
+}
+
+/** Collect the available repertoire facet values across items (from item.piano). */
+export function collectFacets(items) {
+  const styles = new Set(); const skills = new Set(); const instructors = new Set();
+  for (const it of items || []) {
+    const p = it?.piano || {};
+    (p.styles || []).forEach((s) => styles.add(s));
+    if (p.skill) skills.add(p.skill);
+    if (p.instructor) instructors.add(p.instructor);
+  }
+  return { styles: [...styles].sort(), skills: [...skills].sort(), instructors: [...instructors].sort() };
+}
+
+/** Filter items by selected facets ({ style?, skill?, instructor? }); styles match by membership. */
+export function filterByFacets(items, sel = {}) {
+  const { style, skill, instructor } = sel;
+  return (items || []).filter((it) => {
+    const p = it?.piano || {};
+    if (style && !(p.styles || []).includes(style)) return false;
+    if (skill && p.skill !== skill) return false;
+    if (instructor && p.instructor !== instructor) return false;
+    return true;
+  });
 }
