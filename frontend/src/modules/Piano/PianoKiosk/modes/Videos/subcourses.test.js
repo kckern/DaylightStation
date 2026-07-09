@@ -93,3 +93,69 @@ describe('courseGate', () => {
     expect(lockedIds.has('101')).toBe(false);
   });
 });
+
+// ── redesign helpers ─────────────────────────────────────────────────────────
+import {
+  sharedPrefix, courseStats, seasonStats, programStats, continueTarget,
+} from './subcourses.js';
+
+const L = (parentId, itemIndex, title, watched = false) => ({
+  id: `plex:${itemIndex}`, plex: String(itemIndex), parentId: String(parentId),
+  itemIndex, title, label: title, userWatched: watched,
+});
+
+describe('sharedPrefix', () => {
+  it('splits a common leading phrase from the distinguishing tail', () => {
+    const { prefix, tails } = sharedPrefix([
+      'Pop Soloing with Chord Tone Targets',
+      'Pop Soloing with 3rds and 6ths',
+      'Pop Soloing with Slip Notes',
+    ]);
+    expect(prefix).toBe('Pop Soloing with');
+    expect(tails).toEqual(['Chord Tone Targets', '3rds and 6ths', 'Slip Notes']);
+  });
+  it('returns empty prefix when there is no ≥2-word commonality', () => {
+    const { prefix, tails } = sharedPrefix(['Course 1', 'Course 2']);
+    expect(prefix).toBe('');
+    expect(tails).toEqual(['Course 1', 'Course 2']);
+  });
+  it('never eats a whole title (keeps a non-empty tail for all)', () => {
+    const { prefix, tails } = sharedPrefix(['Blues Scales', 'Blues Scales Advanced']);
+    expect(tails.every((t) => t.length > 0)).toBe(true);
+    expect(prefix).not.toBe('Blues Scales');
+  });
+});
+
+describe('reference marking + stats', () => {
+  const items = [
+    L(700, 101, 'Practice – A', true), L(700, 102, 'Practice – B', true),        // reference season 700
+    L(701, 101, 'Solo with X – 1', true), L(701, 102, 'Solo with X – 2', true),   // course 1 complete
+    L(701, 201, 'Solo with Y – 1', true), L(701, 202, 'Solo with Y – 2', false),  // course 2 in progress
+  ];
+  const parents = { 700: { index: 0, title: 'Practice Essentials' }, 701: { index: 1, title: 'Season 1' } };
+  const seasons = partitionSeasons(items, parents, ['700']);
+
+  it('flags the reference season and its courses', () => {
+    const ref = seasons.find((s) => s.id === '700');
+    expect(ref.reference).toBe(true);
+    expect(ref.courses.every((c) => c.reference)).toBe(true);
+  });
+  it('courseStats reports completion', () => {
+    const s1 = seasons.find((s) => s.id === '701');
+    expect(courseStats(s1.courses[0])).toMatchObject({ watched: 2, total: 2, complete: true });
+    expect(courseStats(s1.courses[1])).toMatchObject({ watched: 1, total: 2, complete: false });
+  });
+  it('seasonStats counts complete courses; reference season is exempt', () => {
+    expect(seasonStats(seasons.find((s) => s.id === '701'))).toMatchObject({ reference: false, completeCourses: 1, totalCourses: 2 });
+    expect(seasonStats(seasons.find((s) => s.id === '700'))).toMatchObject({ reference: true });
+  });
+  it('programStats excludes the reference season from the denominator', () => {
+    expect(programStats(seasons)).toMatchObject({ completeCourses: 1, totalCourses: 2 });
+  });
+  it('continueTarget points at the first unwatched lesson in linear order (skipping reference)', () => {
+    const t = continueTarget(seasons);
+    expect(t).toMatchObject({ seasonId: '701', floor: 2 });
+    expect(t.lesson.plex).toBe('202');
+  });
+});
+
