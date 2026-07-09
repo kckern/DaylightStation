@@ -106,7 +106,6 @@ const Player = forwardRef(function Player(props, ref) {
     mediaResilienceRef,
     maxVideoBitrate,
     maxResolution,
-    pauseDecision,
     plexClientSession: externalPlexClientSession,
     onError,
     mediaLoadTimeoutMs
@@ -760,21 +759,12 @@ const Player = forwardRef(function Player(props, ref) {
   const { overlayProps, state: resilienceState, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
-    maxVideoBitrate: effectiveMeta?.maxVideoBitrate
-      ?? singlePlayerProps?.maxVideoBitrate
-      ?? maxVideoBitrate
-      ?? null,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
     pauseIntent: effectiveMeta ? playbackMetrics.pauseIntent : null,
-    playbackDiagnostics: effectiveMeta ? playbackMetrics.diagnostics : null,
     initialStart: explicitStartSeconds ?? 0,
-    explicitStartProvided,
     waitKey: resolvedWaitKey,
-    fetchVideoInfo: mediaAccess.fetchVideoInfo,
-    nudgePlayback: transportAdapter.nudge,
-    diagnosticsProvider: transportAdapter.readDiagnostics,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     onExhausted: handleResilienceExhausted,
@@ -783,11 +773,8 @@ const Player = forwardRef(function Player(props, ref) {
     plexId,
     playbackSessionKey: itemSessionKey,
     debugContext: { scope: 'player', mediaGuid: currentMediaGuid || null },
-    externalPauseReason: pauseDecision?.reason,
-    externalPauseActive: pauseDecision?.paused,
-    // Pass stall state from useCommonMediaController to avoid duplicate detection
+    // Stalled flag from useCommonMediaController to avoid duplicate detection
     externalStalled: effectiveMeta ? playbackMetrics.stalled : null,
-    externalStallState: effectiveMeta ? playbackMetrics.stallState : null,
     // Self-contained formats (titlecard) have no media element — disable resilience monitoring
     disabled: isSelfContainedFormat
   });
