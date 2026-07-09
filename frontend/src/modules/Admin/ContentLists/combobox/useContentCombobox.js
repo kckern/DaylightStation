@@ -301,17 +301,20 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     }
     if (cached?.status === 'pending' && cached.promise) {
       log.debug('load_siblings.cache_pending', { contentId });
+      dispatch({ type: 'BROWSE_LOADING' });
       try {
         const data = await cached.promise;
         if (stillWanted()) applyBrowseData(contentId, data);
       } catch (err) {
         log.error('load_siblings.error', { contentId, from: 'cache_pending', error: err.message });
+        if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
       }
       return;
     }
 
     // Cache miss — fetch and populate the shared cache.
     log.info('load_siblings.start', { contentId });
+    dispatch({ type: 'BROWSE_LOADING' });
     const promise = fetchSiblingsData(contentId);
     setCacheEntry(contentId, { status: 'pending', data: null, promise });
     try {
@@ -327,6 +330,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     } catch (err) {
       setCacheEntry(contentId, { status: 'error', data: null, promise: null });
       log.error('load_siblings.error', { contentId, error: err.message });
+      if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
   }, [applyBrowseData, log]);
 
@@ -343,6 +347,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       contentId: item.id, title: item.title, source, localId,
       prevBreadcrumbDepth: stateRef.current.browse.breadcrumbs.length,
     });
+    dispatch({ type: 'BROWSE_LOADING' });
     try {
       const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
@@ -358,6 +363,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       });
     } catch (err) {
       log.error('browse_container.error', { contentId: item.id, source, localId, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
   }, [log]);
 
@@ -379,6 +385,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     log.info('go_back.to_parent', {
       parentId: parent.id, parentTitle: parent.title, newDepth: nextBreadcrumbs.length,
     });
+    dispatch({ type: 'BROWSE_LOADING' });
     try {
       const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
@@ -396,37 +403,40 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       });
     } catch (err) {
       log.error('go_back.error', { parentId: parent.id, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
   }, [log]);
 
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
+  // Returns true only when a PAGINATED event was actually dispatched, so the
+  // component can arm/disarm its scroll-suppression guard accurately.
   const paginationInFlightRef = useRef(false);
   const paginate = useCallback(async (direction) => {
     const current = stateRef.current;
     const pagination = current.browse.pagination;
     const contentId = current.value;
-    if (!contentId || !pagination || paginationInFlightRef.current) return;
+    if (!contentId || !pagination || paginationInFlightRef.current) return false;
     // Structural guard: only the siblings level paginates against /siblings.
     // After a drill/up, the visible pagination belongs to that level's /list
     // response — fetching value's siblings for it would corrupt the window.
     if (paginationOwnerRef.current !== contentId) {
       log.debug('load_more_siblings.skip', { direction, reason: 'not_siblings_level' });
-      return;
+      return false;
     }
     const parsed = splitContentId(contentId);
-    if (!parsed) return;
+    if (!parsed) return false;
 
     let offset;
     let limit;
     if (direction === 'after') {
-      if (!pagination.hasAfter) return;
+      if (!pagination.hasAfter) return false;
       offset = pagination.offset + pagination.window;
       limit = PAGE_SIZE;
     } else {
-      if (!pagination.hasBefore) return;
+      if (!pagination.hasBefore) return false;
       offset = Math.max(0, pagination.offset - PAGE_SIZE);
       limit = Math.min(PAGE_SIZE, pagination.offset);
-      if (limit <= 0) return;
+      if (limit <= 0) return false;
     }
 
     log.info('load_more_siblings', { direction, offset, limit, ...parsed });
@@ -437,12 +447,14 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       const response = await fetch(
         `/api/v1/siblings/${parsed.source}/${encodeURIComponent(parsed.localId)}?offset=${offset}&limit=${limit}`
       );
-      if (!response.ok) return;
+      if (!response.ok) return false;
       const data = await response.json();
-      if (browseTokenRef.current !== token) return;
+      if (browseTokenRef.current !== token) return false;
       dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
+      return true;
     } catch (err) {
       log.error('load_more_siblings.error', { direction, error: err.message });
+      return false;
     } finally {
       paginationInFlightRef.current = false;
     }

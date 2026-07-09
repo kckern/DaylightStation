@@ -60,6 +60,29 @@ describe('comboboxMachine', () => {
     expect(closeDecision({ search: 'beet', value: 'plex:1' }, 'tab')).toEqual({ action: 'revert' });
   });
 
+  it("closeDecision: 'dismiss' (Enter with unchanged text) follows the outside policy", () => {
+    expect(closeDecision({ search: 'plex:1', value: 'plex:1' }, 'dismiss')).toEqual({ action: 'none' });
+    expect(closeDecision({ search: null, value: 'plex:1' }, 'dismiss')).toEqual({ action: 'none' });
+    expect(closeDecision({ search: 'b', value: 'plex:1' }, 'dismiss')).toEqual({ action: 'revert' });
+  });
+
+  it('BROWSE_LOADING sets browse.loading; *_LOADED, INPUT, and CLOSE clear it', () => {
+    let s = open(initialState('plex:1'));
+    s = reducer(s, { type: 'BROWSE_LOADING' });
+    expect(s.browse.loading).toBe(true);
+    expect(s.mode).toBe(Modes.SEARCH); // loading alone never changes mode
+
+    // explicit clear (failed fetch)
+    expect(reducer(s, { type: 'BROWSE_LOADING', loading: false }).browse.loading).toBe(false);
+    // any browse level landing clears it
+    expect(reducer(s, { type: 'BROWSE_LOADED', items: [], breadcrumbs: [] }).browse.loading).toBe(false);
+    expect(reducer(s, { type: 'DRILL_LOADED', items: [], crumb: { id: 'x' } }).browse.loading).toBe(false);
+    expect(reducer(s, { type: 'WENT_UP', items: [], breadcrumbs: [] }).browse.loading).toBe(false);
+    // typing resets browse entirely
+    expect(reducer(s, { type: 'INPUT', text: 'be' }).browse.loading).toBe(false);
+    expect(reducer(s, { type: 'CLOSE' }).browse.loading).toBe(false);
+  });
+
   it('VALUE_CHANGED (prop) returns to DISPLAY and clears editing state', () => {
     let s = type_(open(initialState('plex:1')), 'beet');
     s = reducer(s, { type: 'VALUE_CHANGED', value: 'plex:2' });
