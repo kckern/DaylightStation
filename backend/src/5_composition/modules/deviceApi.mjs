@@ -2,6 +2,7 @@
 // Composition wiring for Device API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
+import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 import { createDeviceServices } from '../bootstrap.mjs';
 
 /**
@@ -32,6 +33,7 @@ export function createDeviceApiRouter(config) {
     configService,
     loadFile,
     pianoMidiWakeService,
+    screenOverrideService: getScreenOverrideService(),
     logger
   });
 }
