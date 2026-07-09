@@ -72,3 +72,43 @@ describe('usePianoScreensaver keepAlive (playback) hold', () => {
     expect(offCalls().length).toBeGreaterThan(0);
   });
 });
+
+describe('usePianoScreensaver server on-override hold', () => {
+  beforeEach(() => { vi.useFakeTimers(); DaylightAPI.mockReset(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  // The physical button press happens off-device, so it bumps no local activity.
+  // Without honoring the 'on' window the idle clock slept the panel ~3 min after
+  // a press that had explicitly asked for it to stay lit.
+  const withOverride = (state) => DaylightAPI.mockImplementation((path) => (
+    path.endsWith('/screen/override')
+      ? Promise.resolve({ override: state ? { state } : null })
+      : Promise.resolve({ ok: true })
+  ));
+
+  it('holds the screen awake while an on-override is live, then sleeps once it lapses', async () => {
+    withOverride('on');
+    render(
+      <PianoScreenControlProvider><Harness notes={new Map()} /></PianoScreenControlProvider>,
+    );
+
+    // Well past the 3-min idle timeout, with no MIDI and no touch.
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+    expect(offCalls()).toHaveLength(0);
+
+    // Window lapses -> the idle clock resumes from the moment it lapsed.
+    withOverride(null);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60_000); });
+    expect(offCalls().length).toBeGreaterThan(0);
+  });
+
+  it('does not hold the screen awake for an off-override', async () => {
+    withOverride('off');
+    render(
+      <PianoScreenControlProvider><Harness notes={new Map()} /></PianoScreenControlProvider>,
+    );
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60_000); });
+    expect(offCalls().length).toBeGreaterThan(0);
+  });
+});
