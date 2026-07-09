@@ -33,9 +33,6 @@ export function shouldRefreshUrlForReason(reason) {
   return URL_REFRESH_REASONS.has(reason);
 }
 
-// Stable no-op function to avoid creating new function references on each render
-const NOOP = () => {};
-
 // ── Module-level recovery tracker ──────────────────────────────────────
 // Persists across React remounts caused by onReload → scheduleSinglePlayerRemount.
 // Without this, lastReloadAt (React state) resets to 0 on every remount,
@@ -695,7 +692,6 @@ export function useMediaResilience({
   return {
     overlayProps,
     state: resilienceState,
-    onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
     cancelDeadline,
     requestRecovery: triggerRecovery,
     retryFromExhausted,
