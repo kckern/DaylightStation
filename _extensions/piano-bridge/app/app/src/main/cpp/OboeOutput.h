@@ -19,6 +19,11 @@ public:
     bool start();   // open + start the stream
     void stop();    // stop + close the stream
 
+    /** True iff a stream exists and is Started. Lets the reconciler stay idempotent. */
+    bool isRunning() const {
+        return stream_ && stream_->getState() == oboe::StreamState::Started;
+    }
+
     int  xruns() const { return xruns_.load(); }
     // Rough CPU-load estimate (callback-time / callback-period), 0..1.
     float cpuLoad() const { return cpuLoad_.load(); }

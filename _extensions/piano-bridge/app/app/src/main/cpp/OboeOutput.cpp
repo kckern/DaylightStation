@@ -49,6 +49,8 @@ bool OboeOutput::openStream() {
 }
 
 bool OboeOutput::start() {
+    if (isRunning()) return true;   // idempotent: the 20s sweep must not churn the stream
+    if (stream_) stop();            // a closed/errored stream lingers; drop it before reopening
     if (!openStream()) return false;
     oboe::Result result = stream_->requestStart();
     if (result != oboe::Result::OK) {

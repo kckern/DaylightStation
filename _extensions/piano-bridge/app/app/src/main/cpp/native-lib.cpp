@@ -140,4 +140,11 @@ Java_net_kckern_pianobridge_PianoEngine_nativeSetOutputGate(
     if (b && b->host) b->host->setOutputGate(open == JNI_TRUE);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_net_kckern_pianobridge_PianoEngine_nativeIsStreamRunning(
+        JNIEnv* /*env*/, jclass /*clazz*/, jlong handle) {
+    auto* b = fromHandle(handle);
+    return (b && b->output && b->output->isRunning()) ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"
