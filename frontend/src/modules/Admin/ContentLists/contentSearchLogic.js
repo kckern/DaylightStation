@@ -44,3 +44,22 @@ export function resolveDisplayItems({
   });
   return { items: filtered, mode: 'local' };
 }
+
+// Content-id-like text (`plex:456724`, `hymn: 147`, `canvas:a/b.jpg`) is an
+// intentional commit; exploratory search text is not. Space after the colon
+// is tolerated because list YAML historically stores `hymn: 147`.
+// Single source of truth — ContentSearchCombobox.jsx and ListsItemRow.jsx
+// must import this, not re-declare it.
+export const CONTENT_ID_LIKE = /^[\w-]+:\s?\S+/;
+
+export function isContentIdLike(text) {
+  return typeof text === 'string' && CONTENT_ID_LIKE.test(text);
+}
+
+// EmptyItemRow auto-add gate: only auto-persist values that came from a
+// dropdown selection or a pasted content id. Freeform text must be added
+// explicitly (Enter on the row). Root cause of the 2026-03-01 tvapp.yml
+// junk-entries bug: blur-commit → setInput → auto-add POST of raw text.
+export function shouldAutoAdd(input) {
+  return isContentIdLike(input);
+}
