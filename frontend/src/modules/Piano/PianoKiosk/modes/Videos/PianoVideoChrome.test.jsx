@@ -34,10 +34,24 @@ describe('PianoVideoChrome', () => {
     expect(onSkip).toHaveBeenCalledWith(-15);
     expect(onSkip).toHaveBeenCalledWith(15);
   });
-  it('does not render ±30s skip buttons', () => {
-    render(<PianoVideoChrome {...baseProps} onSkip={vi.fn()} />);
-    expect(screen.queryByLabelText('Back 30 seconds')).toBeNull();
-    expect(screen.queryByLabelText('Forward 30 seconds')).toBeNull();
+  it('skips −30 and +30 via the new buttons', () => {
+    const onSkip = vi.fn();
+    render(<PianoVideoChrome {...baseProps} onSkip={onSkip} />);
+    fireEvent.click(screen.getByLabelText('Back 30 seconds'));
+    expect(onSkip).toHaveBeenCalledWith(-30);
+    fireEvent.click(screen.getByLabelText('Forward 30 seconds'));
+    expect(onSkip).toHaveBeenCalledWith(30);
+  });
+  it('fires onToggleFullscreen from the fullscreen button', () => {
+    const onFs = vi.fn();
+    render(<PianoVideoChrome {...baseProps} onToggleFullscreen={onFs} />);
+    fireEvent.click(screen.getByLabelText('Toggle fullscreen'));
+    expect(onFs).toHaveBeenCalled();
+  });
+  it('disables forward skips (both +15 and +30) when forwardDisabled applies (sequential at furthest)', () => {
+    render(<PianoVideoChrome {...baseProps} isSequential currentTime={100} furthestWatched={100} />);
+    expect(screen.getByLabelText('Forward 15 seconds').disabled).toBe(true);
+    expect(screen.getByLabelText('Forward 30 seconds').disabled).toBe(true);
   });
   it('calls onRestart when the restart button is clicked', () => {
     const onRestart = vi.fn();
