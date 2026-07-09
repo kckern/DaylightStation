@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseCourseAndPart, classify, songFields } from './normalizePlan.mjs';
+import { baseCourseAndPart, classify, songFields, cleanTitle } from './normalizePlan.mjs';
 
 describe('baseCourseAndPart', () => {
   it('strips a trailing en-dash part number', () => {
@@ -87,5 +87,20 @@ describe('songFields', () => {
     const r = songFields('Ear Training With Holiday Songs', []);
     expect(r.songKey).toBe('ear training with holiday songs');
     expect(r.skillChallenge).toBe(false);
+  });
+});
+
+describe('cleanTitle', () => {
+  it('strips the "Course N – " prefix', () => {
+    expect(cleanTitle('Silent Night – Rhumba 1 – Rhumba Groove Exercise', 'Silent Night – Rhumba 1'))
+      .toBe('Rhumba Groove Exercise');
+    expect(cleanTitle('Soloing Over a Turnaround 2 – Stride, Walking Bass', 'Soloing Over a Turnaround 2'))
+      .toBe('Stride, Walking Bass');
+  });
+  it('leaves a title without the course prefix unchanged', () => {
+    expect(cleanTitle('How to Practice', 'Practice Essentials Course')).toBe('How to Practice');
+  });
+  it('never returns empty (falls back to full title)', () => {
+    expect(cleanTitle('Jazzy Blues Comping', 'Jazzy Blues Comping')).toBe('Jazzy Blues Comping');
   });
 });
