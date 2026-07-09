@@ -134,8 +134,19 @@ describe('useCommonMediaController stall detection and auto recovery', () => {
     expect(events.filter(([e]) => e === 'playback.recovery-resolved').length).toBe(0);
     expect(ctrlRef.current.readStallState().status).toBe('stalled');
 
-    // Genuine forward advance resolves exactly once and resets escalation state.
-    act(() => { video._ct = 102.0; video.fire('timeupdate'); });
+    // Escalate past the hard threshold so recovery state is genuinely
+    // non-default before the resume: one nudge fires and the counters advance.
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(strategiesFired()).toEqual(['nudge']);
+    const mid = ctrlRef.current.readStallState();
+    expect(mid.attemptIndex).toBe(1);
+    expect(mid.strategy).toBe('nudge');
+
+    // Genuine forward advance resolves exactly once and resets escalation
+    // state back to defaults. (The nudge's pause() left the fake paused and
+    // its play() mock never flips it back, so mark the element playing again
+    // — real resumed playback is not paused.)
+    act(() => { video.paused = false; video._ct = 102.0; video.fire('timeupdate'); });
     expect(events.filter(([e]) => e === 'playback.recovery-resolved').length).toBe(1);
     const snap = ctrlRef.current.readStallState();
     expect(snap.status).toBe('monitoring');
@@ -143,5 +154,13 @@ describe('useCommonMediaController stall detection and auto recovery', () => {
     expect(snap.strategy).toBe(null);
     expect(snap.terminal).toBe(false);
     expect(apiRef.current.isStalled).toBe(false);
+
+    // markProgress re-armed detection: a second stall episode after the
+    // resume is detected fresh and fires a second nudge, proving the
+    // escalation ladder restarts from rung one.
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    expect(ctrlRef.current.readStallState().status).toBe('stalled');
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(strategiesFired()).toEqual(['nudge', 'nudge']);
   });
 });

@@ -18,8 +18,6 @@
 export function buildFpsStatsPayload(snapshot, { estimatedFps } = {}) {
   const {
     seconds,
-    quality,
-    droppedFramePct,
     currentMaxKbps,
     duration,
     media,
@@ -36,10 +34,6 @@ export function buildFpsStatsPayload(snapshot, { estimatedFps } = {}) {
     mediaKey: media?.assetId || media?.key || media?.plex,
     currentTime: safeRound(seconds),
     duration: safeRound(duration),
-    droppedFrames: quality?.droppedVideoFrames ?? null,
-    totalFrames: quality?.totalVideoFrames ?? null,
-    droppedPct: quality?.droppedPct?.toFixed?.(2) ?? null,
-    avgDroppedPct: droppedFramePct ? (droppedFramePct * 100).toFixed(2) : null,
     bitrateCapKbps: currentMaxKbps ?? null,
     estimatedFps: estimatedFps ?? null,
     playbackRate: media?.playbackRate || 1,
