@@ -61,7 +61,12 @@ const STYLE_SUFFIX = /\s*[–—-]\s*(Jazz Ballad|Jazz Swing|Jazz Waltz|Bossa No
 
 function stripRole(base) {
   let c = String(base || '');
-  c = c.replace(/\s*[–—-]?\s*(Challenge|Accompaniment Patterns?|Accompaniment)\s*$/i, '').trim();
+  let prev;
+  // Loop so stacked role words peel fully, e.g. "Misty – Band Accompaniment" → "Misty".
+  do {
+    prev = c;
+    c = c.replace(/\s*[–—-]?\s*(Challenge|Accompaniment Patterns?|Accompaniment|Band)\s*$/i, '').trim();
+  } while (c !== prev && c);
   return c;
 }
 
