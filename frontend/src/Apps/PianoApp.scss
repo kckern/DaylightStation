@@ -2389,4 +2389,25 @@
 .psc-row__resmark{width:2.6rem; height:2.6rem; border-radius:var(--r-sm); flex:0 0 auto; display:grid; place-items:center; color:var(--piano-muted); border:1px dashed var(--piano-border);}
 .psc-tag{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.62rem; letter-spacing:.1em; text-transform:uppercase; padding:.22rem .5rem; border-radius:2rem; margin-left:auto;}
 .psc-tag--res{color:var(--piano-muted); border:1px dashed var(--piano-border);}
+/* ── Subcourses redesign: course cards (prefix-fade wordmarks) ─────────────── */
+.psc-cards{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:.7rem;}
+@media(max-width:760px){.psc-cards{grid-template-columns:1fr;}}
+.psc-card{position:relative; overflow:hidden; width:100%; text-align:left; cursor:pointer;
+  display:flex; flex-direction:column; gap:.5rem; padding:.95rem 1rem .9rem;
+  border-radius:var(--r-md); border:1px solid var(--piano-border); color:inherit;
+  background:color-mix(in srgb, var(--tint,transparent) 7%, var(--piano-surface-2));}
+.psc-card:hover,.psc-card:focus-visible{border-color:var(--piano-muted);}
+.psc-card__tint{position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--tint,var(--piano-muted));}
+.psc-card.is-current{border-color:var(--piano-accent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--piano-accent) 30%, transparent);}
+.psc-card--resource{border-style:dashed;}
+.psc-card__top{display:flex; align-items:flex-start; gap:.7rem;}
+.psc-card__idx{font-family:var(--piano-mono, ui-monospace, monospace); font-variant-numeric:tabular-nums; font-size:1.25rem; color:var(--piano-muted); padding-top:.05rem;}
+.psc-card__wm{flex:1; min-width:0;}
+.psc-card__pfx{display:block; font-size:.74rem; color:var(--piano-muted);}
+.psc-card__tail{display:block; font-family:var(--piano-serif, Georgia, serif); font-size:1.3rem; line-height:1.08; text-wrap:balance;}
+.psc-card__foot{display:flex; align-items:center; justify-content:space-between; gap:.6rem;}
+.psc-card__sub{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.72rem; color:var(--piano-muted); font-variant-numeric:tabular-nums;}
+.psc-tag--next{background:var(--piano-accent); color:var(--piano-accent-ink); font-weight:700;}
+.psc-tag--done{color:var(--psc-done); border:1px solid color-mix(in srgb,var(--psc-done) 40%, transparent);}
+.psc-tag--later{color:var(--piano-muted); border:1px solid var(--piano-border);}
 .psc-ring.is-done .psc-ring__c{color:var(--psc-done); font-size:.9rem;}
