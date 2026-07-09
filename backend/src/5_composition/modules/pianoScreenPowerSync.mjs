@@ -11,6 +11,7 @@
  */
 
 import { PianoScreenAuthorityService } from '#apps/devices/services/PianoScreenAuthorityService.mjs';
+import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 
 /** @type {PianoScreenAuthorityService | null} */
 let instance = null;
@@ -75,6 +76,7 @@ export function createPianoScreenPowerSync({
     reconcileIntervalMs: cfg.reconcile_interval_ms ?? cfg.reconcileIntervalMs,
     maxRetries: cfg.max_retries ?? cfg.maxRetries,
     notifyService: cfg.notify_service ?? cfg.notifyService ?? null,
+    screenOverrideService: getScreenOverrideService({ clock }),
   });
   service.start();
   instance = service;

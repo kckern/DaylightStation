@@ -10,6 +10,7 @@
  */
 
 import { PianoMidiWakeService } from '#apps/devices/services/PianoMidiWakeService.mjs';
+import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 
 /** @type {PianoMidiWakeService | null} */
 let instance = null;
@@ -62,6 +63,7 @@ export function createPianoMidiWake({
     deviceId,
     bridgeUrl,
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
+    screenOverride: getScreenOverrideService(),
   });
   service.start();
   instance = service;
