@@ -274,7 +274,6 @@ Every renderer of playable content implements a shared lifecycle interface calle
 | `onPlaybackMetrics` | `(metrics) => void` | Report current playback state (seconds, isPaused, stalled) |
 | `onRegisterMediaAccess` | `(accessors) => void` | Register media element accessors for resilience |
 | `onResolvedMeta` | `(meta) => void` | Report resolved metadata after content loads |
-| `onStartupSignal` | `() => void` | Signal that playback has started |
 
 ### Existing Implementations
 
