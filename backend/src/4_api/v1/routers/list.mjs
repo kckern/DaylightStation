@@ -20,11 +20,17 @@ function compactItem(obj) {
 
     // Fields where 0 is a meaningful value (episode 0, 0% progress, 0 seconds, etc.)
     const zeroIsValid = ['itemIndex', 'parentIndex', 'watchProgress', 'watchSeconds', 'resumePosition', 'resumeSeconds', 'playCount', 'index'].includes(key);
-    
+
     // Skip falsy values (null, undefined, false, "") but preserve 0 for valid fields
     if (!value && value !== 0) continue;
     // Skip 0 for fields where it's not meaningful (but allow for fields like itemIndex)
     if (value === 0 && !zeroIsValid) continue;
+
+    // Preserve arrays as-is (do not recurse into them)
+    if (Array.isArray(value)) {
+      result[key] = value;
+      continue;
+    }
 
     // Recurse into objects (including action objects like play, queue, list)
     if (typeof value === 'object' && value !== null) {
@@ -229,15 +235,9 @@ export function toListItem(item) {
     // Playlist-as-show marker for frontend sorting
     if (sourceType !== undefined) base.sourceType = sourceType;
 
-    // Piano curriculum metadata passthrough with normalization
+    // Piano curriculum metadata passthrough (preserve styles array unchanged)
     if (item.metadata.piano !== undefined) {
-      const piano = { ...item.metadata.piano };
-      // Normalize styles array to style string (take first element)
-      if (Array.isArray(piano.styles) && piano.styles.length > 0) {
-        piano.style = piano.styles[0];
-        delete piano.styles;
-      }
-      base.piano = piano;
+      base.piano = item.metadata.piano;
     }
 
     // Duration from PlayableItem
