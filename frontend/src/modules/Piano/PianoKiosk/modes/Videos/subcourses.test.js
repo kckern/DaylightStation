@@ -97,6 +97,7 @@ describe('courseGate', () => {
 // ── redesign helpers ─────────────────────────────────────────────────────────
 import {
   sharedPrefix, courseStats, seasonStats, programStats, continueTarget,
+  categoryOf, collectFacets, filterByFacets,
 } from './subcourses.js';
 
 const L = (parentId, itemIndex, title, watched = false) => ({
@@ -156,6 +157,162 @@ describe('reference marking + stats', () => {
     const t = continueTarget(seasons);
     expect(t).toMatchObject({ seasonId: '701', floor: 2 });
     expect(t.lesson.plex).toBe('202');
+  });
+});
+
+// ── piano.course grouping + category/facet helpers ────────────────────────────
+
+describe('partitionCourses with piano.course grouping', () => {
+  it('groups by piano.course, ordered by first-appearance itemIndex, lessons sorted by itemIndex', () => {
+    const items = [
+      { itemIndex: 1, piano: { course: 'A' }, id: 'a1' },
+      { itemIndex: 2, piano: { course: 'A' }, id: 'a2' },
+      { itemIndex: 3, piano: { course: 'B' }, id: 'b1' },
+    ];
+    const courses = partitionCourses(items);
+    expect(courses).toHaveLength(2);
+    expect(courses.map((c) => c.label)).toEqual(['A', 'B']);
+    expect(courses.map((c) => c.floor)).toEqual([1, 2]);
+    expect(courses[0].lessons.map((l) => l.itemIndex)).toEqual([1, 2]);
+    expect(courses[1].lessons.map((l) => l.itemIndex)).toEqual([3]);
+  });
+
+  it('falls back to splitCoursePrefix when piano.course is absent', () => {
+    const items = [
+      { itemIndex: 1, title: 'Scales – A', id: 'a1' },
+      { itemIndex: 2, title: 'Scales – B', id: 'a2' },
+      { itemIndex: 3, title: 'Chords – A', id: 'c1' },
+    ];
+    const courses = partitionCourses(items);
+    expect(courses).toHaveLength(2);
+    expect(courses.map((c) => c.label)).toEqual(['Scales', 'Chords']);
+  });
+
+  it('uses Course as fallback when no piano.course and no title prefix', () => {
+    const items = [
+      { itemIndex: 1, title: 'Lesson One', id: 'l1' },
+      { itemIndex: 2, title: 'Lesson Two', id: 'l2' },
+    ];
+    const courses = partitionCourses(items);
+    expect(courses).toHaveLength(1);
+    expect(courses[0].label).toBe('Course');
+  });
+
+  it('preserves insertion order across unordered input items', () => {
+    const items = [
+      { itemIndex: 5, piano: { course: 'Y' }, id: 'y1' },
+      { itemIndex: 2, piano: { course: 'X' }, id: 'x1' },
+      { itemIndex: 4, piano: { course: 'Y' }, id: 'y2' },
+      { itemIndex: 1, piano: { course: 'X' }, id: 'x2' },
+    ];
+    const courses = partitionCourses(items);
+    expect(courses.map((c) => c.label)).toEqual(['X', 'Y']);
+    expect(courses[0].lessons.map((l) => l.itemIndex)).toEqual([1, 2]);
+    expect(courses[1].lessons.map((l) => l.itemIndex)).toEqual([4, 5]);
+  });
+});
+
+describe('categoryOf', () => {
+  it('returns season.piano.category if present', () => {
+    const season = { piano: { category: 'masterclass' } };
+    expect(categoryOf(season)).toBe('masterclass');
+  });
+
+  it('returns "reference" when season.reference is true', () => {
+    const season = { reference: true };
+    expect(categoryOf(season)).toBe('reference');
+  });
+
+  it('returns "lesson" by default', () => {
+    const season = { title: 'Season 1' };
+    expect(categoryOf(season)).toBe('lesson');
+  });
+
+  it('prefers piano.category over reference flag', () => {
+    const season = { reference: true, piano: { category: 'custom' } };
+    expect(categoryOf(season)).toBe('custom');
+  });
+});
+
+describe('collectFacets', () => {
+  it('collects styles (array), skills, and instructors from item.piano', () => {
+    const items = [
+      { piano: { styles: ['jazz', 'blues'], skill: 'beginner', instructor: 'Alice' } },
+      { piano: { styles: ['blues'], skill: 'beginner', instructor: 'Bob' } },
+      { piano: { styles: ['jazz'], skill: 'advanced' } },
+    ];
+    const facets = collectFacets(items);
+    expect(facets.styles).toEqual(['blues', 'jazz']);
+    expect(facets.skills).toEqual(['advanced', 'beginner']);
+    expect(facets.instructors).toEqual(['Alice', 'Bob']);
+  });
+
+  it('deduplicates and sorts results', () => {
+    const items = [
+      { piano: { styles: ['x', 'a'], skill: 'z' } },
+      { piano: { styles: ['a', 'x'], skill: 'a' } },
+    ];
+    const facets = collectFacets(items);
+    expect(facets.styles).toEqual(['a', 'x']);
+    expect(facets.skills).toEqual(['a', 'z']);
+  });
+
+  it('handles items without piano or missing facet fields', () => {
+    const items = [
+      { piano: { styles: ['jazz'] } },
+      { piano: {} },
+      {},
+      null,
+    ];
+    const facets = collectFacets(items);
+    expect(facets.styles).toEqual(['jazz']);
+    expect(facets.skills).toEqual([]);
+    expect(facets.instructors).toEqual([]);
+  });
+});
+
+describe('filterByFacets', () => {
+  const items = [
+    { id: '1', piano: { styles: ['jazz', 'blues'], skill: 'beginner', instructor: 'Alice' } },
+    { id: '2', piano: { styles: ['classical'], skill: 'advanced', instructor: 'Bob' } },
+    { id: '3', piano: { styles: ['jazz'], skill: 'intermediate', instructor: 'Alice' } },
+    { id: '4', piano: { styles: ['blues'] } },
+  ];
+
+  it('filters by style (membership in array)', () => {
+    const result = filterByFacets(items, { style: 'jazz' });
+    expect(result.map((x) => x.id)).toEqual(['1', '3']);
+  });
+
+  it('filters by skill (exact match)', () => {
+    const result = filterByFacets(items, { skill: 'beginner' });
+    expect(result.map((x) => x.id)).toEqual(['1']);
+  });
+
+  it('filters by instructor (exact match)', () => {
+    const result = filterByFacets(items, { instructor: 'Alice' });
+    expect(result.map((x) => x.id)).toEqual(['1', '3']);
+  });
+
+  it('combines multiple facets (AND logic)', () => {
+    const result = filterByFacets(items, { style: 'jazz', instructor: 'Alice' });
+    expect(result.map((x) => x.id)).toEqual(['1', '3']);
+  });
+
+  it('returns all items when no facets selected', () => {
+    const result = filterByFacets(items, {});
+    expect(result).toEqual(items);
+  });
+
+  it('returns empty when selection matches nothing', () => {
+    const result = filterByFacets(items, { style: 'nonexistent' });
+    expect(result).toEqual([]);
+  });
+
+  it('handles items without piano gracefully', () => {
+    const mixedItems = [...items, { id: '5' }];
+    const result = filterByFacets(mixedItems, { style: 'jazz' });
+    expect(result.map((x) => x.id)).toEqual(['1', '3']);
   });
 });
 
