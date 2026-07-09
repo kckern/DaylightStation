@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMediaResilience, shouldRefreshUrlForReason } from './useMediaResilience.js';
+import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 
 // ---------------------------------------------------------------------------
 // Pure-function tests — no React needed
@@ -136,24 +137,38 @@ describe('useMediaResilience — retryFromExhausted (user retry after exhaustion
     }));
   });
 
-  it('clears the recovery tracker so the next attempt is not gated by maxAttempts', () => {
-    const args = exhaustionArgs();
-    const { result } = renderHook(() => useMediaResilience(args));
-    // Drive the tracker to exhaustion (maxAttempts: 5)
-    act(() => {
-      for (let i = 0; i < 6; i += 1) {
-        result.current._testTriggerRecovery?.('playback-stalled');
-      }
-    });
-    args.onReload.mockClear();
-    // After exhaustion, a plain triggerRecovery is a no-op (tracker at max).
-    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
-    expect(args.onReload).not.toHaveBeenCalled();
-    // retryFromExhausted clears the tracker and fires a reload regardless.
-    act(() => result.current._testRetryFromExhausted?.());
-    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
-      refreshUrl: true,
-      forceRemount: true
-    }));
+  it('clears the recovery ledger so the next attempt is not gated by maxAttempts', () => {
+    // Recovery accounting lives in the shared recoveryLedger; install a
+    // cooldown-free instance so back-to-back triggers reach the session cap
+    // (the default 4s cooldown would deny them before exhaustion).
+    _setSharedLedgerForTests(createRecoveryLedger({ cooldownMs: 0 }));
+    try {
+      const args = exhaustionArgs();
+      const { result } = renderHook(() => useMediaResilience(args));
+      // Drive the ledger to exhaustion (session cap: 5)
+      act(() => {
+        for (let i = 0; i < 6; i += 1) {
+          result.current._testTriggerRecovery?.('playback-stalled');
+        }
+      });
+      expect(args.onReload).toHaveBeenCalledTimes(5); // 6th denied by the cap
+      args.onReload.mockClear();
+      // After exhaustion, a plain triggerRecovery is a no-op (ledger at cap).
+      act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+      expect(args.onReload).not.toHaveBeenCalled();
+      // retryFromExhausted resets the ledger and fires a reload regardless.
+      act(() => result.current._testRetryFromExhausted?.());
+      expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+        refreshUrl: true,
+        forceRemount: true
+      }));
+      // The reset really took: the next gated recovery is allowed again.
+      act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+      expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+        reason: 'playback-stalled'
+      }));
+    } finally {
+      _setSharedLedgerForTests(null);
+    }
   });
 });
