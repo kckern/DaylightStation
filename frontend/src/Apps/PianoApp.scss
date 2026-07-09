@@ -2349,3 +2349,12 @@
 
   &.is-active { border-color: var(--piano-accent); }
 }
+
+/* subcourse drill-in — season/course captions layered under the shared poster */
+.piano-subcourse-tile { position: relative; text-align: left; }
+.piano-subcourse-tile__label {
+  display: block; margin-top: 0.35rem; font-weight: 600; line-height: 1.2;
+}
+.piano-subcourse-tile__meta {
+  display: block; font-size: 0.85em; opacity: 0.7; margin-top: 0.1rem;
+}

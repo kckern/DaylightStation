@@ -61,11 +61,14 @@ function CoProgressLockIcon() {
  * "reference" units (exercise/practice/walkthrough banks) are never locked, give no
  * credit, and render in an always-open "Practice & Reference" section at the bottom.
  */
-export default function CourseDetail({ course, onPlay }) {
+export default function CourseDetail({ course, onPlay, playable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
   const { currentUser, currentProfile, users } = usePianoUser();
   const courseId = idOf(course?.id);
-  const { items, info, parents, isSequential, loading, error, coProgressLock, referenceUnitIds } = usePianoCoursePlayable(courseId, currentUser);
+  // When a parent already fetched the course (the show route), reuse it and skip
+  // a second network call; otherwise fetch here (standalone use / existing tests).
+  const fetched = usePianoCoursePlayable(playable ? null : courseId, playable ? null : currentUser);
+  const { items, info, parents, isSequential, loading, error, coProgressLock, referenceUnitIds } = playable ?? fetched;
 
   const seasons = useMemo(() => {
     if (!parents || typeof parents !== 'object') return [];

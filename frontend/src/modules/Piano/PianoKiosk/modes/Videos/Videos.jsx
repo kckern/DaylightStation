@@ -10,6 +10,8 @@ import PianoVideoPlayer from './PianoVideoPlayer.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { lectureContentId } from './lectureMeta.js';
+import { isSubcourseShow } from './subcourses.js';
+import SubcourseNavigator from './SubcourseNavigator.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -74,22 +76,29 @@ function CourseGridRoute({ groups }) {
   );
 }
 
-/** Course detail → push the lecture contentId (relative); Back goes up a level. */
-function CourseDetailRoute() {
+/**
+ * Show route — fetches the course once and branches: a Plex show labeled
+ * `subcourses` drills through the SubcourseNavigator (season → course → lesson);
+ * every other course renders the flat/multi-unit CourseDetail. Both receive the
+ * single /playable fetch so nothing is fetched twice.
+ */
+export function CourseDetailRoute() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-videos' }), []);
   const { courseId } = useParams();
+  const { currentUser } = usePianoUser();
   const navigate = useNavigate();
+  const playable = usePianoCoursePlayable(idOf(courseId), currentUser);
   const course = useMemo(() => ({ id: courseId }), [courseId]);
-  return (
-    <CourseDetail
-      course={course}
-      onPlay={(item) => {
-        const contentId = lectureContentId(item);
-        logger.info('piano.video-play', { contentId });
-        navigate(`${contentId}`);
-      }}
-    />
-  );
+  const onPlay = useCallback((item) => {
+    const contentId = lectureContentId(item);
+    logger.info('piano.video-play', { contentId });
+    navigate(`${contentId}`);
+  }, [navigate, logger]);
+
+  if (isSubcourseShow(playable.info)) {
+    return <SubcourseNavigator course={course} playable={playable} onPlay={onPlay} />;
+  }
+  return <CourseDetail course={course} playable={playable} onPlay={onPlay} />;
 }
 
 /**
