@@ -21,6 +21,10 @@ vi.mock('../../../../lib/appRegistry.js', () => ({
   ),
 }));
 
+// Warm the module cache for the mocked appRegistry so the hook's dynamic
+// `import()` resolves instantly (keeps the app-results test deterministic).
+import '../../../../lib/appRegistry.js';
+
 import { useContentCombobox, titleCache } from './useContentCombobox.js';
 
 class MockEventSource {
@@ -312,7 +316,9 @@ describe('useContentCombobox', () => {
   });
 
   it('appResults=true merges app registry matches ahead of content results', async () => {
-    vi.useFakeTimers();
+    // Real timers + waitFor: the merge path crosses a debounce timer, a fetch,
+    // AND a dynamic import() — fake timers cannot deterministically flush the
+    // module-loader microtasks of a first-time dynamic import.
     fetchMock.mockImplementation((url) => (
       url.startsWith('/api/v1/content/query/search')
         ? jsonResponse({ items: [{ id: 'plex:7', title: 'Web of Lies' }] })
@@ -321,14 +327,66 @@ describe('useContentCombobox', () => {
     const { result } = setup({ appResults: true });
 
     act(() => { result.current.handleInput('web'); });
-    await act(async () => { vi.advanceTimersByTime(350); });
-    await act(async () => {}); // flush dynamic appRegistry import + merge
 
-    expect(result.current.state.results.map((r) => r.id)).toEqual(['app:webcam', 'plex:7']);
+    await waitFor(
+      () => expect(result.current.state.results.map((r) => r.id)).toEqual(['app:webcam', 'plex:7']),
+      { timeout: 2000 }
+    );
     expect(result.current.state.results[0]).toMatchObject({
       id: 'app:webcam', title: 'Webcam', source: 'app', type: 'app',
       thumbnail: 'webcam-icon.svg', isApp: true, appId: 'webcam', hasParam: false,
     });
+  });
+
+  it('paginate after a drill never fetches /siblings (structural pagination-owner guard)', async () => {
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/10')) return jsonResponse(SIBLINGS_RESPONSE);
+      // The drilled level carries its OWN live pagination — the tempting case.
+      if (url.startsWith('/api/v1/list/plex/11')) {
+        return jsonResponse({
+          items: [{ id: 'plex:c1', title: 'Child 1' }],
+          pagination: { offset: 0, window: 1, total: 50, hasBefore: false, hasAfter: true },
+        });
+      }
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:10' });
+    await openBrowse(result);
+    expect(result.current.state.browse.pagination.hasAfter).toBe(true); // siblings level paginable
+
+    await act(async () => { await result.current.drill(result.current.state.browse.items[2]); });
+    expect(result.current.state.browse.pagination.hasAfter).toBe(true); // drilled level also paginable
+
+    const siblingsCallsBefore = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/siblings/')).length;
+    await act(async () => { await result.current.paginate('after'); });
+
+    const siblingsCallsAfter = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/siblings/')).length;
+    expect(siblingsCallsAfter - siblingsCallsBefore).toBe(0); // ZERO /siblings fetches after drill
+    expect(result.current.state.browse.items.map((i) => i.id)).toEqual(['plex:c1']); // window untouched
+  });
+
+  it('late siblings response cannot clobber newer typing (browse-token race)', async () => {
+    let resolveSiblings;
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/10')) {
+        return new Promise((res) => { resolveSiblings = res; });
+      }
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:10' });
+
+    let opening;
+    act(() => { opening = result.current.openWithSiblings(); });
+    act(() => { result.current.handleInput('x'); }); // user typed while siblings in flight
+
+    await act(async () => {
+      resolveSiblings({ ok: true, status: 200, json: () => Promise.resolve(SIBLINGS_RESPONSE) });
+      await opening;
+    });
+
+    expect(result.current.state.mode).toBe('search'); // NOT yanked into browse
+    expect(result.current.state.search).toBe('x');
+    expect(result.current.state.browse.items).toEqual([]);
   });
 
   it('resolvedTitle fetches /info once and reuses the module cache on a second mount', async () => {

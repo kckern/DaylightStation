@@ -98,7 +98,9 @@ async function fetchSiblingsData(contentId) {
   const data = await response.json();
   return {
     browseItems: (data.items || []).map(toBrowseItem),
-    currentParent: data.parent?.id
+    // Keyed on `data.parent` truthy for parity with ListsItemRow's
+    // doFetchSiblings — the cache is shared with legacy code until Task 13.
+    currentParent: data.parent
       ? {
           id: data.parent.id,
           title: data.parent.title,
@@ -124,7 +126,7 @@ async function fetchSiblingsData(contentId) {
  * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
  */
 export function useContentCombobox({ value, onChange, searchParams = '', appResults = false }) {
-  const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: 'admin' }), []);
+  const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: 'admin', sessionLog: true }), []);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
   // Latest-value refs so async continuations never read a stale closure.
@@ -137,7 +139,16 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   // the dropdown closes, or the committed value changes — a late response must
   // not yank the machine back into BROWSE over newer intent.
   const browseTokenRef = useRef(0);
-  const invalidateBrowseLoads = () => { browseTokenRef.current += 1; };
+  // Which committed value the live browse pagination belongs to. Only a
+  // siblings load (BROWSE_LOADED) sets it — drilled/parent levels own their
+  // own pagination, and paginate() must never fetch /siblings for those.
+  // Structural guard: it does not rely on /list responses happening to carry
+  // no pagination today.
+  const paginationOwnerRef = useRef(null);
+  const invalidateBrowseLoads = () => {
+    browseTokenRef.current += 1;
+    paginationOwnerRef.current = null;
+  };
 
   // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
   const prevValueRef = useRef(value);
@@ -255,15 +266,19 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       ? [parentToCrumb(data.currentParent, splitContentId(contentId)?.source)]
       : [];
     const normalizedVal = normalizeValue(contentId);
-    const referenceIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
+    const foundIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
       ? data.referenceIndex
       : items.findIndex((i) => i.id === normalizedVal);
+    // When the committed value isn't in the loaded window, highlight the first
+    // sibling (ListsItemRow parity) rather than nothing.
+    const referenceIndex = foundIndex >= 0 ? foundIndex : (items.length > 0 ? 0 : -1);
+    paginationOwnerRef.current = data.pagination ? contentId : null;
     dispatch({
       type: 'BROWSE_LOADED',
       items,
       breadcrumbs,
       pagination: data.pagination ?? null,
-      referenceIndex: referenceIndex >= 0 ? referenceIndex : -1,
+      referenceIndex,
     });
   }, []);
 
@@ -320,7 +335,10 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const source = normalizeListSource(item.source || item.id?.split(':')[0]);
     const localId = item.localId
       ?? (item.id?.includes(':') ? item.id.split(':').slice(1).join(':') : item.id);
-    const token = browseTokenRef.current;
+    // Bump the token so any overlapping browse response (siblings, another
+    // drill, pagination) started earlier cannot interleave with this one.
+    const token = ++browseTokenRef.current;
+    paginationOwnerRef.current = null; // the drilled level owns its pagination
     log.info('browse_container.start', {
       contentId: item.id, title: item.title, source, localId,
       prevBreadcrumbDepth: stateRef.current.browse.breadcrumbs.length,
@@ -349,13 +367,15 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     if (breadcrumbs.length <= 1) {
       // At root — exit browse back to SEARCH with the current search text.
       log.info('go_back.to_search_results', { reason: 'at_root_or_single_crumb' });
+      invalidateBrowseLoads(); // a late browse response must not yank us back
       dispatch({ type: 'INPUT', text: stateRef.current.search ?? '' });
       return;
     }
     const nextBreadcrumbs = breadcrumbs.slice(0, -1);
     const popped = breadcrumbs[breadcrumbs.length - 1];
     const parent = nextBreadcrumbs[nextBreadcrumbs.length - 1];
-    const token = browseTokenRef.current;
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = null; // the parent level owns its pagination
     log.info('go_back.to_parent', {
       parentId: parent.id, parentTitle: parent.title, newDepth: nextBreadcrumbs.length,
     });
@@ -386,6 +406,13 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const pagination = current.browse.pagination;
     const contentId = current.value;
     if (!contentId || !pagination || paginationInFlightRef.current) return;
+    // Structural guard: only the siblings level paginates against /siblings.
+    // After a drill/up, the visible pagination belongs to that level's /list
+    // response — fetching value's siblings for it would corrupt the window.
+    if (paginationOwnerRef.current !== contentId) {
+      log.debug('load_more_siblings.skip', { direction, reason: 'not_siblings_level' });
+      return;
+    }
     const parsed = splitContentId(contentId);
     if (!parsed) return;
 
@@ -404,7 +431,8 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
     log.info('load_more_siblings', { direction, offset, limit, ...parsed });
     paginationInFlightRef.current = true;
-    const token = browseTokenRef.current;
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = contentId; // still the siblings level
     try {
       const response = await fetch(
         `/api/v1/siblings/${parsed.source}/${encodeURIComponent(parsed.localId)}?offset=${offset}&limit=${limit}`
