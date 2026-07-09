@@ -42,7 +42,7 @@ export class PianoMidiWakeService {
   #backoff;
   #lastWakeAt;   // ms of the last wake fired, or null (never)
   #waking;       // in-flight guard so a burst can't stack setScreen calls
-  #suppressUntil; // epoch-ms; note-ons before this don't wake (manual screen-off)
+  #screenOverride; // shared ScreenOverrideService; note-ons are muted while its window is 'off'
   #fetchImpl;    // injectable fetch for the APK /config relay (tests)
 
   /**
@@ -65,6 +65,7 @@ export class PianoMidiWakeService {
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
     fetchImpl,
+    screenOverride = null,
   } = {}) {
     if (!deviceService || typeof deviceService.get !== 'function') {
       throw new Error('PianoMidiWakeService requires deviceService with get');
@@ -87,7 +88,7 @@ export class PianoMidiWakeService {
     this.#backoff = backoffBaseMs;
     this.#lastWakeAt = null;
     this.#waking = false;
-    this.#suppressUntil = 0;
+    this.#screenOverride = screenOverride;
     this.#fetchImpl = fetchImpl ?? ((...a) => fetch(...a));
   }
 
@@ -99,7 +100,8 @@ export class PianoMidiWakeService {
    * @param {number} deadlineMs
    */
   suppressWakeUntil(deadlineMs) {
-    this.#suppressUntil = deadlineMs;
+    const minutes = Math.max(0, (deadlineMs - this.#clock.now()) / 60_000);
+    this.#screenOverride?.set(this.#deviceId, 'off', minutes);
     this.#logger.info?.('piano-midi-wake.suppressed', {
       deviceId: this.#deviceId, until: deadlineMs,
     });
@@ -189,7 +191,7 @@ export class PianoMidiWakeService {
   /** @private Debounced wake: at most one setScreen(true) per cooldown window. */
   #onNoteOn() {
     const now = this.#clock.now();
-    if (now < this.#suppressUntil) return; // manually muted (screen-off cooldown)
+    if (this.#screenOverride?.get(this.#deviceId)?.state === 'off') return; // manually muted
     if (this.#lastWakeAt !== null && now - this.#lastWakeAt < this.#cooldownMs) return;
     if (this.#waking) return;
     this.#lastWakeAt = now;
