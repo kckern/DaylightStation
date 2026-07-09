@@ -50,6 +50,8 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     aggregator,
+    cadenceService: container.getCadenceService(),
+    clock,
   });
 
   const ceremonyService = new CeremonyService({
@@ -68,6 +70,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     cadenceService: container.getCadenceService(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
   });
 
   // Ceremony scheduler
