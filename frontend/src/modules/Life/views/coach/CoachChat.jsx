@@ -13,11 +13,11 @@ import { AgentChatSurface } from '../../../Agent/AgentChatSurface.jsx';
  * the broken URL and never functioned in production. Re-add as a follow-up
  * feature on AgentChatSurface if needed.
  */
-export default function CoachChat() {
+export default function CoachChat({ userId }) {
   return (
     <AgentChatSurface
       agentId="lifeplan-guide"
-      userId="default"
+      userId={userId || 'default'}
       style={{ height: 'calc(100vh - 60px)' }}
     />
   );

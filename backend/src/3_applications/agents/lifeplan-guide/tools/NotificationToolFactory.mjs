@@ -34,14 +34,18 @@ export class NotificationToolFactory extends ToolFactory {
           required: ['username', 'title', 'body'],
         },
         execute: async ({ username, title, body, actions = [] }) => {
-          const results = notificationService.send({
+          // 'ceremony' is the closest valid NotificationCategory for coach
+          // nudges ('lifeplan' is not a category and would throw on intent
+          // construction).
+          const results = await notificationService.send({
             title,
             body,
-            category: 'lifeplan',
+            category: 'ceremony',
             urgency: 'normal',
+            actions,
             metadata: { username, actions, source: 'lifeplan-guide' },
           });
-          return { delivered: results?.some(r => r.delivered) || false };
+          return { delivered: Array.isArray(results) && results.some(r => r.delivered) };
         },
       }),
     ];
