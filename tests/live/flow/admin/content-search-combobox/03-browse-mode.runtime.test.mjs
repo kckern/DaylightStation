@@ -8,6 +8,85 @@ import { ComboboxTestHarness, ComboboxLocators, ComboboxActions } from '#testlib
 
 const TEST_URL = '/admin/test/combobox';
 
+const CONTAINER_TYPES = ['show', 'album', 'artist', 'playlist', 'series', 'channel', 'conference', 'watchlist', 'container'];
+const isContainerLike = (item) =>
+  item?.itemType === 'container' || item?.isContainer === true || CONTAINER_TYPES.includes(item?.type);
+
+/**
+ * Hunt live content for a committed value whose /siblings window paginates.
+ *
+ * @param {import('@playwright/test').Page} page - used for baseURL-relative API calls
+ * @param {Object} opts
+ * @param {'hasBefore'|'hasAfter'} opts.flag - required pagination flag on the initial window
+ * @param {number|null} [opts.drillMinChildren] - when set, also require a container row
+ *   inside the sibling window whose own listing has at least this many children
+ *   (so the drilled listing overflows the dropdown viewport and can scroll)
+ * @returns {{ value: string, pagination: Object, drillId?: string, drillChildren?: number }}
+ * @throws when no fixture is found — fail fast, never skip (Test Discipline)
+ */
+async function huntSiblingPaginationFixture(page, { flag, drillMinChildren = null }) {
+  const getJson = async (path) => {
+    try {
+      // Per-request timeout: a single slow/hung adapter (e.g. one busy Plex
+      // library) must not stall the whole hunt — skip and try the next candidate.
+      const res = await page.request.get(path, { timeout: 20000 });
+      if (!res.ok()) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
+  const searchTerms = ['office', 'christmas', 'star', 'adventures', 'world'];
+  const seen = new Set();
+  for (const term of searchTerms) {
+    const search = await getJson(`/api/v1/content/query/search?text=${encodeURIComponent(term)}&source=plex&take=30`);
+    let checked = 0;
+    for (const item of search?.items || []) {
+      if (typeof item?.id !== 'string' || !item.id.startsWith('plex:') || seen.has(item.id)) continue;
+      seen.add(item.id);
+      if (checked++ >= 10) break;
+      const siblings = await getJson(`/api/v1/siblings/plex/${encodeURIComponent(item.id.slice('plex:'.length))}`);
+      const pagination = siblings?.pagination;
+      if (!pagination || pagination[flag] !== true) continue;
+      if (drillMinChildren == null) return { value: item.id, pagination };
+
+      // Need a drillable container row in the returned window whose listing is
+      // long enough to overflow the 300px dropdown viewport after drilling.
+      let listCalls = 0;
+      for (const candidate of (siblings.items || []).filter(isContainerLike)) {
+        if (typeof candidate?.id !== 'string' || !candidate.id.startsWith('plex:')) continue;
+        if (listCalls++ >= 12) break;
+        const list = await getJson(`/api/v1/list/plex/${encodeURIComponent(candidate.id.slice('plex:'.length))}`);
+        const childCount = (list?.items || []).length;
+        if (childCount >= drillMinChildren) {
+          return { value: item.id, pagination, drillId: candidate.id, drillChildren: childCount };
+        }
+      }
+    }
+  }
+  throw new Error(
+    `No live fixture found with pagination.${flag}=true` +
+    (drillMinChildren != null ? ` and a drillable container with >=${drillMinChildren} children` : '') +
+    ` — failing fast (no conditional skip).`
+  );
+}
+
+// The dropdown carries the .mantine-Combobox-dropdown class (no data attribute
+// in this Mantine version) and its scrollable element is .mantine-ScrollArea-viewport.
+const DROPDOWN_SELECTOR = '[data-combobox-dropdown], .mantine-Combobox-dropdown';
+const VIEWPORT_SELECTOR = '.mantine-ScrollArea-viewport';
+
+/** Scroll the dropdown's ScrollArea viewport to top/bottom. */
+async function scrollDropdownViewport(page, position) {
+  await page.evaluate(({ pos, dropdownSel, viewportSel }) => {
+    const dropdown = document.querySelector(dropdownSel);
+    const viewport = dropdown?.querySelector(viewportSel);
+    if (!viewport) throw new Error('dropdown ScrollArea viewport not found');
+    viewport.scrollTop = pos === 'bottom' ? viewport.scrollHeight : 0;
+  }, { pos: position, dropdownSel: DROPDOWN_SELECTOR, viewportSel: VIEWPORT_SELECTOR });
+}
+
 test.describe('ContentSearchCombobox - Browse Mode', () => {
   let harness;
 
@@ -260,5 +339,65 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
     await page.locator('[data-combobox-option]:has([data-testid^="browse-into-"])').first().click();
     await page.waitForTimeout(300);
     await expect(page.getByTestId('current-value')).toContainText(id);
+  });
+
+  test('drilling into a container resets sibling pagination — scroll in the drilled listing fetches no sibling pages (audit S1)', async ({ page }) => {
+    test.setTimeout(180000);
+
+    // Fixture: committed value whose sibling window has more pages after it,
+    // plus a container row in that window big enough to overflow when drilled.
+    const fixture = await huntSiblingPaginationFixture(page, { flag: 'hasAfter', drillMinChildren: 8 });
+    console.log(`S1 fixture: value=${fixture.value} drill=${fixture.drillId} (${fixture.drillChildren} children), pagination=${JSON.stringify(fixture.pagination)}`);
+
+    const siblingsRequests = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/v1/siblings/')) {
+        siblingsRequests.push({ url: req.url(), at: Date.now() });
+      }
+    });
+
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent(fixture.value)}&selectContainers=1`);
+    await ComboboxActions.open(page);
+
+    // Initial sibling window renders in browse mode (breadcrumb back button + rows).
+    await expect(ComboboxLocators.backButton(page)).toBeVisible({ timeout: 30000 });
+    await expect(ComboboxLocators.options(page).first()).toBeVisible({ timeout: 30000 });
+
+    // Bring the drill chevron into view FIRST, then let any scroll-triggered
+    // sibling page-loads from that positioning settle (they are pre-drill state,
+    // not the behavior under test).
+    const chevron = page.getByTestId(`browse-into-${fixture.drillId}`);
+    await expect(chevron, `sibling window must contain drill target ${fixture.drillId}`).toBeVisible({ timeout: 15000 });
+    await chevron.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1000);
+
+    // Drill into the container.
+    const drilledAt = Date.now();
+    await chevron.click();
+    await expect(ComboboxLocators.options(page).first()).toBeVisible({ timeout: 30000 });
+    await page.waitForTimeout(800); // drilled listing settles
+
+    // The drilled listing must overflow the viewport, or scrolling could not
+    // fire events and this test would pass vacuously.
+    const overflow = await page.evaluate(({ dropdownSel, viewportSel }) => {
+      const dropdown = document.querySelector(dropdownSel);
+      const viewport = dropdown?.querySelector(viewportSel);
+      return viewport ? viewport.scrollHeight - viewport.clientHeight : -1;
+    }, { dropdownSel: DROPDOWN_SELECTOR, viewportSel: VIEWPORT_SELECTOR });
+    expect(overflow, 'drilled listing must overflow the dropdown viewport (fixture geometry)').toBeGreaterThan(50);
+
+    // Scroll to the bottom and top of the DRILLED listing. Stale sibling
+    // pagination from the committed value's window must NOT trigger
+    // loadMoreSiblings — those pages belong to a different listing.
+    await scrollDropdownViewport(page, 'bottom');
+    await page.waitForTimeout(600);
+    await scrollDropdownViewport(page, 'top');
+    await page.waitForTimeout(800);
+
+    const postDrill = siblingsRequests.filter((r) => r.at > drilledAt);
+    expect(
+      postDrill.map((r) => `${r.url} (+${r.at - drilledAt}ms after drill)`),
+      'no /siblings requests may fire after drilling into a container'
+    ).toEqual([]);
   });
 });
