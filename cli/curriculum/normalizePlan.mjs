@@ -77,3 +77,14 @@ export function songFields(base, styles = []) {
   const songKey = display.toLowerCase().replace(/[^a-z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
   return { song: display || null, songKey: songKey || null, skillChallenge: false };
 }
+
+export function cleanTitle(title, course) {
+  const t = String(title || '').trim();
+  const c = String(course || '').trim();
+  if (!c) return t;
+  const esc = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // match "<course>" optionally followed by " N", then a dash separator
+  const re = new RegExp(`^${esc}(?:\\s+\\d+)?\\s*[–—-]\\s*`, 'i');
+  const stripped = t.replace(re, '').trim();
+  return stripped || t;   // never empty
+}
