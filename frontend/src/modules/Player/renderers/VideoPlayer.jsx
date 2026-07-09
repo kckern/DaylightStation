@@ -91,8 +91,6 @@ export function VideoPlayer({
   ignoreKeys,
   onProgress,
   onMediaRef,
-  showQuality,
-  stallConfig,
   keyboardOverrides,
   onController,
   upscaleEffects = 'auto',
@@ -106,8 +104,6 @@ export function VideoPlayer({
   const isHls = media?.mediaType === 'hls_video';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const [displayReady, setDisplayReady] = useState(false);
-  const [isAdapting, setIsAdapting] = useState(false);
-  const [adaptMessage, setAdaptMessage] = useState(undefined);
   const displayReadyLoggedRef = useRef(false);
 
   // Track resilienceBridge in a ref so the watchdog's onEscalate closure
@@ -167,9 +163,6 @@ export function VideoPlayer({
     isStalled,
     isSeeking,
     handleProgressClick,
-    quality,
-    droppedFramePct,
-    currentMaxKbps,
     stallState,
     elementKey,
     getMediaEl,
@@ -196,27 +189,8 @@ export function VideoPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    showQuality,
-    stallConfig,
     keyboardOverrides,
-  onController,
-    onRequestBitrateChange: useCallback(async (newCapKbps, { reason }) => {
-      // Trigger a refetch with bitrate override and show overlay message
-      try {
-        const msg =
-          reason === 'over_allowance' ? 'Lowering bitrate to reduce dropped frames…' :
-          reason === 'ramp_up' ? 'Increasing bitrate after stable playback…' :
-          reason === 'reset_unlimited' ? 'Restoring unlimited bitrate…' :
-          reason === 'manual_reset' ? 'Resetting bitrate cap…' :
-          'Adapting bitrate to device performance…';
-        setAdaptMessage(msg);
-        setIsAdapting(true);
-        await fetchVideoInfo?.({ maxVideoBitrateOverride: newCapKbps, reason });
-      } finally {
-        // We will also clear during canplay/playing, but ensure it doesn't stick
-        setTimeout(() => { setIsAdapting(false); setAdaptMessage(undefined); }, 5000);
-      }
-    }, [fetchVideoInfo])
+    onController
   });
 
   // Upscale detection and effects
@@ -254,7 +228,9 @@ export function VideoPlayer({
   }, [filterContentId]);
 
   // Render FPS monitoring for blur overlay performance diagnosis
-  const renderFps = useRenderFpsMonitor({
+  // (emits its own playback telemetry; the return value is unused since the
+  // quality HUD was deleted — audit 2026-07-09 §4.4)
+  useRenderFpsMonitor({
     enabled: displayReady && !isPaused,
     mediaContext: {
       title: media?.title,
@@ -685,7 +661,7 @@ export function VideoPlayer({
     }
 
     // Only log if video is playing (not paused, not stalled, has started)
-    const shouldLog = !isPaused && !isStalled && seconds > 0 && displayReady && quality?.supported;
+    const shouldLog = !isPaused && !isStalled && seconds > 0 && displayReady;
     
     if (!shouldLog) {
       fpsLoggingActiveRef.current = false;
@@ -712,8 +688,6 @@ export function VideoPlayer({
       let estimatedFps = null;
       if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
         estimatedFps = 'supported';
-      } else if (snap.quality?.totalVideoFrames > 0 && snap.duration > 0) {
-        estimatedFps = Math.round((snap.quality.totalVideoFrames / snap.duration) * 100) / 100;
       }
 
       logger.info('playback.fps_stats',
@@ -728,13 +702,17 @@ export function VideoPlayer({
         fpsIntervalRef.current = null;
       }
     };
-  }, [isPaused, isStalled, displayReady, quality?.supported]); // Reduced dependencies - only track state changes that determine timer creation
+  }, [isPaused, isStalled, displayReady]); // Reduced dependencies - only track state changes that determine timer creation
+
+  // The bitrate cap only ever comes from media metadata now — the ABR engine
+  // that could adapt it was unreachable and has been deleted (audit §4.4).
+  const bitrateCapKbps = Number.isFinite(media?.maxVideoBitrate) ? Number(media.maxVideoBitrate) : null;
 
   // Keep refs up to date with latest values for use in interval callback
-  const latestDataRef = useRef({ seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader });
+  const latestDataRef = useRef({ seconds, currentMaxKbps: bitrateCapKbps, duration, media, isDash, shader });
   useEffect(() => {
-    latestDataRef.current = { seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader };
-  }, [seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader]);
+    latestDataRef.current = { seconds, currentMaxKbps: bitrateCapKbps, duration, media, isDash, shader };
+  }, [seconds, bitrateCapKbps, duration, media, isDash, shader]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.assetId || media?.key || media?.plex || null;
@@ -775,8 +753,8 @@ export function VideoPlayer({
           className={`video-element ${displayReady ? 'show' : ''}`}
           src={isHls ? undefined : mediaUrl}
           style={effectStyles}
-          onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
-          onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
+          onCanPlay={() => setDisplayReady(true)}
+          onPlaying={() => setDisplayReady(true)}
         />
       )}
       {overlayProps.showCRT && (
@@ -798,38 +776,9 @@ export function VideoPlayer({
           theme={filterData?.profile?.theme}
         />
       )}
-      {showQuality && quality?.supported && (
-        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} renderFps={renderFps} />
-      )}
     </div>
   );
 }
-
-function QualityOverlay({ stats, capKbps, avgPct, renderFps }) {
-  // console.log('[QualityOverlay] Rendering with capKbps:', capKbps);
-  const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
-  const avgText = typeof avgPct === 'number' ? `${(avgPct * 100).toFixed(1)}%` : null;
-  return (
-    <div className="quality-overlay">
-      <div> Dropped Frames: {stats.droppedVideoFrames} ({pctText}) </div>
-      <div> Bitrate Cap: {capKbps == null ? 'unlimited' : `${capKbps} kbps`} </div>
-      {avgText && <div> Avg (rolling): {avgText} </div>}
-      {renderFps !== null && <div> Render FPS: {renderFps} </div>}
-    </div>
-  );
-}
-
-QualityOverlay.propTypes = {
-  stats: PropTypes.shape({
-    droppedVideoFrames: PropTypes.number,
-    totalVideoFrames: PropTypes.number,
-    droppedPct: PropTypes.number,
-    supported: PropTypes.bool
-  }),
-  capKbps: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
-  avgPct: PropTypes.number,
-  renderFps: PropTypes.number
-};
 
 VideoPlayer.propTypes = {
   media: PropTypes.object.isRequired,
@@ -847,8 +796,6 @@ VideoPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  showQuality: PropTypes.bool,
-  stallConfig: PropTypes.object,
   onController: PropTypes.func,
   upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
   resilienceBridge: PropTypes.shape({
