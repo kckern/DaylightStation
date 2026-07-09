@@ -2358,3 +2358,19 @@
 .piano-subcourse-tile__meta {
   display: block; font-size: 0.85em; opacity: 0.7; margin-top: 0.1rem;
 }
+
+/* ── Subcourses redesign: shared tokens + progress ring ───────────────────── */
+:root{
+  --psc-tint-1:#6f7f8c; --psc-tint-2:#5f8f84; --psc-tint-3:#93728c; --psc-tint-4:#84906a;
+  --psc-done:#5f8f84;
+}
+.psc-ring{
+  --p:0; width:2.6rem; height:2.6rem; border-radius:50%; flex:0 0 auto; position:relative;
+  display:grid; place-items:center;
+  background:conic-gradient(var(--piano-accent) calc(var(--p)*1%), var(--piano-border) 0);
+}
+.psc-ring::before{content:""; position:absolute; inset:3px; border-radius:50%; background:var(--piano-surface-2);}
+.psc-ring__c{position:relative; font-size:.62rem; color:var(--piano-fg);
+  font-variant-numeric:tabular-nums; font-family:var(--piano-mono, ui-monospace, monospace);}
+.psc-ring.is-done{background:conic-gradient(var(--psc-done) 100%, var(--psc-done) 0);}
+.psc-ring.is-done .psc-ring__c{color:var(--psc-done); font-size:.9rem;}
