@@ -79,6 +79,9 @@ describe('songFields', () => {
       expect(r.songKey).toBeNull();
     }
   });
+  it('matches SKILL_CHALLENGE with en-dash variant', () => {
+    expect(songFields('The 10–Lesson Blues Challenge', []).skillChallenge).toBe(true);
+  });
   it('does NOT treat a technique course with an example song as that song', () => {
     // "Ear Training With Holiday Songs 1" is a technique course, not a Silent Night song.
     const r = songFields('Ear Training With Holiday Songs', []);

@@ -54,7 +54,7 @@ export function classify(oldSeason, base) {
 }
 
 // Non-song challenge markers: a challenge whose base is a skill/progression, not a song title.
-const SKILL_CHALLENGE = /\b(improvisation|soloing|progression|\d+-lesson|smooth jazz|bossa nova soloing)\b/i;
+const SKILL_CHALLENGE = /\b(improvisation|soloing|progression|\d+[–—-]lesson|smooth jazz|bossa nova soloing)\b/i;
 
 // Style tokens sometimes suffixed onto a repertoire course name.
 const STYLE_SUFFIX = /\s*[–—-]\s*(Jazz Ballad|Jazz Swing|Jazz Waltz|Bossa Nova|Rhumba|Bolero|Stride|Slow Gospel Blues|Slow Blues|Gospel|Blues|Funk|Latin|Pop|Cocktail Jazz|Swing|Ballad|Waltz)\s*$/i;
