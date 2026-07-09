@@ -1,3 +1,5 @@
+import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
+
 /**
  * GetPlayableUnits — a course's playable units for one kiosk user.
  *
@@ -77,6 +79,16 @@ export class GetPlayableUnits {
           piano: it.piano ?? md.piano ?? null,
         };
       });
+    }
+
+    // Flow each season's curriculum category block into the parents map so the
+    // three-lane UX can route Lessons / Reference / Repertoire.
+    const curIdx = getCurriculumIndex(courseId);
+    if (curIdx && playable.parents && typeof playable.parents === 'object') {
+      for (const p of Object.values(playable.parents)) {
+        const merged = mergeSeason(curIdx, p?.index);
+        if (merged?.piano) p.piano = merged.piano;
+      }
     }
 
     // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared
