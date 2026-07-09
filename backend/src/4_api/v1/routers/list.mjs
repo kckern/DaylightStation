@@ -229,6 +229,17 @@ export function toListItem(item) {
     // Playlist-as-show marker for frontend sorting
     if (sourceType !== undefined) base.sourceType = sourceType;
 
+    // Piano curriculum metadata passthrough with normalization
+    if (item.metadata.piano !== undefined) {
+      const piano = { ...item.metadata.piano };
+      // Normalize styles array to style string (take first element)
+      if (Array.isArray(piano.styles) && piano.styles.length > 0) {
+        piano.style = piano.styles[0];
+        delete piano.styles;
+      }
+      base.piano = piano;
+    }
+
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
   }
