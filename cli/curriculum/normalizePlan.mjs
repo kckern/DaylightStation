@@ -88,3 +88,60 @@ export function cleanTitle(title, course) {
   const stripped = t.replace(re, '').trim();
   return stripped || t;   // never empty
 }
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const sanitize = (s) => String(s).replace(/\//g, '-').trim();
+
+export function buildNormalizationPlan(records) {
+  const episodes = (records || []).map((r) => {
+    const { base, part } = baseCourseAndPart(r.course);
+    const cls = classify(r.oldSeason, base);
+    const sf = cls.lane === 'repertoire' ? songFields(base, r.styles) : { song: null, songKey: null, skillChallenge: false };
+    const newTitle = cleanTitle(r.title, r.course);
+    return {
+      ...r, base, part, ...cls,
+      song: sf.song, songKey: sf.songKey, skillChallenge: sf.skillChallenge,
+      newTitle,
+    };
+  });
+
+  // Renumber within each new season by (oldSeason, oldEpisode).
+  const bySeason = new Map();
+  for (const e of episodes) {
+    if (!bySeason.has(e.newSeason)) bySeason.set(e.newSeason, []);
+    bySeason.get(e.newSeason).push(e);
+  }
+  for (const [, list] of bySeason) {
+    list.sort((a, b) => (a.oldSeason - b.oldSeason) || (a.oldEpisode - b.oldEpisode));
+    list.forEach((e, i) => {
+      e.newEpisode = i + 1;
+      e.newDir = `Season ${pad2(e.newSeason)} - ${e.seasonName}`;
+      e.newBasename = `Piano With Jonny - S${pad2(e.newSeason)}E${pad2(e.newEpisode)} - ${sanitize(e.newTitle)}`;
+    });
+  }
+
+  // Season summaries (ordered by newSeason).
+  const seasons = [...bySeason.keys()].sort((a, b) => a - b).map((sn) => {
+    const list = bySeason.get(sn);
+    const groups = new Map();
+    for (const e of list) { const g = e.group || '—'; groups.set(g, (groups.get(g) || 0) + 1); }
+    return {
+      newSeason: sn, seasonName: list[0].seasonName, lane: list[0].lane, count: list.length,
+      groups: [...groups.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
+
+  // Song-merge rows (repertoire only, non-skill).
+  const merge = new Map();
+  for (const e of episodes) {
+    if (e.lane !== 'repertoire' || e.skillChallenge || !e.songKey) continue;
+    if (!merge.has(e.songKey)) merge.set(e.songKey, { songKey: e.songKey, song: e.song, courses: new Set(), treatments: new Set(), count: 0 });
+    const row = merge.get(e.songKey);
+    row.courses.add(e.course); row.treatments.add(e.treatment); row.count += 1;
+  }
+  const songMerge = [...merge.values()]
+    .map((r) => ({ songKey: r.songKey, song: r.song, courses: [...r.courses], treatments: [...r.treatments], count: r.count }))
+    .sort((a, b) => a.song.localeCompare(b.song));
+
+  return { episodes, seasons, songMerge };
+}
