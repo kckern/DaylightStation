@@ -19,8 +19,13 @@
  * ("4s → 12s → 36s → 108s"), which the old implementation never delivered.
  */
 
+// Session-wide recovery cap (all actors). The ledger is the single source of
+// truth for this number — consumers import it for log payloads/UI copy rather
+// than carrying their own configurable (and therefore lying) copy.
+export const RECOVERY_MAX_ATTEMPTS = 5;
+
 const DEFAULTS = {
-  maxAttempts: 5,
+  maxAttempts: RECOVERY_MAX_ATTEMPTS,
   cooldownMs: 4000,
   cooldownBackoffMultiplier: 3,
   mountBudgets: { 'dash-error': 3 },

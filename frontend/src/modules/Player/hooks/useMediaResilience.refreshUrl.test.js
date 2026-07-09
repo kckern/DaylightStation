@@ -37,21 +37,11 @@ describe('useMediaResilience — refreshUrl signal in onReload', () => {
     meta: { src: 'https://example.test/stream/1', mediaKey: 'plex:1' },
     waitKey: 'test:1',
     playbackSessionKey: `session-${Math.random()}`,
-    // Disable startup deadline monitoring so the hook doesn't blow up
-    // trying to arm timers against a real media element in a unit test.
+    // NOTE: meta lacks mediaType/plex/contentId keys, so the startup deadline
+    // never arms in these tests. Attempt cap + cooldown are owned by the
+    // recoveryLedger (not hook config), so there is nothing to override here.
     disabled: false,
-    getMediaEl: () => null,
-    recoveryCooldownMs: 0,
-    maxAttempts: 5,
-    configOverrides: {
-      monitorSettings: {
-        recoveryCooldownMs: 0,
-        recoveryCooldownBackoffMultiplier: 1,
-        hardRecoverLoadingGraceMs: 0,
-        epsilonSeconds: 1,
-      },
-      recoveryConfig: { maxAttempts: 5 }
-    }
+    getMediaEl: () => null
   });
 
   it('sets refreshUrl:true for startup-deadline-exceeded', () => {
@@ -107,16 +97,7 @@ describe('useMediaResilience — retryFromExhausted (user retry after exhaustion
     waitKey: 'test:exhausted',
     playbackSessionKey: `session-${Math.random()}`,
     disabled: false,
-    getMediaEl: () => null,
-    configOverrides: {
-      monitorSettings: {
-        recoveryCooldownMs: 0,
-        recoveryCooldownBackoffMultiplier: 1,
-        hardRecoverLoadingGraceMs: 0,
-        epsilonSeconds: 1,
-      },
-      recoveryConfig: { maxAttempts: 5 }
-    }
+    getMediaEl: () => null
   });
 
   it('exposes retryFromExhausted from the hook return (so Player can wire the button to it)', () => {

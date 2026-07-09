@@ -10,7 +10,7 @@ import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
-import { getRecoveryLedger } from '../lib/recoveryLedger.js';
+import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -74,14 +74,16 @@ export function useMediaResilience({
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
   disabled = false
 }) {
-  const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
+  const { monitorSettings } = useResilienceConfig({ configOverrides });
   const {
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
     maxSamePositionRetries,
     recoverySeekNudgeSeconds
   } = monitorSettings;
-  const { maxAttempts } = recoveryConfig;
+  // The attempt cap is owned by the recoveryLedger (not per-hook config) so
+  // log payloads can never disagree with the enforced limit.
+  const maxAttempts = RECOVERY_MAX_ATTEMPTS;
 
   const { state: resilienceState, status, statusRef, actions } = useResilienceState(STATUS.startup);
 
@@ -102,6 +104,9 @@ export function useMediaResilience({
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
   // … and on unmount — the final session's entry used to leak (audit §5).
+  // Assumes one mounted Player per playbackSessionKey: a sibling hook sharing
+  // the key would get its ledger entry wiped here (theoretical today —
+  // DancePartyWidget/AudioLayer pairs play different guids).
   useEffect(() => () => {
     if (prevSessionKeyRef.current) {
       getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
@@ -219,7 +224,7 @@ export function useMediaResilience({
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
     getRecoveryLedger().userReset(playbackSessionKey);

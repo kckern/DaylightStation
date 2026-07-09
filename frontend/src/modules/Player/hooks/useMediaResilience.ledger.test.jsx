@@ -43,13 +43,8 @@ const baseArgs = (overrides = {}) => ({
   disabled: false,
   getMediaEl: () => null,
   seconds: 0,
-  configOverrides: {
-    monitorSettings: {
-      hardRecoverLoadingGraceMs: 0,
-      epsilonSeconds: 1
-    },
-    recoveryConfig: { maxAttempts: 5 }
-  },
+  // No configOverrides: attempt cap + cooldown are ledger-owned
+  // (RECOVERY_MAX_ATTEMPTS et al.), not configurable through the hook.
   ...overrides
 });
 
