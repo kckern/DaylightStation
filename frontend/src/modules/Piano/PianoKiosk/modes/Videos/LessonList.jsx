@@ -33,7 +33,7 @@ export default function LessonList({ lessons, onPlay, sequential = true, referen
         return (
           <li key={k}>
             <button type="button"
-              className={['piano-episode', locked && 'piano-episode--locked', current && 'piano-episode--current is-current'].filter(Boolean).join(' ')}
+              className={['piano-episode', locked && 'piano-episode--locked', current && 'is-current'].filter(Boolean).join(' ')}
               onClick={() => { if (!locked) onPlay(item); }} disabled={locked} aria-disabled={locked} aria-current={current ? 'true' : undefined}>
               <div className="piano-episode__thumb">
                 {img && <img src={img} alt="" loading="eager" decoding="async" />}
