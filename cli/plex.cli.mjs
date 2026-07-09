@@ -96,6 +96,29 @@ function loadConfig() {
 
 // Parse command line arguments
 const args = process.argv.slice(2);
+/**
+ * Scalar metadata fields Plex accepts as `<field>.value=...`.
+ * YAML manifest keys and CLI flags use these exact names.
+ */
+const SCALAR_FIELDS = [
+    'title', 'titleSort', 'summary', 'tagline', 'studio',
+    'contentRating', 'originalTitle', 'originallyAvailableAt'
+];
+
+/**
+ * Multi-value tag fields. Key = YAML/CLI plural name, value = the singular
+ * field name Plex expects in `<field>[i].tag.tag=...`, plus the capitalized
+ * key the read API returns them under (needed to diff for removals).
+ */
+const TAG_FIELDS = {
+    genres: { field: 'genre', metaKey: 'Genre' },
+    collections: { field: 'collection', metaKey: 'Collection' },
+    labels: { field: 'label', metaKey: 'Label' },
+    directors: { field: 'director', metaKey: 'Director' },
+    writers: { field: 'writer', metaKey: 'Writer' },
+    producers: { field: 'producer', metaKey: 'Producer' }
+};
+
 const flags = {
     json: args.includes('--json'),
     idsOnly: args.includes('--ids-only'),
@@ -103,10 +126,6 @@ const flags = {
     lock: args.includes('--lock'),
     dryRun: args.includes('--dry-run'),
     section: null,
-    title: null,
-    summary: null,
-    titleSort: null,
-    tagline: null,
     fromYaml: null,
     ids: null
 };
@@ -114,13 +133,14 @@ const flags = {
 // Flags that consume the next argument as their value
 const valueFlags = {
     '--section': 'section',
-    '--title': 'title',
-    '--summary': 'summary',
-    '--titleSort': 'titleSort',
-    '--tagline': 'tagline',
     '--from-yaml': 'fromYaml',
     '--ids': 'ids'
 };
+for (const f of SCALAR_FIELDS) valueFlags[`--${f}`] = f;
+for (const k of Object.keys(TAG_FIELDS)) valueFlags[`--${k}`] = k;
+for (const key of Object.values(valueFlags)) {
+    if (!(key in flags)) flags[key] = null;
+}
 
 // Track indices of flag-values so we can exclude them from positional args
 const consumedValueIndices = new Set();
@@ -421,6 +441,68 @@ class PlexCLI {
     }
 
     /**
+     * Replace a multi-value tag field (genre, label, collection, …) on an item.
+     *
+     * Tag edits do NOT go through library/metadata/{id} — Plex only accepts them on the
+     * section endpoint, keyed by numeric content type. Values already present are re-sent
+     * (harmless); values present in Plex but absent from `values` are explicitly removed via
+     * the `<field>[].tag.tag-` param, since a bare list only ever adds.
+     *
+     * @param {Object} meta - Item metadata (needs librarySectionID, type, and the tag's metaKey)
+     * @param {string} tagKey - Plural key from TAG_FIELDS (e.g. 'genres')
+     * @param {string[]} values - Desired final tag list
+     * @param {Object} [opts]
+     * @param {boolean} [opts.lock=false] - Send `<field>.locked=1`
+     */
+    async editTags(meta, tagKey, values, { lock = false } = {}) {
+        const spec = TAG_FIELDS[tagKey];
+        if (!spec) throw new Error(`Unknown tag field "${tagKey}"`);
+        const typeNum = PLEX_TYPE_NUM[meta.type];
+        if (!typeNum) throw new Error(`Unsupported item type "${meta.type}" for tag edit`);
+
+        const existing = (meta[spec.metaKey] || []).map(t => t.tag);
+        const removals = existing.filter(t => !values.includes(t));
+
+        const params = {
+            type: String(typeNum),
+            id: String(meta.ratingKey),
+            [`${spec.field}.locked`]: lock ? '1' : '0'
+        };
+        if (removals.length) params[`${spec.field}[].tag.tag-`] = removals.join(',');
+        values.forEach((v, i) => { params[`${spec.field}[${i}].tag.tag`] = v; });
+
+        return this.put(`library/sections/${meta.librarySectionID}/all`, params);
+    }
+
+    /**
+     * Apply a manifest entry (scalar fields and/or tag lists) to one item.
+     * Returns the list of field names actually touched.
+     */
+    async applyEdits(plexId, entry, { lock = false, dryRun = false } = {}) {
+        const meta = await this.getMetadata(plexId);
+        if (!meta) throw new Error(`No item found with ID: ${plexId}`);
+
+        const scalars = {};
+        for (const f of SCALAR_FIELDS) {
+            if (typeof entry[f] === 'string') scalars[f] = entry[f];
+        }
+        const tagEdits = {};
+        for (const k of Object.keys(TAG_FIELDS)) {
+            if (Array.isArray(entry[k])) tagEdits[k] = entry[k].map(String);
+        }
+
+        const touched = [...Object.keys(scalars), ...Object.keys(tagEdits)];
+        if (touched.length === 0) return [];
+        if (dryRun) return touched;
+
+        if (Object.keys(scalars).length) await this.setMetadata(plexId, scalars, { lock });
+        for (const [k, values] of Object.entries(tagEdits)) {
+            await this.editTags(meta, k, values, { lock });
+        }
+        return touched;
+    }
+
+    /**
      * Format search result for display
      */
     formatSearchResult(item, sectionKey, sectionTitle = null) {
@@ -578,20 +660,29 @@ async function cmdVerify(plex, ids) {
     console.log();
 }
 
+/** Build a manifest-shaped entry from the CLI flags (scalars as-is, tag lists comma-split). */
+function entryFromFlags() {
+    const entry = {};
+    for (const f of SCALAR_FIELDS) {
+        if (flags[f] !== null) entry[f] = flags[f];
+    }
+    for (const k of Object.keys(TAG_FIELDS)) {
+        if (flags[k] !== null) entry[k] = parseIdList(flags[k]);
+    }
+    return entry;
+}
+
 async function cmdSet(plex, plexId) {
+    const usage = 'Usage: plex set <id> [--title "..."] [--summary "..."] [--studio "..."] '
+        + '[--genres "a,b"] [--labels "a,b"] [--lock] [--dry-run]';
     if (!plexId) {
-        console.error('Usage: plex set <id> [--title "..."] [--summary "..."] [--titleSort "..."] [--tagline "..."] [--lock] [--dry-run]');
+        console.error(usage);
         process.exit(1);
     }
 
-    const fields = {};
-    if (flags.title !== null) fields.title = flags.title;
-    if (flags.summary !== null) fields.summary = flags.summary;
-    if (flags.titleSort !== null) fields.titleSort = flags.titleSort;
-    if (flags.tagline !== null) fields.tagline = flags.tagline;
-
-    if (Object.keys(fields).length === 0) {
-        console.error('Error: provide at least one of --title, --summary, --titleSort, --tagline');
+    const entry = entryFromFlags();
+    if (Object.keys(entry).length === 0) {
+        console.error(`Error: provide at least one field.\n${usage}`);
         process.exit(1);
     }
 
@@ -605,12 +696,16 @@ async function cmdSet(plex, plexId) {
     console.log('\nBefore:');
     console.log(`  ID: ${before.ratingKey}  type: ${before.type}`);
     console.log(`  Title: ${before.title}`);
-    if (before.summary) console.log(`  Summary: ${before.summary.substring(0, 120)}${before.summary.length > 120 ? '…' : ''}`);
+    if (before.summary) console.log(`  Summary: ${truncate(before.summary)}`);
+    if (before.studio) console.log(`  Studio: ${before.studio}`);
+    for (const [k, spec] of Object.entries(TAG_FIELDS)) {
+        const cur = (before[spec.metaKey] || []).map(t => t.tag);
+        if (cur.length) console.log(`  ${k}: ${cur.join(', ')}`);
+    }
 
     console.log('\nWill update:');
-    for (const [k, v] of Object.entries(fields)) {
-        const display = String(v).substring(0, 120);
-        console.log(`  ${k}: ${display}${String(v).length > 120 ? '…' : ''}`);
+    for (const [k, v] of Object.entries(entry)) {
+        console.log(`  ${k}: ${truncate(Array.isArray(v) ? v.join(', ') : v)}`);
     }
     if (flags.lock) console.log('  (with .locked=1 — agents will not overwrite)');
 
@@ -619,28 +714,43 @@ async function cmdSet(plex, plexId) {
         return;
     }
 
-    await plex.setMetadata(plexId, fields, { lock: flags.lock });
+    await plex.applyEdits(plexId, entry, { lock: flags.lock });
 
     // Verify by re-fetching
     const after = await plex.getMetadata(plexId);
     console.log('\nAfter:');
     console.log(`  Title: ${after?.title}`);
-    if (after?.summary) console.log(`  Summary: ${after.summary.substring(0, 120)}${after.summary.length > 120 ? '…' : ''}`);
+    if (after?.summary) console.log(`  Summary: ${truncate(after.summary)}`);
+    if (after?.studio) console.log(`  Studio: ${after.studio}`);
+    for (const [k, spec] of Object.entries(TAG_FIELDS)) {
+        const cur = (after?.[spec.metaKey] || []).map(t => t.tag);
+        if (cur.length) console.log(`  ${k}: ${cur.join(', ')}`);
+    }
     console.log('\n✓ Update applied');
+}
+
+function truncate(value, max = 120) {
+    const s = String(value);
+    return s.length > max ? `${s.substring(0, max)}…` : s;
 }
 
 async function cmdSetFromYaml(plex, yamlPath) {
     if (!yamlPath) {
         console.error('Usage: plex set-from-yaml <path/to/manifest.yml> [--lock] [--dry-run]');
-        console.error('\nManifest format:');
-        console.error('  show:               # optional, for context only');
+        console.error('\nManifest format (show/seasons/items are all optional):');
+        console.error('  show:');
         console.error('    id: 603855');
         console.error('    title: Super Blocks');
+        console.error('    studio: Beachbody');
+        console.error('    genres: [Fitness, Educational]');
         console.error('  seasons:');
         console.error('    - id: 603856');
         console.error('      title: "LIIFT MORE Super Block"');
         console.error('      summary: |');
         console.error('        Description text...');
+        console.error('  items:            # any type (episodes, movies, collections)');
+        console.error('    - id: 603900');
+        console.error('      tagline: "..."');
         process.exit(1);
     }
 
@@ -652,13 +762,20 @@ async function cmdSetFromYaml(plex, yamlPath) {
     const raw = readFileSync(yamlPath, 'utf8');
     const manifest = yaml.load(raw);
 
-    if (!manifest || !Array.isArray(manifest.seasons)) {
-        console.error('Manifest must have a top-level `seasons:` array');
+    // `show` is a single entry; `seasons`/`items` are arrays. All are optional, but at
+    // least one must carry an id or there is nothing to do.
+    const entries = [
+        ...(manifest?.show ? [manifest.show] : []),
+        ...(Array.isArray(manifest?.seasons) ? manifest.seasons : []),
+        ...(Array.isArray(manifest?.items) ? manifest.items : [])
+    ];
+
+    if (entries.length === 0) {
+        console.error('Manifest must have a `show:` map and/or a `seasons:`/`items:` array');
         process.exit(1);
     }
 
-    console.log(`\nLoaded ${manifest.seasons.length} season entries from ${yamlPath}`);
-    if (manifest.show?.title) console.log(`Show: ${manifest.show.title} (id ${manifest.show.id})`);
+    console.log(`\nLoaded ${entries.length} entries from ${yamlPath}`);
     if (flags.lock) console.log('Mode: locking fields (agents will not overwrite)');
     if (flags.dryRun) console.log('Mode: dry-run (no PUTs)');
 
@@ -666,35 +783,28 @@ async function cmdSetFromYaml(plex, yamlPath) {
     let skipped = 0;
     const errors = [];
 
-    for (const entry of manifest.seasons) {
+    for (const entry of entries) {
         if (!entry?.id) {
             console.warn(`  ⚠️  Skipping entry with no id: ${JSON.stringify(entry)}`);
             skipped++;
             continue;
         }
 
-        const fields = {};
-        if (typeof entry.title === 'string') fields.title = entry.title;
-        if (typeof entry.summary === 'string') fields.summary = entry.summary;
-        if (typeof entry.titleSort === 'string') fields.titleSort = entry.titleSort;
-        if (typeof entry.tagline === 'string') fields.tagline = entry.tagline;
-
-        if (Object.keys(fields).length === 0) {
-            console.log(`  ↷ ${entry.id}: no fields to update — skipped`);
-            skipped++;
-            continue;
-        }
-
-        const fieldList = Object.keys(fields).join(', ');
-        if (flags.dryRun) {
-            console.log(`  [dry] ${entry.id}: would set ${fieldList} → "${(fields.title || fields.summary || '').substring(0, 60)}…"`);
-            updated++;
-            continue;
-        }
-
         try {
-            await plex.setMetadata(entry.id, fields, { lock: flags.lock });
-            console.log(`  ✓ ${entry.id}: updated ${fieldList} → "${(fields.title || '').substring(0, 60)}"`);
+            const touched = await plex.applyEdits(entry.id, entry, {
+                lock: flags.lock,
+                dryRun: flags.dryRun
+            });
+
+            if (touched.length === 0) {
+                console.log(`  ↷ ${entry.id}: no fields to update — skipped`);
+                skipped++;
+                continue;
+            }
+
+            const label = truncate(entry.title || entry.summary || '', 60);
+            const prefix = flags.dryRun ? '  [dry]' : '  ✓';
+            console.log(`${prefix} ${entry.id}: ${touched.join(', ')} → "${label}"`);
             updated++;
         } catch (err) {
             console.error(`  ✗ ${entry.id}: ${err.message}`);
@@ -862,6 +972,16 @@ Options:
   --summary "..."          (set) New summary.value
   --titleSort "..."        (set) New titleSort.value
   --tagline "..."          (set) New tagline.value
+  --studio "..."           (set) New studio.value
+  --contentRating "..."    (set) New contentRating.value
+  --originalTitle "..."    (set) New originalTitle.value
+  --originallyAvailableAt  (set) New originallyAvailableAt.value (YYYY-MM-DD)
+  --genres "a,b"           (set) Replace the genre tag list
+  --labels "a,b"           (set) Replace the label tag list
+  --collections "a,b"      (set) Replace the collection tag list
+  --directors "a,b"        (set) Replace the director tag list
+  --writers "a,b"          (set) Replace the writer tag list
+  --producers "a,b"        (set) Replace the producer tag list
   --ids <a,b,c>            (collection) Comma-separated item IDs for create/add/remove
   --from-yaml <file>       (alt to positional) Manifest path for set-from-yaml
   --lock                   Also send .locked=1 (prevents agent overwrite — recommended for seasons)
@@ -875,6 +995,7 @@ Examples:
   node plex.cli.mjs verify 606037 11570 11571
   node plex.cli.mjs set 603856 --title "LIIFT MORE Super Block" --lock
   node plex.cli.mjs set 603856 --summary "..." --dry-run
+  node plex.cli.mjs set 676490 --studio "Piano With Jonny" --genres "Music,Educational" --lock
   node plex.cli.mjs set-from-yaml data/_drafts/super-blocks-seasons.yml --lock
   node plex.cli.mjs collection list --section 17
   node plex.cli.mjs collection items 675687
