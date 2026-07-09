@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { CONTENT_ID_LIKE, isContentIdLike } from './contentSearchLogic.js';
 import './ContentSearchCombobox.scss';
 
 const TYPE_ICONS = {
@@ -65,7 +66,7 @@ function normalizeListSource(source) {
 
 // Content-id-like text (e.g. `plex:456724`, `canvas:religious/stars.jpg`) is an
 // intentional commit; plain exploratory search text is not. (§3.1-5/6)
-const CONTENT_ID_LIKE = /^[\w-]+:\S+/;
+// Predicate now shared via contentSearchLogic.js (CONTENT_ID_LIKE import above).
 
 // Process-lifetime cache of contentId -> human title so the resolved-title line
 // renders instantly for items we've already seen (no refetch). (§3.1-9)
@@ -103,7 +104,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const [resolvedTitle, setResolvedTitle] = useState(null);
   useEffect(() => {
     setResolvedTitle(null);
-    if (!value || !/^[\w-]+:\S+/.test(value)) return;
+    if (!isContentIdLike(value)) return;
     if (titleCache.has(value)) { setResolvedTitle(titleCache.get(value)); return; }
     const colonIndex = value.indexOf(':');
     const source = normalizeListSource(value.slice(0, colonIndex));
