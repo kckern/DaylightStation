@@ -2,10 +2,10 @@
  * Printer Router
  *
  * API endpoints for thermal printer control, keyed by location:
- *   /printer/<action>/:location?
+ *   /printer/<action>{/:location}
  *
- * `:location` is optional and falls back to the default printer configured
- * in the registry.
+ * `{/:location}` is optional (Express 5 optional-segment syntax) and falls
+ * back to the default printer configured in the registry.
  *
  * @module api/routers
  */

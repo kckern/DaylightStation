@@ -492,7 +492,7 @@ export function createLocalContentRouter(config) {
    * GET /api/local-content/cover/*
    * Returns cover art from embedded ID3 or placeholder
    */
-  router.get('/cover/*splat', async (req, res) => {
+  router.get('/cover{/*splat}', async (req, res) => {
     const mediaKey = splatPath(req);
 
     if (!mediaKey) {
