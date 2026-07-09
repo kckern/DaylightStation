@@ -2411,3 +2411,9 @@
 .psc-tag--done{color:var(--psc-done); border:1px solid color-mix(in srgb,var(--psc-done) 40%, transparent);}
 .psc-tag--later{color:var(--piano-muted); border:1px solid var(--piano-border);}
 .psc-ring.is-done .psc-ring__c{color:var(--psc-done); font-size:.9rem;}
+/* ── Subcourses redesign: lesson list emphasis ────────────────────────────── */
+.psc-lessons .piano-episode.is-current{border:1px solid var(--piano-accent);
+  background:color-mix(in srgb,var(--piano-accent) 12%, transparent); border-radius:var(--r-sm);}
+.psc-play{margin-left:auto; display:inline-flex; align-items:center; gap:.35rem;
+  background:var(--piano-accent); color:var(--piano-accent-ink); font-weight:700; font-size:.8rem;
+  border-radius:2rem; padding:.35rem .85rem;}
