@@ -283,3 +283,37 @@ describe('PianoScreenAuthorityService', () => {
     })).toThrow();
   });
 });
+
+// ── override coordination ────────────────────────────────────────────────────
+function makeOverride(entry = null) {
+  return { get: vi.fn(() => entry) };
+}
+
+describe('PianoScreenAuthorityService — screen override', () => {
+  it('poll: a live override window suppresses all screen action (no edge, no debounce)', async () => {
+    const device = makeStatefulDevice(false);
+    const gateway = makeGateway(async () => ({ state: 'on' })); // piano ON reading
+    const override = makeOverride({ state: 'off', until: Number.MAX_SAFE_INTEGER });
+    const { svc } = makeService({ gateway, device, overrides: { screenOverrideService: override } });
+    await svc._tickPollForTest(); // early-returns under the live override
+    expect(device.setScreen).not.toHaveBeenCalled();
+  });
+
+  it('reconcile: a live override enforces the override state, not piano power', async () => {
+    const device = makeStatefulDevice(true); // panel currently ON
+    const gateway = makeGateway(async () => ({ state: 'on' })); // piano ON
+    const override = makeOverride({ state: 'off', until: Number.MAX_SAFE_INTEGER });
+    const { svc } = makeService({ gateway, device, overrides: { screenOverrideService: override } });
+    await svc._tickReconcileForTest();
+    expect(device.setScreen).toHaveBeenCalledWith(false);
+  });
+
+  it('reconcile: an absent override falls back to piano-power control (no-op when not committed off)', async () => {
+    const device = makeStatefulDevice(true);
+    const gateway = makeGateway(async () => ({ state: 'on' }));
+    const override = makeOverride(null);
+    const { svc } = makeService({ gateway, device, overrides: { screenOverrideService: override } });
+    await svc._tickReconcileForTest(); // committedPower null → no-op
+    expect(device.setScreen).not.toHaveBeenCalled();
+  });
+});
