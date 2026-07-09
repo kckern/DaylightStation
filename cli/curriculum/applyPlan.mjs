@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // cli/curriculum/applyPlan.mjs — apply the normalization plan to the NAS.
 // Backup-first, idempotent, --confirm-gated, reversible (writes an undo script).
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, renameSync, rmSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, renameSync } from 'fs';
+import { join, dirname } from 'path';
 import { buildNormalizationPlan } from './normalizePlan.mjs';
 import { parseNfoFull, renderNfo } from './nfoRender.mjs';
 
@@ -30,17 +30,27 @@ export function planToApplyOps(plan, records) {
 }
 
 export function applyOps(root, ops) {
-  const undo = ['#!/bin/sh', '# undo script — reverses applyOps moves', `cd "${root}" || exit 1`];
+  const undo = ['#!/bin/sh', '# undo — restores original nfo bytes + reverses moves', `cd "${root}" || exit 1`];
+  const STASH = '_undo_nfo';
   for (const op of ops) {
     const toDir = join(root, op.to.dir);
     if (!existsSync(toDir)) mkdirSync(toDir, { recursive: true });
-    for (const ext of ['mp4', 'nfo']) {
-      const src = join(root, op.from.dir, `${op.from.base}.${ext}`);
-      const dst = join(toDir, `${op.to.base}.${ext}`);
-      if (ext === 'nfo') { writeFileSync(dst, op.nfo); if (existsSync(src) && src !== dst) rmSync(src); }
-      else if (existsSync(src)) renameSync(src, dst);
-      undo.push(`mv "${op.to.dir}/${op.to.base}.${ext}" "${op.from.dir}/${op.from.base}.${ext}" 2>/dev/null`);
+    // mp4: move if present
+    const mp4src = join(root, op.from.dir, `${op.from.base}.mp4`);
+    const mp4dst = join(toDir, `${op.to.base}.mp4`);
+    if (existsSync(mp4src) && mp4src !== mp4dst) renameSync(mp4src, mp4dst);
+    // nfo: stash the original (preserve bytes), then write the new one
+    const nfosrc = join(root, op.from.dir, `${op.from.base}.nfo`);
+    const nfodst = join(toDir, `${op.to.base}.nfo`);
+    if (existsSync(nfosrc)) {
+      const stash = join(root, STASH, op.from.dir, `${op.from.base}.nfo`);
+      mkdirSync(dirname(stash), { recursive: true });
+      renameSync(nfosrc, stash);
     }
+    writeFileSync(nfodst, op.nfo);
+    undo.push(`rm -f "${op.to.dir}/${op.to.base}.nfo"`);
+    undo.push(`[ -f "${STASH}/${op.from.dir}/${op.from.base}.nfo" ] && mkdir -p "${op.from.dir}" && mv "${STASH}/${op.from.dir}/${op.from.base}.nfo" "${op.from.dir}/${op.from.base}.nfo"`);
+    undo.push(`mv "${op.to.dir}/${op.to.base}.mp4" "${op.from.dir}/${op.from.base}.mp4" 2>/dev/null`);
   }
   return undo.join('\n') + '\n';
 }
@@ -66,13 +76,28 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         file: `${dir}/${f}`, oldSeason: os, oldEpisode: Number(one(xml, 'episode')),
         course: (xml.match(/<tag>Course:\s*([^<]+)<\/tag>/) ? unesc(xml.match(/<tag>Course:\s*([^<]+)<\/tag>/)[1].trim()) : null),
         styles: genres.filter((g) => !GENERIC.has(g)), title: one(xml, 'title'), wistia: full.wistia, _full: full,
+        hasLane: /<tag>Lane:/.test(xml),
       });
     }
   }
-  // Idempotency guard: if every dir is already a NEW-name season, refuse.
-  const newNames = new Set(['Season 00 - Practice','Season 01 - Soloing','Season 02 - Improvisation','Season 03 - Chord Voicings','Season 04 - Chord Theory & Color','Season 05 - Lead Sheet Application','Season 06 - Comping & Rhythm','Season 07 - Intros, Endings & Fills','Season 08 - Song Library']);
-  const dirs = readdirSync(root).filter((d) => statSync(join(root, d)).isDirectory() && /^Season /.test(d));
-  if (dirs.every((d) => newNames.has(d))) { console.log('Already normalized (all dirs are new-name seasons). No-op.'); process.exit(0); }
+  // Idempotency: refuse if any source NFO already carries a Lane tag (already normalized).
+  const already = records.filter((r) => r.hasLane).length;
+  if (already > 0) {
+    console.error(`FATAL: ${already} NFOs already carry a <tag>Lane:> (already normalized). Restore from backup before re-running.`);
+    process.exit(1);
+  }
+  // Pre-flight: every record must have a present, unique wistia id (the join key).
+  const seenW = new Map(); const badW = [];
+  for (const r of records) {
+    if (!r.wistia) badW.push(`${r.file} (no wistia)`);
+    else if (seenW.has(r.wistia)) badW.push(`${r.file} (dup wistia ${r.wistia} shared with ${seenW.get(r.wistia)})`);
+    else seenW.set(r.wistia, r.file);
+  }
+  if (badW.length) {
+    console.error(`FATAL: ${badW.length} records with missing/duplicate wistia id:`);
+    badW.slice(0, 20).forEach((x) => console.error('  ' + x));
+    process.exit(1);
+  }
 
   const plan = buildNormalizationPlan(records);
   let ops = planToApplyOps(plan, records);
@@ -82,6 +107,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   console.log(`ops: ${ops.length}${seasonArg != null ? ` (old season ${seasonArg} only)` : ''}`);
   for (const o of ops.slice(0, 10)) console.log(`  ${o.from.dir}/${o.from.base}  ->  ${o.to.dir}/${o.to.base}`);
+  const missingMp4 = ops.filter((o) => !existsSync(join(root, o.from.dir, `${o.from.base}.mp4`)));
+  if (missingMp4.length) {
+    console.warn(`WARN: ${missingMp4.length} ops have NO source .mp4 (nfo-only, would orphan):`);
+    missingMp4.slice(0, 20).forEach((o) => console.warn('  ' + o.from.dir + '/' + o.from.base));
+  }
   if (!confirm) { console.log('DRY (no --confirm): nothing written.'); process.exit(0); }
 
   const undo = applyOps(root, ops);

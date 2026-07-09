@@ -38,5 +38,9 @@ describe('applyOps (temp dir round-trip)', () => {
     expect(readFileSync(join(root, 'Season 06 - Comping & Rhythm', 'Piano With Jonny - S06E01 - Demo.nfo'), 'utf8')).toContain('<season>6</season>');
     expect(existsSync(join(root, 'Season 06 - Comping', 'Piano With Jonny - S06E01 - Jazzy Blues Comping – Demo.mp4'))).toBe(false);
     expect(undo).toContain('mv');  // undo script references a reverse move
+
+    expect(existsSync(join(root, '_undo_nfo', 'Season 06 - Comping', 'Piano With Jonny - S06E01 - Jazzy Blues Comping – Demo.nfo'))).toBe(true);
+    expect(readFileSync(join(root, '_undo_nfo', 'Season 06 - Comping', 'Piano With Jonny - S06E01 - Jazzy Blues Comping – Demo.nfo'), 'utf8')).toBe('<x/>');
+    expect(undo).toContain('rm -f');
   });
 });
