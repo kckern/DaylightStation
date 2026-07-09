@@ -1,5 +1,5 @@
 // tests/unit/suite/api/list-toListItem.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { toListItem } from '#api/v1/routers/list.mjs';
 
 describe('toListItem', () => {
@@ -36,7 +36,10 @@ describe('toListItem', () => {
 
     const result = toListItem(item);
 
-    expect(result.launch).toEqual({ contentId: 'retroarch:n64/mario-kart-64' });
+    expect(result.launch).toEqual({
+      contentId: 'retroarch:n64/mario-kart-64',
+      intent: { target: 'com.retroarch/Activity' }
+    });
   });
 
   it('does NOT add launch for normal playable items', () => {

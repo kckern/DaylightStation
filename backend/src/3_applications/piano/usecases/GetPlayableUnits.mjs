@@ -1,3 +1,5 @@
+import { getCurriculumIndex, mergeSeason } from '#adapters/content/media/plex/CurriculumIndex.mjs';
+
 /**
  * GetPlayableUnits — a course's playable units for one kiosk user.
  *
@@ -70,8 +72,23 @@ export class GetPlayableUnits {
           // The episode number (E12 badge) and intra-unit sort key live under
           // metadata too; lift so the grid can label + order lectures correctly.
           itemIndex: it.itemIndex ?? md.itemIndex ?? null,
+          // Curriculum metadata (course grouping, styles, skill, instructor, and
+          // the season category block) is merged onto metadata.piano by the Plex
+          // adapter; lift it top-level so the curriculum UX reads item.piano.*
+          // consistently with the /list contract.
+          piano: it.piano ?? md.piano ?? null,
         };
       });
+    }
+
+    // Flow each season's curriculum category block into the parents map so the
+    // three-lane UX can route Lessons / Reference / Repertoire.
+    const curIdx = getCurriculumIndex(courseId);
+    if (curIdx && playable.parents && typeof playable.parents === 'object') {
+      for (const p of Object.values(playable.parents)) {
+        const merged = mergeSeason(curIdx, p?.index);
+        if (merged?.piano) p.piano = merged.piano;
+      }
     }
 
     // Per-user progress enrichment (userPercent/userWatched/etc.) via the shared

@@ -3,6 +3,7 @@ import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
+import { getCurriculumIndex, mergeEpisode, mergeSeason } from './CurriculumIndex.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo } from './transcodeProfile.mjs';
 
@@ -540,6 +541,23 @@ export class PlexAdapter {
   }
 
   /**
+   * Resolve the curriculum-index merge for a raw Plex item, if its show is indexed.
+   * Returns { title?, piano } or null. Episodes join on (parentIndex,index); seasons
+   * on (index); resolved to a show via grandparentRatingKey / parentRatingKey.
+   * @private
+   */
+  #curriculumMerge(item) {
+    const showKey = item.type === 'episode' ? item.grandparentRatingKey
+      : item.type === 'season' ? item.parentRatingKey : null;
+    if (!showKey) return null;
+    const index = getCurriculumIndex(showKey);
+    if (!index) return null;
+    if (item.type === 'episode') return mergeEpisode(index, { season: item.parentIndex, episode: item.index });
+    if (item.type === 'season') return mergeSeason(index, item.index);
+    return null;
+  }
+
+  /**
    * Convert Plex metadata to ListableItem
    * @param {Object} item - Plex metadata object
    * @returns {ListableItem}
@@ -588,11 +606,13 @@ export class PlexAdapter {
       }
     }
 
+    const merged = this.#curriculumMerge(item);
+    if (merged?.piano) metadata.piano = merged.piano;
     return new ListableItem({
       id: `plex:${id}`,
       source: 'plex',
       localId: String(id),
-      title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+      title: merged?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
       itemType: isContainer ? 'container' : 'leaf',
       childCount: item.leafCount || item.childCount || 0,
       thumbnail,
@@ -642,11 +662,13 @@ export class PlexAdapter {
         containerMetadata.parentType = 'library';
       }
 
+      const mergedC = this.#curriculumMerge(item);
+      if (mergedC?.piano) containerMetadata.piano = mergedC.piano;
       return new ListableItem({
         id: `plex:${item.ratingKey}`,
         source: 'plex',
         localId: String(item.ratingKey),
-        title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+        title: mergedC?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
         itemType: 'container',
         childCount: item.leafCount || 0,
         thumbnail: (item.composite || item.thumb) ? `${this.proxyPath}${(item.composite || item.thumb)}` : null,
@@ -760,6 +782,9 @@ export class PlexAdapter {
       }
     }
 
+    const mergedE = this.#curriculumMerge(item);
+    if (mergedE?.piano) metadata.piano = mergedE.piano;
+
     // Use proxy URL for thumbnails with fallback chain (episode -> season -> show)
     const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
     const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
@@ -768,7 +793,7 @@ export class PlexAdapter {
       id: `plex:${item.ratingKey}`,
       source: 'plex',
       localId: String(item.ratingKey),
-      title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
+      title: mergedE?.title || item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
       mediaType: isVideo ? 'dash_video' : 'audio',
       mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
       duration: item.duration ? Math.floor(item.duration / 1000) : null,
