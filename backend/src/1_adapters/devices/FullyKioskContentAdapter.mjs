@@ -495,7 +495,11 @@ export class FullyKioskContentAdapter {
           ready: true,
           provider: 'fully-kiosk',
           currentUrl: data?.currentUrl,
-          screenOn: data?.isScreenOn,
+          // REST `deviceInfo` reports `screenOn`. `isScreenOn` is the in-WebView
+          // JS API (fully.isScreenOn()) and is NOT a deviceInfo field — reading it
+          // yielded undefined, so every #verify() mismatched and screen/toggle
+          // always read "off". Fallback kept for FKB builds that do send it.
+          screenOn: data?.screenOn ?? data?.isScreenOn,
           appVersion: data?.appVersion
         };
       }
