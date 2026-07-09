@@ -69,10 +69,7 @@ const USER_INTENT = Object.freeze({
 // Grace period (ms) to suppress overlay during brief seeks (ffwd/rew bumps)
 const SEEK_OVERLAY_GRACE_MS = 600;
 
-/**
- * Simplified Media Resilience Hook
- * Gutted after backend bug fix to provide only basic stall recovery.
- */
+/** Media resilience: recovery orchestration + overlay state for the Player. */
 export function useMediaResilience({
   getMediaEl,
   meta = {},

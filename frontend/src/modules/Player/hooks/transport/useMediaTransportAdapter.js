@@ -149,18 +149,14 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
   const play = useMemo(() => guard('play', () => controllerRef?.current?.transport?.play?.()), [controllerRef]);
   const pause = useMemo(() => guard('pause', () => controllerRef?.current?.transport?.pause?.()), [controllerRef]);
   const seek = useMemo(() => guard('seek', (seconds) => controllerRef?.current?.transport?.seek?.(seconds)), [controllerRef]);
-  const nudge = useMemo(() => guard('nudge', (...args) => mediaAccess?.nudgePlayback?.(...args)), [mediaAccess]);
+  // No renderer registers a nudge hook; kept as a stable no-op so the transport
+  // API shape stays intact for callers.
+  const nudge = useMemo(() => guard('nudge', () => null), []);
 
   const readDiagnostics = useCallback(() => {
     try {
-      const raw = typeof mediaAccess?.getTroubleDiagnostics === 'function'
-        ? mediaAccess.getTroubleDiagnostics()
-        : null;
-      if (raw) {
-        return normalizeDiagnostics(raw);
-      }
-
-      // Fallback: derive minimal diagnostics directly from the media element
+      // Renderers no longer register a diagnostics provider; derive minimal
+      // diagnostics directly from the media element.
       const mediaEl = getMediaEl();
       if (!mediaEl) return null;
       const fallback = fallbackDiagnosticsFromMediaEl(mediaEl);
@@ -169,7 +165,7 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
       playbackLog('transport-diagnostics-error', { message: error?.message || 'diagnostics-error' }, { level: 'warn' });
       return null;
     }
-  }, [getMediaEl, mediaAccess]);
+  }, [getMediaEl]);
 
   return {
     getMediaEl,

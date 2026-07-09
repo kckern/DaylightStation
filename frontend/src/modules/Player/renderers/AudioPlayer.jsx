@@ -29,8 +29,7 @@ export function AudioPlayer({
   onProgress, 
   onMediaRef, 
   onController,
-  resilienceBridge,
-  watchedDurationProvider
+  resilienceBridge
 }) {
   const { mediaUrl, title, artist, albumArtist, album, image, thumbnail, type } = media || {};
   const effectiveImage = image || thumbnail || null;
@@ -50,12 +49,10 @@ export function AudioPlayer({
     duration,
     containerRef,
     handleProgressClick,
-    mediaInstanceKey,
     getMediaEl,
     getContainerEl,
     isPaused,
-    isSeeking,
-    hardReset
+    isSeeking
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -75,12 +72,7 @@ export function AudioPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    onController,
-    instanceKey: baseMediaKey,
-    fetchVideoInfo,
-    seekToIntentSeconds: resilienceBridge?.seekToIntentSeconds,
-    resilienceBridge,
-    watchedDurationProvider
+    onController
   });
 
   // Register accessors with resilience bridge
@@ -91,7 +83,6 @@ export function AudioPlayer({
     if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
       resilienceBridge.onRegisterMediaAccess({
         getMediaEl,
-        hardReset,
         fetchVideoInfo: fetchVideoInfo || null
       });
     }
@@ -100,7 +91,7 @@ export function AudioPlayer({
         resilienceBridge.onRegisterMediaAccess({});
       }
     };
-  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!effectiveArtist && !!effectiveAlbum ? `${effectiveArtist} - ${effectiveAlbum}` : !!effectiveArtist ? effectiveArtist : !!effectiveAlbum ? effectiveAlbum : title || 'Audio Track';
@@ -278,7 +269,6 @@ export function AudioPlayer({
         </div>
       </div>
       <audio
-        key={mediaInstanceKey}
         ref={containerRef}
         src={mediaUrl}
         autoPlay
@@ -308,7 +298,6 @@ AudioPlayer.propTypes = {
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
   onController: PropTypes.func,
-  watchedDurationProvider: PropTypes.func,
   resilienceBridge: PropTypes.shape({
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,

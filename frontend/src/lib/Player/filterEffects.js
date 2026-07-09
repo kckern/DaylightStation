@@ -77,6 +77,8 @@ registerEffectHandler('title-card', {
   onEnter({ cue, sfx }) { if (cue.sound) sfx?.play?.(cue.sound); },
   onExit({ cue, sfx }) { if (cue.sound) sfx?.stop?.(); },
 });
-// skip-card is expanded by the resolver into skip + title-card; registered so it's
-// a recognized effect name (profiles may map a category to it).
+// skip-card is kept as one cue by the resolver (no skip + title-card expansion) and
+// driven directly by useContentFilter's skip-card lifecycle (seek to `out`, pause
+// behind the card, resume after holdSec). Registered so it's a recognized effect
+// name (profiles may map a category to it).
 registerEffectHandler('skip-card', { kind: EFFECT_KINDS.TRANSPORT });
