@@ -15,7 +15,7 @@ import {
 } from '@mantine/core';
 import { IconSettings, IconSettingsAutomation, IconPhoto } from '@tabler/icons-react';
 import EditorCategories from './EditorCategories.jsx';
-import ContentSearchCombobox from './ContentSearchCombobox.jsx';
+import ContentCombobox from './combobox/ContentCombobox.jsx';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { ACTION_OPTIONS, KNOWN_ITEM_FIELDS, ITEM_DEFAULTS } from './listConstants.js';
@@ -116,7 +116,7 @@ function SimpleMode({ formData, onChange, errors, sections }) {
 
       <Box>
         <Text size="sm" fw={500} mb={4}>Input <Text span c="red">*</Text></Text>
-        <ContentSearchCombobox
+        <ContentCombobox
           value={formData.input}
           onChange={(val) => onChange('input', val)}
           placeholder="Search content or type source:id"
