@@ -400,4 +400,38 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
       'no /siblings requests may fire after drilling into a container'
     ).toEqual([]);
   });
+
+  test('opening with a paginated value: the initial reference scroll fires no sibling page-loads (audit S2)', async ({ page }) => {
+    test.setTimeout(180000);
+
+    // Fixture: committed value sitting deep in a large container, so the initial
+    // sibling window has pages before it (pagination.hasBefore=true).
+    const fixture = await huntSiblingPaginationFixture(page, { flag: 'hasBefore' });
+    console.log(`S2 fixture: value=${fixture.value}, pagination=${JSON.stringify(fixture.pagination)}`);
+
+    const siblingsRequests = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/v1/siblings/')) {
+        siblingsRequests.push({ url: req.url(), at: Date.now() });
+      }
+    });
+
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent(fixture.value)}`);
+    await ComboboxActions.open(page);
+
+    // Sibling window renders and the committed item is scrolled into view.
+    await expect(ComboboxLocators.backButton(page)).toBeVisible({ timeout: 30000 });
+    await expect(ComboboxLocators.options(page).first()).toBeVisible({ timeout: 30000 });
+
+    // Settle with NO user scroll. The programmatic scrollIntoView on open must
+    // not be mistaken for user intent — no page-loads may fire from it.
+    await page.waitForTimeout(1500);
+
+    const offsetRequests = siblingsRequests.filter((r) => /[?&]offset=/.test(r.url));
+    expect(
+      offsetRequests.map((r) => r.url),
+      'the initial reference scroll must not trigger before/after sibling page-loads'
+    ).toEqual([]);
+    expect(siblingsRequests.length, 'exactly one initial /siblings request').toBe(1);
+  });
 });

@@ -275,8 +275,12 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         setBreadcrumbs([]);
       }
 
-      // Scroll to reference item after render
+      // Scroll to reference item after render. The programmatic scrollIntoView
+      // fires onScrollPositionChange like any user scroll; without the cooldown
+      // it could immediately trigger loadMoreSiblings ('before'/'after') and a
+      // visible prepend-compensation jump on open. (audit S2)
       if (data.referenceIndex != null && data.referenceIndex >= 0) {
+        loadCooldownRef.current = true;
         requestAnimationFrame(() => {
           const viewport = scrollViewportRef.current;
           if (viewport) {
@@ -286,6 +290,12 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               refOption.scrollIntoView({ block: 'center' });
             }
           }
+          // Release only after the scroll event from scrollIntoView has flushed.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              loadCooldownRef.current = false;
+            });
+          });
         });
       }
     } catch (err) {
@@ -767,6 +777,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           <ScrollArea.Autosize
             mah={300}
             viewportRef={scrollViewportRef}
+            // Browser scroll anchoring would fight the manual scroll compensation
+            // applied after prepending a 'before' page — disable it. (audit S2)
+            viewportProps={{ style: { overflowAnchor: 'none' } }}
             onScrollPositionChange={({ y }) => {
               if (!pagination || loadingMore || loadCooldownRef.current || breadcrumbs.length === 0) return;
               const viewport = scrollViewportRef.current;
