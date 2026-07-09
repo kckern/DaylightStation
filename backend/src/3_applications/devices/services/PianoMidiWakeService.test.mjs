@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PianoMidiWakeService } from './PianoMidiWakeService.mjs';
+import { ScreenOverrideService } from './ScreenOverrideService.mjs';
 
 class FakeWs { on() {} close() {} }
 
@@ -14,6 +15,7 @@ function makeService(overrides = {}) {
   const advance = (ms) => { t += ms; };
   const fetchCalls = [];
   const fetchImpl = (url, opts) => { fetchCalls.push([url, opts]); return Promise.resolve({ ok: true }); };
+  const screenOverride = new ScreenOverrideService({ clock });
   const svc = new PianoMidiWakeService({
     deviceService,
     deviceId: 'yellow-room-tablet',
@@ -22,10 +24,11 @@ function makeService(overrides = {}) {
     clock,
     fetchImpl,
     WebSocketImpl: FakeWs,
+    screenOverride,
     logger: { info() {}, warn() {} },
     ...overrides,
   });
-  return { svc, screenCalls, advance, fetchCalls };
+  return { svc, screenCalls, advance, fetchCalls, screenOverride };
 }
 
 test('suppressWakeUntil skips FKB wake pokes while suppressed, resumes after the deadline', async () => {
