@@ -20,12 +20,12 @@ export function parseEpisodeNfo(xml) {
   const season = one(xml, 'season'); const episode = one(xml, 'episode');
   if (season == null || episode == null) return null;
   const genres = [...xml.matchAll(/<genre>([^<]+)<\/genre>/g)].map((m) => m[1].trim());
-  const style = genres.find((g) => !GENERIC.has(g)) || null;
+  const styles = genres.filter((g) => !GENERIC.has(g)).map(unesc);
   const ep = {
     season: Number(season), episode: Number(episode),
     title: one(xml, 'title'), plot: one(xml, 'plot'),
     course: tagValues(xml, 'Course')[0] || null,
-    style: unesc(style),
+    styles: styles,
     skill: tagValues(xml, 'Skill Level')[0] || null,
     focus: tagValues(xml, 'Focus'),
     type: tagValues(xml, 'Type')[0] || null,
