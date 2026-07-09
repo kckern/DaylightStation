@@ -1,20 +1,23 @@
 import { useMemo, useState } from 'react';
-import { partitionSeasons } from './subcourses.js';
+import { partitionSeasons, programStats, seasonStats, continueTarget, courseStats } from './subcourses.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
-import SeasonMenu from './SeasonMenu.jsx';
-import CourseList from './CourseList.jsx';
-import CourseLessons from './CourseLessons.jsx';
+import PianoContextRail from './PianoContextRail.jsx';
+import SeasonList from './SeasonList.jsx';
+import CourseCards from './CourseCards.jsx';
+import LessonList from './LessonList.jsx';
 
 /**
- * Drill-in for a "subcourses" program: Season menu → Course list → Lessons.
- * A season with exactly one course collapses straight to its lessons. Navigation
- * is internal state (season/course selection resets on reload — a kiosk lands
- * back on the season menu, consistent with the footer-Back-to-root convention);
- * lesson playback bubbles up via onPlay to the existing player route.
+ * Drill-in for a "subcourses" program: Season list → Course cards → Lessons, framed
+ * by a persistent context rail (poster, ancestor breadcrumb, progress ring, and a
+ * Continue action to the next unwatched lesson). A season with exactly one course
+ * collapses straight to its lessons. Navigation is internal state (resets on
+ * reload — a kiosk lands back on the season list, consistent with the
+ * footer-Back-to-root convention); lesson playback bubbles up via onPlay to the
+ * existing player route.
  */
 export default function SubcourseNavigator({ course, playable, onPlay }) {
-  const { items, parents, info } = playable || {};
-  const seasons = useMemo(() => partitionSeasons(items, parents), [items, parents]);
+  const { items, parents, info, referenceUnitIds } = playable || {};
+  const seasons = useMemo(() => partitionSeasons(items, parents, referenceUnitIds), [items, parents, referenceUnitIds]);
   const [seasonId, setSeasonId] = useState(null);
   const [floor, setFloor] = useState(null);
 
@@ -30,27 +33,39 @@ export default function SubcourseNavigator({ course, playable, onPlay }) {
   }, [season, floor]);
   const collapsed = !!season && season.courses.length === 1;
 
+  const cont = useMemo(() => continueTarget(seasons), [seasons]);
+
+  // Breadcrumb (thin path) still published; rail carries the rich version.
   const crumbs = useMemo(() => {
     const out = [{ label: program, onClick: () => { setSeasonId(null); setFloor(null); } }];
-    if (season) {
-      out.push({
-        label: season.title || `Season ${season.index}`,
-        onClick: (activeCourse && !collapsed) ? () => setFloor(null) : undefined,
-      });
-    }
+    if (season) out.push({ label: season.title || `Season ${season.index}`, onClick: (activeCourse && !collapsed) ? () => setFloor(null) : undefined });
     if (activeCourse && !collapsed) out.push({ label: activeCourse.label });
     return out;
   }, [program, season, activeCourse, collapsed]);
   usePianoBreadcrumb(crumbs);
 
-  let body;
-  if (!season) {
-    body = <SeasonMenu seasons={seasons} poster={poster} onSelect={(s) => { setSeasonId(s.id); setFloor(null); }} />;
-  } else if (activeCourse) {
-    body = <CourseLessons lessons={activeCourse.lessons} onPlay={onPlay} />;
-  } else {
-    body = <CourseList courses={season.courses} poster={poster} onSelect={(c) => setFloor(c.floor)} />;
-  }
+  // Rail props per level.
+  const ancestors = [];
+  if (season) ancestors.push({ label: program, onClick: () => { setSeasonId(null); setFloor(null); } });
+  if (activeCourse && !collapsed) ancestors.push({ label: season.title || `Season ${season.index}`, onClick: () => setFloor(null) });
+  const railTitle = activeCourse ? activeCourse.label : season ? (season.title || `Season ${season.index}`) : program;
+  const ring = (() => {
+    if (activeCourse) { const st = courseStats(activeCourse); return activeCourse.reference ? null : { percent: st.percent, label: `${st.watched}/${st.total}`, done: st.complete }; }
+    if (season) { const st = seasonStats(season); return st.reference ? null : { percent: st.percent, label: `${st.percent}%`, done: st.totalCourses > 0 && st.completeCourses === st.totalCourses }; }
+    const st = programStats(seasons); return { percent: st.percent, label: `${st.percent}%`, done: st.totalCourses > 0 && st.completeCourses === st.totalCourses };
+  })();
+  const railContinue = cont ? { kicker: 'Continue', title: cont.lesson.label || cont.lesson.title, sub: seasons.find((s) => s.id === cont.seasonId)?.title || null } : null;
 
-  return <section className="piano-mode--videos piano-course piano-subcourse">{body}</section>;
+  let pane;
+  if (!season) pane = <SeasonList seasons={seasons} onSelect={(s) => { setSeasonId(s.id); setFloor(null); }} />;
+  else if (activeCourse) pane = <LessonList lessons={activeCourse.lessons} onPlay={onPlay} reference={activeCourse.reference} />;
+  else pane = <CourseCards season={season} currentFloor={cont?.seasonId === season.id ? cont.floor : null} onSelect={(c) => setFloor(c.floor)} />;
+
+  return (
+    <section className="piano-mode--videos piano-course psc-stage">
+      <PianoContextRail poster={poster} program={railTitle} ancestors={ancestors} ring={ring}
+        continue={railContinue} onContinue={() => cont && onPlay(cont.lesson)} />
+      <div className="psc-pane">{pane}</div>
+    </section>
+  );
 }
