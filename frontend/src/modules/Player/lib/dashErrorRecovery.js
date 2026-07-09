@@ -14,7 +14,7 @@
  * Returns `{ action: 'refresh-url', reason }` for the two specific
  * error codes that signal "the source URL is dead, please re-fetch",
  * up to `maxAttempts` times per mount. All other error codes return
- * `{ action: 'ignore' }` so the existing nudge/seekback/reload pipeline
+ * `{ action: 'ignore' }` so the existing nudge/reload pipeline
  * still owns them (those are mid-stream decode/network errors, not
  * source-URL errors).
  *
