@@ -98,6 +98,19 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     badW.slice(0, 20).forEach((x) => console.error('  ' + x));
     process.exit(1);
   }
+  // Pre-flight: (oldSeason, oldEpisode) must be finite and unique (the reconcile join key).
+  const seenSE = new Map(); const badSE = [];
+  for (const r of records) {
+    if (!Number.isFinite(r.oldSeason) || !Number.isFinite(r.oldEpisode)) { badSE.push(`${r.file} (non-finite ${r.oldSeason}/${r.oldEpisode})`); continue; }
+    const se = `${r.oldSeason}:${r.oldEpisode}`;
+    if (seenSE.has(se)) badSE.push(`${r.file} (dup season:episode ${se} shared with ${seenSE.get(se)})`);
+    else seenSE.set(se, r.file);
+  }
+  if (badSE.length) {
+    console.error(`FATAL: ${badSE.length} records with non-finite/duplicate (season,episode):`);
+    badSE.slice(0, 20).forEach((x) => console.error('  ' + x));
+    process.exit(1);
+  }
 
   const plan = buildNormalizationPlan(records);
   let ops = planToApplyOps(plan, records);
