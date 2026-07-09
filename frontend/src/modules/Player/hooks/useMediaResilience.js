@@ -81,7 +81,6 @@ export function useMediaResilience({
   isSeeking = false,
   pauseIntent = null,
   initialStart = 0,
-  explicitStartProvided = false,
   waitKey,
   onStateChange,
   onReload,
@@ -94,10 +93,8 @@ export function useMediaResilience({
   message,
   mediaTypeHint,
   playerFlavorHint,
-  externalPauseReason = null,
-  // External stall state from useCommonMediaController - if provided, trust this instead of internal detection
+  // External stalled flag from useCommonMediaController - if provided, trust this instead of internal detection
   externalStalled = null,
-  externalStallState = null,
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
   disabled = false
 }) {
