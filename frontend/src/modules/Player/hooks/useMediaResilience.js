@@ -10,6 +10,7 @@ import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
+import { getRecoveryLedger } from '../lib/recoveryLedger.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -33,32 +34,10 @@ export function shouldRefreshUrlForReason(reason) {
   return URL_REFRESH_REASONS.has(reason);
 }
 
-// ── Module-level recovery tracker ──────────────────────────────────────
-// Persists across React remounts caused by onReload → scheduleSinglePlayerRemount.
-// Without this, lastReloadAt (React state) resets to 0 on every remount,
-// bypassing the cooldown check and creating an infinite remount loop.
-const _recoveryTracker = new Map();
-function _getTracker(key) {
-  if (!key) return { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  return _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-}
-function _recordRecovery(key) {
-  if (!key) return 0;
-  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  entry.count += 1;
-  entry.lastAt = Date.now();
-  _recoveryTracker.set(key, entry);
-  return entry.count;
-}
-function _recordUrlRefresh(key) {
-  if (!key) return;
-  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  entry.urlRefreshCount = (entry.urlRefreshCount || 0) + 1;
-  _recoveryTracker.set(key, entry);
-}
-function _clearTracker(key) {
-  if (key) _recoveryTracker.delete(key);
-}
+// Recovery attempt/cooldown accounting lives in the shared recoveryLedger
+// (module singleton — persists across React remounts caused by
+// onReload → scheduleSinglePlayerRemount, so the cooldown/cap can't be
+// bypassed by a remount resetting React state). See lib/recoveryLedger.js.
 
 const USER_INTENT = Object.freeze({
   playing: 'playing',
@@ -99,8 +78,6 @@ export function useMediaResilience({
   const {
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
-    recoveryCooldownMs,
-    recoveryCooldownBackoffMultiplier,
     maxSamePositionRetries,
     recoverySeekNudgeSeconds
   } = monitorSettings;
@@ -110,14 +87,26 @@ export function useMediaResilience({
 
   const [showPauseOverlay, setShowPauseOverlay] = useState(true);
 
-  // Clean up module-level tracker when media changes (new session key)
+  // Consumer-side exhaustion dedupe: the ledger returns exhausted:true on
+  // EVERY capped request, and both the deadline path and the jolt path can
+  // hit the cap — onExhausted must fire once per exhaustion episode.
+  const exhaustedNotifiedRef = useRef(false);
+
+  // Release the ledger session when media changes (new session key) …
   const prevSessionKeyRef = useRef(playbackSessionKey);
   useEffect(() => {
     if (prevSessionKeyRef.current && prevSessionKeyRef.current !== playbackSessionKey) {
-      _clearTracker(prevSessionKeyRef.current);
+      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+      exhaustedNotifiedRef.current = false;
     }
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
+  // … and on unmount — the final session's entry used to leak (audit §5).
+  useEffect(() => () => {
+    if (prevSessionKeyRef.current) {
+      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+    }
+  }, []);
 
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
 
@@ -175,35 +164,42 @@ export function useMediaResilience({
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
   const triggerRecovery = useCallback((reason) => {
-    const now = Date.now();
-    const tracker = _getTracker(playbackSessionKey);
+    const ledger = getRecoveryLedger();
+    const gate = ledger.request({
+      sessionKey: playbackSessionKey,
+      mountId: waitKey,
+      actor: 'resilience',
+      reason,
+      isUrlRefresh: shouldRefreshUrlForReason(reason)
+    });
 
-    // Exponential backoff: cooldown grows with each attempt (4s → 12s → 36s → 108s)
-    const effectiveCooldown = recoveryCooldownMs * Math.pow(recoveryCooldownBackoffMultiplier, tracker.count);
-    if (now - tracker.lastAt < effectiveCooldown) return;
-
-    // Max attempts check — prevents infinite remount loop
-    if (tracker.count >= maxAttempts) {
-      playbackLog('resilience-recovery-exhausted', {
-        reason, waitKey: logWaitKey,
-        attempts: tracker.count, maxAttempts,
-        urlRefreshesAttempted: tracker.urlRefreshCount || 0
-      });
-      actions.setStatus(STATUS.exhausted);
-      if (typeof onExhausted === 'function') {
-        onExhausted({ reason, attempts: tracker.count, waitKey });
+    if (!gate.allowed) {
+      if (gate.deniedBy === 'session-cap') {
+        // Max attempts — prevents an infinite remount loop.
+        playbackLog('resilience-recovery-exhausted', {
+          reason, waitKey: logWaitKey,
+          attempts: gate.attempt, maxAttempts,
+          urlRefreshesAttempted: ledger.snapshot(playbackSessionKey)?.urlRefreshCount || 0
+        });
+        actions.setStatus(STATUS.exhausted);
+        if (!exhaustedNotifiedRef.current) {
+          exhaustedNotifiedRef.current = true;
+          if (typeof onExhausted === 'function') {
+            onExhausted({ reason, attempts: gate.attempt, waitKey });
+          }
+        }
+      } else if (gate.deniedBy === 'cooldown') {
+        playbackLog('resilience-recovery-cooldown-denied', {
+          reason, waitKey: logWaitKey, waitMs: gate.waitMs, attempts: gate.attempt
+        }, { level: 'debug' });
       }
       return;
     }
 
-    const attempt = _recordRecovery(playbackSessionKey);
-    if (shouldRefreshUrlForReason(reason)) {
-      _recordUrlRefresh(playbackSessionKey);
-    }
+    const attempt = gate.attempt;
     playbackLog('resilience-recovery', {
       reason, waitKey: logWaitKey,
-      status: statusRef.current, attempt, maxAttempts,
-      effectiveCooldownMs: effectiveCooldown
+      status: statusRef.current, attempt, maxAttempts
     });
     actions.setStatus(STATUS.recovering);
 
@@ -223,10 +219,11 @@ export function useMediaResilience({
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
-    _clearTracker(playbackSessionKey);
+    getRecoveryLedger().userReset(playbackSessionKey);
+    exhaustedNotifiedRef.current = false;
     const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
     actions.setStatus(STATUS.recovering);
@@ -270,7 +267,10 @@ export function useMediaResilience({
       recoverySeekTrackerRef.current = { lastSeekMs: null, sameCount: 0 };
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
-      _clearTracker(playbackSessionKey);
+      // Playback is genuinely progressing — clear attempts/cooldown so the
+      // next stall episode starts with a fresh budget.
+      getRecoveryLedger().recordSuccess(playbackSessionKey);
+      exhaustedNotifiedRef.current = false;
       return;
     }
 
@@ -505,7 +505,7 @@ export function useMediaResilience({
   // a frozen scalar changes).
   joltLatestRef.current = {
     getMediaEl, targetTimeSeconds, seconds, meta, waitKey, logWaitKey,
-    onReload, onExhausted, actions, statusRef, playbackSessionKey, maxAttempts,
+    onReload, onExhausted, actions, statusRef, playbackSessionKey,
   };
 
   // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to the
@@ -535,19 +535,50 @@ export function useMediaResilience({
 
     const fireRung = () => {
       const L = joltLatestRef.current || {};
-      // Hard cap on total jolts this session (survives isStuck flaps); cleared by the
-      // progress effect once playback resumes.
-      const attempt = _recordRecovery(L.playbackSessionKey);
-      const plan = stallJoltPlan(joltStepRef.current);
-      if (!plan || attempt > (L.maxAttempts || 5)) {
+      const ledger = getRecoveryLedger();
+      const declareExhausted = (attempts) => {
         playbackLog('resilience-stall-jolt-exhausted', {
-          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt
+          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt: attempts
         });
         L.actions?.setStatus(STATUS.exhausted);
-        L.onExhausted?.({ reason: 'stall-jolt-exhausted', attempts: attempt, waitKey: L.waitKey });
+        if (!exhaustedNotifiedRef.current) {
+          exhaustedNotifiedRef.current = true;
+          L.onExhausted?.({ reason: 'stall-jolt-exhausted', attempts, waitKey: L.waitKey });
+        }
         joltTimerRef.current = null;
+      };
+
+      const plan = stallJoltPlan(joltStepRef.current);
+      if (!plan) {
+        // Ladder ran out of rungs.
+        declareExhausted(ledger.snapshot(L.playbackSessionKey)?.count ?? joltStepRef.current);
         return;
       }
+      // Ledger gates the rung: hard cap on total recoveries this session
+      // (survives isStuck flaps; cleared by the progress effect once playback
+      // resumes) AND the shared cooldown — jolt used to skip the cooldown
+      // check while still consuming attempts (audit §3.2).
+      const gate = ledger.request({
+        sessionKey: L.playbackSessionKey,
+        mountId: L.waitKey,
+        actor: 'jolt',
+        reason: plan.reason
+      });
+      if (!gate.allowed) {
+        if (gate.deniedBy === 'cooldown') {
+          // Too soon after the last recovery (any actor). Re-check this SAME
+          // rung once the cooldown has elapsed — don't advance the ladder.
+          playbackLog('resilience-stall-jolt-cooldown-denied', {
+            waitKey: L.logWaitKey, rung: joltStepRef.current, waitMs: gate.waitMs
+          }, { level: 'debug' });
+          joltTimerRef.current = setTimeout(fireRung, gate.waitMs);
+          return;
+        }
+        // session-cap: total recovery budget spent.
+        declareExhausted(gate.attempt);
+        return;
+      }
+      const attempt = gate.attempt;
       joltStepRef.current += 1;
       const intentSeconds = joltIntentRef.current;
       const seekToIntentMs = Number.isFinite(intentSeconds) ? Math.max(0, intentSeconds * 1000) : undefined;
