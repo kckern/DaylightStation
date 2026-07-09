@@ -1,35 +1,14 @@
-import React, { useState } from 'react';
-import { Stack, Text } from '@mantine/core';
-import ContentSearchCombobox from '../../ContentLists/ContentSearchCombobox';
-import { titleCache } from '../utils/titleCache.js';
-import { useContentTitle } from '../hooks/useContentTitle.js';
+// LabeledContentPicker — thin alias for the unified ContentCombobox.
+//
+// The unified combobox renders its own resolved-title line beneath the input
+// (data-testid "combobox-resolved-title"), so this wrapper's former title
+// <Text>, useContentTitle hook, and titleCache seeding were removed — they
+// produced a doubled title line (2026-07-09 audit, C6). The file stays as a
+// re-export so the three PlaybackHub call sites (TransportRow,
+// ScheduledFiresSection, SchedulesSection) and their test mocks keyed on this
+// path don't churn. PlaybackHub summary rows still resolve titles through
+// hooks/useContentTitle.js + utils/titleCache.js, which remain in use.
+import ContentCombobox from '../../ContentLists/combobox/ContentCombobox.jsx';
 
-export function LabeledContentPicker({ value, onChange, placeholder, ...rest }) {
-  // Local override for dropdown picks (no-flicker path). Cleared on freeform
-  // commit so the hook re-resolves via /api/v1/info/:source/:id.
-  const [localTitle, setLocalTitle] = useState(null);
-  const resolvedTitle = useContentTitle(value);
-  const title = localTitle ?? resolvedTitle;
-
-  return (
-    <Stack gap={4}>
-      {title && <Text size="sm" c="dimmed">{title}</Text>}
-      <ContentSearchCombobox
-        value={value}
-        placeholder={placeholder}
-        onChange={(id, item) => {
-          if (item?.title) {
-            titleCache.set(id, item.title);
-            setLocalTitle(item.title);
-          } else {
-            setLocalTitle(null);
-          }
-          onChange(id, item);
-        }}
-        {...rest}
-      />
-    </Stack>
-  );
-}
-
-export default LabeledContentPicker;
+export const LabeledContentPicker = ContentCombobox;
+export default ContentCombobox;
