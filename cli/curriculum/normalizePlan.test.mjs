@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseCourseAndPart, classify } from './normalizePlan.mjs';
+import { baseCourseAndPart, classify, songFields } from './normalizePlan.mjs';
 
 describe('baseCourseAndPart', () => {
   it('strips a trailing en-dash part number', () => {
@@ -52,5 +52,37 @@ describe('classify', () => {
   });
   it('keeps an in-lesson exercise inside its Lessons season (S07 exception)', () => {
     expect(classify(7, 'Major Turnaround Exercises With 7th Chords')).toMatchObject({ lane: 'lessons', newSeason: 7 });
+  });
+});
+
+describe('songFields', () => {
+  it('merges punctuation/casing/treatment variants to one key', () => {
+    const a = songFields('Fly Me To The Moon', []);
+    const b = songFields('Fly Me to the Moon – Challenge', []);
+    const c = songFields('Fly Me To The Moon – Challenge', []);
+    expect(a.songKey).toBe(b.songKey);
+    expect(b.songKey).toBe(c.songKey);
+    expect(a.song).toBe('Fly Me To The Moon');   // display from the first/tutorial form
+    expect(a.skillChallenge).toBe(false);
+  });
+  it('strips a trailing style token that matches the episode styles', () => {
+    const jb = songFields('Silent Night – Jazz Ballad', ['Jazz Ballads']);
+    const rh = songFields('Silent Night – Rhumba', ['Latin']);
+    expect(jb.songKey).toBe('silent night');
+    expect(rh.songKey).toBe('silent night');
+  });
+  it('flags non-song challenges as skillChallenge with null song', () => {
+    for (const n of ['Blues Improvisation Challenge', 'The 10-Lesson Blues Challenge', 'The Halloween Progression Challenge', 'Jazz Ballad Soloing Challenge']) {
+      const r = songFields(n, []);
+      expect(r.skillChallenge).toBe(true);
+      expect(r.song).toBeNull();
+      expect(r.songKey).toBeNull();
+    }
+  });
+  it('does NOT treat a technique course with an example song as that song', () => {
+    // "Ear Training With Holiday Songs 1" is a technique course, not a Silent Night song.
+    const r = songFields('Ear Training With Holiday Songs', []);
+    expect(r.songKey).toBe('ear training with holiday songs');
+    expect(r.skillChallenge).toBe(false);
   });
 });

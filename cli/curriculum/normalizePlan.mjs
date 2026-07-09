@@ -52,3 +52,28 @@ export function classify(oldSeason, base) {
   if (s === 12) return { lane: 'repertoire', newSeason: 8, seasonName: 'Song Library', group: null, treatment: 'accompaniment' };
   throw new Error(`classify: unmapped old season ${oldSeason}`);
 }
+
+// Non-song challenge markers: a challenge whose base is a skill/progression, not a song title.
+const SKILL_CHALLENGE = /\b(improvisation|soloing|progression|\d+-lesson|smooth jazz|bossa nova soloing)\b/i;
+
+// Style tokens sometimes suffixed onto a repertoire course name.
+const STYLE_SUFFIX = /\s*[–—-]\s*(Jazz Ballad|Jazz Swing|Jazz Waltz|Bossa Nova|Rhumba|Bolero|Stride|Slow Gospel Blues|Slow Blues|Gospel|Blues|Funk|Latin|Pop|Cocktail Jazz|Swing|Ballad|Waltz)\s*$/i;
+
+function stripRole(base) {
+  let c = String(base || '');
+  c = c.replace(/\s*[–—-]?\s*(Challenge|Accompaniment Patterns?|Accompaniment)\s*$/i, '').trim();
+  return c;
+}
+
+export function songFields(base, styles = []) {
+  const raw = String(base || '');
+  if (SKILL_CHALLENGE.test(raw)) return { song: null, songKey: null, skillChallenge: true };
+  let display = stripRole(raw);
+  // strip a trailing style token (either a known style or one present in this ep's styles)
+  const styleAlt = (styles || []).map((s) => s.replace(/s$/i, '')).filter(Boolean);
+  const dynamic = styleAlt.length ? new RegExp(`\\s*[–—-]\\s*(${styleAlt.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})s?\\s*$`, 'i') : null;
+  display = display.replace(STYLE_SUFFIX, '').trim();
+  if (dynamic) display = display.replace(dynamic, '').trim();
+  const songKey = display.toLowerCase().replace(/[^a-z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
+  return { song: display || null, songKey: songKey || null, skillChallenge: false };
+}
