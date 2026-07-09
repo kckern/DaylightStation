@@ -71,6 +71,11 @@ describe('songFields', () => {
     expect(jb.songKey).toBe('silent night');
     expect(rh.songKey).toBe('silent night');
   });
+  it('strips stacked "– Band Accompaniment" so band accompaniments merge into the base song', () => {
+    expect(songFields('Misty – Band Accompaniment', []).songKey).toBe('misty');
+    expect(songFields('Fly Me to the Moon – Band Accompaniment', []).songKey).toBe('fly me to the moon');
+    expect(songFields('Blue Moon – Band', []).songKey).toBe('blue moon');
+  });
   it('flags non-song challenges as skillChallenge with null song', () => {
     for (const n of ['Blues Improvisation Challenge', 'The 10-Lesson Blues Challenge', 'The Halloween Progression Challenge', 'Jazz Ballad Soloing Challenge']) {
       const r = songFields(n, []);
