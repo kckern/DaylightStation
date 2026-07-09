@@ -64,6 +64,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
+    testOptions {
+        // Stubbed android.jar methods (android.util.Log, SystemClock, org.json)
+        // return defaults instead of throwing "Stub!" in plain JVM unit tests, so
+        // AudioRouteGuard's Diag.log path is exercisable off-device.
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {
