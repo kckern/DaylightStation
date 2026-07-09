@@ -2432,6 +2432,6 @@
 .psc-rail__continue-v{font-weight:700; font-size:.95rem; line-height:1.2;}
 .psc-rail__continue-s{font-size:.76rem; opacity:.8;}
 /* ── Subcourses redesign: stage (rail + pane) ─────────────────────────────── */
-.psc-stage{display:grid; grid-template-columns:minmax(220px,32%) 1fr; min-height:0;}
+.psc-stage{display:grid; grid-template-columns:minmax(220px,32%) 1fr; min-height:0; padding:0;}
 .psc-pane{padding:1.3rem; min-width:0; display:flex; flex-direction:column; gap:.55rem;}
 @media(orientation:portrait){.psc-stage{grid-template-columns:1fr;} .psc-rail{border-right:none; border-bottom:1px solid var(--piano-border);}}
