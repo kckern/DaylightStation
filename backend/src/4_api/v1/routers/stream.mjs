@@ -152,11 +152,13 @@ export function createStreamRouter(config) {
    * - /stream/readalong/scripture/nt/nirv/26046 → nt/nirv/26046.mp3
    * - /stream/readalong/talks/ldsgc202410/smith → talks/ldsgc202410/smith.mp4
    */
-  router.get('/readalong/:collection/*splat', asyncHandler(async (req, res) => {
+  router.get('/readalong/:collection{/*splat}', asyncHandler(async (req, res) => {
     const { collection } = req.params;
-    const itemPath = splatPath(req);
+    const rawItemPath = splatPath(req);
 
-    if (!itemPath) {
+    // Security: prevent path traversal (same pattern as local.mjs /stream)
+    const itemPath = path.normalize(rawItemPath).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (!itemPath || itemPath === '.') {
       return res.status(400).json({ error: 'No item path specified' });
     }
 
@@ -170,6 +172,9 @@ export function createStreamRouter(config) {
 
     // Build full search path
     const fullSearchDir = subDir ? path.join(searchDir, subDir) : searchDir;
+    if (!path.resolve(fullSearchDir).startsWith(path.resolve(readalongBasePath))) {
+      return res.status(403).json({ error: 'Path traversal not allowed' });
+    }
 
     // Find media file by prefix
     // findMediaFileByPrefix returns full path or null

@@ -83,7 +83,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * GET /api/content/item/:source/*
    * Get single item info
    */
-  router.get('/item/:source/*splat', asyncHandler(async (req, res) => {
+  router.get('/item/:source{/*splat}', asyncHandler(async (req, res) => {
     const { source } = req.params;
     const localId = splatPath(req);
 
@@ -116,7 +116,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * GET /api/content/playables/:source/*
      * Resolve to playable items (deprecated: use /api/v1/queue)
    */
-    router.get('/playables/:source/*splat', asyncHandler(async (req, res) => {
+    router.get('/playables/:source{/*splat}', asyncHandler(async (req, res) => {
       const { source } = req.params;
       const localId = splatPath(req);
       const queryIndex = req.url.indexOf('?');
@@ -133,7 +133,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * POST /api/content/progress/:source/*
    * Update watch progress for an item
    */
-  router.post('/progress/:source/*splat', asyncHandler(async (req, res) => {
+  router.post('/progress/:source{/*splat}', asyncHandler(async (req, res) => {
     if (!mediaProgressMemory) {
       return res.status(501).json({ error: 'Media progress storage not configured' });
     }

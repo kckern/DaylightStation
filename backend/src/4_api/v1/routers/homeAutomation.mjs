@@ -92,7 +92,7 @@ export function createHomeAutomationRouter(config) {
   // ===========================================================================
 
   /**
-   * GET /home-automation/tv/:state(on|off|toggle)
+   * GET /home-automation/tv/:state — state must be on|off|toggle
    * Control living room TV power
    */
   // Express 5 (path-to-regexp v8) dropped param regexes like :state(on|off|toggle);
@@ -115,7 +115,7 @@ export function createHomeAutomationRouter(config) {
   }));
 
   /**
-   * GET /home-automation/office_tv/:state(on|off|toggle)
+   * GET /home-automation/office_tv/:state — state must be on|off|toggle
    * Control office TV power
    */
   // Express 5: param regex dropped, validated in handler (see /tv/:state above)
@@ -260,7 +260,7 @@ export function createHomeAutomationRouter(config) {
   // ===========================================================================
 
   /**
-   * GET /home-automation/keyboard/:keyboard_id?
+   * GET /home-automation/keyboard{/:keyboard_id}
    * Get keyboard configuration data for a specific keyboard
    * Returns key mappings with labels, functions, and parameters
    */

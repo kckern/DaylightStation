@@ -33,8 +33,17 @@ export function createStaticRouter(config) {
    * Tries exact path, then common image extensions
    */
   const resolveImagePath = (basePath, relativePath, extensions = ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp']) => {
+    // Security: prevent path traversal (same normalize + resolve + startsWith
+    // guard as local.mjs /stream). All routes resolve through here, so this
+    // covers wildcard paths and encoded ".." in single-segment params alike.
+    // An escaping path returns null, surfacing as the caller's 404.
+    const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const exactPath = path.join(basePath, safePath);
+    if (!path.resolve(exactPath).startsWith(path.resolve(basePath))) {
+      return null;
+    }
+
     // Try exact path first
-    const exactPath = path.join(basePath, relativePath);
     if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
       return exactPath;
     }

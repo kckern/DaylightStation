@@ -329,7 +329,7 @@ export function createListRouter(config) {
   /**
    * GET /api/list/:source/(path)
    */
-  router.get('/:source/*splat', asyncHandler(async (req, res) => {
+  router.get('/:source{/*splat}', asyncHandler(async (req, res) => {
       const requestStart = performance.now();
       const rawSource = req.params.source;
       const rawPath = splatPath(req);
