@@ -14,7 +14,6 @@ export default function PlayableAppShell({
   contentId,
   clear,
   advance,
-  onStartupSignal,
   onPlaybackMetrics,
   onResolvedMeta,
   onRegisterMediaAccess
@@ -27,7 +26,6 @@ export default function PlayableAppShell({
   );
 
   usePlayableLifecycle({
-    onStartupSignal,
     onResolvedMeta,
     onRegisterMediaAccess,
     meta

@@ -856,7 +856,6 @@ VideoPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func,
     requestRecovery: PropTypes.func
   })
 };
