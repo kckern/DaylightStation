@@ -1,13 +1,17 @@
 import { useState, useContext } from 'react';
 import PianoUserContext from './PianoUserContext.jsx';
 import PianoAvatar from './PianoAvatar.jsx';
+import WhoIsPlayingPrompt from './WhoIsPlayingPrompt.jsx';
 import { usePianoPlayback } from './PianoPlaybackContext.jsx';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 
 /**
- * Current-player chip for the chrome. Shows who's playing; tap to open a roster
- * picker ("Who's playing?") and switch. Selecting a user re-scopes recordings,
- * lesson progress, and preferences to them.
+ * Current-player chip for the chrome. Shows who's playing; tap to open the
+ * shared WhoIsPlayingPrompt picker and switch. Selecting a user re-scopes
+ * recordings, lesson progress, and preferences to them.
+ *
+ * Manual switch, so: no auto-dismiss timeout, and dismissing just closes the
+ * sheet (unlike the idle-gap re-prompt, where a dismiss means "Guest").
  *
  * Locked while a video lecture is open: the active player earns watch credit, so
  * switching mid-lesson would mis-credit the watch. The chip stays visible (so you
@@ -42,30 +46,14 @@ export default function PianoUserChip() {
         {locked && <span className="piano-chrome__user-lock" aria-hidden="true"><LockIcon /></span>}
       </button>
 
-      {open && !locked && (
-        <div className="piano-userpicker" role="dialog" aria-modal="true" aria-label="Choose player">
-          <div className="piano-userpicker__scrim" onClick={() => setOpen(false)} />
-          <div className="piano-userpicker__sheet">
-            <h2 className="piano-userpicker__title">Who’s playing?</h2>
-            <ul className="piano-userpicker__grid">
-              {users.map((u) => (
-                <li key={u.id}>
-                  <button
-                    type="button"
-                    className={`piano-usercard${u.id === currentUser ? ' is-active' : ''}`}
-                    onClick={() => { setCurrentUser(u.id); setOpen(false); }}
-                    aria-pressed={u.id === currentUser}
-                  >
-                    <PianoAvatar id={u.id} name={u.name} />
-                    <span className="piano-usercard__name">{u.name}</span>
-                    {u.group_label && <span className="piano-usercard__label">{u.group_label}</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+      <WhoIsPlayingPrompt
+        open={open && !locked}
+        users={users}
+        activeId={currentUser}
+        timeoutMs={0}
+        onPick={(id) => { setCurrentUser(id); setOpen(false); }}
+        onDismiss={() => setOpen(false)}
+      />
     </>
   );
 }
