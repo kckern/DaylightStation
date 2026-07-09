@@ -157,4 +157,13 @@ describe('buildNormalizationPlan', () => {
     expect(s3).toMatchObject({ seasonName: 'Chord Voicings', lane: 'lessons', count: 2 });
     expect(s3.groups.map((g) => g.name).sort()).toEqual(['Block Chords', 'Drop 2 Voicings']);
   });
+  it('picks a deterministic tutorial-form song display regardless of record order', () => {
+    const recs = [
+      rec({ oldSeason: 12, oldEpisode: 3, course: 'Fly Me To The Moon Accompaniment', title: 'x' }),
+      rec({ oldSeason: 11, oldEpisode: 2, course: 'Fly Me to the Moon – Challenge', title: 'x' }),
+      rec({ oldSeason: 10, oldEpisode: 1, course: 'Fly Me To The Moon', title: 'x' }),
+    ];
+    const row = buildNormalizationPlan(recs).songMerge.find((r) => r.songKey === 'fly me to the moon');
+    expect(row.song).toBe('Fly Me To The Moon');
+  });
 });
