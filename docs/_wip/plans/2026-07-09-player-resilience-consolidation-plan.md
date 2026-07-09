@@ -241,6 +241,8 @@ npx vitest run frontend/src frontend/src/lib/Player --reporter=basic 2>&1 | tail
 
 Design (from audit §8 Phase 1): session-scoped total cap + cooldown-with-backoff, per-mount sub-budgets keyed by actor, injectable clock, explicit pruning. This REPLACES: `_recoveryTracker` (useMediaResilience), `dashErrorRefreshAttemptsRef` (VideoPlayer), and gates the controller's nudge. Remount backoff in Player.jsx stays as-is for now (it schedules, doesn't decide).
 
+> **2026-07-09:** the reference implementation below had a cooldown-exponent defect (used prior-attempt count; the spec'd 4s/12s/36s ladder needs count−1). The committed module is authoritative — do NOT "fix" the ledger back to this code.
+
 **Step 1: Write the failing test**
 
 ```js
@@ -471,7 +473,7 @@ export function _setSharedLedgerForTests(ledger) {
 - Progress effect (:282): `_clearTracker` → `ledger.recordSuccess(playbackSessionKey)`.
 - Session-change cleanup effect (:124-129): `_clearTracker(prev)` → `ledger.releaseSession(prev)`; ALSO add an unmount cleanup that releases the current key (fixes the audit §5 leak).
 
-**Step 4:** Run — `npx vitest run frontend/src/modules/Player/hooks --reporter=basic`. The refreshUrl test must still pass (its cooldown semantics are unchanged for the `triggerRecovery` path).
+**Step 4:** Run — `npx vitest run frontend/src/modules/Player/hooks --reporter=basic`. The refreshUrl test must still pass. Note: the cooldown ladder is now anchored one step earlier than old production (first retry at 4s, not 12s) — deliberate, see recoveryLedger.js header.
 
 **Step 5: Commit** — `git commit -m "refactor(player): useMediaResilience recovery accounting via recoveryLedger (audit §3.2)"`
 
@@ -544,7 +546,7 @@ the shared recoveryLedger. Escalation is owned by the resilience layer."
 
 **Step 2:** REQUIRED SUB-SKILL: use the `verify` skill — drive real playback in the dev app (Task: play a dash video, force a mid-playback stall if feasible via devtools network throttling, observe `playback.stalled` → single nudge → jolt ladder logs; confirm no double-fire: each `resilience-recovery`/`playback.recovery-strategy` log line should carry a ledger attempt number, strictly increasing per session).
 
-**Step 3:** Update docs: `docs/reference/player/README.md` (resilience-layers table: one ledger, controller = detection + nudge); mark audit §8 Phase 1 DONE; note the two behavior changes (jolt now respects cooldown; dash-error resets now count toward the session cap).
+**Step 3:** Update docs: `docs/reference/player/README.md` (resilience-layers table: one ledger, controller = detection + nudge); mark audit §8 Phase 1 DONE; note the three behavior changes (jolt now respects cooldown; dash-error resets now count toward the session cap; retry pacing is faster — cooldown ladder re-anchored so the first retry waits 4s instead of 12s and the exhaustion floor drops ~480s→~160s).
 
 **Step 4:** Commit docs. **CHECKPOINT: request code review** before Milestone C.
 

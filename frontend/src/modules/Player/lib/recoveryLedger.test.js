@@ -83,4 +83,32 @@ describe('recoveryLedger', () => {
     ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x', isUrlRefresh: true });
     expect(ledger.snapshot(SESSION).urlRefreshCount).toBe(1);
   });
+
+  it('cooldown denial reports waitMs = effectiveCooldown - elapsed (rung reschedule input)', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x' });
+    now += 1000;
+    const denied = ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x' });
+    expect(denied).toMatchObject({ allowed: false, deniedBy: 'cooldown', waitMs: 3000 }); // 4000 cooldown - 1000 elapsed
+  });
+
+  it('bypassCooldown still records count and lastAt (cross-actor cooldown push is deliberate)', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x', bypassCooldown: true });
+    expect(ledger.snapshot(SESSION)).toMatchObject({ count: 1, lastAt: now });
+    // A non-bypass actor immediately after is inside the cooldown the bypassed attempt started
+    const denied = ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'b', reason: 'x' });
+    expect(denied).toMatchObject({ allowed: false, deniedBy: 'cooldown' });
+  });
+
+  it('recordSuccess preserves urlRefreshCount telemetry while clearing attempt state', () => {
+    ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'a', reason: 'x', isUrlRefresh: true });
+    ledger.recordSuccess(SESSION);
+    expect(ledger.snapshot(SESSION)).toMatchObject({ count: 0, lastAt: 0, exhausted: false, urlRefreshCount: 1 });
+  });
+
+  it('a budgeted actor WITHOUT a mountId is not budget-limited (documented footgun)', () => {
+    for (let i = 0; i < 4; i++) {
+      const r = ledger.request({ sessionKey: SESSION, actor: 'dash-error', reason: 'dash-28', bypassCooldown: true });
+      expect(r.allowed).toBe(true); // 4th exceeds the per-mount budget of 3, but no mountId = no budget gate
+    }
+  });
 });

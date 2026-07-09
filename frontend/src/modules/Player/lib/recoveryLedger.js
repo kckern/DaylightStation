@@ -11,6 +11,12 @@
  *
  * Kept pure (no DOM/React, injectable clock) so the accounting is
  * unit-testable; the hooks wire it to their actuators.
+ *
+ * Behavior change vs the old _recoveryTracker (2026-07-09): the cooldown
+ * exponent is now (attempts - 1), so the FIRST retry waits cooldownMs (4s)
+ * instead of 12s, and the exhaustion floor drops from ~480s to ~160s. This
+ * is deliberate — it matches the old code's own documented intent
+ * ("4s → 12s → 36s → 108s"), which the old implementation never delivered.
  */
 
 const DEFAULTS = {
@@ -106,6 +112,8 @@ export function createRecoveryLedger(options = {}) {
       sessions.delete(sessionKey);
     },
 
+    // Note: `exhausted` is set lazily on the first denied request (telemetry
+    // only; STATUS.exhausted in the consumer remains the UI authority).
     snapshot(sessionKey) {
       const s = sessions.get(sessionKey);
       if (!s) return null;
