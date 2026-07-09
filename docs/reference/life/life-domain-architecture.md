@@ -1,6 +1,6 @@
 # Life Domain Architecture
 
-**Last Updated:** 2026-03-12
+**Last Updated:** 2026-07-09
 
 ---
 
@@ -53,22 +53,34 @@ External integrations for the lifeplan domain.
 | DriftService | Value drift computation + persistence |
 | AlignmentService | Priority alignment from plan + metrics |
 | CeremonyService | Ceremony content assembly + completion |
+| CeremonyScheduler | Checks due ceremonies per user, sends notification intents (moved here from 0_system/scheduling per DDD audit S-2) |
 | FeedbackService | Observation recording |
 | RetroService | Retrospective generation |
-| MetricsService | Monthly rollup computation |
-| BriefingService | AI-powered daily briefing |
+| MetricsService | Monthly rollup computation (not yet wired) |
+| BriefingService | AI-powered daily briefing (not yet wired) |
 
-### 0_system/scheduling/
+### 3_applications/notification/ + 1_adapters/notification/
 
-| File | Purpose |
-|------|---------|
-| CeremonyScheduler | Checks due ceremonies and sends notifications |
+The notification bounded context routes NotificationIntents (title/body/category/urgency/metadata) to channel adapters by category preference:
+
+| Channel | Adapter | Delivery |
+|---------|---------|----------|
+| app | AppNotificationAdapter | WebSocketEventBus broadcast |
+| telegram | TelegramNotificationAdapter | Chat id resolved from profile `identities.telegram.user_id`; sends via the SystemBotLoader telegram adapter |
+| push | PushNotificationAdapter | Home Assistant `notify.<service>`; service name from profile `identities.homeassistant.notify_service` |
+
+Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+app, others app-only.
 
 ### 5_composition/modules/
 
 | File | Purpose |
 |------|---------|
 | lifeplan.mjs | Wires all services, creates router, returns { router, container, ceremonyScheduler, services } |
+| notifications.mjs | Composes the notification stack (channel adapters + preference routing); injected into lifeplan and agents |
+
+### Scheduled tasks
+
+`lifeplan:ceremony-check` runs daily at 07:00 on the agents Scheduler (Docker/prod, or `ENABLE_CRON=true` in dev). It iterates `YamlLifePlanStore.listUsernames()` and calls `CeremonyScheduler.checkAndNotify(username)`. Ceremonies with UI flows (unit_intention, unit_capture, cycle_retro, phase_review) default to enabled; season/era require explicit `ceremonies.<type>.enabled: true` in the plan. Completed ceremonies dedupe per period via ceremony records.
 
 ### 4_api/v1/routers/life/
 
@@ -77,7 +89,11 @@ External integrations for the lifeplan domain.
 | `/plan` | plan.mjs | CRUD for plan sections, goal transitions, belief evidence, ceremony endpoints |
 | `/now` | now.mjs | Alignment data, drift snapshots |
 | `/log` | log.mjs | Lifelog aggregation (day, range, scope, category) |
+| `/schedule` | schedule.mjs | Ceremony schedule export (rrule formats) |
+| `/user` | (in life.mjs) | Resolved identity for the requesting client |
 | `/health` | (in life.mjs) | System health check |
+
+**User identity:** every life route resolves the user via `life/identity.mjs`: `?username=` query param, else the configured default (head of household from `configService.getHeadOfHousehold()`). Usernames are validated against `UserService.getProfile()` — unknown users get 404. Log routes validate their `:username` path param the same way.
 
 ---
 
@@ -142,8 +158,9 @@ All stored under `data/users/{username}/`:
 | useGoalDetail | Single goal detail |
 | useBeliefs | Belief list + evidence injection |
 | useCeremonyConfig | Cadence configuration |
-| useLifelog | Lifelog data fetching |
+| useLifelog | Lifelog data fetching (username defaults from LifeUserContext) |
 | useCeremony | Ceremony flow step management |
+| useLifeUser | Fetches `/life/user`; LifeApp provides it via LifeUserContext (also keys CoachChat's agent memory to the real user) |
 
 ### Views
 

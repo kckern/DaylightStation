@@ -6,7 +6,9 @@ export default function createNowRouter(config) {
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'now' } });
 
-  const getUsername = (req) => req.query.username || 'default';
+  // Resolved by the parent life router's identity middleware; the query
+  // fallback keeps directly-mounted sub-routers (tests) working.
+  const getUsername = (req) => req.lifeUsername || req.query.username || 'default';
 
   // GET / — alignment data (mode: priorities|dashboard|briefing)
   router.get('/', async (req, res, next) => {
