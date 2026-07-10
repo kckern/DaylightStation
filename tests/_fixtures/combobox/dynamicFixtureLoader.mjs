@@ -128,26 +128,22 @@ async function generateSearchTerms() {
 async function getContainers() {
   const containers = [];
 
-  // Try to get shows from Plex
-  try {
-    const result = await searchContent('', { source: 'plex', take: 20 });
-    const plexContainers = (result.items || [])
-      .filter(i => i.itemType === 'container' || ['show', 'album', 'artist'].includes(i.type))
-      .slice(0, 5);
-    containers.push(...plexContainers);
-  } catch (e) {
-    console.warn('[dynamicFixtureLoader] Could not fetch Plex containers');
-  }
-
-  // Try to get folders from files
-  try {
-    const result = await listContent('files');
-    const mediaContainers = (result.items || [])
-      .filter(i => i.itemType === 'container' || i.type === 'folder')
-      .slice(0, 3);
-    containers.push(...mediaContainers);
-  } catch (e) {
-    console.warn('[dynamicFixtureLoader] Could not fetch media containers');
+  // Get shows/albums from Plex via real search terms. (Empty-text search
+  // returns nothing, and listing the files/media ROOT is forbidden here: on
+  // machines whose media root is a cloud-synced tree it synchronously scans
+  // the whole root and wedges the backend event loop for ~90s.)
+  const terms = ['office', 'christmas', 'star'];
+  for (const term of terms) {
+    try {
+      const result = await searchContent(term, { source: 'plex', take: 20 });
+      const plexContainers = (result.items || [])
+        .filter(i => i.itemType === 'container' || ['show', 'album', 'artist'].includes(i.type))
+        .slice(0, 3);
+      containers.push(...plexContainers);
+      if (containers.length >= 5) break;
+    } catch (e) {
+      console.warn(`[dynamicFixtureLoader] Could not fetch Plex containers for "${term}"`);
+    }
   }
 
   return containers;
