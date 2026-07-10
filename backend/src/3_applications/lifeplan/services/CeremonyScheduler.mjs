@@ -32,6 +32,9 @@ const DEFAULT_ENABLED = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase
 // overridden by plan.ceremonies[type].at ('HH:00'). The hourly scheduled task
 // only matches each ceremony's hour once per day, so day-level "due" ceremonies
 // are nudged exactly once (audit A-2.2).
+// DST caveat: on spring-forward days a local hour may not exist (at: '02:00'
+// skips that day); on fall-back days an hour repeats (at: '01:00' could
+// double-send). The defaults 7/17/20 are unaffected.
 const DEFAULT_DELIVERY_HOUR = {
   unit_intention: 7,
   unit_capture: 20,
@@ -99,6 +102,7 @@ export class CeremonyScheduler {
     const cadenceConfig = plan.cadence || {};
     const now = this.#clock?.now?.() || new Date();
     const cadencePosition = this.#cadenceService.resolve(cadenceConfig, now);
+    const localHourNow = this.#localHour(now);
     const sent = [];
 
     for (const [type, timing] of Object.entries(CEREMONY_TIMING)) {
@@ -107,10 +111,14 @@ export class CeremonyScheduler {
       if (!enabled) continue;
 
       // Hour gate: only nudge at the ceremony's household-local delivery hour
-      // ('09:00' parseInt → 9; missing/invalid `at` → per-type default).
+      // ('09:00' parseInt → 9; missing, unparseable, or out-of-range `at`
+      // (e.g. '25:00') → per-type default, so a bad override can never make a
+      // ceremony permanently undeliverable).
       const atHour = Number.parseInt(config?.at, 10);
-      const deliveryHour = Number.isFinite(atHour) ? atHour : DEFAULT_DELIVERY_HOUR[type] ?? 7;
-      if (this.#localHour(now) !== deliveryHour) continue;
+      const deliveryHour = Number.isFinite(atHour) && atHour >= 0 && atHour <= 23
+        ? atHour
+        : DEFAULT_DELIVERY_HOUR[type] ?? 7;
+      if (localHourNow !== deliveryHour) continue;
 
       const periodId = cadencePosition?.[CEREMONY_CADENCE_MAP[type]]?.periodId;
       if (!periodId) continue;

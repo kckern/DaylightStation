@@ -76,6 +76,29 @@ describe('CeremonyService', () => {
     expect(content.ruleEffectiveness).toBeDefined();
   });
 
+  it('unit_capture content includes the same-period unit_intention responses', () => {
+    mockCeremonyRecordStore.getRecords.mockReturnValue([
+      { type: 'unit_intention', periodId: '2025-U165', responses: { intentions: 'intervals at 6', energy: 'high' } },
+    ]);
+
+    const content = service.getCeremonyContent('unit_capture', 'testuser');
+
+    expect(mockCeremonyRecordStore.getRecords).toHaveBeenCalledWith('testuser', 'unit_intention');
+    expect(content.morningIntention.responses.intentions).toBe('intervals at 6');
+    expect(content.morningIntention.responses.energy).toBe('high');
+  });
+
+  it('unit_capture morningIntention is null when only other-period intention records exist', () => {
+    mockCeremonyRecordStore.getRecords.mockReturnValue([
+      { type: 'unit_intention', periodId: '2025-U164', responses: { intentions: 'yesterday plan' } },
+      { type: 'unit_intention', period_id: '2025-U100', responses: { intentions: 'old snake_case record' } },
+    ]);
+
+    const content = service.getCeremonyContent('unit_capture', 'testuser');
+
+    expect(content.morningIntention).toBeNull();
+  });
+
   it('completeCeremony records and saves', () => {
     service.completeCeremony('unit_intention', 'testuser', {
       intentions: ['Focus on running', 'Practice piano'],
@@ -257,6 +280,28 @@ describe('CeremonyScheduler', () => {
 
     // The override replaces the default hour — 07:00 no longer fires.
     const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:05:00Z') } });
+    expect((await at7.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('falls back to the type default hour when at is out of range (25:00)', async () => {
+    mockLifePlanStore.load.mockReturnValue({ ceremonies: { unit_intention: { enabled: true, at: '25:00' } }, cadence: {} });
+
+    // 25 is not a valid hour — the default (07) must still fire...
+    const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:05:00Z') } });
+    expect((await at7.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    // ...and hour 25 never matches (no permanently dead ceremony, no stray fire at 1am either).
+    const at1 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T01:05:00Z') } });
+    expect((await at1.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('honors at: 00:00 (midnight) as local hour 0', async () => {
+    mockLifePlanStore.load.mockReturnValue({ ceremonies: { unit_intention: { enabled: true, at: '00:00' } }, cadence: {} });
+
+    const midnight = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T00:10:00Z') } });
+    expect((await midnight.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:10:00Z') } });
     expect((await at7.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
   });
 
