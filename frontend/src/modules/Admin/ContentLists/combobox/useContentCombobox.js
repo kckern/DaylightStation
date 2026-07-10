@@ -17,6 +17,10 @@ import { reducer, initialState, closeDecision, Modes } from './comboboxMachine.j
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
+// The non-SSE batch fallback caps results; the SSE stream does not. Only the
+// batch path can truncate, so the "showing first N" affordance (audit S6) is
+// gated on it hitting this cap.
+const BATCH_TAKE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 21;
 const TITLE_CACHE_MAX = 500;
@@ -187,7 +191,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     setBatchLoading(true);
     try {
       const response = await fetch(
-        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=20${searchParams ? '&' + searchParams : ''}`
+        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${searchParams ? '&' + searchParams : ''}`
       );
       if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
@@ -528,6 +532,10 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     isSearching: streamSearching || batchLoading,
     pendingSources,
     sourceErrors,
+    // Only the batch fallback caps results; flag when it hit the cap so the UI
+    // can offer a "refine your search" affordance (audit S6). The SSE stream is
+    // uncapped, so it never truncates.
+    truncatedAt: (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
   };
 }
 

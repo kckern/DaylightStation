@@ -112,7 +112,7 @@ export function ContentCombobox({
     handleInput,
     openWithSiblings, drill, goUp, paginate,
     handleClose, select,
-    resolvedTitle, isSearching, pendingSources, sourceErrors,
+    resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
   } = useContentCombobox({ value, onChange, searchParams, appResults });
 
   const mode = state.mode;
@@ -624,6 +624,11 @@ export function ContentCombobox({
             {loadingMore && pagination?.hasAfter && (
               <Group justify="center" py={4}>
                 <Loader size="xs" />
+              </Group>
+            )}
+            {!isBrowse && !isSearching && truncatedAt && items.length >= truncatedAt && (
+              <Group justify="center" py={6} data-testid="results-truncated">
+                <Text size="xs" c="dimmed">Showing first {truncatedAt} — refine your search</Text>
               </Group>
             )}
           </ScrollArea.Autosize>
