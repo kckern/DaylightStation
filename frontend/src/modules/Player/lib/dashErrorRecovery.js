@@ -65,7 +65,11 @@ export function requestDashErrorRecovery({ errorCode, sessionKey, mountId, ledge
     return { fire: false, decision, gate: null };
   }
   const gate = ledger.request({
-    sessionKey,
+    // A falsy sessionKey would hit the ledger's allow-always passthrough,
+    // making hardResets uncapped for any future direct SinglePlayer embedder
+    // that doesn't thread a playbackSessionKey. Fall back to a shared bucket
+    // so unkeyed dash-error recoveries still respect the caps.
+    sessionKey: sessionKey || 'player-item:unkeyed',
     mountId,
     actor: 'dash-error',
     reason: `dash-${errorCode}`,

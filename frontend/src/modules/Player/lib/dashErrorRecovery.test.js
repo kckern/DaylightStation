@@ -76,6 +76,19 @@ describe('requestDashErrorRecovery (ledger-gated)', () => {
     expect(sixth.gate.deniedBy).toBe('session-cap');
   });
 
+  it('a falsy sessionKey falls back to a shared unkeyed bucket — never the allow-always passthrough', () => {
+    const ledger = makeLedger();
+    for (let i = 0; i < 3; i++) {
+      expect(requestDashErrorRecovery({ errorCode: 27, sessionKey: null, mountId: 'm1', ledger }).fire).toBe(true);
+    }
+    // Without the fallback this 4th request would be allowed forever (uncapped
+    // hardResets for a direct SinglePlayer embedder with no session key).
+    const fourth = requestDashErrorRecovery({ errorCode: 27, sessionKey: null, mountId: 'm1', ledger });
+    expect(fourth.fire).toBe(false);
+    expect(fourth.gate.deniedBy).toBe('mount-budget');
+    expect(ledger.snapshot('player-item:unkeyed').count).toBe(3);
+  });
+
   it('dash-error attempts consume the same session cap other actors see (audit §3.1)', () => {
     const ledger = makeLedger();
     for (let i = 0; i < 3; i++) {

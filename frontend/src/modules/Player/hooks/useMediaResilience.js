@@ -168,14 +168,26 @@ export function useMediaResilience({
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
-  const triggerRecovery = useCallback((reason) => {
+  // options (all optional — every no-options call site keeps its old behavior):
+  //   bypassCooldown  — user-initiated recoveries skip the cooldown gate but
+  //                     still record the attempt (pushes the shared window).
+  //   seekToIntentMs  — caller-supplied explicit seek target; passed through
+  //                     verbatim (the poisoned-segment nudge only applies to
+  //                     positions this hook derived itself).
+  //   refreshUrl      — override the reason-derived URL-refresh decision.
+  //   forceRemount    — escalate to a full React remount in onReload.
+  const triggerRecovery = useCallback((reason, options = {}) => {
+    const refreshUrl = typeof options.refreshUrl === 'boolean'
+      ? options.refreshUrl
+      : shouldRefreshUrlForReason(reason);
     const ledger = getRecoveryLedger();
     const gate = ledger.request({
       sessionKey: playbackSessionKey,
       mountId: waitKey,
       actor: 'resilience',
       reason,
-      isUrlRefresh: shouldRefreshUrlForReason(reason)
+      bypassCooldown: options.bypassCooldown === true,
+      isUrlRefresh: refreshUrl
     });
 
     if (!gate.allowed) {
@@ -209,18 +221,27 @@ export function useMediaResilience({
     actions.setStatus(STATUS.recovering);
 
     if (typeof onReload === 'function') {
-      const baseSeekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
-      const { seekMs, tracker: nextTracker } = computeRecoverySeekMs({
-        baseSeekMs,
-        tracker: recoverySeekTrackerRef.current,
-        config: { nudgeSeconds: recoverySeekNudgeSeconds, maxSamePositionRetries: maxSamePositionRetries }
-      });
-      recoverySeekTrackerRef.current = nextTracker;
+      let seekMs;
+      if (Number.isFinite(options.seekToIntentMs)) {
+        // Explicit caller intent (Fitness manual reload / stalled seek) — the
+        // user picked this exact position, so no same-position nudge applies.
+        seekMs = Math.max(0, options.seekToIntentMs);
+      } else {
+        const baseSeekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
+        const computed = computeRecoverySeekMs({
+          baseSeekMs,
+          tracker: recoverySeekTrackerRef.current,
+          config: { nudgeSeconds: recoverySeekNudgeSeconds, maxSamePositionRetries: maxSamePositionRetries }
+        });
+        recoverySeekTrackerRef.current = computed.tracker;
+        seekMs = computed.seekMs;
+      }
       onReload({
         reason,
         meta,
         waitKey,
-        refreshUrl: shouldRefreshUrlForReason(reason),
+        refreshUrl,
+        ...(options.forceRemount === true ? { forceRemount: true } : {}),
         seekToIntentMs: seekMs
       });
     }
@@ -712,17 +733,36 @@ export function useMediaResilience({
     intentPositionUpdatedAt
   ]);
 
-  // Controller API
-  useMemo(() => {
-    if (controllerRef && 'current' in controllerRef) {
-      controllerRef.current = {
-        getState: () => resilienceState,
-        reset: () => actions.reset(),
-        forceReload: (opts) => onReload?.(opts),
-        clearSeekIntent: () => consumeTargetTimeSeconds()
-      };
-    }
-  }, [controllerRef, resilienceState, actions, onReload, consumeTargetTimeSeconds]);
+  // Controller API — assigned in an effect, not useMemo, because writing a
+  // ref is a side effect (audit §6.2). Post-commit assignment is safe: every
+  // consumer reads controllerRef.current lazily from event handlers /
+  // imperative APIs (Player.jsx playerApi getters), never during render.
+  useEffect(() => {
+    if (!controllerRef || !('current' in controllerRef)) return undefined;
+    const api = {
+      getState: () => resilienceState,
+      reset: () => actions.reset(),
+      // User-initiated reload (Fitness manual-reload button / stalled-seek
+      // recovery). Routes through gated recovery so the attempt is recorded
+      // in the shared ledger and status transitions to `recovering`, but
+      // bypasses the cooldown — a user action must respond immediately
+      // (closes the fifth ledger bypass, audit §3.2).
+      forceReload: (opts = {}) => triggerRecovery(opts.reason || 'manual-force-reload', {
+        bypassCooldown: true,
+        ...(Number.isFinite(opts.seekToIntentMs) ? { seekToIntentMs: opts.seekToIntentMs } : {}),
+        ...(typeof opts.refreshUrl === 'boolean' ? { refreshUrl: opts.refreshUrl } : {}),
+        ...(opts.forceRemount === true ? { forceRemount: true } : {})
+      }),
+      clearSeekIntent: () => consumeTargetTimeSeconds()
+    };
+    controllerRef.current = api;
+    return () => {
+      // Null only our own assignment (a newer mount may have already claimed
+      // the shared ref). All consumers optional-chain, so a late reader gets
+      // a no-op instead of driving a recovery against an unmounted player.
+      if (controllerRef.current === api) controllerRef.current = null;
+    };
+  }, [controllerRef, resilienceState, actions, triggerRecovery, consumeTargetTimeSeconds]);
 
   const cancelDeadline = useCallback(() => {
     clearTimeout(startupDeadlineRef.current);
