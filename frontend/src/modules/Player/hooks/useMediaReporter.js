@@ -159,7 +159,6 @@ export function useMediaReporter({
   remountDiagnostics,
   mediaIdentityKey = null,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  onStartupSignal = null,
   mediaAccessExtras = null
 }) {
   const seekingRef = useRef(false);
@@ -176,25 +175,6 @@ export function useMediaReporter({
     diagnosticsVersion: 0
   });
   const lastDiagnosticsHashRef = useRef('diagnostics:none');
-  const startupAttachmentRef = useRef(false);
-
-  const emitStartupSignal = useCallback((type, detail = {}) => {
-    if (typeof onStartupSignal !== 'function') {
-      return;
-    }
-    try {
-      onStartupSignal({
-        type,
-        timestamp: Date.now(),
-        ...detail
-      });
-    } catch (error) {
-      playbackLog('reporter.startup-signal-error', {
-        type,
-        error: error?.message || String(error)
-      }, { level: 'warn' });
-    }
-  }, [onStartupSignal]);
 
   const readPlaybackMetrics = useCallback(() => {
     const mediaEl = mediaRef?.current;
@@ -262,13 +242,8 @@ export function useMediaReporter({
     }
     lastMetricsRef.current = merged;
     onPlaybackMetrics(merged);
-    emitStartupSignal('progress-tick', {
-      seconds: merged.seconds,
-      isPaused: merged.isPaused,
-      isSeeking: merged.isSeeking
-    });
     return merged;
-  }, [onPlaybackMetrics, readPlaybackMetrics, emitStartupSignal]);
+  }, [onPlaybackMetrics, readPlaybackMetrics]);
 
   const applyPendingSeek = useCallback(() => {
     const target = pendingSeekSecondsRef.current;
@@ -370,20 +345,7 @@ export function useMediaReporter({
   useEffect(() => {
     const mediaEl = mediaRef?.current;
     if (!mediaEl) {
-      if (startupAttachmentRef.current) {
-        startupAttachmentRef.current = false;
-        emitStartupSignal('media-el-detached', { reason: 'media-missing' });
-      }
       return undefined;
-    }
-
-    if (!startupAttachmentRef.current) {
-      startupAttachmentRef.current = true;
-      emitStartupSignal('media-el-attached', {
-        tagName: typeof mediaEl.tagName === 'string' ? mediaEl.tagName.toLowerCase() : null,
-        readyState: mediaEl.readyState,
-        networkState: mediaEl.networkState
-      });
     }
 
     const handlePlay = (event) => {
@@ -453,19 +415,6 @@ export function useMediaReporter({
       seekingRef.current = false;
       reportPlaybackMetrics({ isSeeking: false });
     };
-    const handleLoadedMetadata = () => {
-      emitStartupSignal('loadedmetadata', {
-        currentTime: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null,
-        duration: Number.isFinite(mediaEl.duration) ? mediaEl.duration : null,
-        readyState: mediaEl.readyState
-      });
-    };
-    const handlePlaying = () => {
-      emitStartupSignal('playing', {
-        currentTime: Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null,
-        readyState: mediaEl.readyState
-      });
-    };
     const handleEnded = () => {
       logExplicitPlaybackToggle('pause');
       reportPlaybackMetrics({ isPaused: true, pauseIntent: 'system' });
@@ -479,8 +428,6 @@ export function useMediaReporter({
     mediaEl.addEventListener('stalled', handleStallSignal);
     mediaEl.addEventListener('seeking', handleSeeking);
     mediaEl.addEventListener('seeked', handleSeeked);
-    mediaEl.addEventListener('loadedmetadata', handleLoadedMetadata);
-    mediaEl.addEventListener('playing', handlePlaying);
     mediaEl.addEventListener('ended', handleEnded);
 
     reportPlaybackMetrics();
@@ -494,18 +441,9 @@ export function useMediaReporter({
       mediaEl.removeEventListener('stalled', handleStallSignal);
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', handleSeeked);
-      mediaEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      mediaEl.removeEventListener('playing', handlePlaying);
       mediaEl.removeEventListener('ended', handleEnded);
-      if (startupAttachmentRef.current) {
-        startupAttachmentRef.current = false;
-        emitStartupSignal('media-el-detached', {
-          tagName: typeof mediaEl.tagName === 'string' ? mediaEl.tagName.toLowerCase() : null,
-          reason: 'cleanup'
-        });
-      }
     };
-  }, [mediaIdentityKey, mediaRef, reportPlaybackMetrics, emitStartupSignal]);
+  }, [mediaIdentityKey, mediaRef, reportPlaybackMetrics]);
 
   useEffect(() => {
     if (!pollIntervalMs || pollIntervalMs <= 0) {

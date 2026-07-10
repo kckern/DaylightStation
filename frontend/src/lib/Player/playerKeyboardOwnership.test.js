@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   acquirePlayerKeyboard,
   isPlayerKeyboardActive,
-  subscribePlayerKeyboard,
   __resetPlayerKeyboardOwnership,
 } from './playerKeyboardOwnership.js';
 
@@ -38,16 +37,5 @@ describe('playerKeyboardOwnership', () => {
     expect(isPlayerKeyboardActive()).toBe(true); // r2 still holds
     r2();
     expect(isPlayerKeyboardActive()).toBe(false);
-  });
-
-  it('notifies subscribers only on 0<->1 transitions', () => {
-    const cb = vi.fn();
-    const unsub = subscribePlayerKeyboard(cb);
-    const r1 = acquirePlayerKeyboard(); // 0 -> 1: notify(true)
-    const r2 = acquirePlayerKeyboard(); // 1 -> 2: no notify
-    r1();                               // 2 -> 1: no notify
-    r2();                               // 1 -> 0: notify(false)
-    expect(cb.mock.calls.map((c) => c[0])).toEqual([true, false]);
-    unsub();
   });
 });

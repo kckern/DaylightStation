@@ -46,3 +46,34 @@ describe('SubcourseNavigator (redesign)', () => {
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ plex: '101' }));
   });
 });
+
+const withCategories = {
+  info: { title: 'Piano With Jonny', image: '/poster.jpg', labels: ['subcourses'] },
+  parents: {
+    700: { index: 0, title: 'Practice Essentials', piano: { category: 'lesson' } },
+    701: { index: 1, title: 'Chord Charts', piano: { category: 'reference' } },
+    702: { index: 2, title: 'Song Book', piano: { category: 'repertoire' } },
+  },
+  referenceUnitIds: ['701'],
+  items: [
+    ep(700, 101, 'Practice – A'),
+    ep(701, 101, 'Chart – A'),
+    ep(702, 101, 'Clair de Lune', false),
+    ep(702, 201, 'Someone Like You', false),
+  ],
+};
+
+describe('SubcourseNavigator (category lanes)', () => {
+  it('season menu shows three lane headings', () => {
+    render(<SubcourseNavigator course={{ id: '676490' }} playable={withCategories} onPlay={vi.fn()} />);
+    expect(screen.getByText('Lessons')).toBeTruthy();
+    expect(screen.getByText('Reference')).toBeTruthy();
+    expect(screen.getByText('Repertoire')).toBeTruthy();
+  });
+
+  it('selecting the repertoire season renders RepertoireBrowser, not course cards', () => {
+    render(<SubcourseNavigator course={{ id: '676490' }} playable={withCategories} onPlay={vi.fn()} />);
+    fireEvent.click(screen.getByTitle('Song Book'));
+    expect(screen.getByPlaceholderText('Search songs…')).toBeTruthy();
+  });
+});
