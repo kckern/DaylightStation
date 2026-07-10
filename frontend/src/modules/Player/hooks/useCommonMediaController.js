@@ -331,8 +331,9 @@ export function useCommonMediaController({
         }
       }
 
-      // If not in a buffered range, nudge won't help — signal failure so
-      // the pipeline escalates to reload instead of looping
+      // If not in a buffered range, nudge won't help — return false and let
+      // the resilience jolt ladder handle escalation (the nudge is this
+      // controller's single ledger-gated action; anything heavier is not its job)
       if (!inBuffer && buffered.length > 0) {
         if (DEBUG_MEDIA) console.log('[Stall Recovery] nudge: currentTime not in any buffered range, skipping', { t, ranges: buffered.length });
         mcLog().debug('playback.recovery-strategy', { mediaKey: assetId, strategy: 'nudge', success: false, reason: 'outside-buffered-range', currentTime: t, bufferedRanges: buffered.length });

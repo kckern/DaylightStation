@@ -439,8 +439,6 @@ export function VideoPlayer({
 
     const handleReady = () => {
       setDisplayReady(true);
-      setIsAdapting(false);
-      setAdaptMessage(undefined);
       // Prod telemetry: video display ready (one-time per media)
       if (!displayReadyLoggedRef.current) {
         displayReadyLoggedRef.current = true;
