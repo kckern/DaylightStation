@@ -15,7 +15,9 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
   test.describe.configure({ mode: 'serial' }); // Run in order, stop on first failure
 
   test('backend API is responding', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/v1/health`, {
+    // Probe a route the suites actually depend on. (/api/v1/health has no
+    // root route in this route map — it 404s even on a healthy backend.)
+    const response = await request.get(`${BACKEND_URL}/api/v1/admin/content/lists`, {
       timeout: API_TIMEOUT,
     }).catch(e => null);
 
@@ -54,13 +56,17 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
   });
 
   test('list API endpoint is available', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/v1/item/media/`, {
+    // Probe plex, not media: on machines where the media root is a cloud
+    // (Dropbox online-only) tree, listing it synchronously scans the whole
+    // root and wedges the backend event loop for ~90s — the preflight itself
+    // was inflicting the stall the suites then tripped over.
+    const response = await request.get(`${BACKEND_URL}/api/v1/list/plex/`, {
       timeout: API_TIMEOUT,
     }).catch(e => null);
 
     if (!response) {
       throw new Error(
-        `List API not responding at ${BACKEND_URL}/api/v1/item/media/\n` +
+        `List API not responding at ${BACKEND_URL}/api/v1/list/plex/\n` +
         `\n` +
         `The list endpoint is required for browse mode tests.\n`
       );
@@ -88,8 +94,8 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
 
     expect(response.ok(), `Test page returned status ${response.status()}`).toBe(true);
 
-    // Verify the test harness component rendered
-    const title = page.locator('text=ContentSearchCombobox Test Harness');
+    // Verify the test harness component rendered (unified ContentCombobox)
+    const title = page.locator('text=ContentCombobox Test Harness');
     await expect(title).toBeVisible({ timeout: 5000 });
   });
 
