@@ -1,85 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { playbackLog } from '../../lib/playbackLogger.js';
-import { buildMediaDiagnostics } from '../../lib/mediaDiagnostics.js';
-
-const fallbackDiagnosticsFromMediaEl = (mediaEl) => {
-  if (!mediaEl) return null;
-  const diag = buildMediaDiagnostics(mediaEl);
-  return {
-    currentTime: diag.currentTime,
-    readyState: diag.readyState,
-    networkState: diag.networkState,
-    playbackRate: diag.playbackRate,
-    paused: diag.paused,
-    buffered: diag.buffered,
-    bufferAheadSeconds: diag.bufferAheadSeconds,
-    bufferBehindSeconds: diag.bufferBehindSeconds,
-    nextBufferStartSeconds: diag.nextBufferStartSeconds,
-    bufferGapSeconds: diag.bufferGapSeconds,
-    quality: {
-      droppedFrames: diag.droppedFrames,
-      totalFrames: diag.totalFrames
-    }
-  };
-};
-
-const toNumber = (value) => {
-  const n = typeof value === 'string' ? parseFloat(value) : Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-
-/**
- * Normalize diagnostics from VideoPlayer's buildTroubleDiagnostics
- * Handles both flat structure (from VideoPlayer) and nested structure (legacy)
- */
-const normalizeDiagnostics = (raw) => {
-  if (!raw || typeof raw !== 'object') return null;
-  
-  // Support both flat (VideoPlayer) and nested (legacy) buffer data
-  const bufferAhead = toNumber(raw.bufferAheadSeconds ?? raw.buffer?.bufferAheadSeconds);
-  const bufferGap = toNumber(raw.bufferGapSeconds ?? raw.buffer?.bufferGapSeconds);
-  const nextBufferStart = toNumber(raw.nextBufferStartSeconds ?? raw.buffer?.nextBufferStartSeconds);
-  const bufferBehind = toNumber(raw.bufferBehindSeconds ?? raw.buffer?.bufferBehindSeconds);
-  
-  // Support both flat quality object (VideoPlayer) and nested decoder (legacy)
-  const quality = raw.quality || {};
-  const decoder = raw.decoder || {};
-  const droppedFrames = toNumber(quality.droppedFrames ?? decoder.droppedFrames);
-  const totalFrames = toNumber(quality.totalFrames ?? decoder.totalFrames);
-  
-  // Preserve Shaka player stats if available
-  const shaka = raw.shaka || null;
-  
-  return {
-    buffer: {
-      bufferAheadSeconds: bufferAhead,
-      bufferBehindSeconds: bufferBehind,
-      bufferGapSeconds: bufferGap,
-      nextBufferStartSeconds: nextBufferStart,
-      buffered: Array.isArray(raw.buffered) ? raw.buffered : null
-    },
-    decoder: {
-      droppedFrames,
-      totalFrames
-    },
-    readyState: raw.readyState ?? raw.ready_state ?? null,
-    networkState: raw.networkState ?? raw.network_state ?? null,
-    playbackRate: toNumber(raw.playbackRate),
-    paused: typeof raw.paused === 'boolean' ? raw.paused : null,
-    currentTime: toNumber(raw.currentTime),
-    // Include full Shaka player stats for detailed diagnostics
-    shaka: shaka ? {
-      width: toNumber(shaka.width),
-      height: toNumber(shaka.height),
-      streamBandwidth: toNumber(shaka.streamBandwidth),
-      estimatedBandwidth: toNumber(shaka.estimatedBandwidth),
-      decodedFrames: toNumber(shaka.decodedFrames),
-      droppedFrames: toNumber(shaka.droppedFrames),
-      bufferLength: toNumber(shaka.bufferLength),
-      stateHistoryLength: toNumber(shaka.stateHistoryLength)
-    } : null
-  };
-};
 
 const guard = (label, fn) => (...args) => {
   try {
@@ -149,32 +69,13 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
   const play = useMemo(() => guard('play', () => controllerRef?.current?.transport?.play?.()), [controllerRef]);
   const pause = useMemo(() => guard('pause', () => controllerRef?.current?.transport?.pause?.()), [controllerRef]);
   const seek = useMemo(() => guard('seek', (seconds) => controllerRef?.current?.transport?.seek?.(seconds)), [controllerRef]);
-  // No renderer registers a nudge hook; kept as a stable no-op so the transport
-  // API shape stays intact for callers.
-  const nudge = useMemo(() => guard('nudge', () => null), []);
-
-  const readDiagnostics = useCallback(() => {
-    try {
-      // Renderers no longer register a diagnostics provider; derive minimal
-      // diagnostics directly from the media element.
-      const mediaEl = getMediaEl();
-      if (!mediaEl) return null;
-      const fallback = fallbackDiagnosticsFromMediaEl(mediaEl);
-      return normalizeDiagnostics(fallback);
-    } catch (error) {
-      playbackLog('transport-diagnostics-error', { message: error?.message || 'diagnostics-error' }, { level: 'warn' });
-      return null;
-    }
-  }, [getMediaEl]);
 
   return {
     getMediaEl,
     getContainerEl,
     play,
     pause,
-    seek,
-    nudge,
-    readDiagnostics
+    seek
   };
 }
 

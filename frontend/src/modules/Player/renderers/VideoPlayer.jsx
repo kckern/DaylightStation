@@ -169,7 +169,6 @@ export function VideoPlayer({
     isStalled,
     isSeeking,
     handleProgressClick,
-    stallState,
     elementKey,
     getMediaEl,
     getContainerEl
@@ -196,7 +195,8 @@ export function VideoPlayer({
     onProgress,
     onMediaRef,
     keyboardOverrides,
-    onController
+    onController,
+    recoverySessionKey: resilienceBridge?.playbackSessionKey || null
   });
 
   // Upscale detection and effects

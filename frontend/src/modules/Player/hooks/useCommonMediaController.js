@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
@@ -18,6 +18,7 @@ import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHan
 import { useScreenVolume } from '../../../lib/volume/ScreenVolumeContext.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
+import { getRecoveryLedger } from '../lib/recoveryLedger.js';
 
 // Lazy-init child logger for media controller diagnostics
 let _mcLogger;
@@ -32,19 +33,11 @@ function mcLog() {
 const SOFT_STALL_MS = 1200;   // no playhead progress for this long → soft stall
 const HARD_STALL_MS = 8000;   // stalled for this long → attempt recovery
 const STALL_CHECK_INTERVAL_MS = Math.min(500, SOFT_STALL_MS / 3);
-const RELOAD_SEEKBACK_SECONDS = 2;
 const SOFT_REINIT_SEEKBACK_SECONDS = 2;
 
-// The live auto-recovery ladder: one nudge, then one reload. (In practice a
-// continuous stall only ever reaches the nudge — scheduleStallDetection
-// early-returns while isStalled, so the hard timer never re-arms. Task 12 of
-// the 2026-07-09 consolidation plan shrinks this to detection + gated nudge.)
-const strategySteps = [
-  { name: 'nudge', maxAttempts: 1, options: {} },
-  { name: 'reload', maxAttempts: 1, options: {} }
-];
-
-const getStrategyStep = (index) => strategySteps[index] || null;
+// Ledger mount-scope ids (same module-counter pattern as VideoPlayer's
+// dash-error mount id). One id per controller mount instance.
+let _controllerMountSeq = 0;
 
 /**
  * Common media controller hook for both audio and video players
@@ -69,7 +62,11 @@ export function useCommonMediaController({
   onProgress,
   onMediaRef,
   onController,
-  keyboardOverrides
+  keyboardOverrides,
+  // Real playback session key (Player.jsx's itemSessionKey, threaded through
+  // resilienceBridge.playbackSessionKey) — scopes recovery-ledger accounting.
+  // Falls back to assetId below for hosts that don't thread one.
+  recoverySessionKey = null
 }) {
   const DEBUG_MEDIA = false;
 
@@ -84,6 +81,12 @@ export function useCommonMediaController({
   if (!useCommonMediaController.__lastSeekByKey) useCommonMediaController.__lastSeekByKey = Object.create(null);
 
   const assetId = meta.assetId || meta.key || meta.guid || meta.id || meta.plex || meta.mediaUrl;
+
+  // Ledger scope: prefer the real playback session key; assetId keeps
+  // accounting coherent for hosts without the resilience bridge.
+  const recoveryScopeKey = recoverySessionKey || assetId || null;
+  const recoveryMountIdRef = useRef(null);
+  if (!recoveryMountIdRef.current) recoveryMountIdRef.current = `controller-mount-${++_controllerMountSeq}`;
 
   const segment = meta.segment || null;
   const segStart = segment?.start ?? 0;
@@ -122,27 +125,22 @@ export function useCommonMediaController({
   // Track if playback.started has been logged for this media (one-time per track)
   const playbackStartedRef = useRef(false);
 
-  // Stall detection refs
+  // Stall detection refs. The controller is detection + two ledger-gated
+  // actuators (nudge, softReinit); escalation bookkeeping (attempt counters,
+  // strategy pipeline, terminal state) lives in the shared recoveryLedger and
+  // the resilience layer (audit 2026-07-09 §3.3).
   const stallStateRef = useRef({
     lastProgressTs: 0,
     lastAdvancePos: null,
     lastObservedCurrentTime: null,  // tracks currentTime at last markProgress for stall verdict (bug 2026-05-23 §1)
     softTimer: null,
     hardTimer: null,
-    recoveryAttempt: 0,
     isStalled: false,
     lastStrategy: null,
     hasEnded: false,
     status: 'idle',
     sinceTs: null,
-    activeStrategy: null,
-    activeStrategyAttempt: 0,
-    attemptIndex: 0,
-    terminal: false,
     lastSuccessTs: null,
-    strategyCounts: Object.create(null),
-    pendingSoftReinit: false,
-    lastError: null,
     // One-shot guard for `playback.at-duration-stuck` telemetry (audit 2026-05-23).
     atDurationStuckLogged: false
   });
@@ -150,11 +148,7 @@ export function useCommonMediaController({
     status: 'idle',
     since: null,
     strategy: null,
-    strategyAttempt: 0,
-    attemptIndex: 0,
-    lastSuccessTs: null,
-    terminal: false,
-    lastError: null
+    lastSuccessTs: null
   }));
   const [isStalled, setIsStalled] = useState(false);
   const recoverySnapshotRef = useRef(null);
@@ -177,12 +171,8 @@ export function useCommonMediaController({
     const snapshot = {
       status: ref.status,
       since: ref.sinceTs,
-      strategy: ref.activeStrategy,
-      strategyAttempt: ref.activeStrategyAttempt,
-      attemptIndex: ref.attemptIndex,
+      strategy: ref.lastStrategy,
       lastSuccessTs: ref.lastSuccessTs,
-      terminal: ref.terminal,
-      lastError: ref.lastError,
       ...overrides
     };
     setStallState((prev) => {
@@ -190,11 +180,7 @@ export function useCommonMediaController({
         prev.status === snapshot.status &&
         prev.since === snapshot.since &&
         prev.strategy === snapshot.strategy &&
-        prev.strategyAttempt === snapshot.strategyAttempt &&
-        prev.attemptIndex === snapshot.attemptIndex &&
-        prev.lastSuccessTs === snapshot.lastSuccessTs &&
-        prev.terminal === snapshot.terminal &&
-        prev.lastError === snapshot.lastError
+        prev.lastSuccessTs === snapshot.lastSuccessTs
       ) {
         return prev;
       }
@@ -208,12 +194,8 @@ export function useCommonMediaController({
     return {
       status: ref.status,
       since: ref.sinceTs,
-      strategy: ref.activeStrategy,
-      strategyAttempt: ref.activeStrategyAttempt,
-      attemptIndex: ref.attemptIndex,
-      lastSuccessTs: ref.lastSuccessTs,
-      terminal: ref.terminal,
-      lastError: ref.lastError
+      strategy: ref.lastStrategy,
+      lastSuccessTs: ref.lastSuccessTs
     };
   }, []);
 
@@ -368,124 +350,6 @@ export function useCommonMediaController({
     }
   }, [getMediaEl]);
 
-  // Reload: Full media element reset
-  const reloadRecovery = useCallback((options = {}) => {
-    const mediaEl = getMediaEl();
-    if (!mediaEl) {
-      return false;
-    }
-
-    const seekBackSeconds = Number.isFinite(options.seekBackSeconds) ? options.seekBackSeconds : RELOAD_SEEKBACK_SECONDS;
-    const priorTime = lastSeekIntentRef.current !== null ? lastSeekIntentRef.current : (mediaEl.currentTime || 0);
-    const src = mediaEl.getAttribute('src');
-
-    // DASH-aware reload: use the DASH player's own API to avoid destroying SourceBuffer state
-    const hostEl = containerRef.current;
-    const dashPlayer = hostEl?.dashjsPlayer;
-
-    isRecoveringRef.current = true;
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: begin', { priorTime, intent: lastSeekIntentRef.current, seekBackSeconds, hasSrc: !!src, hasDash: !!dashPlayer });
-
-    if (dashPlayer && typeof dashPlayer.reset === 'function' && typeof dashPlayer.initialize === 'function') {
-      const streamSrc = hostEl.getAttribute('src') || src;
-      try {
-        tagPauseSource(mediaEl, 'recovery-reload-dash');
-        mediaEl.pause();
-        dashPlayer.reset();
-        dashPlayer.initialize(mediaEl, streamSrc, true);
-        const target = Math.max(0, priorTime - (Number.isFinite(seekBackSeconds) ? seekBackSeconds : 0));
-        mediaEl.addEventListener('loadedmetadata', function handleOnce() {
-          mediaEl.removeEventListener('loadedmetadata', handleOnce);
-          if (Number.isFinite(target)) {
-            try {
-              if (dashPlayer.seek) {
-                dashPlayer.seek(target);
-              } else {
-                mediaEl.currentTime = target;
-              }
-            } catch (_) {}
-          }
-          const onSeeked = () => {
-            mediaEl.removeEventListener('seeked', onSeeked);
-            isRecoveringRef.current = false;
-            lastSeekIntentRef.current = null;
-            mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'dash-reload-seeked-confirmed' });
-            verifyRecoveryPosition(target);
-            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
-          };
-          mediaEl.addEventListener('seeked', onSeeked, { once: true });
-          setTimeout(() => {
-            mediaEl.removeEventListener('seeked', onSeeked);
-            if (isRecoveringRef.current) {
-              isRecoveringRef.current = false;
-              // Preserve lastSeekIntentRef — don't clear if seek wasn't confirmed
-              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload (DASH): seeked timeout, clearing recovery flag but preserving seek intent');
-            }
-          }, 5000);
-          tagPlaySource(mediaEl, 'recovery-reload-dash');
-          mediaEl.play().catch(() => {});
-        }, { once: true });
-        return true;
-      } catch (err) {
-        if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: DASH reload failed, falling back to DOM reload', err);
-        // Fall through to DOM-based reload below
-      }
-    }
-
-    try {
-      tagPauseSource(mediaEl, 'recovery-reload-dom');
-      mediaEl.pause();
-      mediaEl.removeAttribute('src');
-      mediaEl.load();
-
-      setTimeout(() => {
-        try {
-          if (src) mediaEl.setAttribute('src', src);
-          mediaEl.load();
-          mediaEl.addEventListener('loadedmetadata', function handleOnce() {
-            mediaEl.removeEventListener('loadedmetadata', handleOnce);
-            const target = Math.max(0, priorTime - (Number.isFinite(seekBackSeconds) ? seekBackSeconds : 0));
-            if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: loadedmetadata; seeking to target', { target, priorTime, seekBackSeconds });
-            if (Number.isFinite(target)) {
-              try { mediaEl.currentTime = target; } catch (_) {}
-            }
-            // Only clear seek intent after the seek is confirmed by the browser
-            const onSeeked = () => {
-              mediaEl.removeEventListener('seeked', onSeeked);
-              isRecoveringRef.current = false;
-              lastSeekIntentRef.current = null;
-              mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'dom-reload-seeked-confirmed' });
-              verifyRecoveryPosition(target);
-              if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked confirmed, recovery complete', { currentTime: mediaEl.currentTime });
-            };
-            mediaEl.addEventListener('seeked', onSeeked, { once: true });
-            // Fallback: if seeked never fires (DASH failure), clear after 5s
-            setTimeout(() => {
-              mediaEl.removeEventListener('seeked', onSeeked);
-              if (isRecoveringRef.current) {
-                isRecoveringRef.current = false;
-                // Preserve lastSeekIntentRef — don't clear if seek wasn't confirmed
-                if (DEBUG_MEDIA) console.log('[Stall Recovery] reload: seeked timeout, clearing recovery flag but preserving seek intent');
-              }
-            }, 5000);
-            tagPlaySource(mediaEl, 'recovery-reload-dom');
-            mediaEl.play().catch(() => {});
-          }, { once: true });
-        } catch (_) {
-          isRecoveringRef.current = false;
-          lastSeekIntentRef.current = null;
-          console.warn('[Stall Recovery] reload: error after reattaching src');
-        }
-      }, 50);
-      return true;
-    } catch (_) {
-      isRecoveringRef.current = false;
-      lastSeekIntentRef.current = null;
-      console.warn('[Stall Recovery] reload: error during element reset');
-      return false;
-    }
-  }, [getMediaEl]);
-
   // Soft reinitialisation: rebuild dash element without tearing down React tree
   const softReinitRecovery = useCallback((options = {}) => {
     const hostEl = containerRef.current;
@@ -505,8 +369,6 @@ export function useCommonMediaController({
     };
 
     isRecoveringRef.current = true;
-    stallStateRef.current.pendingSoftReinit = true;
-    stallStateRef.current.lastError = null;
 
     try {
       mediaEl?.pause?.();
@@ -555,30 +417,6 @@ export function useCommonMediaController({
     return true;
   }, [getMediaEl, playbackRate, setElementKey, assetId]);
 
-  const recoveryMethods = useMemo(() => ({
-    nudge: nudgeRecovery,
-    reload: reloadRecovery,
-    softReinit: softReinitRecovery
-  }), [nudgeRecovery, reloadRecovery, softReinitRecovery]);
-
-  const handleTerminalFailure = useCallback(() => {
-    const s = stallStateRef.current;
-    if (!s.terminal) {
-      s.terminal = true;
-      s.status = 'failed';
-      s.lastError = s.lastError || 'terminal_exhausted';
-      mcLog().error('playback.recovery-terminal', {
-        mediaKey: assetId,
-        lastStrategy: s.lastStrategy,
-        totalAttempts: s.recoveryAttempt,
-        lastError: s.lastError,
-        currentTime: getMediaEl()?.currentTime,
-        duration: getMediaEl()?.duration
-      });
-      publishStallSnapshot();
-    }
-  }, [publishStallSnapshot]);
-
   // Position watchdog: verify recovery landed at the expected position
   const verifyRecoveryPosition = useCallback((expectedTime, toleranceSeconds = 30) => {
     const checkDelay = 2000; // check 2s after recovery
@@ -606,82 +444,6 @@ export function useCommonMediaController({
       }
     }, checkDelay);
   }, [getMediaEl]);
-
-  // Execute the next recovery strategy (or a named escalation, e.g. duration-lost → softReinit)
-  const attemptRecovery = useCallback(({ strategyName, options: overrideOptions } = {}) => {
-    const s = stallStateRef.current;
-    let step;
-
-    if (strategyName) {
-      const template = strategySteps.find((entry) => entry.name === strategyName) || { name: strategyName, options: {}, maxAttempts: 1 };
-      step = {
-        ...template,
-        options: { ...template.options, ...(overrideOptions || {}) },
-        attempt: (s.strategyCounts[strategyName] || 0) + 1
-      };
-    } else {
-      step = getStrategyStep(s.recoveryAttempt);
-    }
-
-    if (DEBUG_MEDIA) console.log('[Stall Recovery] Attempting recovery', {
-      attemptIndex: s.recoveryAttempt,
-      strategyName: step?.name,
-      lastStrategy: s.lastStrategy,
-      lastSeekIntent: lastSeekIntentRef.current
-    });
-
-    if (!step) {
-      if (DEBUG_MEDIA) console.log('[Stall Recovery] No strategies remaining');
-      handleTerminalFailure();
-      return false;
-    }
-
-    const method = recoveryMethods[step.name];
-    if (!method) {
-      mcLog().warn('playback.recovery-strategy-missing', { mediaKey: assetId, strategy: step.name });
-      s.lastError = `strategy_missing:${step.name}`;
-      s.recoveryAttempt = Math.min(s.recoveryAttempt + 1, strategySteps.length);
-      s.attemptIndex = s.recoveryAttempt;
-      publishStallSnapshot();
-      if (s.recoveryAttempt >= strategySteps.length) {
-        handleTerminalFailure();
-      }
-      return false;
-    }
-
-    s.lastStrategy = step.name;
-    s.activeStrategy = step.name;
-    s.activeStrategyAttempt = step.attempt || (s.strategyCounts[step.name] || 0) + 1;
-    s.status = 'recovering';
-    s.lastError = null;
-    publishStallSnapshot();
-
-    const success = method(step.options || {});
-
-    s.strategyCounts[step.name] = (s.strategyCounts[step.name] || 0) + 1;
-
-    mcLog().warn('playback.recovery-strategy', {
-      mediaKey: assetId,
-      strategy: step.name,
-      attempt: s.strategyCounts[step.name],
-      success,
-      currentTime: getMediaEl()?.currentTime,
-      duration: getMediaEl()?.duration,
-      lastSeekIntent: lastSeekIntentRef.current,
-      totalAttempts: s.recoveryAttempt,
-      pipelineLength: strategySteps.length
-    });
-
-    s.recoveryAttempt = Math.min(s.recoveryAttempt + 1, strategySteps.length);
-    s.attemptIndex = s.recoveryAttempt;
-    if (s.recoveryAttempt >= strategySteps.length) {
-      handleTerminalFailure();
-    } else {
-      publishStallSnapshot();
-    }
-
-    return success;
-  }, [handleTerminalFailure, publishStallSnapshot, recoveryMethods]);
 
   const scheduleStallDetection = useCallback(() => {
     const s = stallStateRef.current;
@@ -796,6 +558,7 @@ export function useCommonMediaController({
         s.hardTimer = setTimeout(() => {
           const s = stallStateRef.current;
           const mediaEl = getMediaEl();
+          s.hardTimer = null;
 
           // Don't attempt recovery if media has ended
           if (s.hasEnded || !mediaEl || mediaEl.ended || (mediaEl.duration && mediaEl.currentTime >= mediaEl.duration - 0.5)) {
@@ -809,8 +572,47 @@ export function useCommonMediaController({
             return;
           }
 
-          // If duration is lost, skip to softReinit immediately — a nudge can't help
-          if (mediaEl && !Number.isFinite(mediaEl.duration)) {
+          const ledger = getRecoveryLedger();
+          const fireStrategy = (strategy, method, gate) => {
+            s.lastStrategy = strategy;
+            s.status = 'recovering';
+            publishStallSnapshot();
+            const success = method();
+            mcLog().warn('playback.recovery-strategy', {
+              mediaKey: assetId,
+              strategy,
+              attempt: gate.attempt,
+              success,
+              currentTime: mediaEl.currentTime,
+              duration: mediaEl.duration,
+              lastSeekIntent: lastSeekIntentRef.current
+            });
+            return success;
+          };
+
+          // If duration is lost, escalate to softReinit immediately — a nudge
+          // can't help a dead element. Gated through the ledger for session-cap
+          // visibility, but with bypassCooldown so a recent jolt/resilience
+          // recovery can't starve a hard element failure.
+          if (!Number.isFinite(mediaEl.duration)) {
+            const gate = ledger.request({
+              sessionKey: recoveryScopeKey,
+              mountId: recoveryMountIdRef.current,
+              actor: 'controller-softreinit',
+              reason: 'duration-lost',
+              bypassCooldown: true
+            });
+            if (!gate.allowed) {
+              // Session budget spent — the resilience layer owns exhaustion.
+              mcLog().warn('playback.recovery-denied', {
+                mediaKey: assetId,
+                strategy: 'softReinit',
+                reason: 'duration-lost',
+                deniedBy: gate.deniedBy,
+                attempt: gate.attempt
+              });
+              return;
+            }
             if (DEBUG_MEDIA) console.log('[Stall] hardTimer: duration lost, escalating to softReinit');
             mcLog().error('playback.duration-lost', {
               mediaKey: assetId,
@@ -820,19 +622,37 @@ export function useCommonMediaController({
               stallDurationMs: s.sinceTs ? Date.now() - s.sinceTs : null,
               escalatingTo: 'softReinit'
             });
-            attemptRecovery({ strategyName: 'softReinit' });
+            fireStrategy('softReinit', softReinitRecovery, gate);
             return;
           }
 
-          if (s.recoveryAttempt < strategySteps.length) {
-            if (DEBUG_MEDIA) console.log('[Stall] hardTimer: attempting recovery', { attempt: s.recoveryAttempt, strategy: getStrategyStep(s.recoveryAttempt)?.name, lastSeekIntent: lastSeekIntentRef.current });
-            clearTimers();
-            attemptRecovery();
-            scheduleStallDetection();
-          } else {
-            if (DEBUG_MEDIA) console.log('[Stall] hardTimer: no strategies left');
-            handleTerminalFailure();
+          // One ledger-gated nudge per stall episode — and nothing else. The
+          // resilience jolt ladder (armed by this same stall via
+          // externalStalled/playbackHealth) owns all escalation past the nudge.
+          const gate = ledger.request({
+            sessionKey: recoveryScopeKey,
+            mountId: recoveryMountIdRef.current,
+            actor: 'controller-nudge',
+            reason: 'hard-stall-nudge'
+          });
+          if (!gate.allowed) {
+            const payload = {
+              mediaKey: assetId,
+              strategy: 'nudge',
+              deniedBy: gate.deniedBy,
+              waitMs: gate.waitMs,
+              attempt: gate.attempt
+            };
+            // Session-cap exhaustion is terminal for this controller's own
+            // actuation; cooldown denial is routine backpressure.
+            if (gate.deniedBy === 'session-cap') {
+              mcLog().warn('playback.recovery-denied', payload);
+            } else {
+              mcLog().debug('playback.recovery-denied', payload);
+            }
+            return;
           }
+          fireStrategy('nudge', nudgeRecovery, gate);
         }, recoveryDelay);
       } else {
         // verdict 'within-window' — reschedule
@@ -841,7 +661,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
-  }, [getMediaEl, clearTimers, attemptRecovery, publishStallSnapshot, handleTerminalFailure]);
+  }, [getMediaEl, clearTimers, publishStallSnapshot, nudgeRecovery, softReinitRecovery, recoveryScopeKey]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -869,34 +689,29 @@ export function useCommonMediaController({
     }
 
     if (wasStalled) {
-  if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, recoveryAttempt: s.recoveryAttempt, lastStrategy: s.lastStrategy });
+      if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, lastStrategy: s.lastStrategy });
       mcLog().info('playback.recovery-resolved', {
         mediaKey: assetId,
         currentTime: mediaEl?.currentTime,
         duration: mediaEl?.duration,
         stallDurationMs: s.sinceTs ? Date.now() - s.sinceTs : null,
-        strategiesAttempted: s.recoveryAttempt,
         lastStrategy: s.lastStrategy,
         lastSeekIntent: lastSeekIntentRef.current
       });
       s.isStalled = false;
-      s.recoveryAttempt = 0;
-      s.strategyCounts = Object.create(null);
-      s.activeStrategy = null;
-      s.activeStrategyAttempt = 0;
       s.sinceTs = null;
       s.status = 'monitoring';
-      s.attemptIndex = 0;
-      s.terminal = false;
-      s.pendingSoftReinit = false;
       s.lastSuccessTs = Date.now();
+      // Controller-observed resume clears the shared ledger session (idempotent
+      // with useMediaResilience's progress-effect recordSuccess).
+      getRecoveryLedger().recordSuccess(recoveryScopeKey);
       publishStallSnapshot();
       clearTimers();
       setIsStalled(false);
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [clearTimers, scheduleStallDetection, getMediaEl, publishStallSnapshot]);
+  }, [clearTimers, scheduleStallDetection, getMediaEl, publishStallSnapshot, recoveryScopeKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -939,7 +754,6 @@ export function useCommonMediaController({
           stalled: isStalled,
           isSeeking,
           seekIntent: lastSeekIntentRef.current,
-          recoveryAttempt: stallSnapshot.attemptIndex,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot
         });
@@ -1196,7 +1010,6 @@ export function useCommonMediaController({
       
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
-      stallStateRef.current.recoveryAttempt = 0;
       stallStateRef.current.atDurationStuckLogged = false;
       // Fresh playhead baseline for the new item so the first real forward
       // timeupdate (not a seek-to-start) establishes progress tracking.
@@ -1211,7 +1024,6 @@ export function useCommonMediaController({
 
       if (snapshot) {
         recoverySnapshotRef.current = null;
-        stallStateRef.current.pendingSoftReinit = false;
         isRecoveringRef.current = false;
         lastSeekIntentRef.current = null;
         mcLog().debug('playback.state-mutation', { dict: 'seekIntent', action: 'clear', mediaKey: assetId, reason: 'snapshot-cleanup' });
