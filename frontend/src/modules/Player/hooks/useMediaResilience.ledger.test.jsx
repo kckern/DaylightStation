@@ -278,3 +278,103 @@ describe('useMediaResilience × ledger — controllerRef.forceReload is gated', 
     }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// (f) recordSuccess requires genuine forward motion (2026-07-10 soak defect #2)
+//
+// Prod evidence: five consecutive jolts all logged `rung=1 attempt=1` because
+// each jolt's own remount fired a progress event, which reset the ledger's
+// count AND lastAt — defeating both the attempt cap and the cooldown.
+//
+// NOTE ON THE HARNESS (why these tests use a fake media element, not just the
+// `seconds` prop): the clock progress source (usePlaybackHealth) only bumps
+// `progressToken` when `seconds` moves by >= its delta threshold, and it sets
+// `lastProgressSeconds = seconds` in the same step. So a rerender at the SAME
+// `seconds` produces NO progressToken bump — it cannot reproduce a "progress
+// event at a frozen playhead". The real phantom is a `playing` event firing at
+// the frozen currentTime after a jolt remounts the element. We reproduce that
+// with the same fake-element `_fire('playing')` harness usePlaybackHealth's own
+// tests use: it calls recordProgress with the frozen position, bumping the
+// token without advancing the clock.
+// ---------------------------------------------------------------------------
+
+// Fake media element whose `_fire('playing')` dispatches the synthetic event
+// exactly as the browser would to the listeners usePlaybackHealth attaches.
+function makeFakeEl(initial = {}) {
+  const listeners = {};
+  return {
+    currentTime: 0,
+    paused: false,
+    ended: false,
+    buffered: { length: 0 },
+    ...initial,
+    addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
+    removeEventListener: (ev, fn) => {
+      const arr = listeners[ev];
+      if (!arr) return;
+      const i = arr.indexOf(fn);
+      if (i >= 0) arr.splice(i, 1);
+    },
+    _fire: (ev) => { (listeners[ev] || []).forEach((fn) => fn()); }
+  };
+}
+
+describe('useMediaResilience × ledger — phantom progress must not clear the ledger', () => {
+  it('a progressToken bump with a FROZEN playhead does not reset the attempt count', () => {
+    installLedger({ cooldownMs: 0 }); // isolate the cap from the cooldown
+    // Element frozen at 100. The first `playing` models genuine initial
+    // playback (seeds the last-success position); later `playing` events at the
+    // same currentTime are the jolt-remount phantom.
+    const el = makeFakeEl({ currentTime: 100, paused: false });
+    const initial = baseArgs({ seconds: 100, getMediaEl: () => el });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+
+    // Genuine initial playback at 100 → establishes the recovery baseline.
+    act(() => { el._fire('playing'); });
+
+    // Record one real attempt.
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // A `playing` event at the SAME frozen position bumps progressToken but the
+    // clock has not moved — this must NOT reset the ledger.
+    act(() => { el._fire('playing'); });
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // Second attempt must be attempt 2, not attempt 1 again.
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(2);
+  });
+
+  it('genuine forward motion DOES reset the attempt count', () => {
+    installLedger({ cooldownMs: 0 });
+    const initial = baseArgs({ seconds: 100 });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // Clock advances well past PROGRESS_EPSILON → real recovery.
+    act(() => { hook.rerender({ ...initial, seconds: 105 }); });
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(0);
+  });
+
+  it('a frozen playhead lets the session cap engage, so the jolt ladder terminates', () => {
+    installLedger({ cooldownMs: 0 });
+    // A `playing` event at the frozen position precedes each recovery — exactly
+    // the jolt-remount signal that used to reset the ledger and loop the ladder
+    // at rung 1 forever.
+    const el = makeFakeEl({ currentTime: 100, paused: false });
+    const args = baseArgs({ seconds: 100, getMediaEl: () => el });
+    const { result } = renderHook(() => useMediaResilience(args));
+
+    // Separate act()s so the progress effect (recordSuccess gate) flushes
+    // between the phantom `playing` and the recovery it precedes.
+    for (let i = 0; i < 6; i += 1) {
+      act(() => { el._fire('playing'); });
+      act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    }
+    expect(args.onReload).toHaveBeenCalledTimes(5);
+    expect(args.onExhausted).toHaveBeenCalledTimes(1);
+  });
+});
