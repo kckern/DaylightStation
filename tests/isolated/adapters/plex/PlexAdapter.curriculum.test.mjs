@@ -10,7 +10,7 @@ describe('PlexAdapter curriculum merge', () => {
 
   it('episode in an indexed show gets corrected title + metadata.piano', () => {
     const a = adapter();
-    const item = a._toPlayableItem({ type: 'episode', ratingKey: '1', title: 'Intro',
+    const item = a._toPlayableItem({ type: 'episode', ratingKey: '1', title: 'Raw Plex Title',
       grandparentRatingKey: '676490', parentIndex: 8, index: 1, Media: [] });
     expect(item.title).toBe('Intro');
     expect(item.metadata.piano.course).toBe("Ain’t Misbehavin’");
