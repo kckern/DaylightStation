@@ -5,10 +5,12 @@ import {
   Alert, Center, Loader, Anchor
 } from '@mantine/core';
 import {
-  IconArrowBack, IconDeviceFloppy, IconTrash, IconAlertCircle
+  IconArrowBack, IconTrash, IconAlertCircle
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
+import SaveBar from '../shared/SaveBar.jsx';
+import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 const DEVICE_TYPE_OPTIONS = [
@@ -249,6 +251,9 @@ function DeviceEditor() {
 
   const dirty = JSON.stringify(device) !== JSON.stringify(original);
 
+  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
+  useUnsavedGuard(dirty, { label: `device:${deviceId}` });
+
   const fetchDevice = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -368,14 +373,32 @@ function DeviceEditor() {
         <IconArrowBack size={14} /> Back to Devices
       </Anchor>
 
-      <Group justify="space-between" align="center" className="ds-page-header">
-        <Group gap="sm" align="center">
-          <span className="ds-page-title">{device.id}</span>
-          <Badge color={typeBadgeColor(device.type)} variant="light" size="lg">
-            {device.type || 'unknown'}
-          </Badge>
-        </Group>
-      </Group>
+      {/* Shared save/revert chrome (audit C5) */}
+      <SaveBar
+        title={(
+          <Group gap="sm" align="center">
+            <span className="ds-page-title">{device.id}</span>
+            <Badge color={typeBadgeColor(device.type)} variant="light" size="lg">
+              {device.type || 'unknown'}
+            </Badge>
+          </Group>
+        )}
+        dirty={dirty}
+        saving={saving}
+        onSave={handleSave}
+        onRevert={handleRevert}
+        headerExtra={(
+          <Button
+            color="red"
+            variant="light"
+            size="sm"
+            leftSection={<IconTrash size={14} />}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete
+          </Button>
+        )}
+      />
 
       {error && (
         <Alert
@@ -388,39 +411,6 @@ function DeviceEditor() {
           {error.message || 'An error occurred'}
         </Alert>
       )}
-
-      {/* Action buttons */}
-      <Group gap="sm">
-        {dirty && (
-          <Badge color="yellow" variant="light">Unsaved changes</Badge>
-        )}
-        <Button
-          variant="default"
-          size="xs"
-          disabled={!dirty}
-          onClick={handleRevert}
-        >
-          Revert
-        </Button>
-        <Button
-          leftSection={<IconDeviceFloppy size={14} />}
-          size="xs"
-          disabled={!dirty}
-          loading={saving}
-          onClick={handleSave}
-        >
-          Save
-        </Button>
-        <Button
-          color="red"
-          variant="light"
-          size="xs"
-          leftSection={<IconTrash size={14} />}
-          onClick={() => setDeleteOpen(true)}
-        >
-          Delete
-        </Button>
-      </Group>
 
       {/* Type (read-only display) */}
       <Section title="General">
