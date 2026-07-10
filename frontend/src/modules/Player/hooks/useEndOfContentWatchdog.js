@@ -21,6 +21,7 @@ import { getLogger } from '../../../lib/logging/Logger.js';
 
 export function useEndOfContentWatchdog({
   mediaRef,
+  getMediaEl,            // dash-video hides the real <video> in a shadow root
   sourceKey,             // pass mainMediaUrl (or any value that changes per asset)
   onAdvance,
   thresholdSeconds,
@@ -31,12 +32,21 @@ export function useEndOfContentWatchdog({
   const onAdvanceRef = useRef(onAdvance);
   onAdvanceRef.current = onAdvance;
 
+  // dash-video hides the real <video> in a shadow root, so callers pass
+  // getMediaEl(); plain <video> callers pass a ref. Exactly one is required.
+  // Kept behind a ref so getMediaEl's per-render identity change never re-runs
+  // the effect (it must NOT go in the dependency array).
+  const getMediaElRef = useRef(null);
+  getMediaElRef.current = typeof getMediaEl === 'function'
+    ? getMediaEl
+    : () => mediaRef?.current ?? null;
+
   // Lazy-create the watchdog on first effect run so its closures see the
   // current refs. Tear down and rebuild when sourceKey changes so the
   // one-shot guard is fresh per asset.
   useEffect(() => {
     if (!enabled) return undefined;
-    const el = mediaRef?.current;
+    const el = getMediaElRef.current();
     if (!el) return undefined;
 
     const logger = (() => {
@@ -47,7 +57,7 @@ export function useEndOfContentWatchdog({
     watchdogRef.current = createEndOfContentWatchdog({
       onAdvance: () => onAdvanceRef.current?.(),
       getMediaInfo: () => {
-        const node = mediaRef?.current;
+        const node = getMediaElRef.current();
         if (!node) return null;
         return {
           currentTime: node.currentTime,
