@@ -16,7 +16,8 @@ import {
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import ListsItemRow, { EmptyItemRow } from './ListsItemRow.jsx';
+import ListsItemRow from './ListsItemRow.jsx';
+import { EmptyItemRow } from './EmptyItemRow.jsx';
 import { fetchContentMetadata } from './ContentDisplays.jsx';
 import { swapContentPayloads } from './listConstants.js';
 

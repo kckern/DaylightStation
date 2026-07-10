@@ -1,14 +1,12 @@
-import React, { useState, useRef, useEffect, forwardRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Avatar, Badge, ScrollArea, Modal } from '@mantine/core';
+import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
   IconPhoto, IconInfoCircle, IconPlayerPlay,
-  IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
-  IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark,
+  IconArrowBarDown, IconLayoutList, IconAppWindow, IconBookmark,
   IconArrowBarUp, IconSection,
-  IconArrowsShuffle, IconRocket
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
@@ -17,7 +15,7 @@ import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
-import { isContentIdLike, shouldAutoAdd } from './contentSearchLogic.js';
+import { isContentIdLike } from './contentSearchLogic.js';
 import ContentCombobox from './combobox/ContentCombobox.jsx';
 import { useAutoResolve } from './combobox/useAutoResolve.js';
 import { ShimmerAvatar } from './ShimmerAvatar.jsx';
@@ -25,13 +23,15 @@ import {
   ContentValueCard, contentInfoFromPick, fetchContentMetadata, normalizeListSource,
 } from './ContentDisplays.jsx';
 import { ItemDetailsDrawer } from './ItemDetailsDrawer.jsx';
+import { AppParamPicker } from './AppParamPicker.jsx';
+import { ActionChipSelect } from './ActionChipSelect.jsx';
+import { EmptyItemRow, InsertRowButton } from './EmptyItemRow.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
 import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { ACTION_OPTIONS } from './listConstants.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -113,178 +113,6 @@ export async function preloadSiblings(contentId, contentInfo) {
     setCacheEntry(contentId, { status: 'error', data: null, promise: null });
     return null;
   }
-}
-
-/**
- * App parameter picker — rendered in place of the combobox after selecting an
- * app that requires a parameter (e.g. `app:hymn` needs a number). Ported from
- * the inline twin; stays row-level per the unified-combobox design (Task 13).
- *
- * @param {string} appId
- * @param {object} param - the app registry param spec ({name, options})
- * @param {Array|null} options - resolved [{value, label}] options, or null for free text
- * @param {(fullId: string) => void} onCommit
- * @param {() => void} onCancel
- */
-function AppParamPicker({ appId, param, options, onCommit, onCancel }) {
-  const log = useMemo(() => adminLog('AppParamPicker'), []);
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
-  const [paramInput, setParamInput] = useState('');
-  const inputRef = useRef(null);
-
-  const finishWithParam = (paramVal) => {
-    const fullId = paramVal ? `app:${appId}/${paramVal}` : `app:${appId}`;
-    log.info('app_param.commit', { appId, paramVal, fullId });
-    onCommit(fullId);
-  };
-
-  const cancelParam = () => {
-    log.info('app_param.cancel', { appId });
-    onCancel();
-  };
-
-  // Dropdown options
-  if (options) {
-    return (
-      <Combobox
-        store={combobox}
-        onOptionSubmit={(val) => finishWithParam(val)}
-      >
-        <Combobox.Target>
-          <InputBase
-            ref={inputRef}
-            size="xs"
-            pointer
-            rightSection={<Combobox.Chevron />}
-            rightSectionPointerEvents="none"
-            value={paramInput}
-            onChange={(e) => {
-              log.debug('param_input.change', { value: e.currentTarget.value, appId });
-              setParamInput(e.currentTarget.value);
-              combobox.openDropdown();
-            }}
-            onClick={() => combobox.openDropdown()}
-            onFocus={() => combobox.openDropdown()}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') cancelParam();
-              if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
-            }}
-            placeholder={`Choose or type ${param.name}...`}
-            autoFocus
-            styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
-          />
-        </Combobox.Target>
-        <Combobox.Dropdown>
-          <Combobox.Options>
-            <ScrollArea.Autosize mah={200}>
-              {options
-                .filter(o => !paramInput || o.label.toLowerCase().includes(paramInput.toLowerCase()))
-                .map(o => (
-                  <Combobox.Option key={o.value} value={o.value}>
-                    <Text size="xs">{o.label}</Text>
-                  </Combobox.Option>
-                ))}
-            </ScrollArea.Autosize>
-          </Combobox.Options>
-        </Combobox.Dropdown>
-      </Combobox>
-    );
-  }
-
-  // Free text input (no options defined)
-  return (
-    <TextInput
-      ref={inputRef}
-      size="xs"
-      value={paramInput}
-      onChange={(e) => setParamInput(e.currentTarget.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
-        if (e.key === 'Escape') cancelParam();
-      }}
-      onBlur={() => {
-        if (paramInput) finishWithParam(paramInput);
-        else cancelParam();
-      }}
-      placeholder={`Type ${param.name}...`}
-      autoFocus
-      styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
-    />
-  );
-}
-
-// Action colors and icons for chips
-const ACTION_META = {
-  Play:    { color: 'blue',   icon: IconPlayerPlayFilled },
-  Queue:   { color: 'green',  icon: IconPlaylistAdd },
-  List:    { color: 'violet', icon: IconLayoutList },
-  Open:    { color: 'gray',   icon: IconAppWindow },
-  Display: { color: 'cyan',   icon: IconDeviceDesktop },
-  Read:    { color: 'orange', icon: IconBookmark },
-  Launch:  { color: 'teal',   icon: IconRocket },
-  Shuffle: { color: 'grape',  icon: IconArrowsShuffle },
-};
-
-// Action chip select
-function ActionChipSelect({ value, onChange }) {
-  const log = useMemo(() => adminLog('ActionChipSelect'), []);
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
-
-  const currentValue = value || 'Play';
-  const meta = ACTION_META[currentValue] || { color: 'gray', icon: IconPlayerPlayFilled };
-  const Icon = meta.icon;
-
-  return (
-    <Combobox
-      store={combobox}
-      onOptionSubmit={(val) => {
-        log.info('action.select', { oldAction: value, newAction: val });
-        onChange(val);
-        combobox.closeDropdown();
-      }}
-      withinPortal={true}
-      classNames={{ dropdown: 'action-dropdown' }}
-    >
-      <Combobox.Target>
-        <Badge
-          size="sm"
-          variant="light"
-          color={meta.color}
-          leftSection={<Icon size={12} />}
-          style={{ cursor: 'pointer', width: 82, justifyContent: 'flex-start' }}
-          onClick={() => combobox.toggleDropdown()}
-        >
-          {currentValue}
-        </Badge>
-      </Combobox.Target>
-
-      <Combobox.Dropdown>
-        <Combobox.Options>
-          {ACTION_OPTIONS.map((opt) => {
-            const optMeta = ACTION_META[opt.value] || { color: 'gray', icon: IconPlayerPlayFilled };
-            const OptIcon = optMeta.icon;
-            return (
-              <Combobox.Option key={opt.value} value={opt.value}>
-                <Badge
-                  size="sm"
-                  variant="light"
-                  color={optMeta.color}
-                  leftSection={<OptIcon size={12} />}
-                  style={{ width: 82, justifyContent: 'flex-start' }}
-                >
-                  {opt.label}
-                </Badge>
-              </Combobox.Option>
-            );
-          })}
-        </Combobox.Options>
-      </Combobox.Dropdown>
-    </Combobox>
-  );
 }
 
 function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag }) {
@@ -776,181 +604,6 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         onClose={() => setDrawerOpen(false)}
         contentValue={item.input}
       />
-    </div>
-  );
-}
-
-// Empty row for adding new items at the bottom
-function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
-  const log = useMemo(() => adminLog('EmptyItemRow'), []);
-  const { contentInfoMap, setContentInfo } = useListsContext();
-  const [label, setLabel] = useState('');
-  const [action, setAction] = useState('Play');
-  const [input, setInput] = useState('');
-  const [pendingApp, setPendingApp] = useState(null); // {appId, param, options}
-  const addedRef = useRef(false); // prevent double-add from rapid state changes
-  const labelInputRef = useRef(null);
-
-  // Freeform staged text auto-resolves in the background; the resolved id
-  // lands via setInput, where the gated effect below auto-adds it (intended
-  // chain: freeform stays staged, a real content id persists).
-  const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
-    value: input,
-    onChange: (id) => setInput(id),
-    setContentInfo,
-    fetchMetadata: fetchContentMetadata,
-  });
-
-  // Combobox change handler — receives (id, item?) from ContentCombobox.
-  const handleComboboxChange = (value, selectedItem) => {
-    // App that needs a parameter → show the param picker instead of staging.
-    if (selectedItem?.isApp && selectedItem.hasParam) {
-      log.info('app_param.prompt', { nextIndex, appId: selectedItem.appId, paramName: selectedItem.param?.name });
-      import('../../../lib/appRegistry.js')
-        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
-        .then((options) => {
-          setPendingApp({
-            appId: selectedItem.appId,
-            param: selectedItem.param,
-            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
-          });
-        });
-      return;
-    }
-    // Seed the cache from picks so the staged card (and derived label on add)
-    // uses the resolved title immediately.
-    if (value && selectedItem?.title) {
-      setContentInfo(value, contentInfoFromPick(value, selectedItem));
-    }
-    if (value && !selectedItem && !isContentIdLike(value)) {
-      maybeResolve(value, 'empty-row-commit');
-    }
-    setInput(value);
-  };
-
-  const doAdd = useCallback((currentInput, currentLabel, currentAction) => {
-    if (addedRef.current) return;
-    if (!currentInput) return;
-    addedRef.current = true;
-    // Derive label: explicit label > resolved content title > freeform input
-    const resolvedInfo = contentInfoMap.get(currentInput);
-    const derivedLabel = currentLabel.trim()
-      || resolvedInfo?.title
-      || currentInput.replace(/^[^:]+:\s*/, '');
-    log.info('item.add', { nextIndex, label: derivedLabel, action: currentAction, input: currentInput });
-    onAdd({
-      label: derivedLabel,
-      action: currentAction,
-      input: currentInput,
-      active: true
-    });
-    // Reset fields
-    setLabel('');
-    setAction('Play');
-    setInput('');
-    // Allow next add after reset settles
-    setTimeout(() => { addedRef.current = false; }, 100);
-  }, [onAdd, nextIndex, contentInfoMap, log]);
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && (label.trim() || input)) {
-      doAdd(input, label, action);
-    }
-  };
-
-  // Auto-save only when the input is a real content id (dropdown pick or
-  // pasted id). Freeform text stays staged; Enter adds it explicitly.
-  useEffect(() => {
-    if (input && shouldAutoAdd(input)) {
-      doAdd(input, label, action);
-    }
-  }, [input]);
-
-  return (
-    <div className="item-row empty-row">
-      <div className="col-active">
-        <Checkbox checked={true} disabled size="xs" />
-      </div>
-      <div className="col-drag"></div>
-      <div className="col-index">
-        <Text size="xs" c="dimmed">{nextIndex + 1}</Text>
-      </div>
-      <div className="col-icon">
-        <Avatar size={28} radius="sm" color="dark">
-          <IconPlus size={14} />
-        </Avatar>
-      </div>
-      <div className="col-label">
-        <TextInput
-          ref={labelInputRef}
-          size="xs"
-          placeholder="New item label..."
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={handleKeyDown}
-          styles={{ input: { minHeight: 22, height: 22, background: 'transparent', border: 'none' } }}
-        />
-      </div>
-      <div className="col-divider" />
-      <div className="col-content-drag"></div>
-      <div className="col-action">
-        <ActionChipSelect value={action} onChange={setAction} />
-      </div>
-      <div className="col-preview"></div>
-      <div className="col-input">
-        {pendingApp ? (
-          <AppParamPicker
-            appId={pendingApp.appId}
-            param={pendingApp.param}
-            options={pendingApp.options}
-            onCommit={(fullId) => { setPendingApp(null); setInput(fullId); }}
-            onCancel={() => setPendingApp(null)}
-          />
-        ) : (
-          <ContentCombobox
-            value={input}
-            onChange={handleComboboxChange}
-            appResults
-            renderValue={({ onStartEdit }) => (
-              <ContentValueCard
-                value={input}
-                contentInfoMap={contentInfoMap}
-                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
-              />
-            )}
-          />
-        )}
-      </div>
-      {isWatchlist && (
-        <div className="col-progress"></div>
-      )}
-      <div className="col-config"></div>
-      <div className="col-menu"></div>
-    </div>
-  );
-}
-
-// Insert button that appears between rows on hover
-function InsertRowButton({ onInsert }) {
-  const [visible, setVisible] = useState(false);
-
-  return (
-    <div
-      className="insert-row-zone"
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-    >
-      <div className={`insert-row-button ${visible ? 'visible' : ''}`}>
-        <ActionIcon
-          size="xs"
-          variant="filled"
-          color="blue"
-          radius="xl"
-          onClick={onInsert}
-        >
-          <IconPlus size={10} />
-        </ActionIcon>
-      </div>
     </div>
   );
 }
