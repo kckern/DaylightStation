@@ -39,7 +39,15 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
     // Simple check that search endpoint responds
     // Don't retry - if backend is healthy, search should work
     // The actual search tests will exercise this more thoroughly
-    const response = await request.get(`${BACKEND_URL}/api/v1/content/query/search?text=a&take=1`, {
+    //
+    // Probe with a multi-word nonsense term, NOT `text=a`: a single-char
+    // search matches essentially the whole catalog and (on hosts where the
+    // media services are Cloudflare-proxied) kicks off a minutes-long
+    // outbound request storm in the backend — thousands of CLOSE_WAIT
+    // sockets, fd exhaustion, and a wedged API that the rest of this suite
+    // then trips over. Same class of self-inflicted stall as the old
+    // media-root preflight probe (see the /api/v1/list/plex/ comment below).
+    const response = await request.get(`${BACKEND_URL}/api/v1/content/query/search?text=preflight-probe&take=1`, {
       timeout: API_TIMEOUT,
     }).catch(e => {
       throw new Error(
