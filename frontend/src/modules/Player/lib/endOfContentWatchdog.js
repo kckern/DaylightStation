@@ -46,12 +46,21 @@ export function createEndOfContentWatchdog({
   };
 
   const fire = () => {
+    const armedAt = armedAtTime;
     timerId = null;
     if (fired) return;
-    // Verify conditions still hold at the moment the timer fires —
-    // state could have changed between scheduling and firing.
+    // Verify conditions still hold at the moment the timer fires — state could
+    // have changed between scheduling and firing.
+    //
+    // The condition is "parked at duration", NOT "paused at duration": a dash
+    // element whose trailing fragment came back zero-byte sits at duration with
+    // `paused === false` and `ended === false` (2026-07-10, plex:674553). What
+    // actually distinguishes end-of-content from playback is that the clock has
+    // not moved for the whole idle window.
+    // See docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
     const info = getMediaInfo();
-    if (!info || !info.paused || !isAtDuration(info)) return;
+    if (!info || !isAtDuration(info)) return;
+    if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) return;
     fired = true;
     log('playback.end-of-content-advance', {
       currentTime: info.currentTime,
@@ -65,7 +74,7 @@ export function createEndOfContentWatchdog({
   const tick = () => {
     if (fired) return;
     const info = getMediaInfo();
-    if (!info || !info.paused || !isAtDuration(info)) {
+    if (!info || !isAtDuration(info)) {
       cancel();
       return;
     }

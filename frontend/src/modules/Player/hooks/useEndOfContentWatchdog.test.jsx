@@ -25,14 +25,26 @@ describe('useEndOfContentWatchdog', () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
-  it('does not fire when video is playing', () => {
-    const el = makeFakeEl({ currentTime: 441.76, duration: 441.76, paused: false });
+  it('does not fire when video is playing (clock still advancing)', () => {
+    // 2026-07-10: the watchdog keys on a frozen clock at duration, not on
+    // paused===false. The old form of this test held currentTime===duration
+    // with paused:false (frozen at duration) and asserted no advance — that
+    // encoded the very bug being fixed. A genuinely playing video has a moving
+    // clock, so it re-arms on each timeupdate and must never fire.
+    // See docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+    const el = makeFakeEl({ currentTime: 441.4, duration: 441.76, paused: false });
     const onAdvance = vi.fn();
     renderHook(() =>
       useEndOfContentWatchdog({ mediaRef: { current: el }, sourceKey: 'src-a', onAdvance, idleMs: 3000 })
     );
+    act(() => { el._fire('timeupdate'); });        // arm at 441.4
+    act(() => { vi.advanceTimersByTime(1500); });
+    el.currentTime = 441.5;                          // clock advanced → re-arm
     act(() => { el._fire('timeupdate'); });
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(1500); });
+    el.currentTime = 441.6;                          // clock advanced → re-arm
+    act(() => { el._fire('timeupdate'); });
+    act(() => { vi.advanceTimersByTime(1500); });
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
