@@ -131,6 +131,65 @@ describe('CeremonyFlow submit errors', () => {
   });
 });
 
+describe('UnitCapture morning-intention echo', () => {
+  it('shows "This morning you said" with the intention text and energy badge', async () => {
+    fetch.mockResolvedValue(jsonResponse(200, {
+      type: 'unit_capture',
+      periodId: '2026-U555',
+      activeGoals: [],
+      morningIntention: {
+        type: 'unit_intention',
+        periodId: '2026-U555',
+        completedAt: '2026-07-09T07:02:00Z',
+        responses: { responses: { intentions: 'intervals at 6', energy: 'high' } },
+      },
+    }));
+
+    renderFlow({ type: 'unit_capture' });
+
+    await waitFor(() => {
+      expect(screen.getByText('This morning you said')).toBeInTheDocument();
+    });
+    expect(screen.getByText('intervals at 6')).toBeInTheDocument();
+    expect(screen.getByText('high')).toBeInTheDocument();
+  });
+
+  it('reads flat (non-wrapped) responses too', async () => {
+    fetch.mockResolvedValue(jsonResponse(200, {
+      type: 'unit_capture',
+      periodId: '2026-U555',
+      activeGoals: [],
+      morningIntention: {
+        type: 'unit_intention',
+        periodId: '2026-U555',
+        responses: { intentions: 'flat-shape plan', energy: 'medium' },
+      },
+    }));
+
+    renderFlow({ type: 'unit_capture' });
+
+    await waitFor(() => {
+      expect(screen.getByText('flat-shape plan')).toBeInTheDocument();
+    });
+  });
+
+  it('omits the echo block when morningIntention is null', async () => {
+    fetch.mockResolvedValue(jsonResponse(200, {
+      type: 'unit_capture',
+      periodId: '2026-U555',
+      activeGoals: [],
+      morningIntention: null,
+    }));
+
+    renderFlow({ type: 'unit_capture' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Review: How did this unit go?')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('This morning you said')).toBeNull();
+  });
+});
+
 describe('CeremonyFlow unimplemented types', () => {
   it('shows coming-soon notice and suppresses Complete for season_alignment', async () => {
     fetch.mockResolvedValue(jsonResponse(200, { type: 'season_alignment', periodId: '2026-S3' }));
