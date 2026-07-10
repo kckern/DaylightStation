@@ -124,3 +124,9 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-07 | worktree-piano-playback-decoupling | bfd547e88 | Piano playback/render decoupling (timestamped MIDI, note store, OSMD defer) + jank investigation |
 | 2026-07-08 | refactor/ddd-compliance-p2 | 54ffedb117896de04d644bca7534122ffa3e1491 | DDD remediation Phase P2 (merged to main) |
 | 2026-07-08 | refactor/ddd-compliance-p3 | b6adf49b9ea60f0613ac4b262edd0b3ef98bd32b | DDD remediation Phase P3 (merged to main via e1e1616bf) |
+| 2026-07-10 | chore/pii-externalize | eba0025cb | PII externalization chore - fully merged to main (0 ahead). Remote upstream already gone. |
+| 2026-07-10 | chore/pii-p3 | f9229166f | PII externalization Phase P3 - fully merged to main (0 ahead). Remote upstream already gone. |
+| 2026-07-10 | design/self-indexing-loops | 330c89505 | Self-indexing loops design - fully merged to main (0 ahead). |
+| 2026-07-10 | feat/lifeplan-wiring | d668ee730 | Lifeplan wiring - fully merged to main (0 ahead). |
+| 2026-07-10 | piano/theory-panel-standardization | 891add484 | Piano theory-panel standardization - fully merged to main (0 ahead). |
+| 2026-07-10 | refactor/player-resilience-consolidation | a95626f16 | Player resilience consolidation (single recovery ledger, controller demoted) - fully merged to main (0 ahead), contrary to stale project memory saying merge was pending. Worktree at .claude/worktrees/player-resilience removed. |
