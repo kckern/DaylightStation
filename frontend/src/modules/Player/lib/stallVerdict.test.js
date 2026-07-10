@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideStallVerdict } from './stallVerdict.js';
+import { decideStallVerdict, readVideoFrames } from './stallVerdict.js';
 
 describe('decideStallVerdict', () => {
   const base = {
@@ -59,5 +59,61 @@ describe('decideStallVerdict', () => {
     // Browser may report a slightly-lower currentTime briefly during a seek.
     const v = decideStallVerdict({ ...base, currentTime: 99.5 });
     expect(v.verdict).toBe('stalled');
+  });
+});
+
+describe('decideStallVerdict — decoder frame counter (2026-07-09 false-positive fix)', () => {
+  // Session fs 20260709060200: 41/41 "stalls" were the main-thread clock frozen
+  // while decode continued off-thread. `currentTime` and `timeupdate` starve
+  // together, so they can't corroborate each other. totalVideoFrames advances
+  // off the main thread and is the authoritative liveness signal.
+  const base = {
+    now: 10_000,
+    lastProgressTs: 6_000,     // 4s gap, past softMs
+    softMs: 3_500,
+    currentTime: 100.0,
+    lastObservedCurrentTime: 100.0
+  };
+
+  it('returns "progressing" when frames advanced despite a frozen currentTime', () => {
+    const v = decideStallVerdict({ ...base, videoFrames: 5124, lastObservedVideoFrames: 5000 });
+    expect(v.verdict).toBe('progressing');
+    expect(v.stallDurationMs).toBeNull();
+  });
+
+  it('returns "stalled" when frames and currentTime are both frozen', () => {
+    const v = decideStallVerdict({ ...base, videoFrames: 5000, lastObservedVideoFrames: 5000 });
+    expect(v.verdict).toBe('stalled');
+    expect(v.stallDurationMs).toBe(4000);
+  });
+
+  it('falls back to the currentTime check when frame counters are unavailable (audio / unsupported)', () => {
+    const frozen = decideStallVerdict({ ...base, videoFrames: null, lastObservedVideoFrames: null });
+    expect(frozen.verdict).toBe('stalled');
+    const advancing = decideStallVerdict({ ...base, currentTime: 104.0, videoFrames: null, lastObservedVideoFrames: null });
+    expect(advancing.verdict).toBe('progressing');
+  });
+
+  it('does not treat a backwards frame counter (element swap resets it) as progress', () => {
+    const v = decideStallVerdict({ ...base, videoFrames: 12, lastObservedVideoFrames: 5000 });
+    expect(v.verdict).toBe('stalled');
+  });
+});
+
+describe('readVideoFrames', () => {
+  it('returns totalVideoFrames when getVideoPlaybackQuality is supported', () => {
+    const el = { getVideoPlaybackQuality: () => ({ totalVideoFrames: 4321, droppedVideoFrames: 2 }) };
+    expect(readVideoFrames(el)).toBe(4321);
+  });
+
+  it('returns null when the API is missing or throws', () => {
+    expect(readVideoFrames({})).toBeNull();
+    expect(readVideoFrames(null)).toBeNull();
+    expect(readVideoFrames({ getVideoPlaybackQuality: () => { throw new Error('boom'); } })).toBeNull();
+  });
+
+  it('returns null when totalVideoFrames is not a finite number', () => {
+    const el = { getVideoPlaybackQuality: () => ({ totalVideoFrames: undefined }) };
+    expect(readVideoFrames(el)).toBeNull();
   });
 });

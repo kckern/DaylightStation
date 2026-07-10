@@ -10,7 +10,8 @@ export class YamlCeremonyRecordStore {
 
   hasRecord(username, type, periodId) {
     const records = this.#loadRecords(username);
-    return records.some(r => r.type === type && r.period_id === periodId);
+    // CeremonyService writes camelCase periodId; accept legacy snake_case too
+    return records.some(r => r.type === type && (r.periodId === periodId || r.period_id === periodId));
   }
 
   saveRecord(username, record) {

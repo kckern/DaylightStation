@@ -311,7 +311,6 @@ All renderers implement this interface so the queue controller is format-agnosti
 | `onPlaybackMetrics` | `(metrics) => void` | Report playback state |
 | `onRegisterMediaAccess` | `(accessors) => void` | Register media element |
 | `onResolvedMeta` | `(meta) => void` | Report resolved metadata |
-| `onStartupSignal` | `() => void` | Signal playback started |
 
 ### Implementation Status
 

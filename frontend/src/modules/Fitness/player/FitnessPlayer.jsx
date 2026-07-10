@@ -1833,7 +1833,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           onProgress={handlePlayerProgress}
           onController={handlePlayerControllerUpdate}
           onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
-          pauseDecision={pauseDecision}
           ref={playerRef}
         />
       ) : null}

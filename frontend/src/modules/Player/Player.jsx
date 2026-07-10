@@ -18,7 +18,6 @@ import { guid } from './lib/helpers.js';
 import { playbackLog } from './lib/playbackLogger.js';
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
-import { guardedReload } from '../../lib/reloadGuard.js';
 import { shouldSkipResilienceReload } from './lib/shouldSkipResilienceReload.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
 import { usePlayerConfig } from './hooks/usePlayerConfig.js';
@@ -32,23 +31,6 @@ const REMOUNT_BACKOFF_MAX_MS = 45000;
 // Shader aliases must match useQueueController's map. Hoisted to module scope
 // so identity is stable across renders (useEffect deps).
 const SHADER_ALIASES = { dark: 'blackout', minimal: 'focused', regular: 'default', screensaver: 'focused' };
-
-const reloadDocument = (reason = 'player-resilience') => {
-  guardedReload({
-    reason,
-    fallbackAction: () => {
-      // When reloads are blocked, set a state flag instead
-      // This allows the UI to show a "please refresh manually" message
-      if (typeof window !== 'undefined') {
-        window.__playerReloadBlocked = true;
-        // Dispatch event for any listeners
-        window.dispatchEvent(new CustomEvent('player:reload-blocked', {
-          detail: { reason, timestamp: Date.now() }
-        }));
-      }
-    }
-  });
-};
 
 const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 const ensureEntryGuid = (source) => {
@@ -67,9 +49,7 @@ const ensureEntryGuid = (source) => {
 const createDefaultMediaAccess = () => ({
   getMediaEl: null,
   hardReset: null,
-  fetchVideoInfo: null,
-  nudgePlayback: null,
-  getTroubleDiagnostics: null
+  fetchVideoInfo: null
 });
 
 const createDefaultPlaybackMetrics = () => ({
@@ -106,7 +86,6 @@ const Player = forwardRef(function Player(props, ref) {
     mediaResilienceRef,
     maxVideoBitrate,
     maxResolution,
-    pauseDecision,
     plexClientSession: externalPlexClientSession,
     onError,
     mediaLoadTimeoutMs
@@ -417,8 +396,6 @@ const Player = forwardRef(function Player(props, ref) {
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
-      nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
-      getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null,
       autoplayBlocked: !!access.autoplayBlocked,
       onAutoplayResolved: typeof access.onAutoplayResolved === 'function' ? access.onAutoplayResolved : null
     };
@@ -427,8 +404,6 @@ const Player = forwardRef(function Player(props, ref) {
         && prev.getMediaEl === newMediaAccess.getMediaEl
         && prev.hardReset === newMediaAccess.hardReset
         && prev.fetchVideoInfo === newMediaAccess.fetchVideoInfo
-        && prev.nudgePlayback === newMediaAccess.nudgePlayback
-        && prev.getTroubleDiagnostics === newMediaAccess.getTroubleDiagnostics
         && prev.autoplayBlocked === newMediaAccess.autoplayBlocked
         && prev.onAutoplayResolved === newMediaAccess.onAutoplayResolved;
 
@@ -651,19 +626,12 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     const {
-      forceDocumentReload: forceDocReload,
-      forceFullReload,
       forceRemount,
       seekToIntentMs,
       refreshUrl,
       meta: _ignoredMeta,
       ...rest
     } = options || {};
-
-    if ((forceDocReload || forceFullReload) && playerType !== 'overlay') {
-      reloadDocument();
-      return;
-    }
 
     const seekSeconds = Number.isFinite(seekToIntentMs) ? Math.max(0, seekToIntentMs / 1000) : null;
 
@@ -680,9 +648,7 @@ const Player = forwardRef(function Player(props, ref) {
 
     const rawTrigger = {
       ...rest,
-      seekToIntentMs,
-      forceDocumentReload: forceDocReload,
-      forceFullReload
+      seekToIntentMs
     };
     const triggerDetails = Object.fromEntries(
       Object.entries(rawTrigger)
@@ -757,24 +723,15 @@ const Player = forwardRef(function Player(props, ref) {
   // suppress the resilience overlay which would never exit startup.
   const isSelfContainedFormat = effectiveMeta?.format === 'titlecard';
 
-  const { overlayProps, state: resilienceState, onStartupSignal, cancelDeadline, requestRecovery } = useMediaResilience({
+  const { overlayProps, state: resilienceState, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
     meta: effectiveMeta,
-    maxVideoBitrate: effectiveMeta?.maxVideoBitrate
-      ?? singlePlayerProps?.maxVideoBitrate
-      ?? maxVideoBitrate
-      ?? null,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,
     isSeeking: effectiveMeta ? playbackMetrics.isSeeking : false,
     pauseIntent: effectiveMeta ? playbackMetrics.pauseIntent : null,
-    playbackDiagnostics: effectiveMeta ? playbackMetrics.diagnostics : null,
     initialStart: explicitStartSeconds ?? 0,
-    explicitStartProvided,
     waitKey: resolvedWaitKey,
-    fetchVideoInfo: mediaAccess.fetchVideoInfo,
-    nudgePlayback: transportAdapter.nudge,
-    diagnosticsProvider: transportAdapter.readDiagnostics,
     onStateChange: compositeAwareOnState,
     onReload: handleResilienceReload,
     onExhausted: handleResilienceExhausted,
@@ -783,11 +740,8 @@ const Player = forwardRef(function Player(props, ref) {
     plexId,
     playbackSessionKey: itemSessionKey,
     debugContext: { scope: 'player', mediaGuid: currentMediaGuid || null },
-    externalPauseReason: pauseDecision?.reason,
-    externalPauseActive: pauseDecision?.paused,
-    // Pass stall state from useCommonMediaController to avoid duplicate detection
+    // Stalled flag from useCommonMediaController to avoid duplicate detection
     externalStalled: effectiveMeta ? playbackMetrics.stalled : null,
-    externalStallState: effectiveMeta ? playbackMetrics.stallState : null,
     // Self-contained formats (titlecard) have no media element — disable resilience monitoring
     disabled: isSelfContainedFormat
   });
@@ -1096,11 +1050,13 @@ const Player = forwardRef(function Player(props, ref) {
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
-    onStartupSignal,
     onRequestRecovery: handleRequestRecovery,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
+    // Recovery-ledger session scope: the SAME key useMediaResilience passes to
+    // the ledger, so renderer-level recoveries (dash-error) share its caps.
+    resilienceSessionKey: itemSessionKey,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
     // Use external session if provided (for multi-player isolation),

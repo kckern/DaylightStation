@@ -10,7 +10,7 @@ import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
-import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
+import { requestDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
 import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
@@ -28,6 +28,10 @@ const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
 // Surgical review seek (?goto=<seconds>) is parsed in lib/Player/reviewParams.js and
 // shared with Player (which suppresses the saved Plex resume when it's active) so the
 // review target is authoritative. Cue-by-id review resolves to a ?goto time in the CLI.
+
+// Per-mount identity for the recoveryLedger's 'dash-error' sub-budget. A module
+// counter (not Math.random) so log payloads are deterministic across a session.
+let _mountSeq = 0;
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -91,8 +95,6 @@ export function VideoPlayer({
   ignoreKeys,
   onProgress,
   onMediaRef,
-  showQuality,
-  stallConfig,
   keyboardOverrides,
   onController,
   upscaleEffects = 'auto',
@@ -106,8 +108,6 @@ export function VideoPlayer({
   const isHls = media?.mediaType === 'hls_video';
   const hlsLogger = useMemo(() => getLogger().child({ component: 'video-player-hls' }), []);
   const [displayReady, setDisplayReady] = useState(false);
-  const [isAdapting, setIsAdapting] = useState(false);
-  const [adaptMessage, setAdaptMessage] = useState(undefined);
   const displayReadyLoggedRef = useRef(false);
 
   // Track resilienceBridge in a ref so the watchdog's onEscalate closure
@@ -124,10 +124,12 @@ export function VideoPlayer({
   const unmountedRef = useRef(false);
   useEffect(() => () => { unmountedRef.current = true; }, []);
 
-  // Per-mount counter for dash.error 27/28 → hardReset({ refreshUrl: true })
-  // escalations. Capped at maxAttempts in decideDashErrorRecovery so a
-  // permanently dead URL cannot infinite-loop. Resets when the source URL changes.
-  const dashErrorRefreshAttemptsRef = useRef(0);
+  // Mount identity for the shared recoveryLedger: dash.error 27/28 → hardReset
+  // escalations draw from a per-mount 'dash-error' budget (3), so a permanently
+  // dead URL cannot infinite-loop, while every fired refresh still counts toward
+  // the session-wide recovery cap (audit §3.1).
+  const mountIdRef = useRef(null);
+  if (!mountIdRef.current) mountIdRef.current = `video-mount-${++_mountSeq}`;
 
   const staleSessionWatchdogRef = useRef(null);
   if (!staleSessionWatchdogRef.current) {
@@ -167,10 +169,6 @@ export function VideoPlayer({
     isStalled,
     isSeeking,
     handleProgressClick,
-    quality,
-    droppedFramePct,
-    currentMaxKbps,
-    stallState,
     elementKey,
     getMediaEl,
     getContainerEl
@@ -196,27 +194,9 @@ export function VideoPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    showQuality,
-    stallConfig,
     keyboardOverrides,
-  onController,
-    onRequestBitrateChange: useCallback(async (newCapKbps, { reason }) => {
-      // Trigger a refetch with bitrate override and show overlay message
-      try {
-        const msg =
-          reason === 'over_allowance' ? 'Lowering bitrate to reduce dropped frames…' :
-          reason === 'ramp_up' ? 'Increasing bitrate after stable playback…' :
-          reason === 'reset_unlimited' ? 'Restoring unlimited bitrate…' :
-          reason === 'manual_reset' ? 'Resetting bitrate cap…' :
-          'Adapting bitrate to device performance…';
-        setAdaptMessage(msg);
-        setIsAdapting(true);
-        await fetchVideoInfo?.({ maxVideoBitrateOverride: newCapKbps, reason });
-      } finally {
-        // We will also clear during canplay/playing, but ensure it doesn't stick
-        setTimeout(() => { setIsAdapting(false); setAdaptMessage(undefined); }, 5000);
-      }
-    }, [fetchVideoInfo])
+    onController,
+    recoverySessionKey: resilienceBridge?.playbackSessionKey || null
   });
 
   // Upscale detection and effects
@@ -254,7 +234,9 @@ export function VideoPlayer({
   }, [filterContentId]);
 
   // Render FPS monitoring for blur overlay performance diagnosis
-  const renderFps = useRenderFpsMonitor({
+  // (emits its own playback telemetry; the return value is unused since the
+  // quality HUD was deleted — audit 2026-07-09 §4.4)
+  useRenderFpsMonitor({
     enabled: displayReady && !isPaused,
     mediaContext: {
       title: media?.title,
@@ -419,12 +401,6 @@ export function VideoPlayer({
     displayReadyLoggedRef.current = false;
   }, [mediaUrl, media?.maxVideoBitrate]);
 
-  // Bug 2026-05-23 §2: new source URL -> reset dash error refresh budget
-  // for this mount so a fresh URL gets its own 3-attempt allotment.
-  useEffect(() => {
-    dashErrorRefreshAttemptsRef.current = 0;
-  }, [mediaUrl]);
-
   // HLS attach: load the m3u8 via hls.js (or native HLS where supported).
   // Lazy dynamic import so the (large) hls.js bundle only loads when an HLS
   // source is actually played, and never for dash/native video.
@@ -463,8 +439,6 @@ export function VideoPlayer({
 
     const handleReady = () => {
       setDisplayReady(true);
-      setIsAdapting(false);
-      setAdaptMessage(undefined);
       // Prod telemetry: video display ready (one-time per media)
       if (!displayReadyLoggedRef.current) {
         displayReadyLoggedRef.current = true;
@@ -607,23 +581,32 @@ export function VideoPlayer({
         // Bug 2026-05-23 §2: source-URL errors (code 27 segment unavailable,
         // 28 manifest/init unavailable) signal a dead Plex transcode session.
         // Escalate to hardReset with refreshUrl so the backend mints a fresh
-        // transcode. Capped at 3 attempts per mount.
-        const decision = decideDashErrorRecovery({
+        // transcode. Gated by the shared recoveryLedger: 3 per mount for the
+        // 'dash-error' actor, counted against the session-wide cap (audit §3.1).
+        const { fire, decision, gate } = requestDashErrorRecovery({
           errorCode: code,
-          attemptsThisMount: dashErrorRefreshAttemptsRef.current,
-          maxAttempts: 3
+          sessionKey: resilienceBridgeRef.current?.playbackSessionKey || null,
+          mountId: mountIdRef.current
         });
-        if (decision.action === 'refresh-url') {
-          dashErrorRefreshAttemptsRef.current += 1;
+        if (fire) {
           const innerEl = getMediaEl();
           const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
           dashLog.warn('dash.error-recovery', {
             action: 'refresh-url',
             reason: decision.reason,
-            attempt: dashErrorRefreshAttemptsRef.current,
+            attempt: gate.attempt,
             seekToSeconds
           });
           hardReset({ seekToSeconds, refreshUrl: true });
+        } else if (gate) {
+          // Refreshable code, but the ledger denied it (mount budget spent or
+          // session cap reached). The stale-session watchdog remains the
+          // escalation route (bridge.requestRecovery → triggerRecovery).
+          dashLog.debug('dash.error-recovery-budget-denied', {
+            reason: decision.reason,
+            deniedBy: gate.deniedBy,
+            attempt: gate.attempt
+          });
         }
       });
 
@@ -685,7 +668,7 @@ export function VideoPlayer({
     }
 
     // Only log if video is playing (not paused, not stalled, has started)
-    const shouldLog = !isPaused && !isStalled && seconds > 0 && displayReady && quality?.supported;
+    const shouldLog = !isPaused && !isStalled && seconds > 0 && displayReady;
     
     if (!shouldLog) {
       fpsLoggingActiveRef.current = false;
@@ -712,8 +695,6 @@ export function VideoPlayer({
       let estimatedFps = null;
       if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
         estimatedFps = 'supported';
-      } else if (snap.quality?.totalVideoFrames > 0 && snap.duration > 0) {
-        estimatedFps = Math.round((snap.quality.totalVideoFrames / snap.duration) * 100) / 100;
       }
 
       logger.info('playback.fps_stats',
@@ -728,13 +709,17 @@ export function VideoPlayer({
         fpsIntervalRef.current = null;
       }
     };
-  }, [isPaused, isStalled, displayReady, quality?.supported]); // Reduced dependencies - only track state changes that determine timer creation
+  }, [isPaused, isStalled, displayReady]); // Reduced dependencies - only track state changes that determine timer creation
+
+  // The bitrate cap only ever comes from media metadata now — the ABR engine
+  // that could adapt it was unreachable and has been deleted (audit §4.4).
+  const bitrateCapKbps = Number.isFinite(media?.maxVideoBitrate) ? Number(media.maxVideoBitrate) : null;
 
   // Keep refs up to date with latest values for use in interval callback
-  const latestDataRef = useRef({ seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader });
+  const latestDataRef = useRef({ seconds, currentMaxKbps: bitrateCapKbps, duration, media, isDash, shader });
   useEffect(() => {
-    latestDataRef.current = { seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader };
-  }, [seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader]);
+    latestDataRef.current = { seconds, currentMaxKbps: bitrateCapKbps, duration, media, isDash, shader };
+  }, [seconds, bitrateCapKbps, duration, media, isDash, shader]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.assetId || media?.key || media?.plex || null;
@@ -775,8 +760,8 @@ export function VideoPlayer({
           className={`video-element ${displayReady ? 'show' : ''}`}
           src={isHls ? undefined : mediaUrl}
           style={effectStyles}
-          onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
-          onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
+          onCanPlay={() => setDisplayReady(true)}
+          onPlaying={() => setDisplayReady(true)}
         />
       )}
       {overlayProps.showCRT && (
@@ -798,38 +783,9 @@ export function VideoPlayer({
           theme={filterData?.profile?.theme}
         />
       )}
-      {showQuality && quality?.supported && (
-        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} renderFps={renderFps} />
-      )}
     </div>
   );
 }
-
-function QualityOverlay({ stats, capKbps, avgPct, renderFps }) {
-  // console.log('[QualityOverlay] Rendering with capKbps:', capKbps);
-  const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
-  const avgText = typeof avgPct === 'number' ? `${(avgPct * 100).toFixed(1)}%` : null;
-  return (
-    <div className="quality-overlay">
-      <div> Dropped Frames: {stats.droppedVideoFrames} ({pctText}) </div>
-      <div> Bitrate Cap: {capKbps == null ? 'unlimited' : `${capKbps} kbps`} </div>
-      {avgText && <div> Avg (rolling): {avgText} </div>}
-      {renderFps !== null && <div> Render FPS: {renderFps} </div>}
-    </div>
-  );
-}
-
-QualityOverlay.propTypes = {
-  stats: PropTypes.shape({
-    droppedVideoFrames: PropTypes.number,
-    totalVideoFrames: PropTypes.number,
-    droppedPct: PropTypes.number,
-    supported: PropTypes.bool
-  }),
-  capKbps: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
-  avgPct: PropTypes.number,
-  renderFps: PropTypes.number
-};
 
 VideoPlayer.propTypes = {
   media: PropTypes.object.isRequired,
@@ -847,8 +803,6 @@ VideoPlayer.propTypes = {
   ignoreKeys: PropTypes.bool,
   onProgress: PropTypes.func,
   onMediaRef: PropTypes.func,
-  showQuality: PropTypes.bool,
-  stallConfig: PropTypes.object,
   onController: PropTypes.func,
   upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
   resilienceBridge: PropTypes.shape({
@@ -856,7 +810,7 @@ VideoPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    onStartupSignal: PropTypes.func,
-    requestRecovery: PropTypes.func
+    requestRecovery: PropTypes.func,
+    playbackSessionKey: PropTypes.string
   })
 };

@@ -4,10 +4,18 @@ import createPlanRouter from './life/plan.mjs';
 import createNowRouter from './life/now.mjs';
 import createLogRouter from './life/log.mjs';
 import createScheduleRouter from './life/schedule.mjs';
+import { createUsernameResolver } from './life/identity.mjs';
 
 export default function createLifeRouter(config) {
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life' });
+  const users = createUsernameResolver({
+    userService: config.userService,
+    defaultUsername: config.defaultUsername,
+  });
+
+  // Resolve + validate the requesting user before anything else
+  router.use(users.middleware);
 
   // Request logging middleware for all life routes
   router.use((req, res, next) => {
@@ -18,20 +26,30 @@ export default function createLifeRouter(config) {
         path: req.originalUrl,
         status: res.statusCode,
         durationMs: Date.now() - start,
-        username: req.query.username || 'default',
+        username: req.lifeUsername,
       });
     });
     next();
   });
 
+  // GET /user — resolved identity for the requesting client
+  router.get('/user', (req, res) => {
+    const username = req.lifeUsername;
+    const profile = config.userService?.getProfile?.(username);
+    res.json({
+      username,
+      displayName: profile?.display_name || username,
+    });
+  });
+
   router.use('/plan', createPlanRouter(config));
   router.use('/now', createNowRouter(config));
-  router.use('/log', createLogRouter(config));
+  router.use('/log', createLogRouter({ ...config, usernameResolver: users }));
   router.use('/schedule', createScheduleRouter(config));
 
   // GET /health — system health for lifeplan domain
   router.get('/health', (req, res) => {
-    const username = req.query.username || 'default';
+    const username = req.lifeUsername;
     const checks = {};
 
     // Plan loaded

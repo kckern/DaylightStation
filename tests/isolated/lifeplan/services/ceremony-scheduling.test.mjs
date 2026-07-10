@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
-import { CeremonyScheduler } from '#system/scheduling/CeremonyScheduler.mjs';
+import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
 import { frozenClock } from '../../../_lib/clock-helper.mjs';
 
 describe('CeremonyService', () => {
@@ -95,22 +95,26 @@ describe('CeremonyService', () => {
 
 describe('CeremonyScheduler', () => {
   let scheduler;
-  let mockCeremonyService;
   let mockNotificationService;
   let mockLifePlanStore;
   let mockCeremonyRecordStore;
   let mockCadenceService;
 
+  const ALL_DEFAULT_TYPES_DISABLED = {
+    unit_intention: { enabled: false },
+    unit_capture: { enabled: false },
+    cycle_retro: { enabled: false },
+    phase_review: { enabled: false },
+  };
+
   beforeEach(() => {
-    mockCeremonyService = {
-      getCeremonyContent: vi.fn().mockReturnValue({ type: 'unit_intention' }),
-    };
     mockNotificationService = {
-      send: vi.fn(),
+      send: vi.fn().mockResolvedValue([{ delivered: true, channel: 'app' }]),
     };
     mockLifePlanStore = {
       load: vi.fn().mockReturnValue({
         ceremonies: {
+          ...ALL_DEFAULT_TYPES_DISABLED,
           unit_intention: { enabled: true },
           cycle_retro: { enabled: true },
         },
@@ -119,6 +123,7 @@ describe('CeremonyScheduler', () => {
     };
     mockCeremonyRecordStore = {
       hasRecord: vi.fn().mockReturnValue(false),
+      getLatestRecord: vi.fn().mockReturnValue(null),
     };
     mockCadenceService = {
       resolve: vi.fn().mockReturnValue({
@@ -129,7 +134,6 @@ describe('CeremonyScheduler', () => {
     };
 
     scheduler = new CeremonyScheduler({
-      ceremonyService: mockCeremonyService,
       notificationService: mockNotificationService,
       lifePlanStore: mockLifePlanStore,
       ceremonyRecordStore: mockCeremonyRecordStore,
@@ -139,9 +143,34 @@ describe('CeremonyScheduler', () => {
   });
 
   it('sends notification when ceremony is due', async () => {
-    await scheduler.checkAndNotify('testuser');
+    const sent = await scheduler.checkAndNotify('testuser');
 
     expect(mockNotificationService.send).toHaveBeenCalled();
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent[0].delivered).toBe(true);
+  });
+
+  it('sends a valid notification intent (category, metadata)', async () => {
+    await scheduler.checkAndNotify('testuser');
+
+    const intent = mockNotificationService.send.mock.calls[0][0];
+    expect(intent.category).toBe('ceremony');
+    expect(intent.urgency).toBe('normal');
+    expect(intent.metadata.username).toBe('testuser');
+    expect(intent.metadata.ceremony).toBeDefined();
+    expect(intent.metadata.periodId).toBeDefined();
+  });
+
+  it('passes real timing strings to isCeremonyDue', async () => {
+    await scheduler.checkAndNotify('testuser');
+
+    const timings = mockCadenceService.isCeremonyDue.mock.calls.map(c => c[0]);
+    expect(timings).toContain('start_of_unit');
+    expect(timings).toContain('end_of_cycle');
+    // signature: (timing, cadenceConfig, today, lastCeremonyDate)
+    const [, cadenceConfig, today] = mockCadenceService.isCeremonyDue.mock.calls[0];
+    expect(cadenceConfig).toEqual({});
+    expect(today).toBeInstanceOf(Date);
   });
 
   it('skips already-completed ceremonies', async () => {
@@ -154,16 +183,27 @@ describe('CeremonyScheduler', () => {
 
   it('respects enabled/disabled config', async () => {
     mockLifePlanStore.load.mockReturnValue({
-      ceremonies: {
-        unit_intention: { enabled: false },
-        cycle_retro: { enabled: false },
-      },
+      ceremonies: { ...ALL_DEFAULT_TYPES_DISABLED },
       cadence: {},
     });
 
     await scheduler.checkAndNotify('testuser');
 
     expect(mockNotificationService.send).not.toHaveBeenCalled();
+  });
+
+  it('defaults UI-complete ceremonies to enabled when plan has no ceremonies config', async () => {
+    mockLifePlanStore.load.mockReturnValue({ cadence: {} });
+
+    const sent = await scheduler.checkAndNotify('testuser');
+
+    // unit_intention, unit_capture (both unit period), cycle_retro — all due per mock
+    const types = sent.map(s => s.type);
+    expect(types).toContain('unit_intention');
+    expect(types).toContain('cycle_retro');
+    // season_alignment / era_vision have no UI — never default-enabled
+    expect(types).not.toContain('season_alignment');
+    expect(types).not.toContain('era_vision');
   });
 
   it('uses cadence to determine due ceremonies', async () => {

@@ -26,6 +26,8 @@ export function decideStallVerdict({
   softMs,
   currentTime,
   lastObservedCurrentTime,
+  videoFrames = null,
+  lastObservedVideoFrames = null,
   progressEpsilon = 0.05
 }) {
   if (!Number.isFinite(lastProgressTs) || lastProgressTs <= 0) {
@@ -34,6 +36,16 @@ export function decideStallVerdict({
   const gap = now - lastProgressTs;
   if (gap < softMs) {
     return { verdict: 'within-window', stallDurationMs: null };
+  }
+  // Decoder frame counter first: `currentTime` is refreshed by a main-thread
+  // task — the same thread whose starvation freezes `timeupdate` — so the two
+  // signals fail together and can't corroborate each other (2026-07-09 session
+  // fs 20260709060200: 41/41 stalls were this). totalVideoFrames advances off
+  // the main thread; if frames moved, the media is alive regardless of what
+  // the clock reads. A backward jump means the element was swapped — not progress.
+  if (Number.isFinite(videoFrames) && Number.isFinite(lastObservedVideoFrames)
+    && videoFrames > lastObservedVideoFrames) {
+    return { verdict: 'progressing', stallDurationMs: null };
   }
   // Timer gap exceeded — check currentTime as second opinion.
   if (Number.isFinite(currentTime) && Number.isFinite(lastObservedCurrentTime)) {
@@ -47,4 +59,18 @@ export function decideStallVerdict({
     }
   }
   return { verdict: 'stalled', stallDurationMs: gap };
+}
+
+/**
+ * Read the decoder's cumulative frame count from a media element, or null when
+ * the element is audio-only / the API is unsupported. Callers feed this into
+ * `decideStallVerdict` as the starvation-immune liveness signal.
+ */
+export function readVideoFrames(mediaEl) {
+  try {
+    const q = mediaEl?.getVideoPlaybackQuality?.();
+    return q && Number.isFinite(q.totalVideoFrames) ? q.totalVideoFrames : null;
+  } catch (_) {
+    return null;
+  }
 }
