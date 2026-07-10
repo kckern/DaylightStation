@@ -1,6 +1,8 @@
 import { useMemo, useEffect } from 'react';
-import { Stack, Paper, Title, Text, Group, Loader, SimpleGrid } from '@mantine/core';
+import { Stack, Paper, Title, Text, Group, Loader, SimpleGrid, Button, Anchor } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
 import { useAlignment } from '../../hooks/useAlignment.js';
+import { useLifePlan } from '../../hooks/useLifePlan.js';
 import { CadenceIndicator } from '../../widgets/CadenceIndicator.jsx';
 import { DriftGauge } from '../../widgets/DriftGauge.jsx';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
@@ -11,8 +13,10 @@ import getLogger from '../../../../lib/logging/Logger.js';
 
 export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
+  const navigate = useNavigate();
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
+  const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
 
   useEffect(() => {
     logger.info('life.dashboard.mounted');
@@ -20,18 +24,19 @@ export function Dashboard() {
   }, [logger]);
 
   useEffect(() => {
-    if (!pLoading && !dLoading) {
+    if (!pLoading && !dLoading && !planLoading) {
       const dashboard = dashData?.dashboard;
       logger.info('life.dashboard.loaded', {
         goalCount: dashboard?.goalProgress?.length || 0,
         beliefCount: dashboard?.beliefConfidence?.length || 0,
         hasDrift: !!dashboard?.valueDrift,
         priorityCount: priorityData?.priorities?.length || 0,
+        planEmpty: planIsEmpty,
       });
     }
-  }, [pLoading, dLoading, dashData, priorityData, logger]);
+  }, [pLoading, dLoading, planLoading, planIsEmpty, dashData, priorityData, logger]);
 
-  if (pLoading || dLoading) {
+  if (pLoading || dLoading || planLoading) {
     return <Loader size="sm" />;
   }
 
@@ -40,6 +45,24 @@ export function Dashboard() {
 
   return (
     <Stack gap="md">
+      {planIsEmpty && (
+        <Paper p="lg" withBorder radius="md">
+          <Stack gap="sm">
+            <Title order={4}>You don't have a life plan yet</Title>
+            <Text c="dimmed">
+              Ten minutes with your coach gets you a working plan — values, a goal or two,
+              and your first check-in tomorrow morning.
+            </Text>
+            <Group gap="md" mt="xs">
+              <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
+              <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/log')}>
+                Browse my life log first
+              </Anchor>
+            </Group>
+          </Stack>
+        </Paper>
+      )}
+
       {dashboard?.cadencePosition && (
         <CadenceIndicator cadencePosition={dashboard.cadencePosition} />
       )}

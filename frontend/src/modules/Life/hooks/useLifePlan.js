@@ -48,6 +48,14 @@ export function useLifePlan(username) {
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
 
+  // A plan is "empty" when it has no substance yet: no object, no keys, or no
+  // goals/values/purpose. Consumers (e.g. the dashboard funnel) use this to
+  // decide whether to route a new user to the coach.
+  const isEmpty = useMemo(() => (
+    !plan || Object.keys(plan).length === 0 ||
+    ((plan.goals?.length ?? 0) === 0 && (plan.values?.length ?? 0) === 0 && !plan.purpose)
+  ), [plan]);
+
   const updateSection = useCallback(async (section, data) => {
     try {
       await api(`/${section}${qs}`, { method: 'PATCH', body: JSON.stringify(data) });
@@ -59,7 +67,7 @@ export function useLifePlan(username) {
     }
   }, [qs, fetchPlan]);
 
-  return { plan, loading, error, refetch: fetchPlan, updateSection };
+  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection };
 }
 
 /**

@@ -45,6 +45,19 @@ export function GoalsView({ username, onGoalClick }) {
 
   if (loading) return null;
 
+  if (goals.length === 0) {
+    return (
+      <Stack gap="md">
+        <Title order={4}>Goals</Title>
+        <Paper p="lg" withBorder radius="md">
+          <Text c="dimmed">
+            No goals yet — add one below, or let your coach walk you through it.
+          </Text>
+        </Paper>
+      </Stack>
+    );
+  }
+
   return (
     <Stack gap="md">
       <Title order={4}>Goals</Title>
