@@ -24,8 +24,8 @@ android {
         // BUMP versionCode on EVERY build: PackageInstaller self-update (POST /update)
         // rejects an APK whose versionCode is < the installed one. Future ADB-free
         // upgrades must keep incrementing this.
-        versionCode 17
-        versionName "1.9-kiosk-watchdog"
+        versionCode 18
+        versionName "1.10-audio-guard"
 
         // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
         // real target (Samsung SM-T590, Snapdragon 450); arm64-v8a included for
@@ -64,6 +64,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
+    testOptions {
+        // Stubbed android.jar methods (android.util.Log, SystemClock, org.json)
+        // return defaults instead of throwing "Stub!" in plain JVM unit tests, so
+        // AudioRouteGuard's Diag.log path is exercisable off-device.
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -71,4 +78,5 @@ dependencies {
     implementation 'com.google.oboe:oboe:1.8.1'
     // NanoHTTPD WebSocket server — control channel from the browser kiosk.
     implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    testImplementation 'junit:junit:4.13.2'
 }
