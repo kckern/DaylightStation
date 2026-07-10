@@ -5,7 +5,9 @@ export class PlanToolFactory extends ToolFactory {
   static domain = 'lifeplan';
 
   createTools() {
-    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService } = this.deps;
+    const { lifePlanStore, goalStateService, beliefEvaluator, feedbackService, planAuthoringService } = this.deps;
+
+    const CONFIRM_PREFIX = "Writes to the user's plan. Only call after the user has explicitly confirmed in conversation.";
 
     return [
       createTool({
@@ -145,6 +147,94 @@ export class PlanToolFactory extends ToolFactory {
         execute: async ({ username, observation }) => {
           feedbackService.recordObservation(username, { text: observation, date: new Date().toISOString() });
           return { recorded: true };
+        },
+      }),
+
+      createTool({
+        name: 'create_goal',
+        description: `${CONFIRM_PREFIX} Creates a new goal (starts in the 'dream' state). Use during onboarding or when the user commits to a new goal.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', description: 'User identifier' },
+            name: { type: 'string', description: 'Short name of the goal' },
+            why: { type: 'string', description: 'The motivation behind the goal' },
+            milestone: { type: 'string', description: 'An optional first milestone' },
+          },
+          required: ['username', 'name'],
+        },
+        execute: async ({ username, name, why, milestone }) => {
+          try {
+            const created = planAuthoringService.addGoal(username, { name, why, milestone });
+            return { created };
+          } catch (e) {
+            return { error: e.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'add_value',
+        description: `${CONFIRM_PREFIX} Adds a value to the plan at the next rank. Use during onboarding or when the user names a value that matters to them.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', description: 'User identifier' },
+            name: { type: 'string', description: 'Short name of the value (e.g. Health, Family)' },
+            description: { type: 'string', description: 'What this value means to the user' },
+          },
+          required: ['username', 'name'],
+        },
+        execute: async ({ username, name, description }) => {
+          try {
+            const created = planAuthoringService.addValue(username, { name, description });
+            return { created };
+          } catch (e) {
+            return { error: e.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'add_belief',
+        description: `${CONFIRM_PREFIX} Adds an if/then belief to test (starts 'hypothesized', confidence 0.5). Use when the user commits to an assumption worth testing.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', description: 'User identifier' },
+            if_hypothesis: { type: 'string', description: 'The hypothesis (if part)' },
+            then_outcome: { type: 'string', description: 'The expected outcome (then part)' },
+          },
+          required: ['username', 'if_hypothesis', 'then_outcome'],
+        },
+        execute: async ({ username, if_hypothesis, then_outcome }) => {
+          try {
+            const created = planAuthoringService.addBelief(username, { if_hypothesis, then_outcome });
+            return { created };
+          } catch (e) {
+            return { error: e.message };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'set_purpose',
+        description: `${CONFIRM_PREFIX} Sets or replaces the plan's purpose statement. Use when the user articulates their overarching purpose.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            username: { type: 'string', description: 'User identifier' },
+            statement: { type: 'string', description: 'The purpose statement' },
+          },
+          required: ['username', 'statement'],
+        },
+        execute: async ({ username, statement }) => {
+          try {
+            const created = planAuthoringService.setPurpose(username, { statement });
+            return { created };
+          } catch (e) {
+            return { error: e.message };
+          }
         },
       }),
     ];

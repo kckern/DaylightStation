@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
+import { LifePlan } from '#domains/lifeplan/entities/LifePlan.mjs';
 
 describe('PlanAuthoringService', () => {
   let store, saved, current, svc;
@@ -64,5 +65,31 @@ describe('PlanAuthoringService', () => {
     store.load.mockReturnValue(saved); // now the plan exists with goal 'ship-it'
     const g2 = svc.addGoal('test-user', { name: 'Ship it' });
     expect(g2.id).toBe('ship-it-2');
+  });
+
+  it('seeded fields survive a real toJSON -> new LifePlan save/load cycle', () => {
+    // A store that serializes on save (toJSON) and rehydrates on load
+    // (new LifePlan) — mirrors the YAML store. Guards against a future
+    // toJSON regression silently dropping seeded goal/belief fields.
+    let raw = null;
+    const serializingStore = {
+      load: () => (raw ? new LifePlan(raw) : null),
+      save: (_u, plan) => { raw = JSON.parse(JSON.stringify(plan.toJSON())); },
+    };
+    const svc2 = new PlanAuthoringService({ lifePlanStore: serializingStore });
+
+    svc2.addGoal('test-user', { name: 'Run a half marathon', why: 'health', milestone: '10k by Sept' });
+    svc2.addBelief('test-user', { if_hypothesis: 'train before 8am', then_outcome: 'training happens' });
+
+    const reloaded = serializingStore.load();
+    const goal = reloaded.goals.find((g) => g.id === 'run-a-half-marathon');
+    expect(goal.why).toBe('health');
+    expect(goal.milestones).toHaveLength(1);
+    expect(goal.milestones[0].name).toBe('10k by Sept');
+
+    const belief = reloaded.beliefs.find((b) => b.id === 'train-before-8am');
+    expect(belief.if).toBe('train before 8am');
+    expect(belief.then).toBe('training happens');
+    expect(belief.confidence).toBe(0.5);
   });
 });
