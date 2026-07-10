@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { partitionSeasons, programStats, seasonStats, continueTarget, courseStats, categoryOf } from './subcourses.js';
+import { partitionSeasons, programStats, seasonStats, continueTarget, courseStats, laneOf, groupCourses, partsOf } from './subcourses.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoContextRail from './PianoContextRail.jsx';
 import SeasonList from './SeasonList.jsx';
@@ -8,8 +8,8 @@ import LessonList from './LessonList.jsx';
 import RepertoireBrowser from './RepertoireBrowser.jsx';
 
 const LANES = [
-  { key: 'lesson', title: 'Lessons' },
-  { key: 'reference', title: 'Reference' },
+  { key: 'practice', title: 'Practice' },
+  { key: 'lessons', title: 'Lessons' },
   { key: 'repertoire', title: 'Repertoire' },
 ];
 
@@ -58,7 +58,11 @@ export default function SubcourseNavigator({ course, playable, onPlay }) {
   const railTitle = activeCourse ? activeCourse.label : season ? (season.title || `Season ${season.index}`) : program;
   const ring = (() => {
     if (activeCourse) { const st = courseStats(activeCourse); return activeCourse.reference ? null : { percent: st.percent, label: `${st.watched}/${st.total}`, done: st.complete }; }
-    if (season) { const st = seasonStats(season); return st.reference ? null : { percent: st.percent, label: `${st.percent}%`, done: st.totalCourses > 0 && st.completeCourses === st.totalCourses }; }
+    if (season) {
+      if (laneOf(season) !== 'lessons') return null;
+      const st = seasonStats(season);
+      return { percent: st.percent, label: `${st.percent}%`, done: st.totalCourses > 0 && st.completeCourses === st.totalCourses };
+    }
     const st = programStats(seasons); return { percent: st.percent, label: `${st.percent}%`, done: st.totalCourses > 0 && st.completeCourses === st.totalCourses };
   })();
   const railContinue = cont ? { kicker: 'Continue', title: cont.lesson.label || cont.lesson.title, sub: seasons.find((s) => s.id === cont.seasonId)?.title || null } : null;
@@ -68,7 +72,7 @@ export default function SubcourseNavigator({ course, playable, onPlay }) {
     pane = (
       <div className="psc-lanes">
         {LANES.map(({ key, title }) => {
-          const bucket = seasons.filter((s) => categoryOf(s) === key);
+          const bucket = seasons.filter((s) => laneOf(s) === key);
           if (!bucket.length) return null;
           return (
             <section key={key} className="psc-lane">
@@ -79,12 +83,27 @@ export default function SubcourseNavigator({ course, playable, onPlay }) {
         })}
       </div>
     );
-  } else if (categoryOf(season) === 'repertoire') {
+  } else if (laneOf(season) === 'repertoire') {
     pane = <RepertoireBrowser season={season} onPlay={onPlay} />;
   } else if (activeCourse) {
-    pane = <LessonList lessons={activeCourse.lessons} onPlay={onPlay} reference={activeCourse.reference} />;
+    pane = <LessonList lessons={activeCourse.lessons} sections={partsOf(activeCourse)} onPlay={onPlay} reference={activeCourse.reference} />;
   } else {
-    pane = <CourseCards season={season} currentFloor={cont?.seasonId === season.id ? cont.floor : null} onSelect={(c) => setFloor(c.floor)} />;
+    const grouped = groupCourses(season);
+    const cards = (bucket) => (
+      <CourseCards season={{ ...season, courses: bucket.courses }}
+        currentFloor={cont?.seasonId === season.id ? cont.floor : null}
+        onSelect={(c) => setFloor(c.floor)} />
+    );
+    pane = grouped.length === 1 ? cards(grouped[0]) : (
+      <div className="psc-groups">
+        {grouped.map((b) => (
+          <section key={b.group ?? '_'} className="psc-group">
+            <h4 className="psc-group-title">{b.group}</h4>
+            {cards(b)}
+          </section>
+        ))}
+      </div>
+    );
   }
 
   return (

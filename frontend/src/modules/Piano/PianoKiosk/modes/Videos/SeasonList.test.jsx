@@ -26,4 +26,11 @@ describe('SeasonList', () => {
     fireEvent.click(screen.getByTitle('Pop Soloing'));
     expect(onSelect).toHaveBeenCalledWith(graded);
   });
+  it('renders a repertoire season as a song-library row without a ring', () => {
+    const seasons = [{ id: 'r1', index: 8, title: 'Song Library', reference: false, piano: { lane: 'repertoire' }, lessons: new Array(5).fill({}), courses: [] }];
+    render(<SeasonList seasons={seasons} onSelect={() => {}} />);
+    expect(screen.getByText('Song Library')).toBeInTheDocument();
+    expect(screen.getByText(/browse by song/i)).toBeInTheDocument();
+    expect(document.querySelector('.psc-ring')).toBeNull();
+  });
 });
