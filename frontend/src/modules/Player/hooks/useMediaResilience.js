@@ -124,9 +124,18 @@ export function useMediaResilience({
     epsilonSeconds
   });
 
-  const { targetTimeSeconds, setTargetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({ 
-    sessionKey: playbackSessionKey 
+  const { targetTimeSeconds, setTargetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
+    sessionKey: playbackSessionKey
   });
+
+  // Latest-ref for the per-tick position inputs (`seconds`,
+  // playbackHealth.lastProgressSeconds): both change on every progress tick,
+  // and having them as triggerRecovery deps rebuilt its identity each tick —
+  // churning every consumer effect (notably the controllerRef assignment).
+  // The ref is updated each render; triggerRecovery reads it at call time, so
+  // the values are always current without being reactive deps.
+  const progressPositionRef = useRef({ seconds: 0, lastProgressSeconds: null });
+  progressPositionRef.current = { seconds, lastProgressSeconds: playbackHealth.lastProgressSeconds };
 
   // User Intent tracking
   const [userIntent, setUserIntent] = useState(USER_INTENT.playing);
@@ -177,6 +186,7 @@ export function useMediaResilience({
   //   refreshUrl      — override the reason-derived URL-refresh decision.
   //   forceRemount    — escalate to a full React remount in onReload.
   const triggerRecovery = useCallback((reason, options = {}) => {
+    const bypassCooldown = options.bypassCooldown === true;
     const refreshUrl = typeof options.refreshUrl === 'boolean'
       ? options.refreshUrl
       : shouldRefreshUrlForReason(reason);
@@ -186,7 +196,7 @@ export function useMediaResilience({
       mountId: waitKey,
       actor: 'resilience',
       reason,
-      bypassCooldown: options.bypassCooldown === true,
+      bypassCooldown,
       isUrlRefresh: refreshUrl
     });
 
@@ -216,7 +226,10 @@ export function useMediaResilience({
     const attempt = gate.attempt;
     playbackLog('resilience-recovery', {
       reason, waitKey: logWaitKey,
-      status: statusRef.current, attempt, maxAttempts
+      status: statusRef.current, attempt, maxAttempts,
+      // Explicit flag so soak-log filtering doesn't depend on reason-string
+      // conventions to tell user-initiated recoveries from automatic ones.
+      bypassCooldown
     });
     actions.setStatus(STATUS.recovering);
 
@@ -227,7 +240,8 @@ export function useMediaResilience({
         // user picked this exact position, so no same-position nudge applies.
         seekMs = Math.max(0, options.seekToIntentMs);
       } else {
-        const baseSeekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
+        const pos = progressPositionRef.current;
+        const baseSeekMs = (targetTimeSeconds || pos.lastProgressSeconds || pos.seconds || initialStart || 0) * 1000;
         const computed = computeRecoverySeekMs({
           baseSeekMs,
           tracker: recoverySeekTrackerRef.current,
@@ -245,7 +259,7 @@ export function useMediaResilience({
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
     getRecoveryLedger().userReset(playbackSessionKey);

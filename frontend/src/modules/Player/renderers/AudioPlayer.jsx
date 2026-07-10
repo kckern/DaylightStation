@@ -72,7 +72,8 @@ export function AudioPlayer({
     ignoreKeys,
     onProgress,
     onMediaRef,
-    onController
+    onController,
+    recoverySessionKey: resilienceBridge?.playbackSessionKey || null
   });
 
   // Register accessors with resilience bridge
@@ -302,6 +303,7 @@ AudioPlayer.propTypes = {
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
-    onSeekRequestConsumed: PropTypes.func
+    onSeekRequestConsumed: PropTypes.func,
+    playbackSessionKey: PropTypes.string
   })
 };
