@@ -6,6 +6,7 @@ import { createArtSource } from '#adapters/content/art/sources/artSource.mjs';
 import { mergeWorkMetadata, filterWorks } from '#adapters/content/art/workMetadata.mjs';
 import { matchesCollection } from '#adapters/content/art/collections.mjs';
 import { loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Admin Art router — curate the classic file-based art library.
@@ -80,13 +81,13 @@ export function createAdminArtRouter({ mediaPath, householdDir, getCollections, 
   });
 
   // PATCH /works/<folder> — folder may contain slashes (sectioned scopes), so use a wildcard.
-  // The backend runs Express 4 (backend/package.json pins ^4.18.2), so use the Express 4
-  // wildcard form `/works/*` with `req.params[0]`. Express 5's `*splat` form does not
-  // apply here; the root-level express@5 is only used by test files, not imported modules.
-  router.patch('/works/*', async (req, res) => {
+  // The backend resolves the root-level express@5 (backend/ has no node_modules of its own,
+  // despite backend/package.json pinning ^4.18.2), so this uses the Express 5 named-wildcard
+  // form `/works/*splat`; splatPath() joins the segment array back into a path string.
+  router.patch('/works/*splat', async (req, res) => {
     const scopeDir = safeScopeDir(req.body?.source);
     if (!scopeDir) return res.status(400).json({ error: 'Invalid source' });
-    const rawId = req.params[0] || '';
+    const rawId = splatPath(req);
     const workDir = path.resolve(scopeDir, rawId);
     // Per-work traversal guard: the resolved work dir must stay inside the (already
     // art-root-bounded) scope, and must name an actual work (not the scope itself).

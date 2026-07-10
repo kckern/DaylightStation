@@ -457,7 +457,7 @@ export function createGratitudeRouter(config) {
    * Note: The createGratitudeCardCanvas function returns selectedIds that were
    * included in the generated card, which are then marked as printed.
    */
-  router.get('/card/print/:location?', asyncHandler(async (req, res) => {
+  router.get('/card/print{/:location}', asyncHandler(async (req, res) => {
     if (!createGratitudeCardCanvas) {
       return res.status(501).json({
         error: 'Gratitude card generation not configured',

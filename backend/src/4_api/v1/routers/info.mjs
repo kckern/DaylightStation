@@ -17,6 +17,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { resolveFormat } from '../utils/resolveFormat.mjs';
 import { stripEmpty } from '#api/v1/utils/stripEmpty.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Derive capabilities from item properties.
@@ -145,7 +146,7 @@ export function createInfoRouter(config) {
   const handleInfoRequest = asyncHandler(async (req, res) => {
     const requestStart = performance.now();
     const { source } = req.params;
-    const rawPath = req.params[0] || '';
+    const rawPath = splatPath(req);
 
     // Parse the ID using unified parser
     const { source: resolvedSource, localId, compoundId } = parseActionRouteId({
@@ -214,7 +215,7 @@ export function createInfoRouter(config) {
 
   // Register routes: order matters - more specific first
   // GET /:source/* - handles path segments like /plex/12345
-  router.get('/:source/*', handleInfoRequest);
+  router.get('/:source/*splat', handleInfoRequest);
 
   // GET /:source - handles compound IDs like /plex:12345 and heuristics like /12345
   router.get('/:source', handleInfoRequest);

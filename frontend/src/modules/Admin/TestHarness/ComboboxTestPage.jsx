@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/TestHarness/ComboboxTestPage.jsx
 /**
- * Isolated test page for ContentSearchCombobox
+ * Isolated test page for the unified ContentCombobox
  * Mounts component with controllable props via URL params
  *
  * URL params:
@@ -13,7 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Stack, Paper, Text, Code, Group, Badge, Title, Divider } from '@mantine/core';
-import ContentSearchCombobox from '../ContentLists/ContentSearchCombobox.jsx';
+import ContentCombobox from '../ContentLists/combobox/ContentCombobox.jsx';
 
 function ComboboxTestPage() {
   const [searchParams] = useSearchParams();
@@ -44,11 +44,11 @@ function ComboboxTestPage() {
 
   return (
     <Stack p="xl" maw={800} mx="auto">
-      <Title order={2}>ContentSearchCombobox Test Harness</Title>
+      <Title order={2}>ContentCombobox Test Harness</Title>
 
       <Paper p="md" withBorder>
         <Text size="sm" c="dimmed" mb="md">Component Under Test</Text>
-        <ContentSearchCombobox
+        <ContentCombobox
           value={value}
           onChange={handleChange}
           placeholder={placeholder}

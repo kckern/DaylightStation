@@ -43,7 +43,7 @@ export function createExternalProxyRouter(config) {
    * ALL /external-proxy/:service/*
    * Proxy any request to the specified service
    */
-  router.all('/:service/*', async (req, res) => {
+  router.all('/:service/*splat', async (req, res) => {
     const { service } = req.params;
 
     // Rebuild the path without the service prefix

@@ -1,6 +1,9 @@
-import React from 'react';
-import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
+import React, { useState, useMemo, useCallback } from 'react';
+import { NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
 import { NavLink, Stack, Text, Box } from '@mantine/core';
+import { useUnsavedGuardRegistry } from './shared/UnsavedGuardContext.jsx';
+import ConfirmModal from './shared/ConfirmModal.jsx';
+import getLogger from '../../lib/logging/Logger.js';
 import {
   IconMenu2, IconPlayerRecord, IconCalendarEvent,
   IconRun, IconCoin, IconHeart, IconShoppingCart,
@@ -60,6 +63,30 @@ const navSections = [
 
 function AdminNav() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const guardRegistry = useUnsavedGuardRegistry();
+  const logger = useMemo(() => getLogger().child({ component: 'admin-nav' }), []);
+
+  // Destination intercepted by the unsaved-changes guard (null = no modal).
+  const [pendingTo, setPendingTo] = useState(null);
+
+  // Intercept navigation while any registered editor is dirty (audit C1).
+  const handleNavClick = useCallback((event, to) => {
+    if (guardRegistry?.isAnyDirty()) {
+      event.preventDefault();
+      setPendingTo(to);
+      logger.info('unsaved_guard.nav_blocked', { to });
+    }
+  }, [guardRegistry, logger]);
+
+  const handleDiscardConfirm = useCallback(() => {
+    const to = pendingTo;
+    setPendingTo(null);
+    if (to) {
+      logger.info('unsaved_guard.discard_confirmed', { to });
+      navigate(to);
+    }
+  }, [pendingTo, navigate, logger]);
 
   return (
     <Stack gap={0} className="ds-nav">
@@ -113,11 +140,22 @@ function AdminNav() {
                 active={isActive}
                 variant="subtle"
                 className={`ds-nav-item ${isActive ? 'ds-nav-item-active' : ''}`}
+                onClick={(event) => handleNavClick(event, item.to)}
               />
             );
           })}
         </Box>
       ))}
+
+      <ConfirmModal
+        opened={pendingTo !== null}
+        onClose={() => setPendingTo(null)}
+        onConfirm={handleDiscardConfirm}
+        title="Discard unsaved changes?"
+        message="You have unsaved changes on this page."
+        impact="Your edits will be lost."
+        confirmLabel="Discard"
+      />
     </Stack>
   );
 }

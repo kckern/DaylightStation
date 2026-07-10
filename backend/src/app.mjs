@@ -271,7 +271,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   if (!configExists) {
-    app.get('*', (req, res, next) => {
+    // Express 5: '/{*splat}' (optional named wildcard) replaces the bare '*' catch-all
+    app.get('/{*splat}', (req, res, next) => {
       if (req.path.startsWith('/ws/')) return next();
       res.status(500).json({ error: 'Application not configured. Ensure system.yml exists.' });
     });
@@ -1669,7 +1670,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
 
-  // Printer router — thermal printer control, multi-printer via :location? URL segment
+  // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({
     printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'printer-api' })

@@ -92,10 +92,13 @@ export function createHomeAutomationRouter(config) {
   // ===========================================================================
 
   /**
-   * GET /home-automation/tv/:state(on|off|toggle)
+   * GET /home-automation/tv/:state — state must be on|off|toggle
    * Control living room TV power
    */
-  router.get('/tv/:state(on|off|toggle)', asyncHandler(async (req, res) => {
+  // Express 5 (path-to-regexp v8) dropped param regexes like :state(on|off|toggle);
+  // the value is validated in the handler instead (next() preserves the 404 fall-through).
+  router.get('/tv/:state', asyncHandler(async (req, res, next) => {
+    if (!['on', 'off', 'toggle'].includes(req.params.state)) return next();
     if (!tvAdapter) {
       return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
     }
@@ -112,10 +115,12 @@ export function createHomeAutomationRouter(config) {
   }));
 
   /**
-   * GET /home-automation/office_tv/:state(on|off|toggle)
+   * GET /home-automation/office_tv/:state — state must be on|off|toggle
    * Control office TV power
    */
-  router.get('/office_tv/:state(on|off|toggle)', asyncHandler(async (req, res) => {
+  // Express 5: param regex dropped, validated in handler (see /tv/:state above)
+  router.get('/office_tv/:state', asyncHandler(async (req, res, next) => {
+    if (!['on', 'off', 'toggle'].includes(req.params.state)) return next();
     if (!tvAdapter) {
       return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
     }
@@ -255,11 +260,11 @@ export function createHomeAutomationRouter(config) {
   // ===========================================================================
 
   /**
-   * GET /home-automation/keyboard/:keyboard_id?
+   * GET /home-automation/keyboard{/:keyboard_id}
    * Get keyboard configuration data for a specific keyboard
    * Returns key mappings with labels, functions, and parameters
    */
-  router.get('/keyboard/:keyboard_id?', asyncHandler(async (req, res) => {
+  router.get('/keyboard{/:keyboard_id}', asyncHandler(async (req, res) => {
     if (!loadFile) {
       return res.status(503).json({ error: 'State file loading not configured' });
     }

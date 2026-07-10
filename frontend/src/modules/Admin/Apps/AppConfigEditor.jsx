@@ -1,13 +1,14 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useParams } from 'react-router-dom';
-import { Stack, Group, Text, Button, Badge, Alert, Center, Loader } from '@mantine/core';
-import { IconDeviceFloppy, IconArrowBack, IconAlertCircle } from '@tabler/icons-react';
-import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+import { Alert } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
+import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import YamlEditor from '../shared/YamlEditor.jsx';
 import FitnessConfig from './FitnessConfig.jsx';
 import GratitudeConfig from './GratitudeConfig.jsx';
 import ShoppingConfig from './ShoppingConfig.jsx';
 import FinanceConfig from './FinanceConfig.jsx';
+import { capitalize } from '../utils/formatters.js';
 
 /**
  * Maps appId to config file path relative to data root.
@@ -32,87 +33,23 @@ const APP_EDITORS = {
 };
 
 /**
- * Capitalize the first letter of a string.
- */
-function capitalize(str) {
-  if (!str) return '';
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-/**
  * YamlFallbackEditor - Generic YAML editor for app configs
  * that don't have a purpose-built form yet.
  *
- * Same pattern as ConfigFileEditor but scoped to app configs.
+ * Uses ConfigFormWrapper in rawMode so it inherits the shared save/revert
+ * chrome, mod+s / mod+z hotkeys, and the unsaved-changes guard (audit C5).
  */
 function YamlFallbackEditor({ appId, configPath }) {
-  const { raw, loading, saving, error, dirty, load, save, revert, setRaw, clearError } = useAdminConfig(configPath);
-
-  useEffect(() => {
-    load().catch(() => {});
-  }, [load]);
-
-  const handleSave = async () => {
-    try {
-      await save({ useRaw: true });
-    } catch (_) {
-      // error state handled by the hook
-    }
-  };
-
-  if (loading && !raw) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
   return (
-    <Stack gap="md">
-      <Text size="lg" fw={600}>{capitalize(appId)} Config</Text>
-
-      {error && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          title="Error"
-          withCloseButton
-          onClose={clearError}
-        >
-          {error.message || 'An error occurred'}
-        </Alert>
+    <ConfigFormWrapper filePath={configPath} title={`${capitalize(appId)} Config`} rawMode>
+      {({ raw, setRaw, error }) => (
+        <YamlEditor
+          value={raw}
+          onChange={setRaw}
+          error={error?.mark ? error : null}
+        />
       )}
-
-      <Group gap="sm">
-        {dirty && (
-          <Badge color="yellow" variant="light">Unsaved changes</Badge>
-        )}
-        <Button
-          variant="default"
-          size="xs"
-          disabled={!dirty}
-          onClick={revert}
-        >
-          Revert
-        </Button>
-        <Button
-          leftSection={<IconDeviceFloppy size={14} />}
-          size="xs"
-          disabled={!dirty}
-          loading={saving}
-          onClick={handleSave}
-        >
-          Save
-        </Button>
-      </Group>
-
-      <YamlEditor
-        value={raw}
-        onChange={setRaw}
-        error={error?.mark ? error : null}
-      />
-    </Stack>
+    </ConfigFormWrapper>
   );
 }
 

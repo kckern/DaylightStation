@@ -1,38 +1,22 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Stack, Group, Button, Text, Alert, Center, Loader, Badge, Breadcrumbs, Anchor } from '@mantine/core';
-import { IconArrowBack, IconDeviceFloppy, IconAlertCircle } from '@tabler/icons-react';
-import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+import { Stack, Text, Breadcrumbs, Anchor } from '@mantine/core';
+import { IconArrowBack } from '@tabler/icons-react';
+import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import YamlEditor from '../shared/YamlEditor.jsx';
 
+/**
+ * ConfigFileEditor - Raw YAML editor for an arbitrary config file.
+ *
+ * Uses ConfigFormWrapper in rawMode so it inherits the shared save/revert
+ * chrome, mod+s / mod+z hotkeys, and the unsaved-changes guard (audits C1/C5).
+ */
 function ConfigFileEditor() {
   const { '*': filePath } = useParams();
   const navigate = useNavigate();
-  const { raw, loading, saving, error, dirty, load, save, revert, setRaw, clearError } = useAdminConfig(filePath);
-
-  useEffect(() => {
-    if (filePath) {
-      load().catch(() => {});
-    }
-  }, [filePath, load]);
 
   const breadcrumbSegments = filePath ? filePath.split('/') : [];
-
-  const handleSave = async () => {
-    try {
-      await save({ useRaw: true });
-    } catch (_) {
-      // error state handled by the hook
-    }
-  };
-
-  if (loading && !raw) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const fileName = breadcrumbSegments[breadcrumbSegments.length - 1] || filePath;
 
   return (
     <Stack gap="md">
@@ -55,46 +39,17 @@ function ConfigFileEditor() {
         <IconArrowBack size={14} /> Back to Config
       </Anchor>
 
-      {error && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          title="Error"
-          withCloseButton
-          onClose={clearError}
-        >
-          {error.message || 'An error occurred'}
-        </Alert>
+      {filePath && (
+        <ConfigFormWrapper filePath={filePath} title={fileName} rawMode>
+          {({ raw, setRaw, error }) => (
+            <YamlEditor
+              value={raw}
+              onChange={setRaw}
+              error={error?.mark ? error : null}
+            />
+          )}
+        </ConfigFormWrapper>
       )}
-
-      <Group gap="sm">
-        {dirty && (
-          <Badge color="yellow" variant="light">Unsaved changes</Badge>
-        )}
-        <Button
-          variant="default"
-          size="xs"
-          disabled={!dirty}
-          onClick={revert}
-        >
-          Revert
-        </Button>
-        <Button
-          leftSection={<IconDeviceFloppy size={14} />}
-          size="xs"
-          disabled={!dirty}
-          loading={saving}
-          onClick={handleSave}
-        >
-          Save
-        </Button>
-      </Group>
-
-      <YamlEditor
-        value={raw}
-        onChange={setRaw}
-        error={error?.mark ? error : null}
-      />
     </Stack>
   );
 }
