@@ -5,5 +5,6 @@ export { default as ListsItemEditor } from './ListsItemEditor.jsx';
 export { default as ListSettingsModal } from './ListSettingsModal.jsx';
 export { default as EditorCategories } from './EditorCategories.jsx';
 export { default as ConfigIndicators } from './ConfigIndicators.jsx';
+export { default as ShimmerAvatar } from './ShimmerAvatar.jsx';
 export { default as ProgressDisplay } from './ProgressDisplay.jsx';
 export * from './listConstants.js';
