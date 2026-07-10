@@ -69,6 +69,104 @@ describe('TelegramNotificationAdapter', () => {
     expect(result.delivered).toBe(false);
     expect(result.error).toBe('api down');
   });
+
+  // The messaging TelegramAdapter.sendMessage has NO raw reply_markup option; it
+  // derives params.reply_markup from `options.choices` (rows of buttons) and needs
+  // `options.inline: true` for a button's `url` to survive buildKeyboard. These tests
+  // assert against those real option keys so the button actually renders in production.
+  it('renders intent.actions with url data as an inline keyboard', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const adapter = new TelegramNotificationAdapter({
+      telegramAdapter: { sendMessage },
+      resolveChatId: () => '12345',
+      publicBaseUrl: 'https://example.test',
+    });
+
+    await adapter.send({
+      title: 'Weekly retrospective',
+      body: 'Your cycle retro is due.',
+      category: 'ceremony',
+      urgency: 'normal',
+      metadata: { username: 'test-user' },
+      actions: [{ label: 'Begin', action: 'open', data: { url: '/life/ceremony/unit_intention' } }],
+    });
+
+    const opts = sendMessage.mock.calls[0][2];
+    expect(opts.inline).toBe(true);
+    expect(opts.choices[0][0]).toEqual({
+      text: 'Begin',
+      url: 'https://example.test/life/ceremony/unit_intention',
+    });
+  });
+
+  it('omits the keyboard when no publicBaseUrl is configured', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const adapter = new TelegramNotificationAdapter({
+      telegramAdapter: { sendMessage },
+      resolveChatId: () => '12345',
+    });
+
+    const result = await adapter.send({
+      title: 't',
+      body: 'b',
+      category: 'ceremony',
+      urgency: 'normal',
+      metadata: { username: 'test-user' },
+      actions: [{ label: 'Begin', data: { url: '/x' } }],
+    });
+
+    const opts = sendMessage.mock.calls[0][2];
+    expect(opts.choices).toBeUndefined();
+    expect(opts.inline).toBeUndefined();
+    // still delivered as plain text
+    expect(result.delivered).toBe(true);
+  });
+
+  it('skips actions that have no url', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const adapter = new TelegramNotificationAdapter({
+      telegramAdapter: { sendMessage },
+      resolveChatId: () => '12345',
+      publicBaseUrl: 'https://example.test',
+    });
+
+    await adapter.send({
+      title: 't',
+      body: 'b',
+      category: 'ceremony',
+      urgency: 'normal',
+      metadata: { username: 'test-user' },
+      actions: [
+        { label: 'No link', action: 'noop' },
+        { label: 'Begin', data: { url: '/go' } },
+      ],
+    });
+
+    const opts = sendMessage.mock.calls[0][2];
+    expect(opts.choices[0]).toHaveLength(1);
+    expect(opts.choices[0][0]).toEqual({ text: 'Begin', url: 'https://example.test/go' });
+  });
+
+  it('passes an already-absolute action url through unchanged', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const adapter = new TelegramNotificationAdapter({
+      telegramAdapter: { sendMessage },
+      resolveChatId: () => '12345',
+      publicBaseUrl: 'https://example.test',
+    });
+
+    await adapter.send({
+      title: 't',
+      body: 'b',
+      category: 'ceremony',
+      urgency: 'normal',
+      metadata: { username: 'test-user' },
+      actions: [{ label: 'External', data: { url: 'https://other.test/path' } }],
+    });
+
+    const opts = sendMessage.mock.calls[0][2];
+    expect(opts.choices[0][0]).toEqual({ text: 'External', url: 'https://other.test/path' });
+  });
 });
 
 describe('PushNotificationAdapter (Home Assistant)', () => {

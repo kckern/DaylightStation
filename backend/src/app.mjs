@@ -695,9 +695,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The default telegram adapter is constructed later in createMessagingServices,
   // so it's late-bound here and assigned after that call.
   const notificationTelegram = { adapter: null };
+  // Absolute base URL for Telegram inline deep-link buttons (e.g. the ceremony
+  // "Begin" action). No dedicated ConfigService getter exists, so read it from the
+  // system app config; an unset value ⇒ text-only nudges (no button).
+  const notificationPublicBaseUrl = configService.getAppConfig('system')?.public_url ?? null;
   const notificationStack = bootstrapNotifications({
     eventBus,
     telegramAdapter: () => notificationTelegram.adapter,
+    publicBaseUrl: notificationPublicBaseUrl,
     resolveChatId: (username) =>
       userService.getProfile(username)?.identities?.telegram?.user_id
         ?? configService.resolvePlatformId('telegram', username),
