@@ -6,5 +6,6 @@ export { default as ListSettingsModal } from './ListSettingsModal.jsx';
 export { default as EditorCategories } from './EditorCategories.jsx';
 export { default as ConfigIndicators } from './ConfigIndicators.jsx';
 export { default as ShimmerAvatar } from './ShimmerAvatar.jsx';
+export { ContentValueCard, fetchContentMetadata } from './ContentDisplays.jsx';
 export { default as ProgressDisplay } from './ProgressDisplay.jsx';
 export * from './listConstants.js';
