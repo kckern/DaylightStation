@@ -50,6 +50,7 @@ public class A2dpConnector {
     private volatile String lastError = null;
     private volatile int reconnects = 0;
     private volatile long lastConnectAttempt = 0L;
+    private volatile Runnable onStateChanged;
 
     public A2dpConnector(Context ctx, DeviceConfig cfg) {
         this.ctx = ctx.getApplicationContext();
@@ -80,11 +81,54 @@ public class A2dpConnector {
                 try { adapter.closeProfileProxy(BluetoothProfile.A2DP, proxy); } catch (Exception ignored) { }
             }
             proxy = null;
+            onStateChanged = null; // drop the (now stale) guard reference
         });
+        // Let the posted teardown run, then retire the HandlerThread so it doesn't leak
+        // across reloadConfigAndReconnect() while still holding the old guard.
+        thread.quitSafely();
     }
 
     /** Force an immediate reconnect attempt (pbctl POST /speaker). */
     public void connectNow() { handler.post(this::ensureConnected); }
+
+    /** Force an A2DP disconnect (pbctl bootstrap). Reflection: disconnect() is @hide but greylisted. */
+    public void disconnectNow() { handler.post(this::forceDisconnect); }
+
+    /** Force-disconnect the target speaker so the route falls back to the built-in speaker. */
+    private void forceDisconnect() {
+        if (adapter == null || !adapter.isEnabled()) { setError("bluetooth off"); return; }
+        if (proxy == null) { adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP); return; }
+        final String mac = cfg.speakerMac();
+        if (mac.isEmpty()) return;
+
+        BluetoothDevice target;
+        try { target = adapter.getRemoteDevice(mac); }
+        catch (IllegalArgumentException e) { setError("bad speakerMac: " + mac); return; }
+
+        if (!isConnected(target)) return; // already disconnected — nothing to do
+        try {
+            Method disconnect = BluetoothA2dp.class.getMethod("disconnect", BluetoothDevice.class);
+            Object r = disconnect.invoke(proxy, target);
+            Diag.log(TAG, "disconnect(" + mac + ") -> " + r);
+        } catch (Throwable t) {
+            setError("disconnect() failed: " + t.getClass().getSimpleName() + " " + t.getMessage());
+        }
+    }
+
+    /** True iff the configured speaker MAC is currently A2DP-connected. */
+    public boolean isTargetConnected() {
+        String mac = cfg.speakerMac();
+        if (adapter == null || mac.isEmpty()) return false;
+        try { return isConnected(adapter.getRemoteDevice(mac)); }
+        catch (Exception e) { return false; }
+    }
+
+    /** Optional hook fired (off the main thread) whenever A2DP state may have changed. */
+    public void setOnStateChanged(Runnable r) { this.onStateChanged = r; }
+    private void fireStateChanged() {
+        Runnable r = onStateChanged;
+        if (r != null) try { r.run(); } catch (Throwable t) { Log.w(TAG, "onStateChanged threw", t); }
+    }
 
     private final BluetoothProfile.ServiceListener profileListener = new BluetoothProfile.ServiceListener() {
         @Override public void onServiceConnected(int profile, BluetoothProfile p) {
@@ -107,9 +151,11 @@ public class A2dpConnector {
                 reconnects++;
                 Diag.log(TAG, "speaker disconnected — reconnecting (#" + reconnects + ")");
                 handler.postDelayed(A2dpConnector.this::ensureConnected, RECONNECT_DELAY_MS);
+                fireStateChanged();
             } else if (state == BluetoothProfile.STATE_CONNECTED) {
                 Diag.log(TAG, "speaker connected");
                 lastError = null;
+                fireStateChanged();
             }
         }
     };
@@ -119,6 +165,7 @@ public class A2dpConnector {
         handler.postDelayed(() -> {
             if (!running) return;
             ensureConnected();
+            fireStateChanged(); // gives the reconciler its <=20s convergence tick
             scheduleSweep();
         }, SWEEP_MS);
     }
@@ -168,13 +215,11 @@ public class A2dpConnector {
         JSONObject o = new JSONObject();
         try {
             String mac = cfg.speakerMac();
-            boolean connected = false;
+            boolean connected = isTargetConnected(); // single source of truth
             String bond = "unknown";
             if (adapter != null && !mac.isEmpty()) {
                 try {
-                    BluetoothDevice d = adapter.getRemoteDevice(mac);
-                    connected = isConnected(d);
-                    bond = bondName(d.getBondState());
+                    bond = bondName(adapter.getRemoteDevice(mac).getBondState());
                 } catch (Exception ignored) { }
             }
             o.put("targetMac", mac);

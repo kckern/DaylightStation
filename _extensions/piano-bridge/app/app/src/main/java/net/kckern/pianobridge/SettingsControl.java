@@ -10,9 +10,21 @@ import org.json.JSONObject;
  *
  * The ADB-free replacement for `adb shell settings get/put`. That shell path is
  * SELinux-denied to an untrusted_app, but Settings.{Secure,Global,System}.putString
- * works directly because we hold WRITE_SECURE_SETTINGS (dev-granted once over USB).
- * Reads are unrestricted. Lets the kiosk/bridge keep e.g. location_mode=3 (needed
- * for BLE scans) or stay_on_while_plugged_in correct without ADB.
+ * works directly for MOST keys because we hold WRITE_SECURE_SETTINGS (dev-granted
+ * once over USB). Reads are unrestricted. Lets the kiosk/bridge keep e.g.
+ * location_mode=3 (needed for BLE scans) or stay_on_while_plugged_in correct
+ * without ADB.
+ *
+ * NOT a universal writer — per-device volume keys are read-only here. Verified on
+ * hardware (SM-T590, API 29, 2026-07-09): keys like volume_music_speaker,
+ * volume_music_bt_a2dp, volume_music_headset are READABLE via
+ * Settings.System.getString but NOT writable — putString throws
+ * IllegalArgumentException("You cannot keep your settings in the secure settings.").
+ * These live in Settings.System (not Settings.Secure), so WRITE_SECURE_SETTINGS does
+ * not help, and the shell fallback is also gone (`cmd media_session volume` →
+ * "No shell command implementation" on API 29). Do NOT re-attempt volume writes
+ * through this class; drive stream volume via AudioManager.setStreamVolume instead
+ * (that is how the audio guard clamps the built-in speaker index).
  */
 public final class SettingsControl {
 

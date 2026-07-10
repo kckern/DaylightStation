@@ -36,11 +36,15 @@ the browser kiosk. It reads the BLE-MIDI piano directly via Android
 Dexed/MSFA DX7 FM), and outputs through Oboe (low-latency). Package
 `net.kckern.pianobridge`, app label **"Piano Bridge"**.
 
-This mirrors the conventions of the sibling `_extensions/audio-bridge/` APK:
-same Gradle wrapper layout, `compileSdk 33` / `minSdk 30`, Java 11, and crucially
-the **regular-started-service + `NotificationManager.notify()`** pattern (NOT
-`startForeground()`) — see `_extensions/audio-bridge/DESIGN.md` for why that
-matters on Android 11.
+This mirrors the sibling `_extensions/audio-bridge/` APK's Gradle wrapper layout
+and build conventions, but **diverges on the service lifecycle**: Piano Bridge
+runs as a real **foreground service** (`startForegroundService` + `startForeground`,
+`foregroundServiceType=mediaPlayback`) to keep the Oboe stream alive when the
+WebView is backgrounded. audio-bridge deliberately avoids `startForeground()`
+because on Android 11 a foreground service started from a background context loses
+mic access — Piano Bridge uses no mic, so that restriction does not apply. See
+`_extensions/audio-bridge/DESIGN.md` for the audio-bridge rationale and this
+project's `DESIGN.md` "Service lifecycle" for the divergence.
 
 ---
 
@@ -136,6 +140,34 @@ prod container's served `frontend/dist/`). **Post-update the service is stopped*
 in-place update kills the process) — relaunch it ADB-free with
 `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
 
+### Deploying the audio-guard build (gotchas, verified 2026-07-09)
+
+The audio guard shipped as versionCode **18** / `1.10-audio-guard`. What the deploy
+actually required:
+
+- **Deploy is a PULL, not a push.** `GET|POST /update?url=<apk-url>` makes the bridge
+  fetch the APK over HTTP, so the APK **must be served on the LAN** (there is no
+  upload endpoint). `versionCode` must strictly increase or the install is rejected.
+- **Install needs one physical tap.** FKB is not device owner, so the Android confirm
+  dialog appears. The `/update` endpoint **blocks past a 25 s curl timeout** while
+  waiting on that dialog — a client-side timeout does **NOT** mean the install failed.
+- **ADB over WiFi was unavailable.** After the reboot the port was refused;
+  `setprop service.adb.tcp.port` is denied to `untrusted_app`, and although
+  `adb_enabled=1`, it was USB-only. Plan for the `/update` (pull) path, not ADB.
+- **The service does not auto-start after a replace-install** (fresh-install stopped
+  state). Relaunch ADB-free: `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
+- **⚠️ Config-clobber bug (open item — fix separately).** After the replace-install,
+  the on-device config override at
+  `/data/user/0/net.kckern.pianobridge/files/piano-devices.yml` was **clobbered down
+  to a single key** (`fkbWakeSuppressUntilEpochMs`), losing `speakerMac`, `targetMac`,
+  `targetName`, `blocklistMacs`, ports, and timeouts. **Back up `GET /config` before
+  every install** and restore afterward with `POST /config` (YAML body). This is a
+  real bug worth its own fix.
+- **Reassuring:** with `speakerMac` empty after the clobber, the guard correctly
+  refused to clamp (an A2DP output was present → `speakerIsRoute` false) — it gated
+  but never wrote a wrongful volume. The fail-closed policy held under a config it
+  never anticipated.
+
 ### Lifecycle / recovery (no ADB)
 
 - **Reboot:** `BootReceiver` → `startForegroundService` auto-starts the service
@@ -207,9 +239,9 @@ Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 > ```
 
 > **Always bump `versionCode` in `app/app/build.gradle` on every build** — the
-> self-update path (below) rejects an APK whose `versionCode` is < the installed one.
-> Current shipped build: **versionCode 10 / versionName `1.6-selfupdate`** (SM-T590,
-> verified 2026-07-02).
+> self-update path (below) rejects an APK whose `versionCode` is not strictly greater
+> than the installed one. Current shipped build: **versionCode 18 / versionName
+> `1.10-audio-guard`** (SM-T590, verified 2026-07-09).
 
 ## Install
 
