@@ -11,6 +11,7 @@ import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
+import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -100,6 +101,7 @@ export function useMediaResilience({
     if (prevSessionKeyRef.current && prevSessionKeyRef.current !== playbackSessionKey) {
       getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
       exhaustedNotifiedRef.current = false;
+      lastSuccessPosRef.current = null;
     }
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
@@ -176,6 +178,10 @@ export function useMediaResilience({
   const joltLatestRef = useRef(null);
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
+  // Last playhead position that counted as a genuine recovery success. The
+  // ledger must only be cleared when the clock actually moved forward — a
+  // remount at a frozen position fires progress events but is not recovery.
+  const lastSuccessPosRef = useRef(null);
 
   // options (all optional — every no-options call site keeps its old behavior):
   //   bypassCooldown  — user-initiated recoveries skip the cooldown gate but
@@ -307,10 +313,21 @@ export function useMediaResilience({
       recoverySeekTrackerRef.current = { lastSeekMs: null, sameCount: 0 };
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
-      // Playback is genuinely progressing — clear attempts/cooldown so the
-      // next stall episode starts with a fresh budget.
-      getRecoveryLedger().recordSuccess(playbackSessionKey);
-      exhaustedNotifiedRef.current = false;
+
+      // A progressToken bump means "some progress event fired", NOT "the clock
+      // moved". A jolt's own remount fires `playing` at the frozen position; if
+      // that cleared the ledger, the attempt cap and cooldown would never engage
+      // and the ladder would loop at rung 1 forever (2026-07-10 soak, plex:674553).
+      // Only strictly-forward motion counts as recovery.
+      const observed = Number.isFinite(playbackHealth.lastProgressSeconds)
+        ? playbackHealth.lastProgressSeconds
+        : null;
+      const { advanced, nextPos } = evaluatePlayheadProgress(observed, lastSuccessPosRef.current);
+      lastSuccessPosRef.current = nextPos;
+      if (advanced) {
+        getRecoveryLedger().recordSuccess(playbackSessionKey);
+        exhaustedNotifiedRef.current = false;
+      }
       return;
     }
 
@@ -332,7 +349,7 @@ export function useMediaResilience({
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce]);
+  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
