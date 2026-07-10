@@ -4,6 +4,7 @@
 
 /** Format bytes into human-readable size */
 export function formatSize(bytes) {
+  if (bytes == null) return '';
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
@@ -61,22 +62,15 @@ export function cronToHuman(expr) {
   if (!expr) return '';
   const parts = expr.trim().split(/\s+/);
   if (parts.length < 5) return expr;
-  const [min, hour, dom, mon, dow] = parts;
+  const [min, hour, dayOfMonth] = parts;
 
   if (min.startsWith('*/')) return `Every ${min.slice(2)} min`;
-  if (min === '0' && hour === '*') return 'Hourly';
-  if (min === '0' && hour !== '*' && dom === '*' && mon === '*' && dow === '*') {
+  if (min !== '*' && hour === '*') return `Hourly at :${min.padStart(2, '0')}`;
+  if (min !== '*' && hour !== '*' && dayOfMonth === '*') {
     const h = parseInt(hour, 10);
     const ampm = h >= 12 ? 'PM' : 'AM';
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `Daily at ${h12}:00 ${ampm}`;
-  }
-  if (min !== '*' && hour !== '*' && dom === '*' && mon === '*' && dow === '*') {
-    const h = parseInt(hour, 10);
-    const m = parseInt(min, 10);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `Daily at ${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    return `Daily at ${h12}:${min.padStart(2, '0')} ${ampm}`;
   }
   return expr;
 }

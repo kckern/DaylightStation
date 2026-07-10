@@ -8,6 +8,7 @@ import FitnessConfig from './FitnessConfig.jsx';
 import GratitudeConfig from './GratitudeConfig.jsx';
 import ShoppingConfig from './ShoppingConfig.jsx';
 import FinanceConfig from './FinanceConfig.jsx';
+import { capitalize } from '../utils/formatters.js';
 
 /**
  * Maps appId to config file path relative to data root.
@@ -30,14 +31,6 @@ const APP_EDITORS = {
   shopping: ShoppingConfig,
   finance: FinanceConfig,
 };
-
-/**
- * Capitalize the first letter of a string.
- */
-function capitalize(str) {
-  if (!str) return '';
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
 
 /**
  * YamlFallbackEditor - Generic YAML editor for app configs
