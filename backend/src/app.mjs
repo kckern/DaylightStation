@@ -2401,11 +2401,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     notificationService: notificationStack.notificationService,
   });
 
-  // Lifeplan ceremony reminders — daily check for due ceremonies across all
-  // users with a life plan. Dedupe is per period via ceremony records, so a
-  // completed ceremony is never re-notified.
+  // Lifeplan ceremony reminders — hourly check for due ceremonies across all
+  // users with a life plan. CeremonyScheduler gates each ceremony to its
+  // household-local delivery hour (plan.ceremonies[type].at or per-type
+  // default), so each nudge fires at most once per day. Dedupe is per period
+  // via ceremony records, so a completed ceremony is never re-notified.
   if (agentsServices.scheduler) {
-    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 7 * * *', async () => {
+    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 * * * *', async () => {
       const lifePlanStore = lifeplanResult.container.getLifePlanStore();
       for (const username of lifePlanStore.listUsernames()) {
         await lifeplanResult.ceremonyScheduler.checkAndNotify(username);
