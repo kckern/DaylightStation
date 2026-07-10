@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createLogger } from '#system/logging/logger.mjs';
 
 export default function createPlanRouter(config) {
-  const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService } = config;
+  const { lifePlanStore, goalStateService, beliefEvaluator, cadenceService, ceremonyService, feedbackService, retroService, planAuthoringService } = config;
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'plan' } });
 
@@ -15,6 +15,59 @@ export default function createPlanRouter(config) {
     try {
       const plan = lifePlanStore.load(getUsername(req));
       res.json(plan?.toJSON() || {});
+    } catch (error) { next(error); }
+  });
+
+  // POST / — plan genesis (409 if one already exists)
+  router.post('/', (req, res, next) => {
+    try {
+      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      const username = getUsername(req);
+      if (lifePlanStore.load(username)) return res.status(409).json({ error: 'Plan already exists' });
+      planAuthoringService.createPlan(username);
+      logger.info('life.plan.created', { username });
+      res.status(201).json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  // POST /goals — author a new goal (creates the plan if missing)
+  router.post('/goals', (req, res, next) => {
+    try {
+      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      const { name, why, milestone } = req.body || {};
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const username = getUsername(req);
+      const goal = planAuthoringService.addGoal(username, { name, why, milestone });
+      logger.info('life.goal.created', { username, goalId: goal.id });
+      res.status(201).json(goal);
+    } catch (error) { next(error); }
+  });
+
+  // POST /values — author a new value (creates the plan if missing)
+  router.post('/values', (req, res, next) => {
+    try {
+      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      const { name, description } = req.body || {};
+      if (!name) return res.status(400).json({ error: 'name is required' });
+      const username = getUsername(req);
+      const value = planAuthoringService.addValue(username, { name, description });
+      logger.info('life.value.created', { username, valueId: value.id });
+      res.status(201).json(value);
+    } catch (error) { next(error); }
+  });
+
+  // POST /beliefs — author a new belief (creates the plan if missing)
+  router.post('/beliefs', (req, res, next) => {
+    try {
+      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      const { if_hypothesis, then_outcome } = req.body || {};
+      if (!if_hypothesis || !then_outcome) {
+        return res.status(400).json({ error: 'if_hypothesis and then_outcome are required' });
+      }
+      const username = getUsername(req);
+      const belief = planAuthoringService.addBelief(username, { if_hypothesis, then_outcome });
+      logger.info('life.belief.created', { username, beliefId: belief.id });
+      res.status(201).json(belief);
     } catch (error) { next(error); }
   });
 
