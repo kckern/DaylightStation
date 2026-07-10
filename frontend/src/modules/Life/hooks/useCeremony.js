@@ -34,12 +34,15 @@ async function parseErrorResponse(res) {
  *
  * @param {string} type - ceremony type (unit_intention, cycle_retro, etc.)
  * @param {string} [username]
- * @returns {object} state — `error` is null or { status?, code?, message } (never a raw string)
+ * @returns {object} state — `error` (fetch phase) and `submitError` (complete phase)
+ *   are each null or { status?, code?, message } (never a raw string). They are kept
+ *   separate so a failed submit doesn't unmount the form the user already filled in.
  */
 export function useCeremony(type, username) {
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
   const [step, setStep] = useState(0);
   const [responses, setResponses] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -80,6 +83,7 @@ export function useCeremony(type, username) {
 
   const submit = useCallback(async () => {
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch(`${API_BASE}/ceremony/${type}/complete${qs}`, {
         method: 'POST',
@@ -88,14 +92,14 @@ export function useCeremony(type, username) {
       });
       if (!res.ok) {
         const errInfo = await parseErrorResponse(res);
-        setError(errInfo);
+        setSubmitError(errInfo);
         logger().error('ceremony-submit-error', { type, ...errInfo });
         return;
       }
       setCompleted(true);
       logger().info('ceremony-completed', { type });
     } catch (err) {
-      setError({ message: err.message });
+      setSubmitError({ message: err.message });
       logger().error('ceremony-submit-error', { type, error: err.message });
     } finally {
       setSubmitting(false);
@@ -103,7 +107,7 @@ export function useCeremony(type, username) {
   }, [type, qs, responses]);
 
   return {
-    content, loading, error,
+    content, loading, error, submitError,
     step, nextStep, prevStep,
     responses, setResponse,
     submit, submitting, completed,
