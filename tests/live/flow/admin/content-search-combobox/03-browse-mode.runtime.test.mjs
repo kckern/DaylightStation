@@ -77,6 +77,40 @@ async function huntSiblingPaginationFixture(page, { flag, drillMinChildren = nul
 const DROPDOWN_SELECTOR = '[data-combobox-dropdown], .mantine-Combobox-dropdown';
 const VIEWPORT_SELECTOR = '.mantine-ScrollArea-viewport';
 
+// Breadcrumb back button, scoped to the dropdown (the shared
+// ComboboxLocators.backButton is "first svg button on the page", which matches
+// the input's clear button when a value is committed — too loose here).
+const backButtonIn = (page) =>
+  page.locator(DROPDOWN_SELECTOR).getByRole('button', { name: 'Back' });
+
+/**
+ * Hunt a live plex container that appears in search results for a known term,
+ * so drill-down tests are deterministic instead of hoping the first "Office"
+ * result happens to be a container (env-dependent result ordering).
+ * @throws when nothing is found — fail fast, never skip (Test Discipline)
+ */
+async function huntSearchableContainer(page) {
+  const terms = ['office', 'christmas', 'star', 'world', 'adventures'];
+  for (const term of terms) {
+    let data = null;
+    try {
+      const res = await page.request.get(
+        `/api/v1/content/query/search?text=${encodeURIComponent(term)}&source=plex&take=20`,
+        { timeout: 20000 }
+      );
+      if (!res.ok()) continue;
+      data = await res.json();
+    } catch {
+      continue;
+    }
+    const container = (data?.items || []).find(
+      (i) => isContainerLike(i) && typeof i.id === 'string' && i.id.startsWith('plex:')
+    );
+    if (container) return { term, container };
+  }
+  throw new Error('No searchable plex container found — failing fast (no conditional skip).');
+}
+
 /** Scroll the dropdown's ScrollArea viewport to top/bottom. */
 async function scrollDropdownViewport(page, position) {
   await page.evaluate(({ pos, dropdownSel, viewportSel }) => {
@@ -106,15 +140,29 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
   });
 
   test('loads siblings when opening with existing value', async ({ page }) => {
-    // Start with a value that has a parent path
-    await page.goto(`${TEST_URL}?value=media:workouts/hiit.mp4`);
+    // Env-portable fixture: any live plex item (the old hardcoded
+    // media:workouts/... path only exists on one machine's media root).
+    const res = await page.request.get(
+      '/api/v1/content/query/search?text=office&source=plex&take=5',
+      { timeout: 20000 }
+    );
+    expect(res.ok(), 'plex search must respond').toBe(true);
+    const item = ((await res.json()).items || []).find(
+      (i) => typeof i.id === 'string' && i.id.startsWith('plex:')
+    );
+    expect(item, 'plex search must return at least one item').toBeTruthy();
 
+    // Unified combobox loads the sibling window via /api/v1/siblings/ on open.
+    const siblingsRequests = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/v1/siblings/')) siblingsRequests.push(req.url());
+    });
+
+    await page.goto(`${TEST_URL}?value=${encodeURIComponent(item.id)}`);
     await ComboboxActions.open(page);
     await page.waitForTimeout(1000); // Wait for sibling load
 
-    // Should have called list API
-    const apiCheck = harness.assertApiCalled(/api\/v1\/list\//);
-    expect(apiCheck.passed).toBe(true);
+    expect(siblingsRequests.length).toBeGreaterThan(0);
   });
 
   test('clicking container drills into it', async ({ page }) => {
@@ -170,69 +218,54 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
   });
 
   test('back button returns to previous level', async ({ page }) => {
+    // Deterministic: drill a known container instead of hoping the first
+    // search result is one (result ordering is env-dependent).
+    const { term, container } = await huntSearchableContainer(page);
+
     await page.goto(TEST_URL);
     await ComboboxActions.open(page);
-    await ComboboxActions.search(page, 'Office');
+    await ComboboxActions.search(page, term);
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
-    const options = ComboboxLocators.options(page);
-    const count = await options.count();
+    const row = page.locator(`[data-combobox-option][data-value="${container.id}"]`).first();
+    await expect(row, `search "${term}" must list container ${container.id}`).toBeVisible({ timeout: 15000 });
+    await row.click();
 
-    if (count > 0) {
-      // Find and click a container
-      const firstOption = options.first();
-      await firstOption.click();
-      await page.waitForTimeout(500);
+    // Drilled in: breadcrumb back button appears.
+    const backButton = backButtonIn(page);
+    await expect(backButton).toBeVisible({ timeout: 15000 });
 
-      // Check if we drilled in (back button visible)
-      const backButton = ComboboxLocators.backButton(page);
-      const didDrillIn = await backButton.isVisible().catch(() => false);
-
-      if (didDrillIn) {
-        // Click back
-        await ComboboxActions.goBack(page);
-        await page.waitForTimeout(500);
-
-        // Verify we can still see the dropdown (navigation didn't break)
-        const dropdown = ComboboxLocators.dropdown(page);
-        await expect(dropdown).toBeVisible();
-      } else {
-        // If we couldn't drill in, still pass - first item might be a leaf
-        console.log('First option was not a container - back navigation not testable');
-      }
-    } else {
-      expect(count, 'Search should return results').toBeGreaterThan(0);
-    }
+    // Click back — at depth 1 the unified combobox exits browse back to the
+    // search results level; the dropdown stays open.
+    await backButton.click();
+    await page.waitForTimeout(500);
+    await expect(ComboboxLocators.dropdown(page)).toBeVisible();
+    await expect(backButton).not.toBeVisible();
   });
 
   test('breadcrumbs display navigation path', async ({ page }) => {
+    // Deterministic: drill a known container (see huntSearchableContainer).
+    const { term, container } = await huntSearchableContainer(page);
+
     await page.goto(TEST_URL);
     await ComboboxActions.open(page);
-    await ComboboxActions.search(page, 'Office');
+    await ComboboxActions.search(page, term);
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
-    const options = ComboboxLocators.options(page);
-    const count = await options.count();
+    const row = page.locator(`[data-combobox-option][data-value="${container.id}"]`).first();
+    await expect(row, `search "${term}" must list container ${container.id}`).toBeVisible({ timeout: 15000 });
+    await row.click();
 
-    if (count > 0) {
-      // Click first option (may or may not be container)
-      await options.first().click();
-      await page.waitForTimeout(500);
+    const backButton = backButtonIn(page);
+    await expect(backButton).toBeVisible({ timeout: 15000 });
 
-      // Check for breadcrumb text
-      const dropdown = ComboboxLocators.dropdown(page);
-      const dropdownText = await dropdown.textContent();
-
-      // If we drilled in, should see breadcrumb separator
-      const backButton = ComboboxLocators.backButton(page);
-      const didDrillIn = await backButton.isVisible().catch(() => false);
-
-      if (didDrillIn) {
-        // Breadcrumb area should have some text
-        const breadcrumbArea = dropdown.locator('text=/').first();
-        await expect(breadcrumbArea).toBeVisible();
-      }
-    }
+    // Unified breadcrumb bar renders crumb titles joined by ' / '; one level
+    // deep that is just the drilled container's title (no separator — the old
+    // 'text=/' assertion pinned the legacy multi-crumb rendering).
+    const crumbBar = page
+      .locator(`${DROPDOWN_SELECTOR} div:has(> button[aria-label="Back"])`)
+      .first();
+    await expect(crumbBar).toContainText(container.title);
   });
 
   test('deep navigation maintains breadcrumb trail', async ({ page }) => {
