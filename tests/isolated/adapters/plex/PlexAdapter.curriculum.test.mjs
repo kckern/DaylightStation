@@ -10,19 +10,19 @@ describe('PlexAdapter curriculum merge', () => {
 
   it('episode in an indexed show gets corrected title + metadata.piano', () => {
     const a = adapter();
-    const item = a._toPlayableItem({ type: 'episode', ratingKey: '1', title: '2026-07-09',
-      grandparentRatingKey: '676490', parentIndex: 10, index: 1, Media: [] });
-    expect(item.title).toBe('Ain’t Misbehavin’ – 1 – Intro');
-    expect(item.metadata.piano.course).toBe('Ain’t Misbehavin’ – 1');
+    const item = a._toPlayableItem({ type: 'episode', ratingKey: '1', title: 'Intro',
+      grandparentRatingKey: '676490', parentIndex: 8, index: 1, Media: [] });
+    expect(item.title).toBe('Intro');
+    expect(item.metadata.piano.course).toBe("Ain’t Misbehavin’");
     expect(item.metadata.piano.styles).toContain('Jazz Ballads');
   });
 
-  it('season in an indexed show gets the category block', () => {
+  it('season in an indexed show gets the lane block', () => {
     const a = adapter();
-    const item = a._toPlayableItem({ type: 'season', ratingKey: '677395', title: 'Song Tutorials',
-      parentRatingKey: '676490', index: 10 });
-    expect(item.metadata.piano.category).toBe('repertoire');
-    expect(item.metadata.piano.kind).toBe('tutorial');
+    const item = a._toPlayableItem({ type: 'season', ratingKey: '677395', title: 'Song Library',
+      parentRatingKey: '676490', index: 8 });
+    expect(item.metadata.piano.lane).toBe('repertoire');
+    expect(item.metadata.piano.kind).toBeUndefined();
   });
 
   it('item in a non-indexed show is untouched (no piano)', () => {

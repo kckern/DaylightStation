@@ -16,8 +16,8 @@ export function getCurriculumIndex(showRatingKey) {
   return index;
 }
 
-const EP_PIANO = ['course', 'styles', 'skill', 'instructor', 'focus', 'type'];
-const SEASON_PIANO = ['category', 'kind', 'facets', 'sequential', 'pinned'];
+const EP_PIANO = ['course', 'part', 'lane', 'group', 'song', 'treatment', 'skillChallenge', 'styles', 'skill', 'instructor', 'focus', 'type'];
+const SEASON_PIANO = ['lane', 'groups', 'facets', 'sequential', 'pinned'];
 const pick = (obj, keys) => {
   const out = {};
   for (const k of keys) if (obj[k] != null) out[k] = obj[k];
