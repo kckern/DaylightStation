@@ -10,11 +10,31 @@ function logger() {
 const API_BASE = '/api/v1/life/plan';
 
 /**
+ * Build a structured error from a failed fetch Response.
+ * Returns { status, code, message } so consumers can key off the
+ * backend's error contract (e.g. code === 'NO_PLAN') instead of a raw string.
+ */
+async function parseErrorResponse(res) {
+  let body = {};
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON body (proxy error page, etc.) — fall through to defaults
+  }
+  return {
+    status: res.status,
+    code: body.code,
+    message: body.error || `Request failed (HTTP ${res.status})`,
+  };
+}
+
+/**
  * Hook for managing a ceremony flow.
  * Fetches content, manages step state, submits responses.
  *
  * @param {string} type - ceremony type (unit_intention, cycle_retro, etc.)
  * @param {string} [username]
+ * @returns {object} state — `error` is null or { status?, code?, message } (never a raw string)
  */
 export function useCeremony(type, username) {
   const [content, setContent] = useState(null);
@@ -32,12 +52,17 @@ export function useCeremony(type, username) {
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/ceremony/${type}${qs}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errInfo = await parseErrorResponse(res);
+        setError(errInfo);
+        logger().error('ceremony-load-error', { type, ...errInfo });
+        return;
+      }
       const data = await res.json();
       setContent(data);
       logger().info('ceremony-loaded', { type, periodId: data.periodId });
     } catch (err) {
-      setError(err.message);
+      setError({ message: err.message });
       logger().error('ceremony-load-error', { type, error: err.message });
     } finally {
       setLoading(false);
@@ -61,11 +86,16 @@ export function useCeremony(type, username) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(responses),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errInfo = await parseErrorResponse(res);
+        setError(errInfo);
+        logger().error('ceremony-submit-error', { type, ...errInfo });
+        return;
+      }
       setCompleted(true);
       logger().info('ceremony-completed', { type });
     } catch (err) {
-      setError(err.message);
+      setError({ message: err.message });
       logger().error('ceremony-submit-error', { type, error: err.message });
     } finally {
       setSubmitting(false);
