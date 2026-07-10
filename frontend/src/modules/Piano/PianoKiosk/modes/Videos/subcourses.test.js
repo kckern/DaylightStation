@@ -226,6 +226,10 @@ describe('laneOf', () => {
     expect(laneOf({ reference: true })).toBe('practice');
     expect(laneOf({})).toBe('lessons');
   });
+  it('passes unmapped legacy categories through and prefers category over reference flag', () => {
+    expect(laneOf({ piano: { category: 'masterclass' } })).toBe('masterclass');
+    expect(laneOf({ reference: true, piano: { category: 'repertoire' } })).toBe('repertoire');
+  });
 });
 
 describe('partitionCourses group attachment', () => {
