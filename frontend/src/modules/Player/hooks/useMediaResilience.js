@@ -185,7 +185,7 @@ export function useMediaResilience({
           reason, waitKey: logWaitKey,
           attempts: gate.attempt, maxAttempts,
           urlRefreshesAttempted: ledger.snapshot(playbackSessionKey)?.urlRefreshCount || 0
-        });
+        }, { level: 'warn' });
         actions.setStatus(STATUS.exhausted);
         if (!exhaustedNotifiedRef.current) {
           exhaustedNotifiedRef.current = true;
@@ -515,9 +515,10 @@ export function useMediaResilience({
 
   // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to the
   // captured intent (the frozen seek target), until the clock advances again or the
-  // ladder + attempt cap are exhausted. A module-tracker cap bounds total jolts even
-  // if `isStuck` flaps (a jolt that plays one frame then re-stalls), so no infinite
-  // loop; successful playback clears the tracker (see the progress effect above).
+  // ladder + attempt cap are exhausted. The shared recoveryLedger's session cap
+  // bounds total jolts even if `isStuck` flaps (a jolt that plays one frame then
+  // re-stalls), so no infinite loop; successful playback clears the ledger session
+  // via recordSuccess (see the progress effect above).
   useEffect(() => {
     if (disabled) return undefined;
     if (!isStuck) {
@@ -544,7 +545,7 @@ export function useMediaResilience({
       const declareExhausted = (attempts) => {
         playbackLog('resilience-stall-jolt-exhausted', {
           waitKey: L.logWaitKey, rung: joltStepRef.current, attempt: attempts
-        });
+        }, { level: 'warn' });
         L.actions?.setStatus(STATUS.exhausted);
         if (!exhaustedNotifiedRef.current) {
           exhaustedNotifiedRef.current = true;
@@ -579,8 +580,17 @@ export function useMediaResilience({
           joltTimerRef.current = setTimeout(fireRung, gate.waitMs);
           return;
         }
-        // session-cap: total recovery budget spent.
-        declareExhausted(gate.attempt);
+        if (gate.deniedBy === 'session-cap') {
+          // Total recovery budget spent.
+          declareExhausted(gate.attempt);
+          return;
+        }
+        // Any other denial (e.g. a future mount-budget on this actor) must not
+        // masquerade as session exhaustion — log it and stop this ladder run.
+        playbackLog('resilience-stall-jolt-denied', {
+          waitKey: L.logWaitKey, rung: joltStepRef.current, deniedBy: gate.deniedBy
+        }, { level: 'debug' });
+        joltTimerRef.current = null;
         return;
       }
       const attempt = gate.attempt;

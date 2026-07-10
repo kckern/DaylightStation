@@ -1,7 +1,7 @@
 /**
  * recoveryLedger — single source of truth for playback-recovery attempt
- * accounting. Replaces: useMediaResilience's module _recoveryTracker,
- * VideoPlayer's dashErrorRefreshAttemptsRef, and gates
+ * accounting. Replaced useMediaResilience's module _recoveryTracker and
+ * VideoPlayer's per-mount dash-error ref counter; gates
  * useCommonMediaController's nudge.
  *
  * Scope model (audit 2026-07-09 §8 Phase 1): one session-scoped total cap +

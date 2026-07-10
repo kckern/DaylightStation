@@ -10,7 +10,7 @@ import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
 import { createStaleSessionWatchdog } from '../lib/staleSessionWatchdog.js';
 import { buildFpsStatsPayload } from '../lib/fpsStatsPayload.js';
-import { decideDashErrorRecovery } from '../lib/dashErrorRecovery.js';
+import { requestDashErrorRecovery } from '../lib/dashErrorRecovery.js';
 import { useContentFilter } from '../../../lib/Player/useContentFilter.js';
 import { useFilterData } from '../../../lib/Player/useFilterData.js';
 import { REVIEW_GOTO } from '../../../lib/Player/reviewParams.js';
@@ -28,6 +28,10 @@ const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
 // Surgical review seek (?goto=<seconds>) is parsed in lib/Player/reviewParams.js and
 // shared with Player (which suppresses the saved Plex resume when it's active) so the
 // review target is authoritative. Cue-by-id review resolves to a ?goto time in the CLI.
+
+// Per-mount identity for the recoveryLedger's 'dash-error' sub-budget. A module
+// counter (not Math.random) so log payloads are deterministic across a session.
+let _mountSeq = 0;
 
 /**
  * Append or replace a cache-buster query param on a URL.
@@ -120,10 +124,12 @@ export function VideoPlayer({
   const unmountedRef = useRef(false);
   useEffect(() => () => { unmountedRef.current = true; }, []);
 
-  // Per-mount counter for dash.error 27/28 → hardReset({ refreshUrl: true })
-  // escalations. Capped at maxAttempts in decideDashErrorRecovery so a
-  // permanently dead URL cannot infinite-loop. Resets when the source URL changes.
-  const dashErrorRefreshAttemptsRef = useRef(0);
+  // Mount identity for the shared recoveryLedger: dash.error 27/28 → hardReset
+  // escalations draw from a per-mount 'dash-error' budget (3), so a permanently
+  // dead URL cannot infinite-loop, while every fired refresh still counts toward
+  // the session-wide recovery cap (audit §3.1).
+  const mountIdRef = useRef(null);
+  if (!mountIdRef.current) mountIdRef.current = `video-mount-${++_mountSeq}`;
 
   const staleSessionWatchdogRef = useRef(null);
   if (!staleSessionWatchdogRef.current) {
@@ -395,12 +401,6 @@ export function VideoPlayer({
     displayReadyLoggedRef.current = false;
   }, [mediaUrl, media?.maxVideoBitrate]);
 
-  // Bug 2026-05-23 §2: new source URL -> reset dash error refresh budget
-  // for this mount so a fresh URL gets its own 3-attempt allotment.
-  useEffect(() => {
-    dashErrorRefreshAttemptsRef.current = 0;
-  }, [mediaUrl]);
-
   // HLS attach: load the m3u8 via hls.js (or native HLS where supported).
   // Lazy dynamic import so the (large) hls.js bundle only loads when an HLS
   // source is actually played, and never for dash/native video.
@@ -583,23 +583,32 @@ export function VideoPlayer({
         // Bug 2026-05-23 §2: source-URL errors (code 27 segment unavailable,
         // 28 manifest/init unavailable) signal a dead Plex transcode session.
         // Escalate to hardReset with refreshUrl so the backend mints a fresh
-        // transcode. Capped at 3 attempts per mount.
-        const decision = decideDashErrorRecovery({
+        // transcode. Gated by the shared recoveryLedger: 3 per mount for the
+        // 'dash-error' actor, counted against the session-wide cap (audit §3.1).
+        const { fire, decision, gate } = requestDashErrorRecovery({
           errorCode: code,
-          attemptsThisMount: dashErrorRefreshAttemptsRef.current,
-          maxAttempts: 3
+          sessionKey: resilienceBridgeRef.current?.playbackSessionKey || null,
+          mountId: mountIdRef.current
         });
-        if (decision.action === 'refresh-url') {
-          dashErrorRefreshAttemptsRef.current += 1;
+        if (fire) {
           const innerEl = getMediaEl();
           const seekToSeconds = (innerEl && Number.isFinite(innerEl.currentTime)) ? innerEl.currentTime : 0;
           dashLog.warn('dash.error-recovery', {
             action: 'refresh-url',
             reason: decision.reason,
-            attempt: dashErrorRefreshAttemptsRef.current,
+            attempt: gate.attempt,
             seekToSeconds
           });
           hardReset({ seekToSeconds, refreshUrl: true });
+        } else if (gate) {
+          // Refreshable code, but the ledger denied it (mount budget spent or
+          // session cap reached). The stale-session watchdog remains the
+          // escalation route (bridge.requestRecovery → triggerRecovery).
+          dashLog.debug('dash.error-recovery-budget-denied', {
+            reason: decision.reason,
+            deniedBy: gate.deniedBy,
+            attempt: gate.attempt
+          });
         }
       });
 
@@ -803,6 +812,7 @@ VideoPlayer.propTypes = {
     onRegisterMediaAccess: PropTypes.func,
     seekToIntentSeconds: PropTypes.number,
     onSeekRequestConsumed: PropTypes.func,
-    requestRecovery: PropTypes.func
+    requestRecovery: PropTypes.func,
+    playbackSessionKey: PropTypes.string
   })
 };
