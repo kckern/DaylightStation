@@ -21,8 +21,12 @@ export function partitionSongs(items) {
       shelf.get(key).push(it);
       continue;
     }
-    const key = p.song || p.course || it.title || 'Song';
-    if (!songs.has(key)) songs.set(key, { title: key, treatments: {}, count: 0 });
+    // Case-insensitive catalog identity: the index carries per-course casing
+    // ("Fly Me To The Moon" vs "Fly Me to the Moon"); variants must merge into
+    // one card. First-seen casing wins as the display title.
+    const title = p.song || p.course || it.title || 'Song';
+    const key = title.toLowerCase();
+    if (!songs.has(key)) songs.set(key, { title, treatments: {}, count: 0 });
     const rec = songs.get(key);
     const t = p.treatment || 'tutorial';
     (rec.treatments[t] ||= []).push(it);

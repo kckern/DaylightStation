@@ -47,3 +47,16 @@ describe('availableTreatments', () => {
     expect(TREATMENTS.map((t) => t.chip)).toEqual(['Tutorial', 'Challenge', 'Accompaniment']);
   });
 });
+
+describe('partitionSongs case-variant merge', () => {
+  it('merges casing variants of one song into a single card, first-seen title wins', () => {
+    const { songs } = partitionSongs([
+      { title: 'a', piano: { song: 'Fly Me To The Moon', treatment: 'tutorial' } },
+      { title: 'b', piano: { song: 'Fly Me to the Moon', treatment: 'challenge' } },
+    ]);
+    expect(songs).toHaveLength(1);
+    expect(songs[0].title).toBe('Fly Me To The Moon');
+    expect(songs[0].treatments.tutorial).toHaveLength(1);
+    expect(songs[0].treatments.challenge).toHaveLength(1);
+  });
+});
