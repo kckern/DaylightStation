@@ -244,7 +244,17 @@ Guiding principle: **the January gutting must not be repeated.** Every detection
 - Fix the `filterEffects.js:80` stale comment and the `console.debug` violation.
 - Guard: existing resilience/controller suites pass unchanged EXCEPT the escalation tests, which are rewritten (not deleted) to cover the surviving behavior.
 
-### Phase 1 — One recovery ledger + retire the controller's auto-recovery (small, high leverage)
+### Phase 1 — One recovery ledger + retire the controller's auto-recovery (small, high leverage) — **DONE 2026-07-09**
+
+> Landed on `refactor/player-resilience-consolidation` as commits `659204e53`, `003c9d0b2`, `163982344`, `1f4e07c57`, `644f04014`, `8b8e84146`, `610c1a48d`, plus the Task 13 verification/docs commit. Scope grew to include the **controller demotion** (detection + nudge/duration-lost softReinit only), pulled forward from Phase 2 per the adversarial review's sequencing advice. Live-verified against a real Plex DASH stream with CDP network-loss injection (stall → jolt rung 1 → softReinit → jolt rung 2 → clean resume, no recovery storm, ledger reset on progress). The live verify also caught a Phase-0 regression the unit suites could not: `3e0a31e1c` deleted the `isAdapting`/`adaptMessage` state but left `setIsAdapting`/`setAdaptMessage` calls in VideoPlayer's dash `ready` handler, so every dash ready event threw and skipped the `playback.video-ready` telemetry — fixed in the Task 13 commit.
+>
+> **Behavior-change register (Milestone B):**
+> (a) jolt rungs now respect the shared cooldown (a denied rung reschedules at `waitMs`);
+> (b) cooldown ladder re-anchored — first retry waits 4s not 12s; exhaustion floor drops from ~480s to ~160s;
+> (c) dash-error resets count toward the session cap (closes the quad-reset window); the mediaUrl-change budget re-grant was removed (near-unreachable);
+> (d) user forceReload records ledger attempts — reload-hammering reaches the exhausted overlay (which still offers retry) instead of looping raw reloads;
+> (e) controller nudge is ledger-gated — when the jolt ladder fires first, the nudge is often cooldown-denied (escalation-order inversion: the heavy refresh-url at ~6s preempts the cheap nudge at ~8.3s — **SOAK WATCH**: if stalls that a bare nudge used to fix now take a jolt, tune `HARD_STALL_MS` below the jolt grace or give the nudge `bypassCooldown`);
+> (f) duration-lost softReinit is ledger-gated (`bypassCooldown`, cap-bounded at 5 — a plan deviation, justified: it bounds a reinit loop that was previously unbounded).
 
 Create a single `RecoveryLedger` that ALL actuators must pass through: `triggerRecovery`, jolt rungs, dashErrorRecovery, stale-session watchdog, remount scheduling, and `controllerRef.forceReload` (live Fitness callers: `FitnessPlayerFooterControls.jsx:108-109`, `useSeekState.js:134-135`). **Scope-aware, not flat:** the current ledgers encode deliberate semantics — dashErrorRecovery's budget is per-mount so a remount earns a fresh budget; the remount backoff is per-nonce. The ledger needs a session-scoped total cap with mount-scoped sub-budgets, or it will recreate the Feb-27 terminal-stuck failure at a different layer. One exhaustion event; pruned on session end.
 

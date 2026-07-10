@@ -546,7 +546,16 @@ the shared recoveryLedger. Escalation is owned by the resilience layer."
 
 **Step 2:** REQUIRED SUB-SKILL: use the `verify` skill — drive real playback in the dev app (Task: play a dash video, force a mid-playback stall if feasible via devtools network throttling, observe `playback.stalled` → single nudge → jolt ladder logs; confirm no double-fire: each `resilience-recovery`/`playback.recovery-strategy` log line should carry a ledger attempt number, strictly increasing per session).
 
-**Step 3:** Update docs: `docs/reference/player/README.md` (resilience-layers table: one ledger, controller = detection + nudge); mark audit §8 Phase 1 DONE; note the three behavior changes (jolt now respects cooldown; dash-error resets now count toward the session cap; retry pacing is faster — cooldown ladder re-anchored so the first retry waits 4s instead of 12s and the exhaustion floor drops ~480s→~160s).
+**Step 3:** Update docs: `docs/reference/player/README.md` (resilience-layers table: one ledger, controller = detection + nudge); mark audit §8 Phase 1 DONE with the FULL behavior-change register:
+
+- (a) jolt rungs now respect the shared cooldown (a denied rung reschedules at `waitMs`);
+- (b) cooldown ladder re-anchored — first retry waits 4s not 12s; exhaustion floor drops ~480s→~160s;
+- (c) dash-error resets count toward the session cap (closes the quad-reset window); mediaUrl-change budget re-grant removed (near-unreachable);
+- (d) user forceReload records ledger attempts — reload-hammering reaches the exhausted overlay (with retry) instead of looping raw reloads;
+- (e) controller nudge is ledger-gated — when the jolt ladder fires first the nudge is often cooldown-denied (escalation-order inversion: heavy refresh-url at ~6s preempts the cheap nudge at ~8.3s — SOAK WATCH: if stalls a bare nudge used to fix now take a jolt, tune `HARD_STALL_MS` below the jolt grace or give the nudge `bypassCooldown`);
+- (f) duration-lost softReinit is ledger-gated (`bypassCooldown`, cap-bounded at 5 — a plan deviation, justified: bounds a previously unbounded reinit loop).
+
+> **DONE 2026-07-09.** Sweeps green (Player 43 files / 308 tests; Fitness 1041 with the 4 known pre-existing collection failures). Live verify: real Plex DASH stream, CDP offline injection — observed `dash.error-recovery` (attempt 1) → `playback.stalled` → jolt rung 1 (`stall-jolt-refresh-url`) → duration-lost softReinit → jolt rung 2 (`stall-jolt-remount`) → clean resume post-restore with no further attempts (recordSuccess) and no `resilience-recovery` storm. The live verify also exposed a Phase-0 regression invisible to the unit suites: orphaned `setIsAdapting`/`setAdaptMessage` calls in VideoPlayer's dash `ready` handler (left by `3e0a31e1c`) threw on every ready event and suppressed `playback.video-ready` telemetry — removed in the Task 13 commit and re-verified live (`playback.video-ready` now emits).
 
 **Step 4:** Commit docs. **CHECKPOINT: request code review** before Milestone C.
 

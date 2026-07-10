@@ -92,18 +92,48 @@ Playback resilience is defense-in-depth: several independent watchdogs, each
 tuned to a different failure mode, escalating from cheap in-place fixes to a full
 remount and finally to an operator-facing retry surface.
 
+### The shared recovery ledger
+
+Since Milestone B (2026-07) there is exactly **one recovery accounting
+authority**: `lib/recoveryLedger.js`, a session-scoped ledger shared by every
+actuator. Its budget model:
+
+- **Session cap 5** (`RECOVERY_MAX_ATTEMPTS`) — total recovery attempts across
+  all actors for one playback session; hitting it drives the `exhausted`
+  overlay.
+- **Cooldown with backoff** — 4s × 3ⁿ between attempts, anchored at the first
+  retry (attempt 2 waits 4s, attempt 3 waits 12s, …). Denied callers get a
+  `waitMs` they can reschedule against.
+- **Per-mount sub-budget** — dash-error URL refreshes get 3 attempts per mount
+  (a remount mints a new Plex session, so that actor earns a fresh sub-budget,
+  but every attempt still counts toward the session cap).
+- **`recordSuccess`** — real playback progress resets the ledger, so a
+  recovered session gets its full budget back.
+
+Every actuator asks the ledger before acting: the resilience state machine's
+startup/warmup deadlines, the stall-jolt rungs, VideoPlayer's dash-error
+resets, the user-facing forceReload, and the controller's nudge and
+duration-lost softReinit (softReinit bypasses the cooldown but is still
+cap-bounded). No actuator retries outside the ledger's accounting.
+
+### The layers
+
 | Layer | Watches for | Response |
 |-------|-------------|----------|
 | **Transcode warmup** | Consecutive 0-byte / empty segments while Plex spins up its encoder | Emits `transcodewarming` / `transcodewarmed`; the loading overlay stays up instead of failing |
 | **Stale-session watchdog** | `dash.error` code-28 bursts (3 within 10s) — MPD points at a dead Plex session | Escalates `stale-session-detected` before the startup deadline fires |
-| **Dash-error recovery** | `dash.error` 27 (segment unavailable) / 28 (manifest/init unavailable) | `hardReset({ refreshUrl: true })` — cache-busts the `src` so the proxy mints a fresh transcode session. Capped at 3 attempts per mount |
-| **Recovery seek** | Stall after progress | Seek to last known good position before remounting |
-| **Stall exhaustion** | Repeated unrecovered stalls | After `maxAttempts` cycles, enters `exhausted` and renders a retry button |
-| **Media resilience / URL refresh** | Reasons for which the URL is suspect | Propagates `refreshUrl` through hardReset to re-fetch the MPD |
+| **Dash-error recovery** | `dash.error` 27 (segment unavailable) / 28 (manifest/init unavailable) | `hardReset({ refreshUrl: true })` — cache-busts the `src` so the proxy mints a fresh transcode session. Ledger-gated: 3 per mount, counts toward the session cap |
+| **Controller stall detection + nudge** | Soft/hard stall timers on the media element | Detection lives in `useCommonMediaController`; its only in-place actuator is a ledger-gated **nudge** (±1ms seek to kick the buffer). If the nudge is denied or fails, escalation belongs to the resilience jolt ladder — the controller has no ladder of its own |
+| **Duration-lost softReinit** | Stalled with `duration` gone (dead pipeline) | Ledger-gated soft reinit of the dash element (cooldown-bypassed, cap-bounded) |
+| **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
+| **Stall exhaustion** | Session cap reached | Enters `exhausted`, renders the retry button; `retryFromExhausted` resets the ledger and restarts |
+| **User forceReload** | Operator reload request | Records a ledger attempt like everything else — reload-hammering lands on the exhausted overlay (which still offers retry) instead of looping raw reloads |
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
 | **End-of-content / close / stale-session watchdogs** | Natural end, manual close, abandoned sessions | Clean teardown (`dashCleanup`) to prevent SourceBuffer orphans |
 
 > 2026-07-09: the Shaka-era "buffer resilience" layer (`useBufferResilience`/`BufferResilienceManager`) was removed as dead code — it was never mounted after the move to dash.js; the live 0-byte detector is VideoPlayer's transcode-warmup emitter. The unreachable quality/ABR engine and `stallConfig` strategy-override machinery were removed at the same time (see `docs/_wip/audits/2026-07-09-player-module-sedimentary-fixes-audit.md` §4).
+>
+> 2026-07-09 (Milestone B): the controller's private `_recoveryTracker` and VideoPlayer's `dashErrorRefreshAttemptsRef` were replaced by the shared `recoveryLedger`; the controller's internal escalation ladder was demoted to detection + nudge/softReinit, with all escalation owned by the resilience jolt ladder. See the audit's §8 Phase 1 DONE note for the behavior-change register.
 
 **The loading/buffering spinner never sits over visibly-playing video.** The health
 layer samples the media clock directly and exposes an *advancing* signal — whether
@@ -115,9 +145,11 @@ advance. The clock poll is self-contained, so it keeps reporting the truth even 
 the metrics bridge goes quiet during a stall — exactly when the spinner decision
 matters most.
 
-The escalation ladder is deliberate: refresh the URL in place → recovery seek →
-remount the renderer → full reload → operator retry. Each step is more disruptive
-than the last, so the machine only climbs when the cheaper fix fails.
+The escalation ladder is deliberate: nudge in place → refresh the URL in place
+(jolt rung 1) → remount the renderer at the last known position (jolt rung 2) →
+operator retry from the exhausted overlay. Each step is more disruptive than
+the last, the ledger paces every climb, and real progress (`recordSuccess`)
+resets the whole budget.
 
 ---
 

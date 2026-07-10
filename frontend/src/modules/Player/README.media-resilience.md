@@ -97,8 +97,8 @@ forever. The recovery pipeline handles this with three coordinated pieces:
 3. **Exhaustion surface** — after `maxAttempts` recovery cycles
    (default 5), the state machine enters `exhausted` and
    `PlayerOverlayLoading` renders a retry button wired to
-   `retryFromExhausted`, which clears the tracker and restarts the
-   pipeline.
+   `retryFromExhausted`, which resets the shared recovery ledger and
+   restarts the pipeline.
 
 ### Observability events
 
