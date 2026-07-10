@@ -138,17 +138,25 @@ test.describe('ContentSearchCombobox - Edge Cases', () => {
   });
 
   test('shows loading state during search', async ({ page }) => {
-    // With SSE streaming, we can observe the loading state naturally
-    // EventSource connections can't be easily intercepted by page.route()
+    // Deterministic: hold the SSE stream response briefly so the loading
+    // state is observable regardless of backend speed (a fast/cached search
+    // can complete between assertion polls).
+    await page.route('**/api/v1/content/query/search/stream*', async (route) => {
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
+
     await ComboboxActions.open(page);
 
     // Type text but don't wait for results
     await ComboboxLocators.input(page).fill('test search query');
 
-    // Should show loader or pending state while streaming
-    // Either the Mantine loader OR the pending sources indicator
-    const loaderOrPending = page.locator('.mantine-Loader, .pending-sources, [data-loading="true"]');
-    await expect(loaderOrPending.first()).toBeVisible({ timeout: 2000 });
+    // Should show loader or pending state while streaming: the Mantine
+    // loader, the pending-sources strip, or the unified loading row.
+    const loaderOrPending = page.locator(
+      '.mantine-Loader, .pending-sources, [data-testid="combobox-loading"], [data-loading="true"]'
+    );
+    await expect(loaderOrPending.first()).toBeVisible({ timeout: 3000 });
   });
 
   test('deep navigation does not crash', async ({ page }) => {
