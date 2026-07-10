@@ -37,6 +37,22 @@ describe('comboboxMachine', () => {
     expect(s.browse.pagination).toBeNull();
   });
 
+  it('RESULTS dedupes by id (duplicate keys corrupt DOM order vs items order)', () => {
+    let s = open(initialState(''));
+    s = type_(s, 'office');
+    s = reducer(s, {
+      type: 'RESULTS',
+      items: [
+        { id: 'files:a', title: 'first' },
+        { id: 'files:b' },
+        { id: 'files:a', title: 'dupe' },
+        { id: 'plex:1' },
+      ],
+    });
+    expect(s.results.map((r) => r.id)).toEqual(['files:a', 'files:b', 'plex:1']);
+    expect(s.results[0].title).toBe('first'); // first occurrence wins
+  });
+
   it('Mar-01 invariant: Enter selects only when userNavigated', () => {
     let s = open(initialState(''));
     s = type_(s, 'beet');

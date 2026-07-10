@@ -422,6 +422,7 @@ export function ContentCombobox({
         data-value={item.id}
         data-highlighted={isHighlighted ? 'true' : 'false'}
         data-current={isCurrent ? 'true' : 'false'}
+        data-container={container ? 'true' : 'false'}
         className={classNames.join(' ')}
       >
         <Group gap="sm" wrap="nowrap" justify="space-between">
