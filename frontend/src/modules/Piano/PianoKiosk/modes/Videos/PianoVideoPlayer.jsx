@@ -11,7 +11,9 @@ import { TheoryPanel } from '../../../components/TheoryPanel.jsx';
 import PlayerBoundary from './PlayerBoundary.jsx';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
-import PausedLoopOverlay from './PausedLoopOverlay.jsx';
+import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
+import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
+import Icon from '../../icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
@@ -117,13 +119,35 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     </PlayerBoundary>
   ), [contentId, onBack]);
 
-  // Tap the video to toggle browser fullscreen on the video surface.
+  // Fullscreen is entered from the chrome strip's button; a tap never enters it.
+  // While fullscreen the strip is offscreen, so taps summon the transport
+  // overlay instead (which also carries the way back out).
   const videoWrapRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fsOverlayOpen, setFsOverlayOpen] = useState(false);
   const toggleFullscreen = useCallback(() => {
     const el = videoWrapRef.current;
     if (!el) return;
     if (document.fullscreenElement) document.exitFullscreen?.();
     else el.requestFullscreen?.().catch(() => {});
+  }, []);
+  const exitFullscreen = useCallback(() => { document.exitFullscreen?.(); }, []);
+  useEffect(() => {
+    const onFsChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs) setFsOverlayOpen(false);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Transient tap feedback — an indicator of what the tap did, not a button.
+  const [tapFlash, setTapFlash] = useState(null);
+  const tapFlashSeq = useRef(0);
+  const flash = useCallback((icon) => {
+    tapFlashSeq.current += 1;
+    setTapFlash({ icon, seq: tapFlashSeq.current });
   }, []);
 
   // Report active playback to the kiosk context so the inactivity timer stays alive.
@@ -192,6 +216,26 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   // (1s tolerance) — mirrors the chrome's own calc (PianoVideoChrome.jsx:28).
   const forwardDisabled = isSequential && currentTime >= furthestWatched - 1;
 
+  // Bare tap on the video surface. Fullscreen: summon the transport overlay.
+  // Otherwise the tap IS the transport: left third −15s, middle toggles
+  // pause, right third +15s (held back by the sequential forward-lock).
+  const handleSurfaceTap = useCallback((e) => {
+    if (isFullscreen) { setFsOverlayOpen(true); return; }
+    const rect = videoWrapRef.current?.getBoundingClientRect();
+    const action = videoTapAction((e.clientX ?? 0) - (rect?.left ?? 0), rect?.width ?? 0);
+    if (action === 'back') {
+      handleSkip(-TAP_SKIP_SECONDS);
+      flash('skip-back-15');
+    } else if (action === 'forward') {
+      if (forwardDisabled) return;
+      handleSkip(TAP_SKIP_SECONDS);
+      flash('skip-forward-15');
+    } else {
+      ctrl.toggle();
+      flash(isPlaying ? 'pause' : 'play');
+    }
+  }, [isFullscreen, handleSkip, forwardDisabled, ctrl, isPlaying, flash]);
+
   const handleCycleRate = useCallback(() => {
     const r = nextPianoRate(rate);
     setRate(r);
@@ -222,11 +266,23 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
           chord-theory column (fills all leftover width to the right). */}
       <div className="piano-video-player__body" ref={bodyRef}>
         <div className="piano-video-player__stack" style={stackW ? { width: `${stackW}px` } : undefined}>
-          <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : ctrl.toggle} style={{ position: 'relative' }}>
+          <div className="piano-video-player__video" ref={videoWrapRef} onClick={gateOpen ? undefined : handleSurfaceTap} style={{ position: 'relative' }}>
             {playerEl}
             {gateOpen && <EngagementGate open={gateOpen} onDismiss={dismissGate} />}
-            {!isPlaying && !gateOpen && mediaEl && (
-              <PausedLoopOverlay onSkip={handleSkip} onResume={ctrl.toggle} forwardDisabled={forwardDisabled} />
+            {isFullscreen && fsOverlayOpen && !gateOpen && (
+              <FullscreenTransportOverlay
+                isPlaying={isPlaying}
+                onSkip={handleSkip}
+                onToggle={ctrl.toggle}
+                onExitFullscreen={exitFullscreen}
+                onDismiss={() => setFsOverlayOpen(false)}
+                forwardDisabled={forwardDisabled}
+              />
+            )}
+            {tapFlash && (
+              <div key={tapFlash.seq} className="piano-tap-flash" onAnimationEnd={() => setTapFlash(null)}>
+                <Icon name={tapFlash.icon} />
+              </div>
             )}
           </div>
 
