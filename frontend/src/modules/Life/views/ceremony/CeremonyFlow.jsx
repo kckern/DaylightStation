@@ -29,7 +29,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
   const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
   const navigate = useNavigate();
   const ceremony = useCeremony(type, username);
-  const { content, loading, error, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
+  const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
 
   const steps = CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'];
   const implemented = type in CEREMONY_COMPONENTS;
@@ -61,7 +61,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
             <Text c="dimmed">Ceremonies work against your plan — create one first.</Text>
             <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
             <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/plan')}>
-              View your plan
+              See the plan page
             </Anchor>
           </Stack>
         </Paper>
@@ -117,6 +117,14 @@ export function CeremonyFlow({ type, username, onComplete }) {
           </Text>
         )}
       </Paper>
+
+      {/* Submit failures stay inline so the form (and the user's typed
+          responses) remain mounted and Complete can simply be retried. */}
+      {submitError && (
+        <Alert color="red" title="Couldn't save your responses — try again." icon={<IconAlertCircle size={16} />}>
+          {submitError.message}
+        </Alert>
+      )}
 
       <Group justify="space-between">
         <Button

@@ -61,9 +61,9 @@ describe('CeremonyFlow error states', () => {
     renderFlow({ type: 'unit_intention' });
 
     await waitFor(() => {
-      expect(screen.getByText('View your plan')).toBeInTheDocument();
+      expect(screen.getByText('See the plan page')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('View your plan'));
+    fireEvent.click(screen.getByText('See the plan page'));
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/life/plan');
   });
 
@@ -90,13 +90,48 @@ describe('CeremonyFlow error states', () => {
   });
 });
 
-describe('CeremonyFlow unimplemented types', () => {
-  const advanceToLastStep = () => {
-    // Every CEREMONY_STEPS entry has 3 steps → two Next clicks reach the last
-    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
-  };
+const advanceToLastStep = () => {
+  // Every CEREMONY_STEPS entry has 3 steps → two Next clicks reach the last
+  fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+};
 
+describe('CeremonyFlow submit errors', () => {
+  it('keeps the form mounted on a failed Complete and allows a successful retry', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse(200, { type: 'unit_intention', periodId: '2026-U555', activeGoals: [] }));
+
+    renderFlow({ type: 'unit_intention' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Active Goals')).toBeInTheDocument();
+    });
+    advanceToLastStep();
+
+    // POST fails — inline alert appears, form and Complete stay mounted
+    fetch.mockResolvedValueOnce(jsonResponse(500, { error: 'disk full' }));
+    fireEvent.click(screen.getByRole('button', { name: /Complete/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Couldn't save your responses/)).toBeInTheDocument();
+    });
+    expect(screen.getByText('disk full')).toBeInTheDocument();
+    expect(screen.getByText('Review your intentions')).toBeInTheDocument(); // form still present
+    expect(screen.getByRole('button', { name: /Complete/ })).toBeInTheDocument();
+    // NOT the destructive full-screen fetch-error alert
+    expect(screen.queryByText('Ceremony unavailable')).toBeNull();
+
+    // Retry with the backend healthy again — completes normally
+    fetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    fireEvent.click(screen.getByRole('button', { name: /Complete/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Ceremony Complete')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Couldn't save your responses/)).toBeNull();
+  });
+});
+
+describe('CeremonyFlow unimplemented types', () => {
   it('shows coming-soon notice and suppresses Complete for season_alignment', async () => {
     fetch.mockResolvedValue(jsonResponse(200, { type: 'season_alignment', periodId: '2026-S3' }));
 
