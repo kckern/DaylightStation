@@ -16,11 +16,14 @@ public final class AndroidAudioOps implements AudioRouteGuard.Ops {
     private final AudioManager am;
     private final A2dpConnector a2dp;
     private final PianoEngine engine;
+    private final java.util.function.BooleanSupplier desired;
 
-    public AndroidAudioOps(Context ctx, A2dpConnector a2dp, PianoEngine engine) {
+    public AndroidAudioOps(Context ctx, A2dpConnector a2dp, PianoEngine engine,
+                           java.util.function.BooleanSupplier desired) {
         this.am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
         this.a2dp = a2dp;
         this.engine = engine;
+        this.desired = desired;
     }
 
     @Override public boolean a2dpProfileConnected() {
@@ -65,12 +68,14 @@ public final class AndroidAudioOps implements AudioRouteGuard.Ops {
 
     @Override public void setSynthGate(boolean open) {
         if (engine == null) return;
+        // The GATE is asserted unconditionally — fail-closed, always.
         engine.setOutputGate(open);
-        // Reopening is the reconciler's job now: onErrorAfterClose deliberately leaves
-        // the stream closed after an A2DP drop. start() is natively idempotent, and we
-        // only call it once the route is re-confirmed, so this cannot reopen onto the
-        // built-in speaker.
-        if (open && !engine.isStreamRunning()) engine.start();
+        // The STREAM is only (re)opened for a synth the kiosk actually asked for.
+        // onErrorAfterClose deliberately leaves the stream closed after an A2DP drop,
+        // so this is the sole recovery path; gating it on intent avoids holding the
+        // audio HAL open on an idle kiosk. start() is natively idempotent, and we only
+        // call it once the route is re-confirmed, so it can't reopen onto the speaker.
+        if (open && desired.getAsBoolean() && !engine.isStreamRunning()) engine.start();
     }
 
     private boolean hasType(int type) {

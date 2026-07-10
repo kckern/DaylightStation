@@ -81,7 +81,11 @@ public class A2dpConnector {
                 try { adapter.closeProfileProxy(BluetoothProfile.A2DP, proxy); } catch (Exception ignored) { }
             }
             proxy = null;
+            onStateChanged = null; // drop the (now stale) guard reference
         });
+        // Let the posted teardown run, then retire the HandlerThread so it doesn't leak
+        // across reloadConfigAndReconnect() while still holding the old guard.
+        thread.quitSafely();
     }
 
     /** Force an immediate reconnect attempt (pbctl POST /speaker). */

@@ -69,13 +69,20 @@ public class PianoBridgeService extends Service {
 
     // Fail-closed audio guard: keeps the built-in speaker silent whenever the piano's
     // A2DP sink isn't the active route. Reconciled off the main thread (binder calls).
-    private AudioRouteGuard audioGuard;
+    // volatile: nulled on the main/binder thread (teardown) but read on audioGuardHandler.
+    private volatile AudioRouteGuard audioGuard;
     private HandlerThread audioGuardThread;
     private Handler audioGuardHandler;
     private AudioDeviceCallback audioDeviceCallback;
     private BroadcastReceiver volumeReceiver;
 
     private volatile boolean engineRunning = false;
+
+    /** The kiosk's INTENT (WS engine.start/engine.stop). Distinct from whether the
+     *  native stream is actually open, which an A2DP drop can change under us. */
+    private volatile boolean engineDesired = false;
+
+    public boolean isEngineDesired() { return engineDesired; }
 
     @Override
     public void onCreate() {
@@ -160,6 +167,7 @@ public class PianoBridgeService extends Service {
             engine = null;
         }
         engineRunning = false;
+        engineDesired = false;
         super.onDestroy();
     }
 
@@ -185,6 +193,7 @@ public class PianoBridgeService extends Service {
     public File getInstrumentsDir() { return new File(getExternalFilesDir(null), INSTRUMENTS_SUBDIR); }
 
     public synchronized void engineStart() {
+        engineDesired = true;
         if (engine == null) { Log.w(TAG, "engineStart: no engine"); return; }
         if (engine.isStreamRunning()) return;
         engineRunning = engine.start();
@@ -192,6 +201,7 @@ public class PianoBridgeService extends Service {
     }
 
     public synchronized void engineStop() {
+        engineDesired = false;
         if (engine == null) return;
         engine.stop();
         engineRunning = false;
@@ -281,15 +291,26 @@ public class PianoBridgeService extends Service {
         // config reload teardownAudioGuard() clears it so it never holds a stale
         // A2dpConnector (see reloadConfigAndReconnect).
         if (audioGuard == null) {
-            audioGuard = new AudioRouteGuard(new AndroidAudioOps(this, a2dpConnector, engine));
-            a2dpConnector.setOnStateChanged(audioGuard::reconcile);
-            registerAudioRouteCallbacks();
+            audioGuard = new AudioRouteGuard(
+                    new AndroidAudioOps(this, a2dpConnector, engine, this::isEngineDesired));
+            registerAudioRouteCallbacks(); // creates audioGuardThread/Handler
+            // Hop off the BT broadcast/sweep thread: reconcile() now opens the audio HAL
+            // via engine.start(), which must not stall A2DP reconnect handling.
+            a2dpConnector.setOnStateChanged(() -> audioGuardHandler.post(this::safeReconcile));
         }
         // Fail-closed: assert desired state immediately. reconcile() does binder calls,
         // so run it OFF the main thread (onStartCommand runs on main). See Rule 3.
-        if (audioGuardHandler != null && audioGuard != null) {
-            audioGuardHandler.post(audioGuard::reconcile);
+        if (audioGuardHandler != null) {
+            audioGuardHandler.post(this::safeReconcile);
         }
+    }
+
+    /** Reconcile on the guard thread, null-safe and crash-safe: an uncaught throw on a
+     *  Handler thread would kill the process (dark tablet in a sealed box). */
+    private void safeReconcile() {
+        AudioRouteGuard g = audioGuard;
+        if (g == null) return;
+        try { g.reconcile(); } catch (Throwable t) { Log.w(TAG, "reconcile threw", t); }
     }
 
     /**
@@ -309,10 +330,10 @@ public class PianoBridgeService extends Service {
         if (am != null && audioDeviceCallback == null) {
             audioDeviceCallback = new AudioDeviceCallback() {
                 @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
-                    if (audioGuard != null) audioGuard.reconcile();
+                    safeReconcile();
                 }
                 @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
-                    if (audioGuard != null) audioGuard.reconcile();
+                    safeReconcile();
                 }
             };
             am.registerAudioDeviceCallback(audioDeviceCallback, audioGuardHandler);
@@ -320,7 +341,7 @@ public class PianoBridgeService extends Service {
         if (volumeReceiver == null) {
             volumeReceiver = new BroadcastReceiver() {
                 @Override public void onReceive(Context c, Intent i) {
-                    if (audioGuard != null) audioGuard.reconcile();
+                    safeReconcile();
                 }
             };
             registerReceiver(volumeReceiver,
