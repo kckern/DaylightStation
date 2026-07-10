@@ -2,7 +2,7 @@
 
 **Reported:** 2026-07-07 (user asked "did the last NFC tag scan work?")
 **Severity:** High — registered NFC book tags dispatch successfully end-to-end on the backend, report `ok: true`, and then play **nothing**. The screen is left with a Player overlay stuck on "Loading…" indefinitely.
-**Status:** Fix implemented on `main` (see `docs/_wip/plans/2026-07-07-nfc-play-next-url-fallback-fix.md`) — all 6 tasks done TDD, isolated suites green, frontend builds. Pending deploy + live verification. Q1 (WS ack timeout despite fresh subscribers) still open.
+**Status:** Fully landed on `main` as of 2026-07-10 (see `docs/_wip/plans/2026-07-07-nfc-play-next-url-fallback-fix.md`) — all 6 tasks done TDD, isolated suites green, frontend builds. The final refinement (watchdog no longer arms for menu/list opens, which would otherwise false-timeout since a browse never emits `playback.log`) was cherry-picked from the now-deleted `fix/nfc-play-next-url-fallback` branch. **Still pending: deploy + live verification on hardware.** Q1 (WS ack timeout despite fresh subscribers) still open.
 **Related:** `2026-04-27-nfc-multi-scan-and-tv-off-mid-track.md` — the "scan a book 2-3 times before it takes" symptom is plausibly this bug: the first (cold/URL-delivered) scan silently plays nothing; a later re-scan that lands on the WS-delivery path works.
 
 ---
@@ -169,3 +169,8 @@ With this, the present incident would have produced `wake-and-load.playback.time
 - **Q1:** why the WS-first device-ack timed out despite 2 fresh subscribers (suspected stale/zombie WebView session; investigate `useCommandAckPublisher` liveness vs. reality, cf. FKB dead-page runbook).
 - The 11:29:38 `proxy.timeout` (plex, 60 s) — likely a follow-on of the stuck Player; re-check after the fix.
 - Player UX: a queue 404 should surface an error state rather than "Loading…" forever (the 9-hour overlay-summary spam at 1 Hz is its own log-volume problem).
+
+**Edge-case hardening surfaced by the final integration review (non-blocking, no backend path exercises them today):**
+
+- **`play-now` is only half-wired for the URL-fallback path.** The frontend parser now maps `play-now` → `{queueOp}` (symmetric with `handleMediaQueueOp`, which handles both ops for the WS-envelope path), but there is no backend `play-now` action handler and `play-now` is not in `CONTENT_ID_KEYS`. So a hypothetical `?play-now=<id>` FKB URL would parse+emit correctly yet NOT arm the watchdog (`resolveContentId` → null) — the same silent-failure class this branch closed for `play-next`. No backend path produces such a URL today. If `play-now` URL delivery is ever added, also add `play-now` to `CONTENT_ID_KEYS` (note: that key set is shared with the WS delivery adapters, so weigh the blast radius).
+- **Bare-digit `play-next` could false-alarm the watchdog.** `#armPlaybackWatchdog` matches the raw query value; a tag configured with `play-next: 621568` (no `plex:` prefix) yields `expectedContentId = '621568'`, while `playback.log` emits the normalized `plex:621568` → no match → a spurious `wake-and-load.playback.timeout` despite successful playback. Normal NFC tags carry the shorthand-resolved `plex:621568` (NfcResolver's `expandShorthand`), so this only bites a manually bare-numeric-configured tag. Fix if needed by normalizing `expectedContentId` (a `toContentId`-equivalent) on the backend.

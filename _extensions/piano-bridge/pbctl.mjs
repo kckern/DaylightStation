@@ -14,6 +14,9 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs speaker           # A2DP speaker + fail-closed audio-guard status
+//   node pbctl.mjs bootstrap         # spend the one-time clamp window (drop→clamp→reconnect)
+//   node pbctl.mjs override [ms]     # reopen the SYNTH gate only, time-boxed (never unclamps)
 //   node pbctl.mjs update <apk-url>  # ADB-free self-update (one-tap confirm on device)
 //   node pbctl.mjs quiet <s> <e>     # daily MIDI-wake quiet window "HH:mm" (or: quiet off)
 //   node pbctl.mjs suppress <ms>     # mute MIDI-wake for <ms> from now (0 = clear)
@@ -89,6 +92,29 @@ const cmds = {
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
+  // --- A2DP speaker + fail-closed audio guard --------------------------------
+  async speaker() {
+    const s = await req('GET', '/speaker');
+    const spk = s.speaker || {};
+    console.log(`speaker      : ${spk.connected ? 'connected' : 'disconnected'}  ${spk.targetName ?? '?'} (${spk.targetMac ?? '?'})`);
+    console.log(`bond/proxy   : ${spk.bondState ?? '?'} / ${spk.proxyReady ? 'ready' : 'not-ready'}   reconnects: ${spk.reconnects ?? 0}`);
+    if (spk.lastError) console.log(`lastError    : ${spk.lastError}`);
+    const g = s.guard;
+    if (g) console.log(`guard: routeOk=${g.routeOk} reason=${g.reason} clamps=${g.clamps} override=${g.overrideActive}`);
+    else console.log('guard: (not ready)');
+  },
+  async bootstrap() {
+    // Spend the one-time exposure window on purpose: drop A2DP → let the reconciler
+    // clamp the built-in speaker index to 0 → reconnect. Permanent + irreversible.
+    console.log('→ bootstrapping audio guard (drop A2DP, clamp built-in speaker, reconnect)…');
+    pretty(await req('POST', '/audio-guard/bootstrap'));
+  },
+  async override([ms]) {
+    // Time-boxed SYNTH-gate reopen (never unclamps volume). Default 60s, capped 600s.
+    const q = ms == null ? '' : `?ms=${encodeURIComponent(ms)}`;
+    pretty(await req('POST', `/audio-guard/override${q}`));
+  },
+
   // --- ADB-free self-update + wake-policy config -----------------------------
   async update([url]) {
     if (!url) { console.error('usage: update <apk-url>'); process.exit(1); }
@@ -163,7 +189,9 @@ const cmds = {
     else console.log(`  (no thermal zones: ${th.note || 'n/a'})`);
     console.log(`  battery ${bat.percent ?? '?'}%  ${bat.temperatureC ?? '?'}°C  status=${bat.status ?? '?'} plugged=${bat.plugged ?? '?'}`);
     console.log(`── bridge ─────`);
-    console.log(`  engine=${br.engine}  ble=${br.ble?.state ?? '?'}  speaker=${br.speaker?.connected ? 'on' : 'off'}`);
+    const g = br.guard;
+    const guardStr = g ? (g.routeOk ? 'ok' : `gated:${g.reason}`) : '?';
+    console.log(`  engine=${br.engine}  ble=${br.ble?.state ?? '?'}  speaker=${br.speaker?.connected ? 'on' : 'off'}  guard=${guardStr}`);
     console.log(`── kiosk: WebView (is it presenting frames?) ─────`);
     console.log(`  verdict=${wv.verdict}  fps=${wv.lastFps}  beat=${wv.lastBeatAgoMs == null ? 'NONE' : Math.round(wv.lastBeatAgoMs / 1000) + 's ago'}  vis=${wv.lastVisibility}`);
     console.log(`  recovering=${wv.recovering}  counts=${JSON.stringify(wv.recoveryCounts || {})}`);
@@ -202,6 +230,7 @@ const [, , name, ...args] = process.argv;
 if (!name || !cmds[name]) {
   console.log(`pbctl — Piano Bridge control (${BASE})\n`);
   console.log('  status | connect | forget | scan [ms] | config [set k v|push f] | log | panic');
+  console.log('  audio: speaker | bootstrap | override [ms]   (A2DP+guard status / spend clamp window / time-boxed synth-gate reopen)');
   console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
   console.log('  health: diag | kiosk | crashlog        (full snapshot / WebView watchdog / durable death log)');
   console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');

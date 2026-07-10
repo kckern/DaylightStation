@@ -4,9 +4,14 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.media.midi.MidiDevice;
 import android.media.midi.MidiDeviceInfo;
 import android.media.midi.MidiManager;
@@ -14,6 +19,7 @@ import android.media.midi.MidiOutputPort;
 import android.media.midi.MidiReceiver;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
@@ -61,7 +67,22 @@ public class PianoBridgeService extends Service {
     private TouchPulser touchPulser;
     private KioskWatchdog kioskWatchdog;
 
+    // Fail-closed audio guard: keeps the built-in speaker silent whenever the piano's
+    // A2DP sink isn't the active route. Reconciled off the main thread (binder calls).
+    // volatile: nulled on the main/binder thread (teardown) but read on audioGuardHandler.
+    private volatile AudioRouteGuard audioGuard;
+    private HandlerThread audioGuardThread;
+    private Handler audioGuardHandler;
+    private AudioDeviceCallback audioDeviceCallback;
+    private BroadcastReceiver volumeReceiver;
+
     private volatile boolean engineRunning = false;
+
+    /** The kiosk's INTENT (WS engine.start/engine.stop). Distinct from whether the
+     *  native stream is actually open, which an A2DP drop can change under us. */
+    private volatile boolean engineDesired = false;
+
+    public boolean isEngineDesired() { return engineDesired; }
 
     @Override
     public void onCreate() {
@@ -131,6 +152,8 @@ public class PianoBridgeService extends Service {
         CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
+        teardownAudioGuard();
+        if (audioGuardThread != null) { audioGuardThread.quitSafely(); audioGuardThread = null; audioGuardHandler = null; }
         if (screenWaker != null) { screenWaker.shutdown(); screenWaker = null; }
         touchPulser = null;
         closeMidi();
@@ -144,6 +167,7 @@ public class PianoBridgeService extends Service {
             engine = null;
         }
         engineRunning = false;
+        engineDesired = false;
         super.onDestroy();
     }
 
@@ -156,7 +180,9 @@ public class PianoBridgeService extends Service {
 
     public PianoEngine getEngine() { return engine; }
 
-    public boolean isEngineRunning() { return engineRunning; }
+    /** Native stream state is the truth; the engineRunning flag goes stale when an
+     *  Oboe error closes the stream out from under us. */
+    public boolean isEngineRunning() { return engine != null && engine.isStreamRunning(); }
 
     /**
      * App-specific external files dir (no storage permission needed, always
@@ -167,13 +193,15 @@ public class PianoBridgeService extends Service {
     public File getInstrumentsDir() { return new File(getExternalFilesDir(null), INSTRUMENTS_SUBDIR); }
 
     public synchronized void engineStart() {
+        engineDesired = true;
         if (engine == null) { Log.w(TAG, "engineStart: no engine"); return; }
-        if (engineRunning) return;
+        if (engine.isStreamRunning()) return;
         engineRunning = engine.start();
         Log.i(TAG, "engineStart running=" + engineRunning);
     }
 
     public synchronized void engineStop() {
+        engineDesired = false;
         if (engine == null) return;
         engine.stop();
         engineRunning = false;
@@ -256,7 +284,88 @@ public class PianoBridgeService extends Service {
         } else {
             a2dpConnector.connectNow();
         }
+
+        // Fail-closed audio guard. `engine` was created in onStartCommand before this
+        // method runs (and is never nulled by reloadConfigAndReconnect), so it is
+        // non-null here — the spec's construction point is correct. Built once; on a
+        // config reload teardownAudioGuard() clears it so it never holds a stale
+        // A2dpConnector (see reloadConfigAndReconnect).
+        if (audioGuard == null) {
+            audioGuard = new AudioRouteGuard(
+                    new AndroidAudioOps(this, a2dpConnector, engine, this::isEngineDesired));
+            registerAudioRouteCallbacks(); // creates audioGuardThread/Handler
+            // Hop off the BT broadcast/sweep thread: reconcile() now opens the audio HAL
+            // via engine.start(), which must not stall A2DP reconnect handling.
+            a2dpConnector.setOnStateChanged(() -> audioGuardHandler.post(this::safeReconcile));
+        }
+        // Fail-closed: assert desired state immediately. reconcile() does binder calls,
+        // so run it OFF the main thread (onStartCommand runs on main). See Rule 3.
+        if (audioGuardHandler != null) {
+            audioGuardHandler.post(this::safeReconcile);
+        }
     }
+
+    /** Reconcile on the guard thread, null-safe and crash-safe: an uncaught throw on a
+     *  Handler thread would kill the process (dark tablet in a sealed box). */
+    private void safeReconcile() {
+        AudioRouteGuard g = audioGuard;
+        if (g == null) return;
+        try { g.reconcile(); } catch (Throwable t) { Log.w(TAG, "reconcile threw", t); }
+    }
+
+    /**
+     * Register the two edge triggers that supplement A2dpConnector's state hook:
+     *  1) AudioDeviceCallback — output device added/removed (wired plug/unplug, A2DP up/down).
+     *  2) VOLUME_CHANGED_ACTION — stomps a stray volume-up back to 0.
+     * Both fire reconcile() on a dedicated background Handler; reconcile() must never
+     * run on the main thread (it does binder calls). References are kept for teardown.
+     */
+    private void registerAudioRouteCallbacks() {
+        if (audioGuardThread == null) {
+            audioGuardThread = new HandlerThread("PianoBridge-audioguard");
+            audioGuardThread.start();
+            audioGuardHandler = new Handler(audioGuardThread.getLooper());
+        }
+        AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (am != null && audioDeviceCallback == null) {
+            audioDeviceCallback = new AudioDeviceCallback() {
+                @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                    safeReconcile();
+                }
+                @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                    safeReconcile();
+                }
+            };
+            am.registerAudioDeviceCallback(audioDeviceCallback, audioGuardHandler);
+        }
+        if (volumeReceiver == null) {
+            volumeReceiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context c, Intent i) {
+                    safeReconcile();
+                }
+            };
+            registerReceiver(volumeReceiver,
+                    new IntentFilter("android.media.VOLUME_CHANGED_ACTION"), null, audioGuardHandler);
+        }
+    }
+
+    /** Unregister the audio-route callbacks and drop the guard (onDestroy / config reload). */
+    private void teardownAudioGuard() {
+        if (audioDeviceCallback != null) {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                try { am.unregisterAudioDeviceCallback(audioDeviceCallback); } catch (Exception ignored) { }
+            }
+            audioDeviceCallback = null;
+        }
+        if (volumeReceiver != null) {
+            try { unregisterReceiver(volumeReceiver); } catch (Exception ignored) { }
+            volumeReceiver = null;
+        }
+        audioGuard = null;
+    }
+
+    public AudioRouteGuard getAudioGuard() { return audioGuard; }
 
     public A2dpConnector getA2dpConnector() { return a2dpConnector; }
 
@@ -287,6 +396,10 @@ public class PianoBridgeService extends Service {
         config = DeviceConfig.load(this);
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
+        // The guard's Ops closes over the now-dead a2dpConnector, so drop it and let
+        // startBleMidi() rebuild it against the fresh connector. teardownAudioGuard()
+        // keeps the audioGuardThread alive; registerAudioRouteCallbacks reuses it.
+        teardownAudioGuard();
         closeMidi();
         startBleMidi();
         // Refresh watchdog thresholds/policy in place (keeps its beat state).
