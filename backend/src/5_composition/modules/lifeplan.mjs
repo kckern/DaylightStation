@@ -11,6 +11,7 @@ import { YamlLifeplanMetricsStore } from '#adapters/persistence/yaml/YamlLifepla
 import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremonyRecordStore.mjs';
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
 import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
+import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
@@ -58,6 +59,11 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
   });
 
+  // Single write path for plan genesis + authoring (REST now, coach tools in C2)
+  const planAuthoringService = new PlanAuthoringService({
+    lifePlanStore: container.getLifePlanStore(),
+  });
+
   const driftService = new DriftService({
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
@@ -101,6 +107,7 @@ export function bootstrapLifeplan(deps) {
     ...container.getRouterConfig(),
     ceremonyService,
     feedbackService,
+    planAuthoringService,
     retroService,
     alignmentService,
     driftService,
@@ -122,6 +129,7 @@ export function bootstrapLifeplan(deps) {
     services: {
       ceremonyService,
       feedbackService,
+      planAuthoringService,
       retroService,
       driftService,
       alignmentService,
