@@ -5,6 +5,7 @@ import {
 import { IconAlertCircle, IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
 import { useHotkeys } from '@mantine/hooks';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+import { useUnsavedGuard } from './useUnsavedGuard.js';
 
 /**
  * Wraps a config form with standard load/save/revert/dirty-state chrome.
@@ -26,6 +27,9 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
+  useUnsavedGuard(dirty, { label: filePath });
 
   const handleSave = async () => {
     if (validate) {
