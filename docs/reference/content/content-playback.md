@@ -215,19 +215,18 @@ Every renderer of playable content implements the Playable Contract. This is the
 | `onPlaybackMetrics` | `(metrics) => void` | Report playback state |
 | `onRegisterMediaAccess` | `(accessors) => void` | Register media element for resilience |
 | `onResolvedMeta` | `(meta) => void` | Report resolved metadata |
-| `onStartupSignal` | `() => void` | Signal playback started |
 
 ### Implementations
 
 | Renderer | Format(s) | Media Element | Contract Status |
 |----------|-----------|---------------|----------------|
-| VideoPlayer | video, dash_video | `<video>` / `<dash-video>` | Full (via useCommonMediaController). Note: `onStartupSignal` not called by VideoPlayer directly. |
-| AudioPlayer | audio | `<audio>` | Full (via useCommonMediaController). Note: `onStartupSignal` not called by AudioPlayer directly. |
+| VideoPlayer | video, dash_video | `<video>` / `<dash-video>` | Full (via useCommonMediaController) |
+| AudioPlayer | audio | `<audio>` | Full (via useCommonMediaController) |
 | SingalongScroller | singalong | `<audio>` (embedded) | Full (via ContentScroller → useMediaReporter) |
 | ReadalongScroller | readalong | `<audio>` (embedded, optional) | Full (via ContentScroller → useMediaReporter) |
 | PlayableAppShell | app | None (app-defined) | Via `usePlayableLifecycle` hook — delegates to AppContainer |
 
-Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. `onStartupSignal` is currently only implemented by ContentScroller-based renderers (SingalongScroller, ReadalongScroller) via `useMediaReporter`.
+Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. (`onStartupSignal` was removed 2026-07-09 — it had been a no-op since the January resilience gutting; startup detection is owned by `useMediaResilience`'s deadline + progress signals.)
 
 ### DASH Video Playback (`dash_video`)
 

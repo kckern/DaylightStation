@@ -19,6 +19,7 @@ import { QualitiesView } from '../modules/Life/views/plan/QualitiesView.jsx';
 import { CeremonyConfig } from '../modules/Life/views/plan/CeremonyConfig.jsx';
 import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
 import CoachChat from '../modules/Life/views/coach/CoachChat.jsx';
+import { LifeUserContext, useLifeUser } from '../modules/Life/hooks/useLifeUser.js';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -53,6 +54,7 @@ const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user: lifeUser } = useLifeUser();
 
   // Enable session file logging — writes to media/logs/life/<timestamp>.jsonl
   useEffect(() => {
@@ -73,6 +75,7 @@ const LifeApp = () => {
 
   return (
     <MantineProvider>
+      <LifeUserContext.Provider value={lifeUser}>
       <AppShell
         header={{ height: 48 }}
         navbar={{ width: 200, breakpoint: 'sm' }}
@@ -133,10 +136,12 @@ const LifeApp = () => {
             <Route path="plan/qualities" element={<QualitiesView />} />
             <Route path="plan/ceremonies" element={<CeremonyConfig />} />
             <Route path="ceremony/:type" element={<CeremonyRoute />} />
-            <Route path="coach" element={<CoachChat />} />
+            {/* Gate on resolved user so agent memory keys to the right person */}
+            <Route path="coach" element={lifeUser ? <CoachChat userId={lifeUser.username} /> : null} />
           </Routes>
         </AppShell.Main>
       </AppShell>
+      </LifeUserContext.Provider>
     </MantineProvider>
   );
 };

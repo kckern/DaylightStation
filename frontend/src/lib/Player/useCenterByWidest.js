@@ -1,4 +1,11 @@
 import { useLayoutEffect } from 'react';
+import getLogger from '../logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'center-by-widest' });
+  return _logger;
+}
 
 /**
  * useCenterByWidest
@@ -29,20 +36,20 @@ export function useCenterByWidest(containerRef, deps = [], { observeResize = tru
     let frameId = null;
     let resizeObserver = null;
 
-    const log = (...args) => { if (debug) console.debug('[useCenterByWidest]', ...args); };
+    const log = (event, data) => { if (debug) logger().debug(event, data); };
 
     const recalc = (phase = 'immediate') => {
       try {
         const currentEl = containerRef.current; // in case ref changes
         if (!currentEl) return;
         const panel = currentEl.closest('.textpanel');
-        if (!panel) { log('no panel found, abort', phase); return; }
+        if (!panel) { log('no-panel', { phase }); return; }
 
         // Reset width to natural size before measuring
         currentEl.style.width = 'auto';
 
         const stanzas = currentEl.querySelectorAll(stanzaSelector);
-        if (!stanzas || stanzas.length === 0) { log('no stanzas yet', phase); return; }
+        if (!stanzas || stanzas.length === 0) { log('no-stanzas', { phase }); return; }
 
         let maxWidth = 0;
         stanzas.forEach(stanza => {
@@ -60,7 +67,7 @@ export function useCenterByWidest(containerRef, deps = [], { observeResize = tru
         currentEl.style.marginLeft = `${marginLeft}px`;
         log('recalc', { phase, maxWidth, panelWidth, marginLeft });
       } catch (err) {
-        log('error during recalc', err);
+        log('recalc-error', { message: err?.message });
       }
     };
 
@@ -80,7 +87,7 @@ export function useCenterByWidest(containerRef, deps = [], { observeResize = tru
           window.addEventListener('resize', recalc);
         }
       } catch (err) {
-        log('error setting up resize observer', err);
+        log('resize-observer-error', { message: err?.message });
       }
     }
 

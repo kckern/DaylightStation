@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
 function logger() {
@@ -25,7 +26,10 @@ export function useLifelog(params = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const { username = 'user_1', date, start, end, scope, at, category } = params;
+  // Default to the backend-resolved user from LifeUserContext (provided by
+  // LifeApp); 'user_1' is the last-resort legacy fallback outside a provider.
+  const contextUsername = useLifeUsername();
+  const { username = contextUsername || 'user_1', date, start, end, scope, at, category } = params;
 
   const url = useMemo(() => {
     const base = '/api/v1/life/log';

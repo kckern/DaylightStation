@@ -1,121 +1,132 @@
 /**
- * Integration test: CeremonyScheduler triggers → NotificationService routes → adapter receives.
+ * Integration test: CeremonyScheduler triggers → NotificationService routes
+ * by category preference → channel adapters receive normalized intents.
  *
- * Verifies the full ceremony notification delivery chain.
+ * Uses the real application-layer NotificationService (intent normalization +
+ * preference routing) with fake channel adapters.
  */
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { CeremonyScheduler } from '#system/scheduling/CeremonyScheduler.mjs';
+import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
+import { NotificationService } from '#apps/notification/NotificationService.mjs';
+import { NotificationPreference } from '#domains/notification/entities/NotificationPreference.mjs';
 
 describe('CeremonyScheduler — ceremony delivery (integrated)', () => {
   let scheduler;
-  let sentNotifications;
+  let telegramSends;
+  let appSends;
 
   beforeEach(() => {
-    sentNotifications = [];
+    telegramSends = [];
+    appSends = [];
 
-    const mockCeremonyService = {
-      getCeremonyContent: async () => ({ steps: [] }),
+    const telegramAdapter = {
+      channel: 'telegram',
+      send: async (intent) => { telegramSends.push(intent); return { delivered: true, channelId: 'tg-1' }; },
+    };
+    const appAdapter = {
+      channel: 'app',
+      send: async (intent) => { appSends.push(intent); return { delivered: true, channelId: 'app-1' }; },
     };
 
-    const mockNotificationService = {
-      send: (intent) => {
-        sentNotifications.push(intent);
-        return [{ channel: intent.channel, success: true }];
-      },
-    };
+    const notificationService = new NotificationService({
+      adapters: [telegramAdapter, appAdapter],
+      preferenceLoader: () => new NotificationPreference({
+        ceremony: { normal: ['telegram', 'app'] },
+      }),
+    });
 
-    const mockPlanStore = {
+    const planStore = {
       load: () => ({
         ceremonies: {
-          unit_intention: { enabled: true, channel: 'push' },
-          cycle_retro: { enabled: true, channel: 'email' },
+          unit_intention: { enabled: true },
+          unit_capture: { enabled: false },
+          cycle_retro: { enabled: true },
           phase_review: { enabled: false },
-          season_alignment: { enabled: true, channel: 'push' },
+          season_alignment: { enabled: true },
+          era_vision: { enabled: true },
         },
-        cadence: { unit: 'day', cycle: 'week', phase: 'month', season: 'quarter' },
+        cadence: {},
       }),
     };
 
-    const mockCeremonyRecordStore = {
-      hasRecord: (username, type, periodId) => {
-        // unit_intention already done for today
-        return type === 'unit_intention' && periodId === '2025-06-07';
-      },
+    const ceremonyRecordStore = {
+      // unit_intention already completed for today's period
+      hasRecord: (username, type, periodId) =>
+        type === 'unit_intention' && periodId === '2025-06-07',
+      getLatestRecord: () => null,
     };
 
-    const mockCadenceService = {
+    const cadenceService = {
       resolve: () => ({
-        unit: { periodId: '2025-06-07', startDate: new Date('2025-06-07') },
-        cycle: { periodId: '2025-W23', startDate: new Date('2025-06-02') },
-        phase: { periodId: '2025-06', startDate: new Date('2025-06-01') },
-        season: { periodId: '2025-Q2', startDate: new Date('2025-04-01') },
-        era: { periodId: '2025', startDate: new Date('2025-01-01') },
+        unit: { periodId: '2025-06-07' },
+        cycle: { periodId: '2025-W23' },
+        phase: { periodId: '2025-06' },
+        season: { periodId: '2025-Q2' },
+        era: { periodId: '2025' },
       }),
-      isCeremonyDue: (type) => {
-        // All enabled ceremonies are due except era_vision
-        return type !== 'era_vision';
-      },
-    };
-
-    const clock = {
-      now: () => new Date('2025-06-07T08:00:00Z'),
+      // signature: (timing, cadenceConfig, today, lastCeremonyDate)
+      isCeremonyDue: (timing) => timing !== 'end_of_era',
     };
 
     scheduler = new CeremonyScheduler({
-      ceremonyService: mockCeremonyService,
-      notificationService: mockNotificationService,
-      lifePlanStore: mockPlanStore,
-      ceremonyRecordStore: mockCeremonyRecordStore,
-      cadenceService: mockCadenceService,
-      clock,
+      notificationService,
+      lifePlanStore: planStore,
+      ceremonyRecordStore,
+      cadenceService,
+      clock: { now: () => new Date('2025-06-07T08:00:00Z') },
     });
   });
 
-  it('sends notifications for due ceremonies not yet completed', async () => {
-    await scheduler.checkAndNotify('testuser');
+  it('sends notifications for due, enabled, not-yet-completed ceremonies', async () => {
+    const sent = await scheduler.checkAndNotify('test-user');
 
-    // unit_intention is already done → skip
-    // cycle_retro is due + enabled + not done → send
-    // phase_review is disabled → skip
-    // season_alignment is due + enabled + not done → send
-    // era_vision is not due → skip
-    expect(sentNotifications).toHaveLength(2);
+    // unit_intention: already done → skip
+    // unit_capture / phase_review: disabled → skip
+    // cycle_retro + season_alignment: due + enabled + not done → send
+    // era_vision: enabled but not due → skip
+    const types = sent.map(s => s.type).sort();
+    expect(types).toEqual(['cycle_retro', 'season_alignment']);
+    expect(sent.every(s => s.delivered)).toBe(true);
   });
 
-  it('routes to correct notification channel from ceremony config', async () => {
-    await scheduler.checkAndNotify('testuser');
+  it('routes ceremony category to both preferred channels', async () => {
+    await scheduler.checkAndNotify('test-user');
 
-    const cycleNotif = sentNotifications.find(n => n.ceremony === 'cycle_retro');
-    expect(cycleNotif).toBeDefined();
-    expect(cycleNotif.channel).toBe('email');
-
-    const seasonNotif = sentNotifications.find(n => n.ceremony === 'season_alignment');
-    expect(seasonNotif).toBeDefined();
-    expect(seasonNotif.channel).toBe('push');
+    expect(telegramSends).toHaveLength(2);
+    expect(appSends).toHaveLength(2);
   });
 
-  it('includes ceremony type and period in notification', async () => {
-    await scheduler.checkAndNotify('testuser');
+  it('delivers normalized intents with ceremony metadata', async () => {
+    await scheduler.checkAndNotify('test-user');
 
-    const notif = sentNotifications[0];
-    expect(notif.type).toBe('ceremony_due');
-    expect(notif.ceremony).toBeDefined();
-    expect(notif.periodId).toBeDefined();
-    expect(notif.username).toBe('testuser');
-    expect(notif.title).toContain('Time for');
+    const cycleIntent = telegramSends.find(i => i.metadata.ceremony === 'cycle_retro');
+    expect(cycleIntent).toBeDefined();
+    expect(cycleIntent.category).toBe('ceremony');
+    expect(cycleIntent.metadata.username).toBe('test-user');
+    expect(cycleIntent.metadata.periodId).toBe('2025-W23');
+    expect(typeof cycleIntent.toJSON).toBe('function');
+    expect(cycleIntent.title).toBeDefined();
+    expect(cycleIntent.body).toContain('cycle retro');
+  });
+
+  it('rejects invalid categories at the service boundary', async () => {
+    const notificationService = new NotificationService({ adapters: [] });
+    await expect(notificationService.send({ title: 't', body: 'b', category: 'lifeplan', urgency: 'normal' }))
+      .rejects.toThrow(/Invalid notification category/);
   });
 
   it('skips all notifications when no plan exists', async () => {
+    const sends = [];
     scheduler = new CeremonyScheduler({
-      ceremonyService: {},
-      notificationService: { send: (i) => sentNotifications.push(i) },
+      notificationService: { send: async (i) => { sends.push(i); return []; } },
       lifePlanStore: { load: () => null },
-      ceremonyRecordStore: { hasRecord: () => false },
+      ceremonyRecordStore: { hasRecord: () => false, getLatestRecord: () => null },
       cadenceService: { resolve: () => ({}), isCeremonyDue: () => true },
-      clock: { now: () => new Date() },
+      clock: { now: () => new Date('2025-06-07T08:00:00Z') },
     });
 
-    await scheduler.checkAndNotify('testuser');
-    expect(sentNotifications).toHaveLength(0);
+    const sent = await scheduler.checkAndNotify('test-user');
+    expect(sent).toHaveLength(0);
+    expect(sends).toHaveLength(0);
   });
 });

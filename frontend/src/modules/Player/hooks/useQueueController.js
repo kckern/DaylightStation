@@ -7,7 +7,7 @@ import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
 
 // Module-level signature cache — survives React remounts for the same content.
 // Prevents re-fetching queue when the player remounts during resilience recovery.
-// Follows the same pattern as _recoveryTracker in useMediaResilience.js.
+// Same remount-survival pattern as the recovery ledger (lib/recoveryLedger.js).
 const _signatureCache = new Map();
 
 function withTimeout(promise, timeoutMs, kind, ctx) {
