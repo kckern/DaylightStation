@@ -22,6 +22,8 @@
  * See: docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
  *      docs/superpowers/plans/2026-05-23-screens-player-end-of-video-recovery.md
  */
+import { isNearEnd } from './nearEnd.js';
+
 export function createEndOfContentWatchdog({
   onAdvance,
   getMediaInfo,           // () => { currentTime, duration, paused, seeking }
@@ -33,13 +35,7 @@ export function createEndOfContentWatchdog({
   let armedAtTime = null; // currentTime captured when the current timer was scheduled
   let fired = false;
 
-  const isAtDuration = (info) => {
-    if (!info) return false;
-    const { currentTime, duration } = info;
-    if (!Number.isFinite(currentTime) || !Number.isFinite(duration)) return false;
-    if (duration <= 0) return false;
-    return currentTime >= (duration - thresholdSeconds);
-  };
+  const isAtDuration = (info) => !!info && isNearEnd(info.currentTime, info.duration, thresholdSeconds);
 
   const cancel = () => {
     if (timerId != null) {

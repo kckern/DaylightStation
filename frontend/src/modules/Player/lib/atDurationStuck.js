@@ -19,14 +19,14 @@
  *
  * See: docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md §2.2
  */
+import { isNearEnd } from './nearEnd.js';
+
 export function shouldLogAtDurationStuck({ hasEnded, mediaEl, alreadyLogged }) {
   if (alreadyLogged) return false;
   if (hasEnded) return false;
   if (!mediaEl) return false;
   if (mediaEl.ended) return false;
-  if (!Number.isFinite(mediaEl.duration) || mediaEl.duration <= 0) return false;
-  if (!Number.isFinite(mediaEl.currentTime)) return false;
-  return mediaEl.currentTime >= (mediaEl.duration - 0.5);
+  return isNearEnd(mediaEl.currentTime, mediaEl.duration);
 }
 
 export function buildAtDurationStuckPayload({ assetId, mediaEl }) {
