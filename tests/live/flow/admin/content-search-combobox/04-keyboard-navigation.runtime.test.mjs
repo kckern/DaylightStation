@@ -28,16 +28,18 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
     await ComboboxActions.search(page, 'Office');
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
+    // Results stream in per-source; wait until at least two rows exist rather
+    // than asserting an instant count after the first source lands.
     const options = ComboboxLocators.options(page);
-    const count = await options.count();
-    expect(count, 'Search should return results for keyboard navigation').toBeGreaterThan(1);
+    await expect(options.nth(1), 'Search should return results for keyboard navigation').toBeVisible({ timeout: 30000 });
 
     // Press down arrow
     await ComboboxActions.pressKey(page, 'ArrowDown');
 
-    // First option should be highlighted (data-combobox-selected or similar)
+    // Unified combobox owns the highlight (machine state), exposed as
+    // data-highlighted — NOT Mantine's data-combobox-selected.
     const firstOption = options.first();
-    const isSelected = await firstOption.getAttribute('data-combobox-selected');
+    const isSelected = await firstOption.getAttribute('data-highlighted');
     expect(isSelected).toBe('true');
 
     // Press down again
@@ -45,7 +47,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
 
     // Second option should now be highlighted - verify via data attribute
     const secondOption = options.nth(1);
-    const isSecondSelected = await secondOption.getAttribute('data-combobox-selected');
+    const isSecondSelected = await secondOption.getAttribute('data-highlighted');
     expect(isSecondSelected).toBe('true');
   });
 
@@ -54,9 +56,9 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
     await ComboboxActions.search(page, 'Office');
     await ComboboxActions.waitForStreamComplete(page, 30000);
 
+    // Results stream in per-source; wait for at least two rows (see above).
     const options = ComboboxLocators.options(page);
-    const count = await options.count();
-    expect(count, 'Search should return results for keyboard navigation').toBeGreaterThan(1);
+    await expect(options.nth(1), 'Search should return results for keyboard navigation').toBeVisible({ timeout: 30000 });
 
     // Navigate down twice
     await ComboboxActions.pressKey(page, 'ArrowDown');
@@ -65,9 +67,9 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
     // Navigate up once
     await ComboboxActions.pressKey(page, 'ArrowUp');
 
-    // Should be back at first option - verify via data attribute
+    // Should be back at first option - unified highlight attribute
     const firstOption = options.first();
-    const isFirstSelected = await firstOption.getAttribute('data-combobox-selected');
+    const isFirstSelected = await firstOption.getAttribute('data-highlighted');
     expect(isFirstSelected).toBe('true');
   });
 

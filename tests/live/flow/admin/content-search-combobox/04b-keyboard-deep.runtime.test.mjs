@@ -20,24 +20,28 @@ const TEST_URL = '/admin/test/combobox';
 let fixtures;
 
 /**
- * Helper to get the currently selected option index
+ * Helper to get the currently highlighted option index.
+ * Unified combobox owns the highlight (machine state) and exposes it as
+ * data-highlighted — NOT Mantine's data-combobox-selected.
  */
 async function getSelectedIndex(page) {
   const options = ComboboxLocators.options(page);
   const count = await options.count();
   for (let i = 0; i < count; i++) {
-    const isSelected = await options.nth(i).getAttribute('data-combobox-selected');
+    const isSelected = await options.nth(i).getAttribute('data-highlighted');
     if (isSelected === 'true') return i;
   }
   return -1; // None selected
 }
 
 /**
- * Helper to check if an option is a container (has chevron/drill indicator)
+ * Helper to check if an option is a container. Unified combobox rows expose
+ * data-container — svg-sniffing (optionChevron) misreads unified rows, where
+ * every row carries a small type-icon svg in its subtitle.
  */
 async function isContainer(option) {
-  const chevron = ComboboxLocators.optionChevron(option);
-  return await chevron.isVisible().catch(() => false);
+  const attr = await option.getAttribute('data-container').catch(() => null);
+  return attr === 'true';
 }
 
 /**
@@ -173,12 +177,15 @@ test.describe('ContentSearchCombobox - Deep Keyboard Navigation', () => {
     await ComboboxActions.pressKey(page, 'ArrowDown');
     const afterLastIndex = await getSelectedIndex(page);
 
-    // Either wrapped to 0, stayed at last, or went to some valid index
+    // Either wrapped to 0, stayed at last, or went to some valid index.
+    // Validate against the LIVE count — results stream in per-source, so the
+    // list may have grown since `count` was captured.
+    const liveCount = await options.count();
     const wrapped = afterLastIndex === 0;
     const stayed = afterLastIndex === lastIndex;
-    const validIndex = afterLastIndex >= 0 && afterLastIndex < count;
+    const validIndex = afterLastIndex >= 0 && afterLastIndex < liveCount;
 
-    console.log(`At last item (${lastIndex}), ArrowDown went to ${afterLastIndex} - ${wrapped ? 'WRAPPED' : stayed ? 'STAYED' : 'MOVED'}`);
+    console.log(`At last item (${lastIndex}), ArrowDown went to ${afterLastIndex} of ${liveCount} - ${wrapped ? 'WRAPPED' : stayed ? 'STAYED' : 'MOVED'}`);
     expect(validIndex, 'Should be at a valid index').toBe(true);
   });
 
@@ -381,17 +388,18 @@ test.describe('ContentSearchCombobox - Deep Keyboard Navigation', () => {
       return;
     }
 
-    // Navigate down through children
+    // Navigate down through children. The unified highlight wraps (pac-man),
+    // so with a small child list the second ArrowDown may wrap to 0.
     await ComboboxActions.pressKey(page, 'ArrowDown');
     const firstChildIndex = await getSelectedIndex(page);
 
     await ComboboxActions.pressKey(page, 'ArrowDown');
     const secondChildIndex = await getSelectedIndex(page);
 
-    console.log(`Child navigation: first=${firstChildIndex}, second=${secondChildIndex}`);
-    expect(secondChildIndex).toBe(firstChildIndex + 1);
+    console.log(`Child navigation: first=${firstChildIndex}, second=${secondChildIndex} (of ${childCount})`);
+    expect(secondChildIndex).toBe((firstChildIndex + 1) % childCount);
 
-    // Navigate back up
+    // Navigate back up (wrap-aware inverse)
     await ComboboxActions.pressKey(page, 'ArrowUp');
     const backToFirst = await getSelectedIndex(page);
     expect(backToFirst).toBe(firstChildIndex);

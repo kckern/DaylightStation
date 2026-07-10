@@ -290,8 +290,14 @@ export const ComboboxLocators = {
   // Dropdown appears when combobox opens - use data attribute from Mantine
   dropdown: (page) => page.locator('[data-combobox-dropdown], .mantine-Combobox-dropdown'),
 
-  // Options within the dropdown
-  options: (page) => page.locator('[data-combobox-option], .mantine-Combobox-option'),
+  // Content options within the dropdown. Excludes the freeform
+  // "Use as raw value" row — it is a Combobox.Option in the DOM but not a
+  // content result (the unified combobox renders it while a search is still
+  // streaming, so counting it as a result corrupts waits and counts).
+  options: (page) => page.locator(
+    '[data-combobox-option]:not([data-testid="freeform-commit-option"]), '
+    + '.mantine-Combobox-option:not([data-testid="freeform-commit-option"])'
+  ),
 
   // Back button in breadcrumb area
   backButton: (page) => page.getByRole('button').filter({ has: page.locator('svg') }).first(),
@@ -376,8 +382,12 @@ export const ComboboxActions = {
       const dd = document.querySelector('[data-combobox-dropdown], .mantine-Combobox-dropdown');
       if (!dd) return false;
 
-      // Check if we have results (options)
-      const hasOptions = dd.querySelector('[data-combobox-option], .mantine-Combobox-option');
+      // Check if we have results (options). The freeform "Use as raw value"
+      // row renders while the stream is still in flight — do not count it.
+      const hasOptions = dd.querySelector(
+        '[data-combobox-option]:not([data-testid="freeform-commit-option"]), '
+        + '.mantine-Combobox-option:not([data-testid="freeform-commit-option"])'
+      );
       if (hasOptions) return true;
 
       // Check if we have empty state (no results or type to search)

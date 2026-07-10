@@ -139,7 +139,9 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
     await input.click();
     await expect(input).toHaveValue('plex:456724');   // not blanked
     const selection = await input.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd));
-    expect(selection).toBe('plex:456724');            // select-all, type-to-replace
+    // Unified design: select-after-colon — typing replaces the local id while
+    // keeping the source prefix (was select-all in the legacy standalone).
+    expect(selection).toBe('456724');
   });
 
   test('reopening after a search does not show stale results under an untouched input', async ({ page }) => {
