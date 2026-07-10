@@ -9,6 +9,22 @@ export const Modes = { DISPLAY: 'display', SEARCH: 'search', BROWSE: 'browse' };
 
 const emptyBrowse = () => ({ items: [], breadcrumbs: [], pagination: null, loading: false });
 
+// Search transports can emit the same content id twice (e.g. the files
+// adapter matching a directory by name AND by path). Items render with
+// key={item.id}, and the index-owned highlight requires DOM order === items
+// order — duplicate keys corrupt React reconciliation and break that
+// invariant, so RESULTS must be unique by id (first occurrence wins).
+function dedupeById(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = item?.id;
+    if (key == null) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export const initialState = (value = '') => ({
   mode: Modes.DISPLAY,
   value,
@@ -33,7 +49,7 @@ export function reducer(state, event) {
     case 'INPUT':
       return { ...state, mode: Modes.SEARCH, search: event.text, browse: emptyBrowse(), highlight: { idx: -1, userNavigated: false } };
     case 'RESULTS':
-      return { ...state, results: event.items };
+      return { ...state, results: dedupeById(event.items) };
     case 'BROWSE_LOADING':
       // A browse fetch (siblings/drill/up) is in flight. Cleared by whichever
       // *_LOADED event lands, by INPUT (browse reset), by CLOSE, or explicitly
