@@ -2457,6 +2457,43 @@
 .psc-lesson-sections{display:flex; flex-direction:column; gap:1rem;}
 .psc-part-title{margin:0 0 .45rem; font-family:var(--piano-mono, ui-monospace, monospace); font-size:.7rem;
   letter-spacing:.12em; text-transform:uppercase; color:var(--piano-muted);}
+/* ── Subcourses redesign: song-first repertoire catalog ───────────────────── */
+.psc-songs{list-style:none; margin:0; padding:0; display:grid; gap:.55rem;
+  grid-template-columns:repeat(auto-fill, minmax(15rem, 1fr));}
+.psc-song{width:100%; display:flex; flex-direction:column; gap:.45rem; align-items:flex-start;
+  padding:.7rem .85rem; border-radius:var(--r-md); border:1px solid var(--piano-border);
+  background:var(--piano-surface-2); cursor:pointer; text-align:left;}
+.psc-song:hover,.psc-song:focus-visible{border-color:var(--piano-accent);}
+.psc-song__name{font-family:var(--piano-serif, Georgia, serif); font-size:1rem; color:var(--piano-fg);}
+.psc-song__chips{display:flex; gap:.3rem; flex-wrap:wrap;}
+.psc-song-chip{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.58rem;
+  letter-spacing:.08em; text-transform:uppercase; padding:.14rem .45rem; border-radius:999px;
+  border:1px solid var(--piano-border); color:var(--piano-muted);}
+.psc-song-chip--tutorial{border-color:color-mix(in srgb, var(--piano-accent) 55%, transparent); color:var(--piano-accent);}
+.psc-song-chip--challenge{border-color:color-mix(in srgb, #d08340 55%, transparent); color:#d08340;}
+.psc-song-chip--accompaniment{border-color:color-mix(in srgb, #5f9d7a 55%, transparent); color:#5f9d7a;}
+.psc-song-head{margin:0; font-family:var(--piano-serif, Georgia, serif); font-size:1.25rem; color:var(--piano-fg);}
+.psc-song-head__t{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.62rem;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--piano-muted); margin-left:.5rem;}
+.psc-song-actions{display:flex; gap:.7rem; flex-wrap:wrap;}
+.psc-song-action{display:flex; flex-direction:column; gap:.2rem; align-items:flex-start;
+  padding:.85rem 1.1rem; border-radius:var(--r-md); border:1px solid var(--piano-border);
+  background:var(--piano-surface-2); cursor:pointer; min-width:11rem; text-align:left;}
+.psc-song-action:hover,.psc-song-action:focus-visible{border-color:var(--piano-accent);}
+.psc-song-action__do{font-family:var(--piano-serif, Georgia, serif); font-size:1.05rem; color:var(--piano-fg);}
+.psc-song-action__sub{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.62rem;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--piano-muted);}
+.psc-shelf{display:flex; flex-direction:column; gap:.5rem;}
+.psc-shelf__title{margin:0; font-family:var(--piano-mono, ui-monospace, monospace); font-size:.7rem;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--piano-muted);}
+.psc-shelf__row{display:flex; gap:.55rem; overflow-x:auto; padding-bottom:.25rem;}
+.psc-shelf__card{flex:0 0 auto; display:flex; flex-direction:column; gap:.2rem; align-items:flex-start;
+  padding:.6rem .8rem; border-radius:var(--r-md); border:1px dashed var(--piano-border);
+  background:transparent; cursor:pointer; text-align:left;}
+.psc-shelf__card:hover,.psc-shelf__card:focus-visible{border-color:var(--piano-accent);}
+.psc-shelf__name{font-size:.85rem; color:var(--piano-fg);}
+.psc-shelf__sub{font-family:var(--piano-mono, ui-monospace, monospace); font-size:.6rem;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--piano-muted);}
 /* ── Subcourses redesign: stage (rail + pane) ─────────────────────────────── */
 .psc-stage{display:grid; grid-template-columns:minmax(220px,32%) 1fr; min-height:0; padding:0;}
 .psc-pane{padding:1.3rem; min-width:0; display:flex; flex-direction:column; gap:.55rem;}

@@ -1,54 +1,79 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-
 import RepertoireBrowser from './RepertoireBrowser.jsx';
 
-const item = (i, { course, style, skill, instructor, title }) => ({
-  id: `plex:${i}`, plex: String(i), parentId: '900', itemIndex: i,
-  title: title || course, label: title || course, image: `/t${i}.jpg`, duration: 200,
-  piano: { course, styles: [style], skill, instructor },
+const ep = (id, song, treatment, extra = {}) => ({
+  plex: id, itemIndex: id, title: `${song} – ${treatment} lesson`,
+  piano: { song, course: song, treatment, styles: ['Jazz Ballads'], skill: 'Beginner', instructor: 'Jonny May', ...extra },
 });
 
-const season = {
-  id: '900', index: 0, title: 'Repertoire', reference: false, piano: { category: 'repertoire' },
-  lessons: [
-    item(101, { course: 'Clair de Lune', style: 'Classical', skill: 'Intermediate', instructor: 'Jonny' }),
-    item(102, { course: 'Clair de Lune', style: 'Classical', skill: 'Intermediate', instructor: 'Jonny', title: 'Clair de Lune – Part 2' }),
-    item(201, { course: 'Someone Like You', style: 'Pop', skill: 'Beginner', instructor: 'Sarah' }),
-  ],
-};
+const season = (lessons) => ({ id: 's8', index: 8, title: 'Song Library', lessons, courses: [] });
 
-describe('RepertoireBrowser', () => {
-  it('renders style/skill/instructor facet chips', () => {
-    render(<RepertoireBrowser season={season} onPlay={vi.fn()} />);
-    expect(screen.getByText('Classical')).toBeTruthy();
-    expect(screen.getByText('Pop')).toBeTruthy();
-    expect(screen.getByText('Intermediate')).toBeTruthy();
-    expect(screen.getByText('Beginner')).toBeTruthy();
+describe('RepertoireBrowser (song-first)', () => {
+  it('renders one card per song with treatment chips', () => {
+    render(<RepertoireBrowser season={season([
+      ep(1, 'Misty', 'tutorial'), ep(2, 'Misty', 'challenge'),
+      ep(3, 'Autumn Leaves', 'tutorial'),
+    ])} onPlay={() => {}} />);
+    expect(screen.getByText('2 songs')).toBeInTheDocument();
+    const misty = screen.getByText('Misty').closest('button');
+    expect(misty).toHaveTextContent('Tutorial');
+    expect(misty).toHaveTextContent('Challenge');
+    expect(misty).not.toHaveTextContent('Accompaniment');
   });
 
-  it('clicking a style chip filters the song list', () => {
-    render(<RepertoireBrowser season={season} onPlay={vi.fn()} />);
-    expect(screen.getByTitle('Clair de Lune')).toBeTruthy();
-    expect(screen.getByTitle('Someone Like You')).toBeTruthy();
-    fireEvent.click(screen.getByText('Classical'));
-    expect(screen.getByTitle('Clair de Lune')).toBeTruthy();
-    expect(screen.queryByTitle('Someone Like You')).toBeNull();
+  it('multi-treatment song opens a song page with action buttons', () => {
+    render(<RepertoireBrowser season={season([
+      ep(1, 'Misty', 'tutorial'), ep(2, 'Misty', 'challenge'),
+    ])} onPlay={() => {}} />);
+    fireEvent.click(screen.getByText('Misty').closest('button'));
+    expect(screen.getByText('Learn it')).toBeInTheDocument();
+    expect(screen.getByText('Master it')).toBeInTheDocument();
+    expect(screen.queryByText('Comp it')).toBeNull();
   });
 
-  it('search filters by title', () => {
-    render(<RepertoireBrowser season={season} onPlay={vi.fn()} />);
-    fireEvent.change(screen.getByPlaceholderText('Search songs…'), { target: { value: 'someone' } });
-    expect(screen.queryByTitle('Clair de Lune')).toBeNull();
-    expect(screen.getByTitle('Someone Like You')).toBeTruthy();
+  it('single-treatment song skips straight to its lessons', () => {
+    render(<RepertoireBrowser season={season([ep(1, 'Blue Moon', 'tutorial')])} onPlay={() => {}} />);
+    fireEvent.click(screen.getByText('Blue Moon').closest('button'));
+    expect(screen.getByText('Blue Moon – tutorial lesson')).toBeInTheDocument(); // lesson row, no song page
   });
 
-  it('tapping a song shows its lessons', () => {
+  it('treatment lessons are ungated and playable', () => {
     const onPlay = vi.fn();
-    render(<RepertoireBrowser season={season} onPlay={onPlay} />);
-    fireEvent.click(screen.getByTitle('Clair de Lune'));
-    expect(screen.getByText('Clair de Lune – Part 2')).toBeTruthy();
-    fireEvent.click(screen.getByText('Clair de Lune – Part 2').closest('button'));
-    expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ plex: '102' }));
+    render(<RepertoireBrowser season={season([ep(1, 'Blue Moon', 'tutorial'), ep(2, 'Blue Moon', 'tutorial')])} onPlay={onPlay} />);
+    fireEvent.click(screen.getByText('Blue Moon').closest('button'));
+    const rows = screen.getAllByText(/tutorial lesson/).map((el) => el.closest('button'));
+    rows.forEach((r) => expect(r).not.toBeDisabled());
+    fireEvent.click(rows[1]);
+    expect(onPlay).toHaveBeenCalled();
+  });
+
+  it('skill challenges render in their own shelf, not the catalog', () => {
+    render(<RepertoireBrowser season={season([
+      ep(1, 'Misty', 'tutorial'),
+      { plex: 9, itemIndex: 9, title: 'Day 1', piano: { course: '10-Lesson Blues Challenge', treatment: 'challenge', skillChallenge: true } },
+    ])} onPlay={() => {}} />);
+    expect(screen.getByText('Skill Challenges')).toBeInTheDocument();
+    expect(screen.getByText('10-Lesson Blues Challenge')).toBeInTheDocument();
+    expect(screen.getByText('1 song')).toBeInTheDocument(); // challenge not counted as a song
+  });
+
+  it('search narrows the song catalog', () => {
+    render(<RepertoireBrowser season={season([
+      ep(1, 'Misty', 'tutorial'), ep(2, 'Autumn Leaves', 'tutorial'),
+    ])} onPlay={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'mist' } });
+    expect(screen.getByText('Misty')).toBeInTheDocument();
+    expect(screen.queryByText('Autumn Leaves')).toBeNull();
+  });
+
+  it('facet chips filter the catalog', () => {
+    render(<RepertoireBrowser season={season([
+      ep(1, 'Misty', 'tutorial'),
+      ep(2, 'Rocket Man', 'tutorial', { styles: ['Pop'] }),
+    ])} onPlay={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pop' }));
+    expect(screen.getByText('Rocket Man')).toBeInTheDocument();
+    expect(screen.queryByText('Misty')).toBeNull();
   });
 });
