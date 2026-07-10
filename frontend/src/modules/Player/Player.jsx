@@ -1054,6 +1054,9 @@ const Player = forwardRef(function Player(props, ref) {
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: remountState.context,
+    // Recovery-ledger session scope: the SAME key useMediaResilience passes to
+    // the ledger, so renderer-level recoveries (dash-error) share its caps.
+    resilienceSessionKey: itemSessionKey,
     wrapWithContainer: false,
     suppressLocalOverlay: !!overlayElements,
     // Use external session if provided (for multi-player isolation),
