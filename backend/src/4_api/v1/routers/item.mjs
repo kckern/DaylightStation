@@ -4,6 +4,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { parseModifiers } from '../utils/modifierParser.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Shuffle array in place (Fisher-Yates)
@@ -59,9 +60,11 @@ export function createItemRouter(options = {}) {
    * GET /api/v1/item/:source/*
    * Get single item info or container contents with modifiers
    */
-  router.get('/:source/*', asyncHandler(async (req, res) => {
+  // {/*splat} (optional wildcard) so /item/:source and /item/:source/ still match
+  // (Express 4's bare * matched an empty wildcard; *splat alone would not).
+  router.get('/:source{/*splat}', asyncHandler(async (req, res) => {
       const { source } = req.params;
-      const rawPath = req.params[0] || '';
+      const rawPath = splatPath(req);
       const { modifiers, localId } = parseModifiers(rawPath);
       const hasModifiers = modifiers.playable || modifiers.shuffle || modifiers.recent_on_top;
 

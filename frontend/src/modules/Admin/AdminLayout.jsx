@@ -4,32 +4,35 @@ import { AppShell } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import AdminNav from './AdminNav.jsx';
 import AdminHeader from './AdminHeader.jsx';
+import { UnsavedGuardProvider } from './shared/UnsavedGuardContext.jsx';
 import './Admin.scss';
 
 function AdminLayout() {
   const [opened, { toggle }] = useDisclosure();
 
   return (
-    <AppShell
-      className="admin-layout"
-      header={{ height: 48 }}
-      navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding={0}
-    >
-      <AppShell.Header>
-        <AdminHeader opened={opened} toggle={toggle} />
-      </AppShell.Header>
+    <UnsavedGuardProvider>
+      <AppShell
+        className="admin-layout"
+        header={{ height: 48 }}
+        navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+        padding={0}
+      >
+        <AppShell.Header>
+          <AdminHeader opened={opened} toggle={toggle} />
+        </AppShell.Header>
 
-      <AppShell.Navbar>
-        <AdminNav />
-      </AppShell.Navbar>
+        <AppShell.Navbar>
+          <AdminNav />
+        </AppShell.Navbar>
 
-      <AppShell.Main>
-        <div className="admin-content">
-          <Outlet />
-        </div>
-      </AppShell.Main>
-    </AppShell>
+        <AppShell.Main>
+          <div className="admin-content">
+            <Outlet />
+          </div>
+        </AppShell.Main>
+      </AppShell>
+    </UnsavedGuardProvider>
   );
 }
 

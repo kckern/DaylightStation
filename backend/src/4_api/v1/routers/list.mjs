@@ -4,6 +4,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { parseModifiers } from '../utils/modifierParser.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Compact an object by removing falsy values and converting numeric strings
@@ -328,10 +329,10 @@ export function createListRouter(config) {
   /**
    * GET /api/list/:source/(path)
    */
-  router.get('/:source/*', asyncHandler(async (req, res) => {
+  router.get('/:source{/*splat}', asyncHandler(async (req, res) => {
       const requestStart = performance.now();
       const rawSource = req.params.source;
-      const rawPath = req.params[0] || '';
+      const rawPath = splatPath(req);
 
       // Use parseActionRouteId to handle compound IDs (plex:12345) in source param
       const { source, localId, modifiers } = parseActionRouteId({

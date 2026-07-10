@@ -2,6 +2,7 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { ContentExpression } from '#domains/content/ContentExpression.mjs';
 
 export function toQueueItem(item) {
@@ -79,7 +80,7 @@ export function createQueueRouter(config) {
 
   const handleQueueRequest = asyncHandler(async (req, res) => {
     const { source } = req.params;
-    const rawPath = req.params[0] || '';
+    const rawPath = splatPath(req);
 
     const { source: parsedSource, localId, compoundId } = parseActionRouteId({
       source,
@@ -155,7 +156,7 @@ export function createQueueRouter(config) {
     });
   });
 
-  router.get('/:source/*', handleQueueRequest);
+  router.get('/:source/*splat', handleQueueRequest);
   router.get('/:source', handleQueueRequest);
 
   return router;

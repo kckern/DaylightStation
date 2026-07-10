@@ -25,7 +25,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('renders with placeholder when empty', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     const input = ComboboxLocators.input(page);
     await expect(input).toBeVisible();
@@ -34,14 +34,14 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('renders with initial value from URL param', async ({ page }) => {
-    await page.goto(`${TEST_URL}?value=plex:12345`);
+    await ComboboxActions.gotoReady(page, `${TEST_URL}?value=plex:12345`);
 
     const input = ComboboxLocators.input(page);
     await expect(input).toHaveValue('plex:12345');
   });
 
   test('opens dropdown on click', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     await ComboboxActions.open(page);
 
@@ -50,7 +50,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('opens dropdown on focus', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     const input = ComboboxLocators.input(page);
     await input.focus();
@@ -61,7 +61,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('closes dropdown on blur', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     await ComboboxActions.open(page);
     await expect(ComboboxLocators.dropdown(page)).toBeVisible();
@@ -74,7 +74,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('closes dropdown on Escape key', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     await ComboboxActions.open(page);
     await expect(ComboboxLocators.dropdown(page)).toBeVisible();
@@ -85,7 +85,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('shows "Type to search" when empty and opened', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     await ComboboxActions.open(page);
 
@@ -94,7 +94,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('initiates search on typing', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
 
     await ComboboxActions.open(page);
 
@@ -120,30 +120,32 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('custom placeholder from URL param', async ({ page }) => {
-    await page.goto(`${TEST_URL}?placeholder=Find%20content...`);
+    await ComboboxActions.gotoReady(page, `${TEST_URL}?placeholder=Find%20content...`);
 
     const input = ComboboxLocators.input(page);
     await expect(input).toHaveAttribute('placeholder', 'Find content...');
   });
 
   test('value display shows in test harness', async ({ page }) => {
-    await page.goto(`${TEST_URL}?value=plex:999`);
+    await ComboboxActions.gotoReady(page, `${TEST_URL}?value=plex:999`);
 
     const valueDisplay = page.locator('[data-testid="current-value"]');
     await expect(valueDisplay).toContainText('plex:999');
   });
 
   test('opening with a committed value shows that value selected in the input', async ({ page }) => {
-    await page.goto(`${TEST_URL}?value=${encodeURIComponent('plex:456724')}`);
+    await ComboboxActions.gotoReady(page, `${TEST_URL}?value=${encodeURIComponent('plex:456724')}`);
     const input = ComboboxLocators.input(page);
     await input.click();
     await expect(input).toHaveValue('plex:456724');   // not blanked
     const selection = await input.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd));
-    expect(selection).toBe('plex:456724');            // select-all, type-to-replace
+    // Unified design: select-after-colon — typing replaces the local id while
+    // keeping the source prefix (was select-all in the legacy standalone).
+    expect(selection).toBe('456724');
   });
 
   test('reopening after a search does not show stale results under an untouched input', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
     const input = ComboboxLocators.input(page);
     await input.fill('christmas');
     await page.waitForTimeout(1500);
@@ -153,7 +155,7 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
   });
 
   test('closing within the debounce window does not leak a late search into the next open', async ({ page }) => {
-    await page.goto(TEST_URL);
+    await ComboboxActions.gotoReady(page, TEST_URL);
     const input = ComboboxLocators.input(page);
     await input.click();
     await input.fill('christmas');

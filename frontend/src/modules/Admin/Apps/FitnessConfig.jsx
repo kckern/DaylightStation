@@ -27,7 +27,7 @@ import {
 } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
-import ContentSearchCombobox from '../ContentLists/ContentSearchCombobox.jsx';
+import ContentCombobox from '../ContentLists/combobox/ContentCombobox.jsx';
 
 /**
  * Deep-clone data and set a nested property by dot-path.
@@ -271,7 +271,7 @@ function MusicPlaylistsSection({ data, update }) {
           </ActionIcon>
         </Group>
       ))}
-      <ContentSearchCombobox
+      <ContentCombobox
         value=""
         onChange={handleSelect}
         placeholder="Search for a playlist or album..."

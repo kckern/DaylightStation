@@ -187,6 +187,67 @@ describe('ContentQueryService', () => {
     });
   });
 
+  describe('ID-lookup match tagging (audit B2)', () => {
+    it('tags items from the ID-lookup path with matchReason: id-lookup (getItem)', async () => {
+      // "1989" is all digits -> implicit plex ID lookup alongside text search
+      mockAdapter2.getItem = vi.fn().mockResolvedValue({
+        id: 'plex:1989',
+        source: 'plex',
+        title: 'Some Movie With ratingKey 1989'
+      });
+
+      const result = await service.search({ text: '1989' });
+
+      const idItem = result.items.find(i => i.id === 'plex:1989');
+      expect(idItem).toBeDefined();
+      // ID match is pinned first
+      expect(result.items[0].id).toBe('plex:1989');
+      expect(idItem.matchReason).toBe('id-lookup');
+      // Internal flag must not leak to callers
+      expect(idItem._idMatch).toBeUndefined();
+    });
+
+    it('tags items from the ID-lookup path with matchReason: id-lookup (getMetadata fallback)', async () => {
+      // No getItem -> falls back to getMetadata
+      mockAdapter2.getMetadata = vi.fn().mockResolvedValue({
+        title: 'Metadata Title',
+        thumbnail: 'thumb.jpg'
+      });
+
+      const result = await service.search({ text: 'plex:456724' });
+
+      const idItem = result.items.find(i => i.id === 'plex:456724');
+      expect(idItem).toBeDefined();
+      expect(idItem.matchReason).toBe('id-lookup');
+      expect(idItem._idMatch).toBeUndefined();
+    });
+
+    it('does not add matchReason to plain text-search results', async () => {
+      const result = await service.search({ text: 'test' });
+
+      expect(result.items.length).toBeGreaterThan(0);
+      for (const item of result.items) {
+        expect(item).not.toHaveProperty('matchReason');
+      }
+    });
+
+    it('text-search items in an ID-triggering query stay untagged', async () => {
+      mockAdapter2.getItem = vi.fn().mockResolvedValue({
+        id: 'plex:1989',
+        source: 'plex',
+        title: 'ID Match'
+      });
+
+      const result = await service.search({ text: '1989' });
+
+      const textItems = result.items.filter(i => i.id !== 'plex:1989');
+      expect(textItems.length).toBeGreaterThan(0);
+      for (const item of textItems) {
+        expect(item).not.toHaveProperty('matchReason');
+      }
+    });
+  });
+
   describe('list', () => {
     it('lists containers from alias', async () => {
       const result = await service.list({ from: 'playlists' });

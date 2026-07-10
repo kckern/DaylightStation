@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
-import {
-  Stack, Group, Button, Alert, Center, Loader, Badge, Text
-} from '@mantine/core';
-import { IconAlertCircle, IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
+import { Stack, Alert, Center, Loader } from '@mantine/core';
+import { IconAlertCircle } from '@tabler/icons-react';
 import { useHotkeys } from '@mantine/hooks';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+import { useUnsavedGuard } from './useUnsavedGuard.js';
+import SaveBar from './SaveBar.jsx';
 
 /**
  * Wraps a config form with standard load/save/revert/dirty-state chrome.
@@ -12,27 +12,37 @@ import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
  * Props:
  *   filePath    - YAML file path relative to data root (e.g. 'household/config/fitness.yml')
  *   title       - Page title
- *   children    - Render function: ({ data, setData }) => JSX
+ *   children    - Render function: ({ data, setData, raw, setRaw, error }) => JSX
  *                 Receives the parsed config object and a setter.
  *                 The setter accepts a new object or an updater function: setData(prev => ({...prev, ...}))
- *   validate    - Optional (data) => string|null - return error message or null
+ *                 In rawMode, edit via raw/setRaw instead.
+ *   validate    - Optional (data) => string|null - return error message or null (parsed mode only)
+ *   rawMode     - Edit/save the raw YAML string instead of the parsed object
+ *   headerExtra - Optional node rendered in the action bar, before Revert/Save
  */
-function ConfigFormWrapper({ filePath, title, children, validate }) {
+function ConfigFormWrapper({ filePath, title, children, validate, rawMode = false, headerExtra }) {
   const {
-    data, loading, saving, error, dirty,
-    load, save, revert, setData, clearError
+    data, raw, loading, saving, error, dirty,
+    load, save, revert, setData, setRaw, clearError
   } = useAdminConfig(filePath);
 
   useEffect(() => {
-    load();
+    load().catch(() => { /* error state handled by the hook */ });
   }, [load]);
 
+  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
+  useUnsavedGuard(dirty, { label: filePath });
+
   const handleSave = async () => {
-    if (validate) {
+    if (!rawMode && validate) {
       const validationError = validate(data);
       if (validationError) return;
     }
-    await save();
+    try {
+      await save({ useRaw: rawMode });
+    } catch (_) {
+      // error state handled by the hook
+    }
   };
 
   useHotkeys([
@@ -46,7 +56,7 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
     }],
   ]);
 
-  if (loading && !data) {
+  if (loading && (rawMode ? !raw : !data)) {
     return (
       <Center h="60vh">
         <Loader size="lg" />
@@ -56,40 +66,14 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
 
   return (
     <Stack gap="md">
-      <Group
-        justify="space-between"
-        className={`ds-action-bar${dirty ? ' ds-action-bar--dirty' : ''}`}
-      >
-        <Group gap="xs">
-          <Text fw={600} size="lg" ff="var(--ds-font-mono)">{title}</Text>
-          {dirty && (
-            <Badge color="yellow" variant="light" size="sm">
-              Unsaved
-            </Badge>
-          )}
-        </Group>
-        <Group gap="xs">
-          <Button
-            variant="subtle"
-            leftSection={<IconArrowBack size={16} />}
-            onClick={revert}
-            disabled={!dirty || saving}
-            size="sm"
-          >
-            Revert
-          </Button>
-          <Button
-            leftSection={<IconDeviceFloppy size={16} />}
-            onClick={handleSave}
-            loading={saving}
-            disabled={!dirty}
-            size="sm"
-            data-testid="config-save-button"
-          >
-            Save
-          </Button>
-        </Group>
-      </Group>
+      <SaveBar
+        title={title}
+        dirty={dirty}
+        saving={saving}
+        onSave={handleSave}
+        onRevert={revert}
+        headerExtra={headerExtra}
+      />
 
       {error && (
         <Alert
@@ -103,7 +87,9 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
       )}
 
       <div className="ds-config-body">
-        {data !== null && children({ data, setData })}
+        {rawMode
+          ? children({ data, setData, raw, setRaw, error })
+          : data !== null && children({ data, setData, raw, setRaw, error })}
       </div>
     </Stack>
   );

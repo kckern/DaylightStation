@@ -3,6 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import nodePath from 'path';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { streamFileWithRanges } from '#system/http/streamFile.mjs';
 import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
 import { compositeHeroImage } from '#rendering/canvas/compositeHero.mjs';
@@ -208,8 +209,10 @@ export function createProxyRouter(config) {
    * GET /proxy/media/stream/*
    * Stream a file from media adapter
    */
-  router.get('/media/stream/*', asyncHandler(async (req, res) => {
-      const filePath = decodeURIComponent(req.params[0] || '');
+  router.get('/media/stream/*splat', asyncHandler(async (req, res) => {
+      // Params arrive pre-decoded (the old decodeURIComponent was double-decoding);
+      // see splatPath docstring.
+      const filePath = splatPath(req);
       const adapter = registry.get('files') || registry.get('media');
       if (!adapter) {
         return res.status(404).json({ error: 'Media adapter not configured' });
@@ -280,9 +283,9 @@ export function createProxyRouter(config) {
    * GET /proxy/local-content/stream/:type/*
    * Stream audio for LocalContent types (talk, scripture, hymn, primary, poem)
    */
-  router.get('/local-content/stream/:type/*', asyncHandler(async (req, res) => {
+  router.get('/local-content/stream/:type/*splat', asyncHandler(async (req, res) => {
       const { type } = req.params;
-      const path = req.params[0] || '';
+      const path = splatPath(req);
       const adapter = registry.get('local-content');
 
       if (!adapter) {
@@ -525,12 +528,14 @@ export function createProxyRouter(config) {
    * from X-plore (with one retry); subsequent requests stream from disk.
    * Failures return 503 (no-store) so the client can retry.
    */
-  router.get('/retroarch/thumbnail/*', asyncHandler(async (req, res) => {
+  router.get('/retroarch/thumbnail{/*splat}', asyncHandler(async (req, res) => {
     if (!retroarchProxy) {
       return res.status(503).json({ error: 'RetroArch thumbnail proxy not configured' });
     }
 
-    const thumbPath = decodeURIComponent(req.params[0] || '');
+    // Params arrive pre-decoded (the old decodeURIComponent was double-decoding);
+    // see splatPath docstring.
+    const thumbPath = splatPath(req);
     if (!thumbPath) {
       return res.status(400).json({ error: 'No thumbnail path specified' });
     }
@@ -603,12 +608,14 @@ export function createProxyRouter(config) {
    * Stream audio/video files from the media mount
    * Replaces legacy /media/* endpoint for ambient music, poetry, etc.
    */
-  router.get('/media/*', asyncHandler(async (req, res) => {
+  router.get('/media{/*splat}', asyncHandler(async (req, res) => {
       if (!mediaBasePath) {
         return res.status(503).json({ error: 'Media path not configured' });
       }
 
-      const relativePath = decodeURIComponent(req.params[0] || '');
+      // Params arrive pre-decoded (the old decodeURIComponent was double-decoding);
+      // see splatPath docstring.
+      const relativePath = splatPath(req);
       if (!relativePath) {
         return res.status(400).json({ error: 'No path specified' });
       }

@@ -1,229 +1,149 @@
+// LabeledContentPicker.test.jsx — pins the collapsed shape (2026-07-09 audit,
+// C6): the picker IS the unified ContentCombobox, so the combobox's own
+// resolved-title line (data-testid "combobox-resolved-title") is the ONLY
+// title rendered — the wrapper's duplicate <Text> above the input is gone.
+// The real hook + machine run here; fetch and EventSource are stubbed.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { clearCache } from '../../ContentLists/siblingsCache.js';
+
+vi.mock('../../../../lib/logging/singleton.js', () => {
+  const logger = {
+    debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
+    sampled: () => {}, child: () => logger,
+  };
+  return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
+});
+
+import { titleCache } from '../../ContentLists/combobox/useContentCombobox.js';
 import { LabeledContentPicker } from './LabeledContentPicker.jsx';
-import { titleCache } from '../utils/titleCache.js';
+import ContentCombobox from '../../ContentLists/combobox/ContentCombobox.jsx';
 
-// Mock the heavy combobox — we don't need its full search machinery, just
-// a stub that records the `onChange` reference + props so tests can drive it.
-let comboboxOnChangeRef = null;
-let comboboxValueRef = null;
-let comboboxPlaceholderRef = null;
-let comboboxRenderCount = 0;
+const SIBLINGS_RESPONSE = {
+  items: [
+    { id: 'plex:9', title: 'Ep 9', source: 'plex', type: 'episode' },
+    { id: 'plex:670208', title: 'Solo Piano', source: 'plex', type: 'album' },
+  ],
+  parent: { id: 'plex:100', title: 'Music', source: 'plex' },
+  pagination: null,
+  referenceIndex: 1,
+};
 
-vi.mock('../../ContentLists/ContentSearchCombobox', () => ({
-  default: function ContentSearchComboboxStub({ value, onChange, placeholder, ...rest }) {
-    comboboxOnChangeRef = onChange;
-    comboboxValueRef = value;
-    comboboxPlaceholderRef = placeholder;
-    comboboxRenderCount += 1;
-    return (
-      <input
-        data-testid="combobox-stub"
-        data-value={value || ''}
-        data-placeholder={placeholder || ''}
-        readOnly
-      />
-    );
-  },
-}));
+let fetchMock;
+
+function jsonResponse(body, ok = true, status = 200) {
+  return Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
+}
 
 function renderPicker(props = {}) {
   return render(
     <MantineProvider>
       <LabeledContentPicker
-        value={props.value}
-        onChange={props.onChange ?? (() => {})}
+        value={props.value ?? ''}
+        onChange={props.onChange ?? vi.fn()}
         placeholder={props.placeholder}
       />
     </MantineProvider>
   );
 }
 
-describe('LabeledContentPicker', () => {
+describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => {
   beforeEach(() => {
     titleCache.clear();
-    comboboxOnChangeRef = null;
-    comboboxValueRef = null;
-    comboboxPlaceholderRef = null;
-    comboboxRenderCount = 0;
-    global.fetch = vi.fn();
+    clearCache();
+    // No SSE in tests — the hook's search transport falls back to batch fetch.
+    vi.stubGlobal('EventSource', undefined);
+    fetchMock = vi.fn((url) => {
+      if (String(url).startsWith('/api/v1/info/')) {
+        return jsonResponse({ title: 'Solo Piano' });
+      }
+      if (String(url).startsWith('/api/v1/siblings/')) {
+        return jsonResponse(SIBLINGS_RESPONSE);
+      }
+      return jsonResponse({ items: [] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it('renders the combobox; no label when no value provided', () => {
-    renderPicker({ value: undefined });
-    expect(screen.getByTestId('combobox-stub')).toBeInTheDocument();
-    // No label text rendered when there's no value/title
-    // (Stack only has the combobox child)
-    expect(global.fetch).not.toHaveBeenCalled();
+  it('is the unified ContentCombobox (no wrapper layer left)', () => {
+    expect(LabeledContentPicker).toBe(ContentCombobox);
   });
 
-  it('fetches title when value is set but not cached, then renders it', async () => {
-    global.fetch.mockReturnValueOnce(
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ title: 'Solo Piano' }),
-      })
-    );
-
+  it('renders exactly ONE title line — the combobox-owned resolved title', async () => {
     renderPicker({ value: 'plex:670208' });
 
     await waitFor(() => {
-      expect(screen.getByText('Solo Piano')).toBeInTheDocument();
+      expect(screen.getByTestId('combobox-resolved-title')).toHaveTextContent('Solo Piano');
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch.mock.calls[0][0]).toBe(
-      '/api/v1/info/plex/670208'
-    );
-    expect(titleCache.get('plex:670208')).toBe('Solo Piano');
+    // The /info fetch is the combobox's own resolution path.
+    const infoCalls = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/info/'));
+    expect(infoCalls).toHaveLength(1);
+    expect(infoCalls[0][0]).toBe('/api/v1/info/plex/670208');
+
+    // Audit C6: no duplicate title line above the input.
+    expect(screen.getAllByTestId('combobox-resolved-title')).toHaveLength(1);
+    expect(screen.getAllByText('Solo Piano')).toHaveLength(1);
   });
 
-  it('renders cached title immediately and does NOT fetch', () => {
+  it('renders a cached title immediately without fetching /info', () => {
     titleCache.set('plex:670208', 'Cached Title');
 
     renderPicker({ value: 'plex:670208' });
 
-    expect(screen.getByText('Cached Title')).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(screen.getByTestId('combobox-resolved-title')).toHaveTextContent('Cached Title');
+    const infoCalls = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/info/'));
+    expect(infoCalls).toHaveLength(0);
   });
 
-  it('dropdown selection (onChange with item.title) updates label immediately without refetch', async () => {
-    renderPicker({ value: undefined, onChange: vi.fn() });
+  it('renders no title line when there is no value', () => {
+    renderPicker({ value: '' });
 
-    expect(comboboxOnChangeRef).not.toBeNull();
-
-    // Simulate dropdown pick
-    act(() => {
-      comboboxOnChangeRef('plex:777', { id: 'plex:777', title: 'New Title' });
-    });
-
-    expect(await screen.findByText('New Title')).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
-    expect(titleCache.get('plex:777')).toBe('New Title');
+    expect(screen.queryByTestId('combobox-resolved-title')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('freeform commit (onChange with only id, no item) clears label then re-resolves', async () => {
-    titleCache.set('plex:111', 'Old Title');
+  it('passes value and placeholder through to the combobox input', () => {
+    renderPicker({ value: 'plex:670208', placeholder: 'Pick a queue...' });
+
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveValue('plex:670208');
+    expect(input).toHaveAttribute('placeholder', 'Pick a queue...');
+  });
+
+  it('forwards (id, item) through onChange when a dropdown row is selected', async () => {
     const onChange = vi.fn();
-    renderPicker({ value: 'plex:111', onChange });
+    renderPicker({ value: 'plex:670208', onChange });
 
-    // Old title shown initially from cache
-    expect(screen.getByText('Old Title')).toBeInTheDocument();
+    // Clicking the input opens siblings-browse for the committed value.
+    fireEvent.click(screen.getByRole('textbox'));
 
-    global.fetch.mockReturnValueOnce(
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ title: 'Fresh Resolved' }),
-      })
-    );
+    const option = await screen.findByText('Ep 9');
+    fireEvent.click(option);
 
-    // Simulate freeform commit (no item arg)
-    act(() => {
-      comboboxOnChangeRef('plex:222');
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        'plex:9',
+        expect.objectContaining({ id: 'plex:9', title: 'Ep 9' })
+      );
     });
-
-    // Parent onChange called with no item
-    expect(onChange).toHaveBeenCalledWith('plex:222', undefined);
-
-    // Note: this test exercises the wrapper's internal handling on freeform
-    // commit. The parent owns `value`, so re-rendering with the new value
-    // would re-trigger the effect. Here we just confirm the label clears.
-    // The actual re-resolve flow is tested by the "fetches title" case.
   });
 
-  it('unmounts during in-flight fetch without warnings', async () => {
-    let resolveFetch;
-    global.fetch.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      })
-    );
+  it('forwards the raw id (no item) on freeform Enter commit', () => {
+    const onChange = vi.fn();
+    renderPicker({ value: '', onChange });
 
-    const { unmount } = renderPicker({ value: 'plex:670208' });
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'plex:12345' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
 
-    // Unmount before fetch resolves
-    unmount();
-
-    // Now resolve the fetch — should NOT trigger setState on unmounted component
-    await act(async () => {
-      resolveFetch({
-        ok: true,
-        json: () => Promise.resolve({ title: 'Late Title' }),
-      });
-      // Flush microtasks
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // No error / no warning — vitest will fail loudly if act() warning fires.
-    // Cache should NOT have been populated because cancelled === true.
-    expect(titleCache.get('plex:670208')).toBeUndefined();
-  });
-
-  it('fails soft when fetch rejects (no crash, no label)', async () => {
-    global.fetch.mockReturnValueOnce(
-      Promise.reject(new Error('network down'))
-    );
-
-    renderPicker({ value: 'plex:670208' });
-
-    // Wait a couple microtasks for the catch to settle
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(screen.getByTestId('combobox-stub')).toBeInTheDocument();
-    // No title text rendered
-    expect(screen.queryByText(/.+/, { selector: 'p' })).toBeNull();
-  });
-
-  it('passes placeholder + extra props through to the combobox', () => {
-    renderPicker({ placeholder: 'Pick something' });
-    expect(comboboxPlaceholderRef).toBe('Pick something');
-  });
-
-  it('skips fetch when value lacks a colon (malformed contentId)', async () => {
-    renderPicker({ value: 'malformed' });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  it('skips updating cache when API returns no title', async () => {
-    global.fetch.mockReturnValueOnce(
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ title: null }),
-      })
-    );
-
-    renderPicker({ value: 'plex:000' });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(titleCache.get('plex:000')).toBeUndefined();
-  });
-
-  it('skips updating cache on non-OK response', async () => {
-    global.fetch.mockReturnValueOnce(
-      Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) })
-    );
-
-    renderPicker({ value: 'plex:404' });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(titleCache.get('plex:404')).toBeUndefined();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('plex:12345');
   });
 });

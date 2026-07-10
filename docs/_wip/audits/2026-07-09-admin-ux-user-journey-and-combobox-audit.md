@@ -175,6 +175,72 @@ Phase 0 is safe immediately. Phase 1 is the only durable fix for the combobox co
 
 ---
 
+## Resolution status (2026-07-10)
+
+Phases 0 and 1 executed on `feat/admin-ux-remediation`. One implementation remains
+(`ContentLists/combobox/ContentCombobox.jsx` + `useContentCombobox.js` +
+`comboboxMachine.js`); both legacy twins are deleted. Status per finding:
+
+### Fixed
+
+| Finding | Status | Commits |
+|---|---|---|
+| R1 twin fork | **FIXED** — one unified component, six call sites; both twins deleted | 6340b3c37 (component), fc42142fa / 3e41e73f1 (rows + EmptyItemRow), c39391572 (ListsItemEditor), b67ba292b (FitnessConfig), a4f0df1b1 (inline twin deleted), 5479986c7 (standalone deleted) |
+| R2 tests pin the wrong twin | **FIXED** — harness mounts the unified component; suites reconciled; suite 18 drives the real list-row surface | 494de0310, fdc528b16, e834f6f9f, d9d44f419, 98dac046e |
+| R3 boolean-soup state | **FIXED** — explicit reducer state machine (DISPLAY/SEARCH/BROWSE) with unit tests pinning every historical bug class | aaf04942f, fc42cd7bd, 6340b3c37, 575058513 |
+| R4 same field, opposite behavior | **FIXED** — one commit-on-close policy everywhere (id-like commits; exploratory text reverts) | c17853179, then unification commits above |
+| I1 blur commits any text | **FIXED** | c17853179 (pinned failing-first by 98dac046e) |
+| I2 auto-resolve swaps value behind the user | **FIXED** — toast-visible, never clobbers a newer value; extracted to `useAutoResolve` | 6ccf54f5c, 366dfc431 |
+| I3 150ms blur-timeout race | **FIXED** — commit-on-close lives in the machine; no timer ordering | aaf04942f, fc42cd7bd |
+| I4 no streaming/per-source status on rows | **FIXED** — rows run the unified SSE combobox (pending badges, source-error chips) | fc42142fa |
+| I5 prop contract (`selectContainers`/`searchParams`/`item` arg) | **FIXED** — unified `onChange(id, item)` contract | 6340b3c37 |
+| I6 3,030-line ListsItemRow.jsx | **FIXED** — twin deleted, then split: ShimmerAvatar / ContentDisplays / ItemDetailsDrawer / EmptyItemRow+InsertRowButton / AppParamPicker / ActionChipSelect; file is now 612 lines | a4f0df1b1, cdd634478, 170161bf5, 64dd3b2e5, f5abf7a36 |
+| I7 context coupling | **FIXED** — component is context-free; row cards injected via `renderValue` | 6340b3c37, fc42142fa |
+| S1 pagination bleeds across browse levels | **FIXED** — plus a structural owner-token guard in the hook | 86c17063e, 81d7808bd |
+| S2 initial reference scroll fires page-loads | **FIXED** — plus `overflow-anchor: none` on the dropdown viewport | da2dadaed |
+| S3 no current-item indicator | **FIXED** — `isCurrent` bolding/check merged from the inline twin | 6340b3c37 |
+| S4 keyboard model never ported | **FIXED** — wrap + ArrowRight-drill/ArrowLeft-up + select-after-colon merged | 6340b3c37 |
+| S5 `doBatchSearch` stale `searchParams` closure | **FIXED** — dep listed explicitly in the hook | fc42cd7bd |
+| S8 stale-closure `options` memo | **FIXED** structurally — options render from machine state each pass | 6340b3c37 |
+| S9 1-char freeform row / duplicated regex / unbounded titleCache | **FIXED** — ≥2-char gate, shared `CONTENT_ID_LIKE` in contentSearchLogic.js, bounded titleCache | 0bdba03db, fc42cd7bd, 6340b3c37 |
+| S10 debounce pseudo-cancel leaks a late search | **FIXED** — close cancels transports; behavior pinned by suite 01 ("closing within the debounce window…") and machine tests | fc42cd7bd, fdc528b16 |
+| S11 browse loading vs empty indistinct | **FIXED** — browse loading state renders distinctly from empty | e613dcc70 |
+| S12 a11y | **PARTIAL** — input `aria-label`, labeled clear/browse buttons; live-region announcements for counts/pending sources not added | 6340b3c37 |
+| C6 duplicate title resolution | **FIXED** — `LabeledContentPicker` collapsed; combobox owns title resolution and its one cache | 858410db6 |
+| C8/B2 ID-match rows unlabeled | **FIXED** — backend tags `matchReason: 'id-lookup'` (batch path); frontend shows an "ID" badge with tooltip | 25764e8a8, ba2afbc05 |
+
+### New findings fixed en route
+
+| Finding | Commits |
+|---|---|
+| **Express-5 boot breakage** — express@5 upgrade silently broke every Express-4 bare-`*` wildcard route; content routers never mounted, backend could not boot in this tree | 0dacdbe14, ddcd21573 (preserves Express-4 empty-wildcard matches) |
+| **static.mjs path traversal** — static/stream image serving lacked traversal guards | ddcd21573 |
+| **Phantom backend dependencies** — six undeclared imports (rss-parser, googleapis, uuid, iconv-lite, bwip-js, cors) + cron-parser v5 API | 0b4a08591 |
+| **SSE disconnect leak** — the search stream held its socket and adapter iterator after client disconnect; marathon suite runs accumulated dead streams (see open item on backend memory below) | 2ead57252 |
+| Suite-inflicted backend stalls — preflight/fixture loader probes wedged the backend they were probing (media-root listing; then the `text=a` single-char search storm) | 7ce4df0bf, 60845ff44 |
+| Unbounded harness waits / boot-fetch hang | d9d44f419, e834f6f9f |
+
+### Open remainder
+
+| Item | Status |
+|---|---|
+| C1 unsaved-changes guard | Open — Phase 2 (Task 16) |
+| C2 save-model policy | Open — Phase 2 (Task 20) |
+| C3 log-only mutation failures in ContentLists | Open — Phase 2 (Task 18) |
+| C4 confirmation inconsistency | Open — Phase 2 (Task 19) |
+| C5 chrome/util duplication | Open — Phase 2 (Task 17/20) |
+| C7 nav/breadcrumb derivation | Open — Phase 2 |
+| C8/B5 adapter item-shape normalization | Open — Phase 3 |
+| S6 truncation affordance past `take=20` | Open — Phase 3 (Task 22) |
+| S7 `/list` drill-in pagination | Open — Phase 3 (Task 23, stretch) |
+| Suite 11 (slot machine) fragility | Open — excluded from the Phase 1 gate; needs its own reconciliation |
+| Suite 04b/10 marathon flakes | Open — two 04b keyboard-walk tests and one suite-10 permutation failed in long group runs, pass on isolated rerun; order/load-dependent |
+| `/api/v1/health` root route absent | Open — health router mounts but has no root route; probes must use a real endpoint (preflight now probes `/admin/content/lists`) |
+| Media-source env gap | Open — media fixture availability depends on the host profile (kckern-server passed this run; other envs may list media empty) |
+| Backend behavior under marathon load | Partially explained — the SSE socket/iterator leak is fixed (2ead57252). NEW finding (2026-07-10): broad single-char searches (`text=a`) trigger a minutes-long outbound request storm to the Cloudflare-proxied media services (~11k CLOSE_WAIT sockets, fd exhaustion, API wedged until the storm drains). The suite-side trigger is removed (60845ff44); the backend-side flood control (adapter request bounding/agent reuse) remains open |
+
+---
+
 ## Appendix — Fix-wave history (why it stayed broken)
 
 | Date | Trigger | Where fixes landed | Where they didn't |
