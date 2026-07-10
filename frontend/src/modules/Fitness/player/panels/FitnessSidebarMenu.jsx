@@ -6,6 +6,7 @@ import DebugMicButton from './DebugMicButton.jsx';
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from '../../lib/guestOptionsBuilder.js';
 import { genericGuestImageId } from '../../lib/guestPlaceholders.js';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
+import hardReload from '../../lib/hardReload.js';
 import '../FitnessSidebar.scss';
 
 // Auto-close behavior for quick-action settings: flash the selected control
@@ -171,9 +172,7 @@ const FitnessSidebarMenu = ({
   }, [videoVolume, ackSelection]);
 
   const handleReloadPage = () => {
-    if (typeof window !== 'undefined') {
-      window.location.reload();
-    }
+    hardReload('settings-menu');
   };
 
   const handleReloadVideo = () => {
@@ -346,6 +345,19 @@ const FitnessSidebarMenu = ({
           onPauseMusic={onFeedbackPauseMusic}
           onResumeMusic={onFeedbackResumeMusic}
         />
+      </div>
+
+      <div className="menu-section">
+        <h4>Maintenance</h4>
+        <button
+          type="button"
+          className="menu-item"
+          onPointerDown={handleReloadPage}
+          aria-label="Hard-reload the app (bypasses cache)"
+          title="Hard-reload the app — picks up new versions"
+        >
+          🔄 Reload App
+        </button>
       </div>
 
       {activeSessionId && onEndSession && (
