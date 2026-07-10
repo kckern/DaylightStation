@@ -445,6 +445,17 @@ export function ContentCombobox({
           </Group>
           <Group gap="xs" wrap="nowrap">
             <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{(source ?? '?').toUpperCase()}</Badge>
+            {item.matchReason === 'id-lookup' && (
+              <Badge
+                size="xs"
+                variant="light"
+                color="gray"
+                data-testid="match-reason-id"
+                title="Matched by content ID, not text"
+              >
+                ID
+              </Badge>
+            )}
             {container && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
             )}
