@@ -1,3 +1,5 @@
+import { NotificationIntent } from '#domains/notification/entities/NotificationIntent.mjs';
+
 /**
  * Notification orchestration service.
  * Resolves preferences, routes intents to appropriate channel adapters.
@@ -25,10 +27,15 @@ export class NotificationService {
 
   /**
    * Send a notification intent, routing to channels based on preferences.
-   * @param {import('#domains/notification/entities/NotificationIntent.mjs').NotificationIntent} intent
+   * Accepts a NotificationIntent or a plain object with the same shape
+   * (normalized here so callers don't need the domain entity import).
+   * @param {NotificationIntent|Object} rawIntent
    * @returns {Promise<Array<{delivered: boolean, channel: string, channelId?: string, error?: string}>>}
    */
-  async send(intent) {
+  async send(rawIntent) {
+    const intent = rawIntent instanceof NotificationIntent
+      ? rawIntent
+      : new NotificationIntent(rawIntent);
     const preference = this.#preferenceLoader?.();
     const channels = preference
       ? preference.getChannelsFor(intent.category, intent.urgency)

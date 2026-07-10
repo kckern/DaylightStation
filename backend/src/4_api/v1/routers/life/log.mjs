@@ -53,9 +53,18 @@ function filterByCategory(rangeResult, category) {
 }
 
 export default function createLogRouter(config) {
-  const { aggregator } = config;
+  const { aggregator, usernameResolver } = config;
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'log' } });
+
+  // Validate path-param usernames against known profiles (when a resolver
+  // with a user directory is provided by the parent router)
+  router.param('username', (req, res, next, value) => {
+    if (usernameResolver && !usernameResolver.isKnown(value)) {
+      return res.status(404).json({ error: `Unknown user: ${value}` });
+    }
+    next();
+  });
 
   // GET /sources — available extractors
   router.get('/sources', (req, res) => {

@@ -10,6 +10,7 @@ import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
+import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -33,35 +34,10 @@ export function shouldRefreshUrlForReason(reason) {
   return URL_REFRESH_REASONS.has(reason);
 }
 
-// Stable no-op function to avoid creating new function references on each render
-const NOOP = () => {};
-
-// ── Module-level recovery tracker ──────────────────────────────────────
-// Persists across React remounts caused by onReload → scheduleSinglePlayerRemount.
-// Without this, lastReloadAt (React state) resets to 0 on every remount,
-// bypassing the cooldown check and creating an infinite remount loop.
-const _recoveryTracker = new Map();
-function _getTracker(key) {
-  if (!key) return { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  return _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-}
-function _recordRecovery(key) {
-  if (!key) return 0;
-  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  entry.count += 1;
-  entry.lastAt = Date.now();
-  _recoveryTracker.set(key, entry);
-  return entry.count;
-}
-function _recordUrlRefresh(key) {
-  if (!key) return;
-  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0, urlRefreshCount: 0 };
-  entry.urlRefreshCount = (entry.urlRefreshCount || 0) + 1;
-  _recoveryTracker.set(key, entry);
-}
-function _clearTracker(key) {
-  if (key) _recoveryTracker.delete(key);
-}
+// Recovery attempt/cooldown accounting lives in the shared recoveryLedger
+// (module singleton — persists across React remounts caused by
+// onReload → scheduleSinglePlayerRemount, so the cooldown/cap can't be
+// bypassed by a remount resetting React state). See lib/recoveryLedger.js.
 
 const USER_INTENT = Object.freeze({
   playing: 'playing',
@@ -72,10 +48,7 @@ const USER_INTENT = Object.freeze({
 // Grace period (ms) to suppress overlay during brief seeks (ffwd/rew bumps)
 const SEEK_OVERLAY_GRACE_MS = 600;
 
-/**
- * Simplified Media Resilience Hook
- * Gutted after backend bug fix to provide only basic stall recovery.
- */
+/** Media resilience: recovery orchestration + overlay state for the Player. */
 export function useMediaResilience({
   getMediaEl,
   meta = {},
@@ -84,7 +57,6 @@ export function useMediaResilience({
   isSeeking = false,
   pauseIntent = null,
   initialStart = 0,
-  explicitStartProvided = false,
   waitKey,
   onStateChange,
   onReload,
@@ -97,36 +69,49 @@ export function useMediaResilience({
   message,
   mediaTypeHint,
   playerFlavorHint,
-  externalPauseReason = null,
-  // External stall state from useCommonMediaController - if provided, trust this instead of internal detection
+  // External stalled flag from useCommonMediaController - if provided, trust this instead of internal detection
   externalStalled = null,
-  externalStallState = null,
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
   disabled = false
 }) {
-  const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
+  const { monitorSettings } = useResilienceConfig({ configOverrides });
   const {
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
-    recoveryCooldownMs,
-    recoveryCooldownBackoffMultiplier,
     maxSamePositionRetries,
     recoverySeekNudgeSeconds
   } = monitorSettings;
-  const { maxAttempts } = recoveryConfig;
+  // The attempt cap is owned by the recoveryLedger (not per-hook config) so
+  // log payloads can never disagree with the enforced limit.
+  const maxAttempts = RECOVERY_MAX_ATTEMPTS;
 
   const { state: resilienceState, status, statusRef, actions } = useResilienceState(STATUS.startup);
 
   const [showPauseOverlay, setShowPauseOverlay] = useState(true);
 
-  // Clean up module-level tracker when media changes (new session key)
+  // Consumer-side exhaustion dedupe: the ledger returns exhausted:true on
+  // EVERY capped request, and both the deadline path and the jolt path can
+  // hit the cap — onExhausted must fire once per exhaustion episode.
+  const exhaustedNotifiedRef = useRef(false);
+
+  // Release the ledger session when media changes (new session key) …
   const prevSessionKeyRef = useRef(playbackSessionKey);
   useEffect(() => {
     if (prevSessionKeyRef.current && prevSessionKeyRef.current !== playbackSessionKey) {
-      _clearTracker(prevSessionKeyRef.current);
+      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+      exhaustedNotifiedRef.current = false;
     }
     prevSessionKeyRef.current = playbackSessionKey;
   }, [playbackSessionKey]);
+  // … and on unmount — the final session's entry used to leak (audit §5).
+  // Assumes one mounted Player per playbackSessionKey: a sibling hook sharing
+  // the key would get its ledger entry wiped here (theoretical today —
+  // DancePartyWidget/AudioLayer pairs play different guids).
+  useEffect(() => () => {
+    if (prevSessionKeyRef.current) {
+      getRecoveryLedger().releaseSession(prevSessionKeyRef.current);
+    }
+  }, []);
 
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
 
@@ -139,9 +124,18 @@ export function useMediaResilience({
     epsilonSeconds
   });
 
-  const { targetTimeSeconds, setTargetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({ 
-    sessionKey: playbackSessionKey 
+  const { targetTimeSeconds, setTargetTimeSeconds, consumeTargetTimeSeconds } = usePlaybackSession({
+    sessionKey: playbackSessionKey
   });
+
+  // Latest-ref for the per-tick position inputs (`seconds`,
+  // playbackHealth.lastProgressSeconds): both change on every progress tick,
+  // and having them as triggerRecovery deps rebuilt its identity each tick —
+  // churning every consumer effect (notably the controllerRef assignment).
+  // The ref is updated each render; triggerRecovery reads it at call time, so
+  // the values are always current without being reactive deps.
+  const progressPositionRef = useRef({ seconds: 0, lastProgressSeconds: null });
+  progressPositionRef.current = { seconds, lastProgressSeconds: playbackHealth.lastProgressSeconds };
 
   // User Intent tracking
   const [userIntent, setUserIntent] = useState(USER_INTENT.playing);
@@ -183,59 +177,93 @@ export function useMediaResilience({
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
 
-  const triggerRecovery = useCallback((reason) => {
-    const now = Date.now();
-    const tracker = _getTracker(playbackSessionKey);
+  // options (all optional — every no-options call site keeps its old behavior):
+  //   bypassCooldown  — user-initiated recoveries skip the cooldown gate but
+  //                     still record the attempt (pushes the shared window).
+  //   seekToIntentMs  — caller-supplied explicit seek target; passed through
+  //                     verbatim (the poisoned-segment nudge only applies to
+  //                     positions this hook derived itself).
+  //   refreshUrl      — override the reason-derived URL-refresh decision.
+  //   forceRemount    — escalate to a full React remount in onReload.
+  const triggerRecovery = useCallback((reason, options = {}) => {
+    const bypassCooldown = options.bypassCooldown === true;
+    const refreshUrl = typeof options.refreshUrl === 'boolean'
+      ? options.refreshUrl
+      : shouldRefreshUrlForReason(reason);
+    const ledger = getRecoveryLedger();
+    const gate = ledger.request({
+      sessionKey: playbackSessionKey,
+      mountId: waitKey,
+      actor: 'resilience',
+      reason,
+      bypassCooldown,
+      isUrlRefresh: refreshUrl
+    });
 
-    // Exponential backoff: cooldown grows with each attempt (4s → 12s → 36s → 108s)
-    const effectiveCooldown = recoveryCooldownMs * Math.pow(recoveryCooldownBackoffMultiplier, tracker.count);
-    if (now - tracker.lastAt < effectiveCooldown) return;
-
-    // Max attempts check — prevents infinite remount loop
-    if (tracker.count >= maxAttempts) {
-      playbackLog('resilience-recovery-exhausted', {
-        reason, waitKey: logWaitKey,
-        attempts: tracker.count, maxAttempts,
-        urlRefreshesAttempted: tracker.urlRefreshCount || 0
-      });
-      actions.setStatus(STATUS.exhausted);
-      if (typeof onExhausted === 'function') {
-        onExhausted({ reason, attempts: tracker.count, waitKey });
+    if (!gate.allowed) {
+      if (gate.deniedBy === 'session-cap') {
+        // Max attempts — prevents an infinite remount loop.
+        playbackLog('resilience-recovery-exhausted', {
+          reason, waitKey: logWaitKey,
+          attempts: gate.attempt, maxAttempts,
+          urlRefreshesAttempted: ledger.snapshot(playbackSessionKey)?.urlRefreshCount || 0
+        }, { level: 'warn' });
+        actions.setStatus(STATUS.exhausted);
+        if (!exhaustedNotifiedRef.current) {
+          exhaustedNotifiedRef.current = true;
+          if (typeof onExhausted === 'function') {
+            onExhausted({ reason, attempts: gate.attempt, waitKey });
+          }
+        }
+      } else if (gate.deniedBy === 'cooldown') {
+        playbackLog('resilience-recovery-cooldown-denied', {
+          reason, waitKey: logWaitKey, waitMs: gate.waitMs, attempts: gate.attempt
+        }, { level: 'debug' });
       }
       return;
     }
 
-    const attempt = _recordRecovery(playbackSessionKey);
-    if (shouldRefreshUrlForReason(reason)) {
-      _recordUrlRefresh(playbackSessionKey);
-    }
+    const attempt = gate.attempt;
     playbackLog('resilience-recovery', {
       reason, waitKey: logWaitKey,
       status: statusRef.current, attempt, maxAttempts,
-      effectiveCooldownMs: effectiveCooldown
+      // Explicit flag so soak-log filtering doesn't depend on reason-string
+      // conventions to tell user-initiated recoveries from automatic ones.
+      bypassCooldown
     });
     actions.setStatus(STATUS.recovering);
 
     if (typeof onReload === 'function') {
-      const baseSeekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
-      const { seekMs, tracker: nextTracker } = computeRecoverySeekMs({
-        baseSeekMs,
-        tracker: recoverySeekTrackerRef.current,
-        config: { nudgeSeconds: recoverySeekNudgeSeconds, maxSamePositionRetries: maxSamePositionRetries }
-      });
-      recoverySeekTrackerRef.current = nextTracker;
+      let seekMs;
+      if (Number.isFinite(options.seekToIntentMs)) {
+        // Explicit caller intent (Fitness manual reload / stalled seek) — the
+        // user picked this exact position, so no same-position nudge applies.
+        seekMs = Math.max(0, options.seekToIntentMs);
+      } else {
+        const pos = progressPositionRef.current;
+        const baseSeekMs = (targetTimeSeconds || pos.lastProgressSeconds || pos.seconds || initialStart || 0) * 1000;
+        const computed = computeRecoverySeekMs({
+          baseSeekMs,
+          tracker: recoverySeekTrackerRef.current,
+          config: { nudgeSeconds: recoverySeekNudgeSeconds, maxSamePositionRetries: maxSamePositionRetries }
+        });
+        recoverySeekTrackerRef.current = computed.tracker;
+        seekMs = computed.seekMs;
+      }
       onReload({
         reason,
         meta,
         waitKey,
-        refreshUrl: shouldRefreshUrlForReason(reason),
+        refreshUrl,
+        ...(options.forceRemount === true ? { forceRemount: true } : {}),
         seekToIntentMs: seekMs
       });
     }
-  }, [actions, logWaitKey, meta, onReload, onExhausted, playbackHealth.lastProgressSeconds, recoveryCooldownMs, recoveryCooldownBackoffMultiplier, maxAttempts, seconds, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
+  }, [actions, logWaitKey, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds]);
 
   const retryFromExhausted = useCallback(() => {
-    _clearTracker(playbackSessionKey);
+    getRecoveryLedger().userReset(playbackSessionKey);
+    exhaustedNotifiedRef.current = false;
     const seekMs = (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || initialStart || 0) * 1000;
     consumeTargetTimeSeconds();
     actions.setStatus(STATUS.recovering);
@@ -279,7 +307,10 @@ export function useMediaResilience({
       recoverySeekTrackerRef.current = { lastSeekMs: null, sameCount: 0 };
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
-      _clearTracker(playbackSessionKey);
+      // Playback is genuinely progressing — clear attempts/cooldown so the
+      // next stall episode starts with a fresh budget.
+      getRecoveryLedger().recordSuccess(playbackSessionKey);
+      exhaustedNotifiedRef.current = false;
       return;
     }
 
@@ -514,14 +545,15 @@ export function useMediaResilience({
   // a frozen scalar changes).
   joltLatestRef.current = {
     getMediaEl, targetTimeSeconds, seconds, meta, waitKey, logWaitKey,
-    onReload, onExhausted, actions, statusRef, playbackSessionKey, maxAttempts,
+    onReload, onExhausted, actions, statusRef, playbackSessionKey,
   };
 
   // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to the
   // captured intent (the frozen seek target), until the clock advances again or the
-  // ladder + attempt cap are exhausted. A module-tracker cap bounds total jolts even
-  // if `isStuck` flaps (a jolt that plays one frame then re-stalls), so no infinite
-  // loop; successful playback clears the tracker (see the progress effect above).
+  // ladder + attempt cap are exhausted. The shared recoveryLedger's session cap
+  // bounds total jolts even if `isStuck` flaps (a jolt that plays one frame then
+  // re-stalls), so no infinite loop; successful playback clears the ledger session
+  // via recordSuccess (see the progress effect above).
   useEffect(() => {
     if (disabled) return undefined;
     if (!isStuck) {
@@ -544,19 +576,59 @@ export function useMediaResilience({
 
     const fireRung = () => {
       const L = joltLatestRef.current || {};
-      // Hard cap on total jolts this session (survives isStuck flaps); cleared by the
-      // progress effect once playback resumes.
-      const attempt = _recordRecovery(L.playbackSessionKey);
-      const plan = stallJoltPlan(joltStepRef.current);
-      if (!plan || attempt > (L.maxAttempts || 5)) {
+      const ledger = getRecoveryLedger();
+      const declareExhausted = (attempts) => {
         playbackLog('resilience-stall-jolt-exhausted', {
-          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt
-        });
+          waitKey: L.logWaitKey, rung: joltStepRef.current, attempt: attempts
+        }, { level: 'warn' });
         L.actions?.setStatus(STATUS.exhausted);
-        L.onExhausted?.({ reason: 'stall-jolt-exhausted', attempts: attempt, waitKey: L.waitKey });
+        if (!exhaustedNotifiedRef.current) {
+          exhaustedNotifiedRef.current = true;
+          L.onExhausted?.({ reason: 'stall-jolt-exhausted', attempts, waitKey: L.waitKey });
+        }
+        joltTimerRef.current = null;
+      };
+
+      const plan = stallJoltPlan(joltStepRef.current);
+      if (!plan) {
+        // Ladder ran out of rungs.
+        declareExhausted(ledger.snapshot(L.playbackSessionKey)?.count ?? joltStepRef.current);
+        return;
+      }
+      // Ledger gates the rung: hard cap on total recoveries this session
+      // (survives isStuck flaps; cleared by the progress effect once playback
+      // resumes) AND the shared cooldown — jolt used to skip the cooldown
+      // check while still consuming attempts (audit §3.2).
+      const gate = ledger.request({
+        sessionKey: L.playbackSessionKey,
+        mountId: L.waitKey,
+        actor: 'jolt',
+        reason: plan.reason
+      });
+      if (!gate.allowed) {
+        if (gate.deniedBy === 'cooldown') {
+          // Too soon after the last recovery (any actor). Re-check this SAME
+          // rung once the cooldown has elapsed — don't advance the ladder.
+          playbackLog('resilience-stall-jolt-cooldown-denied', {
+            waitKey: L.logWaitKey, rung: joltStepRef.current, waitMs: gate.waitMs
+          }, { level: 'debug' });
+          joltTimerRef.current = setTimeout(fireRung, gate.waitMs);
+          return;
+        }
+        if (gate.deniedBy === 'session-cap') {
+          // Total recovery budget spent.
+          declareExhausted(gate.attempt);
+          return;
+        }
+        // Any other denial (e.g. a future mount-budget on this actor) must not
+        // masquerade as session exhaustion — log it and stop this ladder run.
+        playbackLog('resilience-stall-jolt-denied', {
+          waitKey: L.logWaitKey, rung: joltStepRef.current, deniedBy: gate.deniedBy
+        }, { level: 'debug' });
         joltTimerRef.current = null;
         return;
       }
+      const attempt = gate.attempt;
       joltStepRef.current += 1;
       const intentSeconds = joltIntentRef.current;
       const seekToIntentMs = Number.isFinite(intentSeconds) ? Math.max(0, intentSeconds * 1000) : undefined;
@@ -675,17 +747,36 @@ export function useMediaResilience({
     intentPositionUpdatedAt
   ]);
 
-  // Controller API
-  useMemo(() => {
-    if (controllerRef && 'current' in controllerRef) {
-      controllerRef.current = {
-        getState: () => resilienceState,
-        reset: () => actions.reset(),
-        forceReload: (opts) => onReload?.(opts),
-        clearSeekIntent: () => consumeTargetTimeSeconds()
-      };
-    }
-  }, [controllerRef, resilienceState, actions, onReload, consumeTargetTimeSeconds]);
+  // Controller API — assigned in an effect, not useMemo, because writing a
+  // ref is a side effect (audit §6.2). Post-commit assignment is safe: every
+  // consumer reads controllerRef.current lazily from event handlers /
+  // imperative APIs (Player.jsx playerApi getters), never during render.
+  useEffect(() => {
+    if (!controllerRef || !('current' in controllerRef)) return undefined;
+    const api = {
+      getState: () => resilienceState,
+      reset: () => actions.reset(),
+      // User-initiated reload (Fitness manual-reload button / stalled-seek
+      // recovery). Routes through gated recovery so the attempt is recorded
+      // in the shared ledger and status transitions to `recovering`, but
+      // bypasses the cooldown — a user action must respond immediately
+      // (closes the fifth ledger bypass, audit §3.2).
+      forceReload: (opts = {}) => triggerRecovery(opts.reason || 'manual-force-reload', {
+        bypassCooldown: true,
+        ...(Number.isFinite(opts.seekToIntentMs) ? { seekToIntentMs: opts.seekToIntentMs } : {}),
+        ...(typeof opts.refreshUrl === 'boolean' ? { refreshUrl: opts.refreshUrl } : {}),
+        ...(opts.forceRemount === true ? { forceRemount: true } : {})
+      }),
+      clearSeekIntent: () => consumeTargetTimeSeconds()
+    };
+    controllerRef.current = api;
+    return () => {
+      // Null only our own assignment (a newer mount may have already claimed
+      // the shared ref). All consumers optional-chain, so a late reader gets
+      // a no-op instead of driving a recovery against an unmounted player.
+      if (controllerRef.current === api) controllerRef.current = null;
+    };
+  }, [controllerRef, resilienceState, actions, triggerRecovery, consumeTargetTimeSeconds]);
 
   const cancelDeadline = useCallback(() => {
     clearTimeout(startupDeadlineRef.current);
@@ -695,7 +786,6 @@ export function useMediaResilience({
   return {
     overlayProps,
     state: resilienceState,
-    onStartupSignal: NOOP, // Stable reference to avoid re-render cascades
     cancelDeadline,
     requestRecovery: triggerRecovery,
     retryFromExhausted,

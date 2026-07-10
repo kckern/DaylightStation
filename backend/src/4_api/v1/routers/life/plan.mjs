@@ -6,7 +6,9 @@ export default function createPlanRouter(config) {
   const router = Router();
   const logger = createLogger({ source: 'backend', app: 'life', context: { router: 'plan' } });
 
-  const getUsername = (req) => req.query.username || 'default';
+  // Resolved by the parent life router's identity middleware; the query
+  // fallback keeps directly-mounted sub-routers (tests) working.
+  const getUsername = (req) => req.lifeUsername || req.query.username || 'default';
 
   // GET / — full plan
   router.get('/', async (req, res, next) => {

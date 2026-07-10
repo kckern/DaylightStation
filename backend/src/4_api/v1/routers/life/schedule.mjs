@@ -83,7 +83,7 @@ export default function createScheduleRouter(config) {
       return res.status(400).json({ error: `Unsupported format: ${format}. Supported: ${Object.keys(FORMATTERS).join(', ')}` });
     }
 
-    const username = req.query.username || 'default';
+    const username = req.lifeUsername || req.query.username || 'default';
     const plan = lifePlanStore.load(username);
     if (!plan) return res.status(404).json({ error: 'No plan found' });
 

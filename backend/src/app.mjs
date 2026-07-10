@@ -68,6 +68,7 @@ import {
 } from '#composition/bootstrap.mjs';
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
+import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
 import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
@@ -691,11 +692,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'lifelog' })
   });
 
+  // Notification stack (app/websocket + telegram + HA push channels).
+  // The default telegram adapter is constructed later in createMessagingServices,
+  // so it's late-bound here and assigned after that call.
+  const notificationTelegram = { adapter: null };
+  const notificationStack = bootstrapNotifications({
+    eventBus,
+    telegramAdapter: () => notificationTelegram.adapter,
+    resolveChatId: (username) =>
+      userService.getProfile(username)?.identities?.telegram?.user_id
+        ?? configService.resolvePlatformId('telegram', username),
+    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
+    // HA mobile push requires a per-user notify service name in the profile:
+    // identities.homeassistant.notify_service (e.g. 'mobile_app_kc_phone')
+    resolveNotifyService: (username) =>
+      userService.getProfile(username)?.identities?.homeassistant?.notify_service ?? null,
+    logger: rootLogger.child({ module: 'notifications' }),
+  });
+
   // Lifeplan domain
   const lifeplanResult = bootstrapLifeplan({
     dataPath: path.join(dataBasePath, 'users'),
     aggregator: lifelogServices.lifelogAggregator,
-    notificationService: null,
+    notificationService: notificationStack.notificationService,
+    userService,
+    defaultUsername: configService.getHeadOfHousehold() || 'default',
     clock: null,
     logger: rootLogger.child({ module: 'lifeplan' }),
   });
@@ -2190,10 +2211,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Alias for backward compatibility
   const nutribotAiGateway = sharedAiGateway;
 
+  // Default adapter uses nutribot token. Auth may be a string or an object
+  // with a token property — passing the object through produced a broken
+  // adapter (Telegram API 404s on every send).
+  const nutribotTelegramAuth = configService.getSystemAuth('telegram', 'nutribot');
   const messagingServices = createMessagingServices({
     dataService,
     telegram: {
-      token: configService.getSystemAuth('telegram', 'nutribot') || ''  // Default adapter uses nutribot token
+      token: (typeof nutribotTelegramAuth === 'string' ? nutribotTelegramAuth : nutribotTelegramAuth?.token) || ''
     },
     gmail: gmailConfig.credentials ? {
       credentials: gmailConfig.credentials,
@@ -2203,6 +2228,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpClient: axios,  // Required for TelegramAdapter API calls
     logger: rootLogger.child({ module: 'messaging' })
   });
+
+  // Late-bind the telegram channel of the notification stack (constructed
+  // before messaging services exist; sends only happen post-startup).
+  // Prefer the SystemBotLoader nutribot adapter (the proven prod send path);
+  // fall back to the default messaging adapter.
+  notificationTelegram.adapter = getMessagingAdapter(householdId, 'nutribot')
+    || messagingServices.telegramAdapter;
 
   const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
   const nxConfig = nutribotConfig.integrations?.nutritionix;
@@ -2365,7 +2397,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       services: lifeplanResult.services,
       aggregator: lifelogServices.lifelogAggregator,
     },
+    // Real notification delivery for agent tools (was a no-op stub fallback)
+    notificationService: notificationStack.notificationService,
   });
+
+  // Lifeplan ceremony reminders — daily check for due ceremonies across all
+  // users with a life plan. Dedupe is per period via ceremony records, so a
+  // completed ceremony is never re-notified.
+  if (agentsServices.scheduler) {
+    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 7 * * *', async () => {
+      const lifePlanStore = lifeplanResult.container.getLifePlanStore();
+      for (const username of lifePlanStore.listUsernames()) {
+        await lifeplanResult.ceremonyScheduler.checkAndNotify(username);
+      }
+    });
+  }
 
   // Fitness recap sweep — safety net that recaps sessions ended via the common
   // paths (inactivity, closed tab, crash) that never fire a per-event trigger,
