@@ -16,8 +16,7 @@ vi.mock('../../../../backend/src/1_adapters/content/media/plex/CurriculumIndex.m
           seasons: {
             '10': {
               title: 'Song Tutorials',
-              category: 'repertoire',
-              kind: 'tutorial',
+              lane: 'repertoire',
               facets: ['difficulty', 'instructor', 'style'],
             },
           },
@@ -32,8 +31,8 @@ vi.mock('../../../../backend/src/1_adapters/content/media/plex/CurriculumIndex.m
       return {
         title: s.title ?? undefined,
         piano: {
-          category: s.category,
-          kind: s.kind,
+          lane: s.lane,
+          groups: s.groups,
           facets: s.facets,
           sequential: s.sequential,
           pinned: s.pinned,
@@ -78,13 +77,13 @@ describe('GetPlayableUnits (parents piano enrichment)', () => {
     vi.clearAllMocks();
   });
 
-  it('enriches parents map with season piano.category from curriculum index', async () => {
+  it('enriches parents map with season piano.lane from curriculum index', async () => {
     const { ok, result } = await makeUseCase().execute({ courseId: '676490' });
 
     expect(ok).toBe(true);
     expect(result.parents['677395']).toBeDefined();
     expect(result.parents['677395'].piano).toBeDefined();
-    expect(result.parents['677395'].piano.category).toBe('repertoire');
+    expect(result.parents['677395'].piano.lane).toBe('repertoire');
   });
 
   it('preserves other parent fields when enriching with piano', async () => {
@@ -93,7 +92,7 @@ describe('GetPlayableUnits (parents piano enrichment)', () => {
     expect(ok).toBe(true);
     expect(result.parents['677395'].index).toBe(10);
     expect(result.parents['677395'].title).toBe('Song Tutorials');
-    expect(result.parents['677395'].piano.category).toBe('repertoire');
+    expect(result.parents['677395'].piano.lane).toBe('repertoire');
   });
 
   it('handles missing curriculum index gracefully (no enrichment)', async () => {
