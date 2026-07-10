@@ -28,4 +28,21 @@ describe('LessonList', () => {
     fireEvent.click(screen.getByText('Y').closest('button'));
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ plex: '102' }));
   });
+  it('renders part section headers while gating across the whole list', () => {
+    const lessons = [
+      { plex: 'a', title: 'One', userWatched: true, piano: { part: 1 } },
+      { plex: 'b', title: 'Two', piano: { part: 1 } },
+      { plex: 'c', title: 'Three', piano: { part: 2 } },
+    ];
+    const sections = [
+      { label: 'Part 1', lessons: lessons.slice(0, 2) },
+      { label: 'Part 2', lessons: lessons.slice(2) },
+    ];
+    render(<LessonList lessons={lessons} sections={sections} onPlay={() => {}} />);
+    expect(screen.getByText('Part 1')).toBeInTheDocument();
+    expect(screen.getByText('Part 2')).toBeInTheDocument();
+    // gate: 'Two' is current, 'Three' (in Part 2) locked
+    expect(screen.getByText('Three').closest('button')).toBeDisabled();
+    expect(screen.getByText('Two').closest('button')).not.toBeDisabled();
+  });
 });

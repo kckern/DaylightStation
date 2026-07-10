@@ -47,32 +47,39 @@ describe('SubcourseNavigator (redesign)', () => {
   });
 });
 
-const withCategories = {
+const withLanes = {
   info: { title: 'Piano With Jonny', image: '/poster.jpg', labels: ['subcourses'] },
   parents: {
-    700: { index: 0, title: 'Practice Essentials', piano: { category: 'lesson' } },
-    701: { index: 1, title: 'Chord Charts', piano: { category: 'reference' } },
-    702: { index: 2, title: 'Song Book', piano: { category: 'repertoire' } },
+    700: { index: 0, title: 'Practice Essentials', piano: { lane: 'practice' } },
+    701: { index: 1, title: 'Soloing', piano: { lane: 'lessons', groups: ['Pop Soloing', '2-5-1 Soloing'] } },
+    702: { index: 8, title: 'Song Book', piano: { lane: 'repertoire' } },
   },
-  referenceUnitIds: ['701'],
   items: [
     ep(700, 101, 'Practice – A'),
-    ep(701, 101, 'Chart – A'),
-    ep(702, 101, 'Clair de Lune', false),
-    ep(702, 201, 'Someone Like You', false),
+    { ...ep(701, 101, 'Pop Chords – A'), piano: { course: 'Pop Chords', group: 'Pop Soloing' } },
+    { ...ep(701, 102, 'Pop Chords – B'), piano: { course: 'Pop Chords', group: 'Pop Soloing' } },
+    { ...ep(701, 201, '2-5-1 – A'), piano: { course: '2-5-1', group: '2-5-1 Soloing' } },
+    ep(702, 101, 'Clair de Lune'),
+    ep(702, 201, 'Someone Like You'),
   ],
 };
 
-describe('SubcourseNavigator (category lanes)', () => {
-  it('season menu shows three lane headings', () => {
-    render(<SubcourseNavigator course={{ id: '676490' }} playable={withCategories} onPlay={vi.fn()} />);
-    expect(screen.getByText('Lessons')).toBeTruthy();
-    expect(screen.getByText('Reference')).toBeTruthy();
-    expect(screen.getByText('Repertoire')).toBeTruthy();
+describe('SubcourseNavigator (lane routing)', () => {
+  it('home shows Practice · Lessons · Repertoire lanes from piano.lane', () => {
+    render(<SubcourseNavigator course={{ id: '676490' }} playable={withLanes} onPlay={vi.fn()} />);
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Practice', 'Lessons', 'Repertoire']);
+  });
+
+  it('a grouped lessons season renders group headers around course cards', () => {
+    render(<SubcourseNavigator course={{ id: '676490' }} playable={withLanes} onPlay={vi.fn()} />);
+    fireEvent.click(screen.getByTitle('Soloing'));
+    expect(screen.getByText('Pop Soloing')).toBeInTheDocument();
+    expect(screen.getByText('2-5-1 Soloing')).toBeInTheDocument();
   });
 
   it('selecting the repertoire season renders RepertoireBrowser, not course cards', () => {
-    render(<SubcourseNavigator course={{ id: '676490' }} playable={withCategories} onPlay={vi.fn()} />);
+    render(<SubcourseNavigator course={{ id: '676490' }} playable={withLanes} onPlay={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Song Book'));
     expect(screen.getByPlaceholderText('Search songs…')).toBeTruthy();
   });

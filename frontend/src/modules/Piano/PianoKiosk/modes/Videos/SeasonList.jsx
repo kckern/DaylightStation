@@ -11,6 +11,21 @@ export default function SeasonList({ seasons, onSelect }) {
       {(seasons || []).map((s, i) => {
         const name = s.title || `Season ${s.index}`;
         const tint = tintFor(i);
+        if ((s.piano?.lane || s.piano?.category) === 'repertoire') {
+          return (
+            <li key={s.id}>
+              <button type="button" className="psc-row psc-row--songs" style={{ '--tint': tint }} onClick={() => onSelect(s)} title={name}>
+                <span className="psc-row__tint" />
+                <span className="psc-row__resmark" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                </span>
+                <span className="psc-row__meta"><span className="psc-row__name">{name}</span>
+                  <span className="psc-row__sub">{s.lessons.length} lessons · browse by song</span></span>
+                <span className="psc-tag psc-tag--res">song library</span>
+              </button>
+            </li>
+          );
+        }
         if (s.reference) {
           return (
             <li key={s.id}>
