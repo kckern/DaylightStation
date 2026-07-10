@@ -25,7 +25,6 @@ const DEFAULT_EPOCH = '2024-12-30';
 export class CadenceService {
   #timezone;
   #formatter;
-  #invalidTimezone = false;
 
   /**
    * @param {Object} [options]
@@ -38,7 +37,6 @@ export class CadenceService {
     try {
       this.#formatter = this.#buildFormatter(this.#timezone);
     } catch {
-      this.#invalidTimezone = true;
       this.#timezone = DEFAULT_TZ;
       this.#formatter = this.#buildFormatter(DEFAULT_TZ);
     }

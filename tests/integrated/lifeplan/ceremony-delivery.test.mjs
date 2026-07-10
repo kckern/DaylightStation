@@ -37,13 +37,17 @@ describe('CeremonyScheduler — ceremony delivery (integrated)', () => {
 
     const planStore = {
       load: () => ({
+        // All ceremonies pinned to the test clock's hour (08:00Z below) via
+        // `at` overrides, so the hour gate passes for every type and each
+        // scenario's ORIGINAL skip/send reason (dedupe, disabled, not-due)
+        // stays the deciding factor.
         ceremonies: {
-          unit_intention: { enabled: true },
-          unit_capture: { enabled: false },
-          cycle_retro: { enabled: true },
-          phase_review: { enabled: false },
-          season_alignment: { enabled: true },
-          era_vision: { enabled: true },
+          unit_intention: { enabled: true, at: '08:00' },
+          unit_capture: { enabled: false, at: '08:00' },
+          cycle_retro: { enabled: true, at: '08:00' },
+          phase_review: { enabled: false, at: '08:00' },
+          season_alignment: { enabled: true, at: '08:00' },
+          era_vision: { enabled: true, at: '08:00' },
         },
         cadence: {},
       }),

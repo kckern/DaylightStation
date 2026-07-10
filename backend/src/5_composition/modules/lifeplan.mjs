@@ -91,6 +91,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
+    timezone,
     clock,
     logger,
   });
