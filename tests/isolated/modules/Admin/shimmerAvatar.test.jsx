@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
-import { ShimmerAvatar } from '#frontend/modules/Admin/ContentLists/ListsItemRow.jsx';
+import { ShimmerAvatar } from '#frontend/modules/Admin/ContentLists/ShimmerAvatar.jsx';
 
 // Intercept Image preloading so we can control load timing.
 class FakeImage {
