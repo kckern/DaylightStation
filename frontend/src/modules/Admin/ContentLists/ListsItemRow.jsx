@@ -24,6 +24,8 @@ import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
 import { resolveDisplayItems, isContentIdLike, shouldAutoAdd } from './contentSearchLogic.js';
+import ContentCombobox from './combobox/ContentCombobox.jsx';
+import { useAutoResolve } from './combobox/useAutoResolve.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
@@ -631,6 +633,170 @@ function UnresolvedContentDisplay({ item, onClick }) {
       </Group>
     </div>
   );
+}
+
+/**
+ * Display-mode card for a row's committed content value: resolving spinner,
+ * unresolved warning, resolved card, or empty placeholder. Passed to the
+ * unified ContentCombobox as `renderValue` — clicking any card enters edit
+ * mode via onStartEdit.
+ */
+function ContentValueCard({ value, contentInfoMap, onStartEdit }) {
+  const contentInfo = value ? contentInfoMap.get(value) : null;
+  const loadingInfo = !!value && !contentInfoMap.has(value);
+
+  // Loading state - show user's input text with a spinner and countup so intent is visible
+  if (loadingInfo) {
+    return <ResolvingDisplay value={value} onClick={onStartEdit} />;
+  }
+
+  if (contentInfo) {
+    if (contentInfo.unresolved) {
+      return <UnresolvedContentDisplay item={contentInfo} onClick={onStartEdit} />;
+    }
+    return <ContentDisplay item={contentInfo} onClick={onStartEdit} />;
+  }
+
+  // No value - show placeholder with avatar footprint
+  if (!value) {
+    return (
+      <Group gap={6} wrap="nowrap" onClick={onStartEdit} className="content-display">
+        <Avatar size={28} radius="sm" color="dark">
+          <IconPhoto size={16} />
+        </Avatar>
+        <Text size="xs" c="dimmed">Click to select content...</Text>
+      </Group>
+    );
+  }
+
+  // Fallback - raw value (shouldn't normally reach here)
+  return (
+    <Text size="xs" c="dimmed" onClick={onStartEdit} className="content-display">
+      {value}
+    </Text>
+  );
+}
+
+/**
+ * App parameter picker — rendered in place of the combobox after selecting an
+ * app that requires a parameter (e.g. `app:hymn` needs a number). Ported from
+ * the inline twin; stays row-level per the unified-combobox design (Task 13).
+ *
+ * @param {string} appId
+ * @param {object} param - the app registry param spec ({name, options})
+ * @param {Array|null} options - resolved [{value, label}] options, or null for free text
+ * @param {(fullId: string) => void} onCommit
+ * @param {() => void} onCancel
+ */
+function AppParamPicker({ appId, param, options, onCommit, onCancel }) {
+  const log = useMemo(() => adminLog('AppParamPicker'), []);
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
+  const [paramInput, setParamInput] = useState('');
+  const inputRef = useRef(null);
+
+  const finishWithParam = (paramVal) => {
+    const fullId = paramVal ? `app:${appId}/${paramVal}` : `app:${appId}`;
+    log.info('app_param.commit', { appId, paramVal, fullId });
+    onCommit(fullId);
+  };
+
+  const cancelParam = () => {
+    log.info('app_param.cancel', { appId });
+    onCancel();
+  };
+
+  // Dropdown options
+  if (options) {
+    return (
+      <Combobox
+        store={combobox}
+        onOptionSubmit={(val) => finishWithParam(val)}
+      >
+        <Combobox.Target>
+          <InputBase
+            ref={inputRef}
+            size="xs"
+            pointer
+            rightSection={<Combobox.Chevron />}
+            rightSectionPointerEvents="none"
+            value={paramInput}
+            onChange={(e) => {
+              log.debug('param_input.change', { value: e.currentTarget.value, appId });
+              setParamInput(e.currentTarget.value);
+              combobox.openDropdown();
+            }}
+            onClick={() => combobox.openDropdown()}
+            onFocus={() => combobox.openDropdown()}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancelParam();
+              if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
+            }}
+            placeholder={`Choose or type ${param.name}...`}
+            autoFocus
+            styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
+          />
+        </Combobox.Target>
+        <Combobox.Dropdown>
+          <Combobox.Options>
+            <ScrollArea.Autosize mah={200}>
+              {options
+                .filter(o => !paramInput || o.label.toLowerCase().includes(paramInput.toLowerCase()))
+                .map(o => (
+                  <Combobox.Option key={o.value} value={o.value}>
+                    <Text size="xs">{o.label}</Text>
+                  </Combobox.Option>
+                ))}
+            </ScrollArea.Autosize>
+          </Combobox.Options>
+        </Combobox.Dropdown>
+      </Combobox>
+    );
+  }
+
+  // Free text input (no options defined)
+  return (
+    <TextInput
+      ref={inputRef}
+      size="xs"
+      value={paramInput}
+      onChange={(e) => setParamInput(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
+        if (e.key === 'Escape') cancelParam();
+      }}
+      onBlur={() => {
+        if (paramInput) finishWithParam(paramInput);
+        else cancelParam();
+      }}
+      placeholder={`Type ${param.name}...`}
+      autoFocus
+      styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
+    />
+  );
+}
+
+/**
+ * Shape a picked combobox item (search result, browse item, or app entry)
+ * into the contentInfoMap entry format so the row card renders instantly
+ * without waiting for ListsFolder's metadata refetch.
+ */
+function contentInfoFromPick(value, item) {
+  return {
+    value,
+    title: item.title,
+    source: item.source || value.split(':')[0],
+    type: item.type || item.metadata?.type || null,
+    thumbnail: item.thumbnail || null,
+    grandparent: item.grandparent ?? item.metadata?.grandparentTitle,
+    parent: item.parent ?? item.metadata?.parentTitle,
+    library: item.library ?? item.metadata?.librarySectionTitle,
+    itemCount: item.itemCount ?? item.metadata?.childCount ?? item.metadata?.leafCount ?? null,
+    itemIndex: item.itemIndex ?? item.metadata?.itemIndex ?? null,
+    number: item.number ?? item.metadata?.number ?? null,
+    unresolved: false,
+  };
 }
 
 // Cache for content info to avoid re-fetching
@@ -2626,12 +2792,54 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     }
   };
 
-  // Input (content) change handler
-  const handleInputChange = (value) => {
+  // ── Content input (unified ContentCombobox wiring) ──
+  // App-param picker state: {appId, param, options} while waiting for a param.
+  const [pendingApp, setPendingApp] = useState(null);
+
+  // Autosave the committed content id (twin parity: ignore empty/unchanged).
+  const commitInput = (value) => {
     if (value && value !== item.input) {
       log.info('input.change', { index: item.index, oldInput: item.input, newInput: value });
       onUpdate({ input: value });
     }
+  };
+
+  // Phase 0 auto-resolve survives at row level: freeform commits search in
+  // the background and replace the value only if it hasn't changed since.
+  const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
+    value: item.input,
+    onChange: (id) => commitInput(id),
+    setContentInfo,
+    fetchMetadata: fetchContentMetadata,
+  });
+
+  // Input (content) change handler — receives (id, item?) from ContentCombobox.
+  const handleRowInputChange = (value, selectedItem) => {
+    // App that needs a parameter → show the param picker instead of saving.
+    if (selectedItem?.isApp && selectedItem.hasParam) {
+      log.info('app_param.prompt', { index: item.index, appId: selectedItem.appId, paramName: selectedItem.param?.name });
+      import('../../../lib/appRegistry.js')
+        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
+        .then((options) => {
+          setPendingApp({
+            appId: selectedItem.appId,
+            param: selectedItem.param,
+            // Prepend "Random" option for dropdown-style params (twin parity)
+            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
+          });
+        });
+      return;
+    }
+    // Seed the shared content-info cache from the picked item so the display
+    // card renders instantly instead of flashing "Resolving...".
+    if (value && selectedItem?.title) {
+      setContentInfo(value, contentInfoFromPick(value, selectedItem));
+    }
+    // Freeform (non id-like) commit — kick off background auto-resolve.
+    if (value && !selectedItem && !isContentIdLike(value)) {
+      maybeResolve(value, 'row-commit');
+    }
+    commitInput(value);
   };
 
   // Action change handler
@@ -2873,10 +3081,28 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-input">
-        <ContentSearchCombobox
-          value={item.input}
-          onChange={handleInputChange}
-        />
+        {pendingApp ? (
+          <AppParamPicker
+            appId={pendingApp.appId}
+            param={pendingApp.param}
+            options={pendingApp.options}
+            onCommit={(fullId) => { setPendingApp(null); commitInput(fullId); }}
+            onCancel={() => setPendingApp(null)}
+          />
+        ) : (
+          <ContentCombobox
+            value={item.input}
+            onChange={handleRowInputChange}
+            appResults
+            renderValue={({ onStartEdit }) => (
+              <ContentValueCard
+                value={item.input}
+                contentInfoMap={contentInfoMap}
+                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+              />
+            )}
+          />
+        )}
       </div>
 
       {isWatchlist && (
