@@ -343,24 +343,23 @@ git commit -m "feat(piano-bridge): fail-closed render gate in VoiceHost"
 **Files:**
 - Modify: `_extensions/piano-bridge/app/app/src/main/cpp/OboeOutput.cpp:84-91`
 
-**Step 1: Consult the gate before restarting**
+**Step 1: Never reopen from the error callback**
+
+> **Revised 2026-07-09 after code review.** The first version of this task consulted the gate (`if (!host_->outputGate()) return;`) before reopening. That is WRONG, and subtly so. The event that fires `onErrorAfterClose` *is* the A2DP drop — the same event that closes the gate, arriving via a slower Java broadcast on a different thread with no ordering guarantee. Oboe detects its own HAL-level disconnect first, so the handler observes a still-open gate, reopens onto the only remaining route (the built-in speaker), and `render()` emits synth audio out the tablet until the reconciler catches up. Reopening must not be conditional on the gate; it must not happen here **at all**.
 
 ```cpp
 void OboeOutput::onErrorAfterClose(oboe::AudioStream* /*stream*/, oboe::Result error) {
+    // Do NOT reopen here. This callback fires on the A2DP drop itself, racing the
+    // Java-side gate close — reopening would land the stream on the built-in speaker
+    // and emit audio out the tablet. Recovery is the reconciler's job: it reopens via
+    // PianoEngine.start() only after re-confirming the A2DP route (isStreamRunning()).
+    LOGW("Oboe stream error after close: %s — leaving stream closed",
+         oboe::convertToText(error));
     stop();
-    // A disconnect (A2DP drop) closes the stream. Reopening unconditionally would
-    // land the stream on the built-in speaker — exactly what the guard forbids.
-    // Only reopen while the gate is open; the Java guard reopens us on reconnect
-    // by re-asserting the gate, which PianoBridgeService turns into engine.start().
-    if (!host_->outputGate()) {
-        LOGW("stream error (%s) while gate closed — NOT reopening",
-             oboe::convertToText(error));
-        return;
-    }
-    LOGW("Oboe stream error after close: %s — restarting", oboe::convertToText(error));
-    start();
 }
 ```
+
+Cost: a transient, non-disconnect stream error no longer self-heals instantly — it heals on the next `reconcile()` (≤20 s, or immediately on the next `AudioDeviceCallback`). That is the correct trade. Silence is recoverable; audio out the wrong speaker is not.
 
 **Step 2: Build**
 
@@ -430,6 +429,64 @@ Expected: BUILD SUCCESSFUL. A JNI name mismatch surfaces at runtime, not compile
 git add _extensions/piano-bridge/app/app/src/main/cpp/native-lib.cpp \
         _extensions/piano-bridge/app/app/src/main/java/net/kckern/pianobridge/PianoEngine.java
 git commit -m "feat(piano-bridge): JNI setOutputGate"
+```
+
+---
+
+## Task 5b: Make stream restart possible and idempotent
+
+**Discovered during implementation, 2026-07-09.** Task 4 stops `onErrorAfterClose` from reopening the stream while the gate is closed. But **nothing reopens it when the gate opens again.** `engine.start()` is reachable only from `PianoBridgeService.engineStart()` (line ~171), which early-returns on `if (engineRunning) return;` — and `engineRunning` is still `true`, because only the *native* stream closed. Result: after the first A2DP dropout the tablet is silent **forever**, including after the piano reconnects. The guard would appear to work and would in fact have bricked the audio.
+
+Separately, `OboeOutput::start()` is not idempotent: it calls `openStream()` unconditionally, which overwrites the `stream_` shared_ptr and orphans any existing stream. The reconciler runs every 20 s, so a non-idempotent start would tear down and reopen a healthy stream on every sweep, producing an audible gap.
+
+Both must be fixed before Task 7 wires the gate to anything.
+
+**Files:**
+- Modify: `_extensions/piano-bridge/app/app/src/main/cpp/OboeOutput.cpp` (`start`)
+- Modify: `_extensions/piano-bridge/app/app/src/main/cpp/OboeOutput.h`
+- Modify: `_extensions/piano-bridge/app/app/src/main/cpp/native-lib.cpp`
+- Modify: `_extensions/piano-bridge/app/app/src/main/java/net/kckern/pianobridge/PianoEngine.java`
+
+**Step 1: `isRunning()` on `OboeOutput`** (header, inline):
+
+```cpp
+    /** True iff a stream exists and is Started. Lets the reconciler stay idempotent. */
+    bool isRunning() const {
+        return stream_ && stream_->getState() == oboe::StreamState::Started;
+    }
+```
+
+**Step 2: Make `start()` idempotent** in `OboeOutput.cpp`:
+
+```cpp
+bool OboeOutput::start() {
+    if (isRunning()) return true;   // idempotent: the 20s sweep must not churn the stream
+    if (stream_) stop();            // a closed/errored stream lingers; drop it before reopening
+    if (!openStream()) return false;
+    oboe::Result result = stream_->requestStart();
+    ...
+```
+
+**Step 3: Expose it** — add `nativeIsStreamRunning(long)` in `native-lib.cpp` (using the existing `fromHandle()` idiom and guarding `b->output`), and `public synchronized boolean isStreamRunning()` on `PianoEngine`.
+
+**Step 4: Test** — no JVM test can reach this (it is native + device). Verified in Task 9 Step 6.
+
+**Step 5: Commit**
+
+```bash
+git commit -m "fix(piano-bridge): idempotent Oboe start + isRunning, so the gate can reopen a closed stream"
+```
+
+Task 7's `setSynthGate` then becomes:
+
+```java
+    @Override public void setSynthGate(boolean open) {
+        if (engine == null) return;
+        engine.setOutputGate(open);
+        // Reopening is safe and idempotent: start() no-ops when already running. Without
+        // this, a stream closed by an A2DP drop (Task 4) would never reopen on reconnect.
+        if (open && !engine.isStreamRunning()) engine.start();
+    }
 ```
 
 ---
@@ -693,10 +750,24 @@ public final class AndroidAudioOps implements AudioRouteGuard.Ops {
         return hasType(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP);
     }
 
+    /**
+     * Any non-A2DP, non-built-in output. AudioGuardPolicy suppresses the volume clamp
+     * when this is true, because setStreamVolume would then write THAT device's index
+     * instead of the speaker's. Under-reporting here zeroes the wrong device's volume,
+     * so err on the side of listing a type. (Reviewer flagged: a USB DAC classified as
+     * anything but wired is the one path that corrupts the wrong index.)
+     */
     @Override public boolean wiredOutputPresent() {
         return hasType(AudioDeviceInfo.TYPE_WIRED_HEADSET)
             || hasType(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
-            || hasType(AudioDeviceInfo.TYPE_USB_HEADSET);
+            || hasType(AudioDeviceInfo.TYPE_USB_HEADSET)
+            || hasType(AudioDeviceInfo.TYPE_USB_DEVICE)
+            || hasType(AudioDeviceInfo.TYPE_USB_ACCESSORY)
+            || hasType(AudioDeviceInfo.TYPE_LINE_ANALOG)
+            || hasType(AudioDeviceInfo.TYPE_LINE_DIGITAL)
+            || hasType(AudioDeviceInfo.TYPE_AUX_LINE)
+            || hasType(AudioDeviceInfo.TYPE_HDMI)
+            || hasType(AudioDeviceInfo.TYPE_DOCK);
     }
 
     @Override public int speakerMusicIndex() {
@@ -962,3 +1033,88 @@ git commit -m "docs(piano-bridge): correct dumpsys/startForeground/settings-writ
 - **Restoring the speaker volume.** No code path raises the built-in speaker index. Adding one would defeat the guard. If the tablet ever legitimately needs speaker audio, do it manually and knowingly.
 - **`A2dpConnector` reconnect hardening.** Its `connect()` has never demonstrably worked. Task 9 Step 6 is the first real test. If it proves unreliable against a bonded device, that is a separate fix with its own plan — but the guard's correctness does not depend on it.
 - **Frontend surfacing.** `routeOk`/`reason` are exposed over HTTP but not shown in the kiosk UI. Worth doing once the guard has run for a week, so the UI reflects real failure modes rather than guessed ones.
+
+---
+
+## Verification results (measured on hardware, 2026-07-09)
+
+Shipped as APK versionCode **18** / versionName `1.10-audio-guard`, deployed to the
+live SM-T590 and exercised end to end. All figures below are from hardware, not a
+simulator.
+
+### Bootstrap trace (the one-time exposure window)
+
+From the `Diag` ring (monotonic ms since boot) during `POST /audio-guard/bootstrap`:
+
+```
+77584336  A2DP disconnect(64:49:A5:8B:9B:75) -> true
+77584970  clamped built-in speaker STREAM_MUSIC to 0 (reason=no_a2dp_output)   +634 ms
+77584970  route GATED reason=no_a2dp_output
+77585032  A2DP "speaker disconnected — reconnecting (#1)"                      +696 ms
+77586889  connect(64:49:A5:8B:9B:75) -> true
+77587636  speaker connected
+77588102  route OK reason=ok
+```
+
+- **`AudioDeviceCallback` fired ~634 ms after the disconnect and LED the A2DP
+  broadcast by ~62 ms** — it is the fast trigger. This bounds the one-time exposure
+  window only, not steady-state latency.
+- Full outage (disconnect → route OK again): **~3.8 s**.
+- The bootstrap endpoint's own `reconcile()` ran ~1.9 s after the clamp and did
+  **not** re-clamp (`clamps` stayed 1) — the policy's idempotent `speakerIndex > 0`
+  guard, exercised on real hardware.
+
+### Clamp landed on the right device
+
+- Per-device indices after the clamp: `volume_music_speaker=0`,
+  `volume_music_bt_a2dp=15`, `volume_music_headset=8`. Only the speaker was zeroed.
+- `dumpsys audio` after: `2 (speaker): 0\0`, `80 (bt_a2dp): 15\150`,
+  `Devices: bt_a2dp`.
+- Zero `UnsatisfiedLinkError` — both `nativeSetOutputGate` and
+  `nativeIsStreamRunning` bind at runtime.
+
+### Reconnect: `A2dpConnector.connect()` works against a BONDED device
+
+The historical `reconnects: 5153` were **all** failures against an UNBONDED MAC
+(`bondState: none`), which the code reported in `lastError` ("speaker not bonded")
+where nothing surfaced it. Against the bonded speaker, `connect()` succeeded.
+**Recommendation:** surface `lastError` in `pbctl diag` so the next investigator
+sees why a reconnect failed instead of re-deriving it.
+
+### Reboot survival: INFERRED, NOT VERIFIED
+
+The clamped value lives in the `Settings.System` DB — the store `AudioService`
+reads at boot — and was still `0` half an hour after the clamp, but the tablet did
+NOT reboot during this session (`uptimeMs` ≈ 21.7 h, same PID throughout). Treat
+reboot survival as **inferred, not verified**. One-line check after the next reboot:
+
+```bash
+curl -s "http://<tablet>:8770/getsetting?ns=system&key=volume_music_speaker"   # want 0
+```
+
+### Fail-closed policy held under an unanticipated config
+
+During the deploy the on-device config override was clobbered down to a single key
+(see below), leaving `speakerMac` empty. With no `speakerMac` the guard correctly
+**refused to clamp** (an A2DP output device was present → `speakerIsRoute` false):
+gated, but no wrongful volume write. The fail-closed policy held under a config it
+never anticipated.
+
+### Deployment findings
+
+- **Deploy is a PULL.** `GET|POST /update?url=<apk-url>` makes the bridge fetch the
+  APK over HTTP, so it must be served on the LAN — there is no upload endpoint.
+  `versionCode` must strictly increase (now 18).
+- **Install needs one physical tap** (FKB is not device owner). The `/update`
+  endpoint blocks past a 25 s curl timeout while waiting on the confirm dialog — a
+  client timeout does **NOT** mean the install failed.
+- **ADB over WiFi was unavailable.** Port 5555 was refused after a reboot,
+  `setprop service.adb.tcp.port` is denied to `untrusted_app`, and although
+  `adb_enabled=1` it was USB-only. Plan for the `/update` (pull) path.
+- **The service does not auto-start after a replace-install** (fresh-install stopped
+  state). Relaunch ADB-free with `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
+- **OPEN BUG — config clobber.** The replace-install clobbered the on-device config
+  override at `/data/user/0/net.kckern.pianobridge/files/piano-devices.yml` down to a
+  single key (`fkbWakeSuppressUntilEpochMs`), losing `speakerMac`, `targetMac`,
+  `targetName`, `blocklistMacs`, ports, and timeouts. **Back up `GET /config` before
+  every install** and restore with `POST /config` (YAML body). Worth a separate fix.
