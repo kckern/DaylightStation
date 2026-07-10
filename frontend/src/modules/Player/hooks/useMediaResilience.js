@@ -314,10 +314,9 @@ export function useMediaResilience({
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
 
-      // A progressToken bump means "some progress event fired", NOT "the clock
-      // moved". A jolt's own remount fires `playing` at the frozen position; if
-      // that cleared the ledger, the attempt cap and cooldown would never engage
-      // and the ladder would loop at rung 1 forever (2026-07-10 soak, plex:674553).
+      // A progressToken bump means "a progress event fired", NOT "the clock
+      // moved". A jolt's own remount fires `playing` at the frozen position;
+      // clearing the ledger on that would defeat the attempt cap and cooldown.
       // Only strictly-forward motion counts as recovery.
       const observed = Number.isFinite(playbackHealth.lastProgressSeconds)
         ? playbackHealth.lastProgressSeconds

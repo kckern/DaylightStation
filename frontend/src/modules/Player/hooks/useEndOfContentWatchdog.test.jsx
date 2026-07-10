@@ -2,35 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useEndOfContentWatchdog } from './useEndOfContentWatchdog.js';
-
-/**
- * Build a fake media element. Tracks listener registrations so tests can
- * dispatch synthetic events the same way the browser does.
- */
-function makeFakeEl(initial = {}) {
-  const listeners = {};
-  const el = {
-    currentTime: 0,
-    duration: 0,
-    paused: true,
-    seeking: false,
-    ...initial,
-    addEventListener: (ev, fn) => {
-      (listeners[ev] = listeners[ev] || []).push(fn);
-    },
-    removeEventListener: (ev, fn) => {
-      const arr = listeners[ev];
-      if (!arr) return;
-      const i = arr.indexOf(fn);
-      if (i >= 0) arr.splice(i, 1);
-    },
-    _fire: (ev) => {
-      (listeners[ev] || []).forEach((fn) => fn());
-    },
-    _listeners: listeners
-  };
-  return el;
-}
+import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 
 describe('useEndOfContentWatchdog', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));

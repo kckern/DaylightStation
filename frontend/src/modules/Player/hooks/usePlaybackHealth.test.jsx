@@ -8,31 +8,7 @@ vi.mock('../lib/playbackLogger.js', () => ({
 }));
 
 import { usePlaybackHealth } from './usePlaybackHealth.js';
-
-/**
- * Fake media element with listener tracking, mirroring useEndOfContentWatchdog's
- * harness. `_fire(ev)` dispatches synthetic media events exactly as the browser
- * would to the listeners usePlaybackHealth attaches.
- */
-function makeFakeEl(initial = {}) {
-  const listeners = {};
-  return {
-    currentTime: 0,
-    paused: false,
-    ended: false,
-    buffered: { length: 0 },
-    ...initial,
-    addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
-    removeEventListener: (ev, fn) => {
-      const arr = listeners[ev];
-      if (!arr) return;
-      const i = arr.indexOf(fn);
-      if (i >= 0) arr.splice(i, 1);
-    },
-    _fire: (ev) => { (listeners[ev] || []).forEach((fn) => fn()); },
-    _count: (ev) => (listeners[ev] || []).length
-  };
-}
+import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 
 describe('usePlaybackHealth', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));

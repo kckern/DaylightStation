@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMediaResilience } from './useMediaResilience.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 
 // ---------------------------------------------------------------------------
 // useMediaResilience × recoveryLedger — the hook's recovery accounting now
@@ -297,27 +298,6 @@ describe('useMediaResilience × ledger — controllerRef.forceReload is gated', 
 // tests use: it calls recordProgress with the frozen position, bumping the
 // token without advancing the clock.
 // ---------------------------------------------------------------------------
-
-// Fake media element whose `_fire('playing')` dispatches the synthetic event
-// exactly as the browser would to the listeners usePlaybackHealth attaches.
-function makeFakeEl(initial = {}) {
-  const listeners = {};
-  return {
-    currentTime: 0,
-    paused: false,
-    ended: false,
-    buffered: { length: 0 },
-    ...initial,
-    addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
-    removeEventListener: (ev, fn) => {
-      const arr = listeners[ev];
-      if (!arr) return;
-      const i = arr.indexOf(fn);
-      if (i >= 0) arr.splice(i, 1);
-    },
-    _fire: (ev) => { (listeners[ev] || []).forEach((fn) => fn()); }
-  };
-}
 
 describe('useMediaResilience × ledger — phantom progress must not clear the ledger', () => {
   it('a progressToken bump with a FROZEN playhead does not reset the attempt count', () => {
