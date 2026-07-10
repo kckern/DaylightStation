@@ -34,6 +34,16 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
 export function bootstrapLifeplan(deps) {
   const { dataPath, aggregator, notificationService, userService, defaultUsername, timezone, clock, logger } = deps;
 
+  // Validate the household timezone at the composition seam (the domain has no
+  // logger; CadenceService itself falls back to UTC on an invalid zone).
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: timezone });
+    } catch {
+      logger?.warn('cadence.invalid_timezone', { timezone, fallback: 'UTC' });
+    }
+  }
+
   // Persistence stores (constructed here at the composition root; the
   // container receives instances per Decision D1)
   const container = new LifeplanContainer({
