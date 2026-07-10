@@ -10,7 +10,7 @@ import { IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
  * editors with bespoke data flows (e.g. MemberEditor).
  *
  * Props:
- *   title       - Page title (node or string)
+ *   title       - Page title; strings get the standard mono style, nodes render as-is
  *   dirty       - Unsaved changes present
  *   saving      - Save in flight
  *   onSave      - Save handler
@@ -24,7 +24,9 @@ function SaveBar({ title, dirty, saving, onSave, onRevert, headerExtra }) {
       className={`ds-action-bar${dirty ? ' ds-action-bar--dirty' : ''}`}
     >
       <Group gap="xs">
-        <Text fw={600} size="lg" ff="var(--ds-font-mono)">{title}</Text>
+        {typeof title === 'string'
+          ? <Text fw={600} size="lg" ff="var(--ds-font-mono)">{title}</Text>
+          : title}
         {dirty && (
           <Badge color="yellow" variant="light" size="sm">
             Unsaved
