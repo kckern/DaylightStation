@@ -16,10 +16,14 @@
  * wires it to onReload. See useMediaResilience.js.
  */
 
-// How long the player must be continuously stuck before the first jolt. Long
-// enough that a legitimately-slow-but-succeeding seek/buffer isn't interrupted,
-// short enough to beat the old effectively-infinite stall.
-export const STALL_JOLT_GRACE_MS = 4500;
+// How long the player must be continuously stuck before the first jolt.
+//
+// MUST stay above useCommonMediaController's HARD_STALL_MS (8000): both ladders
+// arm off the same soft-stall boundary, and the jolt is far more disruptive than
+// the controller's nudge (it mints a fresh Plex transcode session). When this was
+// 4500 the jolt preempted the nudge on every stall and the cheap rung never ran
+// once in production. `stallJolt.test.js` pins the ordering.
+export const STALL_JOLT_GRACE_MS = 9500;
 // Spacing between escalating rungs while still stuck. Generous so a jolt that IS
 // recovering (fresh transcode warming up) isn't cut short by the next rung.
 export const STALL_JOLT_STEP_MS = 6000;

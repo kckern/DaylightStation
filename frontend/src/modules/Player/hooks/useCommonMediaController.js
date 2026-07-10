@@ -31,7 +31,7 @@ function mcLog() {
 // param, but no producer ever passed one, so production always ran these values.
 // The configurability was deleted (audit 2026-07-09 §4.4); the constants remain.
 const SOFT_STALL_MS = 1200;   // no playhead progress for this long → soft stall
-const HARD_STALL_MS = 8000;   // stalled for this long → attempt recovery
+export const HARD_STALL_MS = 8000;   // stalled for this long → attempt recovery (the nudge)
 const STALL_CHECK_INTERVAL_MS = Math.min(500, SOFT_STALL_MS / 3);
 const SOFT_REINIT_SEEKBACK_SECONDS = 2;
 
