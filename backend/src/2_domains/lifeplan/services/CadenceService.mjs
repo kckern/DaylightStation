@@ -24,24 +24,43 @@ const DEFAULT_EPOCH = '2024-12-30';
  */
 export class CadenceService {
   #timezone;
+  #formatter;
+  #invalidTimezone = false;
 
   /**
    * @param {Object} [options]
    * @param {string} [options.timezone] - IANA timezone (e.g. 'America/Los_Angeles'). Defaults to UTC.
+   *   An unrecognized timezone falls back to UTC (fail-fast probe here rather than a
+   *   RangeError on first use; the composition root warns about invalid values).
    */
   constructor({ timezone } = {}) {
     this.#timezone = timezone || DEFAULT_TZ;
+    try {
+      this.#formatter = this.#buildFormatter(this.#timezone);
+    } catch {
+      this.#invalidTimezone = true;
+      this.#timezone = DEFAULT_TZ;
+      this.#formatter = this.#buildFormatter(DEFAULT_TZ);
+    }
+  }
+
+  #buildFormatter(timeZone) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
   }
 
   resolve(cadenceConfig, today) {
     const config = this.#normalizeConfig(cadenceConfig);
-    const { serial, year } = this.#daySerial(this.#toDate(today));
+    const { serial, year } = this.#inputDay(today);
     const result = {};
 
     for (const level of LEVELS) {
       const cfg = config[level];
-      const periodIndex = Math.floor((serial - cfg.epochSerial) / cfg.duration_days);
-      const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
+      const { periodIndex, startSerial } = this.#periodPosition(cfg, serial);
       result[level] = {
         periodIndex,
         periodId: this.#formatPeriodId(level, periodIndex, year),
@@ -68,12 +87,11 @@ export class CadenceService {
     if (!level || !config[level]) return false;
 
     const cfg = config[level];
-    const { serial: todaySerial } = this.#daySerial(this.#toDate(today));
-    const periodIndex = Math.floor((todaySerial - cfg.epochSerial) / cfg.duration_days);
-    const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
+    const { serial: todaySerial } = this.#inputDay(today);
+    const { startSerial } = this.#periodPosition(cfg, todaySerial);
 
     if (lastCeremonyDate) {
-      const { serial: lastSerial } = this.#daySerial(this.#toDate(lastCeremonyDate));
+      const { serial: lastSerial } = this.#inputDay(lastCeremonyDate);
       // If ceremony already done this period, not due
       if (lastSerial >= startSerial) return false;
     }
@@ -98,12 +116,16 @@ export class CadenceService {
     if (!level || !config[level]) return null;
 
     const cfg = config[level];
-    const { serial: todaySerial } = this.#daySerial(this.#toDate(today));
-    const periodIndex = Math.floor((todaySerial - cfg.epochSerial) / cfg.duration_days);
-    const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
+    const { serial: todaySerial } = this.#inputDay(today);
+    const { startSerial } = this.#periodPosition(cfg, todaySerial);
 
+    // Returned Dates are UTC instants REPRESENTING the local calendar day
+    // (serial * MS_PER_DAY = UTC midnight of that date), same convention as
+    // resolve().startDate. In a non-UTC zone this is NOT the local day's
+    // start instant — callers must treat it as a day marker, not a
+    // schedulable point in time.
     if (position === 'start') {
-      // Next period start (UTC instant of that local day's start)
+      // First day of the next period
       return new Date((startSerial + cfg.duration_days) * MS_PER_DAY);
     }
 
@@ -117,21 +139,34 @@ export class CadenceService {
     return null;
   }
 
-  #toDate(value) {
-    return typeof value === 'string' ? new Date(value) : value;
+  // today/lastCeremonyDate inputs → integer day serial + local year.
+  // Date-only strings ('YYYY-MM-DD') are calendar dates, not instants —
+  // parsing them as instants (UTC midnight) would misfile them onto the
+  // previous local day in any timezone west of UTC. Instants (Date objects
+  // or datetime strings) are projected into the service timezone.
+  #inputDay(value) {
+    if (typeof value === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [y, m, d] = value.split('-').map(Number);
+        return { serial: Date.UTC(y, m - 1, d) / MS_PER_DAY, year: y };
+      }
+      return this.#daySerial(new Date(value));
+    }
+    return this.#daySerial(value);
   }
 
   // (Y, M, D) of the instant in the service timezone → integer day serial + local year
   #daySerial(date) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: this.#timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(date);
+    const parts = this.#formatter.formatToParts(date);
     const get = (type) => Number(parts.find((p) => p.type === type).value);
     const year = get('year');
     return { serial: Date.UTC(year, get('month') - 1, get('day')) / MS_PER_DAY, year };
+  }
+
+  // Position of a day serial on a level's period grid
+  #periodPosition(cfg, serial) {
+    const periodIndex = Math.floor((serial - cfg.epochSerial) / cfg.duration_days);
+    return { periodIndex, startSerial: cfg.epochSerial + periodIndex * cfg.duration_days };
   }
 
   // Epochs are calendar dates, not instants — parse as plain Y/M/D.

@@ -59,6 +59,28 @@ describe('CadenceService local-day semantics', () => {
     expect(svc.isCeremonyDue('end_of_cycle', {}, lateNight, null)).toBe(true);
   });
 
+  it('date-only strings resolve as local calendar dates, not UTC instants', () => {
+    const svc = new CadenceService({ timezone: TZ });
+    // If '2026-07-06' were parsed as an instant it would be UTC midnight = 5pm PT Jul 5
+    const noonPT = new Date('2026-07-06T19:00:00Z');
+    expect(svc.resolve({}, '2026-07-06').unit.periodId).toBe(svc.resolve({}, noonPT).unit.periodId);
+    // 2026-07-06 is a Monday cycle start
+    expect(svc.isCeremonyDue('start_of_cycle', {}, '2026-07-06', null)).toBe(true);
+  });
+
+  it('date-only lastCeremonyDate dedupes within the same local day', () => {
+    const svc = new CadenceService({ timezone: TZ });
+    const noonPT = new Date('2026-07-06T19:00:00Z');
+    expect(svc.isCeremonyDue('start_of_unit', {}, noonPT, '2026-07-06')).toBe(false);
+  });
+
+  it('an invalid timezone falls back to UTC instead of throwing', () => {
+    const svc = new CadenceService({ timezone: 'America/Nowhere' });
+    const t = new Date('2026-07-06T12:00:00Z');
+    expect(() => svc.resolve({}, t)).not.toThrow();
+    expect(svc.resolve({}, t).unit.periodId).toBe(new CadenceService().resolve({}, t).unit.periodId);
+  });
+
   it('accepts a custom epoch as string or Date (YAML parses bare dates to Date objects)', () => {
     const svc = new CadenceService({ timezone: TZ });
     // Tuesday epoch shifts cycle starts to Tuesdays

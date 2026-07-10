@@ -100,6 +100,33 @@ describe('CeremonyToolFactory', () => {
     expect(result.records).toHaveLength(0);
   });
 
+  it('check_ceremony_status calls isCeremonyDue with a timing string and full cadence args', async () => {
+    const calls = [];
+    const spyFactory = new CeremonyToolFactory({
+      ceremonyRecordStore: { hasRecord: () => false },
+      cadenceService: {
+        resolve: () => ({ unit: { periodId: '2026-U1' }, cycle: { periodId: '2026-C1' } }),
+        isCeremonyDue: (...args) => { calls.push(args); return args[0] === 'start_of_unit'; },
+      },
+      lifePlanStore: {
+        load: () => ({
+          ceremonies: { unit_intention: { enabled: true }, cycle_retro: { enabled: true } },
+          cadence: { unit: { alias: 'day' } },
+        }),
+      },
+    });
+    const tool = spyFactory.createTools().find(t => t.name === 'check_ceremony_status');
+    const result = await tool.execute({ username: 'test-user' });
+
+    const [timing, cadenceConfig, today, last] = calls[0];
+    expect(timing).toBe('start_of_unit'); // timing string, not ceremony type
+    expect(cadenceConfig).toEqual({ unit: { alias: 'day' } });
+    expect(today).toBeInstanceOf(Date);
+    expect(last).toBeNull();
+    expect(result.ceremonies.find(c => c.type === 'unit_intention').isDue).toBe(true);
+    expect(result.ceremonies.find(c => c.type === 'cycle_retro').isDue).toBe(false);
+  });
+
   it('get_ceremony_content returns error on service failure', async () => {
     const failFactory = new CeremonyToolFactory({
       ceremonyService: {
