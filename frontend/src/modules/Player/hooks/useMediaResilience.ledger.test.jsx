@@ -3,6 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useMediaResilience } from './useMediaResilience.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
+import { STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 
 // ---------------------------------------------------------------------------
 // useMediaResilience × recoveryLedger — the hook's recovery accounting now
@@ -356,5 +357,62 @@ describe('useMediaResilience × ledger — phantom progress must not clear the l
     }
     expect(args.onReload).toHaveBeenCalledTimes(5);
     expect(args.onExhausted).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (g) EOF is not a stall (2026-07-10 soak defect #3)
+//
+// plex:674553 reached EOF without firing `ended`. joltIntentRef captured
+// currentTime == duration, so every jolt re-seeked to the end and re-stalled.
+// ---------------------------------------------------------------------------
+
+describe('useMediaResilience — end-of-content is never jolted', () => {
+  // A media element at a given position. Uses makeFakeEl (not a bare object)
+  // because usePlaybackHealth attaches media-event listeners to whatever
+  // getMediaEl returns — a plain object without addEventListener throws inside
+  // its effect. The jolt path itself reads el.currentTime / el.duration /
+  // el.ended, all of which makeFakeEl carries.
+  const elAt = ({ currentTime, duration, ended = false }) =>
+    makeFakeEl({ currentTime, duration, ended, paused: false, seeking: false });
+
+  const renderStalledAt = (el) => {
+    const initial = baseArgs({ waitKey: 'wk-1', externalStalled: false, getMediaEl: () => el });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+    act(() => { hook.rerender({ ...initial, seconds: 5 }); });
+    act(() => { hook.rerender({ ...initial, seconds: 5, waitKey: 'wk-2', externalStalled: true }); });
+    return initial;
+  };
+
+  it('does NOT fire a jolt when frozen at duration', () => {
+    installLedger({ cooldownMs: 0 });
+    const args = renderStalledAt(elAt({ currentTime: 677.418, duration: 677.418 }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS + STALL_JOLT_STEP_MS * 3);
+    expect(args.onReload).not.toHaveBeenCalled();
+    expect(ledger.snapshot(args.playbackSessionKey)?.count ?? 0).toBe(0);
+  });
+
+  it('does NOT fire a jolt when the element reports ended', () => {
+    installLedger({ cooldownMs: 0 });
+    const args = renderStalledAt(elAt({ currentTime: 12, duration: 677.418, ended: true }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS + STALL_JOLT_STEP_MS);
+    expect(args.onReload).not.toHaveBeenCalled();
+  });
+
+  it('DOES fire a jolt for a genuine mid-stream stall', () => {
+    installLedger({ cooldownMs: 0 });
+    // The real incident's stall position: 659.5s of 677.4s — 17.9s of content left.
+    const args = renderStalledAt(elAt({ currentTime: 659.5, duration: 677.418 }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS);
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'stall-jolt-refresh-url' })
+    );
   });
 });

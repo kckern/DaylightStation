@@ -12,6 +12,7 @@ import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
+import { isNearEnd } from '../lib/nearEnd.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -553,7 +554,18 @@ export function useMediaResilience({
   // seek past the Plex transcoder's head freezes with el.seeking stuck true). This
   // is the trigger for the jolt ladder below — the state that used to hang forever.
   const clockAdvancing = playbackHealth.isAdvancing === true;
-  const isStuck = hasEverPlayedRef.current && !isUserPaused && !clockAdvancing
+
+  // End-of-content is not a stall. When dash's trailing fragment is zero-byte
+  // the element parks at duration with `ended === false`; jolting it re-seeks
+  // to the end, "resumes" at the end, and re-stalls forever. `useCommonMedia-
+  // Controller` has disengaged stall detection near the end since the
+  // 2026-05-23 audit; the jolt ladder must do the same. The queue-advance for
+  // this state belongs to useEndOfContentWatchdog, not to recovery.
+  const atEndEl = getMediaEl?.();
+  const atEnd = playbackHealth.elementSignals?.ended === true
+    || (!!atEndEl && (atEndEl.ended === true || isNearEnd(atEndEl.currentTime, atEndEl.duration)));
+
+  const isStuck = hasEverPlayedRef.current && !isUserPaused && !clockAdvancing && !atEnd
     && (isStalled || isBuffering || effectiveSeeking);
 
   // Snapshot everything the ladder needs so its effect can depend only on `isStuck`
@@ -564,12 +576,14 @@ export function useMediaResilience({
     onReload, onExhausted, actions, statusRef, playbackSessionKey,
   };
 
-  // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to the
-  // captured intent (the frozen seek target), until the clock advances again or the
-  // ladder + attempt cap are exhausted. The shared recoveryLedger's session cap
-  // bounds total jolts even if `isStuck` flaps (a jolt that plays one frame then
-  // re-stalls), so no infinite loop; successful playback clears the ledger session
-  // via recordSuccess (see the progress effect above).
+  // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to
+  // the captured intent (the frozen seek target), until the clock advances again
+  // or the ladder + attempt cap are exhausted. The shared recoveryLedger's
+  // session cap bounds total jolts even if `isStuck` flaps (a jolt that plays one
+  // frame then re-stalls) — this holds only because recordSuccess requires
+  // strictly-forward playhead motion (2026-07-10); a bare progress event at a
+  // frozen position must never clear the session. End-of-content is excluded
+  // upstream by `atEnd`, so the ladder never chases a playhead parked at duration.
   useEffect(() => {
     if (disabled) return undefined;
     if (!isStuck) {
