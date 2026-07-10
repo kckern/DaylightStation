@@ -574,7 +574,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       <div className="col-menu">
         <Menu position="bottom-end">
           <Menu.Target>
-            <ActionIcon variant="subtle" size="sm">
+            <ActionIcon variant="subtle" size="sm" data-testid={`row-menu-${sectionIndex}-${item.index}`}>
               <IconDotsVertical size={14} />
             </ActionIcon>
           </Menu.Target>
@@ -591,7 +591,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               </Menu.Item>
             )}
             <Menu.Divider />
-            <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
+            <Menu.Item color="red" data-testid={`row-delete-${sectionIndex}-${item.index}`} leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
               Delete
             </Menu.Item>
           </Menu.Dropdown>
