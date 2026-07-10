@@ -110,6 +110,26 @@ describe('useEndOfContentWatchdog', () => {
     expect(el._listeners.seeked?.length ?? 0).toBe(0);
   });
 
+  it('resolves the media element via getMediaEl when no mediaRef is given', () => {
+    // dash-video hides the real <video> in a shadow root, so VideoPlayer passes
+    // getMediaEl() instead of a ref. A zero-byte trailing DASH fragment parks the
+    // element at duration with paused===false (see Task 4). The watchdog must still
+    // resolve the element through getMediaEl and advance once the clock is frozen.
+    const onAdvance = vi.fn();
+    const el = document.createElement('video');
+    Object.defineProperty(el, 'duration', { value: 100, configurable: true });
+    Object.defineProperty(el, 'currentTime', { value: 100, writable: true, configurable: true });
+    Object.defineProperty(el, 'paused', { value: false, configurable: true });
+
+    renderHook(() => useEndOfContentWatchdog({
+      getMediaEl: () => el, sourceKey: 'plex:674553', onAdvance, idleMs: 3000
+    }));
+
+    act(() => { el.dispatchEvent(new Event('timeupdate')); });
+    act(() => { vi.advanceTimersByTime(3001); });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
   it('always reads the latest onAdvance callback', () => {
     const el = makeFakeEl({ currentTime: 441.76, duration: 441.76, paused: true });
     // Use a stable mediaRef across rerenders (mirrors a real useRef).
