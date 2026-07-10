@@ -3155,12 +3155,50 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 // Empty row for adding new items at the bottom
 function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const log = useMemo(() => adminLog('EmptyItemRow'), []);
-  const { contentInfoMap } = useListsContext();
+  const { contentInfoMap, setContentInfo } = useListsContext();
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
+  const [pendingApp, setPendingApp] = useState(null); // {appId, param, options}
   const addedRef = useRef(false); // prevent double-add from rapid state changes
   const labelInputRef = useRef(null);
+
+  // Freeform staged text auto-resolves in the background; the resolved id
+  // lands via setInput, where the gated effect below auto-adds it (intended
+  // chain: freeform stays staged, a real content id persists).
+  const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
+    value: input,
+    onChange: (id) => setInput(id),
+    setContentInfo,
+    fetchMetadata: fetchContentMetadata,
+  });
+
+  // Combobox change handler — receives (id, item?) from ContentCombobox.
+  const handleComboboxChange = (value, selectedItem) => {
+    // App that needs a parameter → show the param picker instead of staging.
+    if (selectedItem?.isApp && selectedItem.hasParam) {
+      log.info('app_param.prompt', { nextIndex, appId: selectedItem.appId, paramName: selectedItem.param?.name });
+      import('../../../lib/appRegistry.js')
+        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
+        .then((options) => {
+          setPendingApp({
+            appId: selectedItem.appId,
+            param: selectedItem.param,
+            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
+          });
+        });
+      return;
+    }
+    // Seed the cache from picks so the staged card (and derived label on add)
+    // uses the resolved title immediately.
+    if (value && selectedItem?.title) {
+      setContentInfo(value, contentInfoFromPick(value, selectedItem));
+    }
+    if (value && !selectedItem && !isContentIdLike(value)) {
+      maybeResolve(value, 'empty-row-commit');
+    }
+    setInput(value);
+  };
 
   const doAdd = useCallback((currentInput, currentLabel, currentAction) => {
     if (addedRef.current) return;
@@ -3232,7 +3270,28 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
       </div>
       <div className="col-preview"></div>
       <div className="col-input">
-        <ContentSearchCombobox value={input} onChange={setInput} />
+        {pendingApp ? (
+          <AppParamPicker
+            appId={pendingApp.appId}
+            param={pendingApp.param}
+            options={pendingApp.options}
+            onCommit={(fullId) => { setPendingApp(null); setInput(fullId); }}
+            onCancel={() => setPendingApp(null)}
+          />
+        ) : (
+          <ContentCombobox
+            value={input}
+            onChange={handleComboboxChange}
+            appResults
+            renderValue={({ onStartEdit }) => (
+              <ContentValueCard
+                value={input}
+                contentInfoMap={contentInfoMap}
+                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+              />
+            )}
+          />
+        )}
       </div>
       {isWatchlist && (
         <div className="col-progress"></div>
