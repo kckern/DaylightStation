@@ -17,14 +17,6 @@
  */
 
 let count = 0;
-const listeners = new Set();
-
-function notify() {
-  const active = isPlayerKeyboardActive();
-  for (const listener of listeners) {
-    try { listener(active); } catch { /* a bad subscriber must not break others */ }
-  }
-}
 
 /**
  * Claim keyboard ownership for a fullscreen video player.
@@ -32,13 +24,11 @@ function notify() {
  */
 export function acquirePlayerKeyboard() {
   count += 1;
-  if (count === 1) notify();
   let released = false;
   return function release() {
     if (released) return;
     released = true;
     count = Math.max(0, count - 1);
-    if (count === 0) notify();
   };
 }
 
@@ -47,18 +37,7 @@ export function isPlayerKeyboardActive() {
   return count > 0;
 }
 
-/**
- * Subscribe to ownership changes. Fires only on 0<->1 transitions.
- * @param {(active: boolean) => void} listener
- * @returns {() => void} unsubscribe
- */
-export function subscribePlayerKeyboard(listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
 /** Test-only reset. */
 export function __resetPlayerKeyboardOwnership() {
   count = 0;
-  listeners.clear();
 }

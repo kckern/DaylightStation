@@ -26,6 +26,11 @@ export class LifePlan {
     this.cycles = (data.cycles || []).map(c => new Cycle(c));
     this.ceremony_records = (data.ceremony_records || []).map(r => new CeremonyRecord(r));
     this.feedback = (data.feedback || []).map(f => new FeedbackEntry(f));
+    // Plain config blocks (no entity wrapper): cadence level durations and
+    // per-ceremony enablement. Must round-trip through toJSON or the
+    // PATCH /cadence and ceremony scheduling paths lose their config on save.
+    this.cadence = data.cadence || {};
+    this.ceremonies = data.ceremonies || {};
   }
 
   getGoalsByState(state) {
@@ -66,6 +71,8 @@ export class LifePlan {
       cycles: this.cycles.map(c => c.toJSON()),
       ceremony_records: this.ceremony_records.map(r => r.toJSON()),
       feedback: this.feedback.map(f => f.toJSON()),
+      cadence: this.cadence,
+      ceremonies: this.ceremonies,
     };
   }
 }

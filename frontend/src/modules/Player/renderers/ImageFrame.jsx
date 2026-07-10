@@ -527,10 +527,6 @@ export function ImageFrame({
 
       activeLayerRef.current = incomingKey;
 
-      if (typeof resilienceBridgeRef.current?.onStartupSignal === 'function') {
-        resilienceBridgeRef.current.onStartupSignal();
-      }
-
       // Show metadata after dissolve settles, fade out before advance
       if (slideshow.showMetadata) {
         const metaDelay = isFirstImage ? 500 : DISSOLVE_MS + 200;
@@ -655,7 +651,6 @@ ImageFrame.propTypes = {
   resilienceBridge: PropTypes.shape({
     onPlaybackMetrics: PropTypes.func,
     onRegisterMediaAccess: PropTypes.func,
-    onStartupSignal: PropTypes.func,
   }),
   ignoreKeys: PropTypes.bool,
   nextMedia: PropTypes.object,

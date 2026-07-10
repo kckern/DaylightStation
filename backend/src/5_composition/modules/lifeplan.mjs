@@ -14,7 +14,7 @@ import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
-import { CeremonyScheduler } from '#system/scheduling/CeremonyScheduler.mjs';
+import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
 import createLifeRouter from '#api/v1/routers/life.mjs';
 
 /**
@@ -24,12 +24,14 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
  * @param {string} deps.dataPath - Base data path for YAML stores
  * @param {Object} deps.aggregator - LifelogAggregator instance
  * @param {Object} [deps.notificationService] - Notification service for ceremony reminders
+ * @param {Object} [deps.userService] - UserService for username validation/profiles
+ * @param {string} [deps.defaultUsername] - Username used when requests omit one
  * @param {Object} [deps.clock] - Injectable clock
  * @param {Object} [deps.logger] - Logger instance
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
-  const { dataPath, aggregator, notificationService, clock, logger } = deps;
+  const { dataPath, aggregator, notificationService, userService, defaultUsername, clock, logger } = deps;
 
   // Persistence stores (constructed here at the composition root; the
   // container receives instances per Decision D1)
@@ -70,12 +72,12 @@ export function bootstrapLifeplan(deps) {
 
   // Ceremony scheduler
   const ceremonyScheduler = new CeremonyScheduler({
-    ceremonyService,
-    notificationService: notificationService || { send: () => {} },
+    notificationService: notificationService || { send: () => [] },
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
     clock,
+    logger,
   });
 
   // Router config (extends container's base config)
@@ -87,6 +89,8 @@ export function bootstrapLifeplan(deps) {
     alignmentService,
     driftService,
     aggregator,
+    userService,
+    defaultUsername,
   };
 
   const router = createLifeRouter(routerConfig);
