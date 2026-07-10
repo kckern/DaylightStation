@@ -68,7 +68,7 @@ export class ValueDriftCalculator {
       return { correlation: null, status: 'insufficient_data', statedOrder: [], observedOrder: [], allocation };
     }
 
-    const statedOrder = values
+    const statedOrder = [...values]
       .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
       .map(v => v.id);
 

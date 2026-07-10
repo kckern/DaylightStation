@@ -135,6 +135,22 @@ describe('Value Entity', () => {
     });
   });
 
+  describe('calculateDrift input immutability', () => {
+    it('does not mutate the order of the values array passed in', () => {
+      const calc = new ValueDriftCalculator();
+      // Deliberately out of rank order — sorting in place would reorder this array
+      const values = [
+        new Value({ id: 'family', name: 'Family', rank: 3 }),
+        new Value({ id: 'health', name: 'Health', rank: 1 }),
+        new Value({ id: 'craft', name: 'Craft', rank: 2 }),
+      ];
+      const originalIds = values.map(v => v.id);
+      const allocation = { health: 0.5, family: 0.3, craft: 0.2 };
+      calc.calculateDrift(allocation, values);
+      expect(values.map(v => v.id)).toEqual(originalIds);
+    });
+  });
+
   describe('toJSON / fromJSON', () => {
     it('round-trips correctly', () => {
       const data = {
