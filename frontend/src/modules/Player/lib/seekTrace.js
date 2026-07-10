@@ -5,8 +5,8 @@
  * (intent === duration === 441.759999) as the trigger for the screens-player
  * stuck-at-duration failure mode. The seek was tagged `source: "programmatic"`,
  * which is the fallback when no caller set `mediaEl.__seekSource`. None of
- * the known seek-emitting paths (start-time, BufferResilienceManager,
- * position watchdog, recovery strategies) emitted their preceding telemetry
+ * the known seek-emitting paths (start-time, position watchdog, recovery
+ * strategies) emitted their preceding telemetry
  * in the audit window, so the actual trigger could not be pinned down from
  * existing logs.
  *
