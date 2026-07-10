@@ -91,6 +91,30 @@ public class A2dpConnector {
     /** Force an immediate reconnect attempt (pbctl POST /speaker). */
     public void connectNow() { handler.post(this::ensureConnected); }
 
+    /** Force an A2DP disconnect (pbctl bootstrap). Reflection: disconnect() is @hide but greylisted. */
+    public void disconnectNow() { handler.post(this::forceDisconnect); }
+
+    /** Force-disconnect the target speaker so the route falls back to the built-in speaker. */
+    private void forceDisconnect() {
+        if (adapter == null || !adapter.isEnabled()) { setError("bluetooth off"); return; }
+        if (proxy == null) { adapter.getProfileProxy(ctx, profileListener, BluetoothProfile.A2DP); return; }
+        final String mac = cfg.speakerMac();
+        if (mac.isEmpty()) return;
+
+        BluetoothDevice target;
+        try { target = adapter.getRemoteDevice(mac); }
+        catch (IllegalArgumentException e) { setError("bad speakerMac: " + mac); return; }
+
+        if (!isConnected(target)) return; // already disconnected — nothing to do
+        try {
+            Method disconnect = BluetoothA2dp.class.getMethod("disconnect", BluetoothDevice.class);
+            Object r = disconnect.invoke(proxy, target);
+            Diag.log(TAG, "disconnect(" + mac + ") -> " + r);
+        } catch (Throwable t) {
+            setError("disconnect() failed: " + t.getClass().getSimpleName() + " " + t.getMessage());
+        }
+    }
+
     /** True iff the configured speaker MAC is currently A2DP-connected. */
     public boolean isTargetConnected() {
         String mac = cfg.speakerMac();
