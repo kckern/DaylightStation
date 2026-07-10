@@ -21,6 +21,11 @@ export default function useLongPress({ onLongPress, onTap, holdMs = 2000 }) {
   }, []);
 
   const onPointerDown = useCallback((event) => {
+    // pointerdown implicitly captures the pointer to its target on touch
+    // devices, so a finger sliding off never delivers pointerleave — the
+    // abort path below would never run and a slide-off hold would still
+    // fire onLongPress. Release the capture so real boundary events flow.
+    try { event.target?.releasePointerCapture?.(event.pointerId); } catch (_) { /* non-pointer or already released */ }
     if (timerRef.current) clearTimeout(timerRef.current);
     setHolding(true);
     timerRef.current = setTimeout(() => {

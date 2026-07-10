@@ -72,4 +72,34 @@ describe('useLongPress', () => {
     act(() => { vi.advanceTimersByTime(5000); });
     expect(onLongPress).not.toHaveBeenCalled();
   });
+
+  it('releases implicit pointer capture on pointer down so touch slide-off can fire pointerleave', () => {
+    const { result } = setup();
+    const releasePointerCapture = vi.fn();
+    const event = { target: { releasePointerCapture }, pointerId: 7 };
+    act(() => { result.current.handlers.onPointerDown(event); });
+    expect(releasePointerCapture).toHaveBeenCalledTimes(1);
+    expect(releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  it('does not break the hold flow when target is missing or releasePointerCapture throws', () => {
+    const { result } = setup();
+    // No target at all (e.g. a synthetic/mock event).
+    act(() => { result.current.handlers.onPointerDown({}); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+
+    onLongPress.mockClear();
+
+    // target present but releasePointerCapture throws.
+    const throwingEvent = {
+      target: {
+        releasePointerCapture: () => { throw new Error('already released'); }
+      },
+      pointerId: 1
+    };
+    act(() => { result.current.handlers.onPointerDown(throwingEvent); });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
 });
