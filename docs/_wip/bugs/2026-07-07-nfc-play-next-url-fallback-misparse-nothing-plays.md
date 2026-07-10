@@ -2,7 +2,7 @@
 
 **Reported:** 2026-07-07 (user asked "did the last NFC tag scan work?")
 **Severity:** High — registered NFC book tags dispatch successfully end-to-end on the backend, report `ok: true`, and then play **nothing**. The screen is left with a Player overlay stuck on "Loading…" indefinitely.
-**Status:** Fix implemented on `main` (see `docs/_wip/plans/2026-07-07-nfc-play-next-url-fallback-fix.md`) — all 6 tasks done TDD, isolated suites green, frontend builds. Pending deploy + live verification. Q1 (WS ack timeout despite fresh subscribers) still open.
+**Status:** Fully landed on `main` as of 2026-07-10 (see `docs/_wip/plans/2026-07-07-nfc-play-next-url-fallback-fix.md`) — all 6 tasks done TDD, isolated suites green, frontend builds. The final refinement (watchdog no longer arms for menu/list opens, which would otherwise false-timeout since a browse never emits `playback.log`) was cherry-picked from the now-deleted `fix/nfc-play-next-url-fallback` branch. **Still pending: deploy + live verification on hardware.** Q1 (WS ack timeout despite fresh subscribers) still open.
 **Related:** `2026-04-27-nfc-multi-scan-and-tv-off-mid-track.md` — the "scan a book 2-3 times before it takes" symptom is plausibly this bug: the first (cold/URL-delivered) scan silently plays nothing; a later re-scan that lands on the WS-delivery path works.
 
 ---
