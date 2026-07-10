@@ -2705,6 +2705,7 @@ export async function createAgentsServices(config) {
       goalStateService: config.lifeplanServices.container.getGoalStateService(),
       beliefEvaluator: config.lifeplanServices.container.getBeliefEvaluator(),
       feedbackService: config.lifeplanServices.services.feedbackService,
+      planAuthoringService: config.lifeplanServices.services.planAuthoringService,
       aggregator: config.lifeplanServices.aggregator,
       metricsStore: config.lifeplanServices.container.getMetricsStore(),
       driftService: config.lifeplanServices.services.driftService,
