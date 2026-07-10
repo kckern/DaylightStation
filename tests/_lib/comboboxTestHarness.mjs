@@ -456,7 +456,11 @@ export const ComboboxActions = {
       }
 
       return false;
-    }, { timeout });
+      // NOTE: waitForFunction(fn, ARG, options) — passing { timeout } as the
+      // second argument made it the page-function arg and left the wait
+      // UNBOUNDED (runs until the global test timeout when a stream never
+      // completes on a congested backend).
+    }, undefined, { timeout });
 
     // Small buffer for React state to settle
     await page.waitForTimeout(100);
@@ -476,7 +480,7 @@ export const ComboboxActions = {
       const hasPending = dd.querySelector('.pending-sources, [data-pending-sources]');
 
       return !isSearching && !hasPending;
-    }, { timeout });
+    }, undefined, { timeout }); // third arg — see waitForStreamComplete note
 
     await page.waitForTimeout(100);
   },
