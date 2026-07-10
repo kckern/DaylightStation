@@ -3,16 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Text, Group, Paper, Loader, Center, Alert, Badge, UnstyledButton } from '@mantine/core';
 import { IconFile, IconLock, IconAlertCircle, IconFolder } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-
-/**
- * Format bytes into a human-readable string.
- */
-function formatSize(bytes) {
-  if (bytes == null) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatSize } from '../utils/formatters.js';
 
 /**
  * Format an ISO date string into a short readable form.
