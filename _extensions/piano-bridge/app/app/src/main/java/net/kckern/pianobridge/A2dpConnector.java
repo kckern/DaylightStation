@@ -50,6 +50,7 @@ public class A2dpConnector {
     private volatile String lastError = null;
     private volatile int reconnects = 0;
     private volatile long lastConnectAttempt = 0L;
+    private volatile Runnable onStateChanged;
 
     public A2dpConnector(Context ctx, DeviceConfig cfg) {
         this.ctx = ctx.getApplicationContext();
@@ -86,6 +87,21 @@ public class A2dpConnector {
     /** Force an immediate reconnect attempt (pbctl POST /speaker). */
     public void connectNow() { handler.post(this::ensureConnected); }
 
+    /** True iff the configured speaker MAC is currently A2DP-connected. */
+    public boolean isTargetConnected() {
+        String mac = cfg.speakerMac();
+        if (adapter == null || mac.isEmpty()) return false;
+        try { return isConnected(adapter.getRemoteDevice(mac)); }
+        catch (Exception e) { return false; }
+    }
+
+    /** Optional hook fired (off the main thread) whenever A2DP state may have changed. */
+    public void setOnStateChanged(Runnable r) { this.onStateChanged = r; }
+    private void fireStateChanged() {
+        Runnable r = onStateChanged;
+        if (r != null) try { r.run(); } catch (Throwable t) { Log.w(TAG, "onStateChanged threw", t); }
+    }
+
     private final BluetoothProfile.ServiceListener profileListener = new BluetoothProfile.ServiceListener() {
         @Override public void onServiceConnected(int profile, BluetoothProfile p) {
             if (profile != BluetoothProfile.A2DP) return;
@@ -107,9 +123,11 @@ public class A2dpConnector {
                 reconnects++;
                 Diag.log(TAG, "speaker disconnected — reconnecting (#" + reconnects + ")");
                 handler.postDelayed(A2dpConnector.this::ensureConnected, RECONNECT_DELAY_MS);
+                fireStateChanged();
             } else if (state == BluetoothProfile.STATE_CONNECTED) {
                 Diag.log(TAG, "speaker connected");
                 lastError = null;
+                fireStateChanged();
             }
         }
     };
@@ -119,6 +137,7 @@ public class A2dpConnector {
         handler.postDelayed(() -> {
             if (!running) return;
             ensureConnected();
+            fireStateChanged(); // gives the reconciler its <=20s convergence tick
             scheduleSweep();
         }, SWEEP_MS);
     }
@@ -168,13 +187,11 @@ public class A2dpConnector {
         JSONObject o = new JSONObject();
         try {
             String mac = cfg.speakerMac();
-            boolean connected = false;
+            boolean connected = isTargetConnected(); // single source of truth
             String bond = "unknown";
             if (adapter != null && !mac.isEmpty()) {
                 try {
-                    BluetoothDevice d = adapter.getRemoteDevice(mac);
-                    connected = isConnected(d);
-                    bond = bondName(d.getBondState());
+                    bond = bondName(adapter.getRemoteDevice(mac).getBondState());
                 } catch (Exception ignored) { }
             }
             o.put("targetMac", mac);
