@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
-import { decideStallVerdict } from '../lib/stallVerdict.js';
+import { decideStallVerdict, readVideoFrames } from '../lib/stallVerdict.js';
 import {
   shouldTraceSeekAtDuration,
   captureSeekStack,
@@ -133,6 +133,8 @@ export function useCommonMediaController({
     lastProgressTs: 0,
     lastAdvancePos: null,
     lastObservedCurrentTime: null,  // tracks currentTime at last markProgress for stall verdict (bug 2026-05-23 §1)
+    lastObservedVideoFrames: null,  // decoder frame counter at last progress — starvation-immune liveness (2026-07-09)
+    stallSuspicion: null,           // armed on first stalled verdict; declared only if a re-sample confirms (2026-07-09)
     softTimer: null,
     hardTimer: null,
     isStalled: false,
@@ -310,7 +312,30 @@ export function useCommonMediaController({
     const s = stallStateRef.current;
     if (s.softTimer) { clearTimeout(s.softTimer); s.softTimer = null; }
     if (s.hardTimer) { clearTimeout(s.hardTimer); s.hardTimer = null; }
+    // A pending stall suspicion is only meaningful between two consecutive
+    // soft checks; any timer teardown (pause, unmount, reset) invalidates it.
+    s.stallSuspicion = null;
   }, []);
+
+  // A suspected stall turned out to be a starved main-thread clock, not frozen
+  // media. Emit countable telemetry (this is the prod metric for how often the
+  // page is starving) and stand down. See 2026-07-09 diagnosis.
+  const dismissStallSuspicion = useCallback((source) => {
+    const s = stallStateRef.current;
+    const suspicion = s.stallSuspicion;
+    if (!suspicion) return;
+    s.stallSuspicion = null;
+    const mediaEl = getMediaEl();
+    getLogger().debug('playback.stall_false_positive_averted', {
+      mediaKey: assetId,
+      source,
+      suspectedGapMs: suspicion.gapMs,
+      confirmDelayMs: Date.now() - suspicion.ts,
+      playheadJumpMs: mediaEl && Number.isFinite(suspicion.currentTime)
+        ? Math.round((mediaEl.currentTime - suspicion.currentTime) * 1000)
+        : null
+    });
+  }, [assetId, getMediaEl]);
 
   // Recovery strategies
   // Nudge: Tiny time adjustment to trigger buffer reload
@@ -514,20 +539,25 @@ export function useCommonMediaController({
         return;
       }
       
+      const videoFrames = readVideoFrames(mediaEl);
       const verdict = decideStallVerdict({
         now: Date.now(),
         lastProgressTs: s.lastProgressTs,
         softMs: SOFT_STALL_MS,
         currentTime: mediaEl.currentTime,
-        lastObservedCurrentTime: s.lastObservedCurrentTime
+        lastObservedCurrentTime: s.lastObservedCurrentTime,
+        videoFrames,
+        lastObservedVideoFrames: s.lastObservedVideoFrames
       });
 
       if (verdict.verdict === 'progressing') {
         // Bug 2026-05-23 §1: timeupdate was starved but currentTime advanced.
         // Fast-forward lastProgressTs so the next soft-timer cycle has a fresh
         // baseline; do NOT log playback.stalled.
+        dismissStallSuspicion('soft-check');
         s.lastProgressTs = Date.now();
         s.lastObservedCurrentTime = mediaEl.currentTime;
+        s.lastObservedVideoFrames = videoFrames;
         s.softTimer = null;
         if (DEBUG_MEDIA) console.log('[Stall] softTimer: progressing (currentTime advanced); fast-forward', { currentTime: mediaEl.currentTime });
         scheduleStallDetection();
@@ -535,6 +565,24 @@ export function useCommonMediaController({
       }
 
       if (verdict.verdict === 'stalled') {
+        // 2026-07-09 fix: at this moment we are RUNNING main-thread JS, but the
+        // element's official position is refreshed by a separate main-thread
+        // task that may not have run yet after a starvation episode — every
+        // false stall that session snapped forward within 30ms. Arm a suspicion
+        // and re-sample one checkInterval later; only a still-frozen clock
+        // (and frame counter) declares.
+        if (!s.stallSuspicion) {
+          s.stallSuspicion = {
+            ts: Date.now(),
+            currentTime: mediaEl.currentTime,
+            gapMs: verdict.stallDurationMs
+          };
+          if (DEBUG_MEDIA) console.log('[Stall] suspected (soft); awaiting confirmation re-sample', { gapMs: verdict.stallDurationMs, currentTime: mediaEl.currentTime });
+          s.softTimer = null;
+          scheduleStallDetection();
+          return;
+        }
+        s.stallSuspicion = null;
         if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff: verdict.stallDurationMs, softMs: SOFT_STALL_MS, hardMs: HARD_STALL_MS, currentTime: mediaEl.currentTime, duration: mediaEl.duration });
         // Prod telemetry: stall detected
         const logger = getLogger();
@@ -662,7 +710,7 @@ export function useCommonMediaController({
         scheduleStallDetection();
       }
     }, STALL_CHECK_INTERVAL_MS);
-  }, [getMediaEl, clearTimers, publishStallSnapshot, nudgeRecovery, softReinitRecovery, recoveryScopeKey]);
+  }, [getMediaEl, clearTimers, dismissStallSuspicion, publishStallSnapshot, nudgeRecovery, softReinitRecovery, recoveryScopeKey]);
 
   const markProgress = useCallback(() => {
     const s = stallStateRef.current;
@@ -684,10 +732,13 @@ export function useCommonMediaController({
     }
 
     const wasStalled = s.isStalled;
+    // Genuine forward motion refutes any pending stall suspicion (2026-07-09).
+    dismissStallSuspicion('timeupdate');
     s.lastProgressTs = Date.now();
     if (Number.isFinite(pos)) {
       s.lastObservedCurrentTime = pos;
     }
+    s.lastObservedVideoFrames = readVideoFrames(mediaEl);
 
     if (wasStalled) {
       if (DEBUG_MEDIA) console.log('[Stall] Progress resumed; clearing stalled state', { currentTime: mediaEl?.currentTime, lastStrategy: s.lastStrategy });
@@ -712,7 +763,7 @@ export function useCommonMediaController({
       scheduleStallDetection();
     }
     // Continuous polling in scheduleStallDetection handles rescheduling
-  }, [clearTimers, scheduleStallDetection, getMediaEl, publishStallSnapshot, recoveryScopeKey]);
+  }, [clearTimers, dismissStallSuspicion, scheduleStallDetection, getMediaEl, publishStallSnapshot, recoveryScopeKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
@@ -1016,6 +1067,8 @@ export function useCommonMediaController({
       // timeupdate (not a seek-to-start) establishes progress tracking.
       stallStateRef.current.lastAdvancePos = null;
       stallStateRef.current.lastObservedCurrentTime = null;  // bug 2026-05-23 §1: reset stall-verdict tracking for new asset
+      stallStateRef.current.lastObservedVideoFrames = null;  // frame counter is per-element; new asset = new baseline (2026-07-09)
+      stallStateRef.current.stallSuspicion = null;
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),

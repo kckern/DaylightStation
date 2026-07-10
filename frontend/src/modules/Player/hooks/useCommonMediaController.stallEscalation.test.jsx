@@ -15,6 +15,11 @@ vi.mock('../../../lib/api.mjs', () => ({
 // Stall-detection timing (mirrors the constants in useCommonMediaController.js).
 const SOFT_STALL_MS = 1200;
 const HARD_STALL_MS = 8000;
+// Soft-check cadence (mirrors STALL_CHECK_INTERVAL_MS). The 2026-07-09 two-phase
+// suspicion means a stall is DECLARED one check interval after the first stalled
+// verdict (arm → confirming re-sample), so stall-inducing advances below add one
+// extra interval.
+const STALL_CHECK_INTERVAL_MS = Math.min(500, SOFT_STALL_MS / 3);
 
 // Large cooldown so a prior recorded attempt reliably denies the nudge inside
 // a test-driven second episode (real cooldown is 4s with backoff).
@@ -107,7 +112,7 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     );
     expect(ctrlRef.current.getMediaEl()).toBe(video);
     act(() => { video._ct = 100.5; video.fire('timeupdate'); video.fire('playing'); });
-    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + STALL_CHECK_INTERVAL_MS + 300); });
     return { ctrlRef, apiRef, video };
   }
 
@@ -115,7 +120,7 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
   // episode), then into a fresh soft stall.
   function resumeThenRestall(video, { advanceTo }) {
     act(() => { video.paused = false; video._ct = advanceTo; video.fire('timeupdate'); });
-    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + STALL_CHECK_INTERVAL_MS + 300); });
   }
 
   const strategiesFired = () =>
@@ -189,7 +194,7 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
 
     // Episode 2 crosses the hard threshold inside the cooldown window:
     // the ledger denies, the nudge must NOT fire.
-    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + STALL_CHECK_INTERVAL_MS + 300); });
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
 
     expect(strategiesFired()).toEqual(['nudge']); // still just episode 1's
@@ -255,10 +260,83 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     // markProgress re-armed detection AND recordSuccess cleared the cooldown:
     // a second stall episode after the resume is detected fresh and fires a
     // second nudge, proving the per-episode gate restarts.
-    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + STALL_CHECK_INTERVAL_MS + 300); });
     expect(ctrlRef.current.readStallState().status).toBe('stalled');
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
     expect(strategiesFired()).toEqual(['nudge', 'nudge']);
     expect(nudgeRequests().length).toBe(2);
+  });
+
+  it('declares a stall only after a confirming re-sample (first stalled verdict arms a suspicion)', () => {
+    const ctrlRef = { current: null };
+    const apiRef = { current: null };
+    const video = makeFakeVideo({ currentTime: 100 });
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoverySessionKey={SESSION_KEY} />);
+    act(() => { video._ct = 100.5; video.fire('timeupdate'); video.fire('playing'); });
+
+    // 2026-07-09 fix: the first stalled verdict only arms a confirmation
+    // re-sample (one check interval later); a starved main-thread clock snaps
+    // forward by then, a real stall stays frozen. Nothing declared or logged yet.
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 300); });
+    expect(ctrlRef.current.readStallState().status).not.toBe('stalled');
+    expect(events.filter(([e]) => e === 'playback.stalled').length).toBe(0);
+    expect(nudgeRequests()).toEqual([]);
+
+    // The re-sample still sees a frozen clock → the stall is declared.
+    act(() => { vi.advanceTimersByTime(STALL_CHECK_INTERVAL_MS); });
+    expect(ctrlRef.current.readStallState().status).toBe('stalled');
+    expect(events.filter(([e]) => e === 'playback.stalled').length).toBe(1);
+
+    // Downstream is untouched: the hard threshold still fires one ledger-gated nudge.
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(strategiesFired()).toEqual(['nudge']);
+    expect(nudgeRequests().length).toBe(1);
+  });
+
+  it('averts the stall (debug telemetry, no warn) when the playhead jumps before confirmation', () => {
+    // Session fs 20260709060200: all 41 false stalls self-healed in <30ms —
+    // the clock was starved, not the media. The confirmation window must
+    // swallow these and leave a countable debug event behind.
+    const ctrlRef = { current: null };
+    const apiRef = { current: null };
+    const video = makeFakeVideo({ currentTime: 100 });
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoverySessionKey={SESSION_KEY} />);
+    act(() => { video._ct = 100.5; video.fire('timeupdate'); video.fire('playing'); });
+
+    // Freeze past softMs — suspicion armed, not yet declared.
+    act(() => { vi.advanceTimersByTime(SOFT_STALL_MS + 100); });
+    expect(ctrlRef.current.readStallState().status).not.toBe('stalled');
+
+    // Main thread unblocks: the clock snaps forward before the re-sample.
+    act(() => { video._ct = 104.2; video.fire('timeupdate'); });
+    act(() => { vi.advanceTimersByTime(STALL_CHECK_INTERVAL_MS * 3); });
+
+    expect(events.filter(([e]) => e === 'playback.stalled').length).toBe(0);
+    const averted = debugEvents.filter(([e]) => e === 'playback.stall_false_positive_averted');
+    expect(averted.length).toBe(1);
+    expect(averted[0][1].suspectedGapMs).toBeGreaterThanOrEqual(SOFT_STALL_MS);
+    expect(averted[0][1].playheadJumpMs).toBe(3700);
+    expect(ctrlRef.current.readStallState().status).not.toBe('stalled');
+    expect(nudgeRequests()).toEqual([]);
+  });
+
+  it('never suspects a stall while the decoder frame counter advances under a frozen clock', () => {
+    const ctrlRef = { current: null };
+    const apiRef = { current: null };
+    const video = makeFakeVideo({ currentTime: 100 });
+    // Decoder keeps producing frames even though the main-thread clock is starved.
+    let frames = 0;
+    video.getVideoPlaybackQuality = () => ({ totalVideoFrames: (frames += 24), droppedVideoFrames: 0 });
+    render(<Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoverySessionKey={SESSION_KEY} />);
+    act(() => { video._ct = 100.5; video.fire('timeupdate'); video.fire('playing'); });
+
+    // Clock frozen well past softMs (and the hard threshold) while frames advance.
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS + 4000); });
+
+    expect(ctrlRef.current.readStallState().status).not.toBe('stalled');
+    expect(events.filter(([e]) => e === 'playback.stalled').length).toBe(0);
+    // Frame evidence prevents even a suspicion, so no averted event either.
+    expect(debugEvents.filter(([e]) => e === 'playback.stall_false_positive_averted').length).toBe(0);
+    expect(nudgeRequests()).toEqual([]);
   });
 });
