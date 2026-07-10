@@ -147,6 +147,28 @@
       font-size: 2rem;
     }
   }
+
+  // Long-press hard-reload: a 🔄 overlay fades/scales in over the 2s hold so
+  // the hold is legible; releasing early removes it (class comes off).
+  .device-container.is-hold-reloading::after {
+    content: '🔄';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    font-size: 1.5rem;
+    pointer-events: none;
+    animation: hard-reload-hold 2s linear forwards;
+  }
+
+  @keyframes hard-reload-hold {
+    from { opacity: 0.15; transform: scale(0.6); }
+    to { opacity: 1; transform: scale(1); }
+  }
 }
 
 // RPM Device Card Styles - Uses shared partial for single source of truth
