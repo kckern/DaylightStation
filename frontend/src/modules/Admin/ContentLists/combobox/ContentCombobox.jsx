@@ -444,7 +444,7 @@ export function ContentCombobox({
             </Stack>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <Badge size="xs" variant="light" color="gray">{(source ?? '?').toUpperCase()}</Badge>
+            <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{(source ?? '?').toUpperCase()}</Badge>
             {container && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
             )}
