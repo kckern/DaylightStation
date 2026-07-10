@@ -136,6 +136,28 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.handleClose).toHaveBeenCalledWith('dismiss');
   });
 
+  it('ID-lookup tagged results show the ID badge; untagged results do not (audit B2)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: '1989',
+        results: [
+          { id: 'plex:1989', title: 'Some Movie', source: 'plex', matchReason: 'id-lookup' },
+          { id: 'plex:2', title: 'Text Match', source: 'plex' },
+        ],
+      },
+    });
+    renderCombobox();
+
+    const badges = screen.getAllByTestId('match-reason-id');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('ID');
+    expect(badges[0]).toHaveAttribute('title', 'Matched by content ID, not text');
+    // The tagged badge sits in the id-lookup row, not the text-match row.
+    expect(badges[0].closest('[data-value]')).toHaveAttribute('data-value', 'plex:1989');
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
