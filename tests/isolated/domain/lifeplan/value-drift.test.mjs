@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Value } from '#domains/lifeplan/entities/Value.mjs';
+import { ValueDriftCalculator } from '#domains/lifeplan/services/ValueDriftCalculator.mjs';
 
 describe('Value Entity', () => {
   describe('construction', () => {
@@ -94,6 +95,43 @@ describe('Value Entity', () => {
         ],
       });
       expect(value.drift_history).toHaveLength(1);
+    });
+  });
+
+  describe('insufficient data handling (A-3.2c)', () => {
+    it('returns status insufficient_data (not reconsidering) when value ids share <2 categories', () => {
+      const calc = new ValueDriftCalculator();
+      const values = [
+        new Value({ id: 'faith-first', name: 'Faith First', rank: 1 }),
+        new Value({ id: 'deep-craft', name: 'Deep Craft', rank: 2 }),
+      ]; // ids match no allocation keys
+      const allocation = { health: 0.6, family: 0.4 };
+      const result = calc.calculateDrift(allocation, values);
+      expect(result.status).toBe('insufficient_data');
+      expect(result.correlation).toBeNull();
+    });
+
+    it('returns insufficient_data when only one category overlaps', () => {
+      const calc = new ValueDriftCalculator();
+      const values = [
+        new Value({ id: 'health', name: 'Health', rank: 1 }),
+        new Value({ id: 'deep-craft', name: 'Deep Craft', rank: 2 }),
+      ]; // only 'health' overlaps → Spearman undefined over 1 pair
+      const allocation = { health: 0.6, family: 0.4 };
+      const result = calc.calculateDrift(allocation, values);
+      expect(result.status).toBe('insufficient_data');
+      expect(result.correlation).toBeNull();
+    });
+
+    it('returns insufficient_data when allocation is empty', () => {
+      const calc = new ValueDriftCalculator();
+      const values = [
+        new Value({ id: 'health', name: 'Health', rank: 1 }),
+        new Value({ id: 'family', name: 'Family', rank: 2 }),
+      ];
+      const result = calc.calculateDrift({}, values);
+      expect(result.status).toBe('insufficient_data');
+      expect(result.correlation).toBeNull();
     });
   });
 
