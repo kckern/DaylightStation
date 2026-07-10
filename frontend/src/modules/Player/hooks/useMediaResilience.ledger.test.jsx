@@ -109,15 +109,15 @@ describe('useMediaResilience × ledger — jolt ladder respects the cooldown (au
     const { args } = renderStuckHook();
     args.onReload.mockClear();
 
-    // Grace (4500ms) → rung 1 fires, attempt 1 recorded.
-    advance(4500);
+    // Grace → rung 1 fires, attempt 1 recorded.
+    advance(STALL_JOLT_GRACE_MS);
     expect(args.onReload).toHaveBeenCalledTimes(1);
     expect(args.onReload).toHaveBeenLastCalledWith(expect.objectContaining({ reason: 'stall-jolt-refresh-url' }));
     expect(ledger.snapshot(args.playbackSessionKey).count).toBe(1);
 
     // STEP_MS later: only 6s of the 10s cooldown elapsed → rung 2 must be
     // denied (previously it fired unconditionally — the §3.2 bug).
-    advance(6000);
+    advance(STALL_JOLT_STEP_MS);
     expect(args.onReload).toHaveBeenCalledTimes(1);
     expect(ledger.snapshot(args.playbackSessionKey).count).toBe(1);
 
@@ -135,10 +135,10 @@ describe('useMediaResilience × ledger — jolt ladder respects the cooldown (au
     const { args } = renderStuckHook();
     args.onReload.mockClear();
 
-    advance(4500); // rung 1
-    advance(6000); // rung 2
+    advance(STALL_JOLT_GRACE_MS); // rung 1
+    advance(STALL_JOLT_STEP_MS); // rung 2
     expect(args.onReload).toHaveBeenCalledTimes(2);
-    advance(6000); // past the last rung → exhausted
+    advance(STALL_JOLT_STEP_MS); // past the last rung → exhausted
     expect(args.onExhausted).toHaveBeenCalledTimes(1);
     expect(args.onExhausted).toHaveBeenCalledWith(expect.objectContaining({
       reason: 'stall-jolt-exhausted',
