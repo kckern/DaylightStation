@@ -245,15 +245,18 @@ export function PlayerOverlayLoading({
   }, [debugEnabled, getMediaEl, isVisible, overlayLogContext]);
 
   // Determine position display using freshness-based priority (Fix 3: position display audit)
-  // If actively seeking, prefer intent; otherwise use freshness to pick the most recent value
+  // While the wait is seek-driven (seeking, or the stall/loading that follows a
+  // seek), the playhead is pinned at — or recovery-reset to — the wrong spot, so
+  // the intent (the destination the user asked for) always wins, no matter how
+  // long recovery takes. Freshness only arbitrates outside those states (e.g.
+  // the pause overlay), where the current playhead is the truthful display.
   const STALE_THRESHOLD_MS = 5000; // Consider intent stale after 5 seconds
   const isSeekInProgress = status === 'seeking';
   const positionDisplay = useMemo(() => {
-    if (isSeekInProgress) {
-      // During active seek, always prefer intent position
+    if (isSeekInProgress || stalled || waitingToPlay) {
       return intentPositionDisplay || playerPositionDisplay || null;
     }
-    // Use freshness-based selection when not actively seeking
+    // Use freshness-based selection when not waiting on a seek
     const now = Date.now();
     const intentAge = intentPositionUpdatedAt ? now - intentPositionUpdatedAt : Infinity;
     const playerAge = playerPositionUpdatedAt ? now - playerPositionUpdatedAt : Infinity;
@@ -265,7 +268,7 @@ export function PlayerOverlayLoading({
       return intentPositionDisplay;
     }
     return playerPositionDisplay || intentPositionDisplay || null;
-  }, [isSeekInProgress, intentPositionDisplay, playerPositionDisplay, intentPositionUpdatedAt, playerPositionUpdatedAt]);
+  }, [isSeekInProgress, stalled, waitingToPlay, intentPositionDisplay, playerPositionDisplay, intentPositionUpdatedAt, playerPositionUpdatedAt]);
   const hasValidPosition = positionDisplay && positionDisplay !== '0:00';
   const isStartupPhase = status === 'startup';
   const statusLabel = (() => {
