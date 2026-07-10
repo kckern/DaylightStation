@@ -24,8 +24,8 @@ android {
         // BUMP versionCode on EVERY build: PackageInstaller self-update (POST /update)
         // rejects an APK whose versionCode is < the installed one. Future ADB-free
         // upgrades must keep incrementing this.
-        versionCode 17
-        versionName "1.9-kiosk-watchdog"
+        versionCode 18
+        versionName "1.10-audio-guard"
 
         // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
         // real target (Samsung SM-T590, Snapdragon 450); arm64-v8a included for
