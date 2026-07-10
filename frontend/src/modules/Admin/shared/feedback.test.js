@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { showMock, logSpy } = vi.hoisted(() => ({
+const { showMock, hideMock, logSpy } = vi.hoisted(() => ({
   showMock: vi.fn(),
+  hideMock: vi.fn(),
   logSpy: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('@mantine/notifications', () => ({
-  notifications: { show: (...args) => showMock(...args) },
+  notifications: { show: (...args) => showMock(...args), hide: (...args) => hideMock(...args) },
 }));
 
 vi.mock('../../../lib/logging/Logger.js', () => ({
@@ -18,10 +19,12 @@ import {
   notifyFailure,
   notifyPartial,
   runWithFeedback,
+  showUndoToast,
 } from './feedback.js';
 
 beforeEach(() => {
   showMock.mockClear();
+  hideMock.mockClear();
   logSpy.info.mockClear();
   logSpy.warn.mockClear();
   logSpy.error.mockClear();
@@ -138,5 +141,45 @@ describe('runWithFeedback', () => {
       eventName: 'playback-hub.play',
     });
     expect(logSpy.info).toHaveBeenCalledWith('playback-hub.play.started', expect.any(Object));
+  });
+});
+
+describe('showUndoToast', () => {
+  it('shows a gray toast with the given id, title and autoClose', () => {
+    showUndoToast({ id: 'undo-x', title: 'Item deleted', message: 'Removed "Foo"', onUndo: () => {}, timeoutMs: 5000 });
+    expect(showMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'undo-x',
+      title: 'Item deleted',
+      color: 'gray',
+      autoClose: 5000,
+    }));
+  });
+
+  it('invokes onUndo and hides the toast when the Undo button is clicked', () => {
+    const onUndo = vi.fn();
+    showUndoToast({ id: 'undo-y', title: 'Deleted', message: 'gone', onUndo });
+    // The message is a React element tree; find the Undo button node and fire its onClick.
+    const shown = showMock.mock.calls[0][0];
+    const findButton = (node) => {
+      if (!node || typeof node !== 'object') return null;
+      if (node.props?.['data-testid'] === 'undo-toast-button') return node;
+      const kids = node.props?.children;
+      const arr = Array.isArray(kids) ? kids : [kids];
+      for (const k of arr) {
+        const found = findButton(k);
+        if (found) return found;
+      }
+      return null;
+    };
+    const btn = findButton(shown.message);
+    expect(btn).toBeTruthy();
+    btn.props.onClick();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(hideMock).toHaveBeenCalledWith('undo-y');
+  });
+
+  it('defaults autoClose to 7000ms', () => {
+    showUndoToast({ id: 'undo-z', title: 't', message: 'm', onUndo: () => {} });
+    expect(showMock).toHaveBeenCalledWith(expect.objectContaining({ autoClose: 7000 }));
   });
 });
