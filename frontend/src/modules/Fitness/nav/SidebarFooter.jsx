@@ -5,6 +5,8 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import './SidebarFooter.scss';
 
 import getLogger from '@/lib/logging/Logger.js';
+import useLongPress from '../lib/useLongPress.js';
+import hardReload from '../lib/hardReload.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -336,11 +338,20 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     }
   }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap, isVideoPlaying]);
 
+  // Long-press (2s) anywhere on the footer card hard-reloads the kiosk — the
+  // only touch path to a cache-bypassing refresh once an avatar has replaced
+  // the 🔄 card. A short tap falls through to the normal click behavior.
+  const { holding, handlers: longPressHandlers } = useLongPress({
+    onTap: handleContainerClick,
+    onLongPress: () => hardReload('footer-longpress'),
+    holdMs: 2000
+  });
+
   return (
     <div className="sidebar-footer">
-      <div 
-        className="device-container" 
-        onPointerDown={handleContainerClick}
+      <div
+        className={`device-container${holding ? ' is-hold-reloading' : ''}`}
+        {...longPressHandlers}
         role="button"
         tabIndex={0}
         style={{ cursor: 'pointer' }}
@@ -414,7 +425,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       {sortedDevices.length === 0 && (
         <div
           className={`device-card fitness-monitor ${connected ? 'connected' : 'disconnected'}`}
-          onPointerDown={() => window.location.reload()}
+          onPointerDown={() => hardReload('footer-tap')}
           style={{ cursor: 'pointer' }}
           title="Refresh page"
         >
