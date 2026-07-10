@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createRecoveryLedger } from './recoveryLedger.js';
+import { createRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from './recoveryLedger.js';
 
 const SESSION = 'player-item:abc';
 
@@ -110,5 +110,48 @@ describe('recoveryLedger', () => {
       const r = ledger.request({ sessionKey: SESSION, actor: 'dash-error', reason: 'dash-28', bypassCooldown: true });
       expect(r.allowed).toBe(true); // 4th exceeds the per-mount budget of 3, but no mountId = no budget gate
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Production DEFAULTS pin — every test above configures the ledger explicitly,
+// so nothing else would catch silent drift in the shipped defaults. Probed
+// behaviorally (DEFAULTS is intentionally not exported).
+// ---------------------------------------------------------------------------
+
+describe('recoveryLedger production DEFAULTS', () => {
+  it('RECOVERY_MAX_ATTEMPTS is 5 and is the default session cap', () => {
+    expect(RECOVERY_MAX_ATTEMPTS).toBe(5);
+    let now = 1_000_000;
+    const ledger = createRecoveryLedger({ now: () => now });
+    for (let i = 0; i < RECOVERY_MAX_ATTEMPTS; i++) {
+      expect(ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x', bypassCooldown: true }).allowed).toBe(true);
+    }
+    expect(ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x', bypassCooldown: true }))
+      .toMatchObject({ allowed: false, deniedBy: 'session-cap' });
+  });
+
+  it('default cooldown is 4000ms with ×3 backoff (4s after attempt 1, 12s after attempt 2)', () => {
+    let now = 1_000_000;
+    const ledger = createRecoveryLedger({ now: () => now });
+    ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' }); // attempt 1
+    now += 3999;
+    expect(ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' }))
+      .toMatchObject({ allowed: false, deniedBy: 'cooldown', waitMs: 1 });
+    now += 1;
+    expect(ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' }).allowed).toBe(true); // attempt 2
+    now += 11999;
+    expect(ledger.request({ sessionKey: SESSION, actor: 'a', reason: 'x' }))
+      .toMatchObject({ allowed: false, deniedBy: 'cooldown', waitMs: 1 });
+  });
+
+  it("default per-mount budget for 'dash-error' is 3", () => {
+    let now = 1_000_000;
+    const ledger = createRecoveryLedger({ now: () => now });
+    for (let i = 0; i < 3; i++) {
+      expect(ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'dash-28', bypassCooldown: true }).allowed).toBe(true);
+    }
+    expect(ledger.request({ sessionKey: SESSION, mountId: 'm1', actor: 'dash-error', reason: 'dash-28', bypassCooldown: true }))
+      .toMatchObject({ allowed: false, deniedBy: 'mount-budget' });
   });
 });

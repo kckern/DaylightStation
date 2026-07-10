@@ -205,3 +205,76 @@ describe('useMediaResilience × ledger — retryFromExhausted resets the ledger'
     expect(args.onExhausted).toHaveBeenCalledTimes(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// (e) controllerRef.forceReload routes through gated recovery (audit §3.2 —
+//     the fifth ledger bypass: Fitness callers used to hit raw onReload)
+// ---------------------------------------------------------------------------
+
+describe('useMediaResilience × ledger — controllerRef.forceReload is gated', () => {
+  it('fires inside another actor\'s cooldown window (bypass) AND records — pushing the shared cooldown forward', () => {
+    installLedger(); // defaults: cooldownMs 4000, backoff ×3
+    const controllerRef = { current: null };
+    const args = baseArgs({ controllerRef });
+    const { result } = renderHook(() => useMediaResilience(args));
+
+    // Attempt 1 (resilience actor) opens a 4s cooldown window.
+    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+
+    // Immediate user reload: inside the window, but user-initiated → fires,
+    // and the attempt is recorded.
+    act(() => controllerRef.current.forceReload({ reason: 'fitness-manual' }));
+    expect(args.onReload).toHaveBeenCalledTimes(2);
+    expect(args.onReload).toHaveBeenLastCalledWith(expect.objectContaining({ reason: 'fitness-manual' }));
+    expect(ledger.snapshot(args.playbackSessionKey).count).toBe(2);
+    // Gated recovery = same status machine as every other actor.
+    expect(controllerRef.current.getState().status).toBe('recovering');
+
+    // Because the bypassed attempt was RECORDED, the shared window moved:
+    // past the original 4s window but inside the new 12s (attempt-2 backoff)
+    // window, a non-bypass request is still denied…
+    fakeNow += 4001;
+    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(args.onReload).toHaveBeenCalledTimes(2);
+
+    // …and allowed once the pushed-forward window elapses.
+    fakeNow += 8000; // 12001ms since the forceReload attempt
+    act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(args.onReload).toHaveBeenCalledTimes(3);
+  });
+
+  it('does NOT fire when session-capped — the exhausted flow engages instead', () => {
+    installLedger({ cooldownMs: 0 }); // isolate the session cap
+    const controllerRef = { current: null };
+    const args = baseArgs({ controllerRef });
+    const { result } = renderHook(() => useMediaResilience(args));
+
+    act(() => {
+      for (let i = 0; i < 5; i += 1) result.current._testTriggerRecovery?.('playback-stalled');
+    });
+    expect(args.onReload).toHaveBeenCalledTimes(5);
+    expect(args.onExhausted).not.toHaveBeenCalled();
+
+    // bypassCooldown does not override the session cap.
+    act(() => controllerRef.current.forceReload({ reason: 'fitness-manual', seekToIntentMs: 5000 }));
+    expect(args.onReload).toHaveBeenCalledTimes(5);
+    expect(args.onExhausted).toHaveBeenCalledTimes(1);
+    expect(controllerRef.current.getState().status).toBe('exhausted');
+  });
+
+  it('passes a caller-supplied seekToIntentMs through to onReload verbatim', () => {
+    installLedger();
+    const controllerRef = { current: null };
+    const args = baseArgs({ controllerRef });
+    renderHook(() => useMediaResilience(args));
+
+    act(() => controllerRef.current.forceReload({ reason: 'fitness-stalled-seek', seekToIntentMs: 123456 }));
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'fitness-stalled-seek',
+      seekToIntentMs: 123456,
+      refreshUrl: false // 'fitness-stalled-seek' is not a URL-refresh reason
+    }));
+  });
+});
