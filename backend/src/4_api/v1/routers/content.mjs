@@ -361,15 +361,34 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
     res.flushHeaders();
 
-    // Handle client disconnect
+    // Handle client disconnect. Setting a flag alone is NOT enough: the
+    // for-await below can be parked on a hung adapter promise, in which case
+    // the loop never resumes to observe the flag, res.end() is never reached,
+    // and the socket sits in CLOSE_WAIT forever while the generator context
+    // pins heap. Under EventSource churn (every keystroke opens/closes a
+    // stream) this exhausted ephemeral ports and OOM-killed the process.
+    // So on close we end the response immediately and ask the iterator to
+    // finish; a hard deadline covers generators stuck past the adapter
+    // timeouts.
+    const STREAM_DEADLINE_MS = 30000;
     let closed = false;
-    req.on('close', () => {
+    const iterator = contentQueryService.searchStream(query)[Symbol.asyncIterator]();
+    const finish = () => {
+      if (closed) return;
       closed = true;
-    });
+      try { res.end(); } catch { /* socket already gone */ }
+      iterator.return?.().catch(() => {});
+    };
+    req.on('close', finish);
+    const deadline = setTimeout(() => {
+      logger.warn?.('content.query.search.stream.deadline', { query, deadlineMs: STREAM_DEADLINE_MS });
+      finish();
+    }, STREAM_DEADLINE_MS);
 
     try {
-      for await (const event of contentQueryService.searchStream(query)) {
-        if (closed) break;
+      while (true) {
+        const { value: event, done } = await iterator.next();
+        if (closed || done) break;
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
     } catch (error) {
@@ -377,9 +396,14 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         res.write(`data: ${JSON.stringify({ event: 'error', message: error.message })}\n\n`);
       }
       logger.error?.('content.query.search.stream.error', { query, error: error.message });
+    } finally {
+      clearTimeout(deadline);
+      req.off('close', finish);
+      if (!closed) {
+        closed = true;
+        res.end();
+      }
     }
-
-    res.end();
   }));
 
   /**
