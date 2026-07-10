@@ -129,4 +129,33 @@ describe('AlignmentService', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('insufficient_data snapshots (A-3.2c)', () => {
+    const insufficientMetrics = {
+      getLatest: vi.fn().mockReturnValue({
+        correlation: null,
+        status: 'insufficient_data',
+        allocation: {},
+      }),
+    };
+
+    const insufficientService = new AlignmentService({
+      lifePlanStore: mockStore,
+      metricsStore: insufficientMetrics,
+      cadenceService: new CadenceService(),
+      ceremonyRecordStore: mockCeremonyStore,
+      clock,
+    });
+
+    it('does not raise a drift alert', () => {
+      const result = insufficientService.computeAlignment('testuser');
+      const driftItem = result.priorities.find(p => p.type === 'drift_alert');
+      expect(driftItem).toBeUndefined();
+    });
+
+    it('dashboard valueDrift is null (treated like a missing snapshot)', () => {
+      const result = insufficientService.computeAlignment('testuser');
+      expect(result.dashboard.valueDrift).toBeNull();
+    });
+  });
 });

@@ -1,11 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 
+const createdDirs = [];
+
+afterAll(() => {
+  for (const dir of createdDirs) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function tmpUserDir() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeplan-boot-'));
+  createdDirs.push(base);
   fs.mkdirSync(path.join(base, 'test-user'), { recursive: true });
   fs.writeFileSync(
     path.join(base, 'test-user', 'lifeplan.yml'),

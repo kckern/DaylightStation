@@ -65,7 +65,7 @@ export class ValueDriftCalculator {
 
   calculateDrift(allocation, values) {
     if (values.length === 0 || Object.keys(allocation).length === 0) {
-      return { correlation: 0, status: 'reconsidering', statedOrder: [], observedOrder: [] };
+      return { correlation: null, status: 'insufficient_data', statedOrder: [], observedOrder: [], allocation };
     }
 
     const statedOrder = values
@@ -77,6 +77,12 @@ export class ValueDriftCalculator {
       .map(([id]) => id);
 
     const correlation = this.#spearmanCorrelation(statedOrder, observedOrder);
+
+    // Fewer than 2 shared ids between stated values and observed allocation:
+    // Spearman is undefined, so "we can't measure" — not a genuine bad correlation.
+    if (correlation === null) {
+      return { correlation: null, status: 'insufficient_data', statedOrder, observedOrder, allocation };
+    }
 
     const status = correlation > 0.8 ? 'aligned'
       : correlation > 0.5 ? 'drifting'
@@ -128,7 +134,7 @@ export class ValueDriftCalculator {
   #spearmanCorrelation(stated, observed) {
     // Use only items present in both lists
     const common = stated.filter(id => observed.includes(id));
-    if (common.length < 2) return 0;
+    if (common.length < 2) return null; // undefined over <2 pairs — caller maps to insufficient_data
 
     const n = common.length;
     let sumD2 = 0;
