@@ -37,10 +37,14 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   usePauseMediaOnUnmount(mediaEl);
   // Belt-and-suspenders: also pause the live element/controller at unmount, in
   // case the engine swapped elements within the poll window before we left.
+  // Depend on the stable pause callback, NOT the ctrl wrapper object — ctrl is
+  // a fresh object every render, so a [ctrl] dep runs this cleanup (and pauses
+  // playback) on every re-render, freezing the video within one timeupdate.
+  const ctrlPause = ctrl.pause;
   useEffect(() => () => {
-    try { ctrl.pause?.(); } catch { /* torn down */ }
+    try { ctrlPause?.(); } catch { /* torn down */ }
     try { playerRef.current?.getMediaElement?.()?.pause?.(); } catch { /* torn down */ }
-  }, [ctrl]);
+  }, [ctrlPause]);
   const { pressNote, releaseNote } = usePianoMidi();
   const { activeNotes } = usePianoMidiNotes();
   const { mediaLevel } = usePianoMix();
