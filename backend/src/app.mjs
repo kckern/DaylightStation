@@ -716,6 +716,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     notificationService: notificationStack.notificationService,
     userService,
     defaultUsername: configService.getHeadOfHousehold() || 'default',
+    timezone: configService.getHouseholdTimezone(),
     clock: null,
     logger: rootLogger.child({ module: 'lifeplan' }),
   });

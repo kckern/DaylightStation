@@ -61,9 +61,9 @@ describe('CadenceService', () => {
 
   describe('isCeremonyDue()', () => {
     it('ceremony due at start_of_cycle on period start', () => {
-      // epoch is 2025-01-01, cycle is 7 days
-      // 2025-01-01 is a cycle start, 2025-01-08 is next cycle start
-      const due = service.isCeremonyDue('start_of_cycle', defaultCadence, '2025-01-08', null);
+      // default epoch is 2024-12-30 (a Monday), cycle is 7 days
+      // cycles start on Mondays: 2025-01-06 is a cycle start
+      const due = service.isCeremonyDue('start_of_cycle', defaultCadence, '2025-01-06', null);
       expect(due).toBe(true);
     });
 
@@ -73,7 +73,8 @@ describe('CadenceService', () => {
     });
 
     it('ceremony not due if already done this period', () => {
-      const due = service.isCeremonyDue('start_of_cycle', defaultCadence, '2025-01-08', '2025-01-08');
+      // 2025-01-06 is a Monday cycle start; ceremony completed that same day
+      const due = service.isCeremonyDue('start_of_cycle', defaultCadence, '2025-01-06', '2025-01-06');
       expect(due).toBe(false);
     });
   });

@@ -8,19 +8,45 @@ const DEFAULT_CADENCE = {
 
 const LEVELS = ['unit', 'cycle', 'phase', 'season', 'era'];
 
+const MS_PER_DAY = 86400000;
+const DEFAULT_TZ = 'UTC';
+// 2024-12-30 is a Monday — default cycles align to human weeks (audit A-3.1)
+const DEFAULT_EPOCH = '2024-12-30';
+
+/**
+ * Cadence math over LOCAL calendar days.
+ *
+ * All period arithmetic uses integer "day serials": an instant is first
+ * converted to its (Y, M, D) calendar date in the service timezone, then to
+ * `Date.UTC(y, m-1, d) / MS_PER_DAY`. This keeps evening completions in the
+ * household's own day (audit A-2.3), removes fractional-day dual-due windows,
+ * and derives periodId years from the local calendar (audit A-4.4).
+ */
 export class CadenceService {
+  #timezone;
+
+  /**
+   * @param {Object} [options]
+   * @param {string} [options.timezone] - IANA timezone (e.g. 'America/Los_Angeles'). Defaults to UTC.
+   */
+  constructor({ timezone } = {}) {
+    this.#timezone = timezone || DEFAULT_TZ;
+  }
+
   resolve(cadenceConfig, today) {
     const config = this.#normalizeConfig(cadenceConfig);
-    const todayDate = typeof today === 'string' ? new Date(today) : today;
+    const { serial, year } = this.#daySerial(this.#toDate(today));
     const result = {};
 
     for (const level of LEVELS) {
       const cfg = config[level];
-      const periodIndex = this.#periodIndex(todayDate, cfg.duration_days, cfg.epoch);
+      const periodIndex = Math.floor((serial - cfg.epochSerial) / cfg.duration_days);
+      const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
       result[level] = {
         periodIndex,
-        periodId: this.#formatPeriodId(level, periodIndex, todayDate),
-        startDate: this.#periodStartDate(todayDate, cfg.duration_days, cfg.epoch),
+        periodId: this.#formatPeriodId(level, periodIndex, year),
+        // UTC instant representing the local day the period starts on
+        startDate: new Date(startSerial * MS_PER_DAY),
         durationDays: cfg.duration_days,
         alias: cfg.alias,
       };
@@ -36,31 +62,30 @@ export class CadenceService {
 
   isCeremonyDue(ceremonyTiming, cadenceConfig, today, lastCeremonyDate) {
     const config = this.#normalizeConfig(cadenceConfig);
-    const todayDate = typeof today === 'string' ? new Date(today) : today;
 
     // Parse timing like "start_of_cycle", "end_of_unit"
     const [position, , level] = ceremonyTiming.split('_');
     if (!level || !config[level]) return false;
 
     const cfg = config[level];
-    const periodStart = this.#periodStartDate(todayDate, cfg.duration_days, cfg.epoch);
+    const { serial: todaySerial } = this.#daySerial(this.#toDate(today));
+    const periodIndex = Math.floor((todaySerial - cfg.epochSerial) / cfg.duration_days);
+    const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
 
     if (lastCeremonyDate) {
-      const lastDate = typeof lastCeremonyDate === 'string' ? new Date(lastCeremonyDate) : lastCeremonyDate;
+      const { serial: lastSerial } = this.#daySerial(this.#toDate(lastCeremonyDate));
       // If ceremony already done this period, not due
-      if (lastDate >= periodStart) return false;
+      if (lastSerial >= startSerial) return false;
     }
 
     if (position === 'start') {
-      // Due on first day of period
-      return todayDate.getTime() === periodStart.getTime()
-        || this.#daysDiff(periodStart, todayDate) < 1;
+      // Due on first local day of period
+      return todaySerial === startSerial;
     }
 
     if (position === 'end') {
-      // Due on last day of period
-      const periodEnd = new Date(periodStart.getTime() + (cfg.duration_days - 1) * 86400000);
-      return this.#daysDiff(todayDate, periodEnd) < 1;
+      // Due on last local day of period
+      return todaySerial === startSerial + cfg.duration_days - 1;
     }
 
     return false;
@@ -68,27 +93,54 @@ export class CadenceService {
 
   getNextCeremonyTime(ceremonyTiming, cadenceConfig, today) {
     const config = this.#normalizeConfig(cadenceConfig);
-    const todayDate = typeof today === 'string' ? new Date(today) : today;
 
     const [position, , level] = ceremonyTiming.split('_');
     if (!level || !config[level]) return null;
 
     const cfg = config[level];
-    const periodStart = this.#periodStartDate(todayDate, cfg.duration_days, cfg.epoch);
+    const { serial: todaySerial } = this.#daySerial(this.#toDate(today));
+    const periodIndex = Math.floor((todaySerial - cfg.epochSerial) / cfg.duration_days);
+    const startSerial = cfg.epochSerial + periodIndex * cfg.duration_days;
 
     if (position === 'start') {
-      // Next period start
-      return new Date(periodStart.getTime() + cfg.duration_days * 86400000);
+      // Next period start (UTC instant of that local day's start)
+      return new Date((startSerial + cfg.duration_days) * MS_PER_DAY);
     }
 
     if (position === 'end') {
-      const periodEnd = new Date(periodStart.getTime() + (cfg.duration_days - 1) * 86400000);
-      if (todayDate < periodEnd) return periodEnd;
-      // Already past end, next period's end
-      return new Date(periodEnd.getTime() + cfg.duration_days * 86400000);
+      const endSerial = startSerial + cfg.duration_days - 1;
+      if (todaySerial < endSerial) return new Date(endSerial * MS_PER_DAY);
+      // Already on/past end day, next period's end
+      return new Date((endSerial + cfg.duration_days) * MS_PER_DAY);
     }
 
     return null;
+  }
+
+  #toDate(value) {
+    return typeof value === 'string' ? new Date(value) : value;
+  }
+
+  // (Y, M, D) of the instant in the service timezone → integer day serial + local year
+  #daySerial(date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.#timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const get = (type) => Number(parts.find((p) => p.type === type).value);
+    const year = get('year');
+    return { serial: Date.UTC(year, get('month') - 1, get('day')) / MS_PER_DAY, year };
+  }
+
+  // Epochs are calendar dates, not instants — parse as plain Y/M/D.
+  // Accepts 'YYYY-MM-DD' strings or Date objects (YAML parses bare dates
+  // to Dates at UTC midnight, so the UTC calendar date is the intended one).
+  #epochSerial(epoch) {
+    const str = epoch instanceof Date ? epoch.toISOString() : String(epoch);
+    const [y, m, d] = str.slice(0, 10).split('-').map(Number);
+    return Date.UTC(y, m - 1, d) / MS_PER_DAY;
   }
 
   #normalizeConfig(cadenceConfig) {
@@ -99,7 +151,7 @@ export class CadenceService {
       config[level] = {
         duration_days: this.#parseDuration(userCfg.duration) || defaults.duration_days,
         alias: userCfg.alias || defaults.alias,
-        epoch: userCfg.epoch ? new Date(userCfg.epoch) : new Date('2025-01-01'),
+        epochSerial: this.#epochSerial(userCfg.epoch || DEFAULT_EPOCH),
       };
     }
     return config;
@@ -114,23 +166,8 @@ export class CadenceService {
     return match[2].toLowerCase().startsWith('week') ? num * 7 : num;
   }
 
-  #periodIndex(today, durationDays, epoch) {
-    const ms = today.getTime() - epoch.getTime();
-    return Math.floor(ms / (durationDays * 86400000));
-  }
-
-  #periodStartDate(today, durationDays, epoch) {
-    const idx = this.#periodIndex(today, durationDays, epoch);
-    return new Date(epoch.getTime() + idx * durationDays * 86400000);
-  }
-
-  #formatPeriodId(level, index, today) {
-    const year = today.getFullYear();
+  #formatPeriodId(level, index, localYear) {
     const prefix = level.charAt(0).toUpperCase();
-    return `${year}-${prefix}${index}`;
-  }
-
-  #daysDiff(a, b) {
-    return Math.abs((b.getTime() - a.getTime()) / 86400000);
+    return `${localYear}-${prefix}${index}`;
   }
 }
