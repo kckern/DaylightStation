@@ -97,7 +97,7 @@ describe('courseGate', () => {
 // ── redesign helpers ─────────────────────────────────────────────────────────
 import {
   sharedPrefix, courseStats, seasonStats, programStats, continueTarget,
-  categoryOf, collectFacets, filterByFacets,
+  laneOf, groupCourses, partsOf, collectFacets, filterByFacets,
 } from './subcourses.js';
 
 const L = (parentId, itemIndex, title, watched = false) => ({
@@ -212,51 +212,90 @@ describe('partitionCourses with piano.course grouping', () => {
   });
 });
 
-describe('categoryOf', () => {
-  it('returns season.piano.category if present', () => {
-    const season = { piano: { category: 'masterclass' } };
-    expect(categoryOf(season)).toBe('masterclass');
+describe('laneOf', () => {
+  it('reads piano.lane', () => {
+    expect(laneOf({ piano: { lane: 'practice' } })).toBe('practice');
+    expect(laneOf({ piano: { lane: 'repertoire' } })).toBe('repertoire');
   });
-
-  it('returns "reference" when season.reference is true', () => {
-    const season = { reference: true };
-    expect(categoryOf(season)).toBe('reference');
+  it('maps legacy category', () => {
+    expect(laneOf({ piano: { category: 'lesson' } })).toBe('lessons');
+    expect(laneOf({ piano: { category: 'reference' } })).toBe('practice');
+    expect(laneOf({ piano: { category: 'repertoire' } })).toBe('repertoire');
   });
-
-  it('returns "lesson" by default', () => {
-    const season = { title: 'Season 1' };
-    expect(categoryOf(season)).toBe('lesson');
+  it('falls back to reference flag, else lessons', () => {
+    expect(laneOf({ reference: true })).toBe('practice');
+    expect(laneOf({})).toBe('lessons');
   });
+});
 
-  it('prefers piano.category over reference flag', () => {
-    const season = { reference: true, piano: { category: 'custom' } };
-    expect(categoryOf(season)).toBe('custom');
-  });
-
-  it('partitionSeasons carries season.piano; categoryOf reads it', () => {
-    const items = [{ parentId: '10', itemIndex: 1, piano: { course: 'A' } }];
-    const parents = { '10': { index: 10, title: 'Song Tutorials', piano: { category: 'repertoire', kind: 'tutorial' } } };
-    const seasons = partitionSeasons(items, parents);
-    expect(seasons[0].piano).toEqual({ category: 'repertoire', kind: 'tutorial' });
-    expect(categoryOf(seasons[0])).toBe('repertoire');
-  });
-
-  it('programStats and continueTarget count only lesson-category seasons', () => {
-    const mk = (id, index, category, watched) => ({
-      id, index, reference: false, piano: { category },
-      courses: [{ floor: 1, label: 'C', lessons: [{ plex: `${id}a`, itemIndex: 1, userWatched: watched }] }],
-      lessons: [{ plex: `${id}a`, parentId: id, itemIndex: 1, userWatched: watched }],
-    });
-    const seasons = [
-      mk('0', 0, 'reference', false),
-      mk('1', 1, 'lesson', false),
-      mk('10', 10, 'repertoire', false),
+describe('partitionCourses group attachment', () => {
+  it('carries the group of the first lesson', () => {
+    const items = [
+      { itemIndex: 1, title: 'A – x', piano: { course: 'A', group: 'Pop Soloing' } },
+      { itemIndex: 2, title: 'A – y', piano: { course: 'A', group: 'Pop Soloing' } },
+      { itemIndex: 3, title: 'B – x', piano: { course: 'B', group: '2-5-1 Soloing' } },
     ];
-    // only the lesson season counts toward the denominator
+    const courses = partitionCourses(items);
+    expect(courses.map((c) => c.group)).toEqual(['Pop Soloing', '2-5-1 Soloing']);
+  });
+});
+
+describe('groupCourses', () => {
+  const season = {
+    piano: { lane: 'lessons', groups: ['Pop Soloing', '2-5-1 Soloing'] },
+    courses: [
+      { floor: 1, label: 'B', group: '2-5-1 Soloing', lessons: [] },
+      { floor: 2, label: 'A', group: 'Pop Soloing', lessons: [] },
+      { floor: 3, label: 'C', group: 'Pop Soloing', lessons: [] },
+    ],
+  };
+  it('orders buckets by season.piano.groups', () => {
+    const g = groupCourses(season);
+    expect(g.map((b) => b.group)).toEqual(['Pop Soloing', '2-5-1 Soloing']);
+    expect(g[0].courses.map((c) => c.label)).toEqual(['A', 'C']);
+  });
+  it('collapses to a single null bucket when courses carry no groups', () => {
+    const s = { courses: [{ floor: 1, label: 'A', group: null, lessons: [] }] };
+    expect(groupCourses(s)).toEqual([{ group: null, courses: s.courses }]);
+  });
+  it('appends undeclared groups after declared ones', () => {
+    const s = { piano: { groups: ['X'] }, courses: [
+      { floor: 1, label: 'a', group: 'Y', lessons: [] },
+      { floor: 2, label: 'b', group: 'X', lessons: [] },
+    ] };
+    expect(groupCourses(s).map((b) => b.group)).toEqual(['X', 'Y']);
+  });
+});
+
+describe('partsOf', () => {
+  it('returns null for a single-part course', () => {
+    expect(partsOf({ label: 'A', lessons: [{ piano: {} }, { piano: { part: 1 } }] })).toBeNull();
+  });
+  it('splits a multi-part course preserving lesson order', () => {
+    const course = { label: 'Scales', lessons: [
+      { itemIndex: 1, piano: { part: 1 } }, { itemIndex: 2, piano: { part: 1 } },
+      { itemIndex: 3, piano: { part: 2 } },
+    ] };
+    const parts = partsOf(course);
+    expect(parts.map((p) => p.label)).toEqual(['Part 1', 'Part 2']);
+    expect(parts[0].lessons).toHaveLength(2);
+    expect(parts[1].lessons).toHaveLength(1);
+  });
+});
+
+describe('lane-based program stats', () => {
+  const watched = { userWatched: true };
+  const seasons = [
+    { id: 's0', piano: { lane: 'practice' }, courses: [{ floor: 1, label: 'p', lessons: [{}] }] },
+    { id: 's1', piano: { lane: 'lessons' }, courses: [{ floor: 1, label: 'l', lessons: [watched, {}] }] },
+    { id: 's8', piano: { lane: 'repertoire' }, courses: [{ floor: 1, label: 'r', lessons: [{}] }] },
+  ];
+  it('programStats counts only the lessons lane', () => {
     expect(programStats(seasons).totalCourses).toBe(1);
-    // continue points at the lesson season's unwatched lesson, not the reference one
+  });
+  it('continueTarget skips practice and repertoire', () => {
     const t = continueTarget(seasons);
-    expect(t.seasonId).toBe('1');
+    expect(t.seasonId).toBe('s1');
   });
 });
 

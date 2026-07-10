@@ -46,7 +46,12 @@ export function partitionCourses(seasonItems) {
     if (!groups.has(key)) { groups.set(key, []); order.push(key); }
     groups.get(key).push(it);
   }
-  return order.map((label, i) => ({ floor: i + 1, label, lessons: groups.get(label) }));
+  return order.map((label, i) => ({
+    floor: i + 1,
+    label,
+    group: groups.get(label)[0]?.piano?.group ?? null,
+    lessons: groups.get(label),
+  }));
 }
 
 export function partitionSeasons(items, parents, referenceUnitIds = []) {
@@ -57,7 +62,7 @@ export function partitionSeasons(items, parents, referenceUnitIds = []) {
     index: Number.isFinite(p?.index) ? p.index : (parseInt(p?.index, 10) || 0),
     title: p?.title || null,
     thumbnail: p?.thumbnail || null,
-    reference: refSet.has(String(id)) || p?.piano?.category === 'reference',
+    reference: refSet.has(String(id)) || p?.piano?.lane === 'practice' || p?.piano?.category === 'reference',
     piano: p?.piano || null,
   })).sort((a, b) => a.index - b.index);
   return seasons.map((s) => {
@@ -128,7 +133,7 @@ export function seasonStats(season) {
 
 /** Program progress across non-reference seasons. */
 export function programStats(seasons) {
-  const graded = (seasons || []).filter((s) => categoryOf(s) === 'lesson');
+  const graded = (seasons || []).filter((s) => laneOf(s) === 'lessons');
   const totalCourses = graded.reduce((n, s) => n + s.courses.length, 0);
   const completeCourses = graded.reduce((n, s) => n + s.courses.filter((c) => courseStats(c).complete).length, 0);
   const percent = totalCourses > 0 ? Math.round((completeCourses / totalCourses) * 100) : 0;
@@ -141,7 +146,7 @@ export function programStats(seasons) {
  * graded program is complete.
  */
 export function continueTarget(seasons) {
-  for (const s of (seasons || []).filter((x) => categoryOf(x) === 'lesson')) {
+  for (const s of (seasons || []).filter((x) => laneOf(x) === 'lessons')) {
     for (const c of s.courses) {
       const ordered = [...c.lessons].sort((a, b) => (Number(a?.itemIndex) || 0) - (Number(b?.itemIndex) || 0));
       const next = ordered.find((ep) => !lectureUserStatus(ep).watched);
@@ -151,11 +156,49 @@ export function continueTarget(seasons) {
   return null;
 }
 
-/** The content category for a season: from season.piano.category, else reference-flag → 'reference', else 'lesson'. */
-export function categoryOf(season) {
+/** Season lane: piano.lane, legacy piano.category mapped, else reference-flag → practice, else lessons. */
+const LEGACY_LANE = { lesson: 'lessons', reference: 'practice', repertoire: 'repertoire' };
+export function laneOf(season) {
+  const lane = season?.piano?.lane;
+  if (lane) return lane;
   const c = season?.piano?.category;
-  if (c) return c;
-  return season?.reference ? 'reference' : 'lesson';
+  if (c) return LEGACY_LANE[c] || c;
+  return season?.reference ? 'practice' : 'lessons';
+}
+
+/** Bucket a season's courses by intra-season group, ordered by season.piano.groups
+ *  (declared first, stragglers in appearance order). Single/no-group seasons
+ *  collapse to one null bucket so callers can skip headers. */
+export function groupCourses(season) {
+  const courses = season?.courses || [];
+  const buckets = new Map();
+  const seen = [];
+  for (const c of courses) {
+    const g = c.group || null;
+    if (!buckets.has(g)) { buckets.set(g, []); seen.push(g); }
+    buckets.get(g).push(c);
+  }
+  if (seen.length < 2) return [{ group: null, courses }];
+  const declared = (season?.piano?.groups || []).filter((g) => buckets.has(g));
+  const rest = seen.filter((g) => !declared.includes(g));
+  return [...declared, ...rest].map((g) => ({ group: g, courses: buckets.get(g) }));
+}
+
+/** Split a course's lessons into Part sections (piano.part). Null unless the
+ *  course genuinely spans ≥2 numbered parts; lesson order is preserved (parts
+ *  ascend with episode number by construction). */
+export function partsOf(course) {
+  const lessons = course?.lessons || [];
+  const parts = new Map();
+  const order = [];
+  for (const l of lessons) {
+    const n = Number(l?.piano?.part);
+    const key = Number.isFinite(n) ? n : null;
+    if (!parts.has(key)) { parts.set(key, []); order.push(key); }
+    parts.get(key).push(l);
+  }
+  if (order.filter((k) => k !== null).length < 2) return null;
+  return order.map((k) => ({ part: k, label: k === null ? 'Extras' : `Part ${k}`, lessons: parts.get(k) }));
 }
 
 /** Collect the available repertoire facet values across items (from item.piano). */
