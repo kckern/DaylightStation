@@ -21,6 +21,10 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Singalong menu — a karaoke video collection; reuses the Courses grid/detail
   // flow but plays through the karaoke-chrome SingalongPlayer (no keyboard/staff).
   singalong: { plexCollection: null },
+  // Karaoke menu — a purpose-built song browser (search + category tabs) over a
+  // single Plex show whose seasons are genre categories; plays through the same
+  // karaoke-chrome SingalongPlayer as Singalong, but with no course grid/detail.
+  karaoke: { plexShow: null },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
   // Technique-drill collection slug → media/docs/piano-lessons/{collection}/.
@@ -109,6 +113,7 @@ export function resolvePianoConfig(raw, pianoId) {
     videos: { ...PIANO_CONFIG_DEFAULTS.videos, ...(shared.videos || {}), ...(p.videos || {}) },
     playalong: { ...PIANO_CONFIG_DEFAULTS.playalong, ...(shared.playalong || {}), ...(p.playalong || {}) },
     singalong: { ...PIANO_CONFIG_DEFAULTS.singalong, ...(shared.singalong || {}), ...(p.singalong || {}) },
+    karaoke: { ...PIANO_CONFIG_DEFAULTS.karaoke, ...(shared.karaoke || {}), ...(p.karaoke || {}) },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],

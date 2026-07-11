@@ -75,6 +75,18 @@ describe('resolvePianoConfig', () => {
     expect(cfg.singalong.plexCollection).toBeNull();
   });
 
+  it('resolves karaoke plexShow (shared default, per-piano override)', () => {
+    const raw = {
+      karaoke: { plexShow: 683640 },
+      pianos: { upstairs: { karaoke: { plexShow: 999999 } } },
+    };
+    expect(resolvePianoConfig(raw, 'default').karaoke.plexShow).toBe(683640);
+    expect(resolvePianoConfig(raw, 'upstairs').karaoke.plexShow).toBe(999999);
+  });
+  it('defaults karaoke to an empty show when unconfigured', () => {
+    expect(resolvePianoConfig({}, 'default').karaoke.plexShow).toBeNull();
+  });
+
   it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
     const raw = {
       screensaver: { timeoutMinutes: 30, quietHours: { start: '22:00', end: '06:00' } },
