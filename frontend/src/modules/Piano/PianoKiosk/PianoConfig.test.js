@@ -61,6 +61,20 @@ describe('resolvePianoConfig', () => {
     expect(cfg.videos.engagement_timeout_seconds).toBe(90);
   });
 
+  it('resolves separate playalong and singalong collections', () => {
+    const raw = {
+      playalong: { plexCollection: ['plex:676474'] },
+      singalong: { plexCollection: ['plex:676475'] },
+    };
+    const cfg = resolvePianoConfig(raw, 'default');
+    expect(cfg.playalong.plexCollection).toEqual(['plex:676474']);
+    expect(cfg.singalong.plexCollection).toEqual(['plex:676475']);
+  });
+  it('defaults singalong to an empty collection when unconfigured', () => {
+    const cfg = resolvePianoConfig({}, 'default');
+    expect(cfg.singalong.plexCollection).toBeNull();
+  });
+
   it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
     const raw = {
       screensaver: { timeoutMinutes: 30, quietHours: { start: '22:00', end: '06:00' } },

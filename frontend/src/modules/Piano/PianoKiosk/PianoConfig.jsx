@@ -18,6 +18,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   videos: { plexCollection: null },
   // Playalong menu — a video collection (backing tracks) reusing the Courses flow.
   playalong: { plexCollection: null },
+  // Singalong menu — a karaoke video collection; reuses the Courses grid/detail
+  // flow but plays through the karaoke-chrome SingalongPlayer (no keyboard/staff).
+  singalong: { plexCollection: null },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
   // Technique-drill collection slug → media/docs/piano-lessons/{collection}/.
@@ -105,6 +108,7 @@ export function resolvePianoConfig(raw, pianoId) {
     // plexCollection. Default floor keeps the { plexCollection } shape.
     videos: { ...PIANO_CONFIG_DEFAULTS.videos, ...(shared.videos || {}), ...(p.videos || {}) },
     playalong: { ...PIANO_CONFIG_DEFAULTS.playalong, ...(shared.playalong || {}), ...(p.playalong || {}) },
+    singalong: { ...PIANO_CONFIG_DEFAULTS.singalong, ...(shared.singalong || {}), ...(p.singalong || {}) },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],

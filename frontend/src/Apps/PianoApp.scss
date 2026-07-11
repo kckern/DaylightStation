@@ -235,6 +235,14 @@
   &:active { transform: scale(0.97); background: var(--piano-surface-2); }
   &.is-selected { border-color: var(--piano-accent); }
 
+  // Greyed-out, non-interactive tile (e.g. a mode that's visible but not yet
+  // shipped, like Producer). Dimmed, no press feedback, not focusable.
+  &.is-disabled {
+    opacity: 0.4;
+    cursor: default;
+    &:active { transform: none; background: var(--piano-surface); }
+  }
+
   &__icon { font-size: 3rem; }
   &__label { font-size: 1.6rem; font-weight: 700; }
   &__blurb { font-size: 1rem; color: var(--piano-muted); }
@@ -250,8 +258,10 @@
     list-style: none;
     margin: 0;
     padding: 0;
+    // 10 tiles on 2 rows → 5 columns; minmax lets each tile flex between 8–15rem
+    // so the wall stays two rows across a range of kiosk widths.
     display: grid;
-    grid-template-columns: repeat(4, minmax(10rem, 16rem));
+    grid-template-columns: repeat(5, minmax(8rem, 15rem));
     gap: 1.5rem;
   }
 }
@@ -280,7 +290,11 @@
 
 @media (orientation: portrait) {
   .piano-menu__tiles {
-    grid-template-columns: repeat(2, minmax(9rem, 16rem));
+    // Keep two rows in portrait too — 5 equal columns that shrink to fit the
+    // narrower width (tiles hold their 3:2 aspect, so they just get smaller).
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem;
+    width: 100%;
   }
 
   .piano-album-detail__body {
@@ -1417,6 +1431,46 @@
     white-space: nowrap; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
 
+}
+
+/* ---- Singalong (karaoke): full-bleed video stage + compact transport ----
+   Unlike the lecture player there's no staff/keyboard column — the video fills
+   the whole stage above a single karaoke transport bar. */
+.piano-singalong-player {
+  position: relative; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; background: #000;
+
+  &__video { flex: 1 1 auto; min-height: 0; position: relative; cursor: pointer; }
+  &__video:fullscreen { width: 100vw; height: 100vh; background: #000; display: flex; }
+  &__video:fullscreen > * { flex: 1 1 auto; min-height: 0; }
+}
+
+.piano-singalong-chrome {
+  flex: 0 0 auto; z-index: 5;
+  background: var(--piano-surface);
+  border-top: 1px solid var(--piano-border);
+  padding: 0.5rem 1rem;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+
+  &__bar {
+    position: relative; height: 10px; border-radius: var(--r-pill);
+    background: rgba(0, 0, 0, 0.15); cursor: pointer; margin-bottom: 0.75rem;
+  }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--r-pill); background: var(--piano-accent); }
+
+  &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
+  &__spacer { flex: 1 1 auto; }
+  &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  &__vol { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; min-width: 2.25rem; text-align: center; }
+
+  &__btn {
+    min-width: 3rem; height: 3rem; padding: 0 0.75rem;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); font-size: 1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+  &__btn--play { min-width: 4.5rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
 /* ---- Music mode: album grid (square covers with visible caption below) ---- */
