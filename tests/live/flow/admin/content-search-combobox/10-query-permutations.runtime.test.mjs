@@ -51,7 +51,10 @@ test.describe('ContentSearchCombobox - Query Permutations', () => {
   test.beforeEach(async ({ page }) => {
     harness = new ComboboxTestHarness(page);
     await harness.setup();
-    await page.goto(TEST_URL);
+    // gotoReady: this suite's rapid-fire cadence intermittently hits the dev
+    // stack's blank-page boot stall; retry the page load instead of failing
+    // an unrelated behavior test.
+    await ComboboxActions.gotoReady(page, TEST_URL);
   });
 
   test.afterEach(async () => {
@@ -200,6 +203,10 @@ test.describe('ContentSearchCombobox - Query Permutations', () => {
 
     for (const keyword of EDGE_KEYWORDS) {
       test(`handles edge case with prefix: music:"${keyword}"`, async ({ page }) => {
+        // These run at the tail of a rapid-fire group; the dev backend's
+        // event loop stalls for 1-3 min under accumulated search fanout.
+        // Give the test room to ride the stall out instead of dying at 90s.
+        test.setTimeout(180000);
         await ComboboxActions.open(page);
         await ComboboxActions.search(page, `music:${keyword}`);
 

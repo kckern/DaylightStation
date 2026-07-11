@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMediaResilience } from './useMediaResilience.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
+import { STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 
 // ---------------------------------------------------------------------------
 // useMediaResilience × recoveryLedger — the hook's recovery accounting now
@@ -107,15 +109,15 @@ describe('useMediaResilience × ledger — jolt ladder respects the cooldown (au
     const { args } = renderStuckHook();
     args.onReload.mockClear();
 
-    // Grace (4500ms) → rung 1 fires, attempt 1 recorded.
-    advance(4500);
+    // Grace → rung 1 fires, attempt 1 recorded.
+    advance(STALL_JOLT_GRACE_MS);
     expect(args.onReload).toHaveBeenCalledTimes(1);
     expect(args.onReload).toHaveBeenLastCalledWith(expect.objectContaining({ reason: 'stall-jolt-refresh-url' }));
     expect(ledger.snapshot(args.playbackSessionKey).count).toBe(1);
 
     // STEP_MS later: only 6s of the 10s cooldown elapsed → rung 2 must be
     // denied (previously it fired unconditionally — the §3.2 bug).
-    advance(6000);
+    advance(STALL_JOLT_STEP_MS);
     expect(args.onReload).toHaveBeenCalledTimes(1);
     expect(ledger.snapshot(args.playbackSessionKey).count).toBe(1);
 
@@ -133,10 +135,10 @@ describe('useMediaResilience × ledger — jolt ladder respects the cooldown (au
     const { args } = renderStuckHook();
     args.onReload.mockClear();
 
-    advance(4500); // rung 1
-    advance(6000); // rung 2
+    advance(STALL_JOLT_GRACE_MS); // rung 1
+    advance(STALL_JOLT_STEP_MS); // rung 2
     expect(args.onReload).toHaveBeenCalledTimes(2);
-    advance(6000); // past the last rung → exhausted
+    advance(STALL_JOLT_STEP_MS); // past the last rung → exhausted
     expect(args.onExhausted).toHaveBeenCalledTimes(1);
     expect(args.onExhausted).toHaveBeenCalledWith(expect.objectContaining({
       reason: 'stall-jolt-exhausted',
@@ -276,5 +278,141 @@ describe('useMediaResilience × ledger — controllerRef.forceReload is gated', 
       seekToIntentMs: 123456,
       refreshUrl: false // 'fitness-stalled-seek' is not a URL-refresh reason
     }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (f) recordSuccess requires genuine forward motion (2026-07-10 soak defect #2)
+//
+// Prod evidence: five consecutive jolts all logged `rung=1 attempt=1` because
+// each jolt's own remount fired a progress event, which reset the ledger's
+// count AND lastAt — defeating both the attempt cap and the cooldown.
+//
+// NOTE ON THE HARNESS (why these tests use a fake media element, not just the
+// `seconds` prop): the clock progress source (usePlaybackHealth) only bumps
+// `progressToken` when `seconds` moves by >= its delta threshold, and it sets
+// `lastProgressSeconds = seconds` in the same step. So a rerender at the SAME
+// `seconds` produces NO progressToken bump — it cannot reproduce a "progress
+// event at a frozen playhead". The real phantom is a `playing` event firing at
+// the frozen currentTime after a jolt remounts the element. We reproduce that
+// with the same fake-element `_fire('playing')` harness usePlaybackHealth's own
+// tests use: it calls recordProgress with the frozen position, bumping the
+// token without advancing the clock.
+// ---------------------------------------------------------------------------
+
+describe('useMediaResilience × ledger — phantom progress must not clear the ledger', () => {
+  it('a progressToken bump with a FROZEN playhead does not reset the attempt count', () => {
+    installLedger({ cooldownMs: 0 }); // isolate the cap from the cooldown
+    // Element frozen at 100. The first `playing` models genuine initial
+    // playback (seeds the last-success position); later `playing` events at the
+    // same currentTime are the jolt-remount phantom.
+    const el = makeFakeEl({ currentTime: 100, paused: false });
+    const initial = baseArgs({ seconds: 100, getMediaEl: () => el });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+
+    // Genuine initial playback at 100 → establishes the recovery baseline.
+    act(() => { el._fire('playing'); });
+
+    // Record one real attempt.
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // A `playing` event at the SAME frozen position bumps progressToken but the
+    // clock has not moved — this must NOT reset the ledger.
+    act(() => { el._fire('playing'); });
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // Second attempt must be attempt 2, not attempt 1 again.
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(2);
+  });
+
+  it('genuine forward motion DOES reset the attempt count', () => {
+    installLedger({ cooldownMs: 0 });
+    const initial = baseArgs({ seconds: 100 });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+
+    act(() => hook.result.current._testTriggerRecovery?.('playback-stalled'));
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(1);
+
+    // Clock advances well past PROGRESS_EPSILON → real recovery.
+    act(() => { hook.rerender({ ...initial, seconds: 105 }); });
+    expect(ledger.snapshot(initial.playbackSessionKey).count).toBe(0);
+  });
+
+  it('a frozen playhead lets the session cap engage, so the jolt ladder terminates', () => {
+    installLedger({ cooldownMs: 0 });
+    // A `playing` event at the frozen position precedes each recovery — exactly
+    // the jolt-remount signal that used to reset the ledger and loop the ladder
+    // at rung 1 forever.
+    const el = makeFakeEl({ currentTime: 100, paused: false });
+    const args = baseArgs({ seconds: 100, getMediaEl: () => el });
+    const { result } = renderHook(() => useMediaResilience(args));
+
+    // Separate act()s so the progress effect (recordSuccess gate) flushes
+    // between the phantom `playing` and the recovery it precedes.
+    for (let i = 0; i < 6; i += 1) {
+      act(() => { el._fire('playing'); });
+      act(() => result.current._testTriggerRecovery?.('playback-stalled'));
+    }
+    expect(args.onReload).toHaveBeenCalledTimes(5);
+    expect(args.onExhausted).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (g) EOF is not a stall (2026-07-10 soak defect #3)
+//
+// plex:674553 reached EOF without firing `ended`. joltIntentRef captured
+// currentTime == duration, so every jolt re-seeked to the end and re-stalled.
+// ---------------------------------------------------------------------------
+
+describe('useMediaResilience — end-of-content is never jolted', () => {
+  // A media element at a given position. Uses makeFakeEl (not a bare object)
+  // because usePlaybackHealth attaches media-event listeners to whatever
+  // getMediaEl returns — a plain object without addEventListener throws inside
+  // its effect. The jolt path itself reads el.currentTime / el.duration /
+  // el.ended, all of which makeFakeEl carries.
+  const elAt = ({ currentTime, duration, ended = false }) =>
+    makeFakeEl({ currentTime, duration, ended, paused: false, seeking: false });
+
+  const renderStalledAt = (el) => {
+    const initial = baseArgs({ waitKey: 'wk-1', externalStalled: false, getMediaEl: () => el });
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: initial });
+    act(() => { hook.rerender({ ...initial, seconds: 5 }); });
+    act(() => { hook.rerender({ ...initial, seconds: 5, waitKey: 'wk-2', externalStalled: true }); });
+    return initial;
+  };
+
+  it('does NOT fire a jolt when frozen at duration', () => {
+    installLedger({ cooldownMs: 0 });
+    const args = renderStalledAt(elAt({ currentTime: 677.418, duration: 677.418 }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS + STALL_JOLT_STEP_MS * 3);
+    expect(args.onReload).not.toHaveBeenCalled();
+    expect(ledger.snapshot(args.playbackSessionKey)?.count ?? 0).toBe(0);
+  });
+
+  it('does NOT fire a jolt when the element reports ended', () => {
+    installLedger({ cooldownMs: 0 });
+    const args = renderStalledAt(elAt({ currentTime: 12, duration: 677.418, ended: true }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS + STALL_JOLT_STEP_MS);
+    expect(args.onReload).not.toHaveBeenCalled();
+  });
+
+  it('DOES fire a jolt for a genuine mid-stream stall', () => {
+    installLedger({ cooldownMs: 0 });
+    // The real incident's stall position: 659.5s of 677.4s — 17.9s of content left.
+    const args = renderStalledAt(elAt({ currentTime: 659.5, duration: 677.418 }));
+    args.onReload.mockClear();
+
+    advance(STALL_JOLT_GRACE_MS);
+    expect(args.onReload).toHaveBeenCalledTimes(1);
+    expect(args.onReload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'stall-jolt-refresh-url' })
+    );
   });
 });

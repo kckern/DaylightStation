@@ -31,6 +31,12 @@ public:
     // If no engine is active, fills silence.
     void render(float* out, int frames);
 
+    // Fail-closed output gate. When false, render() emits silence regardless of
+    // engine state. Set from the Java guard via PianoEngine.setOutputGate.
+    // Defaults to FALSE: audio must be positively enabled, never assumed.
+    void setOutputGate(bool open) { gateOpen_.store(open, std::memory_order_release); }
+    bool outputGate() const { return gateOpen_.load(std::memory_order_acquire); }
+
     double sampleRate() const { return sampleRate_; }
 
 private:
@@ -42,6 +48,7 @@ private:
     std::mutex swapMutex_;
     std::shared_ptr<Engine> engine_;          // owned; replaced on loadPreset
     std::atomic<Engine*> active_{nullptr};    // lock-free snapshot for render()
+    std::atomic<bool> gateOpen_{false};   // fail-closed default
 };
 
 } // namespace pianobridge

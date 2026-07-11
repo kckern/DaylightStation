@@ -5,6 +5,7 @@ import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from '../components/ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
+import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { cleanupDashElement } from '../lib/dashCleanup.js';
@@ -197,6 +198,18 @@ export function VideoPlayer({
     keyboardOverrides,
     onController,
     recoverySessionKey: resilienceBridge?.playbackSessionKey || null
+  });
+
+  // Fallback queue-advance when HTML5 `ended` never fires. Plex transcode tails
+  // are commonly zero-byte, so dash.js never calls endOfStream() and the element
+  // parks at duration. The resilience jolt ladder deliberately ignores this state
+  // (see useMediaResilience `atEnd`), which makes this watchdog the ONLY thing
+  // that advances the queue. See docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+  useEndOfContentWatchdog({
+    getMediaEl,
+    sourceKey: media?.mediaKey || media?.src || media?.mediaUrl,
+    onAdvance: advance,
+    enabled: !!advance
   });
 
   // Upscale detection and effects

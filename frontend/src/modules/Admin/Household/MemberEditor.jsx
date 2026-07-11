@@ -6,12 +6,15 @@ import {
   ActionIcon, Tooltip
 } from '@mantine/core';
 import {
-  IconArrowBack, IconDeviceFloppy, IconAlertCircle, IconUser,
+  IconArrowBack, IconAlertCircle, IconUser,
   IconSettings, IconLink, IconApple, IconHeartbeat, IconShield,
   IconCopy, IconCheck
 } from '@tabler/icons-react';
+import { useHotkeys } from '@mantine/hooks';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
+import SaveBar from '../shared/SaveBar.jsx';
+import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
 
 const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 
@@ -30,6 +33,9 @@ function MemberEditor() {
   const [inviteLoading, setInviteLoading] = useState(false);
 
   const dirty = JSON.stringify(profile) !== JSON.stringify(original);
+
+  // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
+  useUnsavedGuard(dirty, { label: `member:${username}` });
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
@@ -113,6 +119,17 @@ function MemberEditor() {
     setError(null);
   }, [original]);
 
+  useHotkeys([
+    ['mod+s', (e) => {
+      e.preventDefault();
+      if (dirty && !saving) handleSave();
+    }],
+    ['mod+z', (e) => {
+      e.preventDefault();
+      if (dirty && !saving) handleRevert();
+    }],
+  ]);
+
   // Loading state
   if (loading && !profile) {
     return (
@@ -153,10 +170,19 @@ function MemberEditor() {
         <IconArrowBack size={14} /> Back to Members
       </Anchor>
 
-      <Group gap="sm" align="center">
-        <Text size="xl" fw={700}>{profile.display_name || username}</Text>
-        <Badge variant="light" color="blue">{username}</Badge>
-      </Group>
+      {/* Shared save/revert chrome (audit C5) */}
+      <SaveBar
+        title={(
+          <Group gap="sm" align="center">
+            <Text size="xl" fw={700}>{profile.display_name || username}</Text>
+            <Badge variant="light" color="blue">{username}</Badge>
+          </Group>
+        )}
+        dirty={dirty}
+        saving={saving}
+        onSave={handleSave}
+        onRevert={handleRevert}
+      />
 
       {error && (
         <Alert
@@ -169,30 +195,6 @@ function MemberEditor() {
           {error}
         </Alert>
       )}
-
-      {/* Save / Revert controls */}
-      <Group gap="sm">
-        {dirty && (
-          <Badge color="yellow" variant="light">Unsaved changes</Badge>
-        )}
-        <Button
-          variant="default"
-          size="xs"
-          disabled={!dirty}
-          onClick={handleRevert}
-        >
-          Revert
-        </Button>
-        <Button
-          leftSection={<IconDeviceFloppy size={14} />}
-          size="xs"
-          disabled={!dirty}
-          loading={saving}
-          onClick={handleSave}
-        >
-          Save
-        </Button>
-      </Group>
 
       <Divider />
 

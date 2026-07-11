@@ -22,6 +22,8 @@
  * See: docs/_wip/audits/2026-05-23-livingroom-tv-end-of-video-stuck-seeking-audit.md
  *      docs/superpowers/plans/2026-05-23-screens-player-end-of-video-recovery.md
  */
+import { isNearEnd } from './nearEnd.js';
+
 export function createEndOfContentWatchdog({
   onAdvance,
   getMediaInfo,           // () => { currentTime, duration, paused, seeking }
@@ -33,13 +35,7 @@ export function createEndOfContentWatchdog({
   let armedAtTime = null; // currentTime captured when the current timer was scheduled
   let fired = false;
 
-  const isAtDuration = (info) => {
-    if (!info) return false;
-    const { currentTime, duration } = info;
-    if (!Number.isFinite(currentTime) || !Number.isFinite(duration)) return false;
-    if (duration <= 0) return false;
-    return currentTime >= (duration - thresholdSeconds);
-  };
+  const isAtDuration = (info) => !!info && isNearEnd(info.currentTime, info.duration, thresholdSeconds);
 
   const cancel = () => {
     if (timerId != null) {
@@ -50,12 +46,21 @@ export function createEndOfContentWatchdog({
   };
 
   const fire = () => {
+    const armedAt = armedAtTime;
     timerId = null;
     if (fired) return;
-    // Verify conditions still hold at the moment the timer fires —
-    // state could have changed between scheduling and firing.
+    // Verify conditions still hold at the moment the timer fires — state could
+    // have changed between scheduling and firing.
+    //
+    // The condition is "parked at duration", NOT "paused at duration": a dash
+    // element whose trailing fragment came back zero-byte sits at duration with
+    // `paused === false` and `ended === false` (2026-07-10, plex:674553). What
+    // actually distinguishes end-of-content from playback is that the clock has
+    // not moved for the whole idle window.
+    // See docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
     const info = getMediaInfo();
-    if (!info || !info.paused || !isAtDuration(info)) return;
+    if (!info || !isAtDuration(info)) return;
+    if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) return;
     fired = true;
     log('playback.end-of-content-advance', {
       currentTime: info.currentTime,
@@ -69,7 +74,7 @@ export function createEndOfContentWatchdog({
   const tick = () => {
     if (fired) return;
     const info = getMediaInfo();
-    if (!info || !info.paused || !isAtDuration(info)) {
+    if (!info || !isAtDuration(info)) {
       cancel();
       return;
     }

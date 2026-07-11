@@ -255,6 +255,17 @@ Guiding principle: **the January gutting must not be repeated.** Every detection
 > (d) user forceReload records ledger attempts — reload-hammering reaches the exhausted overlay (which still offers retry) instead of looping raw reloads;
 > (e) controller nudge is ledger-gated — when the jolt ladder fires first, the nudge is often cooldown-denied (escalation-order inversion: the heavy refresh-url at ~6s preempts the cheap nudge at ~8.3s — **SOAK WATCH**: if stalls that a bare nudge used to fix now take a jolt, tune `HARD_STALL_MS` below the jolt grace or give the nudge `bypassCooldown`);
 > (f) duration-lost softReinit is ledger-gated (`bypassCooldown`, cap-bounded at 5 — a plan deviation, justified: it bounds a reinit loop that was previously unbounded).
+>
+> **Soak resolution (2026-07-10) — item (e) SOAK WATCH RESOLVED.** A ~9h production
+> soak confirmed the escalation-order inversion was real and worse than "often
+> cooldown-denied": the jolt grace (4500ms) fired *before* `HARD_STALL_MS` (8000ms), so
+> the nudge never fired at all — 0 `recovery-nudge` events in 9h. The soak also surfaced
+> two further defects on the same root (phantom-progress defeating the ledger cap; the
+> EOF jolt loop). Fixed on `fix/player-resilience-soak-defects`: `STALL_JOLT_GRACE_MS`
+> raised to 9500 > `HARD_STALL_MS` with an invariant test (`b4aa2e6fd`) — the chosen
+> lever was "tune the grace above the nudge deadline", NOT `bypassCooldown` (the nudge
+> was never reaching cooldown). Full writeup:
+> `docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
 
 Create a single `RecoveryLedger` that ALL actuators must pass through: `triggerRecovery`, jolt rungs, dashErrorRecovery, stale-session watchdog, remount scheduling, and `controllerRef.forceReload` (live Fitness callers: `FitnessPlayerFooterControls.jsx:108-109`, `useSeekState.js:134-135`). **Scope-aware, not flat:** the current ledgers encode deliberate semantics — dashErrorRecovery's budget is per-mount so a remount earns a fresh budget; the remount backoff is per-nonce. The ledger needs a session-scoped total cap with mount-scoped sub-budgets, or it will recreate the Feb-27 terminal-stuck failure at a different layer. One exhaustion event; pruned on session end.
 

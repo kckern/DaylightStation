@@ -17,7 +17,7 @@ OboeOutput::OboeOutput(VoiceHost* host) : host_(host) {}
 
 OboeOutput::~OboeOutput() { stop(); }
 
-bool OboeOutput::openStream() {
+bool OboeOutput::openStreamLocked() {
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)
            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -48,8 +48,20 @@ bool OboeOutput::openStream() {
     return true;
 }
 
+bool OboeOutput::isRunningLocked() const {
+    return stream_ && stream_->getState() == oboe::StreamState::Started;
+}
+
+bool OboeOutput::isRunning() const {
+    std::lock_guard<std::mutex> lock(streamMutex_);
+    return isRunningLocked();
+}
+
 bool OboeOutput::start() {
-    if (!openStream()) return false;
+    std::lock_guard<std::mutex> lock(streamMutex_);
+    if (isRunningLocked()) return true;  // idempotent: the 20s sweep must not churn the stream
+    if (stream_) stopLocked();           // a closed/errored stream lingers; drop it before reopening
+    if (!openStreamLocked()) return false;
     oboe::Result result = stream_->requestStart();
     if (result != oboe::Result::OK) {
         LOGE("requestStart failed: %s", oboe::convertToText(result));
@@ -59,7 +71,7 @@ bool OboeOutput::start() {
     return true;
 }
 
-void OboeOutput::stop() {
+void OboeOutput::stopLocked() {
     if (stream_) {
         stream_->stop();
         stream_->close();
@@ -68,25 +80,33 @@ void OboeOutput::stop() {
     }
 }
 
+void OboeOutput::stop() {
+    std::lock_guard<std::mutex> lock(streamMutex_);
+    stopLocked();
+}
+
 oboe::DataCallbackResult OboeOutput::onAudioReady(oboe::AudioStream* stream,
                                                   void* audioData,
                                                   int32_t numFrames) {
-    (void) stream;
     float* out = static_cast<float*>(audioData);
     host_->render(out, numFrames);
 
-    // Track xruns for the status heartbeat.
-    auto x = stream_->getXRunCount();
+    // Track xruns for the status heartbeat. Use the stream Oboe hands us — the
+    // real-time callback must never touch stream_ or take streamMutex_.
+    auto x = stream->getXRunCount();
     if (x) xruns_.store(x.value());
 
     return oboe::DataCallbackResult::Continue;
 }
 
 void OboeOutput::onErrorAfterClose(oboe::AudioStream* /*stream*/, oboe::Result error) {
-    LOGW("Oboe stream error after close: %s — restarting", oboe::convertToText(error));
-    // Disconnect (e.g. headphones unplugged) closes the stream; re-open.
+    // Do NOT reopen here. This callback fires on the A2DP drop itself, racing the
+    // Java-side gate close — reopening would land the stream on the built-in speaker
+    // and emit audio out the tablet. Recovery is the reconciler's job: it reopens via
+    // PianoEngine.start() only after re-confirming the A2DP route (isStreamRunning()).
+    LOGW("Oboe stream error after close: %s — leaving stream closed",
+         oboe::convertToText(error));
     stop();
-    start();
 }
 
 } // namespace pianobridge

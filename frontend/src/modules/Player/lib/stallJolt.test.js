@@ -6,6 +6,7 @@ import {
   STALL_JOLT_GRACE_MS,
   STALL_JOLT_STEP_MS,
 } from './stallJolt.js';
+import { HARD_STALL_MS } from '../hooks/useCommonMediaController.js';
 
 describe('stallJoltPlan', () => {
   it('rung 0 refreshes the URL at the intent (fresh transcode at the seek offset)', () => {
@@ -42,8 +43,17 @@ describe('isStallJoltExhausted', () => {
 });
 
 describe('timing constants', () => {
-  it('grace is shorter than a step, and both are sane', () => {
+  it('grace and step are both sane positive durations', () => {
     expect(STALL_JOLT_GRACE_MS).toBeGreaterThan(1000);
-    expect(STALL_JOLT_STEP_MS).toBeGreaterThan(STALL_JOLT_GRACE_MS - 1);
+    expect(STALL_JOLT_STEP_MS).toBeGreaterThan(1000);
+  });
+});
+
+describe('stall escalation ordering (2026-07-10 soak defect #1)', () => {
+  it('the cheap controller nudge fires before the expensive jolt', () => {
+    // Both ladders arm off the same soft-stall boundary. If the jolt grace is
+    // shorter than the nudge deadline, the jolt preempts the nudge and the cheap
+    // rung is dead code — which is exactly what 9h of production showed (0 nudges).
+    expect(STALL_JOLT_GRACE_MS).toBeGreaterThan(HARD_STALL_MS);
   });
 });

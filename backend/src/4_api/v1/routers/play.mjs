@@ -3,6 +3,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 /**
@@ -261,9 +262,9 @@ export function createPlayRouter(config) {
    * - Compound ID: /play/plex:12345
    * - Heuristic: /play/12345 (bare digits -> plex)
    */
-  router.get('/:source/*', asyncHandler(async (req, res) => {
+  router.get('/:source/*splat', asyncHandler(async (req, res) => {
     const { source } = req.params;
-      const rawPath = req.params[0] || '';
+      const rawPath = splatPath(req);
       const { compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
 
       // Resolve content ID through unified resolver (handles all layers:

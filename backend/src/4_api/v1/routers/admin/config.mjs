@@ -18,6 +18,7 @@
  */
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 /**
  * Create Admin Config Router
@@ -41,13 +42,13 @@ export function createAdminConfigRouter(config) {
   }));
 
   // GET /files/* - Read a config file
-  router.get('/files/*', asyncHandler((req, res) => {
-    res.json(service.readFile(req.params[0]));
+  router.get('/files{/*splat}', asyncHandler((req, res) => {
+    res.json(service.readFile(splatPath(req)));
   }));
 
   // PUT /files/* - Write a config file
-  router.put('/files/*', asyncHandler((req, res) => {
-    res.json(service.writeFile(req.params[0], req.body || {}));
+  router.put('/files{/*splat}', asyncHandler((req, res) => {
+    res.json(service.writeFile(splatPath(req), req.body || {}));
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

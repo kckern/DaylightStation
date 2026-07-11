@@ -191,7 +191,7 @@ describe('WakeAndLoadService playback watchdog', () => {
     vi.useRealTimers();
   });
 
-  test('skips watchdog when queue param is missing', async () => {
+  test('skips watchdog for empty/no-content query', async () => {
     vi.useFakeTimers();
     const logger = makeLogger();
     const broadcast = vi.fn();
@@ -212,6 +212,35 @@ describe('WakeAndLoadService playback watchdog', () => {
 
     // With no content to track, don't arm the watchdog at all.
     expect(subscribeSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test('does NOT arm watchdog for a menu list query (no false timeout)', async () => {
+    vi.useFakeTimers();
+    const logger = makeLogger();
+    const broadcast = vi.fn();
+    const eventBus = makeEventBus();
+    const subscribeSpy = vi.spyOn(eventBus, 'subscribe');
+    const device = makeDevice();
+    const svc = new WakeAndLoadService({
+      deviceService: { get: () => device },
+      readinessPolicy: { isReady: async () => ({ ready: true }) },
+      broadcast,
+      eventBus,
+      logger,
+    });
+
+    const result = await svc.execute('living-room', { list: 'plex:12345' });
+    expect(result.ok).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(90_000);
+
+    // No playback.log subscription => watchdog never armed
+    expect(subscribeSpy).not.toHaveBeenCalledWith('playback.log', expect.anything());
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'wake-and-load.playback.timeout',
+      expect.anything()
+    );
     vi.useRealTimers();
   });
 

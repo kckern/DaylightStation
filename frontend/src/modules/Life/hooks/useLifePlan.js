@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
 function logger() {
@@ -29,7 +30,9 @@ export function useLifePlan(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchPlan = useCallback(async () => {
     setLoading(true);
@@ -48,6 +51,14 @@ export function useLifePlan(username) {
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
 
+  // A plan is "empty" when it has no substance yet: no object, no keys, or no
+  // goals/values/purpose. Consumers (e.g. the dashboard funnel) use this to
+  // decide whether to route a new user to the coach.
+  const isEmpty = useMemo(() => (
+    !plan || Object.keys(plan).length === 0 ||
+    ((plan.goals?.length ?? 0) === 0 && (plan.values?.length ?? 0) === 0 && !plan.purpose)
+  ), [plan]);
+
   const updateSection = useCallback(async (section, data) => {
     try {
       await api(`/${section}${qs}`, { method: 'PATCH', body: JSON.stringify(data) });
@@ -59,7 +70,19 @@ export function useLifePlan(username) {
     }
   }, [qs, fetchPlan]);
 
-  return { plan, loading, error, refetch: fetchPlan, updateSection };
+  // Author a new value (backend assigns the next rank). Throws on failure so
+  // the caller (modal) can surface the error inline; refetches on success.
+  const createValue = useCallback(async ({ name, description } = {}) => {
+    const value = await api(`/values${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    });
+    await fetchPlan();
+    logger().info('value-created', { valueId: value?.id });
+    return value;
+  }, [qs, fetchPlan]);
+
+  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, createValue };
 }
 
 /**
@@ -70,13 +93,16 @@ export function useGoals(username, state) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+
   const qs = useMemo(() => {
     const params = new URLSearchParams();
-    if (username) params.set('username', username);
+    if (user) params.set('username', user);
     if (state) params.set('state', state);
     const s = params.toString();
     return s ? `?${s}` : '';
-  }, [username, state]);
+  }, [user, state]);
 
   const fetchGoals = useCallback(async () => {
     setLoading(true);
@@ -94,16 +120,29 @@ export function useGoals(username, state) {
   useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
   const transitionGoal = useCallback(async (goalId, newState, reason) => {
-    const userQs = username ? `?username=${username}` : '';
+    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
     const result = await api(`/goals/${goalId}/transition${userQs}`, {
       method: 'POST',
       body: JSON.stringify({ state: newState, reason }),
     });
     await fetchGoals();
     return result;
-  }, [username, fetchGoals]);
+  }, [user, fetchGoals]);
 
-  return { goals, loading, error, refetch: fetchGoals, transitionGoal };
+  // Author a new goal. Throws on failure so the caller can surface the error
+  // inline; refetches the goal list on success and returns the created goal.
+  const createGoal = useCallback(async ({ name, why, milestone } = {}) => {
+    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
+    const goal = await api(`/goals${userQs}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, why, milestone }),
+    });
+    await fetchGoals();
+    logger().info('goal-created', { goalId: goal?.id });
+    return goal;
+  }, [user, fetchGoals]);
+
+  return { goals, loading, error, refetch: fetchGoals, transitionGoal, createGoal };
 }
 
 /**
@@ -114,7 +153,9 @@ export function useGoalDetail(goalId, username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchGoal = useCallback(async () => {
     if (!goalId) return;
@@ -143,7 +184,9 @@ export function useBeliefs(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchBeliefs = useCallback(async () => {
     setLoading(true);
@@ -169,7 +212,19 @@ export function useBeliefs(username) {
     return result;
   }, [qs, fetchBeliefs]);
 
-  return { beliefs, loading, error, refetch: fetchBeliefs, addEvidence };
+  // Author a new belief. Throws on failure so the caller can surface the error
+  // inline; refetches on success and returns the created belief.
+  const createBelief = useCallback(async ({ if_hypothesis, then_outcome } = {}) => {
+    const belief = await api(`/beliefs${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ if_hypothesis, then_outcome }),
+    });
+    await fetchBeliefs();
+    logger().info('belief-created', { beliefId: belief?.id });
+    return belief;
+  }, [qs, fetchBeliefs]);
+
+  return { beliefs, loading, error, refetch: fetchBeliefs, addEvidence, createBelief };
 }
 
 /**
@@ -181,7 +236,9 @@ export function useCeremonyConfig(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchCadence = useCallback(async () => {
     setLoading(true);

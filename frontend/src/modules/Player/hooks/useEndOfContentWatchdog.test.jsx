@@ -2,35 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useEndOfContentWatchdog } from './useEndOfContentWatchdog.js';
-
-/**
- * Build a fake media element. Tracks listener registrations so tests can
- * dispatch synthetic events the same way the browser does.
- */
-function makeFakeEl(initial = {}) {
-  const listeners = {};
-  const el = {
-    currentTime: 0,
-    duration: 0,
-    paused: true,
-    seeking: false,
-    ...initial,
-    addEventListener: (ev, fn) => {
-      (listeners[ev] = listeners[ev] || []).push(fn);
-    },
-    removeEventListener: (ev, fn) => {
-      const arr = listeners[ev];
-      if (!arr) return;
-      const i = arr.indexOf(fn);
-      if (i >= 0) arr.splice(i, 1);
-    },
-    _fire: (ev) => {
-      (listeners[ev] || []).forEach((fn) => fn());
-    },
-    _listeners: listeners
-  };
-  return el;
-}
+import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 
 describe('useEndOfContentWatchdog', () => {
   beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
@@ -53,14 +25,26 @@ describe('useEndOfContentWatchdog', () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
-  it('does not fire when video is playing', () => {
-    const el = makeFakeEl({ currentTime: 441.76, duration: 441.76, paused: false });
+  it('does not fire when video is playing (clock still advancing)', () => {
+    // 2026-07-10: the watchdog keys on a frozen clock at duration, not on
+    // paused===false. The old form of this test held currentTime===duration
+    // with paused:false (frozen at duration) and asserted no advance — that
+    // encoded the very bug being fixed. A genuinely playing video has a moving
+    // clock, so it re-arms on each timeupdate and must never fire.
+    // See docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
+    const el = makeFakeEl({ currentTime: 441.4, duration: 441.76, paused: false });
     const onAdvance = vi.fn();
     renderHook(() =>
       useEndOfContentWatchdog({ mediaRef: { current: el }, sourceKey: 'src-a', onAdvance, idleMs: 3000 })
     );
+    act(() => { el._fire('timeupdate'); });        // arm at 441.4
+    act(() => { vi.advanceTimersByTime(1500); });
+    el.currentTime = 441.5;                          // clock advanced → re-arm
     act(() => { el._fire('timeupdate'); });
-    act(() => { vi.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(1500); });
+    el.currentTime = 441.6;                          // clock advanced → re-arm
+    act(() => { el._fire('timeupdate'); });
+    act(() => { vi.advanceTimersByTime(1500); });
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
@@ -124,6 +108,26 @@ describe('useEndOfContentWatchdog', () => {
     expect(el._listeners.pause?.length ?? 0).toBe(0);
     expect(el._listeners.play?.length ?? 0).toBe(0);
     expect(el._listeners.seeked?.length ?? 0).toBe(0);
+  });
+
+  it('resolves the media element via getMediaEl when no mediaRef is given', () => {
+    // dash-video hides the real <video> in a shadow root, so VideoPlayer passes
+    // getMediaEl() instead of a ref. A zero-byte trailing DASH fragment parks the
+    // element at duration with paused===false (see Task 4). The watchdog must still
+    // resolve the element through getMediaEl and advance once the clock is frozen.
+    const onAdvance = vi.fn();
+    const el = document.createElement('video');
+    Object.defineProperty(el, 'duration', { value: 100, configurable: true });
+    Object.defineProperty(el, 'currentTime', { value: 100, writable: true, configurable: true });
+    Object.defineProperty(el, 'paused', { value: false, configurable: true });
+
+    renderHook(() => useEndOfContentWatchdog({
+      getMediaEl: () => el, sourceKey: 'plex:674553', onAdvance, idleMs: 3000
+    }));
+
+    act(() => { el.dispatchEvent(new Event('timeupdate')); });
+    act(() => { vi.advanceTimersByTime(3001); });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
   it('always reads the latest onAdvance callback', () => {

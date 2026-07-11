@@ -121,7 +121,11 @@ function SetupCheck({ children }) {
       setChecked(true);
       return;
     }
-    fetch('/api/v1/auth/context')
+    // Bounded: this fetch gates the ENTIRE app boot (render is null until it
+    // settles). A congested backend that never answers must not blank every
+    // page — after 5s, proceed without the setup redirect (login/claim flows
+    // still enforce auth; this check is a fresh-install convenience).
+    fetch('/api/v1/auth/context', { signal: AbortSignal.timeout(5000) })
       .then(r => r.json())
       .then(data => {
         // Only redirect to setup wizard for fresh installs (no profiles at all).

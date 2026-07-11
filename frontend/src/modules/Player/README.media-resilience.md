@@ -115,4 +115,36 @@ troubleshooting.
 
 ---
 
+## Invariants — do not break these
+
+A 2026-07-10 production soak found three defects in the merged resilience refactor,
+all of the same shape: the code trusted a bare event instead of checking for genuine
+forward motion. Two invariants and one ownership boundary keep them fixed. Full
+writeup: `docs/_wip/bugs/2026-07-10-player-resilience-soak-findings.md`.
+
+1. **`recordSuccess` requires strictly-forward playhead motion.** A progress event at
+   a frozen position is NOT recovery. `usePlaybackHealth` bumps `progressToken` on any
+   progress event — including the `playing` a jolt's own remount fires at the frozen
+   playhead — without comparing seconds. The `useMediaResilience` effect gates
+   `recordSuccess` on `evaluatePlayheadProgress` against a per-session
+   `lastSuccessPosRef` baseline. Breaking this re-defeats the ledger's attempt cap and
+   cooldown, and the jolt ladder loops at rung 1 forever (`f96a60a23`).
+
+2. **`STALL_JOLT_GRACE_MS` must stay greater than `HARD_STALL_MS`.** Both ladders arm
+   off the same soft-stall boundary; the expensive jolt (a fresh Plex transcode
+   session) must not preempt the cheap controller nudge. When the grace was below the
+   nudge deadline, nine hours of production logged zero `recovery-nudge` events.
+   `stallJolt.test.js` pins the ordering (`b4aa2e6fd`).
+
+3. **Ownership boundary: the jolt ladder does not handle end-of-content.** When a dash
+   trailing fragment is zero-byte the element parks at `duration` with `ended === false`;
+   jolting it re-seeks to the end and re-stalls. `useMediaResilience`'s `isStuck` has an
+   `atEnd` guard (via the shared `isNearEnd` predicate in `lib/nearEnd.js`) that
+   deliberately excludes this state from recovery. Advancing the queue at EOF belongs to
+   `useEndOfContentWatchdog`, which is mounted in **both** `ContentScroller` and the dash
+   `VideoPlayer` path — do not let it regress to one renderer only (that scoping is what
+   caused the 2026-07-10 regression of a bug first fixed on 2026-05-23).
+
+---
+
 Please update this README as further adjustments land so reviewers can continue to trace intent, benefits, and remaining concerns.
