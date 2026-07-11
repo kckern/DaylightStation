@@ -1,0 +1,71 @@
+# barcode-relay — dev status (WIP, NOT working yet)
+
+**Date:** 2026-07-11 (overnight session)
+**State:** ESP reliably **finds + bonds + holds** the Zebra DS2278 over SSI-BLE, but the
+gun does **not transmit decode data** to the ESP yet. Protocol handshake unsolved.
+
+## Goal
+M5Stack ATOM Lite (ESP32-PICO-D4) BLE-bridges a **Zebra DS2278** in **SSI Bluetooth
+Low Energy** mode and relays scanned barcodes to DaylightStation (like food-scale-relay).
+
+## What WORKS (verified)
+- Gun config: SSI-BLE host mode + "Do Not Pair on Contacts" (scanned from Zebra DS8 PRG).
+- ESP (NimBLE) finds gun by name `DS2278`, connects, **BONDS** (LE Secure Connections,
+  Just Works, MTU 247), subscribes to all 3 notify chars. Connection **holds indefinitely**
+  (a 4s soft-trigger `START_SESSION 0xE4` keeps the gun awake).
+- **macOS/bleak CANNOT do this** — it can't bond the notify/write-only chars; the ESP is required.
+- **Reliable logging via WiFi UDP broadcast :9999** (the FTDI serial link is flaky — see gotchas).
+- **Live command channel via UDP broadcast :9998** — send SSI commands without reflashing.
+
+## GATT map (DS2278, BLE MAC `c8:1c:fe:fd:ce:90`)
+```
+service a2f0037b-4e26-4981-8a2d-eda9e1689868   (Zebra SSI-over-BLE, proprietary/undocumented)
+  notify[0] 256a0615-...   notify[1] f3ae6f04-...   notify[2] 4b0e1f59-...
+  write[0]  21f9e2b9-... (write, ACKNOWLEDGED)   write[1] 89ae8d0b-... (no-resp)   write[2] 91a765f5-... (no-resp)
+```
+
+## The BLOCKER
+- On connect the gun emits exactly **one** packet: `[NOTIFY 256a0615] 4b 01 14 00 00 00 01 00`, then silence.
+- It responds to **NO** command I send (REQUEST_REVISION 0xA3, START_SESSION 0xE4, SCAN_ENABLE
+  0xE9, CAPABILITIES 0xD4, PARAM_REQUEST 0xC7, echo of its own hello) — every write reports
+  `ok=1` at the BLE layer, zero notify responses.
+- Physical scans produce **no decode notify** on any char (historically gun beeps 4-low = transmit error).
+- The assumed SSI framing `[len][op][0x04 src][0x00 status][data][cksum16 2's-comp MSB-first]`
+  appears NOT to match this transport (no replies to well-formed SSI queries).
+
+## LEADING UNTESTED HYPOTHESIS  ← resume here
+`write[0]` (21f9e2b9) is type **`write` (acknowledged)** but all commands so far used
+**write-WITHOUT-response**. Devices often only process commands via **acknowledged** writes.
+Firmware now supports this: command **`W<idx>`** (uppercase) does an acknowledged write.
+**NOT YET TESTED** — the reflash to add it lost the gun connection (gun slept during the 70s flash).
+
+First test on resume: `zcmd.py W0 04a30400ff55` (REQUEST_REVISION, acknowledged) → watch for a reply notify.
+
+## Other hypotheses if that fails
+- Transport may not be raw SSI. **Decode the `4b01140000000100` packet** — it's the only clue.
+  Could be Zebra RSM or a length/seq-prefixed framing.
+- Try subscribing `f3ae6f04` (the "f3" char = decode?) with **indications** vs notifications.
+- Gun may need an "SSI packet format" / host-capability handshake before decode flows.
+- Escalate to Zebra developer support / Scanner SDK with this GATT map — the transport is undocumented publicly.
+
+## RESUME STEPS (when the gun is awake)
+1. `blueutil --unpair c8-1c-fe-fd-ce-90` (macOS steals the bond otherwise); `blueutil --power 0` optional.
+2. Start listener: `blevenv/bin/python <scratchpad>/udp_listen.py 1800 &`
+3. **Pull the gun trigger** → ESP reconnects (watch UDP log for `bonded OK` / `subscribed 3/3`).
+4. `python <scratchpad>/zcmd.py W0 04a30400ff55` → look for a reply notify in the UDP log.
+5. Iterate via the live command channel. **Do NOT reflash while unattended** — see gotcha.
+
+## Tooling (session scratchpad, port to repo later)
+- `zcmd.py` — send command to ESP. **MUST broadcast** (unicast blocked by AP client isolation).
+- `exp.sh` — send + print new non-heartbeat log lines.
+- `udp_listen.py` — capture ESP UDP logs (:9999). `mon.py` — flaky serial fallback.
+- Firmware: `firmware/` — `pio run -e m5-atom -t upload` at **upload_speed=115200** (link marginal).
+  Free the port first: `kill $(lsof -t /dev/cu.usbserial-*)`.
+
+## Hard-won gotchas
+- **FTDI serial is flaky** → corrupts flash/monitor at high baud. Use `upload_speed=115200` + WiFi UDP for logs.
+- **Reflashing disconnects the gun**; if it sleeps during the ~70s flash it won't re-advertise without a
+  **physical trigger**. NEVER reflash when no human is present — iterate via the live UDP command channel.
+- **macOS bonds/steals the gun** (blueutil shows it paired) → unpair + optionally Mac BT off.
+- **UDP unicast Mac→ESP is blocked** by AP client isolation (ICMP/ping works!) → commands MUST be broadcast.
+- Gun sleeps fast when idle/disconnected → the 4s soft-trigger is what keeps a live session alive.
