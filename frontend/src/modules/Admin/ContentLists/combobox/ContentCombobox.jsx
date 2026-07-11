@@ -28,7 +28,7 @@ import {
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { shouldRunScrollToHighlighted, computeScrollRestore } from '../comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
-import { Modes } from './comboboxMachine.js';
+import { Modes, isContainer } from './comboboxMachine.js';
 import './ContentCombobox.scss';
 
 const TYPE_ICONS = {
@@ -60,15 +60,6 @@ const SOURCE_ICONS = {
 };
 
 const OPTION_CLASS = 'content-combobox-option';
-
-// Item-shape tolerance: hook-normalized browse items ({type, itemCount, parent})
-// AND raw search API items ({metadata: {...}}) both flow through here.
-function isContainer(item) {
-  return item.itemType === 'container'
-    || item.isContainer
-    || ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist', 'container']
-      .includes(item.type || item.metadata?.type);
-}
 
 function getIcon(item) {
   const type = item.type || item.metadata?.type || item.mediaType;

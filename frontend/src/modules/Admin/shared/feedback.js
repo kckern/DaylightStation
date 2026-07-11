@@ -46,6 +46,15 @@ export function notifySuccess({ title, message }) {
   });
 }
 
+export function notifyWarning({ title, message }) {
+  notifications.show({
+    title,
+    message: message ?? '',
+    color: 'yellow',
+    autoClose: 7000,
+  });
+}
+
 export function notifyFailure({ title, message }) {
   notifications.show({
     title,

@@ -12,6 +12,10 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
+vi.mock('../../shared/feedback.js', () => ({
+  notifyWarning: vi.fn(),
+}));
+
 vi.mock('../../../../lib/appRegistry.js', () => ({
   APP_REGISTRY: { webcam: { label: 'Webcam', icon: 'webcam-icon.svg', param: null } },
   searchApps: (query) => (
@@ -26,6 +30,7 @@ vi.mock('../../../../lib/appRegistry.js', () => ({
 import '../../../../lib/appRegistry.js';
 
 import { useContentCombobox, titleCache, Modes } from './useContentCombobox.js';
+import { notifyWarning } from '../../shared/feedback.js';
 
 class MockEventSource {
   constructor(url) {
@@ -76,6 +81,7 @@ describe('useContentCombobox', () => {
     vi.stubGlobal('EventSource', undefined);
     fetchMock = vi.fn(() => jsonResponse({ items: [] }));
     vi.stubGlobal('fetch', fetchMock);
+    notifyWarning.mockClear();
   });
 
   afterEach(() => {
@@ -563,5 +569,115 @@ describe('useContentCombobox', () => {
     expect(result.current.state.value).toBe('plex:10'); // committed value preserved
     expect(result.current.state.browse.items).toEqual([]);
     expect(result.current.state.browse.pagination).toBeNull();
+  });
+
+  // ── R2: searchSettled signal + commit(reason) executor ──
+
+  it('searchSettled is false right after handleInput and true once the batch transport settles', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/content/query/search')
+        ? jsonResponse({ items: [{ id: 'plex:5', title: 'Bluey' }] })
+        : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('bluey'); });
+    // Debounce has not fired: queryRef.current is still stale ('' !== 'bluey').
+    expect(result.current.searchSettled).toBe(false);
+
+    await act(async () => { vi.advanceTimersByTime(350); });
+    // Debounce fired, batch fetch resolved, batchLoading cleared.
+    expect(result.current.searchSettled).toBe(true);
+  });
+
+  it("commit('enter') with a single leaf result selects it (onChange(id,item), DISPLAY)", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/content/query/search')
+        ? jsonResponse({ items: [{ id: 'plex:42', title: 'The Answer', type: 'episode' }] })
+        : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({ onChange });
+
+    act(() => { result.current.handleInput('answ'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:42']);
+
+    let decision;
+    act(() => { decision = result.current.commit('enter'); });
+
+    expect(decision.action).toBe('select');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('plex:42', expect.objectContaining({ id: 'plex:42' }));
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.search).toBeNull();
+  });
+
+  it("commit('enter') settled with empty results commits the raw text and flags a no-match toast", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    // Default fetchMock returns items:[] — a settled, empty search.
+    const { result } = setup({ onChange });
+
+    act(() => { result.current.handleInput('nomatch'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(result.current.searchSettled).toBe(true);
+    expect(result.current.state.results).toEqual([]);
+
+    let decision;
+    act(() => { decision = result.current.commit('enter'); });
+
+    expect(decision.action).toBe('literal');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('nomatch');
+    expect(notifyWarning).toHaveBeenCalledTimes(1);
+    expect(notifyWarning).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('nomatch') })
+    );
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+  });
+
+  it("commit('blur') with a changed, unpicked query reverts: no onChange, value preserved, DISPLAY", () => {
+    const onChange = vi.fn();
+    const { result } = setup({ value: 'plex:10', onChange });
+
+    act(() => { result.current.handleInput('something else'); });
+    expect(result.current.state.search).toBe('something else');
+
+    let decision;
+    act(() => { decision = result.current.commit('blur'); });
+
+    expect(decision.action).toBe('revert');
+    expect(onChange).toHaveBeenCalledTimes(0);
+    expect(result.current.state.value).toBe('plex:10'); // committed value preserved
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.search).toBeNull();
+  });
+
+  it("commit('enter') selects an id-lookup leaf ahead of the single-result rule", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/content/query/search')
+        ? jsonResponse({ items: [
+            { id: 'plex:5', title: 'Exact', type: 'episode', matchReason: 'id-lookup' },
+            { id: 'plex:6', title: 'Fuzzy', type: 'episode' },
+          ] })
+        : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({ onChange });
+
+    act(() => { result.current.handleInput('plexlike'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(result.current.state.results).toHaveLength(2);
+
+    let decision;
+    act(() => { decision = result.current.commit('enter'); });
+
+    expect(decision.action).toBe('select');
+    expect(onChange).toHaveBeenCalledWith('plex:5', expect.objectContaining({ id: 'plex:5' }));
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
   });
 });
