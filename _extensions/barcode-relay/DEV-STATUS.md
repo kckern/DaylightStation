@@ -41,12 +41,34 @@ Firmware now supports this: command **`W<idx>`** (uppercase) does an acknowledge
 
 First test on resume: `zcmd.py W0 04a30400ff55` (REQUEST_REVISION, acknowledged) → watch for a reply notify.
 
-## Other hypotheses if that fails
-- Transport may not be raw SSI. **Decode the `4b01140000000100` packet** — it's the only clue.
-  Could be Zebra RSM or a length/seq-prefixed framing.
-- Try subscribing `f3ae6f04` (the "f3" char = decode?) with **indications** vs notifications.
-- Gun may need an "SSI packet format" / host-capability handshake before decode flows.
-- Escalate to Zebra developer support / Scanner SDK with this GATT map — the transport is undocumented publicly.
+## ⭐ RECOMMENDED PIVOT — abandon SSI-BLE, use HID-BLE (2026-07-11 research conclusion)
+
+Research (dayjaby/zebra-scanner + Zebra Scanner SDK) shows **SSI-over-BLE is Zebra's
+proprietary RSM attribute protocol** (`datatype/id/permission/value`), reachable **only via
+Zebra's closed CoreScanner/Scanner SDK**. The `4b01140000000100` packet is part of it. It is
+**not replicable blind on an ESP** — this is why nothing we sent got a reply. **Stop pursuing
+SSI-BLE from scratch.**
+
+Instead switch the gun to **HID Bluetooth Low Energy** (the barcode KC originally linked:
+`...r-param-desc-hid-bluetooth-low-energy-discoverable.html`). That's the **standard HID-over-
+GATT (HOGP)** profile — documented and implementable. Two paths:
+
+1. **ESP as BLE HID host (keeps the untethered relay pattern):** ESP connects to the gun's HID
+   service `0x1812`, bonds, subscribes to Report characteristics `0x2A4D`, decodes standard
+   USB-HID keyboard reports → barcode string → relay over WS. More firmware work (HOGP central
+   is less common than HID-device examples, e.g. olegos76/nimble_kbdhid_example is a device),
+   but STANDARD. Reuse the keycode→char table already in `_extensions/barcode-scanner`.
+2. **Least-effort / proven:** pair the gun (HID-BLE) directly to an always-on Linux host (garage
+   box / playback-hub / a Pi) — it becomes a BLE keyboard, and the EXISTING `_extensions/
+   barcode-scanner` evdev→MQTT service reads it with near-zero new code. Loses the ESP pattern
+   but works today.
+
+The SSI acknowledged-write test below is worth ~5 min IF you want to exhaust SSI, but the pivot
+above is the real path. Escalating SSI to Zebra developer support would also work but is slow.
+
+## Other SSI hypotheses (low priority — see pivot above)
+- Decode the `4b01140000000100` packet; try `f3ae6f04` with indications vs notifications;
+  gun may need an SSI packet-format/host-capability handshake. All likely moot vs the RSM finding.
 
 ## RESUME STEPS (when the gun is awake)
 1. `blueutil --unpair c8-1c-fe-fd-ce-90` (macOS steals the bond otherwise); `blueutil --power 0` optional.
