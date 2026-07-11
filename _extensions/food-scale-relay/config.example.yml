@@ -17,6 +17,12 @@ backend:
   port: 3111                         # event-bus WS port
   ws_path: /ws
 
+# Backend persistence root (relative to data dir). The backend reads this and
+# writes settled measurements + button events to <dir>/<scale-id>/<date>.yml.
+# Omit to use the default (household/history/nutrition).
+persistence:
+  dir: household/history/nutrition
+
 scales:
   kitchen-food-scale:
     label: "Kitchen food scale"
