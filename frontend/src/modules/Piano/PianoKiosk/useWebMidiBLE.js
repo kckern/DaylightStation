@@ -105,6 +105,9 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   const accessRef = useRef(null);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
+  // Coalesces the BLE statechange STORM (a reconnect fires ~14 statechange events
+  // in one second as the port renegotiates) into a single rebind — see connect().
+  const rebindTimerRef = useRef(null);
 
   // Raw note-event tap — lets the studio recorder capture a full take regardless
   // of noteHistory's 8s display trim. Listeners get {type, note, velocity, time}.
@@ -242,9 +245,18 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       });
       access.onstatechange = (e) => {
         logger().info('midi.statechange', { port: e.port?.name, state: e.port?.state });
-        bindInput(access);
+        // Debounce: a BLE (re)connect emits a burst of statechange events as the
+        // port renegotiates (observed ~14 in one second). Binding on each one
+        // stormed ~14 rebinds AND toggled outputConnected repeatedly, so the
+        // downstream recovery re-assert (PianoSound/Mix) thrashed too. Coalesce to
+        // ONE rebind after the burst settles → a single clean false→true edge.
+        if (rebindTimerRef.current) clearTimeout(rebindTimerRef.current);
+        rebindTimerRef.current = setTimeout(() => {
+          rebindTimerRef.current = null;
+          bindInput(access);
+        }, 200);
       };
-      bindInput(access);
+      bindInput(access); // initial bind is synchronous — fast first connect
     } catch (err) {
       setStatus('denied');
       logger().error('midi.denied', { error: err?.message });
@@ -257,12 +269,18 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   // short-circuit so the input + output both re-attach.
   const resetLink = useCallback(async () => {
     logger().info('midi.reset-link', { hadOutput: !!outputRef.current });
+    if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
     if (inputRef.current) { try { inputRef.current.onmidimessage = null; } catch { /* ignore */ } }
     inputRef.current = null;
     outputRef.current = null;
     setOutputName(null);
     await connect();
   }, [connect]);
+
+  // Clear any pending debounced rebind on unmount so it can't fire into a torn-down hook.
+  useEffect(() => () => {
+    if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
+  }, []);
 
   // Output watchdog / auto-recover: while connected, if the OUT port is missing
   // (BLE enumerated it late, or it dropped), re-scan the live access for it every

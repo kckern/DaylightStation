@@ -26,7 +26,7 @@ const FALLBACK = { pianoLevel: 1, mediaLevel: 1, setPianoLevel: () => {}, setMed
 const Ctx = createContext(FALLBACK);
 
 export function PianoMixProvider({ children }) {
-  const { connected, sendControlChange } = usePianoMidi();
+  const { outputConnected, sendControlChange } = usePianoMidi();
   const logger = useMemo(() => getLogger().child({ component: 'piano-mix' }), []);
   const [pianoLevel, setPianoLevelState] = useState(() => readLevel(PIANO_KEY));
   const [mediaLevel, setMediaLevelState] = useState(() => readLevel(MEDIA_KEY));
@@ -49,14 +49,17 @@ export function PianoMixProvider({ children }) {
     logger.info('piano.mix.media-level', { level });
   }, [logger]);
 
-  // Re-assert the piano CC7 level whenever MIDI (re)connects, so a reconnect or
-  // keyboard power-cycle restores the chosen balance.
+  // Re-assert the piano CC7 level whenever the MIDI OUT LINK (re)connects, so a
+  // reconnect, keyboard power-cycle, or BLE flap restores the chosen balance —
+  // including a volume change made while the link was briefly down (the send
+  // no-oped, but pianoLevel state kept it, so this re-fires it). Keyed on
+  // outputConnected (the port that actually flaps), not input-level `connected`.
   useEffect(() => {
-    if (!connected) return;
+    if (!outputConnected) return;
     const cc = Math.round(pianoRef.current * 127);
     sendControlChange(CC_VOLUME, cc);
     logger.info('piano.mix.cc7-assert', { level: pianoRef.current, cc });
-  }, [connected, sendControlChange, logger]);
+  }, [outputConnected, sendControlChange, logger]);
 
   const value = useMemo(
     () => ({ pianoLevel, mediaLevel, setPianoLevel, setMediaLevel }),

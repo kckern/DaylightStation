@@ -7,6 +7,7 @@ import { usePianoBreadcrumbBar } from './PianoBreadcrumbContext.jsx';
 import { useLongPress } from './useLongPress.js';
 import SoundPanel from './SoundPanel.jsx';
 import OperatorDrawer from './OperatorDrawer.jsx';
+import PianoLinkBanner from './PianoLinkBanner.jsx';
 import PianoUserChip from './PianoUserChip.jsx';
 import Icon from './icons/Icon.jsx';
 
@@ -40,6 +41,7 @@ export function PianoChrome({ modeLabel, modeKey }) {
   (extraCrumbs || []).forEach((c) => trail.push({ label: c.label, onClick: c.onClick }));
 
   return (
+    <Fragment>
     <header className="piano-chrome">
       <nav className="piano-chrome__crumbs" aria-label="Breadcrumb">
         <button
@@ -107,6 +109,10 @@ export function PianoChrome({ modeLabel, modeKey }) {
       <SoundPanel open={soundOpen} onClose={() => setSoundOpen(false)} />
       <OperatorDrawer open={operatorOpen} onClose={() => setOperatorOpen(false)} />
     </header>
+    {/* Below the header bar so a dropped OUT link (and its recovery) is impossible
+        to miss while the player is changing instrument/tone/volume. */}
+    <PianoLinkBanner />
+    </Fragment>
   );
 }
 

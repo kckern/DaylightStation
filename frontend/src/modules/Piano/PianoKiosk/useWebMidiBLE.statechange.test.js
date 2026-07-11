@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useWebMidiBLE } from './useWebMidiBLE.js';
 
@@ -42,20 +42,32 @@ describe('useWebMidiBLE onstatechange', () => {
     expect(input.binds).toBe(1); // still bound exactly once — no churn
   });
 
-  it('binds a LATE-enumerating output on a later statechange (BLE output races the input)', async () => {
-    const { access, input } = mockAccess();
-    const { result } = renderHook(() => useWebMidiBLE({}));
+  it('binds a LATE-enumerating output after the debounced statechange burst settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const { access, input } = mockAccess();
+      const { result } = renderHook(() => useWebMidiBLE({}));
 
-    await act(async () => { await result.current.connect(); });
-    expect(result.current.outputConnected).toBe(false); // no output present at connect time
+      await act(async () => { await result.current.connect(); });
+      expect(result.current.outputConnected).toBe(false); // no output present at connect time
 
-    // The OUT port enumerates a beat later; a statechange fires for the still-present
-    // input (the input is idempotent, but the output must still attach — the bug).
-    access.outputs.set('o', { id: 'o', name: 'Piano', send() {} });
-    await act(async () => { access.onstatechange?.({ port: input }); });
+      // The OUT port enumerates a beat later, and a BLE reconnect fires a STORM of
+      // statechange events. The rebind is DEBOUNCED, so the output attaches once,
+      // after the burst settles (~200ms) — not synchronously per event.
+      access.outputs.set('o', { id: 'o', name: 'Piano', send() {} });
+      await act(async () => {
+        access.onstatechange?.({ port: input });
+        access.onstatechange?.({ port: input });
+        access.onstatechange?.({ port: input });
+      });
+      expect(result.current.outputConnected).toBe(false); // debounced — not yet bound
 
-    expect(result.current.outputConnected).toBe(true);
-    expect(result.current.outputName).toBe('Piano');
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+      expect(result.current.outputConnected).toBe(true);
+      expect(result.current.outputName).toBe('Piano');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('resetLink re-scans and re-binds the input + output', async () => {
