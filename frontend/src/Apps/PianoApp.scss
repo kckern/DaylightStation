@@ -37,6 +37,15 @@
   --r-lg: 16px;   // hero tiles, album art
   --r-pill: 999px;
 
+  // --- spacing scale (4px ramp; the missing sibling of the type/radius scales) ---
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
   // --- media stages (dark, theme-independent) ---
   --piano-stage: #000000;       // video letterbox / game canvas
   --piano-stage-2: #0b0b0f;     // now-playing music backdrop
@@ -262,7 +271,7 @@
     // so the wall stays two rows across a range of kiosk widths.
     display: grid;
     grid-template-columns: repeat(5, minmax(8rem, 15rem));
-    gap: 1.5rem;
+    gap: var(--sp-5);
   }
 }
 
@@ -293,7 +302,7 @@
     // Keep two rows in portrait too — 5 equal columns that shrink to fit the
     // narrower width (tiles hold their 3:2 aspect, so they just get smaller).
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.75rem;
+    gap: var(--sp-3);
     width: 100%;
   }
 
@@ -311,7 +320,7 @@
 
 .piano-mode {
   flex: 1 1 auto;
-  padding: 1.5rem;
+  padding: var(--sp-5);
   overflow: auto;
 
   h2 { font-size: var(--t-display); font-weight: 700; margin: 0 0 1rem; }
