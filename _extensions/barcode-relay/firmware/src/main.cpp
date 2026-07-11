@@ -121,10 +121,17 @@ static void onReport(NimBLERemoteCharacteristic* chr, uint8_t* d, size_t len, bo
 
 class ScanCB : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice* dev) override {
-    bool hid = dev->isAdvertisingService(SVC_HID);
+    uint16_t appr = dev->haveAppearance() ? dev->getAppearance() : 0;
+    bool hid  = dev->isAdvertisingService(SVC_HID);
     bool name = dev->haveName() && dev->getName().rfind("DS2278",0)==0;
-    if(hid || name){
-      logf("[ble] found %s (%s) hidSvc=%d", dev->haveName()?dev->getName().c_str():"?", dev->getAddress().toString().c_str(), hid);
+    bool kbd  = (appr==0x03C1 || appr==0x03C0);   // HID keyboard / generic HID appearance
+    bool tgt  = dev->getAddress().toString()=="e8:c8:a4:69:e5:af";  // candidate gun (random static addr)
+    // Log nearby devices so I can identify how the gun advertises in HID mode.
+    if(dev->getRSSI() > -72)
+      logf("[scan] %s rssi=%d name='%s' appr=0x%04x hidSvc=%d", dev->getAddress().toString().c_str(),
+           dev->getRSSI(), dev->haveName()?dev->getName().c_str():"-", appr, hid);
+    if(hid || name || kbd || tgt){
+      logf("[ble] MATCH %s (%s) hid=%d kbd=%d", dev->haveName()?dev->getName().c_str():"?", dev->getAddress().toString().c_str(), hid, kbd);
       NimBLEDevice::getScan()->stop(); g_adv=new NimBLEAdvertisedDevice(*dev); g_doConnect=true;
     }
   }
