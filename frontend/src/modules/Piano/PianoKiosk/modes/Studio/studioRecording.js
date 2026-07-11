@@ -19,6 +19,11 @@ export function takeDuration(events) {
   return events.reduce((max, e) => (e.t > max ? e.t : max), 0);
 }
 
+/** How many notes were played (note_on events) — for the review summary. */
+export function noteOnCount(events) {
+  return events.reduce((n, e) => (e.type === 'note_on' ? n + 1 : n), 0);
+}
+
 /**
  * Close any notes still held at stop time so playback doesn't leave hung notes.
  * Returns a new events array with synthetic note_off events appended at stopT.
