@@ -150,6 +150,39 @@ Titles wrap to 1–3 lines ("(Everything I Do)…", "As Long as We Got Each Othe
 
 ---
 
+## Implementation status (2026-07-11, shipped `9b1f24885`)
+
+The **purpose-built Karaoke browser** (`modes/Karaoke/`) — not the generic Videos
+grid this audit was written against — is now the live singalong/play-along picker,
+and the de-slop recommendations that don't require new data are shipped:
+
+**Done**
+- **P0.2 Search is the hero** — sticky search toolbar (stays on scroll); searches title + artist.
+- **P0.3 Recognition art** — every song gets the canonical `MaterialGlyph` identicon
+  (deterministic FNV-1a → symmetric SVG) on a **category-tinted tile**. No more wall of gray text.
+- **P1.4 Card re-rank** — Title → promoted Artist → demoted muted category (color-dot, not green
+  eyebrow); hover/focus ▶ "tap to sing" affordance.
+- **P1.5 Sort** — `sortKey` strips leading articles/parentheticals; **Song/Artist** segmented toggle
+  (artistless rows sink, tie-break on song).
+- **P1.6 / J Consistent card height** — fixed height + 2-line title clamp kills the ragged grid.
+- **P2.10 Filter overflow** — tab row wraps (no clipped "TV Themes").
+- **P3 De-slop** — green reserved for action/selection only (categories carry their own stable hue via
+  `categoryHue`); breadcrumb `Karaoke › Karaoke` doubling fixed (empty crumb; chrome shows the mode).
+
+**Deferred — blocked on data/infra that doesn't exist yet (net-new features, not slop fixes)**
+- **P0.1 Replace the taxonomy with Decade / Popular / Recent** — the categories ARE the Plex seasons
+  (a data restructure, not frontend); Decade needs per-song year metadata, Popular/Recent need play
+  history wired to this surface. Artist axis is shipped (sort); the rest is a data project.
+- **P2.7 Queue / favorites / recently-sung** — no karaoke-song queue or per-song favorites store exists
+  (the preset "favorites" are VOICES, not songs).
+- **P2.8 has-lyrics / key / range** — not present in the Plex metadata for these covers.
+- **P2.9 Move the voice selector out of the chrome** — the sound chip is core piano chrome, not
+  picker-only; left as-is pending a broader chrome decision.
+- **P2 Preview** and **P3 list-view toggle** — not built this pass.
+
+These are scoping decisions, not oversights: each deferred item needs a data source or a new
+subsystem, and should be its own spec.
+
 ## One-line verdict
 
 The screen isn't ugly — it's *generic*, and the genericness runs deeper than the palette: it's a general-purpose content grid wearing LLM-generated genre names, optimized for even spacing instead of for a person who walked up to sing a specific song. Fix the taxonomy and the search-first flow, reserve the green for actions, promote the artist, and it stops looking like something a machine assembled and starts looking like a karaoke machine someone built.
