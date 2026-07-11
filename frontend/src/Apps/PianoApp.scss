@@ -2134,6 +2134,91 @@
   &__save { border-color: var(--piano-accent); color: var(--piano-accent-text); }
 }
 
+/* ---- Operator Drawer (maintenance console, behind long-press — design §7) ----
+   Hardware / Diagnostics / Display / Recovery(ranked) / Feedback. Mirrors the
+   Sound Panel's slide-over shell but is the operator-only twin: destructive
+   and diagnostic controls live ONLY here, never on the player-facing panel. ---- */
+.piano-operator-drawer {
+  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
+
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+
+  &__sheet {
+    position: relative; width: min(30rem, 92vw); height: 100%;
+    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
+    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
+  }
+
+  &__head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
+  }
+  &__close {
+    background: none; border: none; color: var(--piano-muted); cursor: pointer;
+    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
+  }
+
+  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
+  &__section--grow { flex: 1 1 auto; min-height: 0; }
+  &__eyebrow {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--piano-muted); margin: 0;
+  }
+
+  // Hardware — connection dot + Connect / Bluetooth launcher.
+  &__hw { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  &__hwdot {
+    width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--piano-muted);
+    &.is-on { background: var(--piano-accent); }
+    &.is-warn { background: var(--piano-warn); }
+    &.is-off { background: var(--piano-danger); }
+  }
+  &__hwlabel { font-weight: 700; }
+  &__hwname { color: var(--piano-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  &__connect {
+    background: var(--piano-accent); color: var(--piano-accent-ink); border: none;
+    border-radius: var(--r-pill); padding: 0.35rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
+    &--ghost { background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border); }
+  }
+
+  // Display — manual screen-off (maintenance / burn-in kill switch), 2-tap confirm.
+  &__screen-off {
+    width: 100%; min-height: 48px; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
+    &:active { background: var(--piano-border); }
+    // Armed (awaiting confirm) — signal it's live with the warn colour.
+    &.is-armed { border-color: var(--piano-warn); color: var(--piano-warn); font-weight: 700; }
+  }
+  &__screen-error { margin: 0.5rem 0 0; color: var(--piano-warn); font-size: 0.9rem; }
+
+  // Recovery — explicitly RANKED (audit T8): restart-audio is the accented,
+  // "try this first" action; reload is de-emphasized, the nuclear fallback.
+  &__recovery { display: flex; flex-direction: column; gap: var(--sp-2); }
+  &__restart, &__reload {
+    width: 100%; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
+    &:active { background: var(--piano-border); }
+  }
+  &__restart { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
+  &__hint {
+    font-size: 0.7rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--piano-accent-text); opacity: 0.8; margin-left: 0.25rem;
+  }
+  // Reload is deliberately quieter — no accent, no hint chip; last resort.
+  &__reload { color: var(--piano-muted); }
+
+  // Feedback — "not a setting" (audit T6), operator-only, out of the player view.
+  &__feedback-open {
+    width: 100%; min-height: 48px; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-md);
+    padding: 0.6rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
+    &:active { background: var(--piano-border); }
+  }
+}
+
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
 @media (prefers-reduced-motion: reduce) {
   .piano-app *, .piano-app *::before, .piano-app *::after {
