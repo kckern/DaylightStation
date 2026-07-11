@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { getNotePosition, getNoteWidth, getNoteHue, getNoteName } from '../noteUtils.js';
+import { reportRender } from '../../../lib/logging/jankProbes.js';
 import { InvaderSprite } from './InvaderSprite.jsx';
 import './NoteWaterfall.scss';
 
@@ -81,6 +82,12 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
       bottomPercent: Math.min(1, (now - l.spawnTime) / travelMs) * 100,
     }));
   }, [gameMode, startNote, endNote, tick]);
+
+  // Telemetry: attribute re-render frequency AND rendered-node payload to this
+  // component so a waterfall storm is visible in perf.diagnostics.renders.
+  useEffect(() => {
+    reportRender('NoteWaterfall', { nodes: notes.length + gameNotes.length });
+  });
 
   return (
     <div className={`note-waterfall${gameMode ? ' note-waterfall--game' : ''}`}>

@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { isWhiteKey, getNoteName } from '../noteUtils.js';
+import { reportRender } from '../../../lib/logging/jankProbes.js';
 import { RomanChord } from './roman/RomanProgression.jsx';
 import './PianoKeyboard.scss';
 
@@ -132,6 +133,12 @@ export function PianoKeyboard({
   );
 
   const now = (destroyedKeys && destroyedKeys.size) ? Date.now() : 0;
+
+  // Telemetry: container re-render frequency (the memoized keys bail out, so a
+  // high count here means the whole board is being asked to reconcile often).
+  useEffect(() => {
+    reportRender('PianoKeyboard', { nodes: descriptors.length });
+  });
 
   return (
     <div

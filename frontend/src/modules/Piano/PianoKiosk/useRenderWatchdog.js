@@ -168,6 +168,15 @@ export function useRenderWatchdog({
                 fps: Math.round(fps), minFps, sustainSeconds,
                 visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
               });
+              // Paper trail: one rich snapshot at onset (loopLag vs fps, longTasks,
+              // slowEvents, per-component renders, heap, DOM) so we can tell a JS
+              // storm from a compositor stall — then densify the perf.diagnostics
+              // cadence so the whole episode is captured, not just its start.
+              try {
+                const root = getLogger();
+                logger.warn('piano.jank.snapshot', root.perfSnapshot ? root.perfSnapshot() : {});
+                if (root.startDiagnostics) root.startDiagnostics({ intervalMs: 2000 });
+              } catch { /* telemetry must never break the render loop */ }
               if (restart) {
                 logger.warn('piano.watchdog.restart', { fps: Math.round(fps), minFps, sustainSeconds });
                 restart();
@@ -176,6 +185,13 @@ export function useRenderWatchdog({
           } else {
             if (inEpisode) {
               logger.info('piano.watchdog.jank-end', { fps: Math.round(fps), worstFps: Math.round(worstFps) });
+              // Episode over — hand the perf.diagnostics cadence back to the
+              // always-on coarse rate (a live side-scroller re-arms its own 5s on
+              // the next phase change).
+              try {
+                const root = getLogger();
+                if (root.startDiagnostics) root.startDiagnostics({ intervalMs: 60000 });
+              } catch { /* ignore */ }
             }
             jankSeconds = 0;
             inEpisode = false;
