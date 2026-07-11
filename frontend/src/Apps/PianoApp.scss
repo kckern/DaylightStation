@@ -2039,6 +2039,101 @@
   &__detail { color: var(--piano-fg); }
 }
 
+/* ---- Player Sound Panel (the only sound surface a family member sees) ----
+   Tap the chrome sound chip to open; long-press opens the separate Operator
+   Drawer. NOTHING destructive lives here — see SoundPanel.jsx. ---- */
+.piano-sound-panel {
+  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
+
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
+
+  &__sheet {
+    position: relative; width: min(30rem, 92vw); height: 100%;
+    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
+    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
+  }
+
+  &__head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
+  }
+  &__close {
+    background: none; border: none; color: var(--piano-muted); cursor: pointer;
+    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
+  }
+
+  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
+  &__eyebrow {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--piano-muted); margin: 0;
+  }
+
+  // Favorites / house-shortlist tiles — big, touch-friendly, the funnel's front door.
+  &__tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  &__tile {
+    width: 100%; min-height: 48px; display: flex; align-items: center; gap: 0.6rem;
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); color: inherit; padding: 0.6rem 0.75rem; cursor: pointer;
+    text-align: left;
+    &:active { background: var(--piano-border); }
+  }
+  &__tileicon { font-size: 1.4rem; line-height: 1; }
+  &__tilename { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  // Browse-all — collapsed by default; the "explore everything" tier.
+  &__browse-toggle {
+    width: 100%; min-height: 44px; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+    padding: 0.5rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
+    &:active { background: var(--piano-border); }
+  }
+  &__browse { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+  &__family {
+    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+    padding: 0.45rem 0.75rem; font: inherit; cursor: pointer;
+  }
+  &__voices {
+    list-style: none; margin: 0; padding: 0; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 0.4rem; max-height: 16rem; overflow-y: auto;
+  }
+  &__voice {
+    width: 100%; min-height: 44px; text-align: left; background: var(--piano-surface-2); color: inherit;
+    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    padding: 0.45rem 0.6rem; font: inherit; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); font-weight: 700; }
+  }
+
+  // Tone — reverb/chorus (type + level) and volume; every change re-fires applyBundle.
+  &__fx { display: flex; flex-direction: column; gap: 0.6rem; }
+  &__fxrow { display: flex; align-items: center; gap: 0.5rem; }
+  &__fxname { flex: 0 0 4rem; color: var(--piano-muted); }
+  &__fxtype {
+    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    padding: 0.3rem 0.5rem; font: inherit; cursor: pointer;
+  }
+  &__fxrow input[type="range"] { flex: 1 1 auto; min-height: 44px; accent-color: var(--piano-accent); }
+  &__fxval { flex: 0 0 2.6rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
+
+  // Save — snapshot the current bundle onto the active user.
+  &__foot {
+    flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: var(--sp-2);
+  }
+  &__save, &__favorite {
+    width: 100%; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
+    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
+    &:active { background: var(--piano-border); }
+  }
+  // Save-as-default is the primary action here — accent it like the settings
+  // sheet's "restart" recovery button (the thing to reach for first).
+  &__save { border-color: var(--piano-accent); color: var(--piano-accent-text); }
+}
+
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
 @media (prefers-reduced-motion: reduce) {
   .piano-app *, .piano-app *::before, .piano-app *::after {
