@@ -37,6 +37,15 @@
   --r-lg: 16px;   // hero tiles, album art
   --r-pill: 999px;
 
+  // --- spacing scale (4px ramp; the missing sibling of the type/radius scales) ---
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
   // --- media stages (dark, theme-independent) ---
   --piano-stage: #000000;       // video letterbox / game canvas
   --piano-stage-2: #0b0b0f;     // now-playing music backdrop
@@ -92,11 +101,25 @@
   // Kiosk-fixity: kill pull-to-refresh and double-tap/pinch zoom at the source.
   overscroll-behavior: none;
   touch-action: manipulation;
-  // Touch UI: kill the full-area tap-highlight flash (WebKit/Blink paints the
-  // accent over the whole element on tap — separate from :focus outlines).
+  // Kiosk base-reset (touch-only surface): no text selection, no callout, no
+  // tap-highlight flash, no focus rings. Consolidated here (was scattered).
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
   * { -webkit-tap-highlight-color: transparent; }
+  // Kill stray UA focus rings on tap (touch fires :focus, not :focus-visible),
+  // matching the prior !important reset — but WITHOUT !important, so intentional
+  // element-specific :focus-visible accents later in this file (e.g.
+  // .piano-course-tab) still win for keyboard focus.
+  :focus { outline: none; box-shadow: none; }
+  :focus-visible { outline: none; }
 }
+
+// Real text fields must remain selectable/editable despite the kiosk reset.
+.piano-app input,
+.piano-app textarea,
+.piano-app [contenteditable] { user-select: text; -webkit-user-select: text; }
 
 .piano-chrome {
   flex: 0 0 auto;
@@ -261,8 +284,9 @@
     // 10 tiles on 2 rows → 5 columns; minmax lets each tile flex between 8–15rem
     // so the wall stays two rows across a range of kiosk widths.
     display: grid;
-    grid-template-columns: repeat(5, minmax(8rem, 15rem));
-    gap: 1.5rem;
+    grid-template-columns: repeat(var(--tile-cols, 5), minmax(8rem, 15rem));
+    justify-content: center;
+    gap: var(--sp-5);
   }
 }
 
@@ -292,8 +316,8 @@
   .piano-menu__tiles {
     // Keep two rows in portrait too — 5 equal columns that shrink to fit the
     // narrower width (tiles hold their 3:2 aspect, so they just get smaller).
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(var(--tile-cols, 5), minmax(0, 1fr));
+    gap: var(--sp-3);
     width: 100%;
   }
 
@@ -311,7 +335,7 @@
 
 .piano-mode {
   flex: 1 1 auto;
-  padding: 1.5rem;
+  padding: var(--sp-5);
   overflow: auto;
 
   h2 { font-size: var(--t-display); font-weight: 700; margin: 0 0 1rem; }
@@ -1741,14 +1765,6 @@
 .piano-video-grid--posters .piano-video-grid__title,
 .piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
 
-/* Touch kiosk: suppress focus rings entirely — they render as ugly teal boxes
-   when tiles/buttons are tapped. No keyboard-navigation use case here. */
-.piano-app :focus,
-.piano-app :focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
 /* ---- Settings sheet (consolidated voice / MIDI hardware / MIDI monitor) ---- */
 .piano-settings {
   position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
@@ -2592,4 +2608,29 @@
   0%{opacity:.95; transform:scale(.88);}
   55%{opacity:.85; transform:scale(1);}
   100%{opacity:0; transform:scale(1.1);}
+}
+
+// ── Skeleton loaders ─────────────────────────────────────────────────────────
+.piano-skeleton {
+  background: var(--piano-surface-2);
+  border-radius: var(--r-sm);
+  width: 100%;
+  &.is-shimmer {
+    background: linear-gradient(90deg, var(--piano-surface) 25%, var(--piano-surface-2) 37%, var(--piano-surface) 63%);
+    background-size: 400% 100%;
+    animation: piano-skeleton-shimmer 1.4s ease infinite;
+  }
+}
+.piano-skeleton--poster { aspect-ratio: 2 / 3; border-radius: var(--r-sm); }
+.piano-skeleton-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--sp-4); justify-content: center;
+  li { flex: 0 0 12.75rem; width: 12.75rem; }
+}
+@keyframes piano-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piano-skeleton.is-shimmer { animation: none; background: var(--piano-surface-2); }
 }
