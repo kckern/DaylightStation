@@ -1538,9 +1538,23 @@
   flex-direction: column;
   gap: var(--sp-4);
 
-  &__search {
+  // Search + sort share a sticky toolbar so the primary tool (search) stays
+  // reachable while scrolling a long catalog (audit P0.2 "make search the hero").
+  &__toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     flex: 0 0 auto;
-    width: 100%;
+    display: flex;
+    gap: var(--sp-3);
+    align-items: stretch;
+    padding-bottom: var(--sp-1);
+    background: var(--piano-bg);
+  }
+
+  &__search {
+    flex: 1 1 auto;
+    min-width: 0;
     padding: var(--sp-3) var(--sp-4);
     border-radius: var(--r-md);
     border: 1px solid var(--piano-border);
@@ -1553,6 +1567,33 @@
     &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
   }
 
+  // Song/Artist sort — a segmented control. Green is reserved for the active
+  // (selected) segment only, per the audit's "reserve green for action" rule.
+  &__sort {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-pill);
+  }
+
+  &__sort-btn {
+    background: none;
+    border: none;
+    color: var(--piano-muted);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.4rem 1rem;
+    border-radius: var(--r-pill);
+    min-height: 2.5rem;
+
+    &.is-on { background: var(--piano-accent); color: var(--piano-accent-ink); }
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  }
+
   &__tabs {
     flex: 0 0 auto;
     display: flex;
@@ -1561,6 +1602,9 @@
   }
 
   &__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     background: var(--piano-surface);
     border: 1px solid var(--piano-border);
     color: var(--piano-muted);
@@ -1571,9 +1615,21 @@
     border-radius: var(--r-pill);
     min-height: 2.75rem;
 
-    &.is-active { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+    // 'All' has no category hue → falls back to the house green when active.
+    &.is-active:not([style]) { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+    &.is-active { color: #fff; }
     &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
   }
+
+  // Color-coding dot: the category's own stable hue (categoryHue). Hidden on the
+  // active tab, whose fill already carries the hue.
+  &__tab-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+  &__tab.is-active .piano-karaoke__tab-dot { display: none; }
 
   &__empty { color: var(--piano-muted); font-style: italic; }
 
@@ -1582,37 +1638,102 @@
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: var(--sp-4);
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: var(--sp-3);
   }
 
+  // Card: recognition art (left) + text block. Fixed height kills the ragged
+  // grid the audit flagged (variable title length no longer moves the baseline).
   &__card {
     width: 100%;
+    height: 100%;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--sp-1);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
     background: var(--piano-surface);
     border: 1px solid var(--piano-border);
     border-radius: var(--r-lg);
     color: inherit;
     text-align: left;
     cursor: pointer;
-    padding: var(--sp-4) var(--sp-5);
-    min-height: 6.5rem;
+    padding: var(--sp-3);
+    min-height: 5.5rem;
 
     &:hover, &:focus-visible { border-color: var(--piano-accent); }
     &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+    &:hover .piano-karaoke__play, &:focus-visible .piano-karaoke__play { opacity: 1; }
   }
 
-  &__card-song { font-size: var(--t-title); font-weight: 700; line-height: 1.2; }
-  &__card-artist { font-size: var(--t-body); color: var(--piano-muted); }
+  // Category-tinted art tile holding the deterministic identicon; the ▶ overlay
+  // is the "tap to sing" affordance (audit G), revealed on hover/focus.
+  &__art {
+    position: relative;
+    flex: 0 0 auto;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: var(--r-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  &__glyph { display: block; }
+  &__play {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: #fff;
+    background: rgba(8, 8, 12, 0.55);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  &__card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  // Title → Artist priority (audit C). Title clamps to 2 lines so long titles
+  // don't blow the fixed card height; artist is promoted out of near-invisibility.
+  &__card-song {
+    font-size: var(--t-title);
+    font-weight: 700;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  &__card-artist {
+    font-size: var(--t-body);
+    color: var(--piano-fg);
+    opacity: 0.82;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  // Category demoted to a muted line with a color dot (color + text = accessible,
+  // no reliance on green-alone). Only shown in All/search where it isn't implied.
   &__card-category {
-    margin-top: var(--sp-1);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.1rem;
     font-size: var(--t-cap);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--piano-accent-text);
+    color: var(--piano-muted);
+  }
+  &__card-cat-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex: 0 0 auto;
   }
 }
 

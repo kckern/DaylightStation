@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseSongTitle, parseSongs, categoriesOf, filterSongs } from './karaokeBrowse.js';
+import {
+  parseSongTitle, parseSongs, categoriesOf, filterSongs, sortKey, categoryHue, songArt,
+} from './karaokeBrowse.js';
 
 describe('parseSongTitle', () => {
   it('splits "Song (Artist)" into song + artist', () => {
@@ -100,5 +102,59 @@ describe('filterSongs', () => {
 
   it('returns [] when nothing matches the query', () => {
     expect(filterSongs(songs, { query: 'zzz-no-match' })).toEqual([]);
+  });
+
+  it('normalizes leading articles/parentheticals for song sort', () => {
+    const list = [
+      { id: '1', song: 'The Way', artist: 'X', category: 'c' },
+      { id: '2', song: '(Everything I Do) I Do It for You', artist: 'Bryan Adams', category: 'c' },
+      { id: '3', song: 'A Whole New World', artist: 'Y', category: 'c' },
+    ];
+    // Sorts as "everything i do…", "the way" (→ "way"), "whole new world" → e, w(ay), w(hole)
+    expect(filterSongs(list, {}).map((s) => s.id)).toEqual(['2', '1', '3']);
+  });
+
+  it('sort=artist orders by artist, artistless rows last, tie-break on song', () => {
+    const list = [
+      { id: '1', song: 'My Way', artist: 'Frank Sinatra', category: 'c' },
+      { id: '2', song: 'Piano Man', artist: 'Billy Joel', category: 'c' },
+      { id: '3', song: 'Africa', artist: '', category: 'c' },
+      { id: '4', song: 'Fly Me to the Moon', artist: 'Frank Sinatra', category: 'c' },
+    ];
+    expect(filterSongs(list, { sort: 'artist' }).map((s) => s.id)).toEqual(['2', '4', '1', '3']);
+  });
+});
+
+describe('sortKey', () => {
+  it('strips a leading article', () => {
+    expect(sortKey('The Way')).toBe('way');
+    expect(sortKey('A Whole New World')).toBe('whole new world');
+    expect(sortKey('An Ocean')).toBe('ocean');
+  });
+  it('strips a leading parenthetical', () => {
+    expect(sortKey('(Everything I Do) I Do It for You')).toBe('i do it for you');
+  });
+  it('falls back to the raw lowercase when stripping empties it', () => {
+    expect(sortKey('The')).toBe('the');
+    expect(sortKey('(only parens)')).toBe('(only parens)');
+  });
+});
+
+describe('categoryHue', () => {
+  it('is deterministic per category and in 0..359', () => {
+    const h = categoryHue('Piano Men');
+    expect(h).toBe(categoryHue('Piano Men'));
+    expect(h).toBeGreaterThanOrEqual(0);
+    expect(h).toBeLessThan(360);
+  });
+});
+
+describe('songArt', () => {
+  it('is stable for the same song and yields a slug seed + gradient', () => {
+    const a = songArt({ song: 'Piano Man', artist: 'Billy Joel', category: 'Piano Men' });
+    const b = songArt({ song: 'Piano Man', artist: 'Billy Joel', category: 'Piano Men' });
+    expect(a).toEqual(b);
+    expect(a.seed).toBe('slug:piano man|billy joel');
+    expect(a.background).toMatch(/^linear-gradient\(/);
   });
 });
