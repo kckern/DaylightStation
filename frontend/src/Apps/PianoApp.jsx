@@ -40,6 +40,8 @@ import { Games } from '../modules/Piano/PianoKiosk/modes/Games/Games.jsx';
 import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
+import { Singalong } from '../modules/Piano/PianoKiosk/modes/Singalong/Singalong.jsx';
+import { Composer } from '../modules/Piano/PianoKiosk/modes/Composer/Composer.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
@@ -220,7 +222,7 @@ function PianoShell() {
     }
   }, playing);
 
-  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Lessons', studio: 'Studio', producer: 'Producer' };
+  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Singalong', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Training', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
@@ -240,11 +242,13 @@ function PianoShell() {
             <Route index element={<PianoMenu />} />
             <Route path="videos/*" element={<Videos />} />
             <Route path="playalong/*" element={<Videos source={config.playalong} />} />
+            <Route path="singalong/*" element={<Singalong />} />
             <Route path="music/*" element={<Music />} />
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />
             <Route path="lessons/*" element={<Lessons />} />
             <Route path="studio/*" element={<Studio />} />
+            <Route path="composer/*" element={<Composer />} />
             <Route path="producer/*" element={<Producer />} />
             <Route path="test/*" element={<PianoTest />} />
             <Route path="*" element={<PianoMenu />} />

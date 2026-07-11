@@ -48,18 +48,20 @@ export function resolveCourseGroups(videos) {
  * Collections come from piano config `videos.collections` (grouped into tabs) or
  * the legacy flat `videos.plexCollection`.
  */
-export function Videos({ source }) {
+export function Videos({ source, PlayerComponent }) {
   const { config } = usePianoKioskConfig();
   // `source` (a videos-shaped config: { collections } or { plexCollection }) lets
   // the same grid→detail→player flow back another menu item (e.g. Playalong).
-  // Defaults to the Courses config.
+  // Defaults to the Courses config. `PlayerComponent` swaps the lecture player so
+  // a mode (e.g. Singalong) can reuse this grid/detail flow with karaoke chrome;
+  // defaults to the standard PianoVideoPlayer.
   const videos = source ?? config.videos;
   const groups = useMemo(() => resolveCourseGroups(videos), [videos]);
   return (
     <Routes>
       <Route index element={<CourseGridRoute groups={groups} />} />
       <Route path=":courseId" element={<CourseDetailRoute />} />
-      <Route path=":courseId/:lectureId" element={<LecturePlayerRoute />} />
+      <Route path=":courseId/:lectureId" element={<LecturePlayerRoute PlayerComponent={PlayerComponent} />} />
     </Routes>
   );
 }
@@ -107,7 +109,7 @@ export function CourseDetailRoute() {
  * URL segment is the same `lectureContentId(item)` used to push it, so the
  * match is stable both warm and cold.
  */
-function LecturePlayerRoute() {
+function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
   const { config } = usePianoKioskConfig();
@@ -143,7 +145,7 @@ function LecturePlayerRoute() {
     );
   }
   return (
-    <PianoVideoPlayer
+    <PlayerComponent
       lecture={lecture}
       source={source}
       onBack={goBack}

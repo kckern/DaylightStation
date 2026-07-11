@@ -13,6 +13,9 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | menu | studio | `menu/studio.svg` | solar:microphone-bold |
 | menu | instruments | `menu/instruments.svg` | solar:tuning-2-bold (faders) |
 | menu | composers | `menu/composers.svg` | solar:book-2-bold (open book) |
+| menu | singalong | `singalong.svg` | solar:microphone-large-bold (handheld karaoke mic) |
+| menu | metronome | `metronome.svg` | svgrepo 390025 metronome (Training) — not Solar; normalized to 1em/currentColor |
+| menu | quill | `quill.svg` | quill/feather pen (Composer) — not Solar |
 | chrome | home | `chrome/home.svg` | solar:home-2-bold |
 | chrome | connection | `chrome/connection.svg` | solar:bluetooth-square-bold |
 | transport | play | `transport/play.svg` | solar:play-bold |

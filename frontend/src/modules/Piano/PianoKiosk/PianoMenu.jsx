@@ -6,19 +6,24 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
 
-// Order maps to the 4-column grid, row by row (top row, then bottom row):
-//   Courses  Lessons  Sheet Music  Studio      ← far-left = Courses, far-right = Studio
-//   Playalong  Music   Games                   ← far-left = Playalong
-// Producer is intentionally NOT a tile — it stays reachable only via the
-// `producer/*` route (see PianoApp.jsx), not the touch UI.
+// Order maps to the 5-column grid, row by row (top row → bottom row):
+//   Courses    Music      Sheet Music  Studio  Composer
+//   Playalong  Singalong  Training     Games   Producer
+// Training sits directly under Sheet Music; Music follows Courses; Composer
+// follows Studio. Producer is present but `disabled` (greyed, non-clickable) —
+// it stays reachable only via the `producer/*` route (see PianoApp.jsx), not the
+// touch UI, until it ships. Composer is a placeholder shell for a future tool.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
-  { id: 'lessons', label: 'Lessons', blurb: 'Technique drills', icon: 'lessons' },
+  { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
   { id: 'sheetmusic', label: 'Sheet Music', blurb: 'Scores to play', icon: 'sheet-music' },
   { id: 'studio', label: 'Studio', blurb: 'Free play, record & replay', icon: 'studio' },
+  { id: 'composer', label: 'Composer', blurb: 'Write & arrange music', icon: 'quill' },
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
-  { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
+  { id: 'singalong', label: 'Singalong', blurb: 'Karaoke — sing along', icon: 'singalong' },
+  { id: 'lessons', label: 'Training', blurb: 'Technique drills', icon: 'metronome' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
+  { id: 'producer', label: 'Producer', blurb: 'Coming soon', icon: 'producer', disabled: true },
 ];
 
 /**
@@ -42,7 +47,13 @@ export function PianoMenu() {
         <ul className="piano-menu__tiles">
           {PIANO_MODES.map((m) => (
             <li key={m.id}>
-              <PianoTile icon={m.icon} label={m.label} blurb={m.blurb} onClick={() => open(m.id)} />
+              <PianoTile
+                icon={m.icon}
+                label={m.label}
+                blurb={m.blurb}
+                disabled={m.disabled}
+                onClick={m.disabled ? undefined : () => open(m.id)}
+              />
             </li>
           ))}
         </ul>
