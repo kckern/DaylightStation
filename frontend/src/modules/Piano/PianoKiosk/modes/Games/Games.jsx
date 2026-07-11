@@ -6,6 +6,7 @@ import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
+import { balancedColumns } from '../../tileGridLayout.js';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
@@ -53,10 +54,11 @@ function GamePicker() {
   // Note Hero now lives under Lessons (it's a timing/learning game), so it is
   // excluded from the arcade Games picker.
   const ids = getGameIds().filter((id) => id !== 'hero');
+  const cols = balancedColumns(ids.length); // 4 → 4, centered, no empty column
 
   return (
     <section className="piano-menu piano-mode--games">
-      <ul className="piano-menu__tiles">
+      <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
         {ids.map((id) => (
           <li key={id}>
             <PianoTile

@@ -284,7 +284,8 @@
     // 10 tiles on 2 rows → 5 columns; minmax lets each tile flex between 8–15rem
     // so the wall stays two rows across a range of kiosk widths.
     display: grid;
-    grid-template-columns: repeat(5, minmax(8rem, 15rem));
+    grid-template-columns: repeat(var(--tile-cols, 5), minmax(8rem, 15rem));
+    justify-content: center;
     gap: var(--sp-5);
   }
 }
@@ -315,7 +316,7 @@
   .piano-menu__tiles {
     // Keep two rows in portrait too — 5 equal columns that shrink to fit the
     // narrower width (tiles hold their 3:2 aspect, so they just get smaller).
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--tile-cols, 5), minmax(0, 1fr));
     gap: var(--sp-3);
     width: 100%;
   }
