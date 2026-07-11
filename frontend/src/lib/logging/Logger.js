@@ -6,6 +6,12 @@
  */
 
 import { getSharedWsTransport } from './sharedTransport.js';
+import {
+  startJankProbes,
+  stopJankProbes,
+  readJankProbes,
+  readRenderRegistry,
+} from './jankProbes.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
@@ -312,6 +318,13 @@ function collectSnapshot() {
     ? document.getElementsByTagName('*').length
     : 0;
 
+  // Why-is-it-slow probes. loopLag vs fps is the key read: low fps + low loopLag
+  // + no longTasks ⇒ compositor/GPU stall (JS idle); low fps + high loopLag ⇒
+  // main-thread saturation. slowEvents surfaces "unresponsive" static UI, and
+  // renders attributes a re-render storm to a specific component.
+  const { loopLag, longTasks, slowEvents } = readJankProbes();
+  const renders = readRenderRegistry();
+
   return {
     fps: +fps.toFixed(1),
     frameMs: { avg: +avgMs.toFixed(1), min: +minMs.toFixed(1), max: +maxMs.toFixed(1) },
@@ -319,6 +332,10 @@ function collectSnapshot() {
     sampleCount: count,
     heap,
     domNodes,
+    loopLag,
+    longTasks,
+    slowEvents,
+    ...(renders ? { renders } : {}),
     // rAF throttles to ~1fps when the page/backlight is off — without this
     // field a dark screen is indistinguishable from real jank in the logs.
     visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
@@ -359,6 +376,7 @@ export const startDiagnostics = (opts = {}) => {
   diagState.count = 0;
   diagState.lastFrameTs = 0;
   diagState.rafId = requestAnimationFrame(diagFrame);
+  startJankProbes(); // loop-lag / long-task / slow-event probes live with diagnostics
 
   diagState.intervalId = setInterval(() => {
     const snap = collectSnapshot();
@@ -389,6 +407,7 @@ export const stopDiagnostics = () => {
   diagState.head = 0;
   diagState.count = 0;
   diagState.lastFrameTs = 0;
+  stopJankProbes();
   if (typeof window !== 'undefined') {
     delete window.__PERF_DIAG__;
   }
